@@ -96,6 +96,8 @@ DEFINE_HOOK(&dMeter2Draw_c::drawOxygen, MeterDrawOxygenHook);
 DEFINE_HOOK(&dMeter2Draw_c::setButtonIconMidonaAlpha, MeterMidnaAlphaHook);
 DEFINE_HOOK(&dMeter2Draw_c::drawButtonCross, MeterDrawButtonCrossHook);
 DEFINE_HOOK(&dMeter2_c::moveButtonCross, MeterMoveButtonCrossHook);
+DEFINE_HOOK(&dMeterButton_c::setString, MeterButtonSetStringHook);
+DEFINE_HOOK(&dMeterButton_c::_execute, MeterButtonExecuteHook);
 DEFINE_HOOK(&dMeterButton_c::draw, MeterButtonDrawHook);
 DEFINE_HOOK(&dMeterMap_c::draw, MeterMapDrawHook);
 DEFINE_HOOK(&daAlink_c::midnaTalkTrigger, MidnaTalkTriggerHook);
@@ -159,13 +161,28 @@ Rml::Element* s_skipTouchElement = nullptr;
 bool s_skipTouchMidnaMode = false;
 bool s_skipTouchMidnaPressed = false;
 std::string s_skipTouchMidnaSource;
+bool s_midnaPromptThisFrame = false;
+bool s_zPromptCustomVisualsActive = false;
+bool s_hideZPromptButton = false;
+bool s_hideZPromptAfterExecute = false;
 
-struct ZPromptTextureSwap {
-    J2DPicture* icon = nullptr;
-    ResTIMG const* originalTexture = nullptr;
+struct ZPromptVisualState {
+    J2DPane* root = nullptr;
+    J2DPane* hiddenPanes[16] = {};
+    bool hiddenVisible[16] = {};
+    u8 hiddenCount = 0;
 };
 
-ZPromptTextureSwap s_zPromptTextureSwap;
+ZPromptVisualState s_zPromptVisualState;
+
+void reset_z_prompt_visual_state() {
+    s_zPromptVisualState = ZPromptVisualState();
+}
+
+void clear_z_prompt_custom_visuals() {
+    reset_z_prompt_visual_state();
+    s_zPromptCustomVisualsActive = false;
+}
 
 struct HudPaneTransformState {
     J2DPane* pane = nullptr;
@@ -252,10 +269,13 @@ bool consume_touch_midna_trigger() {
     return triggered;
 }
 
+J2DPane* prompt_pane(dMeterButton_c* meter, u64 tag) {
+    return meter != nullptr && meter->mpButtonScreen != nullptr ? meter->mpButtonScreen->search(tag) :
+                                                                  nullptr;
+}
+
 J2DPicture* prompt_picture(dMeterButton_c* meter, u64 tag) {
-    J2DPane* pane = meter != nullptr && meter->mpButtonScreen != nullptr ?
-                        meter->mpButtonScreen->search(tag) :
-                        nullptr;
+    J2DPane* pane = prompt_pane(meter, tag);
     if (pane == nullptr || pane->getTypeID() != 18) {
         return nullptr;
     }
@@ -263,37 +283,208 @@ J2DPicture* prompt_picture(dMeterButton_c* meter, u64 tag) {
     return static_cast<J2DPicture*>(pane);
 }
 
-ResTIMG const* z_prompt_dpad_texture() {
-    constexpr const char* names[] = {
-        "im_juji_key_03.bti",
-        "im_juji_key.bti",
-    };
-    JKRArchive* archives[] = {
-        dComIfGp_getCollectResArchive(),
-        dComIfGp_getMain2DArchive(),
-        dComIfGp_getMeterButtonArchive(),
-    };
-
-    for (JKRArchive* archive : archives) {
-        if (archive == nullptr) {
-            continue;
-        }
-        for (const char* name : names) {
-            if (auto* texture = static_cast<ResTIMG const*>(archive->getResource('TIMG', name))) {
-                return texture;
-            }
-        }
-    }
-    return nullptr;
+ResTIMG const* loaded_dpad_quarter_texture() {
+    auto* archive = dComIfGp_getMain2DArchive();
+    return archive != nullptr ?
+               static_cast<ResTIMG const*>(archive->getResource('TIMG', "cross_key_00.bti")) :
+               nullptr;
 }
 
-void restore_z_prompt_texture() {
-    if (s_zPromptTextureSwap.icon != nullptr &&
-        s_zPromptTextureSwap.originalTexture != nullptr)
-    {
-        s_zPromptTextureSwap.icon->changeTexture(s_zPromptTextureSwap.originalTexture, 0);
+void set_prompt_pane_visible(dMeterButton_c* meter, u64 tag, bool visible) {
+    J2DPane* pane = prompt_pane(meter, tag);
+    if (pane == nullptr) {
+        return;
     }
-    s_zPromptTextureSwap = {};
+
+    if (visible) {
+        pane->show();
+    } else {
+        pane->hide();
+    }
+}
+
+void hide_z_prompt_panes(dMeterButton_c* meter) {
+    set_prompt_pane_visible(meter, MULTI_CHAR('zbtn_n'), false);
+    set_prompt_pane_visible(meter, 'zbtn', false);
+    set_prompt_pane_visible(meter, MULTI_CHAR('z_btnl'), false);
+}
+
+bool pane_tree_contains(J2DPane* root, J2DPane* pane) {
+    if (root == nullptr || pane == nullptr) {
+        return false;
+    }
+
+    if (root == pane) {
+        return true;
+    }
+
+    for (J2DPane* child = root->getFirstChildPane(); child != nullptr;
+         child = child->getNextChildPane())
+    {
+        if (pane_tree_contains(child, pane)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void save_and_hide_z_prompt_pane(J2DPane* pane) {
+    if (pane == nullptr) {
+        return;
+    }
+
+    for (u8 i = 0; i < s_zPromptVisualState.hiddenCount; ++i) {
+        if (s_zPromptVisualState.hiddenPanes[i] == pane) {
+            pane->hide();
+            return;
+        }
+    }
+
+    if (s_zPromptVisualState.hiddenCount >= 16) {
+        pane->hide();
+        return;
+    }
+
+    const u8 index = s_zPromptVisualState.hiddenCount++;
+    s_zPromptVisualState.hiddenPanes[index] = pane;
+    s_zPromptVisualState.hiddenVisible[index] = pane->isVisible();
+    pane->hide();
+}
+
+void hide_z_prompt_extra_layers(J2DPane* pane, J2DPane* midna) {
+    if (pane == nullptr || pane == midna) {
+        return;
+    }
+
+    if (pane_tree_contains(pane, midna)) {
+        for (J2DPane* child = pane->getFirstChildPane(); child != nullptr;
+             child = child->getNextChildPane())
+        {
+            hide_z_prompt_extra_layers(child, midna);
+        }
+        return;
+    }
+
+    const u16 type = pane->getTypeID();
+    if (type != 16 && type != 17) {
+        save_and_hide_z_prompt_pane(pane);
+        return;
+    }
+
+    for (J2DPane* child = pane->getFirstChildPane(); child != nullptr;
+         child = child->getNextChildPane())
+    {
+        hide_z_prompt_extra_layers(child, midna);
+    }
+}
+
+void restore_z_prompt_visuals(dMeterButton_c* meter) {
+    if (!s_zPromptCustomVisualsActive || meter == nullptr) {
+        return;
+    }
+
+    if (meter->mpButtonScreen == nullptr ||
+        prompt_pane(meter, MULTI_CHAR('zbtn_n')) != s_zPromptVisualState.root)
+    {
+        clear_z_prompt_custom_visuals();
+        return;
+    }
+
+    for (u8 i = 0; i < s_zPromptVisualState.hiddenCount; ++i) {
+        J2DPane* pane = s_zPromptVisualState.hiddenPanes[i];
+        if (pane == nullptr) {
+            continue;
+        }
+
+        if (s_zPromptVisualState.hiddenVisible[i]) {
+            pane->show();
+        } else {
+            pane->hide();
+        }
+    }
+
+    clear_z_prompt_custom_visuals();
+}
+
+void hide_z_prompt_button_visuals(dMeterButton_c* meter) {
+    if (meter == nullptr || meter->mpButtonScreen == nullptr) {
+        return;
+    }
+
+    J2DPane* root = prompt_pane(meter, MULTI_CHAR('zbtn_n'));
+    J2DPane* midna = prompt_pane(meter, MULTI_CHAR('midona'));
+    if (root == nullptr || midna == nullptr) {
+        return;
+    }
+
+    if (!s_zPromptCustomVisualsActive || s_zPromptVisualState.root != root) {
+        reset_z_prompt_visual_state();
+        s_zPromptVisualState.root = root;
+    }
+
+    hide_z_prompt_extra_layers(root, midna);
+    s_zPromptCustomVisualsActive = true;
+}
+
+void draw_z_prompt_dpad(dMeterButton_c* meter) {
+    if (!s_zPromptCustomVisualsActive || !z_item_slot_enabled() || meter == nullptr ||
+        !meter->isButtonShowBit(dMeterButton_c::BUTTON_Z_e))
+    {
+        return;
+    }
+
+    J2DPicture* icon = prompt_picture(meter, 'zbtn');
+    ResTIMG const* quarterTexture = loaded_dpad_quarter_texture();
+    if (icon == nullptr || quarterTexture == nullptr || icon->getTextureCount() == 0) {
+        return;
+    }
+
+    const bool wasVisible = icon->isVisible();
+    const u8 textureCount = std::min<u8>(icon->getTextureCount(), 2);
+    ResTIMG const* originalTextures[2] = {};
+    for (u8 i = 0; i < textureCount; ++i) {
+        JUTTexture* texture = icon->getTexture(i);
+        originalTextures[i] = texture != nullptr ? texture->getTexInfo() : nullptr;
+        icon->changeTexture(quarterTexture, i);
+    }
+
+    const JUtility::TColor originalBlack = icon->getBlack();
+    const JUtility::TColor originalWhite = icon->getWhite();
+    JUtility::TColor originalCorners[4];
+    for (u8 i = 0; i < 4; ++i) {
+        originalCorners[i] = icon->corner(i);
+    }
+    Mtx originalMtx;
+    MTXCopy(*icon->getMtx(), originalMtx);
+
+    const JGeometry::TBox2<f32>& bounds = icon->getGlbBounds();
+    const f32 width = bounds.f.x - bounds.i.x;
+    const f32 height = bounds.f.y - bounds.i.y;
+    const f32 halfWidth = width * 0.5f;
+    const f32 halfHeight = height * 0.5f;
+
+    icon->show();
+    icon->setBlackWhite(JUtility::TColor(0x00000000), JUtility::TColor(0xFFFFFFFF));
+    icon->setCornerColor(JUtility::TColor(0xFFFFFFFF));
+    icon->draw(bounds.i.x, bounds.i.y, halfWidth, halfHeight, false, false, false);
+    icon->draw(bounds.i.x + halfWidth, bounds.i.y, halfWidth, halfHeight, true, false, false);
+    icon->draw(bounds.i.x, bounds.i.y + halfHeight, halfWidth, halfHeight, false, true, false);
+    icon->draw(bounds.i.x + halfWidth, bounds.i.y + halfHeight, halfWidth, halfHeight, true, true,
+               false);
+
+    icon->setMtx(originalMtx);
+    icon->setBlackWhite(originalBlack, originalWhite);
+    icon->setCornerColor(originalCorners[0], originalCorners[1], originalCorners[2],
+                         originalCorners[3]);
+    for (u8 i = 0; i < textureCount; ++i) {
+        if (originalTextures[i] != nullptr) {
+            icon->changeTexture(originalTextures[i], i);
+        }
+    }
+    if (!wasVisible) {
+        icon->hide();
+    }
 }
 
 bool z_item_menu_or_pause_context();
@@ -2709,31 +2900,68 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
     }
 }
 
-HookAction before_meter_button_draw(ModContext*, void* args, void*, void*) {
-    restore_z_prompt_texture();
-
-    auto* meter = mods::arg<dMeterButton_c*>(args, 0);
-    if (!z_item_slot_enabled() || meter == nullptr ||
-        !meter->isButtonShowBit(dMeterButton_c::BUTTON_Z_e))
-    {
+HookAction before_meter_button_set_string(ModContext*, void* args, void*, void*) {
+    if (!z_item_slot_enabled()) {
         return HOOK_CONTINUE;
     }
 
-    J2DPicture* zIcon = prompt_picture(meter, 'zbtn');
-    ResTIMG const* dpadTexture = z_prompt_dpad_texture();
-    if (zIcon == nullptr || zIcon->getTextureCount() == 0 || dpadTexture == nullptr) {
+    u8& button = mods::arg_ref<u8>(args, 2);
+    if (button != dMeterButton_c::BUTTON_Z_e) {
         return HOOK_CONTINUE;
     }
 
-    ResTIMG const* originalTexture = zIcon->changeTexture(dpadTexture, 0);
-    if (originalTexture != nullptr) {
-        s_zPromptTextureSwap = {.icon = zIcon, .originalTexture = originalTexture};
-    }
+    s_midnaPromptThisFrame = true;
     return HOOK_CONTINUE;
 }
 
-void after_meter_button_draw(ModContext*, void*, void*, void*) {
-    restore_z_prompt_texture();
+HookAction before_meter_button_execute(ModContext*, void* args, void*, void*) {
+    const bool replacePrompt = s_midnaPromptThisFrame && z_item_slot_enabled();
+    s_midnaPromptThisFrame = false;
+    auto* meter = mods::arg<dMeterButton_c*>(args, 0);
+    s_hideZPromptButton = false;
+    s_hideZPromptAfterExecute = false;
+
+    if (!replacePrompt) {
+        restore_z_prompt_visuals(meter);
+        return HOOK_CONTINUE;
+    }
+
+    bool& drawZ = mods::arg_ref<bool>(args, 5);
+    if (!drawZ) {
+        restore_z_prompt_visuals(meter);
+        s_hideZPromptAfterExecute = true;
+        return HOOK_CONTINUE;
+    }
+
+    s_hideZPromptButton = true;
+    return HOOK_CONTINUE;
+}
+
+void after_meter_button_execute(ModContext*, void* args, void*, void*) {
+    auto* meter = mods::arg<dMeterButton_c*>(args, 0);
+    if (s_hideZPromptAfterExecute) {
+        restore_z_prompt_visuals(meter);
+        hide_z_prompt_panes(meter);
+        s_hideZPromptAfterExecute = false;
+    }
+
+    if (!s_hideZPromptButton) {
+        return;
+    }
+
+    if (meter == nullptr || !meter->isButtonShowBit(dMeterButton_c::BUTTON_Z_e)) {
+        restore_z_prompt_visuals(meter);
+        hide_z_prompt_panes(meter);
+        s_hideZPromptButton = false;
+        return;
+    }
+
+    hide_z_prompt_button_visuals(meter);
+    s_hideZPromptButton = false;
+}
+
+void after_meter_button_draw(ModContext*, void* args, void*, void*) {
+    draw_z_prompt_dpad(mods::arg<dMeterButton_c*>(args, 0));
 }
 
 HookAction before_touch_sync_action_bar(ModContext*, void*, void*, void*) {
@@ -2921,7 +3149,13 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_post<PlayerExecuteHook>(svc_hook, after_player_execute);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_pre<MeterButtonDrawHook>(svc_hook, before_meter_button_draw);
+        result = mods::hook_add_pre<MeterButtonSetStringHook>(svc_hook, before_meter_button_set_string);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<MeterButtonExecuteHook>(svc_hook, before_meter_button_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<MeterButtonExecuteHook>(svc_hook, after_meter_button_execute);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterButtonDrawHook>(svc_hook, after_meter_button_draw);

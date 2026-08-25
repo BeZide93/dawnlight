@@ -11,21 +11,10 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchDusklight.cmake")
 add_subdirectory("${DUSKLIGHT_DIR}/sdk" dusklight-sdk EXCLUDE_FROM_ALL)
 
 add_mod(dawnlight_mod
-    FEATURES game
-    SOURCES
-        src/aim_hooks.cpp
-        src/config.cpp
-        src/deferred_features.cpp
-        src/enemy_scaling.cpp
-        src/item_integrity.cpp
-        src/item_slot_hooks.cpp
-        src/jump_hooks.cpp
-        src/manual_shield_hooks.cpp
-        src/mod.cpp
-        src/new_save_modes.cpp
-        src/save_compat.cpp
-        src/ui.cpp
-        src/update_check.cpp
-    MOD_JSON mod.json
-    RES_DIR res
+        FEATURES game          # remove for service/asset-only mods; add webgpu for GfxService
+        SOURCES src/mod.cpp
+        MOD_JSON mod.json
+        RES_DIR res            # mod resources, including icon.png and banner.png
+        OVERLAY_DIR overlay    # game file overlays; remove if unused
+        TEXTURES_DIR textures  # texture replacements; remove if unused
 )

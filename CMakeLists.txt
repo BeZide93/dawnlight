@@ -23,6 +23,7 @@ add_mod(dawnlight_mod
     SOURCES
         src/aim_hooks.cpp
         src/config.cpp
+        src/deferred_features.cpp
         src/enemy_scaling.cpp
         src/item_integrity.cpp
         src/item_slot_hooks.cpp

@@ -114,7 +114,7 @@ constexpr borealis::AppInfo kDawnlightAppInfo{
     .orgName = "BeZide93",
     .appName = "Dawnlight",
     .githubOwner = "BeZide93",
-    .githubRepo = "dusk",
+    .githubRepo = "dawnlight",
     .discordApplicationId = "",
 };
 

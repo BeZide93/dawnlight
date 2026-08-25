@@ -586,7 +586,7 @@ void open_settings(ModContext* ctx, void*) {
 ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModError*) {
     if (add_section(ctx, panel, "Dawnlight Settings") != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, panel, "CHECK FOR UPDATES", check_for_updates_config_var(),
-            "Checks BeZide93/dusk releases for a newer Dawnlight mod version.")
+            "Checks BeZide93/dawnlight releases for a newer Dawnlight mod version.")
         != MOD_OK)
     {
         return MOD_ERROR;

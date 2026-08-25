@@ -12,20 +12,25 @@
 #include "mods/svc/hook.h"
 #include "SSystem/SComponent/c_math.h"
 
+#if __has_include(<RmlUi/Core.h>) && __has_include(<SDL3/SDL_touch.h>) && \
+    __has_include("dusk/ui/touch_controls.hpp")
+#define DAWNLIGHT_HAS_PRIVATE_TOUCH_UI 1
 #include <RmlUi/Core.h>
 #include <SDL3/SDL_touch.h>
+#else
+#define DAWNLIGHT_HAS_PRIVATE_TOUCH_UI 0
+#endif
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
 
-#include "dusk/ui/controls.hpp"
-#include "dusk/ui/document.hpp"
-
+#if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
 #define private public
 #include "dusk/ui/touch_controls.hpp"
 #undef private
+#endif
 
 namespace dawnlight {
 namespace {
@@ -39,6 +44,7 @@ DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
 DEFINE_HOOK(&dCamera_c::Run, CameraRunHook);
 DEFINE_HOOK(&dCamera_c::nextMode, CameraNextModeHook);
 DEFINE_HOOK(&dCamera_c::nextType, CameraNextTypeHook);
+#if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
 #if defined(__ANDROID__)
 #define DAWNLIGHT_TOUCH_SYNC_STATE_SYMBOL "_ZN4dusk2ui13TouchControls16sync_touch_stateEv"
 #define DAWNLIGHT_TOUCH_HANDLE_DOWN_SYMBOL "_ZN4dusk2ui13TouchControls17handle_touch_downERN3Rml5EventE"
@@ -104,6 +110,7 @@ constexpr const char* kRmlContextDimensionsSymbol = "Rml::Context::GetDimensions
 constexpr const char* kRmlSetClassSymbol = "Rml::Element::SetClass";
 constexpr const char* kRmlSetPropertySymbol = "Rml::Element::SetProperty";
 #endif
+#endif
 
 enum class AimItem {
     Bow,
@@ -113,6 +120,7 @@ enum class AimItem {
     CopyRod,
 };
 
+#if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
 using TouchControls = dusk::ui::TouchControls;
 using TouchEventIdFn = SDL_FingerID (*)(const Rml::Event&) noexcept;
 using TouchEventPositionFn = Rml::Vector2f (*)(const Rml::Event&) noexcept;
@@ -140,6 +148,7 @@ struct SavedTouchMove {
 };
 
 SavedTouchMove s_savedTouchMove;
+#endif
 bool s_customCinemaSightActive = false;
 
 bool use_custom_aim_movement() {
@@ -202,6 +211,7 @@ void resolve_optional_symbol(const char* symbol, Fn& out) {
     }
 }
 
+#if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
 ModResult resolve_touch_aim_symbols() {
     if (s_touchEventId != nullptr) {
         return MOD_OK;
@@ -297,6 +307,7 @@ bool touch_context_bounds(Rml::Vector2i& dimensions, float& scale) {
     scale = touch_dp_scale(context);
     return dimensions.x > 0 && dimensions.y > 0;
 }
+#endif
 
 BOOL face_camera_view_yaw(daAlink_c* link) {
     if (link == nullptr) {
@@ -521,6 +532,7 @@ bool update_subject_aim(daAlink_c* link, AimItem item) {
     return true;
 }
 
+#if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
 HookAction before_touch_sync_state(ModContext*, void* args, void*, void*) {
     s_savedTouchMove = {};
     auto* controls = mods::arg<TouchControls*>(args, 0);
@@ -604,6 +616,7 @@ HookAction before_touch_handle_down(ModContext*, void* args, void*, void*) {
     }
     return HOOK_SKIP_ORIGINAL;
 }
+#endif
 
 HookAction replace_bow_subject(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
@@ -806,6 +819,7 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
     if (result == MOD_OK) {
         result = mods::hook_add_post<CameraNextTypeHook>(svc_hook, after_camera_next_type);
     }
+#if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
     if (result == MOD_OK) {
         ModResult touchResult = resolve_touch_aim_symbols();
 #if defined(__ANDROID__)
@@ -837,6 +851,7 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
             result = mods::hook_add_pre<TouchHandleDownHook>(svc_hook, before_touch_handle_down);
         }
     }
+#endif
     if (result == MOD_OK) {
         result = mods::hook_add_post<PlayerExecuteHook>(svc_hook, after_player_execute);
     }

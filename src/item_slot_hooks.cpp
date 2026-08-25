@@ -28,7 +28,6 @@
 #include "d/d_meter2_draw.h"
 #undef private
 #include "m_Do/m_Do_controller_pad.h"
-#include "dusk/ui/controls.hpp"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
@@ -48,6 +47,28 @@ class Element;
 
 namespace dusk::ui {
 class TouchControls;
+
+// Keep this ABI-facing declaration local to the mod. The standalone mod SDK
+// intentionally does not expose Dusklight's private UI headers.
+enum class Control {
+    A,
+    B,
+    X,
+    Y,
+    Z,
+    L,
+    R,
+    FIRST_PERSON,
+    ITEMS,
+    COLLECTIONS,
+    MAP,
+    SKIP,
+    DPAD_UP,
+    DPAD_DOWN,
+    DPAD_LEFT,
+    DPAD_RIGHT,
+    COUNT,
+};
 }  // namespace dusk::ui
 
 namespace dawnlight {

@@ -64,6 +64,14 @@ std::array<ConfigVarHandle, kHudButtonCount> s_hudButtonTextAnchor = {};
 ConfigVarHandle s_hudDpadFollowsMinimap = 0;
 ConfigVarHandle s_hudMinimapSlideDirection = 0;
 
+void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
+    const ConfigVarValue*, void*) {
+    UiToastDesc toast = UI_TOAST_DESC_INIT;
+    toast.title_rml = "Z-Items";
+    toast.body_rml = "Restart game after toggling Z-items";
+    svc_ui->push_toast(ctx, &toast);
+}
+
 struct HudElementDefaults {
     const char* name;
     int x;
@@ -776,6 +784,13 @@ ModResult register_config(ModError* error) {
             return mods::set_error(
                 error, MOD_ERROR, "failed to finish Dawnlight HUD layout migration");
         }
+    }
+
+    const ModResult subscribeResult =
+        svc_config->subscribe(mod_ctx, s_zItemSlot, on_z_item_slot_changed, nullptr, nullptr);
+    if (subscribeResult != MOD_OK) {
+        return mods::set_error(
+            error, subscribeResult, "failed to subscribe to Dawnlight Z-Items changes");
     }
     return MOD_OK;
 }

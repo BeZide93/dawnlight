@@ -141,6 +141,7 @@ struct RingZButtonPrompt {
 };
 
 RingZButtonPrompt s_ringZPrompt;
+bool s_zItemSlotSessionEnabled = false;
 alignas(32) u8 s_zHudItemTexBuf[2][2][0xC00];
 u8 s_zHudItemTexPage = 0;
 u8 s_zHudLastItem = dItemNo_NONE_e;
@@ -165,6 +166,10 @@ bool s_midnaPromptThisFrame = false;
 bool s_zPromptCustomVisualsActive = false;
 bool s_hideZPromptButton = false;
 bool s_hideZPromptAfterExecute = false;
+
+bool z_item_slot_active() {
+    return s_zItemSlotSessionEnabled;
+}
 
 struct ZPromptVisualState {
     J2DPane* root = nullptr;
@@ -428,7 +433,7 @@ void hide_z_prompt_button_visuals(dMeterButton_c* meter) {
 }
 
 void draw_z_prompt_dpad(dMeterButton_c* meter) {
-    if (!s_zPromptCustomVisualsActive || !z_item_slot_enabled() || meter == nullptr ||
+    if (!s_zPromptCustomVisualsActive || !z_item_slot_active() || meter == nullptr ||
         !meter->isButtonShowBit(dMeterButton_c::BUTTON_Z_e))
     {
         return;
@@ -548,7 +553,7 @@ bool midna_touch_available() {
 }
 
 bool skip_touch_can_be_midna() {
-    return z_item_slot_enabled() && !cutscene_skip_touch_visible() &&
+    return z_item_slot_active() && !cutscene_skip_touch_visible() &&
            !touch_midna_controls_suppressed() && midna_touch_available() &&
            dComIfGp_getLinkPlayer() != nullptr;
 }
@@ -1251,13 +1256,15 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     apply_hud_xy_text_box_group_binding(
         HudPaneSlot::TextY, meter->mpXYText, 1, enabled, yLayout.text_anchor);
 
-    const DuskModHudTransform zTransform = hud_layout_z_transform();
-    const DuskModHudButtonLayout zLayout = hud_layout_z_button_layout();
-    apply_hud_pane_transform(HudPaneSlot::ButtonZ, meter->mpButtonXY[2], enabled,
-        zTransform.offset_x, zTransform.offset_y, zTransform.scale);
-    apply_hud_pane_transform(HudPaneSlot::TextZ, meter->mpTextXY[2], enabled,
-        zTransform.offset_x + zLayout.text_offset_x,
-        zTransform.offset_y + zLayout.text_offset_y, hud_text_scale(zTransform, zLayout));
+    if (z_item_slot_active()) {
+        const DuskModHudTransform zTransform = hud_layout_z_transform();
+        const DuskModHudButtonLayout zLayout = hud_layout_z_button_layout();
+        apply_hud_pane_transform(HudPaneSlot::ButtonZ, meter->mpButtonXY[2], enabled,
+            zTransform.offset_x, zTransform.offset_y, zTransform.scale);
+        apply_hud_pane_transform(HudPaneSlot::TextZ, meter->mpTextXY[2], enabled,
+            zTransform.offset_x + zLayout.text_offset_x,
+            zTransform.offset_y + zLayout.text_offset_y, hud_text_scale(zTransform, zLayout));
+    }
 
     const DuskModHudTransform backingTransform = hud_layout_backing_transform();
     apply_hud_pane_transform(HudPaneSlot::Backing, meter->mpUzu, enabled,
@@ -1393,7 +1400,7 @@ void destroy_ring_z_prompt(dMenu_Ring_c* ring) {
 
 void create_ring_z_prompt(dMenu_Ring_c* ring) {
     clear_ring_z_prompt_refs();
-    if (!z_item_slot_enabled() || ring == nullptr || ring->mPlayerIsWolf || ring->mpScreen == nullptr) {
+    if (!z_item_slot_active() || ring == nullptr || ring->mPlayerIsWolf || ring->mpScreen == nullptr) {
         return;
     }
 
@@ -1441,7 +1448,7 @@ void create_ring_z_prompt(dMenu_Ring_c* ring) {
 }
 
 void draw_ring_z_prompt(dMenu_Ring_c* ring) {
-    if (!z_item_slot_enabled() || s_ringZPrompt.ring != ring ||
+    if (!z_item_slot_active() || s_ringZPrompt.ring != ring ||
         s_ringZPrompt.screen == nullptr || s_ringZPrompt.button == nullptr ||
         ring == nullptr || ring->mpScreen == nullptr || ring->mPlayerIsWolf)
     {
@@ -1839,7 +1846,7 @@ void draw_z_oil_meter(dMeter2Draw_c* meter, const u8 itemNo, const f32 itemAlpha
 }
 
 void draw_z_hud_item_meters(dMeter2Draw_c* meter) {
-    if (!z_item_slot_enabled() || meter == nullptr || meter->mpItemR == nullptr ||
+    if (!z_item_slot_active() || meter == nullptr || meter->mpItemR == nullptr ||
         meter->mpButtonParent == nullptr || daPy_py_c::checkNowWolf())
     {
         return;
@@ -1863,7 +1870,7 @@ void draw_z_hud_item_meters(dMeter2Draw_c* meter) {
 }
 
 void update_z_hud_item(dMeter2Draw_c* meter) {
-    if (!z_item_slot_enabled() || meter == nullptr || meter->mpItemR == nullptr ||
+    if (!z_item_slot_active() || meter == nullptr || meter->mpItemR == nullptr ||
         meter->mpLightXY[2] == nullptr || meter->mpButtonXY[2] == nullptr ||
         meter->mpItemXYPane[2] == nullptr || daPy_py_c::checkNowWolf())
     {
@@ -1894,7 +1901,7 @@ void update_z_hud_item(dMeter2Draw_c* meter) {
 }
 
 void move_midna_hud_to_dpad(dMeter2Draw_c* meter) {
-    if (!z_item_slot_enabled() || meter == nullptr || meter->mpScreen == nullptr) {
+    if (!z_item_slot_active() || meter == nullptr || meter->mpScreen == nullptr) {
         return;
     }
 
@@ -2022,7 +2029,7 @@ u8 resolved_select_item(int index) {
 }
 
 void sync_play_select_item(int index) {
-    if (!z_item_slot_enabled() || index != kZItemSlot) {
+    if (!z_item_slot_active() || index != kZItemSlot) {
         return;
     }
 
@@ -2189,7 +2196,7 @@ void fix_z_select_item_animation(dMenu_Ring_c* ring) {
 }
 
 bool z_mix_item_on(dMenu_Ring_c* ring) {
-    if (!z_item_slot_enabled() || ring == nullptr || ring->mPlayerIsWolf ||
+    if (!z_item_slot_active() || ring == nullptr || ring->mPlayerIsWolf ||
         dComIfGs_getItem(ring->mItemSlots[ring->mCurrentSlot], false) == dItemNo_NONE_e)
     {
         return false;
@@ -2205,7 +2212,7 @@ bool z_mix_item_on(dMenu_Ring_c* ring) {
 }
 
 bool z_mix_item_off(dMenu_Ring_c* ring) {
-    return z_item_slot_enabled() && ring != nullptr && !ring->mPlayerIsWolf &&
+    return z_item_slot_active() && ring != nullptr && !ring->mPlayerIsWolf &&
            dComIfGs_getItem(ring->mItemSlots[ring->mCurrentSlot], false) != dItemNo_NONE_e &&
            dComIfGs_getMixItemIndex(kZItemSlot) == SLOT_4 &&
            ring->mItemSlots[ring->mCurrentSlot] == dComIfGs_getSelectItemIndex(kZItemSlot);
@@ -2456,7 +2463,7 @@ void rotate_pending_duplicate(dMenu_Ring_c* ring) {
 
 HookAction before_get_select_item(ModContext*, void* args, void* retval, void*) {
     const int index = mods::arg<int>(args, 0);
-    if (!z_item_slot_enabled() || index != kZItemSlot) {
+    if (!z_item_slot_active() || index != kZItemSlot) {
         return HOOK_CONTINUE;
     }
 
@@ -2469,7 +2476,7 @@ void after_set_select_item(ModContext*, void* args, void*, void*) {
 }
 
 void after_pad_read(ModContext*, void*, void*, void*) {
-    if (!z_item_slot_enabled()) {
+    if (!z_item_slot_active()) {
         s_dpadLeftHeld = false;
         s_dpadLeftTrig = false;
         s_touchMidnaTrig = false;
@@ -2519,7 +2526,9 @@ void after_ring_draw(ModContext*, void* args, void*, void*) {
 
 HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
-    update_z_hud_item(meter);
+    if (z_item_slot_active()) {
+        update_z_hud_item(meter);
+    }
     apply_round_xy_buttons(meter);
     apply_wii_u_hud_layout(meter);
     apply_xy_ammo_layout(meter);
@@ -2529,7 +2538,9 @@ HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
 
 void after_meter_draw(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
-    draw_z_hud_item_meters(meter);
+    if (z_item_slot_active()) {
+        draw_z_hud_item_meters(meter);
+    }
     restore_xy_ammo_layout(meter);
 }
 
@@ -2616,7 +2627,7 @@ void after_meter_map_draw(ModContext*, void* args, void*, void*) {
 
 HookAction before_ring_set_active_cursor(ModContext*, void* args, void*, void*) {
     auto* ring = mods::arg<dMenu_Ring_c*>(args, 0);
-    if (!z_item_slot_enabled() || ring == nullptr) {
+    if (!z_item_slot_active() || ring == nullptr) {
         s_pendingAssign = {};
         return HOOK_CONTINUE;
     }
@@ -2670,7 +2681,7 @@ HookAction before_ring_is_mix_item_off(ModContext*, void* args, void* retval, vo
 
 HookAction before_midna_talk_trigger(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<const daAlink_c*>(args, 0);
-    if (!z_item_slot_enabled() || link == nullptr) {
+    if (!z_item_slot_active() || link == nullptr) {
         return HOOK_CONTINUE;
     }
 
@@ -2680,7 +2691,7 @@ HookAction before_midna_talk_trigger(ModContext*, void* args, void* retval, void
 
 HookAction before_check_item_button_change(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (!z_item_slot_enabled() || link == nullptr) {
+    if (!z_item_slot_active() || link == nullptr) {
         return HOOK_CONTINUE;
     }
 
@@ -2702,7 +2713,7 @@ HookAction before_check_item_button_change(ModContext*, void* args, void*, void*
 
 HookAction before_check_item_change_from_button(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (!z_item_slot_enabled() || link == nullptr) {
+    if (!z_item_slot_active() || link == nullptr) {
         return HOOK_CONTINUE;
     }
 
@@ -2801,7 +2812,7 @@ HookAction before_check_item_change_from_button(ModContext*, void* args, void* r
 HookAction before_check_set_item_trigger(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const int itemNo = mods::arg<int>(args, 1);
-    if (!z_item_slot_enabled() || link == nullptr) {
+    if (!z_item_slot_active() || link == nullptr) {
         return HOOK_CONTINUE;
     }
 
@@ -2843,7 +2854,7 @@ HookAction before_check_set_item_trigger(ModContext*, void* args, void* retval, 
 HookAction before_check_item_set_button(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const int itemNo = mods::arg<int>(args, 1);
-    if (!z_item_slot_enabled() || link == nullptr || !item_needs_z_valid_button(itemNo)) {
+    if (!z_item_slot_active() || link == nullptr || !item_needs_z_valid_button(itemNo)) {
         return HOOK_CONTINUE;
     }
 
@@ -2858,7 +2869,7 @@ HookAction before_check_item_set_button(ModContext*, void* args, void* retval, v
 HookAction before_set_heavy_boots(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const int enable = mods::arg<int>(args, 1);
-    if (!z_item_slot_enabled() || link == nullptr || !link->checkEquipHeavyBoots() ||
+    if (!z_item_slot_active() || link == nullptr || !link->checkEquipHeavyBoots() ||
         link->checkNotHeavyBootsStage() || !z_heavy_boots_selected(link))
     {
         return HOOK_CONTINUE;
@@ -2889,7 +2900,7 @@ HookAction before_set_heavy_boots(ModContext*, void* args, void* retval, void*) 
 
 void after_player_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (!z_item_slot_enabled() || link == nullptr || link->checkWolf()) {
+    if (!z_item_slot_active() || link == nullptr || link->checkWolf()) {
         return;
     }
 
@@ -2901,7 +2912,7 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
 }
 
 HookAction before_meter_button_set_string(ModContext*, void* args, void*, void*) {
-    if (!z_item_slot_enabled()) {
+    if (!z_item_slot_active()) {
         return HOOK_CONTINUE;
     }
 
@@ -2915,7 +2926,7 @@ HookAction before_meter_button_set_string(ModContext*, void* args, void*, void*)
 }
 
 HookAction before_meter_button_execute(ModContext*, void* args, void*, void*) {
-    const bool replacePrompt = s_midnaPromptThisFrame && z_item_slot_enabled();
+    const bool replacePrompt = s_midnaPromptThisFrame && z_item_slot_active();
     s_midnaPromptThisFrame = false;
     auto* meter = mods::arg<dMeterButton_c*>(args, 0);
     s_hideZPromptButton = false;
@@ -3068,20 +3079,28 @@ ModResult add_hook(ModResult result, ModError* error) {
 }  // namespace
 
 ModResult install_item_slot_hooks(ModError* error) {
-    ModResult result = mods::hook_add_pre<GetSelectItemHook>(svc_hook, before_get_select_item);
-    if (result == MOD_OK) {
+    s_zItemSlotSessionEnabled = z_item_slot_enabled();
+
+    ModResult result = MOD_OK;
+    if (s_zItemSlotSessionEnabled) {
+        result = mods::hook_add_pre<GetSelectItemHook>(svc_hook, before_get_select_item);
+    }
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<SetSelectItemHook>(svc_hook, after_set_select_item);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<PadReadHook>(svc_hook, after_pad_read);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<RingCreateHook>(svc_hook, after_ring_create);
     }
-    (void)mods::hook_add_pre<RingDeleteHook>(svc_hook, before_ring_delete);
-    if (result == MOD_OK) {
+    if (s_zItemSlotSessionEnabled) {
+        (void)mods::hook_add_pre<RingDeleteHook>(svc_hook, before_ring_delete);
+    }
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<RingDrawHook>(svc_hook, after_ring_draw);
     }
+
     if (result == MOD_OK) {
         result = mods::hook_add_pre<MeterDrawHook>(svc_hook, before_meter_draw);
     }
@@ -3100,7 +3119,7 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawOxygenHook>(svc_hook, after_meter_draw_oxygen);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<MeterMidnaAlphaHook>(svc_hook, after_meter_midna_alpha);
     }
     if (result == MOD_OK) {
@@ -3115,79 +3134,86 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterMapDrawHook>(svc_hook, after_meter_map_draw);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<RingSetActiveCursorHook>(svc_hook, before_ring_set_active_cursor);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<RingSetActiveCursorHook>(svc_hook, after_ring_set_active_cursor);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<RingIsMixItemOnHook>(svc_hook, before_ring_is_mix_item_on);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<RingIsMixItemOffHook>(svc_hook, before_ring_is_mix_item_off);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<MidnaTalkTriggerHook>(svc_hook, before_midna_talk_trigger);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<CheckItemButtonChangeHook>(svc_hook, before_check_item_button_change);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<CheckItemChangeFromButtonHook>(svc_hook, before_check_item_change_from_button);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<CheckSetItemTriggerHook>(svc_hook, before_check_set_item_trigger);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<CheckItemSetButtonHook>(svc_hook, before_check_item_set_button);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<SetHeavyBootsHook>(svc_hook, before_set_heavy_boots);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<PlayerExecuteHook>(svc_hook, after_player_execute);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<MeterButtonSetStringHook>(svc_hook, before_meter_button_set_string);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<MeterButtonExecuteHook>(svc_hook, before_meter_button_execute);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<MeterButtonExecuteHook>(svc_hook, after_meter_button_execute);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<MeterButtonDrawHook>(svc_hook, after_meter_button_draw);
     }
 #if defined(__ANDROID__)
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<MidnaIconSourceHook>(svc_hook, after_midna_icon_source);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<MidnaIconRevisionHook>(svc_hook, after_midna_icon_revision);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook::install<RmlSetInnerRMLHook>(svc_hook);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook::install<UpdateMidnaIconTextureHook>(svc_hook);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<TouchSyncActionBarHook>(svc_hook, before_touch_sync_action_bar);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<TouchSyncActionBarHook>(svc_hook, after_touch_sync_action_bar);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<RmlSetPseudoClassHook>(svc_hook, before_rml_set_pseudo_class);
     }
-    if (result == MOD_OK) {
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<TouchSetControlPressedHook>(
             svc_hook, before_touch_set_control_pressed);
     }
 #endif
-    return add_hook(result, error);
+
+    const ModResult hookResult = add_hook(result, error);
+    if (hookResult == MOD_OK && svc_log != nullptr) {
+        svc_log->info(mod_ctx, s_zItemSlotSessionEnabled ?
+            "Dawnlight Z Items enabled; Z hooks installed" :
+            "Dawnlight Z Items disabled; Z hooks skipped");
+    }
+    return hookResult;
 }
 
 void shutdown_item_slot_hooks() {

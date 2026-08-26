@@ -348,7 +348,8 @@ ModResult build_controls_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Z Item Slot", z_item_slot_config_var(),
-            "Adds an item slot on Z and moves Midna off the Z button.")
+            "Adds an item slot on Z and moves Midna off the Z button. "
+            "Restart the app after changing this setting.")
         != MOD_OK)
     {
         return MOD_ERROR;

@@ -22,6 +22,7 @@ add_mod(dawnlight_mod
     FEATURES game
     SOURCES
         src/aim_hooks.cpp
+        src/bullet_time.cpp
         src/config.cpp
         src/deferred_features.cpp
         src/enemy_scaling.cpp

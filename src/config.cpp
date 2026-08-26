@@ -31,6 +31,7 @@ ConfigVarHandle s_newSaveMode = 0;
 ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
+ConfigVarHandle s_bulletTime = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
 ConfigVarHandle s_zItemSlot = 0;
@@ -725,6 +726,7 @@ ModResult register_config(ModError* error) {
         register_int("aim-mode", 2, s_aimMode) != MOD_OK ||
         register_bool("aim-movement", true, s_aimMovement) != MOD_OK ||
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
+        register_bool("bullet-time", true, s_bulletTime) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
@@ -837,6 +839,10 @@ bool aim_movement_enabled() {
 
 int cinema_zoom_percent() {
     return get_int(s_cinemaZoomPercent, 100, 25, 400);
+}
+
+bool bullet_time_enabled() {
+    return get_bool(s_bulletTime, true);
 }
 
 bool manual_shielding_enabled() {
@@ -1014,6 +1020,10 @@ ConfigVarHandle aim_movement_config_var() {
 
 ConfigVarHandle cinema_zoom_config_var() {
     return s_cinemaZoomPercent;
+}
+
+ConfigVarHandle bullet_time_config_var() {
+    return s_bulletTime;
 }
 
 ConfigVarHandle manual_shielding_config_var() {

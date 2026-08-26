@@ -17,9 +17,9 @@ void install_bossrush_flow();
 // without modifying host meter code.
 void install_hud_editor_ui();
 
-// Bullet Time and Flurry Rush:
-// R Jump is active as a portable fallback. Bullet Time and Flurry Rush require finer-grained
-// player, combat, projectile, and time-scale extension points.
+// Flurry Rush:
+// Bullet Time now uses public HookService actor hooks. Flurry Rush still requires
+// finer-grained player and combat extension points.
 void install_action_gameplay();
 
 #endif

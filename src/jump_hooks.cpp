@@ -1,3 +1,4 @@
+#include "bullet_time.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
 
@@ -15,6 +16,7 @@ namespace {
 DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, CheckAutoJumpAction);
 DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
+DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
 enum class JumpBinding {
     LockR,
@@ -185,6 +187,7 @@ bool start_ground_jump(daAlink_c* link) {
         if (link->procCutJumpInit(FALSE)) {
             apply_manual_jump_movement(link);
             s_manualJumpOwner = nullptr;
+            clear_manual_jump(link);
             return true;
         }
         return false;
@@ -193,6 +196,7 @@ bool start_ground_jump(daAlink_c* link) {
     if (link->procAutoJumpInit(1)) {
         apply_manual_jump_movement(link);
         s_manualJumpOwner = link;
+        mark_manual_jump_started(link);
         return true;
     }
     return false;
@@ -213,6 +217,7 @@ bool start_air_jump_attack(daAlink_c* link) {
     }
     apply_manual_jump_movement(link);
     s_manualJumpOwner = nullptr;
+    clear_manual_jump(link);
     return true;
 }
 
@@ -229,6 +234,7 @@ HookAction before_check_auto_jump(ModContext*, void* args, void* retval, void*) 
 HookAction before_proc_auto_jump(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!start_air_jump_attack(link)) {
+        update_bullet_time_before_jump(link);
         return HOOK_CONTINUE;
     }
 
@@ -236,13 +242,23 @@ HookAction before_proc_auto_jump(ModContext*, void* args, void* retval, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
+void after_proc_auto_jump(ModContext*, void* args, void*, void*) {
+    update_bullet_time_after_jump(mods::arg<daAlink_c*>(args, 0));
+}
+
 HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const auto nextProc = mods::arg<daAlink_c::daAlink_PROC>(args, 1);
     if (s_manualJumpOwner == link && nextProc != daAlink_c::PROC_AUTO_JUMP) {
         s_manualJumpOwner = nullptr;
+        clear_manual_jump(link);
     }
     return HOOK_CONTINUE;
+}
+
+HookAction before_set_body_angle_x_ready_anime(ModContext*, void* args, void*, void*) {
+    return bullet_time_active_for(mods::arg<daAlink_c*>(args, 0)) ? HOOK_SKIP_ORIGINAL :
+                                                                   HOOK_CONTINUE;
 }
 
 }  // namespace
@@ -255,6 +271,13 @@ ModResult install_jump_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<CommonProcInit>(svc_hook, before_common_proc_init);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ProcAutoJump>(svc_hook, after_proc_auto_jump);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<SetBodyAngleXReadyAnime>(
+            svc_hook, before_set_body_angle_x_ready_anime);
     }
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight R jump hooks");

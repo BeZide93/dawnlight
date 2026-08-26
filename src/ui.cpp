@@ -327,6 +327,12 @@ ModResult build_aiming_tab(
     {
         return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "Bullet Time", bullet_time_config_var(),
+            "Slows gameplay while aiming the Bow during a manual R jump. Press A to cancel it.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     return MOD_OK;
 }
 

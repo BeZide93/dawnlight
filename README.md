@@ -16,6 +16,7 @@ aiming, boss, and HUD features for Twilight Princess.
 - Aim Movement and Aim Mode settings with Vanilla, 3rd Person, and Cinema
   options.
 - Touch and gyro aiming support for the modded aiming modes.
+- Optional Bullet Time while aiming the Bow during a manual R jump.
 - Manual Shielding and R Jump quality-of-life options.
 - Intro Skip new-save mode. 
 - Boss Rush Game Mode with hub (Garden of Twilight), individual boss portals, Boss Rush run portal and Return to hub Midna option.

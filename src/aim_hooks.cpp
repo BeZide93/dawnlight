@@ -1,3 +1,5 @@
+#include "aim_hooks.hpp"
+#include "bullet_time.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
 
@@ -787,8 +789,9 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
     }
 
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (link != nullptr && use_cinema_camera() && dCamera_c::isAimActive() &&
-        player_in_supported_aim_status(0))
+    if (link != nullptr && use_cinema_camera() &&
+        (bullet_time_active_for(link) ||
+            (dCamera_c::isAimActive() && player_in_supported_aim_status(0))))
     {
         return;
     }
@@ -865,6 +868,24 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
 }
 
 }  // namespace
+
+void prepare_bullet_time_bow_aim(daAlink_c* link) {
+    if (link == nullptr || !use_cinema_camera() || is_hawkeye_bow(link)) {
+        return;
+    }
+
+    face_camera_view_yaw(link);
+}
+
+bool update_bullet_time_bow_aim(daAlink_c* link) {
+    if (!should_keep_cinema_bow_sight(link)) {
+        return false;
+    }
+
+    face_camera_view_yaw(link);
+    keep_cinema_bow_sight(link);
+    return true;
+}
 
 ModResult install_aim_hooks(ModError* error) {
     return add_aim_hooks(error, mods::hook_add_pre<BowSubjectHook>(svc_hook, replace_bow_subject));

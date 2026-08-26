@@ -62,6 +62,18 @@ X-Box, Wii-U, or Dawnlight presets.
 The `hud_layout_settings.json` format is compatible with the Dawnlight fork's
 HUD layout export where the same fields are available.
 
+## LLM Disclaimer
+
+Parts of Dawnlight's source code and documentation were created or modified
+with assistance from large language model (LLM) tools. LLM-assisted output can
+contain mistakes even after review and testing. Use Dawnlight at your own risk
+and report reproducible issues through the project's issue tracker.
+
+## License
+
+Dawnlight is released under CC0 1.0 Universal. See [LICENSE.md](LICENSE.md) for
+the full license text.
+
 ## Credits
 
 Dawnlight is maintained by BeZide93 and builds on the Dusklight mod API.

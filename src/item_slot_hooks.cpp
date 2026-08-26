@@ -111,8 +111,12 @@ DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
 #if defined(__ANDROID__)
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_action_bar_stateEv",
     void(dusk::ui::TouchControls*), TouchSyncActionBarHook);
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_control_displaysEv",
+    void(dusk::ui::TouchControls*), TouchSyncControlDisplaysHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls19set_control_pressedENS0_7ControlEb",
     void(dusk::ui::TouchControls*, dusk::ui::Control, bool), TouchSetControlPressedHook);
+DEFINE_HOOK_SYMBOL("_ZN3Rml7Element8SetClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb",
+    void(Rml::Element*, const Rml::String*, bool), RmlSetClassHook);
 DEFINE_HOOK_SYMBOL("_ZN3Rml7Element14SetPseudoClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb",
     void(Rml::Element*, const Rml::String*, bool), RmlSetPseudoClassHook);
 DEFINE_HOOK_SYMBOL("_ZN3Rml7Element11SetInnerRMLERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE",
@@ -166,6 +170,24 @@ bool s_midnaPromptThisFrame = false;
 bool s_zPromptCustomVisualsActive = false;
 bool s_hideZPromptButton = false;
 bool s_hideZPromptAfterExecute = false;
+
+#if defined(__ANDROID__)
+constexpr const char* kRmlGetChildSymbol = "_ZNK3Rml7Element8GetChildEi";
+constexpr const char* kRmlSetPropertySymbol =
+    "_ZN3Rml7Element11SetPropertyERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_";
+
+using RmlElementGetChildFn = Rml::Element* (*)(const Rml::Element*, int);
+using RmlElementSetPropertyFn =
+    bool (*)(Rml::Element*, const Rml::String*, const Rml::String*);
+
+RmlElementGetChildFn s_rmlGetChild = nullptr;
+RmlElementSetPropertyFn s_rmlSetProperty = nullptr;
+Rml::Element* s_zTouchDisplayButton = nullptr;
+Rml::Element* s_zTouchMeterButton = nullptr;
+Rml::Element* s_zTouchMeterContainer = nullptr;
+std::string s_zTouchMeterRml;
+bool s_inTouchControlDisplaySync = false;
+#endif
 
 bool z_item_slot_active() {
     return s_zItemSlotSessionEnabled;
@@ -495,6 +517,8 @@ void draw_z_prompt_dpad(dMeterButton_c* meter) {
 bool z_item_menu_or_pause_context();
 bool midna_unlocked();
 u8 resolved_select_item(int index);
+bool is_z_lantern_item(u8 itemNo);
+bool z_item_ammo_values(u8 itemNo, u8& itemNum, u8& itemMax);
 
 struct PaneRenderState {
     J2DPane* pane = nullptr;
@@ -564,6 +588,93 @@ std::string true_midna_icon_source() {
         return {};
     }
     return MidnaIconSourceHook::g_orig();
+}
+
+template <typename Fn>
+ModResult resolve_z_touch_symbol(const char* name, Fn& out) {
+    void* resolved = nullptr;
+    const ModResult result = svc_hook->resolve(mod_ctx, name, &resolved, nullptr);
+    if (result == MOD_OK) {
+        out = reinterpret_cast<Fn>(resolved);
+    }
+    return result;
+}
+
+ModResult resolve_z_touch_meter_symbols() {
+    ModResult result = resolve_z_touch_symbol(kRmlGetChildSymbol, s_rmlGetChild);
+    if (result == MOD_OK) {
+        result = resolve_z_touch_symbol(kRmlSetPropertySymbol, s_rmlSetProperty);
+    }
+    return result;
+}
+
+void set_z_touch_property(Rml::Element* element, const char* name, const char* value) {
+    if (element == nullptr || s_rmlSetProperty == nullptr) {
+        return;
+    }
+
+    const std::string propertyName = name;
+    const std::string propertyValue = value;
+    s_rmlSetProperty(element, &propertyName, &propertyValue);
+}
+
+void configure_z_touch_meter_container(Rml::Element* container) {
+    set_z_touch_property(container, "position", "absolute");
+    set_z_touch_property(container, "left", "0dp");
+    set_z_touch_property(container, "top", "0dp");
+    set_z_touch_property(container, "right", "auto");
+    set_z_touch_property(container, "bottom", "auto");
+    set_z_touch_property(container, "width", "100%");
+    set_z_touch_property(container, "height", "100%");
+    set_z_touch_property(container, "font-size", "0dp");
+    set_z_touch_property(container, "overflow", "visible");
+    set_z_touch_property(container, "pointer-events", "none");
+}
+
+void sync_z_touch_item_meter(Rml::Element* button) {
+    if (button == nullptr || s_rmlGetChild == nullptr || s_rmlSetProperty == nullptr ||
+        RmlSetInnerRMLHook::g_orig == nullptr)
+    {
+        return;
+    }
+
+    Rml::Element* container = s_rmlGetChild(button, 1);
+    if (container == nullptr) {
+        return;
+    }
+    if (button != s_zTouchMeterButton || container != s_zTouchMeterContainer) {
+        s_zTouchMeterButton = button;
+        s_zTouchMeterContainer = container;
+        s_zTouchMeterRml.clear();
+        configure_z_touch_meter_container(container);
+    }
+
+    std::string rml =
+        "<span style=\"position:absolute;right:9dp;bottom:7dp;font-size:13dp;"
+        "line-height:1;\">Z</span>";
+    const u8 itemNo = resolved_select_item(kZItemSlot);
+    if (itemNo != dItemNo_NONE_e && itemNo != 0 && !daPy_py_c::checkNowWolf()) {
+        u8 itemNum = 0;
+        u8 itemMax = 0;
+        if (z_item_ammo_values(itemNo, itemNum, itemMax) && itemMax != 0) {
+            rml += "<count class=\"item-count visible\">" + std::to_string(itemNum) +
+                   "</count>";
+        } else if (is_z_lantern_item(itemNo) && dComIfGs_getMaxOil() > 0) {
+            const f32 oilFill = std::clamp(static_cast<f32>(dComIfGs_getOil()) /
+                    static_cast<f32>(dComIfGs_getMaxOil()),
+                0.0f, 1.0f);
+            char percent[32] = {};
+            std::snprintf(percent, sizeof(percent), "%.1f%%", oilFill * 100.0f);
+            rml += "<oil-meter class=\"oil-meter visible\"><oil-fill style=\"width:" +
+                   std::string(percent) + ";\" /></oil-meter>";
+        }
+    }
+
+    if (rml == s_zTouchMeterRml) {
+        return;
+    }
+    RmlSetInnerRMLHook::g_orig(container, &rml);
+    s_zTouchMeterRml = rml;
 }
 
 void set_skip_touch_rml(Rml::Element* element, const std::string& rml) {
@@ -2975,6 +3086,34 @@ void after_meter_button_draw(ModContext*, void* args, void*, void*) {
     draw_z_prompt_dpad(mods::arg<dMeterButton_c*>(args, 0));
 }
 
+#if defined(__ANDROID__)
+HookAction before_touch_sync_control_displays(ModContext*, void*, void*, void*) {
+    s_inTouchControlDisplaySync = true;
+    s_zTouchDisplayButton = nullptr;
+    return HOOK_CONTINUE;
+}
+
+void after_touch_sync_control_displays(ModContext*, void*, void*, void*) {
+    Rml::Element* button = s_zTouchDisplayButton;
+    s_inTouchControlDisplaySync = false;
+    s_zTouchDisplayButton = nullptr;
+    sync_z_touch_item_meter(button);
+}
+
+HookAction before_rml_set_class(ModContext*, void* args, void*, void*) {
+    if (!s_inTouchControlDisplaySync) {
+        return HOOK_CONTINUE;
+    }
+
+    auto* element = mods::arg<Rml::Element*>(args, 0);
+    const auto* className = mods::arg<const Rml::String*>(args, 1);
+    if (element != nullptr && className != nullptr && *className == "has-icon") {
+        s_zTouchDisplayButton = element;
+    }
+    return HOOK_CONTINUE;
+}
+#endif
+
 HookAction before_touch_sync_action_bar(ModContext*, void*, void*, void*) {
     if (s_skipTouchMidnaPressed) {
         s_inTouchActionBarSync = false;
@@ -3190,6 +3329,20 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook::install<RmlSetInnerRMLHook>(svc_hook);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+        result = resolve_z_touch_meter_symbols();
+    }
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+        result = mods::hook_add_pre<TouchSyncControlDisplaysHook>(
+            svc_hook, before_touch_sync_control_displays);
+    }
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+        result = mods::hook_add_post<TouchSyncControlDisplaysHook>(
+            svc_hook, after_touch_sync_control_displays);
+    }
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+        result = mods::hook_add_pre<RmlSetClassHook>(svc_hook, before_rml_set_class);
+    }
+    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook::install<UpdateMidnaIconTextureHook>(svc_hook);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
@@ -3218,6 +3371,13 @@ ModResult install_item_slot_hooks(ModError* error) {
 
 void shutdown_item_slot_hooks() {
     clear_ring_z_prompt_refs();
+#if defined(__ANDROID__)
+    s_zTouchDisplayButton = nullptr;
+    s_zTouchMeterButton = nullptr;
+    s_zTouchMeterContainer = nullptr;
+    s_zTouchMeterRml.clear();
+    s_inTouchControlDisplaySync = false;
+#endif
 }
 
 }  // namespace dawnlight

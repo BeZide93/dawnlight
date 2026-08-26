@@ -652,8 +652,9 @@ void sync_z_touch_item_meter(Rml::Element* button) {
     std::string rml =
         "<span style=\"position:absolute;right:9dp;bottom:7dp;font-size:13dp;"
         "line-height:1;\">Z</span>";
-    const u8 itemNo = resolved_select_item(kZItemSlot);
-    if (itemNo != dItemNo_NONE_e && itemNo != 0 && !daPy_py_c::checkNowWolf()) {
+    const bool itemMode = dComIfGp_getLinkPlayer() != nullptr && daPy_py_c::checkNowWolf() == 0;
+    const u8 itemNo = itemMode ? resolved_select_item(kZItemSlot) : dItemNo_NONE_e;
+    if (itemNo != dItemNo_NONE_e && itemNo != 0) {
         u8 itemNum = 0;
         u8 itemMax = 0;
         if (z_item_ammo_values(itemNo, itemNum, itemMax) && itemMax != 0) {

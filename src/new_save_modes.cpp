@@ -64,6 +64,7 @@ DEFINE_HOOK(
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
+DEFINE_HOOK(&daAlink_c::dungeonReturnWarp, DungeonReturnWarpHook);
 #if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
 DEFINE_HOOK_SYMBOL("_ZL15dScnPly_ExecuteP9dScnPly_c", int(void*), PlaySceneUpdateHook);
 DEFINE_HOOK_SYMBOL("_ZL12dScnPly_DrawP9dScnPly_c", int(void*), PlaySceneDrawHook);
@@ -181,13 +182,21 @@ constexpr s8 kBossRushReturnLayer = 0;
 constexpr u8 kBossRushStateHub = 0;
 constexpr u8 kBossRushStateRun = 1;
 constexpr u8 kBossRushStateReplay = 2;
-constexpr u8 kBossRushCenterPortalIndex = static_cast<u8>(kBossRushEntryCount);
-constexpr u8 kBossRushHubPortalCount = kBossRushCenterPortalIndex + 1;
+constexpr u8 kBossRushStateCaveOfOrdeals = 3;
+constexpr u8 kBossRushRunPortalIndex = static_cast<u8>(kBossRushEntryCount);
+constexpr u8 kBossRushCavePortalIndex = kBossRushRunPortalIndex + 1;
+constexpr u8 kBossRushHubPortalCount = kBossRushCavePortalIndex + 1;
 constexpr u8 kBossRushHubPortalCreateBatch = 1;
 constexpr u8 kBossRushHubWarpSceneListNo = 0;
 constexpr f32 kBossRushHubY = 1100.0f;
 constexpr f32 kBossRushHubPortalRadius = 1450.0f;
+constexpr f32 kBossRushHubCenterPortalOffset = 450.0f;
 constexpr f32 kBossRushHubTriggerRadius = 150.0f;
+constexpr char kCaveOfOrdealsStage[] = "D_SB01";
+constexpr const char* kCaveOfOrdealsName = "Cave of Ordeals";
+constexpr s16 kCaveOfOrdealsPoint = 0;
+constexpr s8 kCaveOfOrdealsRoom = 0;
+constexpr s8 kCaveOfOrdealsLayer = -1;
 constexpr f32 kBossRushRedPortalBrkFrameFraction = 0.2f;
 constexpr s16 kGanondorfFacingAngle = 0x37FE;
 constexpr s8 kFinalPuppetRoom = 50;
@@ -252,6 +261,7 @@ int sDirectFinalBossIndex = -1;
 bool sDirectFinalGanondorfStarted = false;
 int sDirectFinalGanondorfReadyFrames = 0;
 bool sDirectFinalSceneTransitionStarted = false;
+bool sCaveOfOrdealsWarpPending = false;
 bool sHubActorIdsInitialized = false;
 bool sHubActorsSpawned = false;
 bool sHubPortalsArmed = false;
@@ -619,19 +629,23 @@ cXyz hub_center() {
 
 cXyz hub_portal_position(u8 portal) {
     cXyz pos = hub_center();
-    if (portal < kBossRushCenterPortalIndex) {
-        const s16 angle = static_cast<s16>((0x10000 * portal) / kBossRushCenterPortalIndex);
+    if (portal < kBossRushRunPortalIndex) {
+        const s16 angle = static_cast<s16>((0x10000 * portal) / kBossRushRunPortalIndex);
         pos.x += angle_sin(angle) * kBossRushHubPortalRadius;
         pos.z += angle_cos(angle) * kBossRushHubPortalRadius;
+    } else if (portal == kBossRushRunPortalIndex) {
+        pos.x += kBossRushHubCenterPortalOffset;
+    } else if (portal == kBossRushCavePortalIndex) {
+        pos.x -= kBossRushHubCenterPortalOffset;
     }
     return pos;
 }
 
 csXyz hub_portal_rotation(u8 portal) {
-    if (portal >= kBossRushCenterPortalIndex) {
+    if (portal >= kBossRushRunPortalIndex) {
         return csXyz(0, 0, 0);
     }
-    const s16 angle = static_cast<s16>((0x10000 * portal) / kBossRushCenterPortalIndex);
+    const s16 angle = static_cast<s16>((0x10000 * portal) / kBossRushRunPortalIndex);
     return csXyz(0, angle, 0);
 }
 
@@ -1684,8 +1698,11 @@ void warp_to_bossrush_hub_from_midna(daMidna_c* midna) {
 }
 
 const char* bossrush_portal_name(int portal) {
-    if (portal == kBossRushCenterPortalIndex) {
+    if (portal == kBossRushRunPortalIndex) {
         return kBossRushRunName;
+    }
+    if (portal == kBossRushCavePortalIndex) {
+        return kCaveOfOrdealsName;
     }
     if (portal >= 0 && portal < static_cast<int>(kBossRushEntryCount)) {
         return kBossRushEntries[portal].displayName;
@@ -1693,11 +1710,34 @@ const char* bossrush_portal_name(int portal) {
     return "Boss";
 }
 
+void start_cave_of_ordeals_warp() {
+    reset_direct_final_boss_state();
+    delete_hub_actors();
+    set_boss_rush_state(kBossRushStateCaveOfOrdeals);
+    set_boss_rush_index(0);
+    close_midna_custom_dialog(daPy_py_c::getMidnaActor());
+
+    daAlink_c* player = daAlink_getAlinkActorClass();
+    sCaveOfOrdealsWarpPending = true;
+    if (player != nullptr && player->procDungeonWarpInit()) {
+        return;
+    }
+
+    sCaveOfOrdealsWarpPending = false;
+    dComIfGp_setNextStage(
+        kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom, kCaveOfOrdealsLayer);
+}
+
 void start_bossrush_entry(int portal) {
+    if (portal == kBossRushCavePortalIndex) {
+        start_cave_of_ordeals_warp();
+        return;
+    }
+
     reset_direct_final_boss_state();
     delete_hub_actors();
 
-    if (portal == kBossRushCenterPortalIndex) {
+    if (portal == kBossRushRunPortalIndex) {
         set_boss_rush_state(kBossRushStateRun);
         set_boss_rush_index(0);
         u8* reserve = reserve_bytes(dComIfGs_getSaveData());
@@ -1812,6 +1852,12 @@ mods::flow::MessageBuilder build_midna_selection(std::string_view first, std::st
 }
 
 mods::flow::MessageBuilder build_hub_portal_prompt(int portal) {
+    if (portal == kBossRushCavePortalIndex) {
+        return mods::flow::MessageBuilder{kMidnaChoiceStyle}
+            .text("Teleport to Cave of Ordeals?\n")
+            .await_choice();
+    }
+
     return mods::flow::MessageBuilder{kMidnaChoiceStyle}
         .text("Fight ")
         .text(bossrush_portal_name(portal))
@@ -2675,6 +2721,7 @@ void finish_prompt_and_advance() {
 
 bool restore_bossrush_hub_load_state() {
     if (!is_boss_hub_stage_name() || boss_rush_state() == kBossRushStateHub ||
+        sCaveOfOrdealsWarpPending ||
         dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek())
     {
         return false;
@@ -3113,6 +3160,16 @@ void update_bossrush() {
         return;
     }
 
+    if (boss_rush_state() == kBossRushStateCaveOfOrdeals) {
+        reset_hub_runtime_when_away();
+        reset_direct_final_boss_state();
+        reset_bossrush_hazards();
+        if (!sCaveOfOrdealsWarpPending) {
+            refresh_midna_root_flow_mode();
+        }
+        return;
+    }
+
     reset_hub_runtime_when_away();
     refresh_midna_root_flow_mode();
     ensure_direct_final_boss_started();
@@ -3466,6 +3523,20 @@ HookAction on_stage_change_pre(ModContext*, void* args, void* retval, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
+HookAction on_dungeon_return_warp_pre(ModContext*, void*, void*, void*) {
+    if (!sCaveOfOrdealsWarpPending || !is_bossrush_game_mode_active() ||
+        !is_boss_rush(dComIfGs_getSaveData()) ||
+        boss_rush_state() != kBossRushStateCaveOfOrdeals)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    sCaveOfOrdealsWarpPending = false;
+    dComIfGp_setNextStage(kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom,
+        kCaveOfOrdealsLayer, 0.0f, 12, 0, 0, 0, 1, 0);
+    return HOOK_SKIP_ORIGINAL;
+}
+
 void on_play_scene_update_post(ModContext*, void*, void*, void*) {
     if (is_bossrush_game_mode_active() && can_update_bossrush_gameplay()) {
         update_bossrush();
@@ -3521,6 +3592,7 @@ void reset_bossrush_runtime_state(bool deleteActors) {
     sSavePromptId = fpcM_ERROR_PROCESS_ID_e;
     clear_hub_confirm_state();
     clear_pending_midna_flow_action();
+    sCaveOfOrdealsWarpPending = false;
     if (deleteActors) {
         delete_hub_actors();
     } else {
@@ -3543,6 +3615,11 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
     result = mods::hook_add_pre<BossWarpExecuteHook>(svc_hook, on_bosswarp_execute_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight bossrush portal hook");
+    }
+
+    result = mods::hook_add_pre<DungeonReturnWarpHook>(svc_hook, on_dungeon_return_warp_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight Cave warp hook");
     }
 
     result = mods::hook_add_pre<MeterExecuteHook>(svc_hook, before_meter_execute);
@@ -3605,6 +3682,12 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     }
     if (const ModResult result = uninstall_bossrush_hook<BossWarpExecuteHook>(
             error, "failed to uninstall Dawnlight bossrush portal hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<DungeonReturnWarpHook>(
+            error, "failed to uninstall Dawnlight Cave warp hook");
         result != MOD_OK)
     {
         return result;

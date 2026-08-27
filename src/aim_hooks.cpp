@@ -154,7 +154,7 @@ SavedTouchMove s_savedTouchMove;
 bool s_customCinemaSightActive = false;
 
 bool use_custom_aim_movement() {
-    return aim_mode() != AimMode::Vanilla || aim_movement_enabled();
+    return aim_movement_enabled();
 }
 
 bool use_third_person_camera() {

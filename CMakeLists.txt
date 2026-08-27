@@ -11,6 +11,22 @@ endif ()
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchDusklight.cmake")
 add_subdirectory("${DUSKLIGHT_DIR}/sdk" dusklight-sdk EXCLUDE_FROM_ALL)
 
+# Dawnlight's touch aim compatibility hooks mirror Dusklight's private touch-control ABI.
+# Fetch only the matching UI headers; the mod resolves all host functions at runtime.
+include(FetchContent)
+FetchContent_Declare(dawnlight_rmlui_headers
+    URL https://github.com/mikke89/RmlUi/archive/f9b8c9e2935d5df2c7dff2c190d3968e99b0c3dc.tar.gz
+    URL_HASH SHA256=42b830abc2509a8c07cf02ba3313505de3a4642725654f489402022d8fefdd79
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+    SOURCE_SUBDIR dawnlight-headers-only
+)
+FetchContent_Declare(dawnlight_sdl3_headers
+    URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.4.10.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+    SOURCE_SUBDIR dawnlight-headers-only
+)
+FetchContent_MakeAvailable(dawnlight_rmlui_headers dawnlight_sdl3_headers)
+
 # Read version from mod.json automatically
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/mod.json" MOD_JSON_CONTENT)
 string(JSON DAWNLIGHT_VER GET "${MOD_JSON_CONTENT}" "version")
@@ -37,4 +53,10 @@ add_mod(dawnlight_mod
         src/update_check.cpp
     MOD_JSON mod.json
     RES_DIR res
+)
+
+target_include_directories(dawnlight_mod PRIVATE
+    "${DUSKLIGHT_DIR}/src"
+    "${dawnlight_rmlui_headers_SOURCE_DIR}/Include"
+    "${dawnlight_sdl3_headers_SOURCE_DIR}/include"
 )

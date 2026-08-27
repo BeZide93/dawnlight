@@ -253,6 +253,8 @@ enum class HudPaneSlot : std::size_t {
     DPadItemsText,
     DPadMapText,
     Hearts,
+    HealthBar,
+    HealthBarCurrentHeart,
     Rupee0,
     Rupee1,
     Rupee2,
@@ -1317,6 +1319,31 @@ void apply_dpad_text_layout(dMeter2Draw_c* meter) {
         mapTransform.offset_x, mapTransform.offset_y, mapTransform.scale);
 }
 
+void apply_health_bar_layout(dMeter2Draw_c* meter) {
+    if (meter == nullptr || meter->getMainScreenPtr() == nullptr ||
+        meter->mpLifeParts[0] == nullptr || meter->mpLifeParts[1] == nullptr ||
+        meter->mpLifeParts[9] == nullptr || meter->mpLifeParts[10] == nullptr)
+    {
+        return;
+    }
+
+    J2DPane* secondRow = meter->getMainScreenPtr()->search(MULTI_CHAR('heart_un'));
+    const f32 spacingX = meter->mpLifeParts[1]->getInitGlobalCenterPosX() -
+                         meter->mpLifeParts[0]->getInitGlobalCenterPosX();
+    const f32 offsetX = meter->mpLifeParts[9]->getInitGlobalCenterPosX() + spacingX -
+                        meter->mpLifeParts[10]->getInitGlobalCenterPosX();
+    const f32 offsetY = meter->mpLifeParts[0]->getInitGlobalCenterPosY() -
+                        meter->mpLifeParts[10]->getInitGlobalCenterPosY();
+    const bool enabled = custom_hud_layout_enabled() && hud_custom_health_bar_enabled();
+    apply_hud_pane_transform(hud_pane_state(HudPaneSlot::HealthBar), secondRow,
+        enabled, offsetX, offsetY, 1.0f);
+
+    const u16 drawnLife = dComIfGp_getItemNowLife();
+    const int currentHeart = drawnLife == 0 ? -1 : (static_cast<int>(drawnLife) - 1) / 4;
+    apply_hud_pane_transform(HudPaneSlot::HealthBarCurrentHeart, meter->mpBigHeart,
+        enabled && currentHeart >= 10, offsetX, offsetY, 1.0f);
+}
+
 void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     if (meter == nullptr) {
         return;
@@ -1416,6 +1443,7 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     const DuskModHudTransform heartsTransform = hud_layout_hearts_transform();
     apply_hud_pane_transform(HudPaneSlot::Hearts, meter->mpLifeParent, enabled,
         heartsTransform.offset_x, heartsTransform.offset_y, heartsTransform.scale);
+    apply_health_bar_layout(meter);
     const DuskModHudTransform rupeesTransform = hud_layout_rupees_transform();
     apply_hud_pane_transform(HudPaneSlot::Rupee0, meter->mpRupeeParent[0], enabled,
         rupeesTransform.offset_x, rupeesTransform.offset_y, rupeesTransform.scale);

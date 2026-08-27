@@ -41,6 +41,7 @@ ConfigVarHandle s_hudLayout = 0;
 ConfigVarHandle s_legacyWiiUHud = 0;
 ConfigVarHandle s_roundXYButtons = 0;
 ConfigVarHandle s_hudButtonBackingVisible = 0;
+ConfigVarHandle s_hudHealthBar = 0;
 ConfigVarHandle s_aimDefaultsMigrated = 0;
 ConfigVarHandle s_hudLayoutMigrated = 0;
 ConfigVarHandle s_hudLayoutMigratedV2 = 0;
@@ -357,7 +358,8 @@ bool set_custom_hud_from_defaults(const HudElementDefaultArray& elementDefaults,
     if (!set_bool(s_hudDpadFollowsMinimap, dpadFollowsMinimap) ||
         !set_int(s_hudMinimapSlideDirection, minimapSlideDirection) ||
         !set_bool(s_roundXYButtons, roundXYButtons) ||
-        !set_bool(s_hudButtonBackingVisible, buttonBackingVisible))
+        !set_bool(s_hudButtonBackingVisible, buttonBackingVisible) ||
+        !set_bool(s_hudHealthBar, false))
     {
         return false;
     }
@@ -658,6 +660,15 @@ bool apply_element_json(const std::string& elementsObject, HudElement element) {
         }
     }
 
+    if (element == HudElement::Hearts) {
+        bool healthBar = false;
+        if (read_json_bool(object, "healthBar", healthBar) &&
+            !set_bool(s_hudHealthBar, healthBar))
+        {
+            return false;
+        }
+    }
+
     HudButton button = HudButton::A;
     bool hasItem = false;
     bool hasAmmo = false;
@@ -748,6 +759,7 @@ ModResult register_config(ModError* error) {
         register_bool("round-xy-buttons", false, s_roundXYButtons) != MOD_OK ||
         register_bool("hud-custom-button-backing-visible", false, s_hudButtonBackingVisible) !=
             MOD_OK ||
+        register_bool("hud-custom-health-bar", false, s_hudHealthBar) != MOD_OK ||
         register_bool("aim-defaults-v2", false, s_aimDefaultsMigrated) != MOD_OK ||
         register_bool("hud-layout-migrated-v1", false, s_hudLayoutMigrated) != MOD_OK ||
         register_bool("hud-layout-migrated-v2", false, s_hudLayoutMigratedV2) != MOD_OK)
@@ -897,6 +909,10 @@ bool round_xy_buttons_enabled() {
 
 bool hud_custom_button_backing_visible() {
     return get_bool(s_hudButtonBackingVisible, false);
+}
+
+bool hud_custom_health_bar_enabled() {
+    return get_bool(s_hudHealthBar, false);
 }
 
 bool hud_button_backing_visible() {
@@ -1068,6 +1084,10 @@ ConfigVarHandle hud_custom_button_backing_visible_config_var() {
     return s_hudButtonBackingVisible;
 }
 
+ConfigVarHandle hud_custom_health_bar_config_var() {
+    return s_hudHealthBar;
+}
+
 ConfigVarHandle hud_custom_element_x_config_var(HudElement element) {
     return s_hudElementX[hud_element_index(element)];
 }
@@ -1180,13 +1200,17 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
             write_json_bool(out, "visible", hud_custom_button_backing_visible(), true);
         }
 
+        if (element == HudElement::Hearts) {
+            write_json_bool(out, "healthBar", hud_custom_health_bar_enabled(), true);
+        }
+
         write_json_number(out, "x", hud_custom_element_x(element), true);
         write_json_number(out, "y", hud_custom_element_y(element), false);
         out << "        }" << (i + 1 < kHudElementCount ? "," : "") << "\n";
     }
     out << "    },\n";
     out << "    \"roundXYButtons\": " << (round_xy_buttons_enabled() ? "true" : "false") << ",\n";
-    out << "    \"version\": 11\n";
+    out << "    \"version\": 12\n";
     out << "}\n";
 
     return out.good() ? HudSettingsIoResult::Ok : HudSettingsIoResult::WriteFailed;

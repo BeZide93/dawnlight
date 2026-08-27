@@ -490,6 +490,12 @@ ModResult build_hud_tab(
     if (add_custom_transform_controls(ctx, left, "Custom Hearts", HudElement::Hearts) != MOD_OK) {
         return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "Health Bar", hud_custom_health_bar_config_var(),
+            "Places the second row of hearts beside the first row.",
+            custom_hud_controls_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_custom_transform_controls(ctx, left, "Custom Rupees", HudElement::Rupees) != MOD_OK) {
         return MOD_ERROR;
     }

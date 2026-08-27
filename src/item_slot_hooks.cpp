@@ -632,7 +632,18 @@ void configure_z_touch_meter_container(Rml::Element* container) {
 }
 
 void sync_z_touch_item_meter(Rml::Element* button) {
-    if (button == nullptr || s_rmlGetChild == nullptr || s_rmlSetProperty == nullptr ||
+    if (button == nullptr) {
+        if (s_zTouchMeterContainer != nullptr && RmlSetInnerRMLHook::g_orig != nullptr &&
+            !s_zTouchMeterRml.empty())
+        {
+            const std::string emptyRml;
+            RmlSetInnerRMLHook::g_orig(s_zTouchMeterContainer, &emptyRml);
+            s_zTouchMeterRml.clear();
+        }
+        return;
+    }
+
+    if (s_rmlGetChild == nullptr || s_rmlSetProperty == nullptr ||
         RmlSetInnerRMLHook::g_orig == nullptr)
     {
         return;
@@ -652,7 +663,8 @@ void sync_z_touch_item_meter(Rml::Element* button) {
     std::string rml =
         "<span style=\"position:absolute;right:9dp;bottom:7dp;font-size:13dp;"
         "line-height:1;\">Z</span>";
-    const bool itemMode = dComIfGp_getLinkPlayer() != nullptr && daPy_py_c::checkNowWolf() == 0;
+    const bool itemMode = !z_item_menu_or_pause_context() &&
+                          dComIfGp_getLinkPlayer() != nullptr && daPy_py_c::checkNowWolf() == 0;
     const u8 itemNo = itemMode ? resolved_select_item(kZItemSlot) : dItemNo_NONE_e;
     if (itemNo != dItemNo_NONE_e && itemNo != 0) {
         u8 itemNum = 0;

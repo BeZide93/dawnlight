@@ -250,6 +250,8 @@ enum class HudPaneSlot : std::size_t {
     TextZ,
     Backing,
     DPad,
+    DPadItemsText,
+    DPadMapText,
     Hearts,
     Rupee0,
     Rupee1,
@@ -1301,6 +1303,20 @@ void apply_hud_text_pane_transform(const HudPaneSlot slot, CPaneMgr* pane, const
     apply_hud_pane_transform(state, pane_ptr(pane), enabled, offsetX, offsetY, scale);
 }
 
+void apply_dpad_text_layout(dMeter2Draw_c* meter) {
+    if (meter == nullptr) {
+        return;
+    }
+
+    const bool enabled = custom_hud_layout_enabled();
+    const DuskModHudTransform itemsTransform = hud_layout_dpad_items_text_transform();
+    apply_hud_pane_transform(HudPaneSlot::DPadItemsText, meter->mpTextI, enabled,
+        itemsTransform.offset_x, itemsTransform.offset_y, itemsTransform.scale);
+    const DuskModHudTransform mapTransform = hud_layout_dpad_map_text_transform();
+    apply_hud_pane_transform(HudPaneSlot::DPadMapText, meter->mpTextM, enabled,
+        mapTransform.offset_x, mapTransform.offset_y, mapTransform.scale);
+}
+
 void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     if (meter == nullptr) {
         return;
@@ -1396,6 +1412,7 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     const DuskModHudTransform dpadTransform = hud_layout_dpad_transform();
     apply_hud_pane_transform(HudPaneSlot::DPad, meter->mpButtonCrossParent, enabled,
         dpadTransform.offset_x, dpadTransform.offset_y, dpadTransform.scale);
+    apply_dpad_text_layout(meter);
     const DuskModHudTransform heartsTransform = hud_layout_hearts_transform();
     apply_hud_pane_transform(HudPaneSlot::Hearts, meter->mpLifeParent, enabled,
         heartsTransform.offset_x, heartsTransform.offset_y, heartsTransform.scale);
@@ -2729,6 +2746,7 @@ void after_meter_draw_button_cross(ModContext*, void* args, void*, void*) {
     apply_hud_pane_transform(HudPaneSlot::DPad, meter->mpButtonCrossParent,
         hardcoded_hud_layout_enabled(), dpadTransform.offset_x, dpadTransform.offset_y,
         dpadTransform.scale);
+    apply_dpad_text_layout(meter);
 }
 
 void after_meter_move_button_cross(ModContext*, void* args, void*, void*) {

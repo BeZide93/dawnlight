@@ -113,6 +113,8 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
     {"oil", 0, 0, 100},
     {"oxygen", 0, 0, 100},
     {"minimap", 0, 0, 100},
+    {"dpad-items-text", 0, 0, 100},
+    {"dpad-map-text", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
@@ -138,6 +140,8 @@ constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults =
     {"oil", 0, 0, 100},
     {"oxygen", 0, 0, 100},
     {"minimap", 0, 50, 70},
+    {"dpad-items-text", 0, 0, 100},
+    {"dpad-map-text", 0, 0, 100},
 }};
 
 constexpr std::array<HudButtonDefaults, kHudButtonCount> kHudButtonDefaults = {{
@@ -163,6 +167,8 @@ constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
     {"oil", 0, 0, 100},
     {"oxygen", 0, 0, 100},
     {"minimap", 0, 50, 70},
+    {"dpad-items-text", 0, 0, 100},
+    {"dpad-map-text", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kWiiUHudButtonDefaults = {{
@@ -188,6 +194,8 @@ constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
     {"oil", 100, 0, 100},
     {"oxygen", 100, 0, 100},
     {"minimap", 730, -190, 70},
+    {"dpad-items-text", 0, 0, 100},
+    {"dpad-map-text", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kDawnlightHudButtonDefaults = {{
@@ -213,6 +221,8 @@ constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
     "Oil",
     "Oxygen",
     "Minimap",
+    "D-Pad Items Text",
+    "D-Pad Map Text",
 }};
 
 constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{
@@ -1176,7 +1186,7 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
     }
     out << "    },\n";
     out << "    \"roundXYButtons\": " << (round_xy_buttons_enabled() ? "true" : "false") << ",\n";
-    out << "    \"version\": 10\n";
+    out << "    \"version\": 11\n";
     out << "}\n";
 
     return out.good() ? HudSettingsIoResult::Ok : HudSettingsIoResult::WriteFailed;

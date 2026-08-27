@@ -422,6 +422,18 @@ inline DuskModHudTransform hud_layout_dpad_transform() {
     }
 }
 
+inline DuskModHudTransform hud_layout_dpad_items_text_transform() {
+    return hud_layout() == HudLayout::Custom ?
+               hud_custom_element_transform(HudElement::DPadItemsText) :
+               DuskModHudTransform{};
+}
+
+inline DuskModHudTransform hud_layout_dpad_map_text_transform() {
+    return hud_layout() == HudLayout::Custom ?
+               hud_custom_element_transform(HudElement::DPadMapText) :
+               DuskModHudTransform{};
+}
+
 inline DuskModHudTransform hud_layout_midna_transform() {
     if (hud_layout() == HudLayout::Custom) {
         return hud_custom_element_transform(HudElement::Midna);

@@ -474,6 +474,16 @@ ModResult build_hud_tab(
     if (add_custom_transform_controls(ctx, left, "Custom D-Pad", HudElement::DPad) != MOD_OK) {
         return MOD_ERROR;
     }
+    if (add_custom_transform_controls(
+            ctx, left, "D-Pad Items Text", HudElement::DPadItemsText) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_custom_transform_controls(
+            ctx, left, "D-Pad Map Text", HudElement::DPadMapText) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_custom_transform_controls(ctx, left, "Custom Midna", HudElement::Midna) != MOD_OK) {
         return MOD_ERROR;
     }

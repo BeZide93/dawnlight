@@ -41,6 +41,8 @@ enum class HudElement : int {
     Oil,
     Oxygen,
     Minimap,
+    DPadItemsText,
+    DPadMapText,
     Count,
 };
 

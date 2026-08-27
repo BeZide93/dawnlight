@@ -25,6 +25,8 @@ enum class JumpBinding {
 constexpr u16 kSwordItem = 0x103;
 
 const daAlink_c* s_manualJumpOwner = nullptr;
+daAlink_c* s_slowSpeedOwner = nullptr;
+float s_previousNormalSpeed = 0.0f;
 
 JumpBinding active_jump_binding() {
     return JumpBinding::LockR;
@@ -233,8 +235,13 @@ HookAction before_check_auto_jump(ModContext*, void* args, void* retval, void*) 
 
 HookAction before_proc_auto_jump(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
+    s_slowSpeedOwner = nullptr;
     if (!start_air_jump_attack(link)) {
         update_bullet_time_before_jump(link);
+        if (bullet_time_active_for(link)) {
+            s_slowSpeedOwner = link;
+            s_previousNormalSpeed = link->mNormalSpeed;
+        }
         return HOOK_CONTINUE;
     }
 
@@ -243,7 +250,12 @@ HookAction before_proc_auto_jump(ModContext*, void* args, void* retval, void*) {
 }
 
 void after_proc_auto_jump(ModContext*, void* args, void*, void*) {
-    update_bullet_time_after_jump(mods::arg<daAlink_c*>(args, 0));
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (s_slowSpeedOwner == link) {
+        slow_bullet_time_jump_speed_change(link, s_previousNormalSpeed);
+    }
+    s_slowSpeedOwner = nullptr;
+    update_bullet_time_after_jump(link);
 }
 
 HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {

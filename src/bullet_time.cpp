@@ -6,7 +6,6 @@
 
 #include "SSystem/SComponent/c_cc_d.h"
 #include "SSystem/SComponent/c_cc_s.h"
-#include "SSystem/SComponent/c_math.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_arrow.h"
 #include "d/d_com_inf_game.h"
@@ -29,6 +28,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 constexpr std::uint64_t kSlowFrameInterval = 4;
+constexpr float kLinkTimeScale = 0.1f;
 constexpr auto kBulletTimeDuration = std::chrono::seconds(5);
 constexpr auto kManualJumpTimeout = std::chrono::seconds(7);
 constexpr auto kColliderCacheEntries = std::size_t{256};
@@ -44,6 +44,7 @@ DEFINE_HOOK_SYMBOL("fopAc_Execute", int(void*), ActorExecuteHook);
 DEFINE_HOOK(&fpcMtd_Execute, ProcessExecuteHook);
 DEFINE_HOOK(&cCcS::Set, ColliderSetHook);
 DEFINE_HOOK(&daArrow_c::atHitCallBack, ArrowHitHook);
+DEFINE_HOOK(&daAlink_c::posMove, LinkPosMoveHook);
 
 struct ColliderCacheEntry {
     fopAc_ac_c* actor = nullptr;
@@ -56,6 +57,13 @@ struct ColliderCacheEntry {
 struct HitActorEntry {
     fopAc_ac_c* actor = nullptr;
     std::uint64_t frame = 0;
+};
+
+struct LinkPositionStep {
+    daAlink_c* link = nullptr;
+    cXyz startPosition{};
+    float gravity = 0.0f;
+    bool active = false;
 };
 
 daAlink_c* s_manualJumpOwner = nullptr;
@@ -71,6 +79,7 @@ float s_previousMaxFallSpeed = 0.0f;
 bool s_previousSpecialGravity = false;
 bool s_bulletTimeActive = false;
 bool s_bulletTimeUsedForJump = false;
+LinkPositionStep s_linkPositionStep{};
 
 void clear_combat_time_caches() {
     s_colliderCache = {};
@@ -105,6 +114,7 @@ void start_bullet_time(daAlink_c* link) {
         link->checkNoResetFlg3(daPy_py_c::FLG3_UNK_4000) != 0;
     clear_combat_time_caches();
     s_bulletTimeStarted = Clock::now();
+    link->setSpecialGravity(s_previousGravity, s_previousMaxFallSpeed, FALSE);
     s_bulletTimeActive = true;
     s_bulletTimeUsedForJump = true;
 }
@@ -225,30 +235,50 @@ bool should_skip_actor(fopAc_ac_c* actor) {
 }
 
 void apply_bullet_time_fall(daAlink_c* link) {
-    if (!s_bulletTimeActive || link == nullptr || link->mpHIO == nullptr) {
+    if (!s_bulletTimeActive || link == nullptr) {
         return;
     }
 
-    constexpr float kFallScale = 0.025f;
-    link->setSpecialGravity(link->mpHIO->mAutoJump.m.mGravity * kFallScale,
-                            link->mpHIO->mAutoJump.m.mMaxFallSpeed * kFallScale, FALSE);
+    link->setSpecialGravity(s_previousGravity, s_previousMaxFallSpeed, FALSE);
+    if (link->speed.y < s_previousMaxFallSpeed) {
+        link->speed.y = s_previousMaxFallSpeed;
+    }
+}
 
-    const float gravity = -link->mpHIO->mAutoJump.m.mGravity;
-    if (gravity > 0.001f && link->speed.y > 0.0f) {
-        const float jumpSpeed = link->mpHIO->mAutoJump.m.mMaxJumpSpeed *
-                                link->mpHIO->mAutoJump.m.mJumpSpeedRate *
-                                cM_ssin(link->mpHIO->mAutoJump.m.mJumpAngle);
-        const float normalJumpHeight = jumpSpeed * jumpSpeed / (2.0f * gravity);
-        const float heightCap = link->mLastJumpPos.y + normalJumpHeight * 2.0f;
-        if (link->current.pos.y >= heightCap) {
-            link->current.pos.y = heightCap;
-            link->speed.y = 0.0f;
-        }
+HookAction before_link_pos_move(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    s_linkPositionStep = {};
+    if (!bullet_time_active_for(link)) {
+        return HOOK_CONTINUE;
     }
 
-    if (link->speed.y < link->maxFallSpeed) {
-        link->speed.y = link->maxFallSpeed;
+    s_linkPositionStep = {
+        .link = link,
+        .startPosition = link->current.pos,
+        .gravity = link->gravity,
+        .active = true,
+    };
+    link->gravity *= kLinkTimeScale;
+    return HOOK_CONTINUE;
+}
+
+void after_link_pos_move(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!s_linkPositionStep.active || s_linkPositionStep.link != link) {
+        return;
     }
+
+    link->current.pos.x = s_linkPositionStep.startPosition.x +
+                          (link->current.pos.x - s_linkPositionStep.startPosition.x) *
+                              kLinkTimeScale;
+    link->current.pos.y = s_linkPositionStep.startPosition.y +
+                          (link->current.pos.y - s_linkPositionStep.startPosition.y) *
+                              kLinkTimeScale;
+    link->current.pos.z = s_linkPositionStep.startPosition.z +
+                          (link->current.pos.z - s_linkPositionStep.startPosition.z) *
+                              kLinkTimeScale;
+    link->gravity = s_linkPositionStep.gravity;
+    s_linkPositionStep = {};
 }
 
 HookAction before_actor_execute(ModContext*, void* args, void*, void*) {
@@ -359,6 +389,12 @@ ModResult initialize_bullet_time(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook::add_pre<ArrowHitHook>(svc_hook, before_arrow_hit);
     }
+    if (result == MOD_OK) {
+        result = mods::hook::add_pre<LinkPosMoveHook>(svc_hook, before_link_pos_move);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<LinkPosMoveHook>(svc_hook, after_link_pos_move);
+    }
     if (result != MOD_OK) {
         return mods::set_error(error, result,
                                "failed to install Dawnlight Bullet Time hooks");
@@ -431,6 +467,15 @@ void update_bullet_time_after_jump(daAlink_c* link) {
     }
 }
 
+void slow_bullet_time_jump_speed_change(daAlink_c* link, float previousNormalSpeed) {
+    if (!bullet_time_active_for(link)) {
+        return;
+    }
+
+    link->mNormalSpeed = previousNormalSpeed +
+                         (link->mNormalSpeed - previousNormalSpeed) * kLinkTimeScale;
+}
+
 bool bullet_time_active_for(const daAlink_c* link) {
     return s_bulletTimeActive && s_manualJumpOwner == link;
 }
@@ -463,6 +508,7 @@ void bullet_time_tick() {
 
 void shutdown_bullet_time() {
     clear_manual_jump(nullptr);
+    s_linkPositionStep = {};
     s_actorExecuteStack = {};
     s_actorExecuteDepth = 0;
 }

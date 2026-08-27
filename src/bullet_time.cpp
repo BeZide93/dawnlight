@@ -300,10 +300,32 @@ bool manual_jump_is_airborne(daAlink_c* link) {
            !link->mLinkAcch.ChkGroundHit();
 }
 
+bool selected_bow_button_requested(daAlink_c* link) {
+    if (link == nullptr) {
+        return false;
+    }
+
+    const u32 buttons = static_cast<u32>(link->mItemTrigger) |
+                        static_cast<u32>(link->mItemButton);
+    constexpr std::array<u8, 3> slots = {
+        SELECT_ITEM_X,
+        SELECT_ITEM_Y,
+        SELECT_ITEM_DOWN,
+    };
+    for (const u8 slot : slots) {
+        if ((buttons & (1u << slot)) != 0 &&
+            daPy_py_c::checkBowItem(dComIfGp_getSelectItem(slot)))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool bow_aim_requested(daAlink_c* link) {
-    return link != nullptr && daPy_py_c::checkBowItem(link->mEquipItem) &&
-           link->checkReadyItem() &&
-           (link->itemTrigger() || link->itemButton());
+    return selected_bow_button_requested(link) ||
+           (link != nullptr && daPy_py_c::checkBowItem(link->mEquipItem) &&
+               link->checkReadyItem() && (link->itemTrigger() || link->itemButton()));
 }
 
 void prepare_bow_aim(daAlink_c* link) {

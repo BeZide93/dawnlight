@@ -150,6 +150,7 @@ struct SavedTouchMove {
 };
 
 SavedTouchMove s_savedTouchMove;
+bool s_touchBulletTimeMoveActive = false;
 #endif
 bool s_customCinemaSightActive = false;
 
@@ -450,7 +451,9 @@ bool should_keep_cinema_bow_sight(daAlink_c* link) {
 
 void keep_cinema_bow_sight(daAlink_c* link) {
     if (should_keep_cinema_bow_sight(link)) {
-        aim_with_c_stick(link);
+        if (aim_movement_enabled()) {
+            aim_with_c_stick(link);
+        }
         draw_camera_center_sight(link);
     }
 }
@@ -538,6 +541,10 @@ bool update_subject_aim(daAlink_c* link, AimItem item) {
 HookAction before_touch_sync_state(ModContext*, void* args, void*, void*) {
     s_savedTouchMove = {};
     auto* controls = mods::arg<TouchControls*>(args, 0);
+    auto* link = daAlink_getAlinkActorClass();
+    s_touchBulletTimeMoveActive =
+        controls != nullptr && !controls->mWasSuppressed && controls->mMoveTouch.active &&
+        link != nullptr && bullet_time_active_for(link);
     if (!touch_aim_movement_enabled() || controls == nullptr || !controls->mMoveTouch.active) {
         return HOOK_CONTINUE;
     }
@@ -880,6 +887,20 @@ void prepare_bullet_time_bow_aim(daAlink_c* link) {
 bool update_bullet_time_bow_aim(daAlink_c* link) {
     if (!should_keep_cinema_bow_sight(link)) {
         return false;
+    }
+
+#if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
+    if (s_touchBulletTimeMoveActive) {
+        link->setBodyAngleToCamera();
+        draw_camera_center_sight(link);
+        return true;
+    }
+#endif
+
+    if (!aim_movement_enabled()) {
+        link->setBodyAngleToCamera();
+        draw_camera_center_sight(link);
+        return true;
     }
 
     face_camera_view_yaw(link);

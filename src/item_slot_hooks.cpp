@@ -1579,6 +1579,13 @@ void draw_ring_z_prompt(dMenu_Ring_c* ring) {
         return;
     }
 
+    if (ring->mStatus == dMenu_Ring_c::STATUS_EXPLAIN ||
+        ring->mStatus == dMenu_Ring_c::STATUS_EXPLAIN_FORCE ||
+        ring->mpItemExplain == nullptr || ring->mpItemExplain->getStatus() != 0)
+    {
+        return;
+    }
+
     J2DPane* anchor = item_wheel_z_anchor(ring->mpScreen);
     if (anchor == nullptr) {
         return;

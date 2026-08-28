@@ -3286,6 +3286,11 @@ ModResult add_hook(ModResult result, ModError* error) {
 ModResult install_item_slot_hooks(ModError* error) {
     s_zItemSlotSessionEnabled = z_item_slot_enabled();
 
+    HookOptions minimapPreOptions = HOOK_OPTIONS_INIT;
+    minimapPreOptions.priority = -100;
+    HookOptions minimapPostOptions = HOOK_OPTIONS_INIT;
+    minimapPostOptions.priority = 100;
+
     ModResult result = MOD_OK;
     if (s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<GetSelectItemHook>(svc_hook, before_get_select_item);
@@ -3334,10 +3339,12 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_post<MeterMoveButtonCrossHook>(svc_hook, after_meter_move_button_cross);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_pre<MeterMapDrawHook>(svc_hook, before_meter_map_draw);
+        result = mods::hook_add_pre<MeterMapDrawHook>(
+            svc_hook, before_meter_map_draw, &minimapPreOptions);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_post<MeterMapDrawHook>(svc_hook, after_meter_map_draw);
+        result = mods::hook_add_post<MeterMapDrawHook>(
+            svc_hook, after_meter_map_draw, &minimapPostOptions);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<RingSetActiveCursorHook>(svc_hook, before_ring_set_active_cursor);

@@ -1,4 +1,5 @@
 #include "update_service.hpp"
+#include "service_imports.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -16,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <vector>
 
 namespace dawnlight {
@@ -48,6 +50,12 @@ static std::string s_downloadUrl;
 static std::chrono::steady_clock::time_point s_updateDetectedTime;
 static std::atomic<DownloadState> s_downloadState{DL_IDLE};
 static UiDialogHandle s_activeDialogHandle = 0;
+
+static void log_update_error(const std::string& message) {
+    if (s_logSvc && s_modCtx) {
+        s_logSvc->error(s_modCtx, message.c_str());
+    }
+}
 
 static std::string http_get(const std::string& url) {
     std::string response;
@@ -149,9 +157,58 @@ static bool download_file(const std::string& url, const std::string& destPath) {
     (void)destPath;
     return false;
 #else
-    std::string cmd = "curl -s -L -H \"User-Agent: DawnlightModUpdater\" -o \"" + destPath + "\" \"" + url + "\"";
+    std::string cmd = "curl -sS -fL -H \"User-Agent: DawnlightModUpdater\" -o \"" + destPath + "\" \"" + url + "\"";
     int ret = std::system(cmd.c_str());
+    if (ret != 0) {
+        log_update_error("[Updater] curl download failed with status " + std::to_string(ret));
+    }
     return ret == 0;
+#endif
+}
+
+static bool download_and_replace(const std::string& url, const std::string& destPath) {
+#if defined(__ANDROID__)
+    namespace fs = std::filesystem;
+
+    const fs::path targetPath(destPath);
+    fs::path tempPath = targetPath;
+    tempPath += ".download";
+
+    std::error_code ec;
+    fs::create_directories(targetPath.parent_path(), ec);
+    if (ec) {
+        log_update_error("[Updater] Failed to create Android mods directory: " + ec.message());
+        return false;
+    }
+
+    fs::remove(tempPath, ec);
+    ec.clear();
+    if (!download_file(url, tempPath.string())) {
+        fs::remove(tempPath, ec);
+        return false;
+    }
+
+    const auto downloadedSize = fs::file_size(tempPath, ec);
+    if (ec || downloadedSize == 0) {
+        log_update_error("[Updater] Downloaded Android update is empty or unreadable");
+        fs::remove(tempPath, ec);
+        return false;
+    }
+
+    fs::rename(tempPath, targetPath, ec);
+    if (ec) {
+        log_update_error("[Updater] Failed to replace Android mod package: " + ec.message());
+        fs::remove(tempPath, ec);
+        return false;
+    }
+
+    if (s_logSvc && s_modCtx) {
+        const std::string message = "[Updater] Replaced Android mod package at " + destPath;
+        s_logSvc->info(s_modCtx, message.c_str());
+    }
+    return true;
+#else
+    return download_file(url, destPath);
 #endif
 }
 
@@ -226,6 +283,20 @@ static std::vector<std::string> get_target_mod_paths() {
         std::string modPath = std::string(appData) + "\\TwilitRealm\\Dusklight\\mods\\dawnlight_mod.dusk";
         paths.push_back(modPath);
     }
+#elif defined(__ANDROID__)
+    const char* dataDir = nullptr;
+    if (svc_host != nullptr && s_modCtx != nullptr &&
+        svc_host->data_dir(s_modCtx, &dataDir) == MOD_OK && dataDir != nullptr && *dataDir)
+    {
+        const std::filesystem::path dataPath(dataDir);
+        const std::filesystem::path configRoot = dataPath.parent_path().parent_path();
+        if (!configRoot.empty()) {
+            paths.push_back((configRoot / "mods" / "dawnlight_mod.dusk").string());
+        }
+    }
+    if (paths.empty()) {
+        log_update_error("[Updater] Failed to resolve Android mods directory");
+    }
 #else
     const char* home = std::getenv("HOME");
     if (home) {
@@ -255,12 +326,16 @@ static void on_update_confirmed(ModContext*, UiDialogHandle, void*) {
     }
 
     s_downloadState = DL_IN_PROGRESS;
+    const auto paths = get_target_mod_paths();
+    if (paths.empty()) {
+        s_downloadState = DL_FAILED;
+        return;
+    }
 
-    std::thread([downloadUrl]() {
-        auto paths = get_target_mod_paths();
+    std::thread([downloadUrl, paths]() {
         bool success = false;
         for (const auto& path : paths) {
-            if (download_file(downloadUrl, path)) {
+            if (download_and_replace(downloadUrl, path)) {
                 success = true;
             }
         }

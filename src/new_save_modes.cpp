@@ -2352,12 +2352,12 @@ ModResult ensure_midna_messages() {
     ModResult result = MOD_OK;
     if (messages.noWarpHumanSelectionId == 0) {
         result = add_midna_message(
-            build_midna_selection("Transform into human", "Talk to Midna", "Garden of Twilight"),
+            build_midna_selection("Transform to human", "Talk to Midna", "Garden of Twilight"),
             messages.noWarpHumanSelectionId);
     }
     if (result == MOD_OK && messages.noWarpWolfSelectionId == 0) {
         result = add_midna_message(
-            build_midna_selection("Transform into wolf", "Talk to Midna", "Garden of Twilight"),
+            build_midna_selection("Transform to wolf", "Talk to Midna", "Garden of Twilight"),
             messages.noWarpWolfSelectionId);
     }
     if (result == MOD_OK && messages.hubSelectionId == 0) {

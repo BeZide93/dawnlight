@@ -93,6 +93,8 @@ DEFINE_HOOK(&dMenu_Ring_c::isMixItemOff, RingIsMixItemOffHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, MeterDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::drawKantera, MeterDrawKanteraHook);
 DEFINE_HOOK(&dMeter2Draw_c::drawOxygen, MeterDrawOxygenHook);
+DEFINE_HOOK(&dMeter2Draw_c::drawKanteraScreen, MeterGaugeScreenHook);
+DEFINE_HOOK(&J2DScreen::draw, ScreenDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::setButtonIconMidonaAlpha, MeterMidnaAlphaHook);
 DEFINE_HOOK(&dMeter2Draw_c::drawButtonCross, MeterDrawButtonCrossHook);
 DEFINE_HOOK(&dMeter2_c::moveButtonCross, MeterMoveButtonCrossHook);
@@ -247,6 +249,8 @@ enum class HudPaneSlot : std::size_t {
     LightY,
     TextY,
     ButtonZ,
+    ItemZ,
+    LightZ,
     TextZ,
     Backing,
     DPad,
@@ -255,6 +259,7 @@ enum class HudPaneSlot : std::size_t {
     Hearts,
     HealthBar,
     HealthBarCurrentHeart,
+    RupeeIcon,
     Rupee0,
     Rupee1,
     Rupee2,
@@ -268,6 +273,16 @@ std::array<std::array<HudTextBoxFlagState, 5>, static_cast<std::size_t>(HudPaneS
     s_hudTextBoxFlags;
 std::array<dMeter2Draw_c::item_params, 2> s_xyAmmoOriginalParams = {};
 std::array<bool, 2> s_xyAmmoOriginalValid = {};
+
+struct GaugeDrawState {
+    dMeter2Draw_c* meter = nullptr;
+    J2DPane* pane = nullptr;
+    u8 type = 0;
+    f32 x = 0.0f;
+    f32 y = 0.0f;
+};
+
+GaugeDrawState s_gaugeDraw;
 
 struct MinimapTransformState {
     dMeterMap_c* map = nullptr;
@@ -1188,10 +1203,19 @@ void restore_applied_hud_pane_transform(const HudPaneSlot slot) {
 }
 
 void restore_shared_hud_layout_base() {
+    restore_applied_hud_pane_transform(HudPaneSlot::ButtonZ);
+    restore_applied_hud_pane_transform(HudPaneSlot::ItemZ);
+    restore_applied_hud_pane_transform(HudPaneSlot::LightZ);
+    restore_applied_hud_pane_transform(HudPaneSlot::TextZ);
     restore_applied_hud_pane_transform(HudPaneSlot::DPad);
     restore_applied_hud_pane_transform(HudPaneSlot::DPadItemsText);
     restore_applied_hud_pane_transform(HudPaneSlot::DPadMapText);
     restore_applied_hud_pane_transform(HudPaneSlot::Hearts);
+    restore_applied_hud_pane_transform(HudPaneSlot::RupeeIcon);
+    restore_applied_hud_pane_transform(HudPaneSlot::Rupee0);
+    restore_applied_hud_pane_transform(HudPaneSlot::Rupee1);
+    restore_applied_hud_pane_transform(HudPaneSlot::Rupee2);
+    restore_applied_hud_pane_transform(HudPaneSlot::Keys);
 }
 
 J2DPane* pane_ptr(CPaneMgrAlpha* pane) {
@@ -1448,15 +1472,21 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     apply_hud_xy_text_box_group_binding(
         HudPaneSlot::TextY, meter->mpXYText, 1, enabled, yLayout.text_anchor);
 
-    if (z_item_slot_active()) {
-        const DuskModHudTransform zTransform = hud_layout_z_transform();
-        const DuskModHudButtonLayout zLayout = hud_layout_z_button_layout();
-        apply_hud_pane_transform(HudPaneSlot::ButtonZ, meter->mpButtonXY[2], enabled,
-            zTransform.offset_x, zTransform.offset_y, zTransform.scale);
-        apply_hud_pane_transform(HudPaneSlot::TextZ, meter->mpTextXY[2], enabled,
-            zTransform.offset_x + zLayout.text_offset_x,
-            zTransform.offset_y + zLayout.text_offset_y, hud_text_scale(zTransform, zLayout));
-    }
+    const DuskModHudTransform zTransform = hud_layout_z_transform();
+    const DuskModHudButtonLayout zLayout = hud_layout_z_button_layout();
+    apply_hud_pane_transform(HudPaneSlot::ButtonZ, meter->mpButtonXY[2], enabled,
+        zTransform.offset_x, zTransform.offset_y, zTransform.scale);
+    apply_hud_pane_transform(HudPaneSlot::TextZ, meter->mpTextXY[2], enabled,
+        zTransform.offset_x + zLayout.text_offset_x,
+        zTransform.offset_y + zLayout.text_offset_y, hud_text_scale(zTransform, zLayout));
+
+    const bool externalZItem = enabled && !z_item_slot_active();
+    apply_hud_pane_transform(HudPaneSlot::ItemZ, meter->mpItemR, externalZItem,
+        zTransform.offset_x + zLayout.item_offset_x,
+        zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
+    apply_hud_pane_transform(HudPaneSlot::LightZ, meter->mpLightXY[2], externalZItem,
+        zTransform.offset_x + zLayout.item_offset_x,
+        zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
 
     const DuskModHudTransform backingTransform = hud_layout_backing_transform();
     apply_hud_pane_transform(HudPaneSlot::Backing, meter->mpUzu, enabled,
@@ -1470,11 +1500,22 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
         heartsTransform.offset_x, heartsTransform.offset_y, heartsTransform.scale);
     apply_health_bar_layout(meter);
     const DuskModHudTransform rupeesTransform = hud_layout_rupees_transform();
-    apply_hud_pane_transform(HudPaneSlot::Rupee0, meter->mpRupeeParent[0], enabled,
+    J2DPane* rupeeIcon = meter->mpScreen != nullptr ?
+        meter->mpScreen->search(MULTI_CHAR('rupi')) : nullptr;
+    const bool usesSharedRupeeParent = rupeeIcon != nullptr &&
+        meter->mpRupeeKeyParent != nullptr &&
+        rupeeIcon->getParentPane() == meter->mpRupeeKeyParent->getPanePtr();
+    apply_hud_pane_transform(hud_pane_state(HudPaneSlot::RupeeIcon), rupeeIcon,
+        enabled && usesSharedRupeeParent, rupeesTransform.offset_x,
+        rupeesTransform.offset_y, rupeesTransform.scale);
+    apply_hud_pane_transform(HudPaneSlot::Rupee0, meter->mpRupeeParent[0],
+        enabled && !usesSharedRupeeParent,
         rupeesTransform.offset_x, rupeesTransform.offset_y, rupeesTransform.scale);
-    apply_hud_pane_transform(HudPaneSlot::Rupee1, meter->mpRupeeParent[1], enabled,
+    apply_hud_pane_transform(HudPaneSlot::Rupee1, meter->mpRupeeParent[1],
+        enabled && !usesSharedRupeeParent,
         rupeesTransform.offset_x, rupeesTransform.offset_y, rupeesTransform.scale);
-    apply_hud_pane_transform(HudPaneSlot::Rupee2, meter->mpRupeeParent[2], enabled,
+    apply_hud_pane_transform(HudPaneSlot::Rupee2, meter->mpRupeeParent[2],
+        enabled && !usesSharedRupeeParent,
         rupeesTransform.offset_x, rupeesTransform.offset_y, rupeesTransform.scale);
     const DuskModHudTransform keysTransform = hud_layout_keys_transform();
     apply_hud_pane_transform(HudPaneSlot::Keys, meter->mpKeyParent, enabled,
@@ -2750,15 +2791,6 @@ void after_meter_draw(ModContext*, void* args, void*, void*) {
     restore_xy_ammo_layout(meter);
 }
 
-HookAction before_meter_draw_kantera(ModContext*, void* args, void*, void*) {
-    if (hardcoded_hud_layout_enabled()) {
-        const DuskModHudTransform transform = hud_layout_oil_transform();
-        mods::arg_ref<f32>(args, 3) += transform.offset_x;
-        mods::arg_ref<f32>(args, 4) += transform.offset_y;
-    }
-    return HOOK_CONTINUE;
-}
-
 void after_meter_draw_kantera(ModContext*, void* args, void*, void*) {
     if (hardcoded_hud_layout_enabled()) {
         auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
@@ -2770,15 +2802,6 @@ void after_meter_draw_kantera(ModContext*, void* args, void*, void*) {
     }
 }
 
-HookAction before_meter_draw_oxygen(ModContext*, void* args, void*, void*) {
-    if (hardcoded_hud_layout_enabled()) {
-        const DuskModHudTransform transform = hud_layout_oxygen_transform();
-        mods::arg_ref<f32>(args, 3) += transform.offset_x;
-        mods::arg_ref<f32>(args, 4) += transform.offset_y;
-    }
-    return HOOK_CONTINUE;
-}
-
 void after_meter_draw_oxygen(ModContext*, void* args, void*, void*) {
     if (hardcoded_hud_layout_enabled()) {
         auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
@@ -2788,6 +2811,52 @@ void after_meter_draw_oxygen(ModContext*, void* args, void*, void*) {
             meter->field_0x5d8[2] *= transform.scale;
         }
     }
+}
+
+HookAction before_meter_gauge_screen(ModContext*, void* args, void*, void*) {
+    s_gaugeDraw = {};
+    const u8 type = mods::arg<u8>(args, 1);
+    if (type == 1 || type == 2) {
+        s_gaugeDraw.meter = mods::arg<dMeter2Draw_c*>(args, 0);
+        s_gaugeDraw.type = type;
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction before_gauge_screen_draw(ModContext*, void* args, void*, void*) {
+    auto* screen = mods::arg<J2DScreen*>(args, 0);
+    auto* meter = s_gaugeDraw.meter;
+    if (!hardcoded_hud_layout_enabled() || meter == nullptr ||
+        screen != meter->mpKanteraScreen || meter->mpMagicParent == nullptr ||
+        s_gaugeDraw.pane != nullptr)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    J2DPane* pane = meter->mpMagicParent->getPanePtr();
+    if (pane == nullptr) {
+        return HOOK_CONTINUE;
+    }
+
+    const DuskModHudTransform transform = s_gaugeDraw.type == 1 ?
+        hud_layout_oil_transform() : hud_layout_oxygen_transform();
+    s_gaugeDraw.pane = pane;
+    s_gaugeDraw.x = pane->getTranslateX();
+    s_gaugeDraw.y = pane->getTranslateY();
+    pane->translate(s_gaugeDraw.x + transform.offset_x,
+        s_gaugeDraw.y + transform.offset_y);
+    return HOOK_CONTINUE;
+}
+
+void after_gauge_screen_draw(ModContext*, void*, void*, void*) {
+    if (s_gaugeDraw.pane != nullptr) {
+        s_gaugeDraw.pane->translate(s_gaugeDraw.x, s_gaugeDraw.y);
+        s_gaugeDraw.pane = nullptr;
+    }
+}
+
+void after_meter_gauge_screen(ModContext*, void*, void*, void*) {
+    s_gaugeDraw = {};
 }
 
 void after_meter_midna_alpha(ModContext*, void* args, void*, void*) {
@@ -3324,6 +3393,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     minimapPreOptions.priority = -100;
     HookOptions minimapPostOptions = HOOK_OPTIONS_INIT;
     minimapPostOptions.priority = 100;
+    HookOptions finalGaugePreOptions = HOOK_OPTIONS_INIT;
+    finalGaugePreOptions.priority = -100;
+    HookOptions finalGaugePostOptions = HOOK_OPTIONS_INIT;
+    finalGaugePostOptions.priority = 100;
 
     ModResult result = MOD_OK;
     if (s_zItemSlotSessionEnabled) {
@@ -3357,16 +3430,24 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_post<MeterDrawHook>(svc_hook, after_meter_draw);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_pre<MeterDrawKanteraHook>(svc_hook, before_meter_draw_kantera);
-    }
-    if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawKanteraHook>(svc_hook, after_meter_draw_kantera);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_pre<MeterDrawOxygenHook>(svc_hook, before_meter_draw_oxygen);
+        result = mods::hook_add_post<MeterDrawOxygenHook>(svc_hook, after_meter_draw_oxygen);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_post<MeterDrawOxygenHook>(svc_hook, after_meter_draw_oxygen);
+        result = mods::hook_add_pre<MeterGaugeScreenHook>(svc_hook, before_meter_gauge_screen);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ScreenDrawHook>(
+            svc_hook, before_gauge_screen_draw, &finalGaugePreOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ScreenDrawHook>(
+            svc_hook, after_gauge_screen_draw, &finalGaugePostOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<MeterGaugeScreenHook>(svc_hook, after_meter_gauge_screen);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<MeterMidnaAlphaHook>(svc_hook, after_meter_midna_alpha);

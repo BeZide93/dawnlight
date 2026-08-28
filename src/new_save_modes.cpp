@@ -40,6 +40,7 @@ class JPABaseEmitter;
 #include "mods/service.hpp"
 #include "mods/svc/flow.hpp"
 #include "mods/svc/hook.h"
+#include "mods/svc/overlay.h"
 
 #include <algorithm>
 #include <array>
@@ -47,8 +48,11 @@ class JPABaseEmitter;
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <initializer_list>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -107,6 +111,8 @@ constexpr uint16_t kMidnaMenuPromptId = 2042;
 constexpr u32 kHyruleCastlePlaceNameMessageId = 1109;
 constexpr int kBossRushHubBannerFallbackDelay = 30;
 constexpr u32 kBossRushHubMusicId = 0x0200007F;
+constexpr char kBossRushHubMusicDiscPath[] = "/Audiores/Stream/temp.ast";
+constexpr char kBossRushHubMusicFileName[] = "temp.ast";
 
 constexpr std::array kAllLanguages{
     MESSAGE_LANGUAGE_ENGLISH,
@@ -340,6 +346,7 @@ MessageId sBossRushHubBannerMessageId = 0;
 bool sBossRushHubBannerShown = false;
 int sBossRushHubBannerFrames = 0;
 bool sBossRushHubMusicStarted = false;
+OverlayHandle sBossRushHubMusicOverlay = 0;
 
 void reset_bossrush_hub_banner_state();
 
@@ -1700,6 +1707,10 @@ void stop_bossrush_hub_music() {
 }
 
 void start_bossrush_hub_music() {
+    if (sBossRushHubMusicOverlay == 0) {
+        return;
+    }
+
     Z2AudioMgr* audioMgr = Z2GetAudioMgr();
     if (audioMgr == NULL) {
         return;
@@ -1717,6 +1728,75 @@ void start_bossrush_hub_music() {
     audioMgr->bgmStreamPrepare(kBossRushHubMusicId);
     audioMgr->bgmStreamPlay();
     sBossRushHubMusicStarted = true;
+}
+
+void register_bossrush_hub_music_overlay() {
+    if (sBossRushHubMusicOverlay != 0 || svc_host == nullptr || svc_overlay == nullptr) {
+        return;
+    }
+
+    const char* dataDir = nullptr;
+    if (svc_host->data_dir(mod_ctx, &dataDir) != MOD_OK || dataDir == nullptr || *dataDir == '\0') {
+        svc_log->warn(mod_ctx, "Dawnlight Boss Rush: failed to resolve the mods directory for temp.ast");
+        return;
+    }
+
+    try {
+        const std::filesystem::path dataPath(dataDir);
+        const std::filesystem::path configRoot = dataPath.parent_path().parent_path();
+        const std::filesystem::path musicPath = configRoot / "mods" / kBossRushHubMusicFileName;
+
+        std::ifstream file(musicPath, std::ios::binary | std::ios::ate);
+        if (!file) {
+            svc_log->info(mod_ctx,
+                "Dawnlight Boss Rush: mods/temp.ast not found; hub music is disabled");
+            return;
+        }
+
+        const std::streamoff fileSize = file.tellg();
+        if (fileSize <= 0 || static_cast<uint64_t>(fileSize) > UINT32_MAX) {
+            svc_log->warn(mod_ctx,
+                "Dawnlight Boss Rush: mods/temp.ast is empty or too large; hub music is disabled");
+            return;
+        }
+
+        std::vector<u8> data(static_cast<size_t>(fileSize));
+        file.seekg(0, std::ios::beg);
+        if (!file.read(reinterpret_cast<char*>(data.data()), fileSize)) {
+            svc_log->warn(mod_ctx,
+                "Dawnlight Boss Rush: failed to read mods/temp.ast; hub music is disabled");
+            return;
+        }
+
+        OverlayHandle handle = 0;
+        const ModResult result = svc_overlay->add_buffer(mod_ctx, kBossRushHubMusicDiscPath,
+            data.data(), data.size(), &handle);
+        if (result != MOD_OK || handle == 0) {
+            svc_log->warn(mod_ctx,
+                "Dawnlight Boss Rush: failed to register mods/temp.ast; hub music is disabled");
+            return;
+        }
+
+        sBossRushHubMusicOverlay = handle;
+        svc_log->info(mod_ctx,
+            "Dawnlight Boss Rush: using mods/temp.ast for Garden of Twilight music");
+    } catch (const std::exception&) {
+        svc_log->warn(mod_ctx,
+            "Dawnlight Boss Rush: failed to load mods/temp.ast; hub music is disabled");
+    }
+}
+
+void unregister_bossrush_hub_music_overlay() {
+    stop_bossrush_hub_music();
+    if (sBossRushHubMusicOverlay == 0 || svc_overlay == nullptr) {
+        return;
+    }
+
+    const OverlayHandle handle = sBossRushHubMusicOverlay;
+    sBossRushHubMusicOverlay = 0;
+    if (svc_overlay->remove(mod_ctx, handle) != MOD_OK) {
+        svc_log->warn(mod_ctx, "Dawnlight Boss Rush: failed to unregister hub music overlay");
+    }
 }
 
 void prepare_midna_hub_warp_item() {
@@ -3992,6 +4072,8 @@ ModResult on_bossrush_tick(void*, ModError*) {
 }  // namespace
 
 ModResult register_new_save_modes(ModError* error) {
+    register_bossrush_hub_music_overlay();
+
     ModResult result =
         mods::hook_add_post<FileSelectNameInput2Hook>(svc_hook, on_file_select_name_input2_post);
     if (result != MOD_OK) {
@@ -4051,7 +4133,7 @@ void shutdown_new_save_modes() {
     }
     unregister_bossrush_hub_banner();
     unregister_bossrush_title_logo();
-    stop_bossrush_hub_music();
+    unregister_bossrush_hub_music_overlay();
     sBossRushGameModeActive = false;
 }
 

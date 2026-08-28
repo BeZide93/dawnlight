@@ -474,6 +474,18 @@ ModResult build_hud_tab(
     if (add_custom_transform_controls(ctx, left, "Custom D-Pad", HudElement::DPad) != MOD_OK) {
         return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "HIDE ARROWS", hud_custom_dpad_hide_arrows_config_var(),
+            "Hides the four small direction arrows around the D-Pad.",
+            custom_hud_controls_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "HIDE SHADOWS", hud_custom_dpad_hide_shadows_config_var(),
+            "Hides the four background shadow panes behind the D-Pad.",
+            custom_hud_controls_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_custom_transform_controls(
             ctx, left, "D-Pad Items Text", HudElement::DPadItemsText) != MOD_OK)
     {

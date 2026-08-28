@@ -65,6 +65,8 @@ std::array<ConfigVarHandle, kHudButtonCount> s_hudButtonItemAnchor = {};
 std::array<ConfigVarHandle, kHudButtonCount> s_hudButtonTextAnchor = {};
 ConfigVarHandle s_hudDpadFollowsMinimap = 0;
 ConfigVarHandle s_hudMinimapSlideDirection = 0;
+ConfigVarHandle s_hudDpadHideArrows = 0;
+ConfigVarHandle s_hudDpadHideShadows = 0;
 
 void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
     const ConfigVarValue*, void*) {
@@ -357,6 +359,8 @@ bool set_custom_hud_from_defaults(const HudElementDefaultArray& elementDefaults,
 
     if (!set_bool(s_hudDpadFollowsMinimap, dpadFollowsMinimap) ||
         !set_int(s_hudMinimapSlideDirection, minimapSlideDirection) ||
+        !set_bool(s_hudDpadHideArrows, false) ||
+        !set_bool(s_hudDpadHideShadows, false) ||
         !set_bool(s_roundXYButtons, roundXYButtons) ||
         !set_bool(s_hudButtonBackingVisible, buttonBackingVisible) ||
         !set_bool(s_hudHealthBar, false))
@@ -660,6 +664,22 @@ bool apply_element_json(const std::string& elementsObject, HudElement element) {
         }
     }
 
+    if (element == HudElement::DPad) {
+        bool hideArrows = false;
+        if (read_json_bool(object, "hideArrows", hideArrows) &&
+            !set_bool(s_hudDpadHideArrows, hideArrows))
+        {
+            return false;
+        }
+
+        bool hideShadows = false;
+        if (read_json_bool(object, "hideShadows", hideShadows) &&
+            !set_bool(s_hudDpadHideShadows, hideShadows))
+        {
+            return false;
+        }
+    }
+
     if (element == HudElement::Hearts) {
         bool healthBar = false;
         if (read_json_bool(object, "healthBar", healthBar) &&
@@ -728,7 +748,9 @@ ModResult register_custom_hud_config() {
     if (register_bool("hud-custom-dpad-follows-minimap", false, s_hudDpadFollowsMinimap) !=
             MOD_OK ||
         register_int("hud-custom-minimap-slide-direction", 0, s_hudMinimapSlideDirection) !=
-            MOD_OK)
+            MOD_OK ||
+        register_bool("hud-custom-dpad-hide-arrows", false, s_hudDpadHideArrows) != MOD_OK ||
+        register_bool("hud-custom-dpad-hide-shadows", false, s_hudDpadHideShadows) != MOD_OK)
     {
         return MOD_ERROR;
     }
@@ -915,6 +937,14 @@ bool hud_custom_health_bar_enabled() {
     return get_bool(s_hudHealthBar, false);
 }
 
+bool hud_custom_dpad_hide_arrows() {
+    return get_bool(s_hudDpadHideArrows, false);
+}
+
+bool hud_custom_dpad_hide_shadows() {
+    return get_bool(s_hudDpadHideShadows, false);
+}
+
 bool hud_button_backing_visible() {
     switch (hud_layout()) {
     case HudLayout::GameCube:
@@ -1088,6 +1118,14 @@ ConfigVarHandle hud_custom_health_bar_config_var() {
     return s_hudHealthBar;
 }
 
+ConfigVarHandle hud_custom_dpad_hide_arrows_config_var() {
+    return s_hudDpadHideArrows;
+}
+
+ConfigVarHandle hud_custom_dpad_hide_shadows_config_var() {
+    return s_hudDpadHideShadows;
+}
+
 ConfigVarHandle hud_custom_element_x_config_var(HudElement element) {
     return s_hudElementX[hud_element_index(element)];
 }
@@ -1200,6 +1238,11 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
             write_json_bool(out, "visible", hud_custom_button_backing_visible(), true);
         }
 
+        if (element == HudElement::DPad) {
+            write_json_bool(out, "hideArrows", hud_custom_dpad_hide_arrows(), true);
+            write_json_bool(out, "hideShadows", hud_custom_dpad_hide_shadows(), true);
+        }
+
         if (element == HudElement::Hearts) {
             write_json_bool(out, "healthBar", hud_custom_health_bar_enabled(), true);
         }
@@ -1210,7 +1253,7 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
     }
     out << "    },\n";
     out << "    \"roundXYButtons\": " << (round_xy_buttons_enabled() ? "true" : "false") << ",\n";
-    out << "    \"version\": 12\n";
+    out << "    \"version\": 13\n";
     out << "}\n";
 
     return out.good() ? HudSettingsIoResult::Ok : HudSettingsIoResult::WriteFailed;

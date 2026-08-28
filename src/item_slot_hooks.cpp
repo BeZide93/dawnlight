@@ -274,6 +274,15 @@ std::array<std::array<HudTextBoxFlagState, 5>, static_cast<std::size_t>(HudPaneS
 std::array<dMeter2Draw_c::item_params, 2> s_xyAmmoOriginalParams = {};
 std::array<bool, 2> s_xyAmmoOriginalValid = {};
 
+struct HudPaneVisibilityState {
+    J2DPane* pane = nullptr;
+    bool wasVisible = false;
+    bool active = false;
+};
+
+std::array<HudPaneVisibilityState, 4> s_dpadArrowVisibility;
+std::array<HudPaneVisibilityState, 4> s_dpadShadowVisibility;
+
 struct GaugeDrawState {
     dMeter2Draw_c* meter = nullptr;
     J2DPane* pane = nullptr;
@@ -1366,6 +1375,58 @@ void apply_dpad_text_layout(dMeter2Draw_c* meter) {
         mapTransform.offset_x, mapTransform.offset_y, mapTransform.scale);
 }
 
+void apply_hud_pane_hidden_state(
+    HudPaneVisibilityState& state, J2DPane* pane, const bool hidden) {
+    if (pane == nullptr) {
+        state = {};
+        return;
+    }
+
+    if (hidden) {
+        if (!state.active || state.pane != pane) {
+            state = {.pane = pane, .wasVisible = pane->isVisible(), .active = true};
+        }
+        pane->hide();
+        return;
+    }
+
+    if (state.active && state.pane == pane) {
+        if (state.wasVisible) {
+            pane->show();
+        } else {
+            pane->hide();
+        }
+    }
+    state = {};
+}
+
+template <std::size_t N>
+void apply_hud_pane_group_hidden_state(J2DScreen* screen, const std::array<u64, N>& tags,
+    std::array<HudPaneVisibilityState, N>& states, const bool hidden) {
+    for (std::size_t i = 0; i < N; ++i) {
+        apply_hud_pane_hidden_state(
+            states[i], screen != nullptr ? screen->search(tags[i]) : nullptr, hidden);
+    }
+}
+
+void apply_dpad_detail_visibility(dMeter2Draw_c* meter) {
+    constexpr std::array<u64, 4> arrowTags = {
+        MULTI_CHAR('yaji_00'), MULTI_CHAR('yaji_01'),
+        MULTI_CHAR('yaji_02'), MULTI_CHAR('yaji_03'),
+    };
+    constexpr std::array<u64, 4> shadowTags = {
+        MULTI_CHAR('ju_ring1'), MULTI_CHAR('ju_ring2'),
+        MULTI_CHAR('ju_ring3'), MULTI_CHAR('ju_ring4'),
+    };
+
+    J2DScreen* screen = meter != nullptr ? meter->mpScreen : nullptr;
+    const bool custom = custom_hud_layout_enabled();
+    apply_hud_pane_group_hidden_state(
+        screen, arrowTags, s_dpadArrowVisibility, custom && hud_custom_dpad_hide_arrows());
+    apply_hud_pane_group_hidden_state(
+        screen, shadowTags, s_dpadShadowVisibility, custom && hud_custom_dpad_hide_shadows());
+}
+
 void apply_health_bar_layout(dMeter2Draw_c* meter) {
     if (meter == nullptr || meter->getMainScreenPtr() == nullptr ||
         meter->mpLifeParts[0] == nullptr || meter->mpLifeParts[1] == nullptr ||
@@ -1493,6 +1554,7 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     apply_hud_pane_transform(HudPaneSlot::DPad, meter->mpButtonCrossParent, enabled,
         dpadTransform.offset_x, dpadTransform.offset_y, dpadTransform.scale);
     apply_dpad_text_layout(meter);
+    apply_dpad_detail_visibility(meter);
     const DuskModHudTransform heartsTransform = hud_layout_hearts_transform();
     apply_hud_pane_transform(HudPaneSlot::Hearts, meter->mpLifeParent, enabled,
         heartsTransform.offset_x, heartsTransform.offset_y, heartsTransform.scale);
@@ -2872,6 +2934,7 @@ void after_meter_draw_button_cross(ModContext*, void* args, void*, void*) {
         hardcoded_hud_layout_enabled(), dpadTransform.offset_x, dpadTransform.offset_y,
         dpadTransform.scale);
     apply_dpad_text_layout(meter);
+    apply_dpad_detail_visibility(meter);
 }
 
 void after_meter_move_button_cross(ModContext*, void* args, void*, void*) {
@@ -3563,6 +3626,8 @@ ModResult install_item_slot_hooks(ModError* error) {
 
 void shutdown_item_slot_hooks() {
     clear_ring_z_prompt_refs();
+    s_dpadArrowVisibility = {};
+    s_dpadShadowVisibility = {};
 #if defined(__ANDROID__)
     s_zTouchDisplayButton = nullptr;
     s_zTouchMeterButton = nullptr;

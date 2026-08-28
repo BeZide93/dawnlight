@@ -58,10 +58,12 @@ add_mod(dawnlight_mod
         src/new_save_modes.cpp
         src/save_compat.cpp
         src/ui.cpp
-        src/update_check.cpp
+        src/update_service.cpp
     MOD_JSON mod.json
     RES_DIR res
 )
+
+target_compile_definitions(dawnlight_mod PRIVATE DAWNLIGHT_VERSION="${DAWNLIGHT_VER}")
 
 if(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS)
     target_include_directories(dawnlight_mod PRIVATE

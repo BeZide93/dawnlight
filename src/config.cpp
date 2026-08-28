@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "service_imports.hpp"
+#include "update_service.hpp"
 
 #include "mods/service.hpp"
 #include "mods/svc/config.h"
@@ -74,6 +75,13 @@ void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarVal
     toast.title_rml = "Z-Items";
     toast.body_rml = "Restart game after toggling Z-items";
     svc_ui->push_toast(ctx, &toast);
+}
+
+void on_check_for_updates_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
+    const ConfigVarValue*, void*) {
+    if (value != nullptr) {
+        g_configCheckForUpdatesEnabled = value->bool_value;
+    }
 }
 
 struct HudElementDefaults {
@@ -832,7 +840,15 @@ ModResult register_config(ModError* error) {
         }
     }
 
-    const ModResult subscribeResult =
+    g_configCheckForUpdatesEnabled = get_bool(s_checkForUpdates, true);
+    ModResult subscribeResult = svc_config->subscribe(
+        mod_ctx, s_checkForUpdates, on_check_for_updates_changed, nullptr, nullptr);
+    if (subscribeResult != MOD_OK) {
+        return mods::set_error(
+            error, subscribeResult, "failed to subscribe to Dawnlight update-check changes");
+    }
+
+    subscribeResult =
         svc_config->subscribe(mod_ctx, s_zItemSlot, on_z_item_slot_changed, nullptr, nullptr);
     if (subscribeResult != MOD_OK) {
         return mods::set_error(

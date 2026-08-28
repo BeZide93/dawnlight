@@ -2,7 +2,7 @@
 #include "config.hpp"
 #include "save_compat.hpp"
 #include "service_imports.hpp"
-#include "update_check.hpp"
+#include "update_service.hpp"
 
 #include "mods/service.hpp"
 #include "mods/svc/config.h"
@@ -75,6 +75,12 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::install_enemy_scaling_hooks(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::init_update_service(
+            svc_log, mod_ctx, svc_ui, svc_config, dawnlight::check_for_updates_config_var());
+        result != MOD_OK)
+    {
+        return result;
+    }
 
     svc_log->info(mod_ctx, "Dawnlight portable feature pack initialized");
     return MOD_OK;
@@ -82,14 +88,14 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
 
 MOD_EXPORT ModResult mod_update(ModError*) {
     dawnlight::bullet_time_tick();
-    dawnlight::update_check_tick();
+    dawnlight::update_update_service(svc_log, mod_ctx, svc_ui);
     return MOD_OK;
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_new_save_modes();
-    dawnlight::shutdown_update_check();
+    dawnlight::shutdown_update_service();
     dawnlight::shutdown_item_slot_hooks();
     svc_log->info(mod_ctx, "Dawnlight portable feature pack stopped");
     return MOD_OK;

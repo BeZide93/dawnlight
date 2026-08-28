@@ -42,6 +42,65 @@ On Android, the active data folder is the folder currently selected by
 Dusklight. If you changed it with `Change Data Folder`, create or use the
 `mods` folder inside that selected location.
 
+## Custom Boss Rush Hub Music
+
+Dawnlight can load custom music for the Garden of Twilight Boss Rush hub. The
+music is not included in `dawnlight_mod.dusk`; provide your own Nintendo AST
+file named exactly `temp.ast`.
+
+Place `temp.ast` next to `dawnlight_mod.dusk` in the active Dusklight mods
+directory:
+
+| OS | File path |
+| --- | --- |
+| Windows | `%APPDATA%\TwilitRealm\Dusklight\mods\temp.ast` |
+| Linux | `~/.local/share/TwilitRealm/Dusklight/mods/temp.ast` |
+| macOS | `~/Library/Application Support/TwilitRealm/Dusklight/mods/temp.ast` |
+| Android | `<active Dusklight data folder>/mods/temp.ast` |
+
+Restart Dusklight after adding or replacing the file. If `temp.ast` is absent
+or cannot be read, Boss Rush remains playable but the custom hub music is
+disabled. Only use audio that you have the right to use and distribute.
+
+### Creating the AST file
+
+[Nintendo AST Creator](https://github.com/gheskett/Nintendo-AST-Creator)
+converts 16-bit PCM WAV files to Nintendo AST. Prepare the source audio as a
+16-bit PCM WAV first; filenames passed to AST Creator should contain only ASCII
+characters.
+
+Create a looping file with loop boundaries expressed as sample positions:
+
+```powershell
+ASTCreate.exe music.wav -o temp.ast -s LOOP_START_SAMPLE -e LOOP_END_SAMPLE
+```
+
+Replace the two placeholders with the loop start and end samples. Then move
+the resulting `temp.ast` to the platform-specific path above.
+
+### Finding loop points
+
+The included [loop_analysis.py](loop_analysis.py) helper searches a 16-bit PCM
+WAV for musically repeating sections and refines the best candidate to
+sample-aligned, click-resistant boundaries. It requires Python 3 and NumPy:
+
+```powershell
+python -m pip install numpy
+python loop_analysis.py "music.wav"
+```
+
+The script prints several musical periods and a `Recommended sample-aligned
+boundary`. Use its `start` and `end` sample values with AST Creator's `-s` and
+`-e` arguments. To inspect a different period from the reported list, rerun it
+with the period length in seconds:
+
+```powershell
+python loop_analysis.py "music.wav" --period 123.4
+```
+
+The analysis is a starting point: listen across the resulting loop boundary
+before settling on the final AST file.
+
 ## HUD Editing
 
 Open `Mod Manager -> Dawnlight -> Open Dawnlight Settings -> HUD`.

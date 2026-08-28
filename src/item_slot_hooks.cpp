@@ -1169,6 +1169,31 @@ HudPaneTransformState& hud_pane_state(const HudPaneSlot slot) {
     return s_wiiUHudPaneTransforms[static_cast<std::size_t>(slot)];
 }
 
+void restore_applied_hud_pane_transform(const HudPaneSlot slot) {
+    HudPaneTransformState& state = hud_pane_state(slot);
+    J2DPane* pane = state.pane;
+    if (state.active && pane != nullptr &&
+        nearly_equal(pane->getTranslateX(), state.appliedX) &&
+        nearly_equal(pane->getTranslateY(), state.appliedY) &&
+        nearly_equal(pane->getScaleX(), state.appliedScaleX) &&
+        nearly_equal(pane->getScaleY(), state.appliedScaleY))
+    {
+        const f32 appliedScale = state.scale > 0.0f ? state.scale : 1.0f;
+        pane->translate(pane->getTranslateX() - state.offsetX,
+            pane->getTranslateY() - state.offsetY);
+        pane->scale(pane->getScaleX() / appliedScale,
+            pane->getScaleY() / appliedScale);
+    }
+    state = {};
+}
+
+void restore_shared_hud_layout_base() {
+    restore_applied_hud_pane_transform(HudPaneSlot::DPad);
+    restore_applied_hud_pane_transform(HudPaneSlot::DPadItemsText);
+    restore_applied_hud_pane_transform(HudPaneSlot::DPadMapText);
+    restore_applied_hud_pane_transform(HudPaneSlot::Hearts);
+}
+
 J2DPane* pane_ptr(CPaneMgrAlpha* pane) {
     return pane != nullptr ? pane->getPanePtr() : nullptr;
 }
@@ -2700,6 +2725,11 @@ void after_ring_draw(ModContext*, void* args, void*, void*) {
     draw_ring_z_prompt(mods::arg<dMenu_Ring_c*>(args, 0));
 }
 
+HookAction before_meter_draw_restore_shared_hud(ModContext*, void*, void*, void*) {
+    restore_shared_hud_layout_base();
+    return HOOK_CONTINUE;
+}
+
 HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
     if (z_item_slot_active()) {
@@ -3286,6 +3316,10 @@ ModResult add_hook(ModResult result, ModError* error) {
 ModResult install_item_slot_hooks(ModError* error) {
     s_zItemSlotSessionEnabled = z_item_slot_enabled();
 
+    HookOptions sharedHudRestoreOptions = HOOK_OPTIONS_INIT;
+    sharedHudRestoreOptions.priority = 100;
+    HookOptions sharedHudApplyOptions = HOOK_OPTIONS_INIT;
+    sharedHudApplyOptions.priority = -100;
     HookOptions minimapPreOptions = HOOK_OPTIONS_INIT;
     minimapPreOptions.priority = -100;
     HookOptions minimapPostOptions = HOOK_OPTIONS_INIT;
@@ -3312,7 +3346,12 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
 
     if (result == MOD_OK) {
-        result = mods::hook_add_pre<MeterDrawHook>(svc_hook, before_meter_draw);
+        result = mods::hook_add_pre<MeterDrawHook>(
+            svc_hook, before_meter_draw_restore_shared_hud, &sharedHudRestoreOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<MeterDrawHook>(
+            svc_hook, before_meter_draw, &sharedHudApplyOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawHook>(svc_hook, after_meter_draw);
@@ -3336,7 +3375,8 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_post<MeterDrawButtonCrossHook>(svc_hook, after_meter_draw_button_cross);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_post<MeterMoveButtonCrossHook>(svc_hook, after_meter_move_button_cross);
+        result = mods::hook_add_post<MeterMoveButtonCrossHook>(
+            svc_hook, after_meter_move_button_cross, &sharedHudApplyOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<MeterMapDrawHook>(

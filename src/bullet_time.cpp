@@ -35,6 +35,7 @@ constexpr auto kManualJumpTimeout = std::chrono::seconds(7);
 constexpr auto kColliderCacheEntries = std::size_t{256};
 constexpr auto kCollidersPerActor = std::size_t{64};
 constexpr auto kHitActorEntries = std::size_t{32};
+constexpr auto kArrowFlightEntries = std::size_t{8};
 constexpr std::uint64_t kHitExecuteGraceFrames = 6;
 
 #if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
@@ -60,6 +61,11 @@ struct HitActorEntry {
     std::uint64_t frame = 0;
 };
 
+struct ArrowFlightEntry {
+    daArrow_c* arrow = nullptr;
+    u16 actorId = 0;
+};
+
 struct LinkPositionStep {
     daAlink_c* link = nullptr;
     cXyz startPosition{};
@@ -72,6 +78,7 @@ Clock::time_point s_manualJumpStarted{};
 Clock::time_point s_bulletTimeStarted{};
 std::array<ColliderCacheEntry, kColliderCacheEntries> s_colliderCache{};
 std::array<HitActorEntry, kHitActorEntries> s_hitActors{};
+std::array<ArrowFlightEntry, kArrowFlightEntries> s_flyingArrows{};
 std::array<fopAc_ac_c*, 8> s_actorExecuteStack{};
 std::size_t s_actorExecuteDepth = 0;
 std::uint64_t s_slowFrame = 0;
@@ -85,6 +92,7 @@ LinkPositionStep s_linkPositionStep{};
 void clear_combat_time_caches() {
     s_colliderCache = {};
     s_hitActors = {};
+    s_flyingArrows = {};
     s_slowFrame = 0;
 }
 
@@ -230,12 +238,49 @@ void mark_actor_hit(fopAc_ac_c* actor) {
     oldest->frame = s_slowFrame;
 }
 
+bool arrow_flight_was_initialized(daArrow_c* arrow) {
+    if (arrow == nullptr) {
+        return false;
+    }
+
+    if (arrow->checkWait()) {
+        for (ArrowFlightEntry& entry : s_flyingArrows) {
+            if (entry.arrow == arrow) {
+                entry = {};
+            }
+        }
+        return false;
+    }
+
+    ArrowFlightEntry* freeEntry = nullptr;
+    for (ArrowFlightEntry& entry : s_flyingArrows) {
+        if (entry.arrow == arrow) {
+            if (entry.actorId == arrow->setID) {
+                return true;
+            }
+            entry = {};
+        }
+        if (entry.arrow == nullptr && freeEntry == nullptr) {
+            freeEntry = &entry;
+        }
+    }
+
+    if (freeEntry == nullptr) {
+        freeEntry = &s_flyingArrows.front();
+    }
+    *freeEntry = {.arrow = arrow, .actorId = arrow->setID};
+    return false;
+}
+
 bool should_skip_actor(fopAc_ac_c* actor) {
     if (!s_bulletTimeActive || actor == nullptr) {
         return false;
     }
 
     if (fopAcM_GetName(actor) == fpcNm_ARROW_e) {
+        if (!arrow_flight_was_initialized(static_cast<daArrow_c*>(actor))) {
+            return false;
+        }
         return s_slowFrame % kArrowSlowFrameInterval != 0;
     }
 

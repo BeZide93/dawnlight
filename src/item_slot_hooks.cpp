@@ -1184,21 +1184,29 @@ HudPaneTransformState& hud_pane_state(const HudPaneSlot slot) {
     return s_wiiUHudPaneTransforms[static_cast<std::size_t>(slot)];
 }
 
-void restore_applied_hud_pane_transform(const HudPaneSlot slot) {
-    HudPaneTransformState& state = hud_pane_state(slot);
-    J2DPane* pane = state.pane;
-    if (state.active && pane != nullptr &&
-        nearly_equal(pane->getTranslateX(), state.appliedX) &&
-        nearly_equal(pane->getTranslateY(), state.appliedY) &&
-        nearly_equal(pane->getScaleX(), state.appliedScaleX) &&
+void remove_applied_hud_pane_transform(HudPaneTransformState& state, J2DPane* pane) {
+    if (!state.active || state.pane != pane || pane == nullptr) {
+        return;
+    }
+
+    if (nearly_equal(pane->getTranslateX(), state.appliedX) &&
+        nearly_equal(pane->getTranslateY(), state.appliedY))
+    {
+        pane->translate(pane->getTranslateX() - state.offsetX,
+            pane->getTranslateY() - state.offsetY);
+    }
+    if (nearly_equal(pane->getScaleX(), state.appliedScaleX) &&
         nearly_equal(pane->getScaleY(), state.appliedScaleY))
     {
         const f32 appliedScale = state.scale > 0.0f ? state.scale : 1.0f;
-        pane->translate(pane->getTranslateX() - state.offsetX,
-            pane->getTranslateY() - state.offsetY);
         pane->scale(pane->getScaleX() / appliedScale,
             pane->getScaleY() / appliedScale);
     }
+}
+
+void restore_applied_hud_pane_transform(const HudPaneSlot slot) {
+    HudPaneTransformState& state = hud_pane_state(slot);
+    remove_applied_hud_pane_transform(state, state.pane);
     state = {};
 }
 
@@ -1295,17 +1303,7 @@ void apply_hud_pane_transform(HudPaneTransformState& state, J2DPane* pane, const
         return;
     }
 
-    if (state.active && state.pane == pane &&
-        nearly_equal(pane->getTranslateX(), state.appliedX) &&
-        nearly_equal(pane->getTranslateY(), state.appliedY) &&
-        nearly_equal(pane->getScaleX(), state.appliedScaleX) &&
-        nearly_equal(pane->getScaleY(), state.appliedScaleY))
-    {
-        const f32 appliedScale = state.scale > 0.0f ? state.scale : 1.0f;
-        pane->translate(pane->getTranslateX() - state.offsetX,
-            pane->getTranslateY() - state.offsetY);
-        pane->scale(pane->getScaleX() / appliedScale, pane->getScaleY() / appliedScale);
-    }
+    remove_applied_hud_pane_transform(state, pane);
 
     if (!enabled) {
         state = {};

@@ -106,6 +106,7 @@ constexpr uint16_t kMidnaMenuPromptEntry = 3003;
 constexpr uint16_t kMidnaMenuPromptId = 2042;
 constexpr u32 kHyruleCastlePlaceNameMessageId = 1109;
 constexpr int kBossRushHubBannerFallbackDelay = 30;
+constexpr u32 kBossRushHubMusicId = 0x0200007F;
 
 constexpr std::array kAllLanguages{
     MESSAGE_LANGUAGE_ENGLISH,
@@ -338,6 +339,7 @@ mods::flow::RegisteredMessage sBossRushHubBannerMessage;
 MessageId sBossRushHubBannerMessageId = 0;
 bool sBossRushHubBannerShown = false;
 int sBossRushHubBannerFrames = 0;
+bool sBossRushHubMusicStarted = false;
 
 void reset_bossrush_hub_banner_state();
 
@@ -720,6 +722,8 @@ void reset_hub_actor_ids() {
 
 void ensure_hub_actor_ids_initialized();
 void arm_ganondorf_barrier(obj_gb_class* barrier);
+void start_bossrush_hub_music();
+void stop_bossrush_hub_music();
 
 void delete_hub_actor(fpc_ProcID id) {
     if (id != fpcM_ERROR_PROCESS_ID_e && fopAcM_SearchByID(id) != NULL) {
@@ -760,6 +764,7 @@ obj_gb_class* hub_barrier_actor() {
 }
 
 void spawn_hub_actors() {
+    start_bossrush_hub_music();
     ensure_hub_actor_ids_initialized();
     if (sHubActorsSpawned) {
         bool actorsAlive = sHubBarrierId != fpcM_ERROR_PROCESS_ID_e &&
@@ -882,6 +887,7 @@ void set_hub_portal_red_state(daObjBossWarp_c* warp) {
 
 void reset_hub_runtime_when_away() {
     if (boss_rush_state() != kBossRushStateHub || !is_boss_hub_stage_name()) {
+        stop_bossrush_hub_music();
         reset_bossrush_hub_banner_state();
     }
 
@@ -1681,6 +1687,36 @@ void reset_bossrush_warp_audio() {
     seqMgr->setBattleBgmOff(true);
     seqMgr->resetBattleBgmParams();
     seqMgr->bgmAllUnMute(0);
+}
+
+void stop_bossrush_hub_music() {
+    Z2AudioMgr* audioMgr = Z2GetAudioMgr();
+    if (sBossRushHubMusicStarted && audioMgr != NULL &&
+        audioMgr->getStreamBgmID() == kBossRushHubMusicId)
+    {
+        audioMgr->bgmStreamStop(30);
+    }
+    sBossRushHubMusicStarted = false;
+}
+
+void start_bossrush_hub_music() {
+    Z2AudioMgr* audioMgr = Z2GetAudioMgr();
+    if (audioMgr == NULL) {
+        return;
+    }
+    if (sBossRushHubMusicStarted) {
+        if (audioMgr->getStreamBgmID() == kBossRushHubMusicId) {
+            audioMgr->bgmStreamPlay();
+            return;
+        }
+        sBossRushHubMusicStarted = false;
+    }
+
+    // D_MN09C preloads stream 0x7F, so re-prepare it to play the overlay replacement.
+    audioMgr->bgmStop(0, 0);
+    audioMgr->bgmStreamPrepare(kBossRushHubMusicId);
+    audioMgr->bgmStreamPlay();
+    sBossRushHubMusicStarted = true;
 }
 
 void prepare_midna_hub_warp_item() {
@@ -3715,6 +3751,7 @@ HookAction on_ganondorf_barrier_execute_pre(ModContext*, void* args, void*, void
 }
 
 void reset_bossrush_runtime_state(bool deleteActors) {
+    stop_bossrush_hub_music();
     sAdvancePending = false;
     sSavePromptId = fpcM_ERROR_PROCESS_ID_e;
     clear_hub_confirm_state();
@@ -4014,6 +4051,7 @@ void shutdown_new_save_modes() {
     }
     unregister_bossrush_hub_banner();
     unregister_bossrush_title_logo();
+    stop_bossrush_hub_music();
     sBossRushGameModeActive = false;
 }
 

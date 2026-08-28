@@ -61,6 +61,7 @@ add_mod(dawnlight_mod
         src/update_service.cpp
     MOD_JSON mod.json
     RES_DIR res
+    OVERLAY_DIR overlay
 )
 
 target_compile_definitions(dawnlight_mod PRIVATE DAWNLIGHT_VERSION="${DAWNLIGHT_VER}")

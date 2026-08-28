@@ -33,6 +33,7 @@ class JPABaseEmitter;
 #include "d/d_s_name.h"
 #include "d/d_save.h"
 #include "d/d_stage.h"
+#include "f_op/f_op_msg_mng.h"
 #include "f_op/f_op_overlap_mng.h"
 #include "f_pc/f_pc_name.h"
 #include "mods/hook.hpp"
@@ -62,6 +63,7 @@ DEFINE_HOOK(
         &dComIfGp_setNextStage),
     SetNextStageHook);
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
+DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
 DEFINE_HOOK(&daAlink_c::dungeonReturnWarp, DungeonReturnWarpHook);
@@ -102,6 +104,8 @@ constexpr uint16_t kMidnaNoWarpPromptAId = 0x07d3;
 constexpr uint16_t kMidnaNoWarpPromptBId = 0x07f6;
 constexpr uint16_t kMidnaMenuPromptEntry = 3003;
 constexpr uint16_t kMidnaMenuPromptId = 2042;
+constexpr u32 kHyruleCastlePlaceNameMessageId = 1109;
+constexpr int kBossRushHubBannerFallbackDelay = 30;
 
 constexpr std::array kAllLanguages{
     MESSAGE_LANGUAGE_ENGLISH,
@@ -117,6 +121,10 @@ constexpr mods::flow::MessageStyle kMidnaMessageStyle =
     mods::flow::MessageStyle{}.speaker(kMidnaSpeaker).box_kind(MESSAGE_BOX_MIDNA);
 constexpr mods::flow::MessageStyle kMidnaChoiceStyle =
     kMidnaMessageStyle.draw_type(MESSAGE_DRAW_INSTANT).talk_anim(31).face_anim(31);
+constexpr mods::flow::MessageStyle kBossRushHubBannerStyle =
+    mods::flow::MessageStyle{}
+        .box_kind(MESSAGE_BOX_PLACE_NAME)
+        .draw_type(MESSAGE_DRAW_INSTANT);
 
 enum class MidnaRootFlowMode {
     None,
@@ -324,6 +332,12 @@ u32 sBossRushTriangleWave = 0;
 bool sBossRushGameModeActive = false;
 bool sBossRushHooksInstalled = false;
 TextureReplacementHandle sBossRushTitleLogoTexture = 0;
+mods::flow::RegisteredMessage sBossRushHubBannerMessage;
+MessageId sBossRushHubBannerMessageId = 0;
+bool sBossRushHubBannerShown = false;
+int sBossRushHubBannerFrames = 0;
+
+void reset_bossrush_hub_banner_state();
 
 struct BossRushElectricOrb {
     bool active = false;
@@ -865,6 +879,10 @@ void set_hub_portal_red_state(daObjBossWarp_c* warp) {
 }
 
 void reset_hub_runtime_when_away() {
+    if (boss_rush_state() != kBossRushStateHub || !is_boss_hub_stage_name()) {
+        reset_bossrush_hub_banner_state();
+    }
+
     if (!is_boss_hub_stage_name()) {
         sHubActorsSpawned = false;
         sHubPortalsArmed = false;
@@ -1832,6 +1850,71 @@ mods::flow::RegisteredMessage register_midna_message(const mods::flow::MessageBu
     return mods::flow::register_message(kMessageGroup, variants);
 }
 
+void reset_bossrush_hub_banner_state() {
+    sBossRushHubBannerShown = false;
+    sBossRushHubBannerFrames = 0;
+}
+
+ModResult register_bossrush_hub_banner(ModError* error) {
+    if (sBossRushHubBannerMessageId != 0) {
+        return MOD_OK;
+    }
+
+    auto message = register_midna_message(mods::flow::MessageBuilder{kBossRushHubBannerStyle}
+            .text("Garden of Twilight")
+            .auto_advance(60));
+    if (!message) {
+        return mods::set_error(error, message.result(),
+            "failed to register Dawnlight Boss Rush hub banner");
+    }
+
+    sBossRushHubBannerMessageId = message.id();
+    sBossRushHubBannerMessage = std::move(message);
+    reset_bossrush_hub_banner_state();
+    return MOD_OK;
+}
+
+void unregister_bossrush_hub_banner() {
+    sBossRushHubBannerMessage.reset();
+    sBossRushHubBannerMessageId = 0;
+    reset_bossrush_hub_banner_state();
+}
+
+HookAction on_message_set_demo_pre(ModContext*, void* args, void*, void*) {
+    if (args != nullptr && sBossRushHubBannerMessageId != 0 && is_bossrush_hub_active() &&
+        mods::arg<u32>(args, 0) == kHyruleCastlePlaceNameMessageId)
+    {
+        mods::arg_ref<u32>(args, 0) = sBossRushHubBannerMessageId;
+    }
+    return HOOK_CONTINUE;
+}
+
+void on_message_set_demo_post(ModContext*, void* args, void* retval, void*) {
+    if (args != nullptr && retval != nullptr && sBossRushHubBannerMessageId != 0 &&
+        mods::arg<u32>(args, 0) == sBossRushHubBannerMessageId &&
+        *static_cast<fpc_ProcID*>(retval) != 0)
+    {
+        sBossRushHubBannerShown = true;
+    }
+}
+
+void update_bossrush_hub_banner() {
+    if (sBossRushHubBannerShown || sBossRushHubBannerMessageId == 0) {
+        return;
+    }
+
+    if (++sBossRushHubBannerFrames < kBossRushHubBannerFallbackDelay ||
+        dComIfGp_event_runCheck() || fopOvlpM_IsPeek() || dComIfGp_isEnableNextStage() ||
+        dComIfGp_isPauseFlag() || ui_document_visible())
+    {
+        return;
+    }
+
+    if (fopMsgM_messageSetDemo(sBossRushHubBannerMessageId) != 0) {
+        sBossRushHubBannerShown = true;
+    }
+}
+
 ModResult add_midna_message(const mods::flow::MessageBuilder& builder, MessageId& outId) {
     auto message = register_midna_message(builder);
     if (!message) {
@@ -2681,6 +2764,7 @@ void update_bossrush_hub() {
         return;
     }
 
+    update_bossrush_hub_banner();
     spawn_hub_actors();
     arm_ganondorf_barrier(hub_barrier_actor());
 
@@ -3289,9 +3373,16 @@ ModResult activate_bossrush_runtime(ModError* error, bool resetRuntime) {
         reset_bossrush_runtime_state(false);
     }
 
-    const ModResult result = install_bossrush_runtime_hooks(error);
+    ModResult result = register_bossrush_hub_banner(error);
     if (result != MOD_OK) {
         sBossRushGameModeActive = false;
+        return result;
+    }
+
+    result = install_bossrush_runtime_hooks(error);
+    if (result != MOD_OK) {
+        sBossRushGameModeActive = false;
+        unregister_bossrush_hub_banner();
     }
     return result;
 }
@@ -3593,6 +3684,7 @@ void reset_bossrush_runtime_state(bool deleteActors) {
     clear_hub_confirm_state();
     clear_pending_midna_flow_action();
     sCaveOfOrdealsWarpPending = false;
+    reset_bossrush_hub_banner_state();
     if (deleteActors) {
         delete_hub_actors();
     } else {
@@ -3610,6 +3702,15 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
     ModResult result = mods::hook_add_pre<StageChangeSceneHook>(svc_hook, on_stage_change_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush scene hook");
+    }
+
+    result = mods::hook_add_pre<MessageSetDemoHook>(svc_hook, on_message_set_demo_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight hub banner hook");
+    }
+    result = mods::hook_add_post<MessageSetDemoHook>(svc_hook, on_message_set_demo_post);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight hub banner result hook");
     }
 
     result = mods::hook_add_pre<BossWarpExecuteHook>(svc_hook, on_bosswarp_execute_pre);
@@ -3676,6 +3777,12 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
 
     if (const ModResult result = uninstall_bossrush_hook<StageChangeSceneHook>(
             error, "failed to uninstall Dawnlight Boss Rush scene hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<MessageSetDemoHook>(
+            error, "failed to uninstall Dawnlight hub banner hook");
         result != MOD_OK)
     {
         return result;
@@ -3772,6 +3879,7 @@ ModResult on_bossrush_game_mode_deactivated(void*, ModError* error) {
     sBossRushGameModeActive = false;
     reset_bossrush_runtime_state(true);
     const ModResult result = uninstall_bossrush_runtime_hooks(error);
+    unregister_bossrush_hub_banner();
     unregister_bossrush_title_logo();
     return result;
 }
@@ -3867,6 +3975,7 @@ void shutdown_new_save_modes() {
     if (result != MOD_OK) {
         svc_log->warn(mod_ctx, "Dawnlight Boss Rush: failed to uninstall runtime hooks");
     }
+    unregister_bossrush_hub_banner();
     unregister_bossrush_title_logo();
     sBossRushGameModeActive = false;
 }

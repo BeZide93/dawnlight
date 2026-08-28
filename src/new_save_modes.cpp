@@ -205,6 +205,7 @@ constexpr const char* kCaveOfOrdealsName = "Cave of Ordeals";
 constexpr s16 kCaveOfOrdealsPoint = 0;
 constexpr s8 kCaveOfOrdealsRoom = 0;
 constexpr s8 kCaveOfOrdealsLayer = -1;
+constexpr u16 kCaveOfOrdealsWarpFallbackFrames = 60;
 constexpr f32 kBossRushRedPortalBrkFrameFraction = 0.2f;
 constexpr s16 kGanondorfFacingAngle = 0x37FE;
 constexpr s8 kFinalPuppetRoom = 50;
@@ -270,6 +271,7 @@ bool sDirectFinalGanondorfStarted = false;
 int sDirectFinalGanondorfReadyFrames = 0;
 bool sDirectFinalSceneTransitionStarted = false;
 bool sCaveOfOrdealsWarpPending = false;
+u16 sCaveOfOrdealsWarpFrames = 0;
 bool sHubActorIdsInitialized = false;
 bool sHubActorsSpawned = false;
 bool sHubPortalsArmed = false;
@@ -1737,11 +1739,13 @@ void start_cave_of_ordeals_warp() {
 
     daAlink_c* player = daAlink_getAlinkActorClass();
     sCaveOfOrdealsWarpPending = true;
+    sCaveOfOrdealsWarpFrames = 0;
     if (player != nullptr && player->procDungeonWarpInit()) {
         return;
     }
 
     sCaveOfOrdealsWarpPending = false;
+    sCaveOfOrdealsWarpFrames = 0;
     dComIfGp_setNextStage(
         kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom, kCaveOfOrdealsLayer);
 }
@@ -1825,6 +1829,13 @@ bool process_pending_midna_flow_action() {
         return true;
     }
 
+    if (sPendingMidnaFlowAction == PendingMidnaFlowAction::HubPortal &&
+        sPendingMidnaFlowPortal == kBossRushCavePortalIndex && dComIfGp_event_runCheck())
+    {
+        close_midna_custom_dialog(daPy_py_c::getMidnaActor());
+        return true;
+    }
+
     const PendingMidnaFlowAction action = sPendingMidnaFlowAction;
     const int portal = sPendingMidnaFlowPortal;
     clear_pending_midna_flow_action();
@@ -1839,6 +1850,27 @@ bool process_pending_midna_flow_action() {
     }
 
     return true;
+}
+
+void update_cave_of_ordeals_warp() {
+    if (!sCaveOfOrdealsWarpPending) {
+        return;
+    }
+
+    if (dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek()) {
+        sCaveOfOrdealsWarpPending = false;
+        sCaveOfOrdealsWarpFrames = 0;
+        return;
+    }
+
+    if (++sCaveOfOrdealsWarpFrames < kCaveOfOrdealsWarpFallbackFrames) {
+        return;
+    }
+
+    sCaveOfOrdealsWarpPending = false;
+    sCaveOfOrdealsWarpFrames = 0;
+    dComIfGp_setNextStage(kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom,
+        kCaveOfOrdealsLayer, 0.0f, 12, 0, 0, 0, 1, 0);
 }
 
 mods::flow::RegisteredMessage register_midna_message(const mods::flow::MessageBuilder& builder) {
@@ -3248,6 +3280,7 @@ void update_bossrush() {
         reset_hub_runtime_when_away();
         reset_direct_final_boss_state();
         reset_bossrush_hazards();
+        update_cave_of_ordeals_warp();
         if (!sCaveOfOrdealsWarpPending) {
             refresh_midna_root_flow_mode();
         }
@@ -3623,6 +3656,7 @@ HookAction on_dungeon_return_warp_pre(ModContext*, void*, void*, void*) {
     }
 
     sCaveOfOrdealsWarpPending = false;
+    sCaveOfOrdealsWarpFrames = 0;
     dComIfGp_setNextStage(kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom,
         kCaveOfOrdealsLayer, 0.0f, 12, 0, 0, 0, 1, 0);
     return HOOK_SKIP_ORIGINAL;
@@ -3684,6 +3718,7 @@ void reset_bossrush_runtime_state(bool deleteActors) {
     clear_hub_confirm_state();
     clear_pending_midna_flow_action();
     sCaveOfOrdealsWarpPending = false;
+    sCaveOfOrdealsWarpFrames = 0;
     reset_bossrush_hub_banner_state();
     if (deleteActors) {
         delete_hub_actors();

@@ -415,6 +415,23 @@ void draw_camera_center_sight(daAlink_c* link) {
     remember_custom_cinema_sight();
 }
 
+void draw_bow_trajectory_sight(daAlink_c* link) {
+    if (link == nullptr) {
+        return;
+    }
+
+    f32 distance;
+    f32 speed;
+    link->getArrowFlyData(&distance, &speed, TRUE);
+
+    cXyz position;
+    link->checkSightLine(distance, &position);
+    link->mSight.setPos(&position);
+    link->mSight.onDrawFlg();
+    link->mSight.offLockFlg();
+    remember_custom_cinema_sight();
+}
+
 void draw_subject_sight(daAlink_c* link, AimItem item) {
     switch (item) {
     case AimItem::Bow:
@@ -740,19 +757,25 @@ bool player_in_supported_aim_state(dCamera_c* camera) {
 
 void after_camera_run(ModContext*, void* args, void*, void*) {
     auto* camera = mods::arg<dCamera_c*>(args, 0);
+    auto* link = daAlink_getAlinkActorClass();
     if (camera == nullptr || !use_cinema_camera() || !player_in_supported_aim_state(camera) ||
-        is_hawkeye_bow(daAlink_getAlinkActorClass()))
+        is_hawkeye_bow(link))
     {
         return;
     }
 
     const int zoomPercent = cinema_zoom_percent();
-    if (zoomPercent == 100) {
-        return;
+    if (zoomPercent != 100) {
+        const float zoom = std::clamp(static_cast<float>(zoomPercent) / 100.0f, 0.25f, 4.0f);
+        camera->mFovy = std::clamp(camera->mFovy / zoom, 10.0f, 120.0f);
     }
 
-    const float zoom = std::clamp(static_cast<float>(zoomPercent) / 100.0f, 0.25f, 4.0f);
-    camera->mFovy = std::clamp(camera->mFovy / zoom, 10.0f, 120.0f);
+    if (s_customCinemaSightActive &&
+        dComIfGp_checkPlayerStatus0(camera->mPadID, 0x1000) &&
+        should_keep_cinema_bow_sight(link))
+    {
+        draw_bow_trajectory_sight(link);
+    }
 }
 
 void after_camera_next_mode(ModContext*, void* args, void* retval, void*) {

@@ -1181,6 +1181,7 @@ void set_saved_dungeon_switch(int saveTable, int sw, bool enabled) {
 
 void ensure_bossrush_story_state() {
     dComIfGs_onEventBit(dSv_event_flag_c::F_0250);
+    dComIfGs_onEventBit(dSv_event_flag_c::M_010);
 }
 
 void grant_bossrush_items() {
@@ -3394,6 +3395,7 @@ void prepare_bossrush_start() {
         return;
     }
 
+    ensure_bossrush_story_state();
     save->getPlayer().getPlayerReturnPlace().set(kBossRushReturnStage, kBossRushReturnRoom, 0);
 }
 

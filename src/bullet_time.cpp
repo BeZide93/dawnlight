@@ -28,6 +28,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 constexpr std::uint64_t kSlowFrameInterval = 4;
+constexpr std::uint64_t kArrowSlowFrameInterval = 5;
 constexpr float kLinkTimeScale = 0.1f;
 constexpr auto kBulletTimeDuration = std::chrono::seconds(5);
 constexpr auto kManualJumpTimeout = std::chrono::seconds(7);
@@ -230,7 +231,15 @@ void mark_actor_hit(fopAc_ac_c* actor) {
 }
 
 bool should_skip_actor(fopAc_ac_c* actor) {
-    return s_bulletTimeActive && !actor_is_exempt(actor) && !actor_has_hit_grace(actor) &&
+    if (!s_bulletTimeActive || actor == nullptr) {
+        return false;
+    }
+
+    if (fopAcM_GetName(actor) == fpcNm_ARROW_e) {
+        return s_slowFrame % kArrowSlowFrameInterval != 0;
+    }
+
+    return !actor_is_exempt(actor) && !actor_has_hit_grace(actor) &&
            s_slowFrame % kSlowFrameInterval != 0;
 }
 

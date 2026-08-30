@@ -42,6 +42,12 @@ On Android, the active data folder is the folder currently selected by
 Dusklight. If you changed it with `Change Data Folder`, create or use the
 `mods` folder inside that selected location.
 
+## Compatibility
+
+See [COMPATIBILITY.md](COMPATIBILITY.md) for tested Twilit Essentials and
+Twilight HD HUD versions, compatible Z-item settings, and details about the
+Android-only `Dawnlight Touch UI` option.
+
 ## Custom Boss Rush Hub Music
 
 Dawnlight can load custom music for the Garden of Twilight Boss Rush hub. The

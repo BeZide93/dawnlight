@@ -36,6 +36,7 @@ ConfigVarHandle s_bulletTime = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
 ConfigVarHandle s_zItemSlot = 0;
+ConfigVarHandle s_dawnlightTouchUi = 0;
 ConfigVarHandle s_checkForUpdates = 0;
 ConfigVarHandle s_bossrushHardmodeHazards = 0;
 ConfigVarHandle s_hudLayout = 0;
@@ -74,6 +75,14 @@ void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarVal
     UiToastDesc toast = UI_TOAST_DESC_INIT;
     toast.title_rml = "Z-Items";
     toast.body_rml = "Restart game after toggling Z-items";
+    svc_ui->push_toast(ctx, &toast);
+}
+
+void on_dawnlight_touch_ui_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
+    const ConfigVarValue*, void*) {
+    UiToastDesc toast = UI_TOAST_DESC_INIT;
+    toast.title_rml = "Dawnlight Touch UI";
+    toast.body_rml = "Restart game after toggling Dawnlight Touch UI";
     svc_ui->push_toast(ctx, &toast);
 }
 
@@ -781,6 +790,7 @@ ModResult register_config(ModError* error) {
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
+        register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
         register_bool("check-for-updates", true, s_checkForUpdates) != MOD_OK ||
         register_bool("bossrush-hardmode-hazards", false, s_bossrushHardmodeHazards) != MOD_OK ||
         register_int("hud-layout", static_cast<int64_t>(HudLayout::GameCube), s_hudLayout) !=
@@ -854,6 +864,13 @@ ModResult register_config(ModError* error) {
         return mods::set_error(
             error, subscribeResult, "failed to subscribe to Dawnlight Z-Items changes");
     }
+
+    subscribeResult = svc_config->subscribe(
+        mod_ctx, s_dawnlightTouchUi, on_dawnlight_touch_ui_changed, nullptr, nullptr);
+    if (subscribeResult != MOD_OK) {
+        return mods::set_error(error, subscribeResult,
+            "failed to subscribe to Dawnlight Touch UI changes");
+    }
     return MOD_OK;
 }
 
@@ -915,6 +932,10 @@ bool r_jump_enabled() {
 
 bool z_item_slot_enabled() {
     return get_bool(s_zItemSlot, true);
+}
+
+bool dawnlight_touch_ui_enabled() {
+    return get_bool(s_dawnlightTouchUi, true);
 }
 
 bool check_for_updates_enabled() {
@@ -1108,6 +1129,10 @@ ConfigVarHandle r_jump_config_var() {
 
 ConfigVarHandle z_item_slot_config_var() {
     return s_zItemSlot;
+}
+
+ConfigVarHandle dawnlight_touch_ui_config_var() {
+    return s_dawnlightTouchUi;
 }
 
 ConfigVarHandle check_for_updates_config_var() {

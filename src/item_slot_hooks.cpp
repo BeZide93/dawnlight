@@ -111,6 +111,7 @@ DEFINE_HOOK(&daAlink_c::checkItemSetButton, CheckItemSetButtonHook);
 DEFINE_HOOK(&daAlink_c::setHeavyBoots, SetHeavyBootsHook);
 DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
 #if defined(__ANDROID__)
+DEFINE_HOOK(&PADSetVirtualStatus, PadSetVirtualStatusHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_action_bar_stateEv",
     void(dusk::ui::TouchControls*), TouchSyncActionBarHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_control_displaysEv",
@@ -148,6 +149,7 @@ struct RingZButtonPrompt {
 
 RingZButtonPrompt s_ringZPrompt;
 bool s_zItemSlotSessionEnabled = false;
+bool s_dawnlightTouchUiSessionEnabled = false;
 alignas(32) u8 s_zHudItemTexBuf[2][2][0xC00];
 u8 s_zHudItemTexPage = 0;
 u8 s_zHudLastItem = dItemNo_NONE_e;
@@ -161,6 +163,8 @@ u8 s_zHeavyBootsGuardFrames = 0;
 bool s_dpadLeftHeld = false;
 bool s_dpadLeftTrig = false;
 bool s_touchMidnaTrig = false;
+bool s_touchZItemHeld = false;
+bool s_touchZItemTrig = false;
 u8 s_touchMidnaBlockStartFrames = 0;
 bool s_inTouchActionBarSync = false;
 u8 s_touchActionBarHiddenCall = 0;
@@ -193,6 +197,10 @@ bool s_inTouchControlDisplaySync = false;
 
 bool z_item_slot_active() {
     return s_zItemSlotSessionEnabled;
+}
+
+bool dawnlight_touch_ui_active() {
+    return s_dawnlightTouchUiSessionEnabled;
 }
 
 struct ZPromptVisualState {
@@ -605,7 +613,7 @@ bool midna_touch_available() {
 }
 
 bool skip_touch_can_be_midna() {
-    return z_item_slot_active() && !cutscene_skip_touch_visible() &&
+    return dawnlight_touch_ui_active() && !cutscene_skip_touch_visible() &&
            !touch_midna_controls_suppressed() && midna_touch_available() &&
            dComIfGp_getLinkPlayer() != nullptr;
 }
@@ -737,7 +745,7 @@ void set_skip_touch_hidden(Rml::Element* element, const bool hidden) {
 void sync_skip_touch_midna_button(Rml::Element* element) {
     const std::string source = true_midna_icon_source();
     if (element == s_skipTouchElement && s_skipTouchMidnaMode &&
-        (!s_skipTouchMidnaSource.empty() || source == s_skipTouchMidnaSource))
+        source == s_skipTouchMidnaSource)
     {
         return;
     }
@@ -2213,8 +2221,6 @@ void move_midna_hud_to_dpad(dMeter2Draw_c* meter) {
         return;
     }
 
-    refresh_midna_touch_icon_texture(midnaPane);
-
     if (z_item_menu_or_pause_context() || !midna_unlocked()) {
         set_pane_tree_alpha_visible(midnaPane, false, 0);
         return;
@@ -2778,20 +2784,45 @@ void after_set_select_item(ModContext*, void* args, void*, void*) {
 }
 
 void after_pad_read(ModContext*, void*, void*, void*) {
-    if (!z_item_slot_active()) {
+    const bool zItemsActive = z_item_slot_active();
+    const bool touchUiActive = dawnlight_touch_ui_active();
+    if (!zItemsActive && !touchUiActive) {
         s_dpadLeftHeld = false;
         s_dpadLeftTrig = false;
         s_touchMidnaTrig = false;
+        s_touchZItemHeld = false;
+        s_touchZItemTrig = false;
         s_skipTouchMidnaPressed = false;
         s_touchMidnaBlockStartFrames = 0;
         return;
     }
 
     interface_of_controller_pad& pad = mDoCPd_c::getCpadInfo(PAD_1);
-    if (s_touchMidnaBlockStartFrames != 0) {
+    if (touchUiActive && s_touchMidnaBlockStartFrames != 0) {
         pad.mButtonFlags &= ~PAD_BUTTON_START;
         pad.mPressedButtonFlags &= ~PAD_BUTTON_START;
         --s_touchMidnaBlockStartFrames;
+    }
+
+    if (touchUiActive && s_touchZItemHeld && dComIfGp_getLinkPlayer() != nullptr &&
+        daAlink_getAlinkActorClass() != nullptr)
+    {
+        pad.mButtonFlags |= PAD_TRIGGER_Z;
+        if (s_touchZItemTrig) {
+            pad.mPressedButtonFlags |= PAD_TRIGGER_Z;
+        }
+    }
+    s_touchZItemTrig = false;
+
+    if (!zItemsActive) {
+        s_dpadLeftHeld = false;
+        s_dpadLeftTrig = false;
+        if (dComIfGp_getLinkPlayer() == nullptr || daAlink_getAlinkActorClass() == nullptr ||
+            z_item_menu_or_pause_context())
+        {
+            s_touchMidnaTrig = false;
+        }
+        return;
     }
 
     if (dComIfGp_getLinkPlayer() == nullptr || daAlink_getAlinkActorClass() == nullptr ||
@@ -2920,7 +2951,14 @@ void after_meter_gauge_screen(ModContext*, void*, void*, void*) {
 }
 
 void after_meter_midna_alpha(ModContext*, void* args, void*, void*) {
-    move_midna_hud_to_dpad(mods::arg<dMeter2Draw_c*>(args, 0));
+    auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
+    if (dawnlight_touch_ui_active() && meter != nullptr && meter->mpScreen != nullptr) {
+        refresh_midna_touch_icon_texture(
+            meter->mpScreen->search(MULTI_CHAR('midona_n')));
+    }
+    if (z_item_slot_active()) {
+        move_midna_hud_to_dpad(meter);
+    }
 }
 
 void after_meter_draw_button_cross(ModContext*, void* args, void*, void*) {
@@ -3018,12 +3056,24 @@ HookAction before_ring_is_mix_item_off(ModContext*, void* args, void* retval, vo
 
 HookAction before_midna_talk_trigger(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<const daAlink_c*>(args, 0);
-    if (!z_item_slot_active() || link == nullptr) {
+    if (link == nullptr) {
         return HOOK_CONTINUE;
     }
 
-    *static_cast<BOOL*>(retval) = s_dpadLeftTrig || consume_touch_midna_trigger();
-    return HOOK_SKIP_ORIGINAL;
+    const bool touchTriggered = consume_touch_midna_trigger();
+    if (z_item_slot_active()) {
+        *static_cast<BOOL*>(retval) = s_dpadLeftTrig || touchTriggered;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if (dawnlight_touch_ui_active() && touchTriggered) {
+        *static_cast<BOOL*>(retval) = TRUE;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if (dawnlight_touch_ui_active() && s_touchZItemHeld) {
+        *static_cast<BOOL*>(retval) = FALSE;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
 }
 
 HookAction before_check_item_button_change(ModContext*, void* args, void*, void*) {
@@ -3313,6 +3363,18 @@ void after_meter_button_draw(ModContext*, void* args, void*, void*) {
 }
 
 #if defined(__ANDROID__)
+HookAction before_pad_set_virtual_status(ModContext*, void* args, void*, void*) {
+    if (!dawnlight_touch_ui_active() || mods::arg<u32>(args, 0) != PAD_1) {
+        return HOOK_CONTINUE;
+    }
+
+    auto* status = const_cast<PADStatus*>(mods::arg<const PADStatus*>(args, 1));
+    if (status != nullptr) {
+        status->button &= ~PAD_TRIGGER_Z;
+    }
+    return HOOK_CONTINUE;
+}
+
 HookAction before_touch_sync_control_displays(ModContext*, void*, void*, void*) {
     s_inTouchControlDisplaySync = true;
     s_zTouchDisplayButton = nullptr;
@@ -3397,6 +3459,11 @@ HookAction before_rml_set_pseudo_class(ModContext*, void* args, void*, void*) {
 HookAction before_touch_set_control_pressed(ModContext*, void* args, void*, void*) {
     const auto control = mods::arg<dusk::ui::Control>(args, 1);
     const bool pressed = mods::arg<bool>(args, 2);
+    if (control == dusk::ui::Control::Z) {
+        s_touchZItemTrig = pressed && !s_touchZItemHeld;
+        s_touchZItemHeld = pressed;
+        return HOOK_CONTINUE;
+    }
     if (control != dusk::ui::Control::SKIP) {
         return HOOK_CONTINUE;
     }
@@ -3445,6 +3512,11 @@ ModResult add_hook(ModResult result, ModError* error) {
 
 ModResult install_item_slot_hooks(ModError* error) {
     s_zItemSlotSessionEnabled = z_item_slot_enabled();
+#if defined(__ANDROID__)
+    s_dawnlightTouchUiSessionEnabled = dawnlight_touch_ui_enabled();
+#else
+    s_dawnlightTouchUiSessionEnabled = false;
+#endif
 
     HookOptions sharedHudRestoreOptions = HOOK_OPTIONS_INIT;
     sharedHudRestoreOptions.priority = 100;
@@ -3458,6 +3530,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     finalGaugePreOptions.priority = -100;
     HookOptions finalGaugePostOptions = HOOK_OPTIONS_INIT;
     finalGaugePostOptions.priority = 100;
+    HookOptions touchInputObserveOptions = HOOK_OPTIONS_INIT;
+    touchInputObserveOptions.priority = 100;
+    HookOptions touchInputApplyOptions = HOOK_OPTIONS_INIT;
+    touchInputApplyOptions.priority = -100;
 
     ModResult result = MOD_OK;
     if (s_zItemSlotSessionEnabled) {
@@ -3466,8 +3542,9 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<SetSelectItemHook>(svc_hook, after_set_select_item);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
-        result = mods::hook_add_post<PadReadHook>(svc_hook, after_pad_read);
+    if (result == MOD_OK && (s_zItemSlotSessionEnabled || s_dawnlightTouchUiSessionEnabled)) {
+        result = mods::hook_add_post<PadReadHook>(
+            svc_hook, after_pad_read, &touchInputApplyOptions);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<RingCreateHook>(svc_hook, after_ring_create);
@@ -3510,8 +3587,11 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterGaugeScreenHook>(svc_hook, after_meter_gauge_screen);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
-        result = mods::hook_add_post<MeterMidnaAlphaHook>(svc_hook, after_meter_midna_alpha);
+    if (result == MOD_OK &&
+        (s_zItemSlotSessionEnabled || s_dawnlightTouchUiSessionEnabled))
+    {
+        result = mods::hook_add_post<MeterMidnaAlphaHook>(
+            svc_hook, after_meter_midna_alpha, &touchInputApplyOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawButtonCrossHook>(svc_hook, after_meter_draw_button_cross);
@@ -3540,8 +3620,9 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<RingIsMixItemOffHook>(svc_hook, before_ring_is_mix_item_off);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
-        result = mods::hook_add_pre<MidnaTalkTriggerHook>(svc_hook, before_midna_talk_trigger);
+    if (result == MOD_OK && (s_zItemSlotSessionEnabled || s_dawnlightTouchUiSessionEnabled)) {
+        result = mods::hook_add_pre<MidnaTalkTriggerHook>(
+            svc_hook, before_midna_talk_trigger, &touchInputObserveOptions);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<CheckItemButtonChangeHook>(svc_hook, before_check_item_button_change);
@@ -3574,42 +3655,46 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_post<MeterButtonDrawHook>(svc_hook, after_meter_button_draw);
     }
 #if defined(__ANDROID__)
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<PadSetVirtualStatusHook>(
+            svc_hook, before_pad_set_virtual_status, &touchInputObserveOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_post<MidnaIconSourceHook>(svc_hook, after_midna_icon_source);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_post<MidnaIconRevisionHook>(svc_hook, after_midna_icon_revision);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook::install<RmlSetInnerRMLHook>(svc_hook);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = resolve_z_touch_meter_symbols();
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<TouchSyncControlDisplaysHook>(
             svc_hook, before_touch_sync_control_displays);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_post<TouchSyncControlDisplaysHook>(
             svc_hook, after_touch_sync_control_displays);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<RmlSetClassHook>(svc_hook, before_rml_set_class);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook::install<UpdateMidnaIconTextureHook>(svc_hook);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<TouchSyncActionBarHook>(svc_hook, before_touch_sync_action_bar);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_post<TouchSyncActionBarHook>(svc_hook, after_touch_sync_action_bar);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<RmlSetPseudoClassHook>(svc_hook, before_rml_set_pseudo_class);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<TouchSetControlPressedHook>(
             svc_hook, before_touch_set_control_pressed);
     }
@@ -3620,15 +3705,22 @@ ModResult install_item_slot_hooks(ModError* error) {
         svc_log->info(mod_ctx, s_zItemSlotSessionEnabled ?
             "Dawnlight Z Items enabled; Z hooks installed" :
             "Dawnlight Z Items disabled; Z hooks skipped");
+        svc_log->info(mod_ctx, s_dawnlightTouchUiSessionEnabled ?
+            "Dawnlight Touch UI enabled; touch hooks installed" :
+            "Dawnlight Touch UI disabled; touch hooks skipped");
     }
     return hookResult;
 }
 
 void shutdown_item_slot_hooks() {
     clear_ring_z_prompt_refs();
+    s_zItemSlotSessionEnabled = false;
+    s_dawnlightTouchUiSessionEnabled = false;
     s_dpadArrowVisibility = {};
     s_dpadShadowVisibility = {};
 #if defined(__ANDROID__)
+    s_touchZItemHeld = false;
+    s_touchZItemTrig = false;
     s_zTouchDisplayButton = nullptr;
     s_zTouchMeterButton = nullptr;
     s_zTouchMeterContainer = nullptr;

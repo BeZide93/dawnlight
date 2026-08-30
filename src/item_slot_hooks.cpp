@@ -40,11 +40,18 @@
 #include <cstring>
 #include <string>
 
+#if defined(__ANDROID__)
+#define private public
+#include "dusk/ui/touch_controls.hpp"
+#undef private
+#endif
+
 namespace Rml {
 using String = std::string;
 class Element;
 }  // namespace Rml
 
+#if !defined(__ANDROID__)
 namespace dusk::ui {
 class TouchControls;
 
@@ -70,6 +77,7 @@ enum class Control {
     COUNT,
 };
 }  // namespace dusk::ui
+#endif
 
 namespace dawnlight {
 namespace {
@@ -167,8 +175,8 @@ bool s_touchZItemHeld = false;
 bool s_touchZItemTrig = false;
 u8 s_touchMidnaBlockStartFrames = 0;
 bool s_inTouchActionBarSync = false;
-u8 s_touchActionBarHiddenCall = 0;
 Rml::Element* s_skipTouchElement = nullptr;
+Rml::Element* s_skipTouchRmlElement = nullptr;
 bool s_skipTouchMidnaMode = false;
 bool s_skipTouchMidnaPressed = false;
 std::string s_skipTouchMidnaSource;
@@ -744,13 +752,14 @@ void set_skip_touch_hidden(Rml::Element* element, const bool hidden) {
 
 void sync_skip_touch_midna_button(Rml::Element* element) {
     const std::string source = true_midna_icon_source();
-    if (element == s_skipTouchElement && s_skipTouchMidnaMode &&
+    if (element == s_skipTouchRmlElement && s_skipTouchMidnaMode &&
         source == s_skipTouchMidnaSource)
     {
         return;
     }
 
     s_skipTouchElement = element;
+    s_skipTouchRmlElement = element;
     s_skipTouchMidnaMode = true;
 
     if (source.empty()) {
@@ -765,11 +774,12 @@ void sync_skip_touch_midna_button(Rml::Element* element) {
 }
 
 void restore_skip_touch_button(Rml::Element* element) {
-    if (element == s_skipTouchElement && !s_skipTouchMidnaMode) {
+    if (element == s_skipTouchRmlElement && !s_skipTouchMidnaMode) {
         return;
     }
 
     s_skipTouchElement = element;
+    s_skipTouchRmlElement = element;
     s_skipTouchMidnaMode = false;
     s_skipTouchMidnaPressed = false;
     s_skipTouchMidnaSource.clear();
@@ -2952,9 +2962,14 @@ void after_meter_gauge_screen(ModContext*, void*, void*, void*) {
 
 void after_meter_midna_alpha(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
-    if (dawnlight_touch_ui_active() && meter != nullptr && meter->mpScreen != nullptr) {
-        refresh_midna_touch_icon_texture(
-            meter->mpScreen->search(MULTI_CHAR('midona_n')));
+    if (dawnlight_touch_ui_active() && meter != nullptr && meter->mpButtonMidona != nullptr) {
+        refresh_midna_touch_icon_texture(meter->mpButtonMidona->getPanePtr());
+#if defined(__ANDROID__)
+        if (s_skipTouchElement != nullptr && !cutscene_skip_touch_visible())
+        {
+            sync_skip_touch_midna_button(s_skipTouchElement);
+        }
+#endif
     }
     if (z_item_slot_active()) {
         move_midna_hud_to_dpad(meter);
@@ -3002,17 +3017,24 @@ void after_meter_map_draw(ModContext*, void* args, void*, void*) {
 
 HookAction before_ring_set_active_cursor(ModContext*, void* args, void*, void*) {
     auto* ring = mods::arg<dMenu_Ring_c*>(args, 0);
-    if (!z_item_slot_active() || ring == nullptr) {
+    if (ring == nullptr) {
         s_pendingAssign = {};
         return HOOK_CONTINUE;
     }
 
-    if (mDoCPd_c::getTrigR(PAD_1) && set_z_mix_item(ring)) {
+    const bool touchOnly = !z_item_slot_active() && dawnlight_touch_ui_active();
+    if (touchOnly && !mDoCPd_c::getTrigZ(PAD_1)) {
+        return HOOK_CONTINUE;
+    }
+
+    if (!touchOnly && mDoCPd_c::getTrigR(PAD_1) && set_z_mix_item(ring)) {
         return HOOK_SKIP_ORIGINAL;
     }
 
     if (!mDoCPd_c::getTrigZ(PAD_1)) {
-        capture_vanilla_assign(ring);
+        if (z_item_slot_active()) {
+            capture_vanilla_assign(ring);
+        }
         return HOOK_CONTINUE;
     }
 
@@ -3402,15 +3424,23 @@ HookAction before_rml_set_class(ModContext*, void* args, void*, void*) {
 }
 #endif
 
-HookAction before_touch_sync_action_bar(ModContext*, void*, void*, void*) {
+HookAction before_touch_sync_action_bar(ModContext*, void* args, void*, void*) {
+#if defined(__ANDROID__)
+    auto* controls = mods::arg<dusk::ui::TouchControls*>(args, 0);
+    if (controls != nullptr) {
+        s_skipTouchElement = controls->mControlElements[
+            static_cast<std::size_t>(dusk::ui::Control::SKIP)].root;
+    }
+#else
+    (void)args;
+#endif
+
     if (s_skipTouchMidnaPressed) {
         s_inTouchActionBarSync = false;
-        s_touchActionBarHiddenCall = 0;
         return HOOK_SKIP_ORIGINAL;
     }
 
     s_inTouchActionBarSync = true;
-    s_touchActionBarHiddenCall = 0;
     return HOOK_CONTINUE;
 }
 
@@ -3419,7 +3449,6 @@ void after_touch_sync_action_bar(ModContext*, void*, void*, void*) {
     const bool canShowMidna = skip_touch_can_be_midna();
 
     s_inTouchActionBarSync = false;
-    s_touchActionBarHiddenCall = 0;
 
     if (canShowMidna && skipElement != nullptr) {
         set_skip_touch_hidden(skipElement, false);
@@ -3443,8 +3472,7 @@ HookAction before_rml_set_pseudo_class(ModContext*, void* args, void*, void*) {
         return HOOK_CONTINUE;
     }
 
-    ++s_touchActionBarHiddenCall;
-    if (s_touchActionBarHiddenCall != 2 || element == nullptr) {
+    if (element == nullptr || element != s_skipTouchElement) {
         return HOOK_CONTINUE;
     }
 
@@ -3608,7 +3636,7 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_post<MeterMapDrawHook>(
             svc_hook, after_meter_map_draw, &minimapPostOptions);
     }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    if (result == MOD_OK && (s_zItemSlotSessionEnabled || s_dawnlightTouchUiSessionEnabled)) {
         result = mods::hook_add_pre<RingSetActiveCursorHook>(svc_hook, before_ring_set_active_cursor);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
@@ -3721,6 +3749,12 @@ void shutdown_item_slot_hooks() {
 #if defined(__ANDROID__)
     s_touchZItemHeld = false;
     s_touchZItemTrig = false;
+    s_inTouchActionBarSync = false;
+    s_skipTouchElement = nullptr;
+    s_skipTouchRmlElement = nullptr;
+    s_skipTouchMidnaMode = false;
+    s_skipTouchMidnaPressed = false;
+    s_skipTouchMidnaSource.clear();
     s_zTouchDisplayButton = nullptr;
     s_zTouchMeterButton = nullptr;
     s_zTouchMeterContainer = nullptr;

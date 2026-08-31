@@ -98,6 +98,7 @@ DEFINE_HOOK(&dMenu_Ring_c::_draw, RingDrawHook);
 DEFINE_HOOK(&dMenu_Ring_c::setActiveCursor, RingSetActiveCursorHook);
 DEFINE_HOOK(&dMenu_Ring_c::isMixItemOn, RingIsMixItemOnHook);
 DEFINE_HOOK(&dMenu_Ring_c::isMixItemOff, RingIsMixItemOffHook);
+DEFINE_HOOK(&dMeter2_c::_delete, MeterDeleteHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, MeterDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::drawKantera, MeterDrawKanteraHook);
 DEFINE_HOOK(&dMeter2Draw_c::drawOxygen, MeterDrawOxygenHook);
@@ -333,6 +334,8 @@ struct RoundPictureState {
 
 std::array<RoundPictureState, 32> s_roundPictureStates;
 dMeter2Draw_c* s_roundHudMeter = nullptr;
+dMeter2Draw_c* s_hudLayoutMeter = nullptr;
+J2DScreen* s_hudLayoutScreen = nullptr;
 
 bool consume_touch_midna_trigger() {
     const bool triggered = s_touchMidnaTrig;
@@ -1251,6 +1254,20 @@ void restore_shared_hud_layout_base() {
     restore_applied_hud_pane_transform(HudPaneSlot::Rupee1);
     restore_applied_hud_pane_transform(HudPaneSlot::Rupee2);
     restore_applied_hud_pane_transform(HudPaneSlot::Keys);
+}
+
+void clear_shared_hud_layout_cache() {
+    s_wiiUHudPaneTransforms = {};
+    s_hudTextBoxFlags = {};
+    s_dpadArrowVisibility = {};
+    s_dpadShadowVisibility = {};
+    s_xyAmmoOriginalParams = {};
+    s_xyAmmoOriginalValid = {};
+    s_gaugeDraw = {};
+    s_roundPictureStates = {};
+    s_roundHudMeter = nullptr;
+    s_hudLayoutMeter = nullptr;
+    s_hudLayoutScreen = nullptr;
 }
 
 J2DPane* pane_ptr(CPaneMgrAlpha* pane) {
@@ -2867,7 +2884,21 @@ void after_ring_draw(ModContext*, void* args, void*, void*) {
     draw_ring_z_prompt(mods::arg<dMenu_Ring_c*>(args, 0));
 }
 
-HookAction before_meter_draw_restore_shared_hud(ModContext*, void*, void*, void*) {
+HookAction before_meter_delete(ModContext*, void*, void*, void*) {
+    clear_shared_hud_layout_cache();
+    return HOOK_CONTINUE;
+}
+
+HookAction before_meter_draw_restore_shared_hud(ModContext*, void* args, void*, void*) {
+    auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
+    J2DScreen* screen = meter != nullptr ? meter->mpScreen : nullptr;
+    if (meter != s_hudLayoutMeter || screen != s_hudLayoutScreen) {
+        clear_shared_hud_layout_cache();
+        s_hudLayoutMeter = meter;
+        s_hudLayoutScreen = screen;
+        return HOOK_CONTINUE;
+    }
+
     restore_shared_hud_layout_base();
     return HOOK_CONTINUE;
 }
@@ -3585,6 +3616,9 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
 
     if (result == MOD_OK) {
+        result = mods::hook_add_pre<MeterDeleteHook>(svc_hook, before_meter_delete);
+    }
+    if (result == MOD_OK) {
         result = mods::hook_add_pre<MeterDrawHook>(
             svc_hook, before_meter_draw_restore_shared_hud, &sharedHudRestoreOptions);
     }
@@ -3742,6 +3776,7 @@ ModResult install_item_slot_hooks(ModError* error) {
 
 void shutdown_item_slot_hooks() {
     clear_ring_z_prompt_refs();
+    clear_shared_hud_layout_cache();
     s_zItemSlotSessionEnabled = false;
     s_dawnlightTouchUiSessionEnabled = false;
     s_dpadArrowVisibility = {};

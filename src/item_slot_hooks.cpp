@@ -2915,12 +2915,15 @@ HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
+void after_meter_draw_restore_xy_ammo(ModContext*, void* args, void*, void*) {
+    restore_xy_ammo_layout(mods::arg<dMeter2Draw_c*>(args, 0));
+}
+
 void after_meter_draw(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
     if (z_item_slot_active()) {
         draw_z_hud_item_meters(meter);
     }
-    restore_xy_ammo_layout(meter);
 }
 
 void after_meter_draw_kantera(ModContext*, void* args, void*, void*) {
@@ -3625,6 +3628,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_pre<MeterDrawHook>(
             svc_hook, before_meter_draw, &sharedHudApplyOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<MeterDrawHook>(
+            svc_hook, after_meter_draw_restore_xy_ammo, &sharedHudRestoreOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawHook>(svc_hook, after_meter_draw);

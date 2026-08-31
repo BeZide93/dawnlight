@@ -1194,6 +1194,7 @@ void set_saved_dungeon_switch(int saveTable, int sw, bool enabled) {
 
 void ensure_bossrush_story_state() {
     dComIfGs_onEventBit(dSv_event_flag_c::F_0250);
+    dComIfGs_onEventBit(dSv_event_flag_c::F_0302);
     dComIfGs_onEventBit(dSv_event_flag_c::M_010);
 }
 

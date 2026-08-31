@@ -1,5 +1,6 @@
 #include "bullet_time.hpp"
 #include "config.hpp"
+#include "model_overlays.hpp"
 #include "save_compat.hpp"
 #include "service_imports.hpp"
 #include "update_service.hpp"
@@ -50,6 +51,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::register_ui(error); result != MOD_OK) {
         return result;
     }
+    dawnlight::initialize_model_overlays();
     if (const ModResult result = dawnlight::initialize_bullet_time(error); result != MOD_OK) {
         return result;
     }
@@ -95,6 +97,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    dawnlight::shutdown_model_overlays();
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_new_save_modes();
     dawnlight::shutdown_update_service();

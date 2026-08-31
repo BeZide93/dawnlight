@@ -55,6 +55,7 @@ add_mod(dawnlight_mod
         src/jump_hooks.cpp
         src/manual_shield_hooks.cpp
         src/mod.cpp
+        src/model_overlays.cpp
         src/new_save_modes.cpp
         src/save_compat.cpp
         src/ui.cpp

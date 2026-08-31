@@ -50,6 +50,17 @@ ConfigVarHandle s_hudLayoutMigratedV2 = 0;
 
 constexpr size_t kHudElementCount = static_cast<size_t>(HudElement::Count);
 constexpr size_t kHudButtonCount = static_cast<size_t>(HudButton::Count);
+constexpr size_t kCustomModelCount = static_cast<size_t>(CustomModel::Count);
+
+constexpr std::array<const char*, kCustomModelCount> kCustomModelConfigNames = {{
+    "model-ordon-link",
+    "model-hero-clothes",
+    "model-zora-armor",
+    "model-magic-armor",
+    "model-wolf-link",
+    "model-sumo-link",
+    "model-items",
+}};
 
 std::array<ConfigVarHandle, kHudElementCount> s_hudElementX = {};
 std::array<ConfigVarHandle, kHudElementCount> s_hudElementY = {};
@@ -69,6 +80,7 @@ ConfigVarHandle s_hudDpadFollowsMinimap = 0;
 ConfigVarHandle s_hudMinimapSlideDirection = 0;
 ConfigVarHandle s_hudDpadHideArrows = 0;
 ConfigVarHandle s_hudDpadHideShadows = 0;
+std::array<ConfigVarHandle, kCustomModelCount> s_customModels = {};
 
 void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
     const ConfigVarValue*, void*) {
@@ -83,6 +95,14 @@ void on_dawnlight_touch_ui_changed(ModContext* ctx, ConfigVarHandle, const Confi
     UiToastDesc toast = UI_TOAST_DESC_INIT;
     toast.title_rml = "Dawnlight Touch UI";
     toast.body_rml = "Restart game after toggling Dawnlight Touch UI";
+    svc_ui->push_toast(ctx, &toast);
+}
+
+void on_custom_model_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
+    const ConfigVarValue*, void*) {
+    UiToastDesc toast = UI_TOAST_DESC_INIT;
+    toast.title_rml = "Models";
+    toast.body_rml = "Restart game to apply model changes";
     svc_ui->push_toast(ctx, &toast);
 }
 
@@ -264,6 +284,10 @@ size_t hud_element_index(HudElement element) {
 
 size_t hud_button_index(HudButton button) {
     return std::clamp<size_t>(static_cast<size_t>(button), 0, kHudButtonCount - 1);
+}
+
+size_t custom_model_index(CustomModel model) {
+    return std::clamp<size_t>(static_cast<size_t>(model), 0, kCustomModelCount - 1);
 }
 
 ModResult register_bool(const char* name, bool defaultValue, ConfigVarHandle& handle) {
@@ -806,6 +830,12 @@ ModResult register_config(ModError* error) {
     {
         return mods::set_error(error, MOD_ERROR, "failed to register Dawnlight config variables");
     }
+    for (size_t i = 0; i < kCustomModelCount; ++i) {
+        if (register_int(kCustomModelConfigNames[i], 0, s_customModels[i]) != MOD_OK) {
+            return mods::set_error(
+                error, MOD_ERROR, "failed to register Dawnlight model variables");
+        }
+    }
     if (register_custom_hud_config() != MOD_OK) {
         return mods::set_error(
             error, MOD_ERROR, "failed to register Dawnlight custom HUD variables");
@@ -870,6 +900,14 @@ ModResult register_config(ModError* error) {
     if (subscribeResult != MOD_OK) {
         return mods::set_error(error, subscribeResult,
             "failed to subscribe to Dawnlight Touch UI changes");
+    }
+    for (ConfigVarHandle handle : s_customModels) {
+        subscribeResult =
+            svc_config->subscribe(mod_ctx, handle, on_custom_model_changed, nullptr, nullptr);
+        if (subscribeResult != MOD_OK) {
+            return mods::set_error(error, subscribeResult,
+                "failed to subscribe to Dawnlight model changes");
+        }
     }
     return MOD_OK;
 }
@@ -944,6 +982,10 @@ bool check_for_updates_enabled() {
 
 bool bossrush_hardmode_hazards_enabled() {
     return get_bool(s_bossrushHardmodeHazards, false);
+}
+
+bool custom_model_enabled(CustomModel model) {
+    return get_int(s_customModels[custom_model_index(model)], 0, 0, 1) == 1;
 }
 
 HudLayout hud_layout() {
@@ -1141,6 +1183,10 @@ ConfigVarHandle check_for_updates_config_var() {
 
 ConfigVarHandle bossrush_hardmode_hazards_config_var() {
     return s_bossrushHardmodeHazards;
+}
+
+ConfigVarHandle custom_model_config_var(CustomModel model) {
+    return s_customModels[custom_model_index(model)];
 }
 
 ConfigVarHandle hud_layout_config_var() {

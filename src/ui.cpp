@@ -24,6 +24,11 @@ constexpr const char* kNewSaveModeOptions[] = {
     "Intro Skip",
 };
 
+constexpr const char* kModelOptions[] = {
+    "Vanilla",
+    "Custom",
+};
+
 constexpr const char* kHudLayoutOptions[] = {
     "GameCube",
     "X-Box",
@@ -582,6 +587,62 @@ ModResult build_gameplay_tab(
     return MOD_OK;
 }
 
+ModResult build_models_tab(
+    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
+    if (add_section(ctx, left, "Models") != MOD_OK) return MOD_ERROR;
+    if (add_select(ctx, left, "Ordon Link", custom_model_config_var(CustomModel::OrdonLink),
+            kModelOptions, std::size(kModelOptions),
+            "Custom loads mods/BMDL.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Hero's Clothes",
+            custom_model_config_var(CustomModel::HeroClothes), kModelOptions,
+            std::size(kModelOptions),
+            "Custom loads mods/Kmdl.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Zora Armor", custom_model_config_var(CustomModel::ZoraArmor),
+            kModelOptions, std::size(kModelOptions),
+            "Custom loads mods/Zmdl.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Magic Armor", custom_model_config_var(CustomModel::MagicArmor),
+            kModelOptions, std::size(kModelOptions),
+            "Custom loads mods/Mmdl.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Wolf Link", custom_model_config_var(CustomModel::WolfLink),
+            kModelOptions, std::size(kModelOptions),
+            "Custom loads mods/Wmdl.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Sumo Link", custom_model_config_var(CustomModel::SumoLink),
+            kModelOptions, std::size(kModelOptions),
+            "Custom loads mods/alSumou.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Items", custom_model_config_var(CustomModel::Items),
+            kModelOptions, std::size(kModelOptions),
+            "Custom loads mods/Alink.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    return MOD_OK;
+}
+
 ModResult build_deferred_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "Waiting For Services") != MOD_OK) return MOD_ERROR;
@@ -604,7 +665,7 @@ void open_settings(ModContext* ctx, void*) {
         return;
     }
 
-    std::array<UiTabDesc, 5> tabs{};
+    std::array<UiTabDesc, 6> tabs{};
     for (auto& tab : tabs) {
         tab = UI_TAB_DESC_INIT;
     }
@@ -616,8 +677,10 @@ void open_settings(ModContext* ctx, void*) {
     tabs[2].build = build_hud_tab;
     tabs[3].title = "Gameplay";
     tabs[3].build = build_gameplay_tab;
-    tabs[4].title = "Deferred";
-    tabs[4].build = build_deferred_tab;
+    tabs[4].title = "Models";
+    tabs[4].build = build_models_tab;
+    tabs[5].title = "Deferred";
+    tabs[5].build = build_deferred_tab;
 
     UiWindowDesc desc = UI_WINDOW_DESC_INIT;
     desc.tabs = tabs.data();

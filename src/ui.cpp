@@ -633,6 +633,13 @@ ModResult build_models_tab(
     {
         return MOD_ERROR;
     }
+    if (add_select(ctx, left, "Horse", custom_model_config_var(CustomModel::Horse),
+            kModelOptions, std::size(kModelOptions),
+            "Custom loads mods/Horse.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_select(ctx, left, "Items", custom_model_config_var(CustomModel::Items),
             kModelOptions, std::size(kModelOptions),
             "Custom loads mods/Alink.arc after restarting. Missing files keep the vanilla model.")

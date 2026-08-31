@@ -59,6 +59,7 @@ constexpr std::array<const char*, kCustomModelCount> kCustomModelConfigNames = {
     "model-magic-armor",
     "model-wolf-link",
     "model-sumo-link",
+    "model-horse",
     "model-items",
 }};
 

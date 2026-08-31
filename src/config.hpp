@@ -25,6 +25,7 @@ enum class CustomModel : int {
     MagicArmor,
     WolfLink,
     SumoLink,
+    Horse,
     Items,
     Count,
 };

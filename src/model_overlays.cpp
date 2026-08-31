@@ -32,6 +32,7 @@ constexpr std::array<ModelOverlayDesc, static_cast<size_t>(CustomModel::Count)> 
     {CustomModel::MagicArmor, "Mmdl.arc", "/res/Object/Mmdl.arc"},
     {CustomModel::WolfLink, "Wmdl.arc", "/res/Object/Wmdl.arc"},
     {CustomModel::SumoLink, "alSumou.arc", "/res/Object/alSumou.arc"},
+    {CustomModel::Horse, "Horse.arc", "/res/Object/Horse.arc"},
     {CustomModel::Items, "Alink.arc", "/res/Object/Alink.arc"},
 }};
 

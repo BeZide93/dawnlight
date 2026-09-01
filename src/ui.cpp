@@ -590,6 +590,12 @@ ModResult build_gameplay_tab(
 ModResult build_models_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "Models") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Hide Shield", hide_shield_config_var(),
+            "Hides the Ordon, Wooden, and Hylian shield models while keeping shielding functional.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_select(ctx, left, "Ordon Link", custom_model_config_var(CustomModel::OrdonLink),
             kModelOptions, std::size(kModelOptions),
             "Custom loads mods/BMDL.arc after restarting. Missing files keep the vanilla model.")

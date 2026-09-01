@@ -39,6 +39,7 @@ ConfigVarHandle s_zItemSlot = 0;
 ConfigVarHandle s_dawnlightTouchUi = 0;
 ConfigVarHandle s_checkForUpdates = 0;
 ConfigVarHandle s_bossrushHardmodeHazards = 0;
+ConfigVarHandle s_hideShield = 0;
 ConfigVarHandle s_hudLayout = 0;
 ConfigVarHandle s_legacyWiiUHud = 0;
 ConfigVarHandle s_roundXYButtons = 0;
@@ -841,6 +842,7 @@ ModResult register_config(ModError* error) {
         register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
         register_bool("check-for-updates", true, s_checkForUpdates) != MOD_OK ||
         register_bool("bossrush-hardmode-hazards", false, s_bossrushHardmodeHazards) != MOD_OK ||
+        register_bool("model-hide-shield", false, s_hideShield) != MOD_OK ||
         register_int("hud-layout", static_cast<int64_t>(HudLayout::GameCube), s_hudLayout) !=
             MOD_OK ||
         register_bool("wii-u-hud", false, s_legacyWiiUHud) != MOD_OK ||
@@ -1006,6 +1008,10 @@ bool check_for_updates_enabled() {
 
 bool bossrush_hardmode_hazards_enabled() {
     return get_bool(s_bossrushHardmodeHazards, false);
+}
+
+bool hide_shield_enabled() {
+    return get_bool(s_hideShield, false);
 }
 
 bool custom_model_enabled(CustomModel model) {
@@ -1207,6 +1213,10 @@ ConfigVarHandle check_for_updates_config_var() {
 
 ConfigVarHandle bossrush_hardmode_hazards_config_var() {
     return s_bossrushHardmodeHazards;
+}
+
+ConfigVarHandle hide_shield_config_var() {
+    return s_hideShield;
 }
 
 ConfigVarHandle custom_model_config_var(CustomModel model) {

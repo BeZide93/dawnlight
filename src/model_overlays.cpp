@@ -3,7 +3,11 @@
 #include "config.hpp"
 #include "service_imports.hpp"
 
+#include "d/actor/d_a_alink.h"
+#include "mods/hook.hpp"
+#include "mods/service.hpp"
 #include "mods/svc/host.h"
+#include "mods/svc/hook.h"
 #include "mods/svc/log.h"
 #include "mods/svc/overlay.h"
 
@@ -18,6 +22,8 @@
 
 namespace dawnlight {
 namespace {
+
+DEFINE_HOOK(&daAlink_c::checkShieldDraw, CheckShieldDrawHook);
 
 struct ModelOverlayDesc {
     CustomModel model;
@@ -37,6 +43,12 @@ constexpr std::array<ModelOverlayDesc, static_cast<size_t>(CustomModel::Count)> 
 }};
 
 std::array<OverlayHandle, kModelOverlays.size()> s_modelOverlayHandles = {};
+
+void after_check_shield_draw(ModContext*, void*, void* retval, void*) {
+    if (hide_shield_enabled() && retval != nullptr) {
+        *static_cast<bool*>(retval) = false;
+    }
+}
 
 void log_model_message(void (*logFn)(ModContext*, const char*), const std::string& message) {
     if (logFn != nullptr) {
@@ -63,6 +75,15 @@ bool load_model_file(const std::filesystem::path& path, std::vector<uint8_t>& da
 }
 
 }  // namespace
+
+ModResult install_model_hooks(ModError* error) {
+    const ModResult result =
+        mods::hook_add_post<CheckShieldDrawHook>(svc_hook, after_check_shield_draw);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight model hooks");
+    }
+    return MOD_OK;
+}
 
 void initialize_model_overlays() {
     bool hasCustomModel = false;

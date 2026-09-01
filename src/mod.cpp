@@ -57,6 +57,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::register_ui(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::install_model_hooks(error); result != MOD_OK) {
+        return result;
+    }
     dawnlight::initialize_model_overlays();
     if (const ModResult result = dawnlight::initialize_bullet_time(error); result != MOD_OK) {
         return result;

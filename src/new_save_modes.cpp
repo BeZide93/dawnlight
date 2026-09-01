@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "save_compat.hpp"
+#include "save_state.hpp"
 #include "service_imports.hpp"
 
 #include "global.h"
@@ -82,16 +83,6 @@ DEFINE_HOOK_SYMBOL("dScnPly_Draw", int(void*), PlaySceneDrawHook);
 DEFINE_HOOK_SYMBOL("daB_GND_Execute", int(b_gnd_class*), GanondorfExecuteHook);
 DEFINE_HOOK_SYMBOL("daObj_Gb_Execute", int(obj_gb_class*), GanondorfBarrierExecuteHook);
 #endif
-
-constexpr size_t kReserveOffset = 0x8F0;
-constexpr size_t kIntroSkipOffset = 16;
-constexpr size_t kBossRushOffset = 32;
-constexpr size_t kBossRushIndexOffset = 40;
-constexpr size_t kBossRushLoopOffset = 41;
-constexpr size_t kBossRushStateOffset = 42;
-constexpr char kIntroSkipMagic[] = "DUSKSKP1";
-constexpr char kBossRushMagic[] = "DUSKBR1";
-constexpr char kBossRushDefeatedMagic[] = "DUSKBRD1";
 
 constexpr char kIntroSkipStage[] = "F_SP108";
 constexpr s8 kIntroSkipRoom = 0;
@@ -184,10 +175,7 @@ constexpr BossRushEntry kBossRushEntries[] = {
 };
 
 constexpr size_t kBossRushEntryCount = std::size(kBossRushEntries);
-constexpr size_t kBossRushDefeatedMagicOffset = kBossRushStateOffset + 1;
-constexpr size_t kBossRushDefeatedMaskOffset =
-    kBossRushDefeatedMagicOffset + sizeof(kBossRushDefeatedMagic) - 1;
-constexpr size_t kBossRushDefeatedMaskSize = (kBossRushEntryCount + 7) / 8;
+static_assert(kBossRushEntryCount <= 24, "Boss Rush defeated state exceeds SaveService capacity");
 constexpr const char* kBossRushRunName = "Boss Rush";
 constexpr const char* kBossRushGameModeId = "bossrush";
 constexpr s8 kBossRushReturnRoom = 0;
@@ -251,9 +239,6 @@ constexpr f32 kBossRushTriangleSize = 8.0f;
 constexpr f32 kBossRushTriangleSqrt3Half = 0.8660254f;
 constexpr const char* kBossRushTitleLogoTexturePath =
     "res/tex1_608x100_0c1c70378fb8cb46_6.png";
-static_assert(kBossRushDefeatedMaskOffset + kBossRushDefeatedMaskSize <= 64,
-    "Boss Rush defeated portal state must stay before Dawnlight item slot state");
-
 #if VERSION == VERSION_GCN_PAL
 constexpr size_t kNameSceneFileSelectOffset = 0x43C;
 #else
@@ -479,111 +464,24 @@ bool can_update_bossrush_gameplay() {
     return dComIfGp_getPlayer(0) != nullptr && dComIfGp_getStageStagInfo() != nullptr;
 }
 
-u8* reserve_bytes(dSv_save_c* save) {
-    return save == nullptr ? nullptr : reinterpret_cast<u8*>(save) + kReserveOffset;
+bool is_boss_rush() {
+    return save_state_boss_rush_active();
 }
 
-const u8* reserve_bytes(const dSv_save_c* save) {
-    return save == nullptr ? nullptr : reinterpret_cast<const u8*>(save) + kReserveOffset;
+void set_intro_skipped(bool enabled) {
+    save_state_set_intro_skipped(enabled);
 }
 
-void write_marker(dSv_save_c* save, size_t offset, const char* magic, size_t length, bool enabled) {
-    u8* reserve = reserve_bytes(save);
-    if (reserve == nullptr) {
-        return;
-    }
-    if (enabled) {
-        std::memcpy(reserve + offset, magic, length);
-    } else {
-        std::memset(reserve + offset, 0, length);
-    }
-}
-
-bool is_boss_rush(const dSv_save_c* save) {
-    const u8* reserve = reserve_bytes(save);
-    return reserve != nullptr &&
-           std::memcmp(reserve + kBossRushOffset, kBossRushMagic, sizeof(kBossRushMagic) - 1) == 0;
-}
-
-void set_intro_skipped(dSv_save_c* save, bool enabled) {
-    write_marker(save, kIntroSkipOffset, kIntroSkipMagic, sizeof(kIntroSkipMagic) - 1, enabled);
-}
-
-void set_boss_rush(dSv_save_c* save, bool enabled) {
-    write_marker(save, kBossRushOffset, kBossRushMagic, sizeof(kBossRushMagic) - 1, enabled);
-    if (!enabled) {
-        u8* reserve = reserve_bytes(save);
-        if (reserve != nullptr) {
-            reserve[kBossRushIndexOffset] = 0;
-            reserve[kBossRushLoopOffset] = 0;
-            reserve[kBossRushStateOffset] = kBossRushStateHub;
-            std::memset(reserve + kBossRushDefeatedMagicOffset, 0,
-                sizeof(kBossRushDefeatedMagic) - 1 + kBossRushDefeatedMaskSize);
-        }
-    }
-}
-
-bool bossrush_defeated_state_initialized(const dSv_save_c* save) {
-    const u8* reserve = reserve_bytes(save);
-    return reserve != nullptr &&
-           std::memcmp(reserve + kBossRushDefeatedMagicOffset, kBossRushDefeatedMagic,
-               sizeof(kBossRushDefeatedMagic) - 1) == 0;
-}
-
-void initialize_bossrush_defeated_state(dSv_save_c* save) {
-    u8* reserve = reserve_bytes(save);
-    if (reserve == nullptr || !is_boss_rush(save)) {
-        return;
-    }
-
-    std::memcpy(reserve + kBossRushDefeatedMagicOffset, kBossRushDefeatedMagic,
-        sizeof(kBossRushDefeatedMagic) - 1);
-    std::memset(reserve + kBossRushDefeatedMaskOffset, 0, kBossRushDefeatedMaskSize);
-}
-
-u8* bossrush_defeated_mask(dSv_save_c* save, bool create) {
-    if (save == nullptr || !is_boss_rush(save)) {
-        return nullptr;
-    }
-
-    if (!bossrush_defeated_state_initialized(save)) {
-        if (!create) {
-            return nullptr;
-        }
-        initialize_bossrush_defeated_state(save);
-    }
-
-    u8* reserve = reserve_bytes(save);
-    return reserve == nullptr ? nullptr : reserve + kBossRushDefeatedMaskOffset;
-}
-
-const u8* bossrush_defeated_mask(const dSv_save_c* save) {
-    if (save == nullptr || !is_boss_rush(save) || !bossrush_defeated_state_initialized(save)) {
-        return nullptr;
-    }
-
-    const u8* reserve = reserve_bytes(save);
-    return reserve == nullptr ? nullptr : reserve + kBossRushDefeatedMaskOffset;
+void set_boss_rush(bool enabled) {
+    save_state_set_boss_rush_active(enabled);
 }
 
 bool bossrush_portal_defeated(u8 index) {
-    if (index >= kBossRushEntryCount) {
-        return false;
-    }
-
-    const u8* mask = bossrush_defeated_mask(dComIfGs_getSaveData());
-    return mask != nullptr && (mask[index / 8] & (1 << (index % 8))) != 0;
+    return index < kBossRushEntryCount && save_state_boss_defeated(index);
 }
 
 void mark_bossrush_portal_defeated(u8 index) {
-    if (index >= kBossRushEntryCount) {
-        return;
-    }
-
-    u8* mask = bossrush_defeated_mask(dComIfGs_getSaveData(), true);
-    if (mask != nullptr) {
-        mask[index / 8] |= static_cast<u8>(1 << (index % 8));
-    }
+    if (index < kBossRushEntryCount) save_state_mark_boss_defeated(index);
 }
 
 int bossrush_entry_index(const BossRushEntry& entry) {
@@ -604,40 +502,20 @@ void mark_bossrush_entry_defeated(const BossRushEntry& entry) {
 }
 
 u8 boss_rush_index() {
-    dSv_save_c* save = dComIfGs_getSaveData();
-    u8* reserve = reserve_bytes(save);
-    if (reserve == nullptr || !is_boss_rush(save)) {
-        return 0;
-    }
-    if (reserve[kBossRushIndexOffset] >= kBossRushEntryCount) {
-        reserve[kBossRushIndexOffset] = 0;
-    }
-    return reserve[kBossRushIndexOffset];
+    const u8 index = save_state_boss_rush_index();
+    return index < kBossRushEntryCount ? index : 0;
 }
 
 void set_boss_rush_index(u8 index) {
-    dSv_save_c* save = dComIfGs_getSaveData();
-    u8* reserve = reserve_bytes(save);
-    if (reserve != nullptr && is_boss_rush(save)) {
-        reserve[kBossRushIndexOffset] = index;
-    }
+    save_state_set_boss_rush_index(index);
 }
 
 u8 boss_rush_state() {
-    dSv_save_c* save = dComIfGs_getSaveData();
-    u8* reserve = reserve_bytes(save);
-    if (reserve == nullptr || !is_boss_rush(save)) {
-        return kBossRushStateHub;
-    }
-    return reserve[kBossRushStateOffset];
+    return save_state_boss_rush_state();
 }
 
 void set_boss_rush_state(u8 state) {
-    dSv_save_c* save = dComIfGs_getSaveData();
-    u8* reserve = reserve_bytes(save);
-    if (reserve != nullptr && is_boss_rush(save)) {
-        reserve[kBossRushStateOffset] = state;
-    }
+    save_state_set_boss_rush_state(state);
 }
 
 f32 angle_sin(s16 angle) {
@@ -680,7 +558,7 @@ bool is_boss_hub_stage_name() {
 }
 
 bool is_bossrush_hub_active() {
-    return is_boss_rush(dComIfGs_getSaveData()) && boss_rush_state() == kBossRushStateHub &&
+    return is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
            is_boss_hub_stage_name();
 }
 
@@ -907,11 +785,7 @@ void reset_hub_runtime_when_away() {
 }
 
 void increment_boss_rush_loop() {
-    dSv_save_c* save = dComIfGs_getSaveData();
-    u8* reserve = reserve_bytes(save);
-    if (reserve != nullptr && is_boss_rush(save) && reserve[kBossRushLoopOffset] < 0xff) {
-        reserve[kBossRushLoopOffset]++;
-    }
+    save_state_increment_boss_rush_loop();
 }
 
 bool is_intro_skip_bottle_item(u8 item) {
@@ -1139,8 +1013,8 @@ void apply_intro_skip_preset(dSv_save_c* save) {
     }
 
     save->getPlayer().getPlayerReturnPlace().set(kIntroSkipStage, kIntroSkipRoom, 0);
-    set_intro_skipped(save, true);
-    set_boss_rush(save, false);
+    set_intro_skipped(true);
+    set_boss_rush(false);
     repair_intro_skip_faron_tears(save);
     dComIfGs_setLineUpItem();
 }
@@ -1298,15 +1172,12 @@ void apply_boss_rush_preset(dSv_save_c* save) {
         return;
     }
 
-    set_intro_skipped(save, false);
-    set_boss_rush(save, true);
+    set_intro_skipped(false);
+    set_boss_rush(true);
     set_boss_rush_index(0);
-    u8* reserve = reserve_bytes(save);
-    if (reserve != nullptr) {
-        reserve[kBossRushLoopOffset] = 0;
-        reserve[kBossRushStateOffset] = kBossRushStateHub;
-    }
-    initialize_bossrush_defeated_state(save);
+    save_state_set_boss_rush_loop(0);
+    set_boss_rush_state(kBossRushStateHub);
+    save_state_clear_boss_defeated();
 
     dComIfGs_setMaxLife(25);
     dComIfGs_setLife(20);
@@ -1463,7 +1334,7 @@ void create_direct_final_barrier_if_needed(b_gnd_class* ganondorf) {
 }
 
 bool is_direct_final_ganondorf_active() {
-    if (!is_boss_rush(dComIfGs_getSaveData()) || boss_rush_state() != kBossRushStateReplay) {
+    if (!is_boss_rush() || boss_rush_state() != kBossRushStateReplay) {
         return false;
     }
 
@@ -1585,7 +1456,7 @@ void ensure_direct_final_boss_started() {
 }
 
 void set_bossrush_next_stage() {
-    if (!is_boss_rush(dComIfGs_getSaveData())) {
+    if (!is_boss_rush()) {
         return;
     }
 
@@ -1647,14 +1518,14 @@ void clear_pending_midna_flow_action() {
 }
 
 bool can_offer_midna_hub_warp() {
-    return is_boss_rush(dComIfGs_getSaveData()) && boss_rush_state() != kBossRushStateHub &&
+    return is_boss_rush() && boss_rush_state() != kBossRushStateHub &&
            !is_boss_hub_stage_name() && !fopOvlpM_IsPeek() && !dComIfGp_isEnableNextStage() &&
            dMeter2Info_getGameOverType() == 0 && dComIfGp_getGameoverStatus() == 0 &&
            !has_pending_midna_flow_action();
 }
 
 bool has_hub_portal_midna_prompt() {
-    return is_boss_rush(dComIfGs_getSaveData()) && boss_rush_state() == kBossRushStateHub &&
+    return is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
            is_boss_hub_stage_name() && !has_pending_midna_flow_action() &&
            sPendingHubPortal >= 0 &&
            sPendingHubPortal < static_cast<int>(kBossRushHubPortalCount);
@@ -1664,7 +1535,7 @@ void set_hub_midna_prompt_portal(int portal);
 void refresh_midna_root_flow_mode();
 
 void set_hub_portal_midna_meter_prompt() {
-    if (!is_boss_rush(dComIfGs_getSaveData()) || boss_rush_state() != kBossRushStateHub ||
+    if (!is_boss_rush() || boss_rush_state() != kBossRushStateHub ||
         !is_boss_hub_stage_name() || has_pending_midna_flow_action() ||
         dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek())
     {
@@ -1880,10 +1751,7 @@ void start_bossrush_entry(int portal) {
     if (portal == kBossRushRunPortalIndex) {
         set_boss_rush_state(kBossRushStateRun);
         set_boss_rush_index(0);
-        u8* reserve = reserve_bytes(dComIfGs_getSaveData());
-        if (reserve != nullptr) {
-            reserve[kBossRushLoopOffset] = 0;
-        }
+        save_state_set_boss_rush_loop(0);
         clear_all_boss_flags();
         set_bossrush_next_stage();
         return;
@@ -1961,7 +1829,7 @@ bool process_pending_midna_flow_action() {
     if (action == PendingMidnaFlowAction::GardenWarp) {
         warp_to_bossrush_hub_from_midna(daPy_py_c::getMidnaActor());
     } else if (action == PendingMidnaFlowAction::HubPortal && portal >= 0 &&
-               is_boss_rush(dComIfGs_getSaveData()) && boss_rush_state() == kBossRushStateHub &&
+               is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
                is_boss_hub_stage_name())
     {
         start_bossrush_entry(portal);
@@ -2992,7 +2860,7 @@ bool restore_bossrush_hub_load_state() {
 }
 
 bool bossrush_hazards_can_run() {
-    if (!bossrush_hardmode_hazards_enabled() || !is_boss_rush(dComIfGs_getSaveData()) ||
+    if (!bossrush_hardmode_hazards_enabled() || !is_boss_rush() ||
         boss_rush_state() == kBossRushStateHub || dComIfGs_getLife() == 0 ||
         sSavePromptId != fpcM_ERROR_PROCESS_ID_e || sAdvancePending || fopOvlpM_IsPeek() ||
         dComIfGp_isEnableNextStage() || dMeter2Info_getGameOverType() != 0 ||
@@ -3359,7 +3227,7 @@ bool bossrush_should_return_to_hub_after_death() {
 }
 
 void update_bossrush() {
-    if (!is_boss_rush(dComIfGs_getSaveData())) {
+    if (!is_boss_rush()) {
         clear_pending_midna_flow_action();
         sAdvancePending = false;
         sSavePromptId = fpcM_ERROR_PROCESS_ID_e;
@@ -3449,9 +3317,9 @@ void update_bossrush() {
     }
 }
 
-void clear_dawnlight_new_save_markers(dSv_save_c* save) {
-    set_intro_skipped(save, false);
-    set_boss_rush(save, false);
+void clear_dawnlight_new_save_markers() {
+    set_intro_skipped(false);
+    set_boss_rush(false);
 }
 
 dFile_select_c* name_scene_file_select(void* nameScene) {
@@ -3469,7 +3337,7 @@ void apply_selected_new_save_mode() {
     }
 
     dSv_save_c* save = dComIfGs_getSaveData();
-    clear_dawnlight_new_save_markers(save);
+    clear_dawnlight_new_save_markers();
 
     switch (new_save_mode()) {
     case NewSaveMode::IntroSkip:
@@ -3495,7 +3363,7 @@ void on_file_select_name_input2_post(ModContext*, void* args, void*, void*) {
 
 void prepare_intro_skip_start() {
     dSv_save_c* save = dComIfGs_getSaveData();
-    if (!is_intro_skipped(save)) {
+    if (!is_intro_skipped()) {
         return;
     }
 
@@ -3508,7 +3376,7 @@ void prepare_intro_skip_start() {
 
 void prepare_bossrush_start() {
     dSv_save_c* save = dComIfGs_getSaveData();
-    if (!is_boss_rush(save)) {
+    if (!is_boss_rush()) {
         return;
     }
 
@@ -3539,8 +3407,8 @@ ModResult activate_bossrush_runtime(ModError* error, bool resetRuntime) {
     return result;
 }
 
-bool ensure_bossrush_runtime_for_save(dSv_save_c* save) {
-    if (!is_boss_rush(save)) {
+bool ensure_bossrush_runtime_for_save() {
+    if (!is_boss_rush()) {
         return false;
     }
     if (sBossRushGameModeActive && sBossRushHooksInstalled) {
@@ -3563,9 +3431,9 @@ HookAction before_meter_execute(ModContext*, void*, void*, void*) {
 HookAction on_name_scene_change_pre(ModContext*, void* args, void*, void*) {
     dSv_save_c* save = dComIfGs_getSaveData();
     const bool bossRushActive =
-        (is_bossrush_game_mode_active() || ensure_bossrush_runtime_for_save(save)) &&
-        is_boss_rush(save);
-    const bool introSkipActive = is_intro_skipped(save);
+        (is_bossrush_game_mode_active() || ensure_bossrush_runtime_for_save()) &&
+        is_boss_rush();
+    const bool introSkipActive = is_intro_skipped();
     if (!bossRushActive && !introSkipActive) {
         return HOOK_CONTINUE;
     }
@@ -3617,14 +3485,14 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
 
     dSv_save_c* save = dComIfGs_getSaveData();
     const bool bossRushActive =
-        (is_bossrush_game_mode_active() || ensure_bossrush_runtime_for_save(save)) &&
-        is_boss_rush(save);
+        (is_bossrush_game_mode_active() || ensure_bossrush_runtime_for_save()) &&
+        is_boss_rush();
     if (bossRushActive &&
         is_vanilla_new_file_stage(stage, point, room, layer)) {
         prepare_bossrush_start();
         set_next_stage_args(args, kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom,
             kBossRushReturnLayer);
-    } else if (is_intro_skipped(save) && is_vanilla_new_file_stage(stage, point, room, layer)) {
+    } else if (is_intro_skipped() && is_vanilla_new_file_stage(stage, point, room, layer)) {
         prepare_intro_skip_start();
         set_next_stage_args(args, kIntroSkipStage, 0, kIntroSkipRoom, -1);
     }
@@ -3635,7 +3503,7 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
 HookAction on_bosswarp_execute_pre(ModContext*, void* args, void* retval, void*) {
     auto* warp = mods::arg<daObjBossWarp_c*>(args, 0);
     if (warp == nullptr || !is_bossrush_game_mode_active() ||
-        !is_boss_rush(dComIfGs_getSaveData()) ||
+        !is_boss_rush() ||
         boss_rush_state() != kBossRushStateHub || !is_boss_hub_stage_name())
     {
         return HOOK_CONTINUE;
@@ -3719,7 +3587,7 @@ bool complete_bossrush_final_sequence() {
 }
 
 bool should_handle_final_scene_change(int exitId, s8 roomNo) {
-    if (!is_bossrush_game_mode_active() || !is_boss_rush(dComIfGs_getSaveData()) ||
+    if (!is_bossrush_game_mode_active() || !is_boss_rush() ||
         boss_rush_state() == kBossRushStateHub) {
         return false;
     }
@@ -3768,7 +3636,7 @@ HookAction on_stage_change_pre(ModContext*, void* args, void* retval, void*) {
 
 HookAction on_dungeon_return_warp_pre(ModContext*, void*, void*, void*) {
     if (!sCaveOfOrdealsWarpPending || !is_bossrush_game_mode_active() ||
-        !is_boss_rush(dComIfGs_getSaveData()) ||
+        !is_boss_rush() ||
         boss_rush_state() != kBossRushStateCaveOfOrdeals)
     {
         return HOOK_CONTINUE;
@@ -4045,7 +3913,7 @@ ModResult on_bossrush_game_mode_play(void*, ModError* error) {
 
 ModResult on_bossrush_save_loaded(void*, ModError* error) {
     dSv_save_c* save = dComIfGs_getSaveData();
-    if (is_boss_rush(save)) {
+    if (is_boss_rush()) {
         prepare_bossrush_start();
         return activate_bossrush_runtime(error, true);
     }
@@ -4059,7 +3927,7 @@ ModResult on_bossrush_new_save(void*, ModError*) {
 }
 
 ModResult on_bossrush_game_reset(void*, ModError*) {
-    if (is_boss_rush(dComIfGs_getSaveData())) {
+    if (is_boss_rush()) {
         set_bossrush_return_place();
     }
     reset_bossrush_runtime_state(true);

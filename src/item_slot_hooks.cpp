@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "hud_layout.hpp"
+#include "save_state.hpp"
 #include "service_imports.hpp"
 
 #include "global.h"
@@ -86,10 +87,6 @@ constexpr u8 kZItemSlot = SELECT_ITEM_DOWN;
 constexpr int kExtendedSelectItemCount = 3;
 constexpr int kSelectItemNotFound = 3;
 constexpr int kItemProcBootsEquip = 1;
-constexpr size_t kDawnlightReserveOffset = 0x8F0;
-constexpr size_t kBossRushMarkerOffset = 32;
-constexpr char kBossRushMarker[] = "DUSKBR1";
-
 DEFINE_HOOK(&dComIfGp_getSelectItem, GetSelectItemHook);
 DEFINE_HOOK(&dComIfGp_setSelectItem, SetSelectItemHook);
 DEFINE_HOOK(&dMenu_Ring_c::_create, RingCreateHook);
@@ -611,12 +608,7 @@ bool touch_midna_controls_suppressed() {
 }
 
 bool boss_rush_save_active() {
-    dSv_save_c* save = dComIfGs_getSaveData();
-    const u8* reserve = save == nullptr ? nullptr :
-        reinterpret_cast<const u8*>(save) + kDawnlightReserveOffset;
-    return reserve != nullptr &&
-           std::memcmp(
-               reserve + kBossRushMarkerOffset, kBossRushMarker, sizeof(kBossRushMarker) - 1) == 0;
+    return save_state_boss_rush_active();
 }
 
 bool midna_touch_available() {

@@ -357,16 +357,39 @@ const char* text_anchor_name(int anchor) {
 
 std::filesystem::path hud_settings_file_path() {
     const char* dataDir = nullptr;
-    if (svc_host == nullptr || svc_host->data_dir(mod_ctx, &dataDir) != MOD_OK || dataDir == nullptr) {
+    if (svc_host == nullptr || svc_host->data_dir(mod_ctx, &dataDir) != MOD_OK || dataDir == nullptr ||
+        *dataDir == '\0')
+    {
         return {};
     }
 
     const std::filesystem::path dataPath(dataDir);
+    const std::filesystem::path path = dataPath / kHudSettingsFileName;
     const std::filesystem::path configRoot = dataPath.parent_path().parent_path();
-    if (configRoot.empty()) {
-        return {};
+    const std::filesystem::path legacyPath = configRoot / "mods" / kHudSettingsFileName;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) && !ec &&
+        std::filesystem::exists(legacyPath, ec) && !ec)
+    {
+        std::filesystem::rename(legacyPath, path, ec);
+        if (ec) {
+            ec.clear();
+            std::filesystem::copy_file(
+                legacyPath, path, std::filesystem::copy_options::none, ec);
+            if (!ec) {
+                std::filesystem::remove(legacyPath, ec);
+            }
+        }
+        if (ec) {
+            svc_log->warn(mod_ctx,
+                "Dawnlight HUD: failed to migrate hud_layout_settings.json to mod data");
+        } else {
+            svc_log->info(mod_ctx,
+                "Dawnlight HUD: migrated hud_layout_settings.json to mod data");
+        }
     }
-    return configRoot / "mods" / kHudSettingsFileName;
+    return path;
 }
 
 bool set_custom_hud_from_defaults(const HudElementDefaultArray& elementDefaults,
@@ -1432,9 +1455,9 @@ const char* hud_settings_io_result_message(HudSettingsIoResult result) {
     case HudSettingsIoResult::Ok:
         return "OK";
     case HudSettingsIoResult::FileMissing:
-        return "Place hud_layout_settings.json in the mods folder, then press IMPORT HUD again.";
+        return "Place hud_layout_settings.json in Dawnlight's data folder, then press IMPORT HUD again.";
     case HudSettingsIoResult::PathUnavailable:
-        return "The mods folder path is currently unavailable.";
+        return "Dawnlight's data folder path is currently unavailable.";
     case HudSettingsIoResult::ReadFailed:
         return "Unable to read hud_layout_settings.json.";
     case HudSettingsIoResult::WriteFailed:

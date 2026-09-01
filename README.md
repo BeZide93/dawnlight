@@ -121,9 +121,10 @@ The HUD layout setting has five modes:
 
 The Custom layout can move and scale supported HUD elements and can adjust item,
 text, ammo, and button-backing offsets on the HUD buttons. `EXPORT HUD` writes
-`hud_layout_settings.json` into the `mods` folder, and `IMPORT HUD` reads the
-same file from that folder. The copy buttons can seed Custom from the GameCube,
-X-Box, Wii-U, or Dawnlight presets.
+`hud_layout_settings.json` into Dawnlight's mod data directory provided by
+Dusklight, and `IMPORT HUD` reads the same file from there. Existing exports in
+the old `mods` folder are migrated automatically. The copy buttons can seed
+Custom from the GameCube, X-Box, Wii-U, or Dawnlight presets.
 
 The `hud_layout_settings.json` format is compatible with the Dawnlight fork's
 HUD layout export where the same fields are available.

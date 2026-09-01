@@ -38,7 +38,7 @@ void on_actor_create_post(ModContext*, void* args, void* retval, void*) {
 
     int percent = health_scale_percent();
     if (automatic_ngplus_health_scaling()) {
-        const unsigned count = std::min(new_game_plus_count(dComIfGs_getSaveData()), 9u);
+        const unsigned count = std::min(new_game_plus_count(), 9u);
         if (count != 0) {
             percent = std::max(percent, 200 + static_cast<int>(count) * 10);
         }

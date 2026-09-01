@@ -1,6 +1,7 @@
 #include "save_compat.hpp"
 
 #include "config.hpp"
+#include "save_state.hpp"
 #include "service_imports.hpp"
 
 #include "d/d_com_inf_game.h"
@@ -10,8 +11,6 @@
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
-
-#include <cstring>
 
 namespace dawnlight {
 namespace {
@@ -26,18 +25,8 @@ DEFINE_HOOK(&item_getcheck_func_HVY_BOOTS, ItemGetCheckHeavyBoots);
 DEFINE_HOOK(&item_getcheck_func_KANTERA, ItemGetCheckLantern);
 DEFINE_HOOK(&item_getcheck_func_PACHINKO, ItemGetCheckSlingshot);
 
-constexpr size_t kReserveOffset = 0x8F0;
-constexpr size_t kNgPlusCountOffset = 8;
-constexpr size_t kIntroSkipOffset = 16;
-constexpr char kNgPlusMagic[] = "DUSKNGP1";
-constexpr char kIntroSkipMagic[] = "DUSKSKP1";
-
-const u8* reserve_bytes(const dSv_save_c* save) {
-    return save == nullptr ? nullptr : reinterpret_cast<const u8*>(save) + kReserveOffset;
-}
-
 void repair_faron_tears(dSv_save_c* save) {
-    if (save == nullptr || !is_intro_skipped(save)) {
+    if (save == nullptr || !is_intro_skipped()) {
         return;
     }
 
@@ -51,7 +40,7 @@ void repair_faron_tears(dSv_save_c* save) {
 }
 
 void repair_ordon_gear(dSv_save_c* save) {
-    if (save == nullptr || !is_new_game_plus(save) || is_intro_skipped(save)) {
+    if (save == nullptr || !is_new_game_plus() || is_intro_skipped()) {
         return;
     }
 
@@ -101,15 +90,13 @@ void on_card_to_memory_post(ModContext*, void*, void*, void*) {
 }
 
 void restore_master_sword_post(ModContext*, void*, void*, void*) {
-    dSv_save_c* save = dComIfGs_getSaveData();
-    if (is_new_game_plus(save) && dComIfGs_isItemFirstBit(dItemNo_MASTER_SWORD_e)) {
+    if (is_new_game_plus() && dComIfGs_isItemFirstBit(dItemNo_MASTER_SWORD_e)) {
         dComIfGs_setSelectEquipSword(dItemNo_MASTER_SWORD_e);
     }
 }
 
 void restore_hylian_shield_post(ModContext*, void*, void*, void*) {
-    dSv_save_c* save = dComIfGs_getSaveData();
-    if (is_new_game_plus(save) && dComIfGs_isItemFirstBit(dItemNo_HYLIA_SHIELD_e)) {
+    if (is_new_game_plus() && dComIfGs_isItemFirstBit(dItemNo_HYLIA_SHIELD_e)) {
         dComIfGs_setSelectEquipShield(dItemNo_HYLIA_SHIELD_e);
     }
 }
@@ -117,7 +104,7 @@ void restore_hylian_shield_post(ModContext*, void*, void*, void*) {
 void hide_early_ngplus_item_post(ModContext*, void*, void* retval, void* eventBitPtr) {
     auto* result = static_cast<int*>(retval);
     const auto eventBit = static_cast<u16>(reinterpret_cast<uintptr_t>(eventBitPtr));
-    if (result != nullptr && is_new_game_plus(dComIfGs_getSaveData()) &&
+    if (result != nullptr && is_new_game_plus() &&
         !dComIfGs_isEventBit(eventBit))
     {
         *result = FALSE;
@@ -133,23 +120,16 @@ ModResult add_post(HookPostFn callback, void* userdata = nullptr) {
 
 }  // namespace
 
-bool is_new_game_plus(const dSv_save_c* save) {
-    const u8* reserve = reserve_bytes(save);
-    return reserve != nullptr && std::memcmp(reserve, kNgPlusMagic, sizeof(kNgPlusMagic) - 1) == 0;
+bool is_new_game_plus() {
+    return save_state_is_new_game_plus();
 }
 
-bool is_intro_skipped(const dSv_save_c* save) {
-    const u8* reserve = reserve_bytes(save);
-    return reserve != nullptr &&
-           std::memcmp(reserve + kIntroSkipOffset, kIntroSkipMagic, sizeof(kIntroSkipMagic) - 1) == 0;
+bool is_intro_skipped() {
+    return save_state_intro_skipped();
 }
 
-unsigned new_game_plus_count(const dSv_save_c* save) {
-    if (!is_new_game_plus(save)) {
-        return 0;
-    }
-    const unsigned count = reserve_bytes(save)[kNgPlusCountOffset];
-    return count == 0 ? 1 : count;
+unsigned new_game_plus_count() {
+    return save_state_new_game_plus_count();
 }
 
 ModResult install_save_compat_hooks(ModError* error) {

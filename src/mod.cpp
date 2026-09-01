@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "model_overlays.hpp"
 #include "save_compat.hpp"
+#include "save_state.hpp"
 #include "service_imports.hpp"
 #include "update_service.hpp"
 
@@ -14,6 +15,7 @@
 #include "mods/svc/log.h"
 #include "mods/svc/message.h"
 #include "mods/svc/overlay.h"
+#include "mods/svc/save.h"
 #include "mods/svc/texture.h"
 #include "mods/svc/ui.h"
 
@@ -26,6 +28,7 @@ IMPORT_SERVICE(HostService, svc_host);
 IMPORT_SERVICE(LogService, svc_log);
 IMPORT_SERVICE(MessageService, svc_message);
 IMPORT_SERVICE(OverlayService, svc_overlay);
+IMPORT_SERVICE(SaveService, svc_save);
 IMPORT_SERVICE(TextureService, svc_texture);
 IMPORT_SERVICE(UiService, svc_ui);
 
@@ -46,6 +49,9 @@ extern "C" {
 
 MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::register_config(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::initialize_save_state(error); result != MOD_OK) {
         return result;
     }
     if (const ModResult result = dawnlight::register_ui(error); result != MOD_OK) {
@@ -100,6 +106,7 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_model_overlays();
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_new_save_modes();
+    dawnlight::shutdown_save_state();
     dawnlight::shutdown_update_service();
     dawnlight::shutdown_item_slot_hooks();
     svc_log->info(mod_ctx, "Dawnlight portable feature pack stopped");

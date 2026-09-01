@@ -131,7 +131,7 @@ void export_hud_settings(ModContext*, void*) {
     std::string path;
     const HudSettingsIoResult result = export_custom_hud_settings(path);
     if (result == HudSettingsIoResult::Ok) {
-        push_toast("HUD Exported", "Exported hud_layout_settings.json to the mods folder.");
+        push_toast("HUD Exported", "Exported hud_layout_settings.json to Dawnlight's data folder.");
     } else {
         push_toast("HUD Export Failed", hud_settings_io_result_message(result), "warning");
     }
@@ -141,7 +141,7 @@ void import_hud_settings(ModContext*, void*) {
     std::string path;
     const HudSettingsIoResult result = import_custom_hud_settings(path);
     if (result == HudSettingsIoResult::Ok) {
-        push_toast("HUD Imported", "Imported hud_layout_settings.json from the mods folder.");
+        push_toast("HUD Imported", "Imported hud_layout_settings.json from Dawnlight's data folder.");
     } else {
         push_toast("HUD Import Failed", hud_settings_io_result_message(result), "warning");
     }

@@ -58,6 +58,7 @@ add_mod(dawnlight_mod
         src/model_overlays.cpp
         src/new_save_modes.cpp
         src/save_compat.cpp
+        src/save_state.cpp
         src/ui.cpp
         src/update_service.cpp
     MOD_JSON mod.json

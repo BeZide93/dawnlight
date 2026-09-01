@@ -9,6 +9,7 @@
 #include "mods/svc/log.h"
 #include "mods/svc/message.h"
 #include "mods/svc/overlay.h"
+#include "mods/svc/save.h"
 #include "mods/svc/texture.h"
 #include "mods/svc/ui.h"
 
@@ -21,5 +22,6 @@ extern const HostService* svc_host;
 extern const LogService* svc_log;
 extern const MessageService* svc_message;
 extern const OverlayService* svc_overlay;
+extern const SaveService* svc_save;
 extern const TextureService* svc_texture;
 extern const UiService* svc_ui;

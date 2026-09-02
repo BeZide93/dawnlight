@@ -25,7 +25,7 @@ namespace {
 DEFINE_HOOK(&daAlink_c::execute, GreatSpinPlayerExecuteHook);
 
 constexpr float kProjectileSpeed = 40.0f;
-constexpr float kProjectileRange = 1200.0f;
+constexpr float kProjectileRange = 2400.0f;
 constexpr float kColliderHalfWidth = 150.0f;
 constexpr float kColliderRadius = 55.0f;
 

@@ -548,6 +548,14 @@ ModResult build_gameplay_tab(
         return MOD_ERROR;
     }
 
+    if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Great Spin Projectile", great_spin_projectile_config_var(),
+            "Launches the Great Spin trail forward as a damaging sword projectile at full health.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+
     if (add_section(ctx, left, "Boss Rush Hardmode") != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Arena Hazards", bossrush_hardmode_hazards_config_var(),
             "Spawns three damaging projectiles every 10 seconds during active Boss Rush fights.")

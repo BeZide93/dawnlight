@@ -33,6 +33,7 @@ ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
 ConfigVarHandle s_bulletTime = 0;
+ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
 ConfigVarHandle s_zItemSlot = 0;
@@ -836,6 +837,7 @@ ModResult register_config(ModError* error) {
         register_bool("aim-movement", true, s_aimMovement) != MOD_OK ||
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
         register_bool("bullet-time", true, s_bulletTime) != MOD_OK ||
+        register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
@@ -984,6 +986,10 @@ int cinema_zoom_percent() {
 
 bool bullet_time_enabled() {
     return get_bool(s_bulletTime, true);
+}
+
+bool great_spin_projectile_enabled() {
+    return get_bool(s_greatSpinProjectile, true);
 }
 
 bool manual_shielding_enabled() {
@@ -1189,6 +1195,10 @@ ConfigVarHandle cinema_zoom_config_var() {
 
 ConfigVarHandle bullet_time_config_var() {
     return s_bulletTime;
+}
+
+ConfigVarHandle great_spin_projectile_config_var() {
+    return s_greatSpinProjectile;
 }
 
 ConfigVarHandle manual_shielding_config_var() {

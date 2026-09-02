@@ -1,5 +1,6 @@
 #include "bullet_time.hpp"
 #include "config.hpp"
+#include "great_spin_projectile.hpp"
 #include "model_overlays.hpp"
 #include "save_compat.hpp"
 #include "save_state.hpp"
@@ -64,6 +65,11 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::initialize_bullet_time(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::initialize_great_spin_projectile(error);
+        result != MOD_OK)
+    {
+        return result;
+    }
     if (const ModResult result = dawnlight::install_save_compat_hooks(error); result != MOD_OK) {
         return result;
     }
@@ -107,6 +113,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_model_overlays();
+    dawnlight::shutdown_great_spin_projectile();
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_new_save_modes();
     dawnlight::shutdown_save_state();

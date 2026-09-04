@@ -1025,6 +1025,44 @@ void clear_boss_flags(const BossRushEntry& entry) {
     }
 }
 
+void clear_boss_completion_event(const BossRushEntry& entry) {
+    if (entry.clearMode != BossRushEntry::Boss) {
+        return;
+    }
+
+    u16 eventBit;
+    switch (entry.saveTable) {
+    case dStage_SaveTbl_LV1:
+        eventBit = dSv_event_flag_c::M_022;
+        break;
+    case dStage_SaveTbl_LV2:
+        eventBit = dSv_event_flag_c::M_031;
+        break;
+    case dStage_SaveTbl_LV3:
+        eventBit = dSv_event_flag_c::M_045;
+        break;
+    case dStage_SaveTbl_LV4:
+        eventBit = dSv_event_flag_c::F_0265;
+        break;
+    case dStage_SaveTbl_LV5:
+        eventBit = dSv_event_flag_c::F_0266;
+        break;
+    case dStage_SaveTbl_LV6:
+        eventBit = dSv_event_flag_c::F_0267;
+        break;
+    case dStage_SaveTbl_LV7:
+        eventBit = dSv_event_flag_c::F_0268;
+        break;
+    case dStage_SaveTbl_LV8:
+        eventBit = dSv_event_flag_c::F_0570;
+        break;
+    default:
+        return;
+    }
+
+    dComIfGs_offEventBit(eventBit);
+}
+
 void clear_all_boss_flags() {
     for (const BossRushEntry& entry : kBossRushEntries) {
         clear_boss_flags(entry);
@@ -1218,6 +1256,7 @@ void prepare_final_battle_state(const BossRushEntry& entry) {
 void prepare_bossrush_entry(const BossRushEntry& entry) {
     ensure_bossrush_story_state();
     clear_boss_flags(entry);
+    clear_boss_completion_event(entry);
 
     if (entry.saveTable == dStage_SaveTbl_LV9) {
         prepare_final_battle_state(entry);

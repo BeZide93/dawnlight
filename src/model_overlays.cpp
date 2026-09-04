@@ -40,6 +40,10 @@ constexpr std::array<ModelOverlayDesc, static_cast<size_t>(CustomModel::Count)> 
     {CustomModel::SumoLink, "alSumou.arc", "/res/Object/alSumou.arc"},
     {CustomModel::Horse, "Horse.arc", "/res/Object/Horse.arc"},
     {CustomModel::Items, "Alink.arc", "/res/Object/Alink.arc"},
+    {CustomModel::Animations, "AlAnm.arc", "/res/Object/AlAnm.arc"},
+    {CustomModel::OrdonShield, "CWShd.arc", "/res/Object/CWShd.arc"},
+    {CustomModel::WoodenShield, "SWShd.arc", "/res/Object/SWShd.arc"},
+    {CustomModel::HylianShield, "HyShd.arc", "/res/Object/HyShd.arc"},
 }};
 
 std::array<OverlayHandle, kModelOverlays.size()> s_modelOverlayHandles = {};

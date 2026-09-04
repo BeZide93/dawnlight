@@ -36,6 +36,7 @@ IMPORT_SERVICE(UiService, svc_ui);
 namespace dawnlight {
 ModResult install_aim_hooks(ModError* error);
 ModResult install_enemy_scaling_hooks(ModError* error);
+ModResult install_eye_movement_hooks(ModError* error);
 ModResult install_item_integrity_hooks(ModError* error);
 ModResult install_item_slot_hooks(ModError* error);
 ModResult install_jump_hooks(ModError* error);
@@ -59,6 +60,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         return result;
     }
     if (const ModResult result = dawnlight::install_model_hooks(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::install_eye_movement_hooks(error); result != MOD_OK) {
         return result;
     }
     dawnlight::initialize_model_overlays();

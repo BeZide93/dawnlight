@@ -604,6 +604,14 @@ ModResult build_models_tab(
     {
         return MOD_ERROR;
     }
+    if (add_number(ctx, left, "Eye Movement Range", eye_movement_range_config_var(), 0, 200,
+            1, "%",
+            "Scales both animated and procedural eye texture movement. 100% is vanilla; 0% "
+            "removes all eye UV movement.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_select(ctx, left, "Ordon Link", custom_model_config_var(CustomModel::OrdonLink),
             kModelOptions, std::size(kModelOptions),
             "Custom loads mods/BMDL.arc after restarting. Missing files keep the vanilla model.")
@@ -657,6 +665,38 @@ ModResult build_models_tab(
     if (add_select(ctx, left, "Items", custom_model_config_var(CustomModel::Items),
             kModelOptions, std::size(kModelOptions),
             "Custom loads mods/Alink.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Animations",
+            custom_model_config_var(CustomModel::Animations), kModelOptions,
+            std::size(kModelOptions),
+            "Custom loads mods/AlAnm.arc after restarting. Missing files keep the vanilla animations.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Ordon Shield",
+            custom_model_config_var(CustomModel::OrdonShield), kModelOptions,
+            std::size(kModelOptions),
+            "Custom loads mods/CWShd.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Wooden Shield",
+            custom_model_config_var(CustomModel::WoodenShield), kModelOptions,
+            std::size(kModelOptions),
+            "Custom loads mods/SWShd.arc after restarting. Missing files keep the vanilla model.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Hylian Shield",
+            custom_model_config_var(CustomModel::HylianShield), kModelOptions,
+            std::size(kModelOptions),
+            "Custom loads mods/HyShd.arc after restarting. Missing files keep the vanilla model.")
         != MOD_OK)
     {
         return MOD_ERROR;

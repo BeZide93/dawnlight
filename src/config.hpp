@@ -27,6 +27,10 @@ enum class CustomModel : int {
     SumoLink,
     Horse,
     Items,
+    Animations,
+    OrdonShield,
+    WoodenShield,
+    HylianShield,
     Count,
 };
 
@@ -95,6 +99,7 @@ bool dawnlight_touch_ui_enabled();
 bool check_for_updates_enabled();
 bool bossrush_hardmode_hazards_enabled();
 bool hide_shield_enabled();
+int eye_movement_range_percent();
 bool custom_model_enabled(CustomModel model);
 HudLayout hud_layout();
 bool hardcoded_hud_layout_enabled();
@@ -139,6 +144,7 @@ ConfigVarHandle dawnlight_touch_ui_config_var();
 ConfigVarHandle check_for_updates_config_var();
 ConfigVarHandle bossrush_hardmode_hazards_config_var();
 ConfigVarHandle hide_shield_config_var();
+ConfigVarHandle eye_movement_range_config_var();
 ConfigVarHandle custom_model_config_var(CustomModel model);
 ConfigVarHandle hud_layout_config_var();
 ConfigVarHandle round_xy_buttons_config_var();

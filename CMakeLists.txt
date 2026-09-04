@@ -50,6 +50,7 @@ add_mod(dawnlight_mod
         src/config.cpp
         src/deferred_features.cpp
         src/enemy_scaling.cpp
+        src/eye_movement.cpp
         src/great_spin_projectile.cpp
         src/item_integrity.cpp
         src/item_slot_hooks.cpp

@@ -258,6 +258,12 @@ fpc_ProcID sHubBarrierId = fpcM_ERROR_PROCESS_ID_e;
 fpc_ProcID sHubPortalIds[kBossRushHubPortalCount];
 fpc_ProcID sDirectFinalBossId = fpcM_ERROR_PROCESS_ID_e;
 fpc_ProcID sDirectFinalBarrierId = fpcM_ERROR_PROCESS_ID_e;
+struct PendingActorDelete {
+    ActorId id = 0;
+    bool active = false;
+};
+constexpr size_t kPendingActorDeleteCapacity = kBossRushHubPortalCount + 4;
+std::array<PendingActorDelete, kPendingActorDeleteCapacity> sPendingActorDeletes{};
 int sDirectFinalBossIndex = -1;
 bool sDirectFinalGanondorfStarted = false;
 int sDirectFinalGanondorfReadyFrames = 0;
@@ -356,104 +362,26 @@ struct BossRushTriangleHazard {
 
 BossRushTriangleHazard sBossRushTriangleHazard;
 
-using CreateActor7Fn =
-    fpc_ProcID (*)(s16, u32, const cXyz*, int, const csXyz*, const cXyz*, s8);
-using CreateActor8Fn =
-    fpc_ProcID (*)(s16, u32, const cXyz*, int, const csXyz*, const cXyz*, s8, u32);
-using CreateActor9Fn =
-    fpc_ProcID (*)(s16, u32, const cXyz*, int, const csXyz*, const cXyz*, s8, u32, u8);
-
-CreateActor7Fn sCreateActor7 = nullptr;
-CreateActor8Fn sCreateActor8 = nullptr;
-CreateActor9Fn sCreateActor9 = nullptr;
-bool sCreateActorResolveAttempted = false;
-
-void resolve_create_actor() {
-    if (sCreateActorResolveAttempted) {
-        return;
-    }
-    sCreateActorResolveAttempted = true;
-
-    void* symbol = nullptr;
-#if defined(_WIN32)
-    if (svc_hook->resolve(
-            mod_ctx, "?fopAcM_create@@YAIFIPEBUcXyz@@HPEBVcsXyz@@0CIE@Z", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor9 = reinterpret_cast<CreateActor9Fn>(symbol);
-        return;
-    }
-    if (svc_hook->resolve(
-            mod_ctx, "?fopAcM_create@@YAIFIPEBUcXyz@@HPEBVcsXyz@@0CI@Z", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor8 = reinterpret_cast<CreateActor8Fn>(symbol);
-        return;
-    }
-    if (svc_hook->resolve(
-            mod_ctx, "?fopAcM_create@@YAIFIPEBUcXyz@@HPEBVcsXyz@@0C@Z", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor7 = reinterpret_cast<CreateActor7Fn>(symbol);
-        return;
-    }
-#elif defined(__ANDROID__)
-    if (svc_hook->resolve(mod_ctx, "_Z13fopAcM_createsjPK4cXyziPK5csXyzS1_ajh", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor9 = reinterpret_cast<CreateActor9Fn>(symbol);
-        return;
-    }
-    if (svc_hook->resolve(mod_ctx, "_Z13fopAcM_createsjPK4cXyziPK5csXyzS1_a", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor7 = reinterpret_cast<CreateActor7Fn>(symbol);
-        return;
-    }
-    if (svc_hook->resolve(mod_ctx, "_Z13fopAcM_createsjPK4cXyziPK5csXyzS1_aj", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor8 = reinterpret_cast<CreateActor8Fn>(symbol);
-        return;
-    }
-#else
-    if (svc_hook->resolve(mod_ctx, "_Z13fopAcM_createsjPK4cXyziPK5csXyzS1_ajh", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor9 = reinterpret_cast<CreateActor9Fn>(symbol);
-        return;
-    }
-    if (svc_hook->resolve(mod_ctx, "_Z13fopAcM_createsjPK4cXyziPK5csXyzS1_aj", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor8 = reinterpret_cast<CreateActor8Fn>(symbol);
-        return;
-    }
-    if (svc_hook->resolve(mod_ctx, "_Z13fopAcM_createsjPK4cXyziPK5csXyzS1_a", &symbol,
-            nullptr) == MOD_OK)
-    {
-        sCreateActor7 = reinterpret_cast<CreateActor7Fn>(symbol);
-    }
-#endif
-}
-
 fpc_ProcID create_actor(s16 procName, u32 parameters, const cXyz* pos, int roomNo,
     const csXyz* angle, const cXyz* scale, s8 argument) {
-    resolve_create_actor();
+    const cXyz spawnPos = pos != nullptr ? *pos : cXyz(0.0f, 0.0f, 0.0f);
+    const csXyz spawnAngle = angle != nullptr ? *angle : csXyz(0, 0, 0);
+    const cXyz spawnScale = scale != nullptr ? *scale : cXyz(1.0f, 1.0f, 1.0f);
+    const ActorSpawnParams spawnParams = {
+        .parameters = parameters,
+        .argument = argument,
+        .room_num = static_cast<s8>(roomNo),
+        .position = {spawnPos.x, spawnPos.y, spawnPos.z},
+        .angle = {spawnAngle.x, spawnAngle.y, spawnAngle.z},
+        .scale = {spawnScale.x, spawnScale.y, spawnScale.z},
+        .create_function = nullptr,
+    };
 
-    if (sCreateActor9 != nullptr) {
-        return sCreateActor9(procName, parameters, pos, roomNo, angle, scale, argument, 0, 0xff);
+    ActorId actorId = fpcM_ERROR_PROCESS_ID_e;
+    if (svc_actor->create_actor(mod_ctx, procName, &spawnParams, &actorId) != MOD_OK) {
+        return fpcM_ERROR_PROCESS_ID_e;
     }
-
-    if (sCreateActor8 != nullptr) {
-        return sCreateActor8(procName, parameters, pos, roomNo, angle, scale, argument, 0);
-    }
-
-    if (sCreateActor7 != nullptr) {
-        return sCreateActor7(procName, parameters, pos, roomNo, angle, scale, argument);
-    }
-
-    return fpcM_ERROR_PROCESS_ID_e;
+    return static_cast<fpc_ProcID>(actorId);
 }
 
 bool is_bossrush_game_mode_active() {
@@ -610,9 +538,55 @@ void arm_ganondorf_barrier(obj_gb_class* barrier);
 void start_bossrush_hub_music();
 void stop_bossrush_hub_music();
 
+void queue_actor_delete(ActorId id) {
+    for (const PendingActorDelete& pending : sPendingActorDeletes) {
+        if (pending.active && pending.id == id) {
+            return;
+        }
+    }
+
+    for (PendingActorDelete& pending : sPendingActorDeletes) {
+        if (!pending.active) {
+            pending.id = id;
+            pending.active = true;
+            return;
+        }
+    }
+
+    svc_log->warn(mod_ctx, "Dawnlight Boss Rush: actor deletion queue is full");
+}
+
+void retry_pending_actor_deletes() {
+    for (PendingActorDelete& pending : sPendingActorDeletes) {
+        if (!pending.active) {
+            continue;
+        }
+        if (fopAcM_SearchByID(pending.id) == nullptr) {
+            pending = {};
+            continue;
+        }
+
+        const ModResult result = svc_actor->delete_actor(mod_ctx, pending.id);
+        if (result == MOD_UNAVAILABLE) {
+            continue;
+        }
+        if (result != MOD_OK) {
+            svc_log->warn(mod_ctx, "Dawnlight Boss Rush: failed to delete actor");
+        }
+        pending = {};
+    }
+}
+
 void delete_hub_actor(fpc_ProcID id) {
-    if (id != fpcM_ERROR_PROCESS_ID_e && fopAcM_SearchByID(id) != NULL) {
-        fopAcM_delete(id);
+    if (id == fpcM_ERROR_PROCESS_ID_e || fopAcM_SearchByID(id) == nullptr) {
+        return;
+    }
+
+    const ModResult result = svc_actor->delete_actor(mod_ctx, static_cast<ActorId>(id));
+    if (result == MOD_UNAVAILABLE) {
+        queue_actor_delete(static_cast<ActorId>(id));
+    } else if (result != MOD_OK) {
+        svc_log->warn(mod_ctx, "Dawnlight Boss Rush: failed to request actor deletion");
     }
 }
 
@@ -3987,6 +3961,10 @@ ModResult register_new_save_modes(ModError* error) {
     return MOD_OK;
 }
 
+void update_new_save_modes() {
+    retry_pending_actor_deletes();
+}
+
 void shutdown_new_save_modes() {
     if (svc_game_mode != nullptr) {
         ModResult result = svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId);
@@ -4003,6 +3981,7 @@ void shutdown_new_save_modes() {
     unregister_bossrush_hub_banner();
     unregister_bossrush_title_logo();
     unregister_bossrush_hub_music_overlay();
+    retry_pending_actor_deletes();
     sBossRushGameModeActive = false;
 }
 

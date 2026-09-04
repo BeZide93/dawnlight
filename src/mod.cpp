@@ -8,6 +8,7 @@
 #include "update_service.hpp"
 
 #include "mods/service.hpp"
+#include "mods/svc/actor.h"
 #include "mods/svc/config.h"
 #include "mods/svc/flow.h"
 #include "mods/svc/game_mode.h"
@@ -21,6 +22,7 @@
 #include "mods/svc/ui.h"
 
 DEFINE_MOD();
+IMPORT_SERVICE(ActorService, svc_actor);
 IMPORT_SERVICE(ConfigService, svc_config);
 IMPORT_SERVICE(FlowService, svc_flow);
 IMPORT_SERVICE(GameModeService, svc_game_mode);
@@ -43,6 +45,7 @@ ModResult install_jump_hooks(ModError* error);
 ModResult install_manual_shield_hooks(ModError* error);
 ModResult register_new_save_modes(ModError* error);
 ModResult register_ui(ModError* error);
+void update_new_save_modes();
 void shutdown_item_slot_hooks();
 void shutdown_new_save_modes();
 }
@@ -110,6 +113,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
 }
 
 MOD_EXPORT ModResult mod_update(ModError*) {
+    dawnlight::update_new_save_modes();
     dawnlight::bullet_time_tick();
     dawnlight::update_update_service(svc_log, mod_ctx, svc_ui);
     return MOD_OK;

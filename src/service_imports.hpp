@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mods/svc/actor.h"
 #include "mods/svc/config.h"
 #include "mods/svc/flow.h"
 #include "mods/svc/game.h"
@@ -13,6 +14,7 @@
 #include "mods/svc/texture.h"
 #include "mods/svc/ui.h"
 
+extern const ActorService* svc_actor;
 extern const ConfigService* svc_config;
 extern const FlowService* svc_flow;
 extern const GameService* svc_game;

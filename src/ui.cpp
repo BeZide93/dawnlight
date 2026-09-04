@@ -549,6 +549,13 @@ ModResult build_gameplay_tab(
     }
 
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Flurry Rush", flurry_rush_config_var(),
+            "Perfectly evade a locked enemy attack with a side jump or backflip to slow enemies "
+            "for three seconds. Releasing the lock-on ends the effect early.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Fierce Deity", fierce_deity_config_var(),
             "Builds power with damaging sword attacks. Use a charged Spin Attack at full power "
             "to transform, deal double sword damage, and consume the meter over time.")

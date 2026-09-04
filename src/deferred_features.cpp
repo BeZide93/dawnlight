@@ -17,9 +17,4 @@ void install_bossrush_flow();
 // without modifying host meter code.
 void install_hud_editor_ui();
 
-// Flurry Rush:
-// Bullet Time now uses public HookService actor hooks. Flurry Rush still requires
-// finer-grained player and combat extension points.
-void install_action_gameplay();
-
 #endif

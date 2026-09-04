@@ -32,6 +32,8 @@ constexpr std::uint64_t kArrowSlowFrameInterval = 5;
 constexpr float kLinkTimeScale = 0.1f;
 constexpr auto kBulletTimeDuration = std::chrono::seconds(5);
 constexpr auto kManualJumpTimeout = std::chrono::seconds(7);
+constexpr auto kFlurryRushDuration = std::chrono::seconds(3);
+constexpr float kPerfectDodgeMargin = 45.0f;
 constexpr auto kColliderCacheEntries = std::size_t{256};
 constexpr auto kCollidersPerActor = std::size_t{64};
 constexpr auto kHitActorEntries = std::size_t{32};
@@ -80,6 +82,12 @@ struct LinkPositionStep {
 daAlink_c* s_manualJumpOwner = nullptr;
 Clock::time_point s_manualJumpStarted{};
 Clock::time_point s_bulletTimeStarted{};
+daAlink_c* s_flurryRushOwner = nullptr;
+fopAc_ac_c* s_flurryRushTarget = nullptr;
+Clock::time_point s_flurryRushStarted{};
+daAlink_c* s_dodgeOwner = nullptr;
+u16 s_dodgeProc = daAlink_c::PROC_WAIT;
+bool s_dodgeTriggered = false;
 std::array<ColliderCacheEntry, kColliderCacheEntries> s_colliderCache{};
 std::array<HitActorEntry, kHitActorEntries> s_hitActors{};
 std::array<ArrowFlightEntry, kArrowFlightEntries> s_flyingArrows{};
@@ -90,8 +98,13 @@ float s_previousGravity = 0.0f;
 float s_previousMaxFallSpeed = 0.0f;
 bool s_previousSpecialGravity = false;
 bool s_bulletTimeActive = false;
+bool s_flurryRushActive = false;
 bool s_bulletTimeUsedForJump = false;
 LinkPositionStep s_linkPositionStep{};
+
+bool combat_slow_active() {
+    return s_bulletTimeActive || s_flurryRushActive;
+}
 
 void clear_combat_time_caches() {
     s_colliderCache = {};
@@ -113,7 +126,22 @@ void stop_bullet_time() {
             s_previousSpecialGravity ? FALSE : TRUE);
     }
     s_bulletTimeActive = false;
-    clear_combat_time_caches();
+    if (!combat_slow_active()) {
+        clear_combat_time_caches();
+    }
+}
+
+void stop_flurry_rush() {
+    if (!s_flurryRushActive) {
+        return;
+    }
+
+    s_flurryRushActive = false;
+    s_flurryRushOwner = nullptr;
+    s_flurryRushTarget = nullptr;
+    if (!combat_slow_active()) {
+        clear_combat_time_caches();
+    }
 }
 
 void start_bullet_time(daAlink_c* link) {
@@ -121,6 +149,7 @@ void start_bullet_time(daAlink_c* link) {
         return;
     }
 
+    stop_flurry_rush();
     s_previousGravity = link->gravity;
     s_previousMaxFallSpeed = link->maxFallSpeed;
     s_previousSpecialGravity =
@@ -179,7 +208,7 @@ ColliderCacheEntry* find_collider_entry(fopAc_ac_c* actor, bool create) {
 }
 
 void remember_collider(cCcD_Obj* collider) {
-    if (!s_bulletTimeActive || collider == nullptr) {
+    if (!combat_slow_active() || collider == nullptr) {
         return;
     }
 
@@ -223,7 +252,7 @@ bool actor_has_hit_grace(fopAc_ac_c* actor) {
 }
 
 void mark_actor_hit(fopAc_ac_c* actor) {
-    if (!s_bulletTimeActive || actor_is_exempt(actor)) {
+    if (!combat_slow_active() || actor_is_exempt(actor)) {
         return;
     }
 
@@ -277,11 +306,14 @@ bool arrow_flight_was_initialized(daArrow_c* arrow) {
 }
 
 bool should_skip_actor(fopAc_ac_c* actor) {
-    if (!s_bulletTimeActive || actor == nullptr) {
+    if (!combat_slow_active() || actor == nullptr) {
         return false;
     }
 
     if (fopAcM_GetName(actor) == fpcNm_ARROW_e) {
+        if (!s_bulletTimeActive) {
+            return false;
+        }
         if (!arrow_flight_was_initialized(static_cast<daArrow_c*>(actor))) {
             return false;
         }
@@ -290,6 +322,103 @@ bool should_skip_actor(fopAc_ac_c* actor) {
 
     return !actor_is_exempt(actor) && !actor_has_hit_grace(actor) &&
            s_slowFrame % kSlowFrameInterval != 0;
+}
+
+bool flurry_dodge_active(const daAlink_c* link) {
+    return link != nullptr &&
+           (link->mProcID == daAlink_c::PROC_SIDESTEP ||
+               link->mProcID == daAlink_c::PROC_BACK_JUMP);
+}
+
+void update_dodge_attempt(daAlink_c* link) {
+    if (!flurry_dodge_active(link)) {
+        s_dodgeOwner = nullptr;
+        s_dodgeProc = daAlink_c::PROC_WAIT;
+        s_dodgeTriggered = false;
+        return;
+    }
+
+    if (s_dodgeOwner != link || s_dodgeProc != link->mProcID) {
+        s_dodgeOwner = link;
+        s_dodgeProc = link->mProcID;
+        s_dodgeTriggered = false;
+    }
+}
+
+float axis_gap(float minA, float maxA, float minB, float maxB) {
+    if (maxA < minB) {
+        return minB - maxA;
+    }
+    if (maxB < minA) {
+        return minA - maxB;
+    }
+    return 0.0f;
+}
+
+bool collider_near_link(cCcD_Obj* attack, daAlink_c* link) {
+    cCcD_ShapeAttr* attackShape = attack->GetShapeAttr();
+    if (attackShape == nullptr) {
+        return false;
+    }
+    attackShape->CalcAabBox();
+    const cM3dGAab& attackBounds = attackShape->GetWorkAab();
+    const float marginSquared = kPerfectDodgeMargin * kPerfectDodgeMargin;
+
+    for (dCcD_Cyl& body : link->mTgCyls) {
+        if (!body.ChkTgSet() || (attack->GetAtGrp() & body.GetTgGrp()) == 0 ||
+            (attack->GetAtType() & body.GetTgType()) == 0)
+        {
+            continue;
+        }
+
+        cCcD_ShapeAttr* bodyShape = body.GetShapeAttr();
+        if (bodyShape == nullptr) {
+            continue;
+        }
+        bodyShape->CalcAabBox();
+        const cM3dGAab& bodyBounds = bodyShape->GetWorkAab();
+        const float x = axis_gap(attackBounds.GetMinX(), attackBounds.GetMaxX(),
+                                 bodyBounds.GetMinX(), bodyBounds.GetMaxX());
+        const float y = axis_gap(attackBounds.GetMinY(), attackBounds.GetMaxY(),
+                                 bodyBounds.GetMinY(), bodyBounds.GetMaxY());
+        const float z = axis_gap(attackBounds.GetMinZ(), attackBounds.GetMaxZ(),
+                                 bodyBounds.GetMinZ(), bodyBounds.GetMaxZ());
+        if (x * x + y * y + z * z <= marginSquared) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void try_start_flurry_rush(cCcD_Obj* attack) {
+    if (attack == nullptr || !attack->ChkAtSet() || attack->GetAtType() == AT_TYPE_0 ||
+        s_bulletTimeActive || s_flurryRushActive || !flurry_rush_enabled())
+    {
+        return;
+    }
+
+    daAlink_c* link = daAlink_getAlinkActorClass();
+    update_dodge_attempt(link);
+    if (!flurry_dodge_active(link) || s_dodgeTriggered || !link->checkAttentionLock()) {
+        return;
+    }
+
+    fopAc_ac_c* target = link->mTargetedActor;
+    fopAc_ac_c* attacker = attack->GetAc();
+    if (target == nullptr || attacker == nullptr || attacker == link ||
+        !daAlink_c::checkEnemyGroup(target) ||
+        (attacker != target && !daAlink_c::checkEnemyGroup(attacker)) ||
+        !collider_near_link(attack, link))
+    {
+        return;
+    }
+
+    clear_combat_time_caches();
+    s_flurryRushOwner = link;
+    s_flurryRushTarget = target;
+    s_flurryRushStarted = Clock::now();
+    s_flurryRushActive = true;
+    s_dodgeTriggered = true;
 }
 
 void apply_bullet_time_fall(daAlink_c* link) {
@@ -398,7 +527,9 @@ HookAction before_process_method(ModContext*, void* args, void* retval, void*) {
 #endif
 
 HookAction before_collider_set(ModContext*, void* args, void*, void*) {
-    remember_collider(mods::arg<cCcD_Obj*>(args, 1));
+    cCcD_Obj* collider = mods::arg<cCcD_Obj*>(args, 1);
+    try_start_flurry_rush(collider);
+    remember_collider(collider);
     return HOOK_CONTINUE;
 }
 
@@ -489,6 +620,7 @@ ModResult initialize_bullet_time(ModError* error) {
 }
 
 void mark_manual_jump_started(daAlink_c* link) {
+    stop_flurry_rush();
     stop_bullet_time();
     s_manualJumpOwner = link;
     s_manualJumpStarted = Clock::now();
@@ -567,33 +699,50 @@ bool bullet_time_active_for(const daAlink_c* link) {
 }
 
 void bullet_time_tick() {
-    if (s_manualJumpOwner == nullptr) {
-        return;
-    }
-
     daAlink_c* currentLink = daAlink_getAlinkActorClass();
-    if (currentLink != s_manualJumpOwner || !bullet_time_enabled() || !r_jump_enabled()) {
-        clear_manual_jump(nullptr);
-        return;
+    update_dodge_attempt(currentLink);
+
+    if (s_flurryRushActive) {
+        const bool targetStillLocked = currentLink == s_flurryRushOwner &&
+                                       currentLink != nullptr &&
+                                       currentLink->checkAttentionLock() &&
+                                       currentLink->mTargetedActor == s_flurryRushTarget &&
+                                       s_flurryRushTarget != nullptr;
+        if (!flurry_rush_enabled() || !targetStillLocked ||
+            Clock::now() - s_flurryRushStarted >= kFlurryRushDuration)
+        {
+            stop_flurry_rush();
+        }
     }
 
-    const auto now = Clock::now();
-    if (!manual_jump_is_airborne(currentLink) ||
-        now - s_manualJumpStarted >= kManualJumpTimeout)
-    {
-        clear_manual_jump(currentLink);
-        return;
+    if (s_manualJumpOwner != nullptr) {
+        if (currentLink != s_manualJumpOwner || !bullet_time_enabled() || !r_jump_enabled()) {
+            clear_manual_jump(nullptr);
+        } else {
+            const auto now = Clock::now();
+            if (!manual_jump_is_airborne(currentLink) ||
+                now - s_manualJumpStarted >= kManualJumpTimeout)
+            {
+                clear_manual_jump(currentLink);
+            } else if (s_bulletTimeActive &&
+                       now - s_bulletTimeStarted >= kBulletTimeDuration)
+            {
+                stop_bullet_time();
+            }
+        }
     }
 
-    if (s_bulletTimeActive && now - s_bulletTimeStarted >= kBulletTimeDuration) {
-        stop_bullet_time();
-    } else if (s_bulletTimeActive) {
+    if (combat_slow_active()) {
         ++s_slowFrame;
     }
 }
 
 void shutdown_bullet_time() {
+    stop_flurry_rush();
     clear_manual_jump(nullptr);
+    s_dodgeOwner = nullptr;
+    s_dodgeProc = daAlink_c::PROC_WAIT;
+    s_dodgeTriggered = false;
     s_linkPositionStep = {};
     s_actorExecuteStack = {};
     s_actorExecuteDepth = 0;

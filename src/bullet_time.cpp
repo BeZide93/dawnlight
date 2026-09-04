@@ -43,7 +43,11 @@ DEFINE_HOOK_SYMBOL("_ZL13fopAc_ExecutePv", int(void*), ActorExecuteHook);
 #else
 DEFINE_HOOK_SYMBOL("fopAc_Execute", int(void*), ActorExecuteHook);
 #endif
+#if defined(__APPLE__)
+DEFINE_HOOK(&fpcMtd_Method, ProcessMethodHook);
+#else
 DEFINE_HOOK(&fpcMtd_Execute, ProcessExecuteHook);
+#endif
 DEFINE_HOOK(&cCcS::Set, ColliderSetHook);
 DEFINE_HOOK(&daArrow_c::atHitCallBack, ArrowHitHook);
 DEFINE_HOOK(&daAlink_c::posMove, LinkPosMoveHook);
@@ -369,6 +373,30 @@ HookAction before_process_execute(ModContext*, void* args, void* retval, void*) 
     return HOOK_SKIP_ORIGINAL;
 }
 
+#if defined(__APPLE__)
+HookAction before_process_method(ModContext*, void* args, void* retval, void*) {
+    if (s_actorExecuteDepth == 0) {
+        return HOOK_CONTINUE;
+    }
+
+    auto* actor = s_actorExecuteStack[s_actorExecuteDepth - 1];
+    const auto method = mods::arg<process_method_func>(args, 0);
+    const auto* methods = actor == nullptr
+                              ? nullptr
+                              : reinterpret_cast<const process_method_class*>(actor->sub_method);
+    if (actor == nullptr || actor->sub_method == nullptr ||
+        mods::arg<void*>(args, 1) != actor ||
+        method != methods->execute_method ||
+        !should_skip_actor(actor)) {
+        return HOOK_CONTINUE;
+    }
+
+    prime_actor_colliders(actor);
+    *static_cast<int*>(retval) = 1;
+    return HOOK_SKIP_ORIGINAL;
+}
+#endif
+
 HookAction before_collider_set(ModContext*, void* args, void*, void*) {
     remember_collider(mods::arg<cCcD_Obj*>(args, 1));
     return HOOK_CONTINUE;
@@ -435,7 +463,11 @@ ModResult initialize_bullet_time(ModError* error) {
         result = mods::hook::add_post<ActorExecuteHook>(svc_hook, after_actor_execute);
     }
     if (result == MOD_OK) {
+#if defined(__APPLE__)
+        result = mods::hook::add_pre<ProcessMethodHook>(svc_hook, before_process_method);
+#else
         result = mods::hook::add_pre<ProcessExecuteHook>(svc_hook, before_process_execute);
+#endif
     }
     if (result == MOD_OK) {
         result = mods::hook::add_pre<ColliderSetHook>(svc_hook, before_collider_set);

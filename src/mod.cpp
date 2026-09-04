@@ -1,5 +1,6 @@
 #include "bullet_time.hpp"
 #include "config.hpp"
+#include "fierce_deity.hpp"
 #include "great_spin_projectile.hpp"
 #include "model_overlays.hpp"
 #include "save_compat.hpp"
@@ -77,6 +78,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     {
         return result;
     }
+    if (const ModResult result = dawnlight::initialize_fierce_deity(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::install_save_compat_hooks(error); result != MOD_OK) {
         return result;
     }
@@ -122,6 +126,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_model_overlays();
     dawnlight::shutdown_great_spin_projectile();
+    dawnlight::shutdown_fierce_deity();
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_new_save_modes();
     dawnlight::shutdown_save_state();

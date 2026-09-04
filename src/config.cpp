@@ -33,6 +33,7 @@ ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
 ConfigVarHandle s_bulletTime = 0;
+ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
@@ -842,6 +843,7 @@ ModResult register_config(ModError* error) {
         register_bool("aim-movement", true, s_aimMovement) != MOD_OK ||
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
         register_bool("bullet-time", true, s_bulletTime) != MOD_OK ||
+        register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
@@ -992,6 +994,10 @@ int cinema_zoom_percent() {
 
 bool bullet_time_enabled() {
     return get_bool(s_bulletTime, true);
+}
+
+bool fierce_deity_enabled() {
+    return get_bool(s_fierceDeity, false);
 }
 
 bool great_spin_projectile_enabled() {
@@ -1205,6 +1211,10 @@ ConfigVarHandle cinema_zoom_config_var() {
 
 ConfigVarHandle bullet_time_config_var() {
     return s_bulletTime;
+}
+
+ConfigVarHandle fierce_deity_config_var() {
+    return s_fierceDeity;
 }
 
 ConfigVarHandle great_spin_projectile_config_var() {

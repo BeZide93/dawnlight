@@ -549,6 +549,13 @@ ModResult build_gameplay_tab(
     }
 
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Fierce Deity", fierce_deity_config_var(),
+            "Builds power with damaging sword attacks. Use a charged Spin Attack at full power "
+            "to transform, deal double sword damage, and consume the meter over time.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Great Spin Projectile", great_spin_projectile_config_var(),
             "Launches the Great Spin trail forward as a damaging sword projectile at full health.")
         != MOD_OK)

@@ -24,7 +24,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 
 namespace dawnlight {
 namespace {
@@ -94,7 +93,6 @@ struct DeferredFlurryDamage {
     cCcD_Obj* attackCollider = nullptr;
     cCcD_Obj* targetCollider = nullptr;
     cXyz hitPosition{};
-    std::uint32_t damage = 0;
     std::uint64_t lastAttackSerial = 0;
     bool setAttackHit = false;
     bool pending = false;
@@ -158,20 +156,14 @@ void clear_held_flurry_damage() {
 void release_deferred_flurry_damage() {
     const DeferredFlurryDamage deferred = s_deferredFlurryDamage;
     clear_deferred_flurry_damage();
-    char logMessage[160] = {};
-    std::snprintf(logMessage, sizeof(logMessage),
-                  "Dawnlight Flurry: release attacks=%llu raw_total=%u pending=%u",
-                  static_cast<unsigned long long>(s_flurrySwordAttackSerial),
-                  static_cast<unsigned>(deferred.damage), deferred.pending ? 1U : 0U);
-    svc_log->info(mod_ctx, logMessage);
-    if (!deferred.pending || deferred.damage == 0 || s_flurryRushOwner == nullptr ||
+    if (!deferred.pending || s_flurrySwordAttackSerial == 0 ||
+        s_flurryRushOwner == nullptr ||
         daAlink_getAlinkActorClass() != s_flurryRushOwner ||
         fopAcM_SearchByID(deferred.targetActorId) != deferred.targetActor ||
         deferred.attackCollider == nullptr || deferred.targetCollider == nullptr ||
         deferred.attackCollider->GetAc() != s_flurryRushOwner ||
         deferred.targetCollider->GetAc() != deferred.targetActor)
     {
-        svc_log->warn(mod_ctx, "Dawnlight Flurry: release validation failed");
         return;
     }
 
@@ -184,7 +176,6 @@ void release_deferred_flurry_damage() {
     if (attackStatus == nullptr || targetStatus == nullptr ||
         attackInfo == nullptr || targetInfo == nullptr)
     {
-        svc_log->warn(mod_ctx, "Dawnlight Flurry: release collider state missing");
         return;
     }
 
@@ -577,7 +568,6 @@ void try_start_flurry_rush(cCcD_Obj* attack) {
     s_flurrySwordAttackWasActive = false;
     clear_deferred_flurry_damage();
     disable_flurry_link_targets(link);
-    svc_log->info(mod_ctx, "Dawnlight Flurry: started");
 }
 
 bool sword_attack_active(const daAlink_c* link) {
@@ -622,18 +612,6 @@ void track_flurry_sword_attack(daAlink_c* link) {
             if (s_flurrySwordAttackSerial == 0) {
                 ++s_flurrySwordAttackSerial;
             }
-            s_deferredFlurryDamage.damage = std::min<std::uint32_t>(
-                s_deferredFlurryDamage.damage +
-                    static_cast<std::uint32_t>(attackPower),
-                0xFFU);
-            char logMessage[192] = {};
-            std::snprintf(logMessage, sizeof(logMessage),
-                          "Dawnlight Flurry: attack=%llu cut_count=%u proc=%u raw=%d total=%u",
-                          static_cast<unsigned long long>(s_flurrySwordAttackSerial),
-                          static_cast<unsigned>(cutCount), static_cast<unsigned>(swordProc),
-                          attackPower,
-                          static_cast<unsigned>(s_deferredFlurryDamage.damage));
-            svc_log->info(mod_ctx, logMessage);
         }
     }
 
@@ -838,14 +816,6 @@ void after_flurry_attack_power(ModContext*, void* args, void*, void*) {
         static_cast<std::uint32_t>(baseDamage) * s_heldFlurryAttackCount,
         0xFFFFU));
     s_flurryDamageScaled = true;
-
-    char logMessage[160] = {};
-    std::snprintf(logMessage, sizeof(logMessage),
-                  "Dawnlight Flurry: damage base=%u attacks=%u total=%u",
-                  static_cast<unsigned>(baseDamage),
-                  static_cast<unsigned>(s_heldFlurryAttackCount),
-                  static_cast<unsigned>(atInfo->mAttackPower));
-    svc_log->info(mod_ctx, logMessage);
 }
 
 void after_at_check(ModContext*, void*, void*, void*) {
@@ -1114,12 +1084,6 @@ void bullet_time_tick() {
                                        s_flurryRushTarget != nullptr;
         const bool timedOut = Clock::now() - s_flurryRushStarted >= kFlurryRushDuration;
         if (!flurry_rush_enabled() || !targetStillLocked || timedOut) {
-            svc_log->info(mod_ctx,
-                          !flurry_rush_enabled()
-                              ? "Dawnlight Flurry: stopping (disabled)"
-                              : (!targetStillLocked
-                                        ? "Dawnlight Flurry: stopping (lock lost)"
-                                        : "Dawnlight Flurry: stopping (timeout)"));
             stop_flurry_rush();
         }
     }

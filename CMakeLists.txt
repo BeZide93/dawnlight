@@ -3,7 +3,7 @@ project(dawnlight_mod CXX)
 
 # The Dusklight version to build against: a release tag (e.g. "v1.5.0") or a commit SHA.
 if (NOT DUSKLIGHT_VERSION)
-    set(DUSKLIGHT_VERSION "fa70bb8fe832948884730427e077163aae7b7bb1")
+    set(DUSKLIGHT_VERSION "58c31d304c70effe9454aa0200c578f7ac86144f")
 endif ()
 
 # Fetches the Dusklight sources into ./dusklight and provides DUSKLIGHT_DIR.

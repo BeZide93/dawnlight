@@ -550,8 +550,10 @@ ModResult build_gameplay_tab(
 
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Flurry Rush", flurry_rush_config_var(),
-            "Perfectly evade a locked enemy attack with a side jump or backflip to slow enemies "
-            "for three seconds. Releasing the lock-on ends the effect early.")
+            "Perfectly evade a locked enemy attack with a side jump or backflip to slow the "
+            "dodge and enemies for three seconds. A sword attack closes to melee range and "
+            "restores Link's speed. Link cannot be hit while the effect is active. Releasing "
+            "the lock-on ends the effect early.")
         != MOD_OK)
     {
         return MOD_ERROR;

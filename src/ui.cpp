@@ -782,11 +782,23 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
     if (add_text(ctx, panel, "Aim Movement, Aim Modes, and Bullet Time") != MOD_OK) {
         return MOD_ERROR;
     }
+    if (add_text(ctx, panel, "Flurry Rush, Fierce Deity, and Great Spin Projectile") != MOD_OK) {
+        return MOD_ERROR;
+    }
+    if (add_text(ctx, panel, "Shared Stamina and Lazy Tweaks compatibility") != MOD_OK) {
+        return MOD_ERROR;
+    }
     if (add_text(ctx, panel, "Manual Shielding and R Jump") != MOD_OK) return MOD_ERROR;
-    if (add_text(ctx, panel, "Z item slot") != MOD_OK) return MOD_ERROR;
+    if (add_text(ctx, panel, "Z Item Slot and Dawnlight Touch UI") != MOD_OK) return MOD_ERROR;
     if (add_text(ctx, panel, "Intro Skip new-save mode") != MOD_OK) return MOD_ERROR;
-    if (add_text(ctx, panel, "Boss Rush prelaunch mode, hub, and portal prompts") != MOD_OK) return MOD_ERROR;
+    if (add_text(ctx, panel, "Boss Rush hub, portals, resume, and hardmode") != MOD_OK) {
+        return MOD_ERROR;
+    }
     if (add_text(ctx, panel, "HUD Layout Editor") != MOD_OK) return MOD_ERROR;
+    if (add_text(ctx, panel, "Custom models, animations, and shields") != MOD_OK) {
+        return MOD_ERROR;
+    }
+    if (add_text(ctx, panel, "Enemy HP and NG+ scaling") != MOD_OK) return MOD_ERROR;
     if (add_text(ctx, panel, "Save compatibility and item integrity fixes") != MOD_OK) return MOD_ERROR;
     return MOD_OK;
 }

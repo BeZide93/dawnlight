@@ -10,18 +10,31 @@ aiming, boss, and HUD features for Twilight Princess.
 ## Features
 
 - Z item slot: bind a third item to Z, move Midna to the D-Pad prompt, and use
-  the Z slot from the item wheel.
+  the Z slot from the item wheel. The separate Dawnlight Touch UI option keeps
+  the touch controls available when another mod provides the third item slot.
 - Improved item HUD support for extra item slots, including item icons, ammo,
   oil, bottle contents, and combine prompts.
 - Aim Movement and Aim Mode settings with Vanilla, 3rd Person, and Cinema
   options.
 - Touch and gyro aiming support for the modded aiming modes.
-- Optional Bullet Time while aiming the Bow during a manual R jump.
+- Optional Bullet Time while aiming the Bow during a manual R jump, Flurry Rush
+  after a perfectly timed evade, and a ranged Great Spin projectile.
+- Shared Stamina meter for Bullet Time, Flurry Rush, and the Great Spin
+  projectile, including compatibility with Lazy Tweaks stamina actions.
+- Fierce Deity mode with a charge meter, temporary Magic Armor model swap, and
+  doubled sword damage.
 - Manual Shielding and R Jump quality-of-life options.
-- Intro Skip new-save mode. 
-- Boss Rush Game Mode with hub (Garden of Twilight), individual boss portals, Boss Rush run portal and Return to hub Midna option.
+- Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
+- Boss Rush Game Mode with the Garden of Twilight hub, individual boss portals,
+  a complete-run portal, Cave of Ordeals access, hardmode arena hazards, save
+  and resume support, and a Return to Hub Midna option.
 - HUD Layout Editor for supported HUD elements, item/text/ammo offsets, button
-  backing, round X/Y buttons, and HUD import/export.
+  backing, D-Pad arrows and shadows, single-row hearts, round X/Y buttons, and
+  HUD import/export.
+- External custom model overlays for Link's outfits, Wolf Link, Sumo Link, the
+  horse, items, animations, and shields, plus shield visibility and eye movement
+  controls.
+- Save compatibility and item integrity repairs.
 - Optional update checks against the Dawnlight GitHub releases.
 
 ## Installation

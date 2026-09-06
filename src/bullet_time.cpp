@@ -3,6 +3,7 @@
 #include "aim_hooks.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
+#include "stamina.hpp"
 
 #include "SSystem/SComponent/c_cc_d.h"
 #include "SSystem/SComponent/c_cc_s.h"
@@ -242,7 +243,9 @@ void stop_flurry_rush(bool releaseDamage = true) {
 }
 
 void start_bullet_time(daAlink_c* link) {
-    if (s_bulletTimeActive || s_bulletTimeUsedForJump || link == nullptr) {
+    if (s_bulletTimeActive || s_bulletTimeUsedForJump || link == nullptr ||
+        !stamina_available_for_bullet_time())
+    {
         return;
     }
 
@@ -552,6 +555,10 @@ void try_start_flurry_rush(cCcD_Obj* attack) {
         (attacker != target && !daAlink_c::checkEnemyGroup(attacker)) ||
         !collider_near_link(attack, link))
     {
+        return;
+    }
+    if (!consume_flurry_rush_stamina()) {
+        s_dodgeTriggered = true;
         return;
     }
 
@@ -1103,6 +1110,10 @@ void bullet_time_tick() {
                 stop_bullet_time();
             }
         }
+    }
+
+    if (!update_stamina(s_bulletTimeActive) && s_bulletTimeActive) {
+        stop_bullet_time();
     }
 
     if (combat_slow_active()) {

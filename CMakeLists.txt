@@ -47,6 +47,7 @@ add_mod(dawnlight_mod
     SOURCES
         src/aim_hooks.cpp
         src/bullet_time.cpp
+        src/combat_meter.cpp
         src/config.cpp
         src/deferred_features.cpp
         src/enemy_scaling.cpp
@@ -62,6 +63,7 @@ add_mod(dawnlight_mod
         src/new_save_modes.cpp
         src/save_compat.cpp
         src/save_state.cpp
+        src/stamina.cpp
         src/ui.cpp
         src/update_service.cpp
     MOD_JSON mod.json

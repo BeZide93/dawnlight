@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 #include "service_imports.hpp"
+#include "stamina.hpp"
 
 #include "JSystem/JParticle/JPAEmitter.h"
 #include "d/actor/d_a_alink.h"
@@ -310,7 +311,9 @@ void update_spin_launch(daAlink_c* link) {
     const float frame = link->mUnderFrameCtrl[0].getFrame();
     if (frame >= link->field_0x3484 && frame < link->field_0x3488) {
         s_launchedForCurrentSpin = true;
-        launch_projectile(link);
+        if (consume_great_spin_stamina()) {
+            launch_projectile(link);
+        }
     }
 }
 

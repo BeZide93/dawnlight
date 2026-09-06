@@ -332,7 +332,8 @@ ModResult build_aiming_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Bullet Time", bullet_time_config_var(),
-            "Slows gameplay while aiming the Bow during a manual R jump. Press A to cancel it.")
+            "Slows gameplay while aiming the Bow during a manual R jump. Uses 20% stamina per "
+            "second and ends when stamina is empty. Press A to cancel it.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -553,7 +554,7 @@ ModResult build_gameplay_tab(
             "Perfectly evade a locked enemy attack with a side jump or backflip to slow the "
             "dodge and enemies for three seconds. A sword attack closes to melee range and "
             "restores Link's speed. Link cannot be hit while the effect is active. Releasing "
-            "the lock-on ends the effect early.")
+            "the lock-on ends the effect early. Uses 25% stamina.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -566,7 +567,8 @@ ModResult build_gameplay_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Great Spin Projectile", great_spin_projectile_config_var(),
-            "Launches the Great Spin trail forward as a damaging sword projectile at full health.")
+            "Launches the Great Spin trail forward as a damaging sword projectile at full "
+            "health. Uses 40% stamina.")
         != MOD_OK)
     {
         return MOD_ERROR;

@@ -1,21 +1,18 @@
 #include "fierce_deity.hpp"
 
+#include "combat_meter.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
+#include "stamina.hpp"
 
-#include "JSystem/J2DGraph/J2DGrafContext.h"
-#include "JSystem/J2DGraph/J2DPicture.h"
-#include "JSystem/J2DGraph/J2DScreen.h"
 #include "d/actor/d_a_alink.h"
 #include "d/d_cc_d.h"
 #include "d/d_cc_uty.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_item.h"
-#include "d/d_meter_HIO.h"
 #include "d/d_meter2_draw.h"
 #include "d/d_meter2_info.h"
 #include "d/d_msg_object.h"
-#include "d/d_pane_class.h"
 #include "f_op/f_op_actor_mng.h"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
@@ -37,7 +34,6 @@ DEFINE_HOOK(&dMeter2Draw_c::draw, FierceMeterDrawHook);
 
 constexpr float kMeterGainPerAttack = 5.0f;
 constexpr float kMeterDrainPerSecond = 5.0f;
-constexpr float kMeterHeartGap = 2.0f;
 
 using Clock = std::chrono::steady_clock;
 
@@ -270,166 +266,13 @@ void after_damage_check(ModContext*, void* args, void*, void*) {
     s_state.meter = std::min(100.0f, s_state.meter + kMeterGainPerAttack);
 }
 
-struct PaneState {
-    CPaneMgr* pane = nullptr;
-    float posX = 0.0f;
-    float posY = 0.0f;
-    float x = 0.0f;
-    float y = 0.0f;
-    float width = 0.0f;
-    float height = 0.0f;
-    float scaleX = 1.0f;
-    float scaleY = 1.0f;
-    float alpha = 1.0f;
-    bool visible = false;
-};
-
-PaneState save_pane(CPaneMgr* pane) {
-    if (pane == nullptr || pane->getPanePtr() == nullptr) {
-        return {};
-    }
-    return {
-        pane,
-        pane->getPosX(),
-        pane->getPosY(),
-        pane->getTranslateX(),
-        pane->getTranslateY(),
-        pane->getSizeX(),
-        pane->getSizeY(),
-        pane->getScaleX(),
-        pane->getScaleY(),
-        pane->getAlphaRate(),
-        pane->getPanePtr()->isVisible(),
-    };
-}
-
-void restore_pane(const PaneState& state) {
-    if (state.pane == nullptr || state.pane->getPanePtr() == nullptr) {
-        return;
-    }
-    state.pane->move(state.posX, state.posY);
-    state.pane->translate(state.x, state.y);
-    state.pane->resize(state.width, state.height);
-    state.pane->scale(state.scaleX, state.scaleY);
-    state.pane->setAlphaRate(state.alpha);
-    if (state.visible) {
-        state.pane->getPanePtr()->show();
-    } else {
-        state.pane->getPanePtr()->hide();
-    }
-}
-
-struct ScreenBounds {
-    float left = 0.0f;
-    float top = 0.0f;
-    float right = 0.0f;
-    float bottom = 0.0f;
-    bool valid = false;
-};
-
-ScreenBounds pane_screen_bounds(CPaneMgr* pane) {
-    if (pane == nullptr || pane->getPanePtr() == nullptr) {
-        return {};
-    }
-
-    Mtx matrix;
-    const Vec first = pane->getGlobalVtx(&matrix, 0, false, 0);
-    const Vec last = pane->getGlobalVtx(&matrix, 3, false, 0);
-    return {
-        .left = std::min(first.x, last.x),
-        .top = std::min(first.y, last.y),
-        .right = std::max(first.x, last.x),
-        .bottom = std::max(first.y, last.y),
-        .valid = true,
-    };
-}
-
-ScreenBounds visible_heart_bounds(dMeter2Draw_c* meter) {
-    ScreenBounds result;
-    for (CPaneMgr* heart : meter->mpLifeParts) {
-        if (heart == nullptr || heart->getPanePtr() == nullptr ||
-            !heart->getPanePtr()->isVisible())
-        {
-            continue;
-        }
-
-        const ScreenBounds bounds = pane_screen_bounds(heart);
-        if (!result.valid) {
-            result = bounds;
-            continue;
-        }
-        result.left = std::min(result.left, bounds.left);
-        result.top = std::min(result.top, bounds.top);
-        result.right = std::max(result.right, bounds.right);
-        result.bottom = std::max(result.bottom, bounds.bottom);
-    }
-    return result;
-}
-
 void draw_fierce_meter(dMeter2Draw_c* meter) {
-    if (meter == nullptr || meter->mpKanteraScreen == nullptr || meter->mpMagicParent == nullptr ||
-        meter->mpMagicBase == nullptr || meter->mpMagicFrameL == nullptr ||
-        meter->mpMagicMeter == nullptr || meter->mpMagicFrameR == nullptr ||
-        meter->mpLifeParent == nullptr ||
-        !fierce_deity_enabled() || s_state.meter <= 0.0f || menu_or_pause_active())
+    if (!fierce_deity_enabled() || s_state.meter <= 0.0f || menu_or_pause_active())
     {
         return;
     }
-
-    const PaneState parent = save_pane(meter->mpMagicParent);
-    const PaneState base = save_pane(meter->mpMagicBase);
-    const PaneState frameL = save_pane(meter->mpMagicFrameL);
-    const PaneState fill = save_pane(meter->mpMagicMeter);
-    const PaneState frameR = save_pane(meter->mpMagicFrameR);
-    auto* fillPicture = static_cast<J2DPicture*>(meter->mpMagicMeter->getPanePtr());
-    const JUtility::TColor oldBlack = fillPicture->getBlack();
-    const JUtility::TColor oldWhite = fillPicture->getWhite();
-
-    const float fullWidth = meter->mpMagicMeter->getInitSizeX();
-    const float frameSpan =
-        meter->mpMagicFrameR->getInitPosX() - meter->mpMagicFrameL->getInitPosX();
-
-    meter->mpMagicParent->getPanePtr()->show();
-    meter->mpMagicBase->getPanePtr()->show();
-    meter->mpMagicFrameL->getPanePtr()->show();
-    meter->mpMagicMeter->getPanePtr()->show();
-    meter->mpMagicFrameR->getPanePtr()->show();
-    meter->mpMagicParent->setAlphaRate(1.0f);
-    meter->mpMagicBase->setAlphaRate(1.0f);
-    meter->mpMagicFrameL->setAlphaRate(1.0f);
-    meter->mpMagicMeter->setAlphaRate(1.0f);
-    meter->mpMagicFrameR->setAlphaRate(1.0f);
-    meter->mpMagicMeter->setBlackWhite(
-        JUtility::TColor(255, 100, 100, 255), JUtility::TColor(210, 0, 0, 255));
-    meter->mpMagicMeter->resize(fullWidth * (s_state.meter / 100.0f),
-        meter->mpMagicMeter->getInitSizeY());
-    meter->mpMagicFrameR->move(frameSpan + meter->mpMagicFrameL->getInitPosX(),
-        meter->mpMagicFrameL->getInitPosY());
-    meter->mpMagicBase->resize(
-        meter->mpMagicBase->getInitSizeX(), meter->mpMagicBase->getInitSizeY());
-    const float lifeBaseScale = std::max(g_drawHIO.mLifeParentScale, 0.001f);
-    const float relativeScale = g_drawHIO.mMagicMeterScale / lifeBaseScale;
-    meter->mpMagicParent->scale(meter->mpLifeParent->getScaleX() * relativeScale,
-        meter->mpLifeParent->getScaleY() * relativeScale);
-    meter->mpMagicParent->paneTrans(parent.x, parent.y);
-
-    const ScreenBounds hearts = visible_heart_bounds(meter);
-    const ScreenBounds frame = pane_screen_bounds(meter->mpMagicFrameL);
-    if (hearts.valid && frame.valid) {
-        const float gap = kMeterHeartGap * meter->mpLifeParent->getScaleY();
-        meter->mpMagicParent->paneTrans(parent.x + hearts.left - frame.left,
-            parent.y + hearts.bottom + gap - frame.top);
-    }
-
-    J2DGrafContext* graf = dComIfGp_getCurrentGrafPort();
-    meter->mpKanteraScreen->draw(0.0f, 0.0f, graf);
-
-    fillPicture->setBlackWhite(oldBlack, oldWhite);
-    restore_pane(frameR);
-    restore_pane(fill);
-    restore_pane(frameL);
-    restore_pane(base);
-    restore_pane(parent);
+    draw_combat_meter(meter, s_state.meter, CombatMeterStyle::FierceDeity,
+        stamina_meter_visible() ? 1 : 0);
 }
 
 void after_meter_draw(ModContext*, void* args, void*, void*) {

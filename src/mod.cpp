@@ -6,6 +6,7 @@
 #include "save_compat.hpp"
 #include "save_state.hpp"
 #include "service_imports.hpp"
+#include "stamina.hpp"
 #include "update_service.hpp"
 
 #include "mods/service.hpp"
@@ -81,6 +82,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::initialize_fierce_deity(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::initialize_stamina(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::install_save_compat_hooks(error); result != MOD_OK) {
         return result;
     }
@@ -128,6 +132,7 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_great_spin_projectile();
     dawnlight::shutdown_fierce_deity();
     dawnlight::shutdown_bullet_time();
+    dawnlight::shutdown_stamina();
     dawnlight::shutdown_new_save_modes();
     dawnlight::shutdown_save_state();
     dawnlight::shutdown_update_service();

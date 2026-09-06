@@ -1643,18 +1643,17 @@ void restore_xy_ammo_layout(dMeter2Draw_c* meter) {
 }
 
 void apply_hud_backing_visibility(dMeter2Draw_c* meter) {
-    if (meter == nullptr || meter->mpUzu == nullptr) {
+    if (meter == nullptr || meter->mpUzu == nullptr || meter->mpButtonParent == nullptr) {
         return;
     }
 
     if (!hud_button_backing_visible()) {
-        meter->mpUzu->setAlpha(0);
         meter->mpUzu->setAlphaRate(0.0f);
         return;
     }
 
-    meter->mpUzu->setAlpha(meter->mpUzu->getInitAlpha());
-    meter->mpUzu->setAlphaRate(1.0f);
+    meter->mpUzu->setAlphaRate(
+        meter->mButtonBaseAlpha * meter->mpButtonParent->getAlphaRate());
 }
 
 void apply_wii_u_minimap_layout(dMeterMap_c* map) {

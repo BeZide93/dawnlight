@@ -33,7 +33,8 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr std::uint64_t kSlowFrameInterval = 4;
+constexpr std::uint64_t kEnemySlowFrameInterval = 10;
+constexpr std::uint64_t kFlurryLinkSlowFrameInterval = 4;
 constexpr std::uint64_t kArrowSlowFrameInterval = 5;
 constexpr float kLinkTimeScale = 0.1f;
 constexpr auto kBulletTimeDuration = std::chrono::seconds(5);
@@ -497,6 +498,12 @@ bool actor_uses_visual_slowdown(fopAc_ac_c* actor) {
     return !actor_is_exempt(actor) && !actor_has_hit_grace(actor);
 }
 
+std::uint64_t actor_visual_slow_frame_interval(fopAc_ac_c* actor) {
+    return fopAcM_GetName(actor) == fpcNm_ALINK_e
+               ? kFlurryLinkSlowFrameInterval
+               : kEnemySlowFrameInterval;
+}
+
 void read_matrix(MtxP matrix, MatrixPose& pose) {
     for (std::size_t row = 0; row < 3; ++row) {
         for (std::size_t column = 0; column < 4; ++column) {
@@ -638,11 +645,11 @@ bool should_skip_actor(fopAc_ac_c* actor) {
         auto* link = static_cast<daAlink_c*>(actor);
         return s_flurryRushActive && s_flurryLinkSlowed &&
                s_flurryRushOwner == link && flurry_dodge_active(link) &&
-               s_slowFrame % kSlowFrameInterval != 0;
+               s_slowFrame % kFlurryLinkSlowFrameInterval != 0;
     }
 
     return !actor_is_exempt(actor) && !actor_has_hit_grace(actor) &&
-           s_slowFrame % kSlowFrameInterval != 0;
+           s_slowFrame % kEnemySlowFrameInterval != 0;
 }
 
 void update_dodge_attempt(daAlink_c* link) {
@@ -1000,7 +1007,7 @@ HookAction before_combat_model_view_calc(ModContext*, void* args, void*, void*) 
                                             : 0;
     const float progress = std::min(
         static_cast<float>(elapsedFrames + 1) /
-            static_cast<float>(kSlowFrameInterval),
+            static_cast<float>(actor_visual_slow_frame_interval(state->actor)),
         1.0f);
     write_interpolated_model_pose(*state, progress);
     return HOOK_CONTINUE;

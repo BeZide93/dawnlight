@@ -17,6 +17,7 @@ namespace {
 DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, CheckAutoJumpAction);
 DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
 DEFINE_HOOK(&daAlink_c::procMove, ProcMoveSprint);
+DEFINE_HOOK(&daAlink_c::getMainBckData, GetMainBckDataSprint);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
 DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
@@ -292,6 +293,15 @@ HookAction before_proc_move_sprint(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
+HookAction before_get_main_bck_data_sprint(ModContext*, void* args, void*, void*) {
+    const auto* link = mods::arg<const daAlink_c*>(args, 0);
+    auto& animation = mods::arg_ref<daAlink_c::daAlink_ANM>(args, 1);
+    if (s_sprintOwner == link && animation == daAlink_c::ANM_RUN) {
+        animation = daAlink_c::ANM_RUN_B;
+    }
+    return HOOK_CONTINUE;
+}
+
 void after_proc_move_sprint(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (s_sprintOwner != link || link->mProcID != daAlink_c::PROC_MOVE ||
@@ -342,6 +352,10 @@ ModResult install_jump_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<ProcMoveSprint>(svc_hook, after_proc_move_sprint);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<GetMainBckDataSprint>(
+            svc_hook, before_get_main_bck_data_sprint);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<SetBodyAngleXReadyAnime>(

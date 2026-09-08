@@ -79,6 +79,9 @@ bool menu_or_pause_active() {
 }
 
 bool try_consume(float amount) {
+    if (!stamina_enabled()) {
+        return true;
+    }
     daAlink_c* link = current_link();
     if (link == nullptr || link->checkDeadHP() || link->checkSceneChangeAreaStart() ||
         s_state.exhausted || s_state.stamina < amount)
@@ -94,6 +97,9 @@ bool try_consume(float amount) {
 }
 
 bool can_consume(float amount) {
+    if (!stamina_enabled()) {
+        return true;
+    }
     daAlink_c* link = current_link();
     return link != nullptr && !link->checkDeadHP() &&
            !link->checkSceneChangeAreaStart() && !s_state.exhausted &&
@@ -263,11 +269,15 @@ void shutdown_stamina() {
 }
 
 bool stamina_meter_visible() {
-    return bullet_time_enabled() || flurry_rush_enabled() ||
-           great_spin_projectile_enabled() || sprint_enabled();
+    return stamina_enabled() &&
+           (bullet_time_enabled() || flurry_rush_enabled() ||
+               great_spin_projectile_enabled() || sprint_enabled());
 }
 
 bool stamina_available_for_bullet_time() {
+    if (!stamina_enabled()) {
+        return true;
+    }
     daAlink_c* link = current_link();
     return link != nullptr && !link->checkDeadHP() &&
            !link->checkSceneChangeAreaStart() && !s_state.exhausted &&
@@ -279,7 +289,9 @@ bool stamina_available_for_sprint() {
 }
 
 void mark_sprint_stamina_active() {
-    s_state.sprintActive = true;
+    if (stamina_enabled()) {
+        s_state.sprintActive = true;
+    }
 }
 
 bool consume_flurry_rush_stamina() {
@@ -299,6 +311,20 @@ bool update_stamina(bool bulletTimeActive) {
     const Clock::time_point now = Clock::now();
     const bool sprintActive = s_state.sprintActive;
     s_state.sprintActive = false;
+    if (!stamina_enabled()) {
+        const bool wasExhausted = s_state.exhausted;
+        s_state.stamina = kMaximumStamina;
+        s_state.exhausted = false;
+        s_state.lastUpdate = now;
+        if (wasExhausted && dComIfGs_getLife() > 4) {
+            if (link->mProcID == daAlink_c::PROC_TIRED_WAIT) {
+                link->procWaitInit();
+            } else if (link->mProcID == daAlink_c::PROC_WOLF_TIRED_WAIT) {
+                link->procWolfWaitInit();
+            }
+        }
+        return true;
+    }
     if (link->checkDeadHP() || link->checkSceneChangeAreaStart()) {
         reset_for_link(link);
         return true;

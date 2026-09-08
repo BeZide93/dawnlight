@@ -21,7 +21,8 @@ aiming, boss, and HUD features for Twilight Princess.
   after a perfectly timed evade, and a ranged Great Spin projectile.
 - Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, and the Great Spin
   projectile, including compatibility with Lazy Tweaks stamina actions. Emptying
-  the meter causes exhaustion until it recovers to 50%.
+  the meter causes exhaustion until it recovers to 50%. The Stamina Bar setting
+  can disable both the meter and all Dawnlight stamina costs.
 - Fierce Deity mode with a charge meter, temporary Magic Armor model swap, and
   doubled sword damage.
 - Manual Shielding, R Jump, and a stamina-powered Sprint option.

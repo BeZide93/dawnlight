@@ -358,6 +358,13 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "Stamina Bar", stamina_config_var(),
+            "Enables shared stamina costs and the stamina meter. When disabled, Dawnlight moves "
+            "do not consume stamina.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Sprint", sprint_config_var(),
             "Hold the Roll button while running to move 50% faster using the run animation. "
             "Uses 5% stamina per second.")

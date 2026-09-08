@@ -38,6 +38,7 @@ ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
+ConfigVarHandle s_stamina = 0;
 ConfigVarHandle s_sprint = 0;
 ConfigVarHandle s_zItemSlot = 0;
 ConfigVarHandle s_dawnlightTouchUi = 0;
@@ -861,6 +862,7 @@ ModResult register_config(ModError* error) {
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
+        register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
         register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
@@ -1052,6 +1054,10 @@ bool manual_shielding_enabled() {
 
 bool r_jump_enabled() {
     return get_bool(s_rJump, true);
+}
+
+bool stamina_enabled() {
+    return get_bool(s_stamina, true);
 }
 
 bool sprint_enabled() {
@@ -1277,6 +1283,10 @@ ConfigVarHandle manual_shielding_config_var() {
 
 ConfigVarHandle r_jump_config_var() {
     return s_rJump;
+}
+
+ConfigVarHandle stamina_config_var() {
+    return s_stamina;
 }
 
 ConfigVarHandle sprint_config_var() {

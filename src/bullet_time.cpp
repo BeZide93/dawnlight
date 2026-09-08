@@ -7,6 +7,7 @@
 
 #include "SSystem/SComponent/c_cc_d.h"
 #include "SSystem/SComponent/c_cc_s.h"
+#include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_arrow.h"
 #include "d/d_cc_s.h"
@@ -25,6 +26,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace dawnlight {
 namespace {
@@ -62,6 +64,8 @@ DEFINE_HOOK(&daAlink_c::checkDamageAction, LinkDamageActionHook);
 DEFINE_HOOK(&cCcS::SetAtTgCommonHitInf, CommonAtTgHitHook);
 DEFINE_HOOK(&cc_at_check, AtCheckHook);
 DEFINE_HOOK(&at_power_check, FlurryAttackPowerHook);
+DEFINE_HOOK(&J3DModel::calc, CombatModelCalcHook);
+DEFINE_HOOK(&J3DModel::viewCalc, CombatModelViewCalcHook);
 
 struct ColliderCacheEntry {
     fopAc_ac_c* actor = nullptr;
@@ -99,6 +103,28 @@ struct DeferredFlurryDamage {
     bool pending = false;
 };
 
+using MatrixPose = std::array<float, 12>;
+
+struct ModelVisualState {
+    J3DModel* model = nullptr;
+    fopAc_ac_c* actor = nullptr;
+    u16 actorId = 0;
+    std::uint64_t targetFrame = 0;
+    std::uint64_t captureFrame = 0;
+    std::uint64_t lastSeenFrame = 0;
+    std::vector<MatrixPose> startJoints;
+    std::vector<MatrixPose> targetJoints;
+    std::vector<MatrixPose> backupJoints;
+    std::vector<MatrixPose> startWeights;
+    std::vector<MatrixPose> targetWeights;
+    std::vector<MatrixPose> backupWeights;
+    MatrixPose startBase{};
+    MatrixPose targetBase{};
+    MatrixPose backupBase{};
+    bool initialized = false;
+    bool viewApplied = false;
+};
+
 daAlink_c* s_manualJumpOwner = nullptr;
 Clock::time_point s_manualJumpStarted{};
 Clock::time_point s_bulletTimeStarted{};
@@ -127,6 +153,7 @@ u8 s_flurryLastCutCount = 0;
 bool s_flurrySwordAttackWasActive = false;
 LinkPositionStep s_linkPositionStep{};
 DeferredFlurryDamage s_deferredFlurryDamage{};
+std::array<ModelVisualState, 128> s_modelVisualStates{};
 cCcD_Obj* s_heldFlurryPowerCollider = nullptr;
 fopAc_ac_c* s_heldFlurryTarget = nullptr;
 std::uint32_t s_heldFlurryAttackCount = 0;
@@ -137,11 +164,18 @@ bool combat_slow_active() {
     return s_bulletTimeActive || s_flurryRushActive;
 }
 
+void clear_model_visual_states() {
+    for (ModelVisualState& state : s_modelVisualStates) {
+        state = {};
+    }
+}
+
 void clear_combat_time_caches() {
     s_colliderCache = {};
     s_hitActors = {};
     s_flyingArrows = {};
     s_slowFrame = 0;
+    clear_model_visual_states();
 }
 
 void clear_deferred_flurry_damage() {
@@ -449,6 +483,142 @@ bool flurry_dodge_active(const daAlink_c* link) {
                link->mProcID == daAlink_c::PROC_BACK_JUMP);
 }
 
+bool actor_uses_visual_slowdown(fopAc_ac_c* actor) {
+    if (!combat_slow_active() || actor == nullptr) {
+        return false;
+    }
+
+    if (fopAcM_GetName(actor) == fpcNm_ALINK_e) {
+        auto* link = static_cast<daAlink_c*>(actor);
+        return s_flurryRushActive && s_flurryLinkSlowed &&
+               s_flurryRushOwner == link && flurry_dodge_active(link);
+    }
+
+    return !actor_is_exempt(actor) && !actor_has_hit_grace(actor);
+}
+
+void read_matrix(MtxP matrix, MatrixPose& pose) {
+    for (std::size_t row = 0; row < 3; ++row) {
+        for (std::size_t column = 0; column < 4; ++column) {
+            pose[row * 4 + column] = matrix[row][column];
+        }
+    }
+}
+
+void write_matrix(const MatrixPose& pose, MtxP matrix) {
+    for (std::size_t row = 0; row < 3; ++row) {
+        for (std::size_t column = 0; column < 4; ++column) {
+            matrix[row][column] = pose[row * 4 + column];
+        }
+    }
+}
+
+void write_interpolated_matrix(const MatrixPose& start, const MatrixPose& target,
+                               float progress, MtxP matrix) {
+    MatrixPose pose{};
+    for (std::size_t i = 0; i < pose.size(); ++i) {
+        pose[i] = start[i] + (target[i] - start[i]) * progress;
+    }
+    write_matrix(pose, matrix);
+}
+
+ModelVisualState* find_model_visual_state(J3DModel* model, bool create,
+                                          fopAc_ac_c* actor = nullptr) {
+    ModelVisualState* oldest = &s_modelVisualStates.front();
+    for (ModelVisualState& state : s_modelVisualStates) {
+        if (state.model == model) {
+            if (actor != nullptr &&
+                (state.actor != actor || state.actorId != actor->setID))
+            {
+                state = {};
+                state.model = model;
+                state.actor = actor;
+                state.actorId = actor->setID;
+            }
+            return &state;
+        }
+        if (state.model == nullptr && create) {
+            state.model = model;
+            state.actor = actor;
+            state.actorId = actor == nullptr ? 0 : actor->setID;
+            return &state;
+        }
+        if (state.lastSeenFrame < oldest->lastSeenFrame) {
+            oldest = &state;
+        }
+    }
+
+    if (!create) {
+        return nullptr;
+    }
+
+    *oldest = {};
+    oldest->model = model;
+    oldest->actor = actor;
+    oldest->actorId = actor == nullptr ? 0 : actor->setID;
+    return oldest;
+}
+
+bool prepare_model_pose_buffers(ModelVisualState& state) {
+    J3DModelData* modelData = state.model == nullptr
+                                  ? nullptr
+                                  : state.model->getModelData();
+    if (modelData == nullptr) {
+        return false;
+    }
+
+    const std::size_t jointCount = modelData->getJointNum();
+    const std::size_t weightCount = modelData->getWEvlpMtxNum();
+    state.startJoints.resize(jointCount);
+    state.targetJoints.resize(jointCount);
+    state.backupJoints.resize(jointCount);
+    state.startWeights.resize(weightCount);
+    state.targetWeights.resize(weightCount);
+    state.backupWeights.resize(weightCount);
+    return true;
+}
+
+void read_model_pose(J3DModel* model, std::vector<MatrixPose>& joints,
+                     std::vector<MatrixPose>& weights) {
+    for (std::size_t i = 0; i < joints.size(); ++i) {
+        read_matrix(model->getAnmMtx(static_cast<int>(i)), joints[i]);
+    }
+    for (std::size_t i = 0; i < weights.size(); ++i) {
+        read_matrix(model->getWeightAnmMtx(static_cast<int>(i)), weights[i]);
+    }
+}
+
+void write_interpolated_model_pose(ModelVisualState& state, float progress) {
+    read_matrix(state.model->getBaseTRMtx(), state.backupBase);
+    read_model_pose(state.model, state.backupJoints, state.backupWeights);
+    write_interpolated_matrix(state.startBase, state.targetBase, progress,
+                              state.model->getBaseTRMtx());
+    for (std::size_t i = 0; i < state.startJoints.size(); ++i) {
+        write_interpolated_matrix(state.startJoints[i], state.targetJoints[i],
+                                  progress,
+                                  state.model->getAnmMtx(static_cast<int>(i)));
+    }
+    for (std::size_t i = 0; i < state.startWeights.size(); ++i) {
+        write_interpolated_matrix(state.startWeights[i], state.targetWeights[i],
+                                  progress,
+                                  state.model->getWeightAnmMtx(static_cast<int>(i)));
+    }
+    state.viewApplied = true;
+}
+
+void restore_model_pose(ModelVisualState& state) {
+    write_matrix(state.backupBase, state.model->getBaseTRMtx());
+    for (std::size_t i = 0; i < state.backupJoints.size(); ++i) {
+        write_matrix(state.backupJoints[i],
+                     state.model->getAnmMtx(static_cast<int>(i)));
+    }
+    for (std::size_t i = 0; i < state.backupWeights.size(); ++i) {
+        write_matrix(state.backupWeights[i],
+                     state.model->getWeightAnmMtx(static_cast<int>(i)));
+    }
+    state.viewApplied = false;
+}
+
 bool should_skip_actor(fopAc_ac_c* actor) {
     if (!combat_slow_active() || actor == nullptr) {
         return false;
@@ -736,6 +906,114 @@ void after_actor_execute(ModContext*, void* args, void*, void*) {
     }
 }
 
+HookAction before_combat_model_calc(ModContext*, void* args, void*, void*) {
+    if (s_actorExecuteDepth == 0) {
+        return HOOK_CONTINUE;
+    }
+
+    auto* model = mods::arg<J3DModel*>(args, 0);
+    fopAc_ac_c* actor = s_actorExecuteStack[s_actorExecuteDepth - 1];
+    if (model == nullptr || actor == nullptr) {
+        return HOOK_CONTINUE;
+    }
+
+    if (!actor_uses_visual_slowdown(actor)) {
+        if (ModelVisualState* state = find_model_visual_state(model, false);
+            state != nullptr)
+        {
+            *state = {};
+        }
+        return HOOK_CONTINUE;
+    }
+
+    ModelVisualState* state = find_model_visual_state(model, true, actor);
+    if (!prepare_model_pose_buffers(*state)) {
+        *state = {};
+        return HOOK_CONTINUE;
+    }
+
+    if (!state->initialized) {
+        read_matrix(model->getBaseTRMtx(), state->startBase);
+        state->targetBase = state->startBase;
+        read_model_pose(model, state->startJoints, state->startWeights);
+        state->targetJoints = state->startJoints;
+        state->targetWeights = state->startWeights;
+        state->initialized = true;
+    } else if (state->captureFrame != s_slowFrame) {
+        state->startBase = state->targetBase;
+        state->startJoints = state->targetJoints;
+        state->startWeights = state->targetWeights;
+    }
+
+    read_matrix(model->getBaseTRMtx(), state->targetBase);
+    state->captureFrame = s_slowFrame;
+    state->lastSeenFrame = s_slowFrame;
+    return HOOK_CONTINUE;
+}
+
+void after_combat_model_calc(ModContext*, void* args, void*, void*) {
+    if (s_actorExecuteDepth == 0) {
+        return;
+    }
+
+    auto* model = mods::arg<J3DModel*>(args, 0);
+    fopAc_ac_c* actor = s_actorExecuteStack[s_actorExecuteDepth - 1];
+    ModelVisualState* state = find_model_visual_state(model, false);
+    if (state == nullptr || !state->initialized || state->actor != actor ||
+        !actor_uses_visual_slowdown(actor))
+    {
+        return;
+    }
+
+    read_matrix(model->getBaseTRMtx(), state->targetBase);
+    read_model_pose(model, state->targetJoints, state->targetWeights);
+    state->targetFrame = s_slowFrame;
+    state->lastSeenFrame = s_slowFrame;
+}
+
+HookAction before_combat_model_view_calc(ModContext*, void* args, void*, void*) {
+    auto* model = mods::arg<J3DModel*>(args, 0);
+    ModelVisualState* state = find_model_visual_state(model, false);
+    if (state == nullptr || !state->initialized || state->viewApplied) {
+        return HOOK_CONTINUE;
+    }
+
+    if (state->actor == nullptr ||
+        fopAcM_SearchByID(state->actorId) != state->actor ||
+        !actor_uses_visual_slowdown(state->actor))
+    {
+        *state = {};
+        return HOOK_CONTINUE;
+    }
+
+    J3DModelData* modelData = model->getModelData();
+    if (modelData == nullptr ||
+        state->startJoints.size() != modelData->getJointNum() ||
+        state->startWeights.size() != modelData->getWEvlpMtxNum())
+    {
+        *state = {};
+        return HOOK_CONTINUE;
+    }
+
+    const std::uint64_t elapsedFrames = s_slowFrame >= state->targetFrame
+                                            ? s_slowFrame - state->targetFrame
+                                            : 0;
+    const float progress = std::min(
+        static_cast<float>(elapsedFrames + 1) /
+            static_cast<float>(kSlowFrameInterval),
+        1.0f);
+    write_interpolated_model_pose(*state, progress);
+    return HOOK_CONTINUE;
+}
+
+void after_combat_model_view_calc(ModContext*, void* args, void*, void*) {
+    auto* model = mods::arg<J3DModel*>(args, 0);
+    ModelVisualState* state = find_model_visual_state(model, false);
+    if (state != nullptr && state->viewApplied) {
+        restore_model_pose(*state);
+    }
+}
+
 HookAction before_process_execute(ModContext*, void* args, void* retval, void*) {
     if (s_actorExecuteDepth == 0) {
         return HOOK_CONTINUE;
@@ -957,6 +1235,22 @@ ModResult initialize_bullet_time(ModError* error) {
         result = mods::hook::add_post<ActorExecuteHook>(svc_hook, after_actor_execute);
     }
     if (result == MOD_OK) {
+        result = mods::hook::add_pre<CombatModelCalcHook>(
+            svc_hook, before_combat_model_calc);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<CombatModelCalcHook>(
+            svc_hook, after_combat_model_calc);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_pre<CombatModelViewCalcHook>(
+            svc_hook, before_combat_model_view_calc);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<CombatModelViewCalcHook>(
+            svc_hook, after_combat_model_view_calc);
+    }
+    if (result == MOD_OK) {
 #if defined(__APPLE__)
         result = mods::hook::add_pre<ProcessMethodHook>(svc_hook, before_process_method);
 #else
@@ -1130,6 +1424,7 @@ void shutdown_bullet_time() {
     s_linkPositionStep = {};
     s_actorExecuteStack = {};
     s_actorExecuteDepth = 0;
+    clear_model_visual_states();
 }
 
 }  // namespace dawnlight

@@ -225,6 +225,10 @@ void on_new_save(ModContext*, uint32_t, void*) {
 
 void on_save_loaded(ModContext*, uint32_t, void*) {
     load_current_state();
+    if (!s_state.bossRushContext && flag_set(kFlagIntroSkipped)) {
+        set_flag(kFlagIntroSkipped, false);
+        persist_state();
+    }
 }
 
 bool state_available_for_current_context() {

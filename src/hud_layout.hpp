@@ -531,6 +531,34 @@ inline DuskModHudTransform hud_layout_hearts_transform() {
     return {};
 }
 
+inline DuskModHudTransform hud_layout_stamina_bar_transform() {
+    if (hud_layout() == HudLayout::Custom) {
+        return hud_custom_element_transform(HudElement::StaminaBar);
+    }
+    if (hud_layout() == HudLayout::Dawnlight) {
+        return {
+            .offset_x = 100.0f,
+            .offset_y = 0.0f,
+            .scale = 1.0f,
+        };
+    }
+    return {};
+}
+
+inline DuskModHudTransform hud_layout_fierce_deity_bar_transform() {
+    if (hud_layout() == HudLayout::Custom) {
+        return hud_custom_element_transform(HudElement::FierceDeityBar);
+    }
+    if (hud_layout() == HudLayout::Dawnlight) {
+        return {
+            .offset_x = 100.0f,
+            .offset_y = 0.0f,
+            .scale = 1.0f,
+        };
+    }
+    return {};
+}
+
 inline DuskModHudTransform hud_layout_rupees_transform() {
     if (hud_layout() == HudLayout::Custom) {
         return hud_custom_element_transform(HudElement::Rupees);

@@ -534,6 +534,16 @@ ModResult build_hud_tab(
     if (add_custom_transform_controls(ctx, left, "Custom Oxygen", HudElement::Oxygen) != MOD_OK) {
         return MOD_ERROR;
     }
+    if (add_custom_transform_controls(
+            ctx, left, "Custom Stamina Bar", HudElement::StaminaBar) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_custom_transform_controls(
+            ctx, left, "Custom Fierce Deity Bar", HudElement::FierceDeityBar) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     return MOD_OK;
 }
 

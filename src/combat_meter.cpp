@@ -1,5 +1,7 @@
 #include "combat_meter.hpp"
 
+#include "hud_layout.hpp"
+
 #include "JSystem/J2DGraph/J2DGrafContext.h"
 #include "JSystem/J2DGraph/J2DPicture.h"
 #include "d/d_com_inf_game.h"
@@ -107,17 +109,60 @@ void include_bounds(ScreenBounds& result, const ScreenBounds& bounds) {
     result.bottom = std::max(result.bottom, bounds.bottom);
 }
 
-ScreenBounds visible_heart_bounds(dMeter2Draw_c* meter) {
+ScreenBounds full_heart_bounds(dMeter2Draw_c* meter) {
     ScreenBounds result;
     for (CPaneMgr* heart : meter->mpLifeParts) {
-        if (heart == nullptr || heart->getPanePtr() == nullptr ||
-            !heart->getPanePtr()->isVisible())
-        {
+        if (heart == nullptr || heart->getPanePtr() == nullptr) {
             continue;
         }
         include_bounds(result, pane_screen_bounds(heart));
     }
     return result;
+}
+
+ScreenBounds untransformed_heart_bounds(dMeter2Draw_c* meter) {
+    const PaneState lifeParent = save_pane(meter->mpLifeParent);
+    const DuskModHudTransform heartsTransform = hud_layout_hearts_transform();
+    const float heartsScale = std::max(heartsTransform.scale, 0.001f);
+
+    meter->mpLifeParent->translate(
+        lifeParent.x - heartsTransform.offset_x, lifeParent.y - heartsTransform.offset_y);
+    meter->mpLifeParent->scale(
+        lifeParent.scaleX / heartsScale, lifeParent.scaleY / heartsScale);
+
+    J2DPane* secondRow = meter->getMainScreenPtr() != nullptr ?
+        meter->getMainScreenPtr()->search(MULTI_CHAR('heart_un')) : nullptr;
+    float secondRowX = 0.0f;
+    float secondRowY = 0.0f;
+    const bool undoHealthBar = secondRow != nullptr && custom_hud_layout_enabled() &&
+                               hud_custom_health_bar_enabled() &&
+                               meter->mpLifeParts[0] != nullptr &&
+                               meter->mpLifeParts[1] != nullptr &&
+                               meter->mpLifeParts[9] != nullptr &&
+                               meter->mpLifeParts[10] != nullptr;
+    if (undoHealthBar) {
+        secondRowX = secondRow->getTranslateX();
+        secondRowY = secondRow->getTranslateY();
+        const float spacingX = meter->mpLifeParts[1]->getInitGlobalCenterPosX() -
+                               meter->mpLifeParts[0]->getInitGlobalCenterPosX();
+        const float offsetX = meter->mpLifeParts[9]->getInitGlobalCenterPosX() + spacingX -
+                              meter->mpLifeParts[10]->getInitGlobalCenterPosX();
+        const float offsetY = meter->mpLifeParts[0]->getInitGlobalCenterPosY() -
+                              meter->mpLifeParts[10]->getInitGlobalCenterPosY();
+        secondRow->translate(secondRowX - offsetX, secondRowY - offsetY);
+    }
+
+    const ScreenBounds result = full_heart_bounds(meter);
+    if (undoHealthBar) {
+        secondRow->translate(secondRowX, secondRowY);
+    }
+    restore_pane(lifeParent);
+    return result;
+}
+
+DuskModHudTransform combat_meter_transform(CombatMeterStyle style) {
+    return style == CombatMeterStyle::Stamina ? hud_layout_stamina_bar_transform() :
+                                                hud_layout_fierce_deity_bar_transform();
 }
 
 ScreenBounds combat_meter_bounds(dMeter2Draw_c* meter) {
@@ -182,17 +227,21 @@ void draw_combat_meter(
     meter->mpMagicBase->resize(
         meter->mpMagicBase->getInitSizeX(), meter->mpMagicBase->getInitSizeY());
 
+    const DuskModHudTransform meterTransform = combat_meter_transform(style);
+    const DuskModHudTransform heartsTransform = hud_layout_hearts_transform();
+    const float heartsScale = std::max(heartsTransform.scale, 0.001f);
     const float lifeBaseScale = std::max(g_drawHIO.mLifeParentScale, 0.001f);
     const float relativeScale = g_drawHIO.mMagicMeterScale / lifeBaseScale;
-    meter->mpMagicParent->scale(meter->mpLifeParent->getScaleX() * relativeScale,
-        meter->mpLifeParent->getScaleY() * relativeScale);
+    meter->mpMagicParent->scale(
+        meter->mpLifeParent->getScaleX() / heartsScale * relativeScale * meterTransform.scale,
+        meter->mpLifeParent->getScaleY() / heartsScale * relativeScale * meterTransform.scale);
     meter->mpMagicParent->paneTrans(parent.x, parent.y);
 
-    const ScreenBounds hearts = visible_heart_bounds(meter);
+    const ScreenBounds hearts = untransformed_heart_bounds(meter);
     const ScreenBounds frame = pane_screen_bounds(meter->mpMagicFrameL);
     const ScreenBounds meterBounds = combat_meter_bounds(meter);
     if (hearts.valid && frame.valid && meterBounds.valid) {
-        const float lifeScaleY = std::abs(meter->mpLifeParent->getScaleY());
+        const float lifeScaleY = std::abs(meter->mpLifeParent->getScaleY()) / heartsScale;
         const float meterScaleY = std::abs(meter->mpMagicParent->getScaleY());
         const float gap = -kHeartPaneOverlap * lifeScaleY;
         const float rowStep =
@@ -201,7 +250,8 @@ void draw_combat_meter(
         const float targetTop = hearts.bottom + gap + normalizedRow * rowStep -
                                 normalizedRow * kAdditionalRowLiftPixels;
         meter->mpMagicParent->paneTrans(
-            parent.x + hearts.left - frame.left, parent.y + targetTop - frame.top);
+            parent.x + hearts.left - frame.left + meterTransform.offset_x,
+            parent.y + targetTop - frame.top + meterTransform.offset_y);
     }
 
     J2DGrafContext* graf = dComIfGp_getCurrentGrafPort();

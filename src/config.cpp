@@ -52,6 +52,7 @@ ConfigVarHandle s_hudHealthBar = 0;
 ConfigVarHandle s_aimDefaultsMigrated = 0;
 ConfigVarHandle s_hudLayoutMigrated = 0;
 ConfigVarHandle s_hudLayoutMigratedV2 = 0;
+ConfigVarHandle s_hudCombatMetersMigrated = 0;
 
 constexpr size_t kHudElementCount = static_cast<size_t>(HudElement::Count);
 constexpr size_t kHudButtonCount = static_cast<size_t>(HudButton::Count);
@@ -165,6 +166,8 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
     {"minimap", 0, 0, 100},
     {"dpad-items-text", 0, 0, 100},
     {"dpad-map-text", 0, 0, 100},
+    {"stamina-bar", 0, 0, 100},
+    {"fierce-deity-bar", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
@@ -192,6 +195,8 @@ constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults =
     {"minimap", 0, 50, 70},
     {"dpad-items-text", 0, 0, 100},
     {"dpad-map-text", 0, 0, 100},
+    {"stamina-bar", 0, 0, 100},
+    {"fierce-deity-bar", 0, 0, 100},
 }};
 
 constexpr std::array<HudButtonDefaults, kHudButtonCount> kHudButtonDefaults = {{
@@ -219,6 +224,8 @@ constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
     {"minimap", 0, 50, 70},
     {"dpad-items-text", 0, 0, 100},
     {"dpad-map-text", 0, 0, 100},
+    {"stamina-bar", 0, 0, 100},
+    {"fierce-deity-bar", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kWiiUHudButtonDefaults = {{
@@ -246,6 +253,8 @@ constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
     {"minimap", 730, -190, 70},
     {"dpad-items-text", 0, 0, 100},
     {"dpad-map-text", 0, 0, 100},
+    {"stamina-bar", 100, 0, 100},
+    {"fierce-deity-bar", 100, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kDawnlightHudButtonDefaults = {{
@@ -273,6 +282,8 @@ constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
     "Minimap",
     "D-Pad Items Text",
     "D-Pad Map Text",
+    "Stamina Bar",
+    "Fierce Deity Bar",
 }};
 
 constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{
@@ -864,7 +875,9 @@ ModResult register_config(ModError* error) {
         register_bool("hud-custom-health-bar", false, s_hudHealthBar) != MOD_OK ||
         register_bool("aim-defaults-v2", false, s_aimDefaultsMigrated) != MOD_OK ||
         register_bool("hud-layout-migrated-v1", false, s_hudLayoutMigrated) != MOD_OK ||
-        register_bool("hud-layout-migrated-v2", false, s_hudLayoutMigratedV2) != MOD_OK)
+        register_bool("hud-layout-migrated-v2", false, s_hudLayoutMigratedV2) != MOD_OK ||
+        register_bool("hud-combat-meters-migrated-v1", false, s_hudCombatMetersMigrated) !=
+            MOD_OK)
     {
         return mods::set_error(error, MOD_ERROR, "failed to register Dawnlight config variables");
     }
@@ -924,6 +937,27 @@ ModResult register_config(ModError* error) {
     if (subscribeResult != MOD_OK) {
         return mods::set_error(
             error, subscribeResult, "failed to subscribe to Dawnlight update-check changes");
+    }
+
+    if (!get_bool(s_hudCombatMetersMigrated, false)) {
+        const size_t hearts = hud_element_index(HudElement::Hearts);
+        const int x = get_int(s_hudElementX[hearts], kHudElementDefaults[hearts].x, -9999, 9999);
+        const int y = get_int(s_hudElementY[hearts], kHudElementDefaults[hearts].y, -9999, 9999);
+        const int scale =
+            get_int(s_hudElementScale[hearts], kHudElementDefaults[hearts].scale, 1, 9999);
+        for (const HudElement element : {HudElement::StaminaBar, HudElement::FierceDeityBar}) {
+            const size_t index = hud_element_index(element);
+            if (!set_int(s_hudElementX[index], x) || !set_int(s_hudElementY[index], y) ||
+                !set_int(s_hudElementScale[index], scale))
+            {
+                return mods::set_error(
+                    error, MOD_ERROR, "failed to migrate Dawnlight combat meter layout");
+            }
+        }
+        if (!set_bool(s_hudCombatMetersMigrated, true)) {
+            return mods::set_error(
+                error, MOD_ERROR, "failed to finish Dawnlight combat meter layout migration");
+        }
     }
 
     subscribeResult =
@@ -1418,7 +1452,7 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
     }
     out << "    },\n";
     out << "    \"roundXYButtons\": " << (round_xy_buttons_enabled() ? "true" : "false") << ",\n";
-    out << "    \"version\": 13\n";
+    out << "    \"version\": 14\n";
     out << "}\n";
 
     return out.good() ? HudSettingsIoResult::Ok : HudSettingsIoResult::WriteFailed;

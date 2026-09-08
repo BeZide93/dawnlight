@@ -59,6 +59,8 @@ enum class HudElement : int {
     Minimap,
     DPadItemsText,
     DPadMapText,
+    StaminaBar,
+    FierceDeityBar,
     Count,
 };
 

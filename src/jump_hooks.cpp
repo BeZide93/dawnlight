@@ -31,7 +31,6 @@ const daAlink_c* s_manualJumpOwner = nullptr;
 daAlink_c* s_slowSpeedOwner = nullptr;
 float s_previousNormalSpeed = 0.0f;
 daAlink_c* s_sprintOwner = nullptr;
-bool s_sprintExhausted = false;
 
 JumpBinding active_jump_binding() {
     return JumpBinding::LockR;
@@ -55,10 +54,6 @@ bool jump_held(JumpBinding binding) {
 
 bool sprint_requested(daAlink_c* link) {
     if (link == nullptr || !sprint_enabled() || !link->doButton()) {
-        s_sprintExhausted = false;
-        return false;
-    }
-    if (s_sprintExhausted) {
         return false;
     }
 
@@ -71,11 +66,7 @@ bool sprint_requested(daAlink_c* link) {
     if (!canSprint) {
         return false;
     }
-    if (!stamina_available_for_sprint()) {
-        s_sprintExhausted = true;
-        return false;
-    }
-    return true;
+    return canSprint && stamina_available_for_sprint();
 }
 
 bool switch_target_active(daAlink_c* link) {

@@ -161,8 +161,8 @@ ScreenBounds untransformed_heart_bounds(dMeter2Draw_c* meter) {
 }
 
 DuskModHudTransform combat_meter_transform(CombatMeterStyle style) {
-    return style == CombatMeterStyle::Stamina ? hud_layout_stamina_bar_transform() :
-                                                hud_layout_fierce_deity_bar_transform();
+    return style == CombatMeterStyle::FierceDeity ?
+        hud_layout_fierce_deity_bar_transform() : hud_layout_stamina_bar_transform();
 }
 
 ScreenBounds combat_meter_bounds(dMeter2Draw_c* meter) {
@@ -214,6 +214,9 @@ void draw_combat_meter(
     if (style == CombatMeterStyle::Stamina) {
         meter->mpMagicMeter->setBlackWhite(
             JUtility::TColor(100, 255, 100, 255), JUtility::TColor(0, 210, 0, 255));
+    } else if (style == CombatMeterStyle::StaminaExhausted) {
+        meter->mpMagicMeter->setBlackWhite(
+            JUtility::TColor(255, 190, 80, 255), JUtility::TColor(230, 105, 0, 255));
     } else {
         meter->mpMagicMeter->setBlackWhite(
             JUtility::TColor(255, 100, 100, 255), JUtility::TColor(210, 0, 0, 255));

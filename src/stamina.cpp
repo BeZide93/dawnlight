@@ -20,6 +20,7 @@ namespace dawnlight {
 namespace {
 
 DEFINE_HOOK(&dMeter2Draw_c::draw, StaminaMeterDrawHook);
+DEFINE_HOOK(&daAlink_c::checkRestHPAnime, StaminaRestAnimationHook);
 DEFINE_HOOK(&dMeter2Draw_c::drawKanteraScreen, LazySkillMeterScreenHook);
 DEFINE_HOOK(&daAlink_c::procGuardAttackInit, LazyGuardAttackHook);
 DEFINE_HOOK(&daAlink_c::procCutFinishJumpUpInit, LazyBackSliceHook);
@@ -32,6 +33,7 @@ constexpr float kGreatSpinCost = 40.0f;
 constexpr float kBulletTimeDrainPerSecond = 20.0f;
 constexpr float kSprintDrainPerSecond = 5.0f;
 constexpr float kRecoveryPerSecond = 5.0f;
+constexpr float kExhaustionRecoveryThreshold = 50.0f;
 constexpr float kLazySkillCost = 50.0f;
 constexpr float kLazyMidnaChargeCost = 100.0f;
 
@@ -43,6 +45,7 @@ struct RuntimeState {
     float stamina = kMaximumStamina;
     Clock::time_point lastUpdate{};
     bool sprintActive = false;
+    bool exhausted = false;
 };
 
 RuntimeState s_state;
@@ -57,6 +60,8 @@ void reset_for_link(daAlink_c* link) {
     s_state.linkId = link != nullptr ? link->setID : 0;
     s_state.stamina = kMaximumStamina;
     s_state.lastUpdate = Clock::now();
+    s_state.sprintActive = false;
+    s_state.exhausted = false;
 }
 
 daAlink_c* current_link() {
@@ -76,18 +81,23 @@ bool menu_or_pause_active() {
 bool try_consume(float amount) {
     daAlink_c* link = current_link();
     if (link == nullptr || link->checkDeadHP() || link->checkSceneChangeAreaStart() ||
-        s_state.stamina < amount)
+        s_state.exhausted || s_state.stamina < amount)
     {
         return false;
     }
     s_state.stamina -= amount;
+    if (s_state.stamina <= 0.0f) {
+        s_state.stamina = 0.0f;
+        s_state.exhausted = true;
+    }
     return true;
 }
 
 bool can_consume(float amount) {
     daAlink_c* link = current_link();
     return link != nullptr && !link->checkDeadHP() &&
-           !link->checkSceneChangeAreaStart() && s_state.stamina >= amount;
+           !link->checkSceneChangeAreaStart() && !s_state.exhausted &&
+           s_state.stamina >= amount;
 }
 
 bool lazy_stamina_bridge_active() {
@@ -155,8 +165,27 @@ void after_meter_draw(ModContext*, void* args, void*, void*) {
     if (!stamina_meter_visible() || menu_or_pause_active()) {
         return;
     }
-    draw_combat_meter(mods::arg<dMeter2Draw_c*>(args, 0), s_state.stamina,
-        CombatMeterStyle::Stamina, 0);
+    const CombatMeterStyle style = s_state.exhausted ?
+        CombatMeterStyle::StaminaExhausted : CombatMeterStyle::Stamina;
+    draw_combat_meter(
+        mods::arg<dMeter2Draw_c*>(args, 0), s_state.stamina, style, 0);
+}
+
+void after_check_rest_animation(ModContext*, void* args, void* retval, void*) {
+    if (retval == nullptr || *static_cast<BOOL*>(retval) != FALSE ||
+        !stamina_meter_visible() || !s_state.exhausted)
+    {
+        return;
+    }
+
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (link != nullptr && !link->checkPlayerGuard() &&
+        (link->checkNoUpperAnime() || link->checkHorseTiredAnime()) &&
+        link->mTargetedActor == nullptr && !link->checkWindSpeedOnAngle() &&
+        !link->checkPlayerDemoMode())
+    {
+        *static_cast<BOOL*>(retval) = TRUE;
+    }
 }
 
 bool resolve_lazy_tweaks_symbol(const char* name) {
@@ -213,8 +242,12 @@ ModResult install_lazy_tweaks_bridge() {
 }  // namespace
 
 ModResult initialize_stamina(ModError* error) {
-    const ModResult result =
+    ModResult result =
         mods::hook::add_post<StaminaMeterDrawHook>(svc_hook, after_meter_draw);
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<StaminaRestAnimationHook>(
+            svc_hook, after_check_rest_animation);
+    }
     if (result != MOD_OK) {
         return mods::set_error(error, result,
             "failed to install Dawnlight stamina meter hook");
@@ -237,7 +270,8 @@ bool stamina_meter_visible() {
 bool stamina_available_for_bullet_time() {
     daAlink_c* link = current_link();
     return link != nullptr && !link->checkDeadHP() &&
-           !link->checkSceneChangeAreaStart() && s_state.stamina > 0.0f;
+           !link->checkSceneChangeAreaStart() && !s_state.exhausted &&
+           s_state.stamina > 0.0f;
 }
 
 bool stamina_available_for_sprint() {
@@ -281,17 +315,34 @@ bool update_stamina(bool bulletTimeActive) {
     const float elapsed = std::clamp(
         std::chrono::duration<float>(now - s_state.lastUpdate).count(), 0.0f, 0.25f);
     s_state.lastUpdate = now;
-    if (bulletTimeActive) {
+    const bool wasExhausted = s_state.exhausted;
+    if (bulletTimeActive && !s_state.exhausted) {
         s_state.stamina = std::max(
             0.0f, s_state.stamina - elapsed * kBulletTimeDrainPerSecond);
-    } else if (sprintActive) {
+    } else if (sprintActive && !s_state.exhausted) {
         s_state.stamina = std::max(
             0.0f, s_state.stamina - elapsed * kSprintDrainPerSecond);
     } else {
         s_state.stamina = std::min(
             kMaximumStamina, s_state.stamina + elapsed * kRecoveryPerSecond);
     }
-    return s_state.stamina > 0.0f;
+    if (!s_state.exhausted && s_state.stamina <= 0.0f) {
+        s_state.stamina = 0.0f;
+        s_state.exhausted = true;
+    } else if (s_state.exhausted &&
+               s_state.stamina >= kExhaustionRecoveryThreshold)
+    {
+        s_state.exhausted = false;
+    }
+
+    if (wasExhausted && !s_state.exhausted && dComIfGs_getLife() > 4) {
+        if (link->mProcID == daAlink_c::PROC_TIRED_WAIT) {
+            link->procWaitInit();
+        } else if (link->mProcID == daAlink_c::PROC_WOLF_TIRED_WAIT) {
+            link->procWolfWaitInit();
+        }
+    }
+    return !s_state.exhausted;
 }
 
 }  // namespace dawnlight

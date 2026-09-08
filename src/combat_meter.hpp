@@ -6,6 +6,7 @@ namespace dawnlight {
 
 enum class CombatMeterStyle {
     Stamina,
+    StaminaExhausted,
     FierceDeity,
 };
 

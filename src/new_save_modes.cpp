@@ -902,6 +902,8 @@ void apply_intro_skip_preset(dSv_save_c* save) {
     }
 
     std::memcpy(save, kIntroSkipReferenceSave.data(), kIntroSkipReferenceSave.size());
+    save->getPlayer().getPlayerInfo().setTotalTime(0);
+    save->getPlayer().getPlayerStatusA().setRupee(150);
     set_intro_skipped(true);
     set_boss_rush(false);
 }

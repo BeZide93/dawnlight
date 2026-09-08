@@ -27,7 +27,7 @@ DEFINE_HOOK(&daAlink_c::procCutHeadInit, LazyHelmSplitterHook);
 DEFINE_HOOK(&daAlink_c::setWolfLockDomeModel, LazyMidnaChargeHook);
 
 constexpr float kMaximumStamina = 100.0f;
-constexpr float kFlurryRushCost = 25.0f;
+constexpr float kFlurryRushCost = 50.0f;
 constexpr float kGreatSpinCost = 40.0f;
 constexpr float kBulletTimeDrainPerSecond = 20.0f;
 constexpr float kRecoveryPerSecond = 5.0f;

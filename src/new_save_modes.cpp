@@ -20,6 +20,8 @@ class JPABaseEmitter;
 #include "f_op/f_op_actor_mng.h"
 #define private public
 #include "d/actor/d_a_obj_bosswarp.h"
+#include "d/actor/d_a_obj_carry.h"
+#include "d/actor/d_a_obj_oiltubo.h"
 #undef private
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
@@ -70,6 +72,8 @@ DEFINE_HOOK(
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
+DEFINE_HOOK(&daObjCarry_c::obj_break, CarryPotBreakHook);
+DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
 DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
 DEFINE_HOOK(&daAlink_c::dungeonReturnWarp, DungeonReturnWarpHook);
 #if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
@@ -195,6 +199,14 @@ constexpr f32 kBossRushHubY = 1100.0f;
 constexpr f32 kBossRushHubPortalRadius = 1450.0f;
 constexpr f32 kBossRushHubCenterPortalOffset = 450.0f;
 constexpr f32 kBossRushHubTriggerRadius = 150.0f;
+constexpr f32 kBossRushHubRefillDistance = kBossRushHubPortalRadius * 0.5f;
+constexpr f32 kBossRushHubRefillSpacing = 220.0f;
+constexpr f32 kBossRushHubPotDistance = 300.0f;
+constexpr f32 kBossRushHubPotSpacing = 150.0f;
+constexpr u8 kBossRushHubSupplyActorCount = 7;
+constexpr u8 kBossRushHubSupplyCreateBatch = 1;
+constexpr u32 kBossRushCarryParameters = 0x00003FFF;
+constexpr s16 kBossRushSmallPotParams = 0x1040;
 constexpr char kCaveOfOrdealsStage[] = "D_SB01";
 constexpr const char* kCaveOfOrdealsName = "Cave of Ordeals";
 constexpr s16 kCaveOfOrdealsPoint = 0;
@@ -256,13 +268,15 @@ bool sAdvancePending = false;
 DataNewRestore sDataNewRestore;
 fpc_ProcID sHubBarrierId = fpcM_ERROR_PROCESS_ID_e;
 fpc_ProcID sHubPortalIds[kBossRushHubPortalCount];
+std::array<fpc_ProcID, kBossRushHubSupplyActorCount> sHubSupplyActorIds;
 fpc_ProcID sDirectFinalBossId = fpcM_ERROR_PROCESS_ID_e;
 fpc_ProcID sDirectFinalBarrierId = fpcM_ERROR_PROCESS_ID_e;
 struct PendingActorDelete {
     ActorId id = 0;
     bool active = false;
 };
-constexpr size_t kPendingActorDeleteCapacity = kBossRushHubPortalCount + 4;
+constexpr size_t kPendingActorDeleteCapacity =
+    kBossRushHubPortalCount + kBossRushHubSupplyActorCount + 4;
 std::array<PendingActorDelete, kPendingActorDeleteCapacity> sPendingActorDeletes{};
 int sDirectFinalBossIndex = -1;
 bool sDirectFinalGanondorfStarted = false;
@@ -274,6 +288,10 @@ bool sHubActorIdsInitialized = false;
 bool sHubActorsSpawned = false;
 bool sHubPortalsArmed = false;
 u8 sHubNextPortalToSpawn = 0;
+u8 sHubNextSupplyActorToSpawn = 0;
+bool sHubSupplyAnchorInitialized = false;
+cXyz sHubSupplyAnchor;
+s16 sHubSupplyFacing = 0;
 int sPendingHubPortal = -1;
 int sDismissedHubPortal = -1;
 MidnaRootFlowMode sMidnaRootFlowMode = MidnaRootFlowMode::None;
@@ -480,6 +498,102 @@ csXyz hub_portal_rotation(u8 portal) {
     return csXyz(0, angle, 0);
 }
 
+bool initialize_hub_supply_anchor() {
+    if (sHubSupplyAnchorInitialized) {
+        return true;
+    }
+
+    daPy_py_c* player = daPy_getPlayerActorClass();
+    if (player == nullptr) {
+        return false;
+    }
+
+    sHubSupplyAnchor = player->home.pos;
+    sHubSupplyFacing = player->home.angle.y;
+    sHubSupplyAnchorInitialized = true;
+    return true;
+}
+
+cXyz hub_supply_position(f32 forwardOffset, f32 rightOffset) {
+    cXyz pos = sHubSupplyAnchor;
+    pos.x += angle_sin(sHubSupplyFacing) * forwardOffset +
+             angle_cos(sHubSupplyFacing) * rightOffset;
+    pos.z += angle_cos(sHubSupplyFacing) * forwardOffset -
+             angle_sin(sHubSupplyFacing) * rightOffset;
+    return pos;
+}
+
+fpc_ProcID create_hub_carry_pot(const cXyz& pos, u8 item, s16 carryParams) {
+    csXyz angle(static_cast<s16>(0xFF00 | item), sHubSupplyFacing, carryParams);
+    return create_actor(fpcNm_Obj_Carry_e, kBossRushCarryParameters, &pos,
+        kBossRushReturnRoom, &angle, nullptr, -1);
+}
+
+fpc_ProcID create_hub_supply_actor(u8 index) {
+    const f32 refillSide = kBossRushHubRefillSpacing * 0.5f;
+    csXyz angle(0, sHubSupplyFacing, 0);
+
+    switch (index) {
+    case 0: {
+        const cXyz pos = hub_supply_position(-kBossRushHubRefillDistance, -refillSide);
+        return create_actor(fpcNm_OBJ_OILTUBO_e, 0xFFFFFFFF, &pos, kBossRushReturnRoom,
+            &angle, nullptr, -1);
+    }
+    case 1: {
+        const cXyz pos = hub_supply_position(-kBossRushHubRefillDistance, refillSide);
+        return create_actor(fpcNm_OBJ_OILTUBO_e, 0xFFFFFFFF, &pos, kBossRushReturnRoom,
+            &angle, nullptr, -1);
+    }
+    case 2: {
+        const cXyz pos = hub_supply_position(-kBossRushHubRefillDistance + 55.0f, refillSide);
+        return create_actor(fpcNm_TAG_BTLITM_e, dItemNo_RED_BOTTLE_2_e, &pos,
+            kBossRushReturnRoom, &angle, nullptr, -1);
+    }
+    case 3: {
+        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, -kBossRushHubPotSpacing);
+        return create_hub_carry_pot(pos, dItemNo_ARROW_30_e, kBossRushSmallPotParams);
+    }
+    case 4: {
+        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, 0.0f);
+        return create_hub_carry_pot(pos, dItemNo_BOMB_30_e, kBossRushSmallPotParams);
+    }
+    case 5: {
+        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, kBossRushHubPotSpacing);
+        return create_hub_carry_pot(pos, dItemNo_PACHINKO_SHOT_e, kBossRushSmallPotParams);
+    }
+    case 6: {
+        cXyz pos = hub_supply_position(-kBossRushHubRefillDistance, 0.0f);
+        pos.y += 80.0f;
+        return fopAcM_createItem(&pos, dItemNo_RECOVERY_FAILY_e, -1,
+            kBossRushReturnRoom, &angle, nullptr, 0);
+    }
+    default:
+        return fpcM_ERROR_PROCESS_ID_e;
+    }
+}
+
+void spawn_hub_supply_actors() {
+    if (sHubNextSupplyActorToSpawn >= kBossRushHubSupplyActorCount ||
+        !initialize_hub_supply_anchor())
+    {
+        return;
+    }
+
+    u8 actorsCreated = 0;
+    while (sHubNextSupplyActorToSpawn < kBossRushHubSupplyActorCount &&
+           actorsCreated < kBossRushHubSupplyCreateBatch)
+    {
+        const u8 index = sHubNextSupplyActorToSpawn;
+        const fpc_ProcID actorId = create_hub_supply_actor(index);
+        if (actorId == fpcM_ERROR_PROCESS_ID_e) {
+            return;
+        }
+        sHubSupplyActorIds[index] = actorId;
+        ++sHubNextSupplyActorToSpawn;
+        ++actorsCreated;
+    }
+}
+
 bool is_boss_hub_stage_name() {
     return std::strcmp(dComIfGp_getStartStageName(), kBossRushReturnStage) == 0 &&
            dComIfGp_getStartStageRoomNo() == kBossRushReturnRoom;
@@ -525,10 +639,13 @@ void reset_hub_actor_ids() {
     for (u8 i = 0; i < kBossRushHubPortalCount; i++) {
         sHubPortalIds[i] = fpcM_ERROR_PROCESS_ID_e;
     }
+    sHubSupplyActorIds.fill(fpcM_ERROR_PROCESS_ID_e);
     sHubActorIdsInitialized = true;
     sHubActorsSpawned = false;
     sHubPortalsArmed = false;
     sHubNextPortalToSpawn = 0;
+    sHubNextSupplyActorToSpawn = 0;
+    sHubSupplyAnchorInitialized = false;
     sPendingHubPortal = -1;
     sDismissedHubPortal = -1;
 }
@@ -596,6 +713,9 @@ void delete_hub_actors() {
     for (u8 i = 0; i < kBossRushHubPortalCount; i++) {
         delete_hub_actor(sHubPortalIds[i]);
     }
+    for (fpc_ProcID actorId : sHubSupplyActorIds) {
+        delete_hub_actor(actorId);
+    }
     reset_hub_actor_ids();
 }
 
@@ -635,6 +755,7 @@ void spawn_hub_actors() {
 
         if (actorsAlive) {
             arm_ganondorf_barrier(hub_barrier_actor());
+            spawn_hub_supply_actors();
             return;
         }
 
@@ -679,6 +800,7 @@ void spawn_hub_actors() {
 
     arm_ganondorf_barrier(hub_barrier_actor());
     sHubActorsSpawned = true;
+    spawn_hub_supply_actors();
 }
 
 int touched_hub_portal() {
@@ -895,7 +1017,11 @@ void grant_bossrush_items() {
 
     dComIfGs_onItemFirstBit(dItemNo_SWORD_e);
     dComIfGs_onItemFirstBit(dItemNo_MASTER_SWORD_e);
+    dComIfGs_onItemFirstBit(dItemNo_SHIELD_e);
     dComIfGs_onItemFirstBit(dItemNo_HYLIA_SHIELD_e);
+    dComIfGs_onItemFirstBit(dItemNo_BOMB_BAG_LV1_e);
+    dComIfGs_onItemFirstBit(dItemNo_BOMB_BAG_LV2_e);
+    dComIfGs_onItemFirstBit(dItemNo_ARROW_LV3_e);
     dComIfGs_onItemFirstBit(dItemNo_WEAR_KOKIRI_e);
     dComIfGs_onItemFirstBit(dItemNo_ARMOR_e);
     dComIfGs_onItemFirstBit(dItemNo_WEAR_ZORA_e);
@@ -906,6 +1032,7 @@ void grant_bossrush_items() {
     dComIfGs_setSelectEquipClothes(dItemNo_WEAR_KOKIRI_e);
     dComIfGs_setBButtonItemKey(dItemNo_SWORD_e);
     dComIfGs_setCollectSword(COLLECT_MASTER_SWORD);
+    dComIfGs_setCollectShield(COLLECT_ORDON_SHIELD);
     dComIfGs_setCollectShield(COLLECT_HYLIAN_SHIELD);
     dComIfGs_setCollectClothes(KOKIRI_CLOTHES_FLAG);
 
@@ -916,15 +1043,15 @@ void grant_bossrush_items() {
     set_select_item(SELECT_ITEM_X, SLOT_4);
     set_select_item(SELECT_ITEM_Y, SLOT_10);
 
-    dComIfGs_setArrowMax(60);
-    dComIfGs_setArrowNum(60);
+    dComIfGs_setArrowMax(GIANT_QUIVER_MAX);
+    dComIfGs_setArrowNum(GIANT_QUIVER_MAX);
     dComIfGs_setPachinkoNum(dComIfGs_getPachinkoMax());
     dComIfGs_setBombMax(dItemNo_NORMAL_BOMB_e, 30);
     dComIfGs_setBombMax(dItemNo_WATER_BOMB_e, 15);
     dComIfGs_setBombMax(dItemNo_POKE_BOMB_e, 10);
-    dComIfGs_setBombNum(0, 30);
-    dComIfGs_setBombNum(1, 15);
-    dComIfGs_setBombNum(2, 10);
+    dComIfGs_setBombNum(0, dComIfGs_getBombMax(dItemNo_NORMAL_BOMB_e));
+    dComIfGs_setBombNum(1, dComIfGs_getBombMax(dItemNo_WATER_BOMB_e));
+    dComIfGs_setBombNum(2, dComIfGs_getBombMax(dItemNo_POKE_BOMB_e));
 
     dComIfGs_setWalletSize(GIANT_WALLET);
     dComIfGs_setRupee(GIANT_WALLET_MAX);
@@ -3321,6 +3448,34 @@ HookAction on_bosswarp_execute_pre(ModContext*, void* args, void* retval, void*)
     return HOOK_SKIP_ORIGINAL;
 }
 
+HookAction on_oiltubo_wait_pre(ModContext*, void* args, void* retval, void*) {
+    auto* oilTub = mods::arg<daObj_Oiltubo_c*>(args, 0);
+    if (!is_bossrush_hub_active() || oilTub == nullptr ||
+        sHubSupplyActorIds[1] == fpcM_ERROR_PROCESS_ID_e ||
+        fopAcM_GetID(oilTub) != sHubSupplyActorIds[1])
+    {
+        return HOOK_CONTINUE;
+    }
+
+    oilTub->eventInfo.offCondition(dEvtCnd_40_e);
+    if (retval != nullptr) {
+        *static_cast<int*>(retval) = 1;
+    }
+    return HOOK_SKIP_ORIGINAL;
+}
+
+HookAction on_carry_pot_break_pre(ModContext*, void* args, void*, void*) {
+    auto* carry = mods::arg<daObjCarry_c*>(args, 0);
+    if (is_bossrush_hub_active() && carry != nullptr &&
+        sHubSupplyActorIds[4] != fpcM_ERROR_PROCESS_ID_e &&
+        fopAcM_GetID(carry) == sHubSupplyActorIds[4] && mods::arg<bool>(args, 1))
+    {
+        addBombCount(dItemNo_NORMAL_BOMB_e, 30);
+        mods::arg_ref<bool>(args, 1) = false;
+    }
+    return HOOK_CONTINUE;
+}
+
 bool redirect_replay_to_hub(const BossRushEntry& entry) {
     if (boss_rush_state() != kBossRushStateReplay) {
         return false;
@@ -3539,6 +3694,16 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
         return mods::set_error(error, result, "failed to install Dawnlight bossrush portal hook");
     }
 
+    result = mods::hook_add_pre<OilTuboWaitHook>(svc_hook, on_oiltubo_wait_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight refill prompt hook");
+    }
+
+    result = mods::hook_add_pre<CarryPotBreakHook>(svc_hook, on_carry_pot_break_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight supply pot hook");
+    }
+
     result = mods::hook_add_pre<DungeonReturnWarpHook>(svc_hook, on_dungeon_return_warp_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Cave warp hook");
@@ -3610,6 +3775,18 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     }
     if (const ModResult result = uninstall_bossrush_hook<BossWarpExecuteHook>(
             error, "failed to uninstall Dawnlight bossrush portal hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<OilTuboWaitHook>(
+            error, "failed to uninstall Dawnlight refill prompt hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<CarryPotBreakHook>(
+            error, "failed to uninstall Dawnlight supply pot hook");
         result != MOD_OK)
     {
         return result;

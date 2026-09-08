@@ -20,9 +20,9 @@ class JPABaseEmitter;
 #include "f_op/f_op_actor_mng.h"
 #define private public
 #include "d/actor/d_a_obj_bosswarp.h"
-#include "d/actor/d_a_obj_carry.h"
 #include "d/actor/d_a_obj_oiltubo.h"
 #undef private
+#include "d/actor/d_a_tbox2.h"
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_debug_viewer.h"
@@ -72,7 +72,6 @@ DEFINE_HOOK(
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
-DEFINE_HOOK(&daObjCarry_c::obj_break, CarryPotBreakHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
 DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
 DEFINE_HOOK(&daAlink_c::dungeonReturnWarp, DungeonReturnWarpHook);
@@ -207,6 +206,7 @@ constexpr u8 kBossRushHubSupplyActorCount = 7;
 constexpr u8 kBossRushHubSupplyCreateBatch = 1;
 constexpr u32 kBossRushCarryParameters = 0x00003FFF;
 constexpr s16 kBossRushSmallPotParams = 0x1040;
+constexpr u8 kBossRushBombChestNo = 0xFF;
 constexpr char kCaveOfOrdealsStage[] = "D_SB01";
 constexpr const char* kCaveOfOrdealsName = "Cave of Ordeals";
 constexpr s16 kCaveOfOrdealsPoint = 0;
@@ -555,7 +555,13 @@ fpc_ProcID create_hub_supply_actor(u8 index) {
     }
     case 4: {
         const cXyz pos = hub_supply_position(kBossRushHubPotDistance, 0.0f);
-        return create_hub_carry_pot(pos, dItemNo_BOMB_30_e, kBossRushSmallPotParams);
+        const u32 params = dItemNo_BOMB_30_e |
+                           (static_cast<u32>(daTbox2_c::TYPE_SMALL_e) << 8) |
+                           (static_cast<u32>(kBossRushBombChestNo) << 16);
+        const csXyz chestAngle(
+            0, static_cast<s16>(sHubSupplyFacing + static_cast<s16>(0x8000)), 0);
+        return create_actor(fpcNm_TBOX2_e, params, &pos, kBossRushReturnRoom,
+            &chestAngle, nullptr, -1);
     }
     case 5: {
         const cXyz pos = hub_supply_position(kBossRushHubPotDistance, kBossRushHubPotSpacing);
@@ -3464,18 +3470,6 @@ HookAction on_oiltubo_wait_pre(ModContext*, void* args, void* retval, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
-HookAction on_carry_pot_break_pre(ModContext*, void* args, void*, void*) {
-    auto* carry = mods::arg<daObjCarry_c*>(args, 0);
-    if (is_bossrush_hub_active() && carry != nullptr &&
-        sHubSupplyActorIds[4] != fpcM_ERROR_PROCESS_ID_e &&
-        fopAcM_GetID(carry) == sHubSupplyActorIds[4] && mods::arg<bool>(args, 1))
-    {
-        addBombCount(dItemNo_NORMAL_BOMB_e, 30);
-        mods::arg_ref<bool>(args, 1) = false;
-    }
-    return HOOK_CONTINUE;
-}
-
 bool redirect_replay_to_hub(const BossRushEntry& entry) {
     if (boss_rush_state() != kBossRushStateReplay) {
         return false;
@@ -3699,11 +3693,6 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
         return mods::set_error(error, result, "failed to install Dawnlight refill prompt hook");
     }
 
-    result = mods::hook_add_pre<CarryPotBreakHook>(svc_hook, on_carry_pot_break_pre);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install Dawnlight supply pot hook");
-    }
-
     result = mods::hook_add_pre<DungeonReturnWarpHook>(svc_hook, on_dungeon_return_warp_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Cave warp hook");
@@ -3781,12 +3770,6 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     }
     if (const ModResult result = uninstall_bossrush_hook<OilTuboWaitHook>(
             error, "failed to uninstall Dawnlight refill prompt hook");
-        result != MOD_OK)
-    {
-        return result;
-    }
-    if (const ModResult result = uninstall_bossrush_hook<CarryPotBreakHook>(
-            error, "failed to uninstall Dawnlight supply pot hook");
         result != MOD_OK)
     {
         return result;

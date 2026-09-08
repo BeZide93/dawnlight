@@ -30,6 +30,7 @@ constexpr float kMaximumStamina = 100.0f;
 constexpr float kFlurryRushCost = 50.0f;
 constexpr float kGreatSpinCost = 40.0f;
 constexpr float kBulletTimeDrainPerSecond = 20.0f;
+constexpr float kSprintDrainPerSecond = 5.0f;
 constexpr float kRecoveryPerSecond = 5.0f;
 constexpr float kLazySkillCost = 50.0f;
 constexpr float kLazyMidnaChargeCost = 100.0f;
@@ -41,6 +42,7 @@ struct RuntimeState {
     u16 linkId = 0;
     float stamina = kMaximumStamina;
     Clock::time_point lastUpdate{};
+    bool sprintActive = false;
 };
 
 RuntimeState s_state;
@@ -229,13 +231,21 @@ void shutdown_stamina() {
 
 bool stamina_meter_visible() {
     return bullet_time_enabled() || flurry_rush_enabled() ||
-           great_spin_projectile_enabled();
+           great_spin_projectile_enabled() || sprint_enabled();
 }
 
 bool stamina_available_for_bullet_time() {
     daAlink_c* link = current_link();
     return link != nullptr && !link->checkDeadHP() &&
            !link->checkSceneChangeAreaStart() && s_state.stamina > 0.0f;
+}
+
+bool stamina_available_for_sprint() {
+    return can_consume(0.0001f);
+}
+
+void mark_sprint_stamina_active() {
+    s_state.sprintActive = true;
 }
 
 bool consume_flurry_rush_stamina() {
@@ -253,6 +263,8 @@ bool update_stamina(bool bulletTimeActive) {
     }
 
     const Clock::time_point now = Clock::now();
+    const bool sprintActive = s_state.sprintActive;
+    s_state.sprintActive = false;
     if (link->checkDeadHP() || link->checkSceneChangeAreaStart()) {
         reset_for_link(link);
         return true;
@@ -272,6 +284,9 @@ bool update_stamina(bool bulletTimeActive) {
     if (bulletTimeActive) {
         s_state.stamina = std::max(
             0.0f, s_state.stamina - elapsed * kBulletTimeDrainPerSecond);
+    } else if (sprintActive) {
+        s_state.stamina = std::max(
+            0.0f, s_state.stamina - elapsed * kSprintDrainPerSecond);
     } else {
         s_state.stamina = std::min(
             kMaximumStamina, s_state.stamina + elapsed * kRecoveryPerSecond);

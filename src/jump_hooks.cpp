@@ -1,6 +1,7 @@
 #include "bullet_time.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
+#include "stamina.hpp"
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"
@@ -15,6 +16,7 @@ namespace {
 
 DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, CheckAutoJumpAction);
 DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
+DEFINE_HOOK(&daAlink_c::procMove, ProcMoveSprint);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
 DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
@@ -23,10 +25,13 @@ enum class JumpBinding {
 };
 
 constexpr u16 kSwordItem = 0x103;
+constexpr float kSprintSpeedMultiplier = 1.5f;
 
 const daAlink_c* s_manualJumpOwner = nullptr;
 daAlink_c* s_slowSpeedOwner = nullptr;
 float s_previousNormalSpeed = 0.0f;
+daAlink_c* s_sprintOwner = nullptr;
+bool s_sprintExhausted = false;
 
 JumpBinding active_jump_binding() {
     return JumpBinding::LockR;
@@ -46,6 +51,31 @@ bool jump_held(JumpBinding binding) {
         return mDoCPd_c::getHoldLockR(PAD_1) != 0;
     }
     return false;
+}
+
+bool sprint_requested(daAlink_c* link) {
+    if (link == nullptr || !sprint_enabled() || !link->doButton()) {
+        s_sprintExhausted = false;
+        return false;
+    }
+    if (s_sprintExhausted) {
+        return false;
+    }
+
+    const bool canSprint = link->mProcID == daAlink_c::PROC_MOVE &&
+           !link->doTrigger() && link->checkInputOnR() &&
+           link->mLinkAcch.ChkGroundHit() && !link->checkWolf() &&
+           !link->checkEventRun() && !dComIfGp_event_runCheck() &&
+           !link->checkMagneBootsOn() && !link->getSumouMode() &&
+           link->mGrabItemAcKeep.getActor() == nullptr;
+    if (!canSprint) {
+        return false;
+    }
+    if (!stamina_available_for_sprint()) {
+        s_sprintExhausted = true;
+        return false;
+    }
+    return true;
 }
 
 bool switch_target_active(daAlink_c* link) {
@@ -258,6 +288,35 @@ void after_proc_auto_jump(ModContext*, void* args, void*, void*) {
     update_bullet_time_after_jump(link);
 }
 
+HookAction before_proc_move_sprint(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    s_sprintOwner = nullptr;
+    if (!sprint_requested(link)) {
+        return HOOK_CONTINUE;
+    }
+
+    link->mMaxSpeed *= kSprintSpeedMultiplier;
+    s_sprintOwner = link;
+    mark_sprint_stamina_active();
+    return HOOK_CONTINUE;
+}
+
+void after_proc_move_sprint(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (s_sprintOwner != link || link->mProcID != daAlink_c::PROC_MOVE ||
+        !link->checkUnderMove0BckNoArc(daAlink_c::ANM_RUN))
+    {
+        s_sprintOwner = nullptr;
+        return;
+    }
+
+    link->mUnderFrameCtrl[0].setRate(
+        link->mUnderFrameCtrl[0].getRate() * kSprintSpeedMultiplier);
+    link->mUnderFrameCtrl[1].setRate(
+        link->mUnderFrameCtrl[1].getRate() * kSprintSpeedMultiplier);
+    s_sprintOwner = nullptr;
+}
+
 HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const auto nextProc = mods::arg<daAlink_c::daAlink_PROC>(args, 1);
@@ -286,6 +345,12 @@ ModResult install_jump_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<ProcAutoJump>(svc_hook, after_proc_auto_jump);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ProcMoveSprint>(svc_hook, before_proc_move_sprint);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ProcMoveSprint>(svc_hook, after_proc_move_sprint);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<SetBodyAngleXReadyAnime>(

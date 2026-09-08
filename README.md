@@ -19,11 +19,11 @@ aiming, boss, and HUD features for Twilight Princess.
 - Touch and gyro aiming support for the modded aiming modes.
 - Optional Bullet Time while aiming the Bow during a manual R jump, Flurry Rush
   after a perfectly timed evade, and a ranged Great Spin projectile.
-- Shared Stamina meter for Bullet Time, Flurry Rush, and the Great Spin
+- Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, and the Great Spin
   projectile, including compatibility with Lazy Tweaks stamina actions.
 - Fierce Deity mode with a charge meter, temporary Magic Armor model swap, and
   doubled sword damage.
-- Manual Shielding and R Jump quality-of-life options.
+- Manual Shielding, R Jump, and a stamina-powered Sprint option.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
 - Boss Rush Game Mode with the Garden of Twilight hub, individual boss portals,
   a complete-run portal, Cave of Ordeals access, hardmode arena hazards, save

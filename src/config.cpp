@@ -38,6 +38,7 @@ ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
+ConfigVarHandle s_sprint = 0;
 ConfigVarHandle s_zItemSlot = 0;
 ConfigVarHandle s_dawnlightTouchUi = 0;
 ConfigVarHandle s_checkForUpdates = 0;
@@ -860,6 +861,7 @@ ModResult register_config(ModError* error) {
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
+        register_bool("sprint", false, s_sprint) != MOD_OK ||
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
         register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
         register_bool("check-for-updates", true, s_checkForUpdates) != MOD_OK ||
@@ -1050,6 +1052,10 @@ bool manual_shielding_enabled() {
 
 bool r_jump_enabled() {
     return get_bool(s_rJump, true);
+}
+
+bool sprint_enabled() {
+    return get_bool(s_sprint, false);
 }
 
 bool z_item_slot_enabled() {
@@ -1271,6 +1277,10 @@ ConfigVarHandle manual_shielding_config_var() {
 
 ConfigVarHandle r_jump_config_var() {
     return s_rJump;
+}
+
+ConfigVarHandle sprint_config_var() {
+    return s_sprint;
 }
 
 ConfigVarHandle z_item_slot_config_var() {

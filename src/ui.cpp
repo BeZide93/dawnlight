@@ -358,6 +358,13 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "Sprint", sprint_config_var(),
+            "Hold the Roll button while running to move 50% faster using the run animation. "
+            "Uses 5% stamina per second.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Z Item Slot", z_item_slot_config_var(),
             "Adds an item slot on Z and moves Midna off the Z button. "
             "Restart the app after changing this setting.")
@@ -798,7 +805,9 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
     if (add_text(ctx, panel, "Shared Stamina and Lazy Tweaks compatibility") != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Manual Shielding and R Jump") != MOD_OK) return MOD_ERROR;
+    if (add_text(ctx, panel, "Manual Shielding, R Jump, and Sprint") != MOD_OK) {
+        return MOD_ERROR;
+    }
     if (add_text(ctx, panel, "Z Item Slot and Dawnlight Touch UI") != MOD_OK) return MOD_ERROR;
     if (add_text(ctx, panel, "Intro Skip new-save mode") != MOD_OK) return MOD_ERROR;
     if (add_text(ctx, panel, "Boss Rush hub, portals, resume, and hardmode") != MOD_OK) {

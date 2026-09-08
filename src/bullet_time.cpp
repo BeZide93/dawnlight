@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -105,6 +106,20 @@ struct DeferredFlurryDamage {
 };
 
 using MatrixPose = std::array<float, 12>;
+using VectorPose = std::array<float, 3>;
+
+struct QuaternionPose {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float w = 1.0f;
+};
+
+struct TransformPose {
+    VectorPose translation{};
+    VectorPose scale{1.0f, 1.0f, 1.0f};
+    QuaternionPose rotation{};
+};
 
 struct ModelVisualState {
     J3DModel* model = nullptr;
@@ -122,6 +137,7 @@ struct ModelVisualState {
     MatrixPose startBase{};
     MatrixPose targetBase{};
     MatrixPose backupBase{};
+    VectorPose rootStartTangent{};
     bool initialized = false;
     bool viewApplied = false;
 };
@@ -529,6 +545,195 @@ void write_interpolated_matrix(const MatrixPose& start, const MatrixPose& target
     write_matrix(pose, matrix);
 }
 
+float vector_length(float x, float y, float z) {
+    return std::sqrt(x * x + y * y + z * z);
+}
+
+bool decompose_transform(const MatrixPose& pose, TransformPose& transform) {
+    constexpr float kMinimumScale = 0.0001f;
+    constexpr float kMaximumAxisDot = 0.001f;
+
+    float scaleX = vector_length(pose[0], pose[4], pose[8]);
+    const float scaleY = vector_length(pose[1], pose[5], pose[9]);
+    const float scaleZ = vector_length(pose[2], pose[6], pose[10]);
+    if (scaleX < kMinimumScale || scaleY < kMinimumScale ||
+        scaleZ < kMinimumScale)
+    {
+        return false;
+    }
+
+    float r00 = pose[0] / scaleX;
+    float r10 = pose[4] / scaleX;
+    float r20 = pose[8] / scaleX;
+    const float r01 = pose[1] / scaleY;
+    const float r11 = pose[5] / scaleY;
+    const float r21 = pose[9] / scaleY;
+    const float r02 = pose[2] / scaleZ;
+    const float r12 = pose[6] / scaleZ;
+    const float r22 = pose[10] / scaleZ;
+
+    if (std::abs(r00 * r01 + r10 * r11 + r20 * r21) > kMaximumAxisDot ||
+        std::abs(r00 * r02 + r10 * r12 + r20 * r22) > kMaximumAxisDot ||
+        std::abs(r01 * r02 + r11 * r12 + r21 * r22) > kMaximumAxisDot)
+    {
+        return false;
+    }
+
+    const float determinant =
+        r00 * (r11 * r22 - r12 * r21) -
+        r01 * (r10 * r22 - r12 * r20) +
+        r02 * (r10 * r21 - r11 * r20);
+    if (determinant < 0.0f) {
+        scaleX = -scaleX;
+        r00 = -r00;
+        r10 = -r10;
+        r20 = -r20;
+    }
+
+    QuaternionPose rotation;
+    const float trace = r00 + r11 + r22;
+    if (trace > 0.0f) {
+        const float s = std::sqrt(trace + 1.0f) * 2.0f;
+        rotation.w = 0.25f * s;
+        rotation.x = (r21 - r12) / s;
+        rotation.y = (r02 - r20) / s;
+        rotation.z = (r10 - r01) / s;
+    } else if (r00 > r11 && r00 > r22) {
+        const float s = std::sqrt(1.0f + r00 - r11 - r22) * 2.0f;
+        rotation.w = (r21 - r12) / s;
+        rotation.x = 0.25f * s;
+        rotation.y = (r01 + r10) / s;
+        rotation.z = (r02 + r20) / s;
+    } else if (r11 > r22) {
+        const float s = std::sqrt(1.0f + r11 - r00 - r22) * 2.0f;
+        rotation.w = (r02 - r20) / s;
+        rotation.x = (r01 + r10) / s;
+        rotation.y = 0.25f * s;
+        rotation.z = (r12 + r21) / s;
+    } else {
+        const float s = std::sqrt(1.0f + r22 - r00 - r11) * 2.0f;
+        rotation.w = (r10 - r01) / s;
+        rotation.x = (r02 + r20) / s;
+        rotation.y = (r12 + r21) / s;
+        rotation.z = 0.25f * s;
+    }
+
+    const float rotationLength = vector_length(
+        rotation.x, rotation.y, rotation.z);
+    const float quaternionLength =
+        std::sqrt(rotationLength * rotationLength + rotation.w * rotation.w);
+    if (quaternionLength < kMinimumScale) {
+        return false;
+    }
+    rotation.x /= quaternionLength;
+    rotation.y /= quaternionLength;
+    rotation.z /= quaternionLength;
+    rotation.w /= quaternionLength;
+
+    transform.translation = {pose[3], pose[7], pose[11]};
+    transform.scale = {scaleX, scaleY, scaleZ};
+    transform.rotation = rotation;
+    return true;
+}
+
+QuaternionPose interpolate_rotation(
+    const QuaternionPose& start, const QuaternionPose& target, float progress)
+{
+    QuaternionPose end = target;
+    const float dot = start.x * end.x + start.y * end.y +
+                      start.z * end.z + start.w * end.w;
+    if (dot < 0.0f) {
+        end.x = -end.x;
+        end.y = -end.y;
+        end.z = -end.z;
+        end.w = -end.w;
+    }
+
+    QuaternionPose result{
+        start.x + (end.x - start.x) * progress,
+        start.y + (end.y - start.y) * progress,
+        start.z + (end.z - start.z) * progress,
+        start.w + (end.w - start.w) * progress,
+    };
+    const float length = std::sqrt(result.x * result.x + result.y * result.y +
+                                   result.z * result.z + result.w * result.w);
+    if (length > 0.0001f) {
+        result.x /= length;
+        result.y /= length;
+        result.z /= length;
+        result.w /= length;
+    }
+    return result;
+}
+
+float interpolate_root_translation(float start, float target, float startTangent,
+                                   float progress) {
+    const float progress2 = progress * progress;
+    const float progress3 = progress2 * progress;
+    const float endTangent = target - start;
+    const float value = (2.0f * progress3 - 3.0f * progress2 + 1.0f) * start +
+                        (progress3 - 2.0f * progress2 + progress) * startTangent +
+                        (-2.0f * progress3 + 3.0f * progress2) * target +
+                        (progress3 - progress2) * endTangent;
+    return std::clamp(value, std::min(start, target), std::max(start, target));
+}
+
+void compose_transform(const TransformPose& transform, MatrixPose& pose) {
+    const QuaternionPose& q = transform.rotation;
+    const float xx = q.x * q.x;
+    const float yy = q.y * q.y;
+    const float zz = q.z * q.z;
+    const float xy = q.x * q.y;
+    const float xz = q.x * q.z;
+    const float yz = q.y * q.z;
+    const float xw = q.x * q.w;
+    const float yw = q.y * q.w;
+    const float zw = q.z * q.w;
+
+    pose[0] = (1.0f - 2.0f * (yy + zz)) * transform.scale[0];
+    pose[4] = (2.0f * (xy + zw)) * transform.scale[0];
+    pose[8] = (2.0f * (xz - yw)) * transform.scale[0];
+    pose[1] = (2.0f * (xy - zw)) * transform.scale[1];
+    pose[5] = (1.0f - 2.0f * (xx + zz)) * transform.scale[1];
+    pose[9] = (2.0f * (yz + xw)) * transform.scale[1];
+    pose[2] = (2.0f * (xz + yw)) * transform.scale[2];
+    pose[6] = (2.0f * (yz - xw)) * transform.scale[2];
+    pose[10] = (1.0f - 2.0f * (xx + yy)) * transform.scale[2];
+    pose[3] = transform.translation[0];
+    pose[7] = transform.translation[1];
+    pose[11] = transform.translation[2];
+}
+
+void write_interpolated_transform(const MatrixPose& start, const MatrixPose& target,
+                                  float progress, MtxP matrix,
+                                  const VectorPose* rootStartTangent = nullptr) {
+    TransformPose startTransform;
+    TransformPose targetTransform;
+    if (!decompose_transform(start, startTransform) ||
+        !decompose_transform(target, targetTransform))
+    {
+        write_interpolated_matrix(start, target, progress, matrix);
+        return;
+    }
+
+    TransformPose result;
+    for (std::size_t i = 0; i < result.translation.size(); ++i) {
+        result.translation[i] = rootStartTangent == nullptr ?
+            startTransform.translation[i] +
+                (targetTransform.translation[i] - startTransform.translation[i]) * progress :
+            interpolate_root_translation(startTransform.translation[i],
+                targetTransform.translation[i], (*rootStartTangent)[i], progress);
+        result.scale[i] = startTransform.scale[i] +
+                          (targetTransform.scale[i] - startTransform.scale[i]) * progress;
+    }
+    result.rotation = interpolate_rotation(
+        startTransform.rotation, targetTransform.rotation, progress);
+
+    MatrixPose pose{};
+    compose_transform(result, pose);
+    write_matrix(pose, matrix);
+}
+
 ModelVisualState* find_model_visual_state(J3DModel* model, bool create,
                                           fopAc_ac_c* actor = nullptr) {
     ModelVisualState* oldest = &s_modelVisualStates.front();
@@ -598,12 +803,13 @@ void read_model_pose(J3DModel* model, std::vector<MatrixPose>& joints,
 void write_interpolated_model_pose(ModelVisualState& state, float progress) {
     read_matrix(state.model->getBaseTRMtx(), state.backupBase);
     read_model_pose(state.model, state.backupJoints, state.backupWeights);
-    write_interpolated_matrix(state.startBase, state.targetBase, progress,
-                              state.model->getBaseTRMtx());
+    write_interpolated_transform(state.startBase, state.targetBase, progress,
+                                 state.model->getBaseTRMtx(),
+                                 &state.rootStartTangent);
     for (std::size_t i = 0; i < state.startJoints.size(); ++i) {
-        write_interpolated_matrix(state.startJoints[i], state.targetJoints[i],
-                                  progress,
-                                  state.model->getAnmMtx(static_cast<int>(i)));
+        write_interpolated_transform(state.startJoints[i], state.targetJoints[i],
+                                     progress,
+                                     state.model->getAnmMtx(static_cast<int>(i)));
     }
     for (std::size_t i = 0; i < state.startWeights.size(); ++i) {
         write_interpolated_matrix(state.startWeights[i], state.targetWeights[i],
@@ -947,6 +1153,11 @@ HookAction before_combat_model_calc(ModContext*, void* args, void*, void*) {
         state->targetWeights = state->startWeights;
         state->initialized = true;
     } else if (state->captureFrame != s_slowFrame) {
+        state->rootStartTangent = {
+            state->targetBase[3] - state->startBase[3],
+            state->targetBase[7] - state->startBase[7],
+            state->targetBase[11] - state->startBase[11],
+        };
         state->startBase = state->targetBase;
         state->startJoints = state->targetJoints;
         state->startWeights = state->targetWeights;

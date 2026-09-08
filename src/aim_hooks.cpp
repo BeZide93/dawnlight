@@ -771,7 +771,7 @@ void after_camera_run(ModContext*, void* args, void*, void*) {
     }
 
     if (s_customCinemaSightActive &&
-        dComIfGp_checkPlayerStatus0(camera->mPadID, 0x1000) &&
+        dComIfGp_checkPlayerStatus0(camera->mPadID, 0x1040) &&
         should_keep_cinema_bow_sight(link))
     {
         draw_bow_trajectory_sight(link);

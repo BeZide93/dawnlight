@@ -1,6 +1,6 @@
 #include "profile.hpp"
 #include "timing.hpp"
-#include "d/actor/d_a_npc_grA.h"
+#include "d/actor/d_a_npc_gra.h"
 #include "d/d_com_inf_game.h"
 #include "m_Do/m_Do_ext.h"
 

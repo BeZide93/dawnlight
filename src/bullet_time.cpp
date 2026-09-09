@@ -17,6 +17,7 @@
 #include "d/d_cc_s.h"
 #include "d/d_cc_uty.h"
 #include "d/d_com_inf_game.h"
+#include "d/d_meter2_draw.h"
 #include "f_op/f_op_actor.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_manager.h"
@@ -54,6 +55,7 @@ constexpr auto kManualJumpTimeout = std::chrono::seconds(7);
 constexpr auto kFlurryRushDuration = std::chrono::seconds(3);
 constexpr float kPerfectDodgeMargin = 45.0f;
 constexpr float kFlurryRushMeleeDistance = 120.0f;
+constexpr u8 kFlurryRushActionStatus = BUTTON_STATUS_UNK_129;
 constexpr auto kColliderCacheEntries = std::size_t{256};
 constexpr auto kCollidersPerActor = std::size_t{64};
 constexpr auto kHitActorEntries = std::size_t{32};
@@ -85,6 +87,7 @@ DEFINE_HOOK(&Z2CreatureLink::startLinkVoice, LinkVoiceStartHook);
 DEFINE_HOOK(&cCcS::SetAtTgCommonHitInf, CommonAtTgHitHook);
 DEFINE_HOOK(&cc_at_check, AtCheckHook);
 DEFINE_HOOK(&at_power_check, FlurryAttackPowerHook);
+DEFINE_HOOK(&dMeter2Draw_c::getActionString, FlurryActionStringHook);
 DEFINE_HOOK(&J3DModel::calc, CombatModelCalcHook);
 DEFINE_HOOK(&J3DModel::viewCalc, CombatModelViewCalcHook);
 DEFINE_HOOK(&fpcM_DrawIterater, DrawIteraterHook);
@@ -256,6 +259,20 @@ std::array<LinkVoiceRateEntry, 8> s_linkVoiceRates{};
 
 bool combat_slow_active() {
     return s_bulletTimeActive || s_flurryRushActive;
+}
+
+void after_flurry_action_string(ModContext*, void* args, void* retval, void*) {
+    if (!s_flurryRushActive || retval == nullptr ||
+        mods::arg<u8>(args, 1) != kFlurryRushActionStatus)
+    {
+        return;
+    }
+
+    static char prompt[] = "Flurry Rush";
+    if (u8* drawType = mods::arg<u8*>(args, 3); drawType != nullptr) {
+        *drawType = MESSAGE_DRAW_UI_ACTION;
+    }
+    *static_cast<char**>(retval) = prompt;
 }
 
 void NativeAudioSource::render(float* output, int frames) {
@@ -487,6 +504,11 @@ void stop_flurry_rush(bool releaseDamage = true) {
     } else {
         clear_deferred_flurry_damage();
         clear_held_flurry_damage();
+    }
+    if (s_flurryRushOwner != nullptr &&
+        dComIfGp_getAStatus() == kFlurryRushActionStatus)
+    {
+        s_flurryRushOwner->setBStatus(BUTTON_STATUS_NONE);
     }
     s_flurryRushActive = false;
     s_flurryRushOwner = nullptr;
@@ -1559,6 +1581,9 @@ void after_actor_execute(ModContext*, void* args, void*, void*) {
     }
     update_flurry_link_attack(actor);
     update_flurry_link_landing(actor);
+    if (s_flurryRushActive && actor == s_flurryRushOwner) {
+        dComIfGp_setAStatus(kFlurryRushActionStatus, BUTTON_STATUS_FLAG_EMPHASIS);
+    }
     if (s_actorExecuteStack[s_actorExecuteDepth - 1] == actor) {
         s_actorExecuteStack[--s_actorExecuteDepth] = nullptr;
     }
@@ -1963,6 +1988,10 @@ ModResult initialize_bullet_time(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook::add_post<FlurryAttackPowerHook>(
             svc_hook, after_flurry_attack_power);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<FlurryActionStringHook>(
+            svc_hook, after_flurry_action_string);
     }
     if (result == MOD_OK) {
         GfxStageHookDesc desc = GFX_STAGE_HOOK_DESC_INIT;

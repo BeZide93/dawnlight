@@ -5,6 +5,7 @@
 #include "mods/svc/flow.h"
 #include "mods/svc/game.h"
 #include "mods/svc/game_mode.h"
+#include "mods/svc/gfx.h"
 #include "mods/svc/hook.h"
 #include "mods/svc/host.h"
 #include "mods/svc/log.h"
@@ -19,6 +20,7 @@ extern const ConfigService* svc_config;
 extern const FlowService* svc_flow;
 extern const GameService* svc_game;
 extern const GameModeService* svc_game_mode;
+extern const GfxService* svc_gfx;
 extern const HookService* svc_hook;
 extern const HostService* svc_host;
 extern const LogService* svc_log;

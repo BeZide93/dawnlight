@@ -14,6 +14,7 @@
 #include "mods/svc/config.h"
 #include "mods/svc/flow.h"
 #include "mods/svc/game_mode.h"
+#include "mods/svc/gfx.h"
 #include "mods/svc/hook.h"
 #include "mods/svc/host.h"
 #include "mods/svc/log.h"
@@ -28,6 +29,7 @@ IMPORT_SERVICE(ActorService, svc_actor);
 IMPORT_SERVICE(ConfigService, svc_config);
 IMPORT_SERVICE(FlowService, svc_flow);
 IMPORT_SERVICE(GameModeService, svc_game_mode);
+IMPORT_SERVICE(GfxService, svc_gfx);
 IMPORT_SERVICE(HookService, svc_hook);
 IMPORT_SERVICE(HostService, svc_host);
 IMPORT_SERVICE(LogService, svc_log);

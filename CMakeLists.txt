@@ -43,7 +43,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_
 set_source_files_properties(src/mod.cpp src/update_service.cpp PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mod.json")
 
 add_mod(dawnlight_mod
-    FEATURES game
+    FEATURES game webgpu
     SOURCES
         src/aim_hooks.cpp
         src/bullet_time.cpp
@@ -68,6 +68,10 @@ add_mod(dawnlight_mod
         src/update_service.cpp
     MOD_JSON mod.json
     RES_DIR res
+)
+
+target_include_directories(dawnlight_mod PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
 target_compile_definitions(dawnlight_mod PRIVATE DAWNLIGHT_VERSION="${DAWNLIGHT_VER}")

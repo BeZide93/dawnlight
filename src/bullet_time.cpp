@@ -5,9 +5,13 @@
 #include "service_imports.hpp"
 #include "stamina.hpp"
 
+#include "dusk/audio/MusicRateBuffer.h"
+#include "dusk/simulation_accumulator.h"
+#include "slow_motion/Controller.h"
 #include "SSystem/SComponent/c_cc_d.h"
 #include "SSystem/SComponent/c_cc_s.h"
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
+#include "Z2AudioLib/Z2LinkMgr.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_arrow.h"
 #include "d/d_cc_s.h"
@@ -15,28 +19,35 @@
 #include "d/d_com_inf_game.h"
 #include "f_op/f_op_actor.h"
 #include "f_op/f_op_actor_mng.h"
+#include "f_pc/f_pc_manager.h"
 #include "f_pc/f_pc_method.h"
 #include "f_pc/f_pc_name.h"
+#include "m_Do/m_Do_graphic.h"
 #include "mods/service.hpp"
+#include "mods/svc/gfx.h"
 #include "mods/svc/hook.h"
 #include "mods/svc/hook.hpp"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
+#include "../integration/dusklight_edges.inc"
+
 namespace dawnlight {
 namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr std::uint64_t kEnemySlowFrameInterval = 10;
-constexpr std::uint64_t kFlurryLinkSlowFrameInterval = 4;
-constexpr std::uint64_t kArrowSlowFrameInterval = 5;
+constexpr float kSimulationPeriod = 1.0f / 30.0f;
+constexpr float kEnemyTimeScale = 0.1f;
+constexpr float kFlurryLinkTimeScale = 0.25f;
+constexpr float kArrowTimeScale = 0.2f;
 constexpr float kLinkTimeScale = 0.1f;
 constexpr auto kBulletTimeDuration = std::chrono::seconds(5);
 constexpr auto kManualJumpTimeout = std::chrono::seconds(7);
@@ -61,13 +72,23 @@ DEFINE_HOOK(&fpcMtd_Execute, ProcessExecuteHook);
 #endif
 DEFINE_HOOK(&cCcS::Set, ColliderSetHook);
 DEFINE_HOOK(&daArrow_c::atHitCallBack, ArrowHitHook);
+DEFINE_HOOK(&daAlink_c::allAnimePlay, LinkAllAnimePlayHook);
 DEFINE_HOOK(&daAlink_c::posMove, LinkPosMoveHook);
 DEFINE_HOOK(&daAlink_c::checkDamageAction, LinkDamageActionHook);
+#if defined(_WIN32)
+DEFINE_HOOK_SYMBOL(
+    "?startLinkVoice@Z2CreatureLink@@QEAAPEAVZ2SoundHandlePool@@VJAISoundID@@C@Z",
+    Z2SoundHandlePool*(Z2CreatureLink*, JAISoundID, s8), LinkVoiceStartHook);
+#else
+DEFINE_HOOK(&Z2CreatureLink::startLinkVoice, LinkVoiceStartHook);
+#endif
 DEFINE_HOOK(&cCcS::SetAtTgCommonHitInf, CommonAtTgHitHook);
 DEFINE_HOOK(&cc_at_check, AtCheckHook);
 DEFINE_HOOK(&at_power_check, FlurryAttackPowerHook);
 DEFINE_HOOK(&J3DModel::calc, CombatModelCalcHook);
 DEFINE_HOOK(&J3DModel::viewCalc, CombatModelViewCalcHook);
+DEFINE_HOOK(&fpcM_DrawIterater, DrawIteraterHook);
+DEFINE_HOOK_SYMBOL("dusk::audio::DspRender", void(void*), DspRenderHook);
 
 struct ColliderCacheEntry {
     fopAc_ac_c* actor = nullptr;
@@ -91,6 +112,14 @@ struct LinkPositionStep {
     daAlink_c* link = nullptr;
     cXyz startPosition{};
     float gravity = 0.0f;
+    float scale = 1.0f;
+    bool active = false;
+};
+
+struct LinkAnimationRateStep {
+    daAlink_c* link = nullptr;
+    std::array<float, 3> underRates{};
+    std::array<float, 3> upperRates{};
     bool active = false;
 };
 
@@ -121,10 +150,45 @@ struct TransformPose {
     QuaternionPose rotation{};
 };
 
+struct SlowActorClockEntry {
+    fopAc_ac_c* actor = nullptr;
+    fpc_ProcID actorId = fpcM_ERROR_PROCESS_ID_e;
+    std::uint64_t lastSeenFrame = 0;
+    dusk::game_clock::SimulationAccumulator accumulator{kSimulationPeriod};
+    int pendingTicks = 0;
+};
+
+constexpr int kAudioChannels = 2;
+constexpr int kAudioSubframeSize = 0x50;
+
+struct AudioOutputSubframe {
+    std::array<std::array<float, kAudioSubframeSize>, kAudioChannels> channels{};
+};
+
+struct NativeAudioSource {
+    std::array<float, kAudioSubframeSize * kAudioChannels> samples{};
+    int position = 0;
+    int count = 0;
+
+    void reset() {
+        position = 0;
+        count = 0;
+    }
+
+    void render(float* output, int frames);
+};
+
+struct LinkVoiceRateEntry {
+    Z2SoundHandlePool* handle = nullptr;
+    JAISound* sound = nullptr;
+    float basePitch = 1.0f;
+    bool compensated = false;
+};
+
 struct ModelVisualState {
     J3DModel* model = nullptr;
     fopAc_ac_c* actor = nullptr;
-    u16 actorId = 0;
+    fpc_ProcID actorId = fpcM_ERROR_PROCESS_ID_e;
     std::uint64_t targetFrame = 0;
     std::uint64_t captureFrame = 0;
     std::uint64_t lastSeenFrame = 0;
@@ -156,6 +220,7 @@ std::array<HitActorEntry, kHitActorEntries> s_hitActors{};
 std::array<ArrowFlightEntry, kArrowFlightEntries> s_flyingArrows{};
 std::array<fopAc_ac_c*, 8> s_actorExecuteStack{};
 std::size_t s_actorExecuteDepth = 0;
+std::array<SlowActorClockEntry, 256> s_actorClocks{};
 std::uint64_t s_slowFrame = 0;
 float s_previousGravity = 0.0f;
 float s_previousMaxFallSpeed = 0.0f;
@@ -163,12 +228,14 @@ bool s_previousSpecialGravity = false;
 bool s_bulletTimeActive = false;
 bool s_flurryRushActive = false;
 bool s_flurryLinkSlowed = false;
+bool s_flurryMeleePositioned = false;
 bool s_bulletTimeUsedForJump = false;
 std::uint64_t s_flurrySwordAttackSerial = 0;
 u16 s_flurryLastSwordProc = daAlink_c::PROC_WAIT;
 u8 s_flurryLastCutCount = 0;
 bool s_flurrySwordAttackWasActive = false;
 LinkPositionStep s_linkPositionStep{};
+LinkAnimationRateStep s_linkAnimationRateStep{};
 DeferredFlurryDamage s_deferredFlurryDamage{};
 std::array<ModelVisualState, 128> s_modelVisualStates{};
 cCcD_Obj* s_heldFlurryPowerCollider = nullptr;
@@ -176,9 +243,147 @@ fopAc_ac_c* s_heldFlurryTarget = nullptr;
 std::uint32_t s_heldFlurryAttackCount = 0;
 thread_local bool s_flurryDamageCheckActive = false;
 thread_local bool s_flurryDamageScaled = false;
+slow_motion::Controller s_enemySlowMotion;
+slow_motion::Controller s_arrowSlowMotion;
+slow_motion::Controller s_flurryLinkSlowMotion;
+Clock::time_point s_lastPresentationSample{};
+GfxStageHookHandle s_edgesHook = 0;
+std::atomic<float> s_audioRate{1.0f};
+thread_local dusk::audio::MusicRateBuffer s_musicRateBuffer;
+thread_local NativeAudioSource s_nativeAudioSource;
+thread_local bool s_audioSlowMotionActive = false;
+std::array<LinkVoiceRateEntry, 8> s_linkVoiceRates{};
 
 bool combat_slow_active() {
     return s_bulletTimeActive || s_flurryRushActive;
+}
+
+void NativeAudioSource::render(float* output, int frames) {
+    while (frames > 0) {
+        if (position >= count) {
+            AudioOutputSubframe rendered{};
+            DspRenderHook::g_orig(&rendered);
+            for (int frame = 0; frame < kAudioSubframeSize; ++frame) {
+                for (int channel = 0; channel < kAudioChannels; ++channel) {
+                    samples[frame * kAudioChannels + channel] =
+                        rendered.channels[channel][frame];
+                }
+            }
+            position = 0;
+            count = kAudioSubframeSize;
+        }
+
+        const int copyFrames = std::min(frames, count - position);
+        std::copy_n(samples.data() + position * kAudioChannels,
+                    copyFrames * kAudioChannels, output);
+        output += copyFrames * kAudioChannels;
+        position += copyFrames;
+        frames -= copyFrames;
+    }
+}
+
+void remember_link_voice(Z2SoundHandlePool* handle) {
+    if (handle == nullptr || !*handle) {
+        return;
+    }
+
+    LinkVoiceRateEntry* destination = &s_linkVoiceRates.front();
+    for (LinkVoiceRateEntry& entry : s_linkVoiceRates) {
+        if (entry.handle == handle || entry.handle == nullptr ||
+            !*entry.handle || entry.handle->getSound() != entry.sound)
+        {
+            destination = &entry;
+            break;
+        }
+    }
+
+    JAISound* sound = handle->getSound();
+    *destination = {
+        .handle = handle,
+        .sound = sound,
+        .basePitch = sound->getAuxiliary().params_.mPitch,
+    };
+}
+
+void update_link_voice_rates(float outputRate) {
+    for (LinkVoiceRateEntry& entry : s_linkVoiceRates) {
+        if (entry.handle == nullptr) {
+            continue;
+        }
+        if (!*entry.handle || entry.handle->getSound() != entry.sound) {
+            entry = {};
+            continue;
+        }
+
+        if (outputRate < 0.999f) {
+            entry.sound->getAuxiliary().movePitch(entry.basePitch / outputRate, 0);
+            entry.compensated = true;
+        } else if (entry.compensated) {
+            entry.sound->getAuxiliary().movePitch(entry.basePitch, 0);
+            entry.compensated = false;
+        }
+    }
+}
+
+void clear_link_voice_rates() {
+    update_link_voice_rates(1.0f);
+    s_linkVoiceRates = {};
+}
+
+void after_link_voice_start(ModContext*, void*, void* retval, void*) {
+    if (retval != nullptr) {
+        remember_link_voice(*static_cast<Z2SoundHandlePool**>(retval));
+    }
+}
+
+void replace_dsp_render(ModContext*, void* args, void*, void*) {
+    auto* output = static_cast<AudioOutputSubframe*>(mods::arg<void*>(args, 0));
+    if (output == nullptr || DspRenderHook::g_orig == nullptr) {
+        return;
+    }
+
+    const float rate = s_audioRate.load(std::memory_order_relaxed);
+    if (rate >= 0.999f) {
+        if (s_audioSlowMotionActive) {
+            s_musicRateBuffer.reset();
+            s_nativeAudioSource.reset();
+            s_audioSlowMotionActive = false;
+        }
+        DspRenderHook::g_orig(output);
+        return;
+    }
+
+    s_audioSlowMotionActive = true;
+    std::array<float, kAudioSubframeSize * kAudioChannels> mixed{};
+    s_musicRateBuffer.mix(mixed.data(), kAudioSubframeSize, rate,
+        [](float* target, int renderFrames) {
+            s_nativeAudioSource.render(target, renderFrames);
+        });
+    for (int frame = 0; frame < kAudioSubframeSize; ++frame) {
+        for (int channel = 0; channel < kAudioChannels; ++channel) {
+            output->channels[channel][frame] = mixed[frame * kAudioChannels + channel];
+        }
+    }
+}
+
+void sync_slow_motion_controllers() {
+    if (combat_slow_active()) {
+        s_enemySlowMotion.start(kEnemyTimeScale);
+    } else if (s_enemySlowMotion.active()) {
+        s_enemySlowMotion.stop();
+    }
+
+    if (s_bulletTimeActive) {
+        s_arrowSlowMotion.start(kArrowTimeScale);
+    } else if (s_arrowSlowMotion.active()) {
+        s_arrowSlowMotion.stop();
+    }
+
+    if (s_flurryRushActive && s_flurryLinkSlowed) {
+        s_flurryLinkSlowMotion.start(kFlurryLinkTimeScale);
+    } else if (s_flurryLinkSlowMotion.active()) {
+        s_flurryLinkSlowMotion.stop();
+    }
 }
 
 void clear_model_visual_states() {
@@ -191,6 +396,7 @@ void clear_combat_time_caches() {
     s_colliderCache = {};
     s_hitActors = {};
     s_flyingArrows = {};
+    s_actorClocks = {};
     s_slowFrame = 0;
     clear_model_visual_states();
 }
@@ -263,6 +469,7 @@ void stop_bullet_time() {
             s_previousSpecialGravity ? FALSE : TRUE);
     }
     s_bulletTimeActive = false;
+    sync_slow_motion_controllers();
     if (!combat_slow_active()) {
         clear_combat_time_caches();
     }
@@ -270,6 +477,7 @@ void stop_bullet_time() {
 
 void stop_flurry_rush(bool releaseDamage = true) {
     if (!s_flurryRushActive) {
+        s_flurryMeleePositioned = false;
         clear_deferred_flurry_damage();
         return;
     }
@@ -284,10 +492,12 @@ void stop_flurry_rush(bool releaseDamage = true) {
     s_flurryRushOwner = nullptr;
     s_flurryRushTarget = nullptr;
     s_flurryLinkSlowed = false;
+    s_flurryMeleePositioned = false;
     s_flurrySwordAttackSerial = 0;
     s_flurryLastSwordProc = daAlink_c::PROC_WAIT;
     s_flurryLastCutCount = 0;
     s_flurrySwordAttackWasActive = false;
+    sync_slow_motion_controllers();
     if (!combat_slow_active()) {
         clear_combat_time_caches();
     }
@@ -310,6 +520,7 @@ void start_bullet_time(daAlink_c* link) {
     link->setSpecialGravity(s_previousGravity, s_previousMaxFallSpeed, FALSE);
     s_bulletTimeActive = true;
     s_bulletTimeUsedForJump = true;
+    sync_slow_motion_controllers();
 }
 
 bool actor_is_exempt(fopAc_ac_c* actor) {
@@ -356,6 +567,35 @@ ColliderCacheEntry* find_collider_entry(fopAc_ac_c* actor, bool create) {
     oldest->actor = actor;
     oldest->actorId = actor->setID;
     return oldest;
+}
+
+float get_flurry_target_collider_radius(fopAc_ac_c* actor) {
+    ColliderCacheEntry* entry = find_collider_entry(actor, false);
+    if (entry == nullptr) {
+        return 0.0f;
+    }
+
+    float radius = 0.0f;
+    for (std::size_t i = 0; i < entry->count; ++i) {
+        cCcD_Obj* collider = entry->colliders[i];
+        if (collider == nullptr || !collider->ChkTgSet()) {
+            continue;
+        }
+
+        cCcD_ShapeAttr* shape = collider->GetShapeAttr();
+        if (shape == nullptr) {
+            continue;
+        }
+
+        cCcD_ShapeAttr::Shape access{};
+        shape->getShapeAccess(&access);
+        if ((access._0 == 0 || access._0 == 1) && std::isfinite(access._10) &&
+            access._10 > radius)
+        {
+            radius = access._10;
+        }
+    }
+    return radius;
 }
 
 void remember_collider(cCcD_Obj* collider) {
@@ -500,24 +740,151 @@ bool flurry_dodge_active(const daAlink_c* link) {
                link->mProcID == daAlink_c::PROC_BACK_JUMP);
 }
 
+bool flurry_link_slow_active(const daAlink_c* link) {
+    return s_flurryRushActive && s_flurryLinkSlowed &&
+           s_flurryRushOwner == link && flurry_dodge_active(link);
+}
+
 bool actor_uses_visual_slowdown(fopAc_ac_c* actor) {
     if (!combat_slow_active() || actor == nullptr) {
         return false;
     }
 
     if (fopAcM_GetName(actor) == fpcNm_ALINK_e) {
-        auto* link = static_cast<daAlink_c*>(actor);
-        return s_flurryRushActive && s_flurryLinkSlowed &&
-               s_flurryRushOwner == link && flurry_dodge_active(link);
+        return false;
     }
 
     return !actor_is_exempt(actor) && !actor_has_hit_grace(actor);
 }
 
-std::uint64_t actor_visual_slow_frame_interval(fopAc_ac_c* actor) {
-    return fopAcM_GetName(actor) == fpcNm_ALINK_e
-               ? kFlurryLinkSlowFrameInterval
-               : kEnemySlowFrameInterval;
+float actor_time_scale(fopAc_ac_c* actor) {
+    if (!combat_slow_active() || actor == nullptr) {
+        return 1.0f;
+    }
+
+    switch (fopAcM_GetName(actor)) {
+    case fpcNm_ARROW_e:
+        return s_bulletTimeActive ? s_arrowSlowMotion.time_scale() : 1.0f;
+    case fpcNm_ALINK_e:
+        return 1.0f;
+    default:
+        return actor_is_exempt(actor) ? 1.0f : s_enemySlowMotion.time_scale();
+    }
+}
+
+SlowActorClockEntry* find_actor_clock(fopAc_ac_c* actor, bool create,
+                                      bool initiallyDue = true) {
+    SlowActorClockEntry* oldest = &s_actorClocks.front();
+    for (SlowActorClockEntry& entry : s_actorClocks) {
+        if (entry.actor == actor) {
+            if (entry.actorId != fopAcM_GetID(actor)) {
+                entry = {};
+                entry.actor = actor;
+                entry.actorId = fopAcM_GetID(actor);
+                entry.accumulator.reset(initiallyDue ? kSimulationPeriod : 0.0f);
+                entry.pendingTicks = initiallyDue ? 1 : 0;
+            }
+            entry.lastSeenFrame = s_slowFrame;
+            return &entry;
+        }
+        if (entry.actor == nullptr && create) {
+            entry.actor = actor;
+            entry.actorId = fopAcM_GetID(actor);
+            entry.lastSeenFrame = s_slowFrame;
+            entry.accumulator.reset(initiallyDue ? kSimulationPeriod : 0.0f);
+            entry.pendingTicks = initiallyDue ? 1 : 0;
+            return &entry;
+        }
+        if (entry.lastSeenFrame < oldest->lastSeenFrame) {
+            oldest = &entry;
+        }
+    }
+
+    if (!create) {
+        return nullptr;
+    }
+
+    *oldest = {};
+    oldest->actor = actor;
+    oldest->actorId = fopAcM_GetID(actor);
+    oldest->lastSeenFrame = s_slowFrame;
+    oldest->accumulator.reset(initiallyDue ? kSimulationPeriod : 0.0f);
+    oldest->pendingTicks = initiallyDue ? 1 : 0;
+    return oldest;
+}
+
+void reset_actor_clock(fopAc_ac_c* actor, bool initiallyDue) {
+    if (actor == nullptr) {
+        return;
+    }
+    SlowActorClockEntry* entry = find_actor_clock(actor, true, initiallyDue);
+    entry->accumulator.reset(initiallyDue ? kSimulationPeriod : 0.0f);
+    entry->pendingTicks = initiallyDue ? 1 : 0;
+}
+
+bool consume_actor_tick(fopAc_ac_c* actor) {
+    SlowActorClockEntry* entry = find_actor_clock(actor, true);
+    if (entry->pendingTicks <= 0) {
+        return false;
+    }
+    --entry->pendingTicks;
+    entry->accumulator.commit();
+    return true;
+}
+
+float actor_visual_progress(fopAc_ac_c* actor) {
+    SlowActorClockEntry* entry = find_actor_clock(actor, false);
+    return entry == nullptr ? 1.0f : entry->accumulator.interpolation();
+}
+
+void update_slow_motion_presentation() {
+    const Clock::time_point now = Clock::now();
+    float dt = 1.0f / 60.0f;
+    if (s_lastPresentationSample != Clock::time_point{}) {
+        dt = std::chrono::duration<float>(now - s_lastPresentationSample).count();
+    }
+    s_lastPresentationSample = now;
+    dt = std::clamp(dt, 0.0f, 0.05f);
+
+    s_enemySlowMotion.update(dt);
+    s_arrowSlowMotion.update(dt);
+    s_flurryLinkSlowMotion.update(dt);
+    const float audioRate = combat_slow_active()
+                                ? s_enemySlowMotion.audio_rate()
+                                : 1.0f;
+    s_audioRate.store(audioRate, std::memory_order_relaxed);
+    update_link_voice_rates(audioRate);
+
+    for (SlowActorClockEntry& entry : s_actorClocks) {
+        if (entry.actor == nullptr) {
+            continue;
+        }
+        if (fopAcM_SearchByID(entry.actorId) != entry.actor) {
+            entry = {};
+            continue;
+        }
+
+        const float scale = actor_time_scale(entry.actor);
+        if (scale >= 0.999f) {
+            entry = {};
+            continue;
+        }
+        if (entry.pendingTicks == 0) {
+            entry.pendingTicks = entry.accumulator.advance(dt, scale, 1);
+        }
+    }
+}
+
+HookAction before_draw_iterater(ModContext*, void*, void*, void*) {
+    update_slow_motion_presentation();
+    return HOOK_CONTINUE;
+}
+
+void draw_slow_motion_edges(ModContext*, const GfxStageContext*, void*) {
+    view_class* view = dComIfGd_getView();
+    if (view != nullptr) {
+        drawSlowMotionEdges(view, s_enemySlowMotion.edge_strength());
+    }
 }
 
 void read_matrix(MtxP matrix, MatrixPose& pose) {
@@ -740,19 +1107,20 @@ ModelVisualState* find_model_visual_state(J3DModel* model, bool create,
     for (ModelVisualState& state : s_modelVisualStates) {
         if (state.model == model) {
             if (actor != nullptr &&
-                (state.actor != actor || state.actorId != actor->setID))
+                (state.actor != actor || state.actorId != fopAcM_GetID(actor)))
             {
                 state = {};
                 state.model = model;
                 state.actor = actor;
-                state.actorId = actor->setID;
+                state.actorId = fopAcM_GetID(actor);
             }
             return &state;
         }
         if (state.model == nullptr && create) {
             state.model = model;
             state.actor = actor;
-            state.actorId = actor == nullptr ? 0 : actor->setID;
+            state.actorId = actor == nullptr ? fpcM_ERROR_PROCESS_ID_e
+                                             : fopAcM_GetID(actor);
             return &state;
         }
         if (state.lastSeenFrame < oldest->lastSeenFrame) {
@@ -767,7 +1135,8 @@ ModelVisualState* find_model_visual_state(J3DModel* model, bool create,
     *oldest = {};
     oldest->model = model;
     oldest->actor = actor;
-    oldest->actorId = actor == nullptr ? 0 : actor->setID;
+    oldest->actorId = actor == nullptr ? fpcM_ERROR_PROCESS_ID_e
+                                       : fopAcM_GetID(actor);
     return oldest;
 }
 
@@ -842,20 +1211,18 @@ bool should_skip_actor(fopAc_ac_c* actor) {
             return false;
         }
         if (!arrow_flight_was_initialized(static_cast<daArrow_c*>(actor))) {
+            reset_actor_clock(actor, false);
             return false;
         }
-        return s_slowFrame % kArrowSlowFrameInterval != 0;
+        return !consume_actor_tick(actor);
     }
 
     if (fopAcM_GetName(actor) == fpcNm_ALINK_e) {
-        auto* link = static_cast<daAlink_c*>(actor);
-        return s_flurryRushActive && s_flurryLinkSlowed &&
-               s_flurryRushOwner == link && flurry_dodge_active(link) &&
-               s_slowFrame % kFlurryLinkSlowFrameInterval != 0;
+        return false;
     }
 
     return !actor_is_exempt(actor) && !actor_has_hit_grace(actor) &&
-           s_slowFrame % kEnemySlowFrameInterval != 0;
+           !consume_actor_tick(actor);
 }
 
 void update_dodge_attempt(daAlink_c* link) {
@@ -951,6 +1318,7 @@ void try_start_flurry_rush(cCcD_Obj* attack) {
     s_flurryRushStarted = Clock::now();
     s_flurryRushActive = true;
     s_flurryLinkSlowed = true;
+    s_flurryMeleePositioned = false;
     s_dodgeTriggered = true;
     s_flurrySwordAttackSerial = 0;
     s_flurryLastSwordProc = link->mProcID;
@@ -958,6 +1326,7 @@ void try_start_flurry_rush(cCcD_Obj* attack) {
     s_flurrySwordAttackWasActive = false;
     clear_deferred_flurry_damage();
     disable_flurry_link_targets(link);
+    sync_slow_motion_controllers();
 }
 
 bool sword_attack_active(const daAlink_c* link) {
@@ -1020,12 +1389,14 @@ void move_link_to_flurry_target(daAlink_c* link) {
     const cXyz targetPosition = s_flurryRushTarget->current.pos;
     const float deltaX = link->current.pos.x - targetPosition.x;
     const float deltaZ = link->current.pos.z - targetPosition.z;
+    const float meleeDistance =
+        kFlurryRushMeleeDistance + get_flurry_target_collider_radius(s_flurryRushTarget);
     const float distance = cXyz(deltaX, 0.0f, deltaZ).abs();
-    if (distance <= kFlurryRushMeleeDistance || distance < 0.001f) {
+    if (distance <= meleeDistance || distance < 0.001f) {
         return;
     }
 
-    const float scale = kFlurryRushMeleeDistance / distance;
+    const float scale = meleeDistance / distance;
     cXyz destination(
         targetPosition.x + deltaX * scale,
         link->current.pos.y,
@@ -1036,7 +1407,9 @@ void move_link_to_flurry_target(daAlink_c* link) {
 }
 
 void update_flurry_link_attack(fopAc_ac_c* actor) {
-    if (!s_flurryRushActive || !s_flurryLinkSlowed || actor != s_flurryRushOwner) {
+    if (!s_flurryRushActive || s_flurryMeleePositioned ||
+        actor != s_flurryRushOwner)
+    {
         return;
     }
 
@@ -1045,8 +1418,30 @@ void update_flurry_link_attack(fopAc_ac_c* actor) {
         return;
     }
 
-    s_flurryLinkSlowed = false;
+    if (s_flurryLinkSlowed) {
+        s_flurryLinkSlowed = false;
+        s_flurryRushStarted = Clock::now();
+        sync_slow_motion_controllers();
+    }
+    s_flurryMeleePositioned = true;
     move_link_to_flurry_target(link);
+}
+
+void update_flurry_link_landing(fopAc_ac_c* actor) {
+    if (!s_flurryRushActive || !s_flurryLinkSlowed || actor != s_flurryRushOwner) {
+        return;
+    }
+
+    auto* link = static_cast<daAlink_c*>(actor);
+    if (link->mProcID != daAlink_c::PROC_BACK_JUMP_LAND &&
+        link->mProcID != daAlink_c::PROC_SIDESTEP_LAND)
+    {
+        return;
+    }
+
+    s_flurryLinkSlowed = false;
+    s_flurryRushStarted = Clock::now();
+    sync_slow_motion_controllers();
 }
 
 void apply_bullet_time_fall(daAlink_c* link) {
@@ -1063,7 +1458,13 @@ void apply_bullet_time_fall(daAlink_c* link) {
 HookAction before_link_pos_move(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     s_linkPositionStep = {};
-    if (!bullet_time_active_for(link)) {
+    float scale = 1.0f;
+    if (bullet_time_active_for(link)) {
+        scale = kLinkTimeScale;
+    } else if (flurry_link_slow_active(link)) {
+        scale = s_flurryLinkSlowMotion.time_scale();
+    }
+    if (scale >= 0.999f) {
         return HOOK_CONTINUE;
     }
 
@@ -1071,9 +1472,10 @@ HookAction before_link_pos_move(ModContext*, void* args, void*, void*) {
         .link = link,
         .startPosition = link->current.pos,
         .gravity = link->gravity,
+        .scale = scale,
         .active = true,
     };
-    link->gravity *= kLinkTimeScale;
+    link->gravity *= scale;
     return HOOK_CONTINUE;
 }
 
@@ -1085,15 +1487,57 @@ void after_link_pos_move(ModContext*, void* args, void*, void*) {
 
     link->current.pos.x = s_linkPositionStep.startPosition.x +
                           (link->current.pos.x - s_linkPositionStep.startPosition.x) *
-                              kLinkTimeScale;
+                              s_linkPositionStep.scale;
     link->current.pos.y = s_linkPositionStep.startPosition.y +
                           (link->current.pos.y - s_linkPositionStep.startPosition.y) *
-                              kLinkTimeScale;
+                              s_linkPositionStep.scale;
     link->current.pos.z = s_linkPositionStep.startPosition.z +
                           (link->current.pos.z - s_linkPositionStep.startPosition.z) *
-                              kLinkTimeScale;
+                              s_linkPositionStep.scale;
     link->gravity = s_linkPositionStep.gravity;
     s_linkPositionStep = {};
+}
+
+HookAction before_link_all_anime_play(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    s_linkAnimationRateStep = {};
+    if (!flurry_link_slow_active(link)) {
+        return HOOK_CONTINUE;
+    }
+
+    const float scale = s_flurryLinkSlowMotion.time_scale();
+    if (scale >= 0.999f) {
+        return HOOK_CONTINUE;
+    }
+
+    s_linkAnimationRateStep.link = link;
+    s_linkAnimationRateStep.active = true;
+    for (std::size_t i = 0; i < 3; ++i) {
+        s_linkAnimationRateStep.underRates[i] = link->mUnderFrameCtrl[i].getRate();
+        s_linkAnimationRateStep.upperRates[i] = link->mUpperFrameCtrl[i].getRate();
+        link->mUnderFrameCtrl[i].setRate(
+            s_linkAnimationRateStep.underRates[i] * scale);
+        link->mUpperFrameCtrl[i].setRate(
+            s_linkAnimationRateStep.upperRates[i] * scale);
+    }
+    return HOOK_CONTINUE;
+}
+
+void after_link_all_anime_play(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!s_linkAnimationRateStep.active || s_linkAnimationRateStep.link != link) {
+        return;
+    }
+
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (link->mUnderFrameCtrl[i].getRate() != 0.0f) {
+            link->mUnderFrameCtrl[i].setRate(s_linkAnimationRateStep.underRates[i]);
+        }
+        if (link->mUpperFrameCtrl[i].getRate() != 0.0f) {
+            link->mUpperFrameCtrl[i].setRate(s_linkAnimationRateStep.upperRates[i]);
+        }
+    }
+    s_linkAnimationRateStep = {};
 }
 
 HookAction before_actor_execute(ModContext*, void* args, void*, void*) {
@@ -1114,6 +1558,7 @@ void after_actor_execute(ModContext*, void* args, void*, void*) {
         track_flurry_sword_attack(static_cast<daAlink_c*>(actor));
     }
     update_flurry_link_attack(actor);
+    update_flurry_link_landing(actor);
     if (s_actorExecuteStack[s_actorExecuteDepth - 1] == actor) {
         s_actorExecuteStack[--s_actorExecuteDepth] = nullptr;
     }
@@ -1213,13 +1658,7 @@ HookAction before_combat_model_view_calc(ModContext*, void* args, void*, void*) 
         return HOOK_CONTINUE;
     }
 
-    const std::uint64_t elapsedFrames = s_slowFrame >= state->targetFrame
-                                            ? s_slowFrame - state->targetFrame
-                                            : 0;
-    const float progress = std::min(
-        static_cast<float>(elapsedFrames + 1) /
-            static_cast<float>(actor_visual_slow_frame_interval(state->actor)),
-        1.0f);
+    const float progress = actor_visual_progress(state->actor);
     write_interpolated_model_pose(*state, progress);
     return HOOK_CONTINUE;
 }
@@ -1469,6 +1908,14 @@ ModResult initialize_bullet_time(ModError* error) {
             svc_hook, after_combat_model_view_calc);
     }
     if (result == MOD_OK) {
+        result = mods::hook::add_pre<DrawIteraterHook>(
+            svc_hook, before_draw_iterater);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::replace<DspRenderHook>(
+            svc_hook, replace_dsp_render);
+    }
+    if (result == MOD_OK) {
 #if defined(__APPLE__)
         result = mods::hook::add_pre<ProcessMethodHook>(svc_hook, before_process_method);
 #else
@@ -1482,6 +1929,14 @@ ModResult initialize_bullet_time(ModError* error) {
         result = mods::hook::add_pre<ArrowHitHook>(svc_hook, before_arrow_hit);
     }
     if (result == MOD_OK) {
+        result = mods::hook::add_pre<LinkAllAnimePlayHook>(
+            svc_hook, before_link_all_anime_play);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<LinkAllAnimePlayHook>(
+            svc_hook, after_link_all_anime_play);
+    }
+    if (result == MOD_OK) {
         result = mods::hook::add_pre<LinkPosMoveHook>(svc_hook, before_link_pos_move);
     }
     if (result == MOD_OK) {
@@ -1490,6 +1945,10 @@ ModResult initialize_bullet_time(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook::add_pre<LinkDamageActionHook>(
             svc_hook, before_link_damage_action);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<LinkVoiceStartHook>(
+            svc_hook, after_link_voice_start);
     }
     if (result == MOD_OK) {
         result = mods::hook::add_pre<CommonAtTgHitHook>(
@@ -1504,6 +1963,12 @@ ModResult initialize_bullet_time(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook::add_post<FlurryAttackPowerHook>(
             svc_hook, after_flurry_attack_power);
+    }
+    if (result == MOD_OK) {
+        GfxStageHookDesc desc = GFX_STAGE_HOOK_DESC_INIT;
+        desc.callback = draw_slow_motion_edges;
+        result = svc_gfx->register_stage_hook(
+            mod_ctx, GFX_STAGE_FRAME_BEFORE_HUD, &desc, &s_edgesHook);
     }
     if (result != MOD_OK) {
         return mods::set_error(error, result,
@@ -1601,7 +2066,8 @@ void bullet_time_tick() {
                                        currentLink->checkAttentionLock() &&
                                        currentLink->mTargetedActor == s_flurryRushTarget &&
                                        s_flurryRushTarget != nullptr;
-        const bool timedOut = Clock::now() - s_flurryRushStarted >= kFlurryRushDuration;
+        const bool timedOut = !s_flurryLinkSlowed &&
+                              Clock::now() - s_flurryRushStarted >= kFlurryRushDuration;
         if (!flurry_rush_enabled() || !targetStillLocked || timedOut) {
             stop_flurry_rush();
         }
@@ -1640,8 +2106,19 @@ void shutdown_bullet_time() {
     s_dodgeProc = daAlink_c::PROC_WAIT;
     s_dodgeTriggered = false;
     s_linkPositionStep = {};
+    s_linkAnimationRateStep = {};
     s_actorExecuteStack = {};
     s_actorExecuteDepth = 0;
+    s_enemySlowMotion.reset();
+    s_arrowSlowMotion.reset();
+    s_flurryLinkSlowMotion.reset();
+    s_lastPresentationSample = {};
+    s_audioRate.store(1.0f, std::memory_order_relaxed);
+    clear_link_voice_rates();
+    if (s_edgesHook != 0 && svc_gfx != nullptr) {
+        svc_gfx->unregister_stage_hook(mod_ctx, s_edgesHook);
+        s_edgesHook = 0;
+    }
     clear_model_visual_states();
 }
 

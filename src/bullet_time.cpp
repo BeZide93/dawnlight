@@ -2,6 +2,7 @@
 
 #include "aim_hooks.hpp"
 #include "config.hpp"
+#include "enemy_slow_motion.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
 
@@ -772,7 +773,7 @@ bool actor_uses_visual_slowdown(fopAc_ac_c* actor) {
         return false;
     }
 
-    if (fopAcM_GetName(actor) == fpcNm_ALINK_e) {
+    if (fopAcM_GetName(actor) == fpcNm_ALINK_e || enemy_uses_continuous_slow(actor)) {
         return false;
     }
 
@@ -1239,7 +1240,7 @@ bool should_skip_actor(fopAc_ac_c* actor) {
         return !consume_actor_tick(actor);
     }
 
-    if (fopAcM_GetName(actor) == fpcNm_ALINK_e) {
+    if (fopAcM_GetName(actor) == fpcNm_ALINK_e || enemy_uses_continuous_slow(actor)) {
         return false;
     }
 
@@ -1911,8 +1912,16 @@ void prepare_bow_aim(daAlink_c* link) {
 
 }  // namespace
 
+float enemy_slow_motion_scale(fopAc_ac_c* actor) {
+    return combat_slow_active() && !actor_has_hit_grace(actor)
+        ? s_enemySlowMotion.time_scale() : 1.0f;
+}
+
 ModResult initialize_bullet_time(ModError* error) {
-    ModResult result = mods::hook::add_pre<ActorExecuteHook>(svc_hook, before_actor_execute);
+    ModResult result = initialize_enemy_slow_motion();
+    if (result == MOD_OK) {
+        result = mods::hook::add_pre<ActorExecuteHook>(svc_hook, before_actor_execute);
+    }
     if (result == MOD_OK) {
         result = mods::hook::add_post<ActorExecuteHook>(svc_hook, after_actor_execute);
     }
@@ -2129,6 +2138,7 @@ void bullet_time_tick() {
 }
 
 void shutdown_bullet_time() {
+    reset_enemy_slow_motion();
     stop_flurry_rush(false);
     clear_manual_jump(nullptr);
     s_dodgeOwner = nullptr;

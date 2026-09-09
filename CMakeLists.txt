@@ -47,6 +47,10 @@ add_mod(dawnlight_mod
     SOURCES
         src/aim_hooks.cpp
         src/bullet_time.cpp
+        src/enemy_slow_motion.cpp
+        src/enemy_slow_motion/darknut.cpp
+        src/enemy_slow_motion/bokoblin.cpp
+        src/enemy_slow_motion/mini_freezard.cpp
         src/combat_meter.cpp
         src/config.cpp
         src/deferred_features.cpp

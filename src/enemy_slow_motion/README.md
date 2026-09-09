@@ -36,6 +36,7 @@ interpolation. All other actors retain their previous behavior.
 | Baba Serpent (`E_HB`) | Head/leaf animation, head motion, knockback, timers and live stem relaxation with matching colliders | Player grabs, deletion sentinel and scripted events |
 | Deku Baba (`E_DB`) | Head/leaf animation, lunges, knockback, detached movement/gravity and stem, timers | Player grabs, water death, deletion sentinel and scripted events |
 | Big Baba (`E_GB`) | Head/flower/material animation, head motion, lunges, falling attack, timers and live stem relaxation | Intro/end demos and scripted flower ending |
+| Stalfos (`E_SF`) | Both weapon variants, body/weapon pose, movement/gravity, knockback, head/ground angles, combat and resurrection timers, modulo decisions and once-only sword sounds | Seated intro and scripted camera/events; native shield and bomb-finisher rules remain intact |
 
 The user tested the core with Darknut, Bokoblin and Mini Freezard before commit
 `ad4536d`. Profiles added after that commit are compile-tested only and still
@@ -44,7 +45,7 @@ need in-game tests. This is not yet the entire requested enemy list.
 ## Remaining Requested Profiles
 
 Armos, Baby Gohma, Chu Worm, Guay, Imp Poe, Kargarok,
-Phantom Rider, Poe, Stalfos,
+Phantom Rider, Poe,
 Young Gohma, Zant Mask and Zant's Hand still use the previous
 slow-motion path. Dangoro (`E_GOB`) also remains pending, independently of
 normal adult Gorons. Goron children/elders/shopkeepers use other NPC actors.

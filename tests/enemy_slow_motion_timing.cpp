@@ -1,7 +1,31 @@
 #include "../src/enemy_slow_motion/timing.hpp"
+#include "../src/enemy_slow_motion/scope.hpp"
 #include <cassert>
 
 int main() {
+    struct Scope {
+        const void* actor = nullptr;
+        const void* profile = nullptr;
+    };
+    std::array<Scope, 2> scopes{};
+    int actor = 0, profile = 0;
+    assert(dawnlight::active_enemy_scope(scopes, 0) == nullptr);
+    assert(dawnlight::active_enemy_scope(scopes, 1) == nullptr); // slow motion off
+    scopes[0].actor = &actor;
+    assert(dawnlight::active_enemy_scope(scopes, 1) == nullptr);
+    scopes[0] = {nullptr, &profile};
+    assert(dawnlight::active_enemy_scope(scopes, 1) == nullptr);
+    scopes[0] = {&actor, &profile};
+    assert(dawnlight::active_enemy_scope(scopes, 1) == &scopes[0]);
+    assert(dawnlight::active_enemy_scope(scopes, 2) == nullptr); // inactive child masks parent
+    scopes[1] = {&actor, &profile};
+    assert(dawnlight::active_enemy_scope(scopes, 2) == &scopes[1]);
+    assert(dawnlight::active_enemy_scope(scopes, 3) == nullptr); // nesting overflow
+    scopes[1] = {};
+    assert(dawnlight::active_enemy_scope(scopes, 1) == &scopes[0]); // child returned
+    scopes = {};
+    assert(dawnlight::active_enemy_scope(scopes, 1) == nullptr); // reset
+
     for (float scale : {0.1f, 0.25f, 0.5f, 1.0f}) {
         float fraction = 0.0f;
         int ticks = 0;
@@ -35,4 +59,30 @@ int main() {
         previous = current;
     }
     assert(std::fabs(total) < 0.0001f);
+
+    assert(dawnlight::sample_looped_enemy_motion(samples, 2.5f) == 15.0f);
+    assert(dawnlight::sample_looped_enemy_motion(samples, 3.5f) == 5.0f);
+    assert(dawnlight::sample_looped_enemy_motion(samples, -1.0f) == 0.0f);
+    assert(std::fabs(dawnlight::slow_enemy_position_axis(100.0f, 72.0f, -30.0f, 0.1f) + 30.0f - 100.2f) < 0.001f);
+    assert(dawnlight::slow_enemy_position_axis(100.0f, 102.0f, 0.0f, 1.0f) == 102.0f);
+    assert(dawnlight::slow_enemy_position_axis(100.0f, 72.0f, -30.0f, 0.0f) == 70.0f);
+
+    for (std::uint16_t start : {0, 65520}) {
+        std::uint16_t counter = start;
+        float phase = 0.0f;
+        int events4 = 0, events8 = 0, events16 = 0, events32 = 0;
+        for (int frame = 0; frame < 320; ++frame) {
+            const auto saved = counter;
+            const bool tick = dawnlight::advance_enemy_timer(phase, 0.1f);
+            counter = dawnlight::enemy_periodic_counter_input(counter, tick);
+            ++counter;
+            events4 += (counter & 3U) == 0;
+            events8 += (counter & 7U) == 0;
+            events16 += (counter & 15U) == 0;
+            events32 += (counter & 31U) == 0;
+            if (!tick) counter = saved;
+        }
+        assert(counter == static_cast<std::uint16_t>(start + 32));
+        assert(events4 == 8 && events8 == 4 && events16 == 2 && events32 == 1);
+    }
 }

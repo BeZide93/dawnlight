@@ -9,6 +9,8 @@
 #include <limits>
 
 class mDoExt_morf_c;
+class dBgS_Acch;
+class J3DFrameCtrl;
 
 namespace dawnlight {
 struct EnemySlowProfile;
@@ -25,7 +27,20 @@ struct EnemySlowStep {
     cXyz position{};
     float gravity = 0.0f;
     bool moving = false;
+    bool timerTick = false;
+    float timerFraction = 0.0f;
+    bool freshAnimationFrame = false;
+    cXyz originalPosition{};
+    cXyz originalOldPosition{};
+    csXyz originalAngles{};
+    csXyz originalShapeAngles{};
+    cXyz originalSpeed{};
+    std::array<float, 4> values{};
+    std::array<float*, 8> chaseFloats{};
+    std::array<s16*, 12> chaseAngles{};
+    dBgS_Acch* directCollision = nullptr;
     std::array<mDoExt_morf_c*, 4> animations{};
+    std::array<J3DFrameCtrl*, 4> controllers{};
 };
 
 struct EnemySlowProfile {
@@ -36,8 +51,12 @@ struct EnemySlowProfile {
     void (*observeExecute)(fopAc_ac_c*, float scale);
     ModResult (*install)();
     void (*reset)();
+    void (*beforeCollision)(EnemySlowStep&) = nullptr;
+    void (*afterExecute)(EnemySlowStep&) = nullptr;
+    bool processExecute = false;
 };
 
+// Returns only an active actor/profile pair, never an empty stack placeholder.
 EnemySlowStep* current_enemy_slow_step();
 HookAction before_enemy_slow_execute(ModContext*, void*, void*, void*);
 void after_enemy_slow_execute(ModContext*, void*, void*, void*);
@@ -73,4 +92,20 @@ inline void slow_enemy_steering(EnemySlowStep& step, bool sameState) {
 const EnemySlowProfile& darknut_slow_profile();
 const EnemySlowProfile& bokoblin_slow_profile();
 const EnemySlowProfile& mini_freezard_slow_profile();
+const EnemySlowProfile& keese_slow_profile();
+const EnemySlowProfile& tektite_slow_profile();
+const EnemySlowProfile& gibdo_slow_profile();
+const EnemySlowProfile& goron_slow_profile();
+const EnemySlowProfile& staltroop_slow_profile();
+const EnemySlowProfile& aeralfos_slow_profile();
+const EnemySlowProfile& chilfos_slow_profile();
+const EnemySlowProfile& freezard_slow_profile();
+const EnemySlowProfile& stalchild_slow_profile();
+const EnemySlowProfile& bubble_slow_profile();
+const EnemySlowProfile& rat_slow_profile();
+const EnemySlowProfile& white_wolfos_slow_profile();
+const EnemySlowProfile& puppet_slow_profile();
+const EnemySlowProfile& bomskit_slow_profile();
+const EnemySlowProfile& stalhound_slow_profile();
+const EnemySlowProfile& fire_toadpoli_slow_profile();
 }

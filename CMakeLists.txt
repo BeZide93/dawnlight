@@ -51,6 +51,22 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/darknut.cpp
         src/enemy_slow_motion/bokoblin.cpp
         src/enemy_slow_motion/mini_freezard.cpp
+        src/enemy_slow_motion/keese.cpp
+        src/enemy_slow_motion/tektite.cpp
+        src/enemy_slow_motion/gibdo.cpp
+        src/enemy_slow_motion/goron.cpp
+        src/enemy_slow_motion/staltroop.cpp
+        src/enemy_slow_motion/aeralfos.cpp
+        src/enemy_slow_motion/chilfos.cpp
+        src/enemy_slow_motion/freezard.cpp
+        src/enemy_slow_motion/stalchild.cpp
+        src/enemy_slow_motion/bubble.cpp
+        src/enemy_slow_motion/rat.cpp
+        src/enemy_slow_motion/white_wolfos.cpp
+        src/enemy_slow_motion/puppet.cpp
+        src/enemy_slow_motion/bomskit.cpp
+        src/enemy_slow_motion/stalhound.cpp
+        src/enemy_slow_motion/fire_toadpoli.cpp
         src/combat_meter.cpp
         src/config.cpp
         src/deferred_features.cpp

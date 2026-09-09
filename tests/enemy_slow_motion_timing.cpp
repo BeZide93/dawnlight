@@ -1,5 +1,6 @@
 #include "../src/enemy_slow_motion/timing.hpp"
 #include "../src/enemy_slow_motion/scope.hpp"
+#include "../src/enemy_slow_motion/events.hpp"
 #include <cassert>
 
 int main() {
@@ -25,6 +26,26 @@ int main() {
     assert(dawnlight::active_enemy_scope(scopes, 1) == &scopes[0]); // child returned
     scopes = {};
     assert(dawnlight::active_enemy_scope(scopes, 1) == nullptr); // reset
+
+    dawnlight::EnemyFrameEvents events, otherActor;
+    events.update(&actor, 4);
+    assert(events.claim(42));
+    assert(!events.claim(42));
+    assert(events.claim(43)); // distinct events on the same frame remain valid
+    otherActor.update(&actor, 4);
+    assert(otherActor.claim(42));
+    events.update(&actor, 5); // animation->play crossed an integer boundary
+    assert(events.claim(42));
+    events.update(&actor, 5); // following execute starts on that same frame
+    assert(!events.claim(42));
+    events.update(&actor, 6); // silent frame must reset a single-event loop
+    events.update(&actor, 5);
+    assert(events.claim(42));
+    events.update(&profile, 5); // different animation at the same frame
+    assert(events.claim(42));
+    events = {};
+    events.update(&actor, 5);
+    assert(events.claim(42)); // reset/new actor lifetime
 
     for (float scale : {0.1f, 0.25f, 0.5f, 1.0f}) {
         float fraction = 0.0f;

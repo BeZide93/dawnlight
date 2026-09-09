@@ -2,10 +2,12 @@
 #include "enemy_slow_motion/profile.hpp"
 #include "enemy_slow_motion/scope.hpp"
 #include "enemy_slow_motion/timing.hpp"
+#include "enemy_slow_motion/events.hpp"
 #include "m_Do/m_Do_ext.h"
 #include "f_pc/f_pc_method.h"
 #include "d/d_bg_s_acch.h"
 #include "SSystem/SComponent/c_lib.h"
+#include "Z2AudioLib/Z2Creature.h"
 
 namespace dawnlight {
 namespace {
@@ -22,14 +24,19 @@ DEFINE_HOOK(&cLib_addCalcAngleS2, ChaseAngleHook);
 DEFINE_HOOK(&cLib_addCalcAngleS, ChaseAngleMinHook);
 DEFINE_HOOK(&cLib_chaseS, ChaseShortHook);
 DEFINE_HOOK(&J3DFrameCtrl::update, ControllerUpdateHook);
+DEFINE_HOOK_SYMBOL("Z2CreatureEnemy::startCreatureSound", Z2SoundHandlePool*(Z2CreatureEnemy*, JAISoundID, u32, s8), FrameSoundHook);
+DEFINE_HOOK_SYMBOL("Z2CreatureEnemy::startCreatureVoice", Z2SoundHandlePool*(Z2CreatureEnemy*, JAISoundID, s8), FrameVoiceHook);
 
-const std::array<const EnemySlowProfile*, 19> s_profiles{
+const std::array<const EnemySlowProfile*, 27> s_profiles{
     &darknut_slow_profile(), &bokoblin_slow_profile(), &mini_freezard_slow_profile(),
     &keese_slow_profile(), &tektite_slow_profile(), &gibdo_slow_profile(),
     &goron_slow_profile(), &staltroop_slow_profile(), &aeralfos_slow_profile(), &chilfos_slow_profile(),
     &freezard_slow_profile(), &stalchild_slow_profile(), &bubble_slow_profile(),
     &rat_slow_profile(), &white_wolfos_slow_profile(), &puppet_slow_profile(),
-    &bomskit_slow_profile(), &stalhound_slow_profile(), &fire_toadpoli_slow_profile()
+    &bomskit_slow_profile(), &stalhound_slow_profile(), &fire_toadpoli_slow_profile(),
+    &bulblin_slow_profile(), &lizalfos_slow_profile(), &skulltula_slow_profile(),
+    &dodongo_slow_profile(), &dynalfos_slow_profile(), &baba_serpent_slow_profile(),
+    &big_baba_slow_profile(), &deku_baba_slow_profile()
 };
 
 const EnemySlowProfile* find_profile(fopAc_ac_c* actor) {
@@ -47,6 +54,7 @@ struct ActorClock {
     float fraction = 0.0f;
     J3DAnmTransform* animation = nullptr;
     int eventFrame = -1;
+    EnemyFrameEvents soundEvents{};
 };
 std::array<ActorClock, 64> s_clocks{};
 
@@ -71,6 +79,29 @@ ActorClock& clock_for(fopAc_ac_c* actor) {
     auto& clock = s_clocks[fopAcM_GetID(actor) % s_clocks.size()];
     clock = {actor, fopAcM_GetID(actor), 0.0f};
     return clock;
+}
+
+void update_sound_frame(ActorClock& clock, mDoExt_morf_c* animation) {
+    if (animation == nullptr) return;
+    clock.soundEvents.update(animation->getAnm(), static_cast<int>(animation->getFrame()));
+}
+
+HookAction before_frame_sound(ModContext*, void* args, void* retval, void*) {
+    auto* step = current_enemy_slow_step();
+    if (step == nullptr || step->sound == nullptr ||
+        mods::arg<Z2CreatureEnemy*>(args, 0) != step->sound) return HOOK_CONTINUE;
+    const u32 id = mods::arg<JAISoundID>(args, 1);
+    if (id == 0 || std::find(step->frameSounds.begin(), step->frameSounds.end(), id) ==
+        step->frameSounds.end()) return HOOK_CONTINUE;
+    auto& clock = clock_for(step->actor);
+    // Events can run either before or after model->play(). Use its actual frame
+    // here, and clear on silent frames too so single-event loops can repeat.
+    update_sound_frame(clock, step->animations[0]);
+    if (!clock.soundEvents.claim(id)) {
+        *static_cast<Z2SoundHandlePool**>(retval) = nullptr;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
 }
 
 
@@ -114,6 +145,8 @@ bool owns_chase_float(const EnemySlowStep* step, float* value) {
 
 HookAction before_chase_target(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
+    if (step != nullptr && step->profile->beforeFloatChase != nullptr)
+        step->profile->beforeFloatChase(*step, mods::arg<float*>(args, 0));
     if (owns_chase_float(step, mods::arg<float*>(args, 0))) {
         mods::arg_ref<float>(args, 2) *= step->scale;
         mods::arg_ref<float>(args, 3) *= step->scale;
@@ -141,6 +174,8 @@ HookAction before_chase_linear(ModContext*, void* args, void*, void*) {
 HookAction before_chase_angle(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
     if (step == nullptr || step->actor == nullptr) return HOOK_CONTINUE;
+    if (step->profile->beforeAngleChase != nullptr)
+        step->profile->beforeAngleChase(*step, mods::arg<s16*>(args, 0));
     for (auto* owned : step->chaseAngles) {
         if (owned == mods::arg<s16*>(args, 0)) {
             auto& divisor = mods::arg_ref<s16>(args, 2);
@@ -352,6 +387,7 @@ HookAction before_enemy_slow_execute(ModContext*, void* args, void*, void*) {
         step.timerFraction = clock.fraction;
         profile->prepare(step, timerTick);
         if (auto* animation = step.animations[0]; animation != nullptr) {
+            update_sound_frame(clock, animation);
             const int frame = static_cast<int>(animation->getFrame());
             step.freshAnimationFrame = clock.animation != animation->getAnm() || clock.eventFrame != frame;
             clock.animation = animation->getAnm();
@@ -383,6 +419,8 @@ ModResult initialize_enemy_slow_motion() {
         if (result != MOD_OK) return result;
     }
     ModResult result = mods::hook::add_pre<MoveHook>(svc_hook, before_move);
+    if (result == MOD_OK) result = mods::hook::add_pre<FrameSoundHook>(svc_hook, before_frame_sound);
+    if (result == MOD_OK) result = mods::hook::add_pre<FrameVoiceHook>(svc_hook, before_frame_sound);
     if (result == MOD_OK) result = mods::hook::add_pre<ProcessMethodHook>(svc_hook, before_process_method);
     if (result == MOD_OK) result = mods::hook::add_post<ProcessMethodHook>(svc_hook, after_process_method);
     if (result == MOD_OK) result = mods::hook::add_pre<CollisionHook>(svc_hook, before_collision);

@@ -302,22 +302,6 @@ HookAction before_get_main_bck_data_sprint(ModContext*, void* args, void*, void*
     return HOOK_CONTINUE;
 }
 
-void after_proc_move_sprint(ModContext*, void* args, void*, void*) {
-    auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (s_sprintOwner != link || link->mProcID != daAlink_c::PROC_MOVE ||
-        !link->checkUnderMove0BckNoArc(daAlink_c::ANM_RUN))
-    {
-        s_sprintOwner = nullptr;
-        return;
-    }
-
-    link->mUnderFrameCtrl[0].setRate(
-        link->mUnderFrameCtrl[0].getRate() * kSprintSpeedMultiplier);
-    link->mUnderFrameCtrl[1].setRate(
-        link->mUnderFrameCtrl[1].getRate() * kSprintSpeedMultiplier);
-    s_sprintOwner = nullptr;
-}
-
 HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const auto nextProc = mods::arg<daAlink_c::daAlink_PROC>(args, 1);
@@ -349,9 +333,6 @@ ModResult install_jump_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ProcMoveSprint>(svc_hook, before_proc_move_sprint);
-    }
-    if (result == MOD_OK) {
-        result = mods::hook_add_post<ProcMoveSprint>(svc_hook, after_proc_move_sprint);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<GetMainBckDataSprint>(

@@ -6,6 +6,7 @@
 #include "service_imports.hpp"
 #include "stamina.hpp"
 
+#include "global.h"
 #include "dusk/audio/MusicRateBuffer.h"
 #include "dusk/simulation_accumulator.h"
 #include "slow_motion/Controller.h"
@@ -14,6 +15,8 @@
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "Z2AudioLib/Z2LinkMgr.h"
 #include "d/actor/d_a_alink.h"
+#include "dusk/gyro.h"
+#include "dusk/settings.h"
 #include "d/actor/d_a_arrow.h"
 #include "d/d_cc_s.h"
 #include "d/d_cc_uty.h"
@@ -230,6 +233,16 @@ float s_previousGravity = 0.0f;
 float s_previousMaxFallSpeed = 0.0f;
 bool s_previousSpecialGravity = false;
 bool s_bulletTimeActive = false;
+bool s_bulletTimeOwnsGyroKeepAlive = false;
+using GetGyroKeepAliveFn = bool (*)();
+using SetGyroKeepAliveFn = void (*)(bool);
+using GetGyroAimDeltasFn = void (*)(float&, float&);
+using GetSettingsFn = dusk::UserSettings& (*)();
+GetGyroKeepAliveFn s_getGyroKeepAlive = nullptr;
+SetGyroKeepAliveFn s_setGyroKeepAlive = nullptr;
+GetGyroAimDeltasFn s_getGyroAimDeltas = nullptr;
+GetSettingsFn s_getSettings = nullptr;
+bool s_gyroKeepAliveSymbolsResolved = false;
 bool s_flurryRushActive = false;
 bool s_flurryLinkSlowed = false;
 bool s_flurryMeleePositioned = false;
@@ -260,6 +273,91 @@ std::array<LinkVoiceRateEntry, 8> s_linkVoiceRates{};
 
 bool combat_slow_active() {
     return s_bulletTimeActive || s_flurryRushActive;
+}
+
+void resolve_bullet_time_gyro_symbols() {
+    if (s_gyroKeepAliveSymbolsResolved || svc_hook == nullptr ||
+        svc_hook->resolve == nullptr)
+    {
+        return;
+    }
+
+    constexpr const char* getSymbol = "dusk::gyro::get_sensor_keep_alive";
+    constexpr const char* setSymbol = "dusk::gyro::set_sensor_keep_alive";
+    constexpr const char* deltasSymbol = "dusk::gyro::getAimDeltas";
+    constexpr const char* settingsSymbol = "dusk::getSettings";
+
+    void* address = nullptr;
+    if (svc_hook->resolve(mod_ctx, getSymbol, &address, nullptr) == MOD_OK) {
+        s_getGyroKeepAlive = reinterpret_cast<GetGyroKeepAliveFn>(address);
+    }
+    address = nullptr;
+    if (svc_hook->resolve(mod_ctx, setSymbol, &address, nullptr) == MOD_OK) {
+        s_setGyroKeepAlive = reinterpret_cast<SetGyroKeepAliveFn>(address);
+    }
+    address = nullptr;
+    if (svc_hook->resolve(mod_ctx, deltasSymbol, &address, nullptr) == MOD_OK) {
+        s_getGyroAimDeltas = reinterpret_cast<GetGyroAimDeltasFn>(address);
+    }
+    address = nullptr;
+    if (svc_hook->resolve(mod_ctx, settingsSymbol, &address, nullptr) == MOD_OK) {
+        s_getSettings = reinterpret_cast<GetSettingsFn>(address);
+    }
+    s_gyroKeepAliveSymbolsResolved = true;
+}
+
+bool bullet_time_gyro_enabled() {
+    resolve_bullet_time_gyro_symbols();
+    return s_getSettings != nullptr &&
+           s_getSettings().game.enableGyroAim.getValue();
+}
+
+void sync_bullet_time_gyro_keep_alive() {
+    resolve_bullet_time_gyro_symbols();
+    if (s_getGyroKeepAlive == nullptr || s_setGyroKeepAlive == nullptr ||
+        !bullet_time_gyro_enabled())
+    {
+        if (s_bulletTimeOwnsGyroKeepAlive && s_setGyroKeepAlive != nullptr) {
+            s_setGyroKeepAlive(false);
+            s_bulletTimeOwnsGyroKeepAlive = false;
+        }
+        return;
+    }
+
+    const bool sensorKeepAlive = s_getGyroKeepAlive();
+    if (s_bulletTimeActive && !sensorKeepAlive) {
+        s_setGyroKeepAlive(true);
+        s_bulletTimeOwnsGyroKeepAlive = true;
+    } else if (!s_bulletTimeActive && s_bulletTimeOwnsGyroKeepAlive) {
+        s_setGyroKeepAlive(false);
+        s_bulletTimeOwnsGyroKeepAlive = false;
+    }
+}
+
+void apply_bullet_time_gyro_impl(daAlink_c* link) {
+    if (link == nullptr || !bullet_time_gyro_enabled() ||
+        s_getGyroAimDeltas == nullptr)
+    {
+        return;
+    }
+
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    s_getGyroAimDeltas(yaw, pitch);
+
+    float scale = 1.0f;
+    if (link->checkWolfEyeUp()) {
+        scale *= 0.6f;
+    }
+    if (dComIfGp_checkPlayerStatus0(0, 0x200000)) {
+        scale /= dComIfGp_getCameraZoomScale(link->field_0x317c);
+    }
+
+    link->shape_angle.y += cM_rad2s(yaw * scale);
+    link->mBodyAngle.x = link->checkBodyAngleX(
+        static_cast<s16>(link->mBodyAngle.x + cM_rad2s(pitch * scale)));
+    link->field_0x310a = link->mBodyAngle.x;
+    link->field_0x310c = link->shape_angle.y;
 }
 
 void after_flurry_action_string(ModContext*, void* args, void* retval, void*) {
@@ -487,6 +585,7 @@ void stop_bullet_time() {
             s_previousSpecialGravity ? FALSE : TRUE);
     }
     s_bulletTimeActive = false;
+    sync_bullet_time_gyro_keep_alive();
     sync_slow_motion_controllers();
     if (!combat_slow_active()) {
         clear_combat_time_caches();
@@ -543,6 +642,7 @@ void start_bullet_time(daAlink_c* link) {
     link->setSpecialGravity(s_previousGravity, s_previousMaxFallSpeed, FALSE);
     s_bulletTimeActive = true;
     s_bulletTimeUsedForJump = true;
+    sync_bullet_time_gyro_keep_alive();
     sync_slow_motion_controllers();
 }
 
@@ -1912,6 +2012,10 @@ void prepare_bow_aim(daAlink_c* link) {
 
 }  // namespace
 
+void apply_bullet_time_gyro(daAlink_c* link) {
+    apply_bullet_time_gyro_impl(link);
+}
+
 float enemy_slow_motion_scale(fopAc_ac_c* actor) {
     return combat_slow_active() && !actor_has_hit_grace(actor)
         ? s_enemySlowMotion.time_scale() : 1.0f;
@@ -2096,6 +2200,7 @@ bool bullet_time_active_for(const daAlink_c* link) {
 
 void bullet_time_tick() {
     daAlink_c* currentLink = daAlink_getAlinkActorClass();
+    sync_bullet_time_gyro_keep_alive();
     update_dodge_attempt(currentLink);
 
     if (s_flurryRushActive) {
@@ -2144,6 +2249,8 @@ void shutdown_bullet_time() {
     s_dodgeOwner = nullptr;
     s_dodgeProc = daAlink_c::PROC_WAIT;
     s_dodgeTriggered = false;
+    s_bulletTimeActive = false;
+    sync_bullet_time_gyro_keep_alive();
     s_linkPositionStep = {};
     s_linkAnimationRateStep = {};
     s_actorExecuteStack = {};

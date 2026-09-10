@@ -13,6 +13,7 @@ void update_bullet_time_before_jump(daAlink_c* link);
 void update_bullet_time_after_jump(daAlink_c* link);
 void slow_bullet_time_jump_speed_change(daAlink_c* link, float previousNormalSpeed);
 bool bullet_time_active_for(const daAlink_c* link);
+void apply_bullet_time_gyro(daAlink_c* link);
 void bullet_time_tick();
 void shutdown_bullet_time();
 

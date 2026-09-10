@@ -915,6 +915,7 @@ bool update_bullet_time_bow_aim(daAlink_c* link) {
 #if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
     if (s_touchBulletTimeMoveActive) {
         link->setBodyAngleToCamera();
+        apply_bullet_time_gyro(link);
         draw_camera_center_sight(link);
         return true;
     }
@@ -922,12 +923,14 @@ bool update_bullet_time_bow_aim(daAlink_c* link) {
 
     if (!aim_movement_enabled()) {
         link->setBodyAngleToCamera();
+        apply_bullet_time_gyro(link);
         draw_camera_center_sight(link);
         return true;
     }
 
     face_camera_view_yaw(link);
     keep_cinema_bow_sight(link);
+    apply_bullet_time_gyro(link);
     return true;
 }
 

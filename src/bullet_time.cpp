@@ -15,8 +15,13 @@
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "Z2AudioLib/Z2LinkMgr.h"
 #include "d/actor/d_a_alink.h"
+#if __has_include("dusk/gyro.h") && __has_include("dusk/settings.h")
+#define DAWNLIGHT_HAS_GYRO_API 1
 #include "dusk/gyro.h"
 #include "dusk/settings.h"
+#else
+#define DAWNLIGHT_HAS_GYRO_API 0
+#endif
 #include "d/actor/d_a_arrow.h"
 #include "d/d_cc_s.h"
 #include "d/d_cc_uty.h"
@@ -233,6 +238,7 @@ float s_previousGravity = 0.0f;
 float s_previousMaxFallSpeed = 0.0f;
 bool s_previousSpecialGravity = false;
 bool s_bulletTimeActive = false;
+#if DAWNLIGHT_HAS_GYRO_API
 bool s_bulletTimeOwnsGyroKeepAlive = false;
 using GetGyroKeepAliveFn = bool (*)();
 using SetGyroKeepAliveFn = void (*)(bool);
@@ -243,6 +249,7 @@ SetGyroKeepAliveFn s_setGyroKeepAlive = nullptr;
 GetGyroAimDeltasFn s_getGyroAimDeltas = nullptr;
 GetSettingsFn s_getSettings = nullptr;
 bool s_gyroKeepAliveSymbolsResolved = false;
+#endif
 bool s_flurryRushActive = false;
 bool s_flurryLinkSlowed = false;
 bool s_flurryMeleePositioned = false;
@@ -275,6 +282,7 @@ bool combat_slow_active() {
     return s_bulletTimeActive || s_flurryRushActive;
 }
 
+#if DAWNLIGHT_HAS_GYRO_API
 void resolve_bullet_time_gyro_symbols() {
     if (s_gyroKeepAliveSymbolsResolved || svc_hook == nullptr ||
         svc_hook->resolve == nullptr)
@@ -359,6 +367,11 @@ void apply_bullet_time_gyro_impl(daAlink_c* link) {
     link->field_0x310a = link->mBodyAngle.x;
     link->field_0x310c = link->shape_angle.y;
 }
+#else
+void sync_bullet_time_gyro_keep_alive() {}
+
+void apply_bullet_time_gyro_impl(daAlink_c*) {}
+#endif
 
 void after_flurry_action_string(ModContext*, void* args, void* retval, void*) {
     if (!s_flurryRushActive || retval == nullptr ||

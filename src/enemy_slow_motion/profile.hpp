@@ -119,4 +119,7 @@ const EnemySlowProfile& lizalfos_slow_profile();
 const EnemySlowProfile& dodongo_slow_profile();
 const EnemySlowProfile& dynalfos_slow_profile();
 const EnemySlowProfile& skulltula_slow_profile();
+const EnemySlowProfile& baba_serpent_slow_profile();
+const EnemySlowProfile& big_baba_slow_profile();
+const EnemySlowProfile& deku_baba_slow_profile();
 }

@@ -44,6 +44,7 @@ DEFINE_HOOK(&daAlink_c::procIronBallSubject, IronBallSubjectHook);
 DEFINE_HOOK(&daAlink_c::procCopyRodSubject, CopyRodSubjectHook);
 DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
 DEFINE_HOOK(&dCamera_c::Run, CameraRunHook);
+DEFINE_HOOK(&dCamera_c::subjectCamera, SubjectCameraHook);
 DEFINE_HOOK(&dCamera_c::nextMode, CameraNextModeHook);
 DEFINE_HOOK(&dCamera_c::nextType, CameraNextTypeHook);
 #if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
@@ -153,6 +154,10 @@ SavedTouchMove s_savedTouchMove;
 bool s_touchBulletTimeMoveActive = false;
 #endif
 bool s_customCinemaSightActive = false;
+bool s_thirdPersonAimActive = false;
+float s_thirdPersonDistance = 300.0f;
+float s_thirdPersonFovy = 45.0f;
+float s_thirdPersonHeight = 130.0f;
 
 bool use_custom_aim_movement() {
     return aim_movement_enabled();
@@ -167,7 +172,7 @@ bool use_cinema_camera() {
 }
 
 void remember_custom_cinema_sight() {
-    if (use_cinema_camera()) {
+    if (use_cinema_camera() || use_third_person_camera()) {
         s_customCinemaSightActive = true;
     }
 }
@@ -463,12 +468,12 @@ void draw_subject_sight(daAlink_c* link, AimItem item) {
 }
 
 bool should_keep_cinema_bow_sight(daAlink_c* link) {
-    return link != nullptr && use_cinema_camera() && link->mEquipItem != dItemNo_HAWK_ARROW_e;
+    return link != nullptr && use_scope_suppress_camera() && !is_hawkeye_bow(link);
 }
 
 void keep_cinema_bow_sight(daAlink_c* link) {
     if (should_keep_cinema_bow_sight(link)) {
-        if (aim_movement_enabled()) {
+        if (aim_movement_enabled() && use_cinema_camera()) {
             aim_with_c_stick(link);
         }
         draw_camera_center_sight(link);
@@ -493,12 +498,35 @@ void normalize_forward_aim_speed(daAlink_c* link) {
     }
 }
 
+void prepare_third_person_aim(daAlink_c* link) {
+    if (link == nullptr || !use_third_person_camera() || is_hawkeye_bow(link) ||
+        link->checkMagneBootsOn() || s_thirdPersonAimActive)
+    {
+        return;
+    }
+    auto* actor = dComIfGp_getCamera(link->field_0x317c);
+    if (actor == nullptr || !face_camera_view_yaw(link)) {
+        return;
+    }
+
+    auto& camera = actor->mCamera;
+    const cXyz direction = camera.mCenter - camera.mEye;
+    link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
+    link->checkBodyAngleX(link->mBodyAngle.x);
+    link->field_0x310a = link->mBodyAngle.x;
+    s_thirdPersonDistance = std::clamp(direction.abs(), 200.0f, 600.0f);
+    s_thirdPersonFovy = camera.mFovy;
+    s_thirdPersonHeight = std::clamp(camera.mCenter.y - link->current.pos.y, 100.0f, 180.0f);
+    s_thirdPersonAimActive = true;
+}
+
 bool update_subject_aim(daAlink_c* link, AimItem item) {
     if (link == nullptr) {
         return false;
     }
 
     const bool hawkeyeBow = item == AimItem::Bow && is_hawkeye_bow(link);
+    prepare_third_person_aim(link);
     if (hawkeyeBow || !use_custom_aim_movement()) {
         return false;
     }
@@ -755,17 +783,62 @@ bool player_in_supported_aim_state(dCamera_c* camera) {
     return player_in_supported_aim_status(camera->mPadID);
 }
 
+void after_subject_camera(ModContext*, void* args, void*, void*) {
+    auto* camera = mods::arg<dCamera_c*>(args, 0);
+    auto* link = daAlink_getAlinkActorClass();
+    if (!use_third_person_camera() || !s_thirdPersonAimActive || camera == nullptr ||
+        link == nullptr || !player_in_supported_aim_state(camera) ||
+        is_hawkeye_bow(link) || link->checkMagneBootsOn() || camera->mCurMode != 8)
+    {
+        return;
+    }
+
+    // Use the same yaw/pitch as native subject aiming, without a second orbit input.
+    const s16 yaw = link->getCameraAngleY();
+    const s16 pitch = link->getCameraAngleX();
+    const float horizontal = s_thirdPersonDistance * cM_scos(pitch);
+    cXyz center = link->current.pos;
+    center.y += s_thirdPersonHeight;
+    // Translate eye and center together so framing does not rotate the aim direction.
+    constexpr float shoulderLeft = 60.0f;
+    constexpr float shoulderUp = 40.0f;
+    const cXyz offset(shoulderLeft * cM_scos(yaw) + shoulderUp * cM_ssin(yaw) * cM_ssin(pitch),
+        shoulderUp * cM_scos(pitch),
+        -shoulderLeft * cM_ssin(yaw) + shoulderUp * cM_scos(yaw) * cM_ssin(pitch));
+    cXyz shiftedCenter = center + offset;
+    dBgS_CamLinChk shoulderCheck;
+    if (camera->lineBGCheck(&center, &shiftedCenter, &shoulderCheck, 0x40b7)) {
+        const float distance = std::max(0.0f, (shoulderCheck.GetCross() - center).abs() - 5.0f);
+        shiftedCenter = center + offset * (distance / offset.abs());
+    }
+    center = shiftedCenter;
+    cXyz eye = center + cXyz(-horizontal * cM_ssin(yaw),
+        s_thirdPersonDistance * cM_ssin(pitch), -horizontal * cM_scos(yaw));
+
+    // Native subject mode disables the chase-camera bump check.
+    dBgS_CamLinChk check;
+    if (camera->lineBGCheck(&center, &eye, &check, 0x40b7)) {
+        cXyz inward = center - eye;
+        inward.normalize();
+        eye = check.GetCross() + inward * 5.0f;
+    }
+    camera->mViewCache.mCenter = center;
+    camera->mViewCache.mEye = eye;
+    camera->mViewCache.mDirection.Val(eye - center);
+    camera->mViewCache.mFovy = s_thirdPersonFovy;
+}
+
 void after_camera_run(ModContext*, void* args, void*, void*) {
     auto* camera = mods::arg<dCamera_c*>(args, 0);
     auto* link = daAlink_getAlinkActorClass();
-    if (camera == nullptr || !use_cinema_camera() || !player_in_supported_aim_state(camera) ||
+    if (camera == nullptr || !use_scope_suppress_camera() || !player_in_supported_aim_state(camera) ||
         is_hawkeye_bow(link))
     {
         return;
     }
 
     const int zoomPercent = cinema_zoom_percent();
-    if (zoomPercent != 100) {
+    if (use_cinema_camera() && zoomPercent != 100) {
         const float zoom = std::clamp(static_cast<float>(zoomPercent) / 100.0f, 0.25f, 4.0f);
         camera->mFovy = std::clamp(camera->mFovy / zoom, 10.0f, 120.0f);
     }
@@ -791,7 +864,8 @@ void after_camera_next_mode(ModContext*, void* args, void* retval, void*) {
     }
 
     if (*result == 7 || *result == 8) {
-        *result = use_third_person_camera() ? 0 : 8;
+        prepare_third_person_aim(daAlink_getAlinkActorClass());
+        *result = 8;
     }
 }
 
@@ -814,12 +888,17 @@ void after_camera_next_type(ModContext*, void* args, void* retval, void*) {
 }
 
 void after_player_execute(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (link == nullptr || !use_third_person_camera() || is_hawkeye_bow(link) ||
+        (!bullet_time_active_for(link) && !player_in_supported_aim_status(0)))
+    {
+        s_thirdPersonAimActive = false;
+    }
     if (!s_customCinemaSightActive) {
         return;
     }
 
-    auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (link != nullptr && use_cinema_camera() &&
+    if (link != nullptr && use_scope_suppress_camera() &&
         (bullet_time_active_for(link) ||
             (dCamera_c::isAimActive() && player_in_supported_aim_status(0))))
     {
@@ -889,6 +968,9 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
         result = mods::hook_add_post<PlayerExecuteHook>(svc_hook, after_player_execute);
     }
     if (result == MOD_OK) {
+        result = mods::hook_add_post<SubjectCameraHook>(svc_hook, after_subject_camera);
+    }
+    if (result == MOD_OK) {
         result = mods::hook_add_post<CameraRunHook>(svc_hook, after_camera_run);
     }
     if (result != MOD_OK) {
@@ -900,6 +982,7 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
 }  // namespace
 
 void prepare_bullet_time_bow_aim(daAlink_c* link) {
+    prepare_third_person_aim(link);
     if (link == nullptr || !use_cinema_camera() || is_hawkeye_bow(link)) {
         return;
     }
@@ -911,6 +994,7 @@ bool update_bullet_time_bow_aim(daAlink_c* link) {
     if (!should_keep_cinema_bow_sight(link)) {
         return false;
     }
+    prepare_third_person_aim(link);
 
 #if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
     if (s_touchBulletTimeMoveActive) {
@@ -928,7 +1012,11 @@ bool update_bullet_time_bow_aim(daAlink_c* link) {
         return true;
     }
 
-    face_camera_view_yaw(link);
+    if (use_cinema_camera()) {
+        face_camera_view_yaw(link);
+    } else {
+        aim_with_c_stick(link);
+    }
     keep_cinema_bow_sight(link);
     apply_bullet_time_gyro(link);
     return true;

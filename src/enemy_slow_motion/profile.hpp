@@ -11,7 +11,6 @@
 class mDoExt_morf_c;
 class dBgS_Acch;
 class J3DFrameCtrl;
-class Z2CreatureEnemy;
 
 namespace dawnlight {
 struct EnemySlowProfile;
@@ -36,15 +35,12 @@ struct EnemySlowStep {
     csXyz originalAngles{};
     csXyz originalShapeAngles{};
     cXyz originalSpeed{};
-    std::array<float, 16> values{};
-    std::array<cXyz, 18> points{};
-    std::array<float*, 32> chaseFloats{};
-    std::array<s16*, 96> chaseAngles{};
+    std::array<float, 4> values{};
+    std::array<float*, 8> chaseFloats{};
+    std::array<s16*, 12> chaseAngles{};
     dBgS_Acch* directCollision = nullptr;
     std::array<mDoExt_morf_c*, 4> animations{};
-    std::array<J3DFrameCtrl*, 8> controllers{};
-    Z2CreatureEnemy* sound = nullptr;
-    std::array<u32, 20> frameSounds{};
+    std::array<J3DFrameCtrl*, 4> controllers{};
 };
 
 struct EnemySlowProfile {
@@ -58,8 +54,6 @@ struct EnemySlowProfile {
     void (*beforeCollision)(EnemySlowStep&) = nullptr;
     void (*afterExecute)(EnemySlowStep&) = nullptr;
     bool processExecute = false;
-    void (*beforeFloatChase)(EnemySlowStep&, float*) = nullptr;
-    void (*beforeAngleChase)(EnemySlowStep&, s16*) = nullptr;
 };
 
 // Returns only an active actor/profile pair, never an empty stack placeholder.
@@ -114,13 +108,4 @@ const EnemySlowProfile& puppet_slow_profile();
 const EnemySlowProfile& bomskit_slow_profile();
 const EnemySlowProfile& stalhound_slow_profile();
 const EnemySlowProfile& fire_toadpoli_slow_profile();
-const EnemySlowProfile& bulblin_slow_profile();
-const EnemySlowProfile& lizalfos_slow_profile();
-const EnemySlowProfile& skulltula_slow_profile();
-const EnemySlowProfile& dodongo_slow_profile();
-const EnemySlowProfile& dynalfos_slow_profile();
-const EnemySlowProfile& baba_serpent_slow_profile();
-const EnemySlowProfile& big_baba_slow_profile();
-const EnemySlowProfile& deku_baba_slow_profile();
-const EnemySlowProfile& stalfos_slow_profile();
 }

@@ -28,24 +28,15 @@ interpolation. All other actors retain their previous behavior.
 | Bomskit (`E_CR`) | Animation, movement, bounce/gravity, head movement, timers and native egg cadence | None beyond the shared combat-slow gate |
 | Stalhound (`E_SH`) | Animation, movement, gravity, knockback, head angles, timers and mouth effects | Disappearance relocation remains native |
 | Fire Toadpoli (`E_TK2`) | Animation, turning, timers, one fireball creation/release per attack | Lava anchoring remains native; fireball actor still uses its existing movement path |
-| Bulblin (`E_RD`) | On-foot combat, bow/horn animation, joint easing, gravity, timers, one arrow per shooting frame | Mounted/King Bulblin, scripted actor sets, water death and collision-pause states |
-| Lizalfos (`E_DN`) | Animation, procedural joint easing, movement/gravity, jump arc, timers, once-only sidestep impulses and frame sounds | Event/demo, water and collision-pause states |
-| Dynalfos (`E_MF`) | Animation, joint easing, movement/gravity, leap arc, tail turning, timers, once-only sidestep impulses and frame sounds | Event, inactive, water and collision-pause states |
-| Dodongo (`E_DD`) | Body/material animation, wall/ground movement, neck angles, gravity, timers and breath hitbox sweep | Scripted events |
-| Skulltula (`E_ST`) | Ground/wall movement, homing jump/return, animation, leg easing, gravity, timers and silk emission cadence | Water death and scripted events; player attachment remains native |
-| Baba Serpent (`E_HB`) | Head/leaf animation, head motion, knockback, timers and live stem relaxation with matching colliders | Player grabs, deletion sentinel and scripted events |
-| Deku Baba (`E_DB`) | Head/leaf animation, lunges, knockback, detached movement/gravity and stem, timers | Player grabs, water death, deletion sentinel and scripted events |
-| Big Baba (`E_GB`) | Head/flower/material animation, head motion, lunges, falling attack, timers and live stem relaxation | Intro/end demos and scripted flower ending |
-| Stalfos (`E_SF`) | Both weapon variants, body/weapon pose, movement/gravity, knockback, head/ground angles, combat and resurrection timers, modulo decisions and once-only sword sounds | Seated intro and scripted camera/events; native shield and bomb-finisher rules remain intact |
-
 The user tested the core with Darknut, Bokoblin and Mini Freezard before commit
 `ad4536d`. Profiles added after that commit are compile-tested only and still
 need in-game tests. This is not yet the entire requested enemy list.
 
 ## Remaining Requested Profiles
 
-Armos, Baby Gohma, Chu Worm, Guay, Imp Poe, Kargarok,
-Phantom Rider, Poe,
+Armos, Baba Serpent, Baby Gohma, Big Baba, Bulblin, Chu Worm,
+Deku Baba, Dodongo, Dynalfos, Guay, Imp Poe, Kargarok,
+Lizalfos, Phantom Rider, Poe, Skulltula, Stalfos,
 Young Gohma, Zant Mask and Zant's Hand still use the previous
 slow-motion path. Dangoro (`E_GOB`) also remains pending, independently of
 normal adult Gorons. Goron children/elders/shopkeepers use other NPC actors.
@@ -80,8 +71,6 @@ C++17 or newer compiler, with assertions enabled. They cover timer cadence,
 independent phases, and forward/reverse motion sampling, not game hooks.
 They also cover modulo-counter event cadence across wraparound, periodic
 motion-curve sampling and direct movement with a shifted collision origin.
-Frame-event tests cover duplicate suppression, independent actors, before/after
-animation advance, silent frames, loops, animation changes and reset.
 Scope tests cover slow motion off, incomplete contexts, nested inactive actors,
 nesting overflow and reset. Hooks must not receive an empty execute placeholder
 as an active profile (the cause of the 2026-09-09 Cave of Ordeals entry crash).

@@ -67,15 +67,6 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/bomskit.cpp
         src/enemy_slow_motion/stalhound.cpp
         src/enemy_slow_motion/fire_toadpoli.cpp
-        src/enemy_slow_motion/bulblin.cpp
-        src/enemy_slow_motion/lizalfos.cpp
-        src/enemy_slow_motion/skulltula.cpp
-        src/enemy_slow_motion/dodongo.cpp
-        src/enemy_slow_motion/dynalfos.cpp
-        src/enemy_slow_motion/baba_serpent.cpp
-        src/enemy_slow_motion/big_baba.cpp
-        src/enemy_slow_motion/deku_baba.cpp
-        src/enemy_slow_motion/stalfos.cpp
         src/combat_meter.cpp
         src/config.cpp
         src/deferred_features.cpp

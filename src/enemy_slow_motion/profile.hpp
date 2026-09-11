@@ -118,4 +118,5 @@ const EnemySlowProfile& bulblin_slow_profile();
 const EnemySlowProfile& lizalfos_slow_profile();
 const EnemySlowProfile& dodongo_slow_profile();
 const EnemySlowProfile& dynalfos_slow_profile();
+const EnemySlowProfile& skulltula_slow_profile();
 }

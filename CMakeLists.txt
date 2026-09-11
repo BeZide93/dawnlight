@@ -68,6 +68,9 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/stalhound.cpp
         src/enemy_slow_motion/fire_toadpoli.cpp
         src/enemy_slow_motion/bulblin.cpp
+        src/enemy_slow_motion/lizalfos.cpp
+        src/enemy_slow_motion/dodongo.cpp
+        src/enemy_slow_motion/dynalfos.cpp
         src/combat_meter.cpp
         src/config.cpp
         src/deferred_features.cpp

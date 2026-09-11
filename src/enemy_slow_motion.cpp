@@ -23,14 +23,15 @@ DEFINE_HOOK(&cLib_addCalcAngleS, ChaseAngleMinHook);
 DEFINE_HOOK(&cLib_chaseS, ChaseShortHook);
 DEFINE_HOOK(&J3DFrameCtrl::update, ControllerUpdateHook);
 
-const std::array<const EnemySlowProfile*, 20> s_profiles{
+const std::array<const EnemySlowProfile*, 23> s_profiles{
     &darknut_slow_profile(), &bokoblin_slow_profile(), &mini_freezard_slow_profile(),
     &keese_slow_profile(), &tektite_slow_profile(), &gibdo_slow_profile(),
     &goron_slow_profile(), &staltroop_slow_profile(), &aeralfos_slow_profile(), &chilfos_slow_profile(),
     &freezard_slow_profile(), &stalchild_slow_profile(), &bubble_slow_profile(),
     &rat_slow_profile(), &white_wolfos_slow_profile(), &puppet_slow_profile(),
     &bomskit_slow_profile(), &stalhound_slow_profile(), &fire_toadpoli_slow_profile(),
-    &bulblin_slow_profile()
+    &bulblin_slow_profile(), &lizalfos_slow_profile(), &dodongo_slow_profile(),
+    &dynalfos_slow_profile()
 };
 
 const EnemySlowProfile* find_profile(fopAc_ac_c* actor) {
@@ -115,6 +116,8 @@ bool owns_chase_float(const EnemySlowStep* step, float* value) {
 
 HookAction before_chase_target(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
+    if (step != nullptr && step->profile->beforeFloatChase != nullptr)
+        step->profile->beforeFloatChase(*step, mods::arg<float*>(args, 0));
     if (owns_chase_float(step, mods::arg<float*>(args, 0))) {
         mods::arg_ref<float>(args, 2) *= step->scale;
         mods::arg_ref<float>(args, 3) *= step->scale;
@@ -142,6 +145,8 @@ HookAction before_chase_linear(ModContext*, void* args, void*, void*) {
 HookAction before_chase_angle(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
     if (step == nullptr || step->actor == nullptr) return HOOK_CONTINUE;
+    if (step->profile->beforeAngleChase != nullptr)
+        step->profile->beforeAngleChase(*step, mods::arg<s16*>(args, 0));
     for (auto* owned : step->chaseAngles) {
         if (owned == mods::arg<s16*>(args, 0)) {
             auto& divisor = mods::arg_ref<s16>(args, 2);

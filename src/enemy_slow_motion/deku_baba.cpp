@@ -89,7 +89,7 @@ ModResult install() {
 
 const EnemySlowProfile& deku_baba_slow_profile() {
     static const EnemySlowProfile profile{fpcNm_E_DB_e, eligible, prepare, nullptr,
-        nullptr, install, nullptr, before_collision, after_execute, true, before_float};
+        nullptr, install, nullptr, before_collision, nullptr, true, before_float};
     return profile;
 }
 }

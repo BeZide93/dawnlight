@@ -23,13 +23,14 @@ DEFINE_HOOK(&cLib_addCalcAngleS, ChaseAngleMinHook);
 DEFINE_HOOK(&cLib_chaseS, ChaseShortHook);
 DEFINE_HOOK(&J3DFrameCtrl::update, ControllerUpdateHook);
 
-const std::array<const EnemySlowProfile*, 19> s_profiles{
+const std::array<const EnemySlowProfile*, 20> s_profiles{
     &darknut_slow_profile(), &bokoblin_slow_profile(), &mini_freezard_slow_profile(),
     &keese_slow_profile(), &tektite_slow_profile(), &gibdo_slow_profile(),
     &goron_slow_profile(), &staltroop_slow_profile(), &aeralfos_slow_profile(), &chilfos_slow_profile(),
     &freezard_slow_profile(), &stalchild_slow_profile(), &bubble_slow_profile(),
     &rat_slow_profile(), &white_wolfos_slow_profile(), &puppet_slow_profile(),
-    &bomskit_slow_profile(), &stalhound_slow_profile(), &fire_toadpoli_slow_profile()
+    &bomskit_slow_profile(), &stalhound_slow_profile(), &fire_toadpoli_slow_profile(),
+    &bulblin_slow_profile()
 };
 
 const EnemySlowProfile* find_profile(fopAc_ac_c* actor) {

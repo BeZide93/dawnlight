@@ -6,6 +6,7 @@
 
 namespace dawnlight {
 namespace {
+DEFINE_HOOK_SYMBOL("Z2CreatureEnemy::startCreatureSound", Z2SoundHandlePool*(Z2CreatureEnemy*, JAISoundID, u32, s8), SoundHook);
 constexpr s16 kSitWait = 33;
 
 e_sf_class& stalfos(fopAc_ac_c* actor) {
@@ -23,8 +24,6 @@ void prepare(EnemySlowStep& step, bool tick) {
     auto& a = stalfos(step.actor);
     step.animations = {a.mpModelMorf};
     step.directCollision = &a.mBgc;
-    step.sound = &a.mSound;
-    step.frameSounds = {Z2SE_EN_SF_SWING_SWORD_S, Z2SE_EN_SF_SWING_SWORD_L};
     step.chaseFloats = {&a.actor.speedF, &a.field_0x6c4};
     step.chaseAngles = {&a.actor.current.angle.y, &a.actor.shape_angle.x,
         &a.actor.shape_angle.y, &a.actor.shape_angle.z, &a.mColor,
@@ -65,11 +64,30 @@ void before_collision(EnemySlowStep& step) {
 void after_execute(EnemySlowStep& step) {
     if (!step.timerTick) stalfos(step.actor).mFrameCounter = static_cast<s16>(step.values[0]);
 }
+
+HookAction before_sound(ModContext*, void* args, void* retval, void*) {
+    auto* step = current_enemy_slow_step();
+    if (step == nullptr || step->profile->name != fpcNm_E_SF_e ||
+        step->freshAnimationFrame ||
+        mods::arg<Z2CreatureEnemy*>(args, 0) != &stalfos(step->actor).mSound) {
+        return HOOK_CONTINUE;
+    }
+    const auto sound = mods::arg<JAISoundID>(args, 1);
+    if (sound == Z2SE_EN_SF_SWING_SWORD_S || sound == Z2SE_EN_SF_SWING_SWORD_L) {
+        *static_cast<Z2SoundHandlePool**>(retval) = nullptr;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
+}
+
+ModResult install() {
+    return mods::hook::add_pre<SoundHook>(svc_hook, before_sound);
+}
 }
 
 const EnemySlowProfile& stalfos_slow_profile() {
     static const EnemySlowProfile profile{fpcNm_E_SF_e, eligible, prepare, nullptr,
-        nullptr, nullptr, nullptr, before_collision, after_execute, true, nullptr, before_angle};
+        nullptr, install, nullptr, before_collision, after_execute, true, nullptr, before_angle};
     return profile;
 }
 }

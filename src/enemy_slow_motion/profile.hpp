@@ -122,4 +122,5 @@ const EnemySlowProfile& skulltula_slow_profile();
 const EnemySlowProfile& baba_serpent_slow_profile();
 const EnemySlowProfile& big_baba_slow_profile();
 const EnemySlowProfile& deku_baba_slow_profile();
+const EnemySlowProfile& stalfos_slow_profile();
 }

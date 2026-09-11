@@ -28,6 +28,7 @@ interpolation. All other actors retain their previous behavior.
 | Bomskit (`E_CR`) | Animation, movement, bounce/gravity, head movement, timers and native egg cadence | None beyond the shared combat-slow gate |
 | Stalhound (`E_SH`) | Animation, movement, gravity, knockback, head angles, timers and mouth effects | Disappearance relocation remains native |
 | Fire Toadpoli (`E_TK2`) | Animation, turning, timers, one fireball creation/release per attack | Lava anchoring remains native; fireball actor still uses its existing movement path |
+| Stalfos (`E_SF`) | Body animation, movement, gravity, steering, head motion, timers and single sword-swing sound per animation frame | Scripted demos and seated intro |
 The user tested the core with Darknut, Bokoblin and Mini Freezard before commit
 `ad4536d`. Profiles added after that commit are compile-tested only and still
 need in-game tests. This is not yet the entire requested enemy list.
@@ -36,7 +37,7 @@ need in-game tests. This is not yet the entire requested enemy list.
 
 Armos, Baba Serpent, Baby Gohma, Big Baba, Bulblin, Chu Worm,
 Deku Baba, Dodongo, Dynalfos, Guay, Imp Poe, Kargarok,
-Lizalfos, Phantom Rider, Poe, Skulltula, Stalfos,
+Lizalfos, Phantom Rider, Poe, Skulltula,
 Young Gohma, Zant Mask and Zant's Hand still use the previous
 slow-motion path. Dangoro (`E_GOB`) also remains pending, independently of
 normal adult Gorons. Goron children/elders/shopkeepers use other NPC actors.

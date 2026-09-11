@@ -76,6 +76,7 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/baba_serpent.cpp
         src/enemy_slow_motion/big_baba.cpp
         src/enemy_slow_motion/deku_baba.cpp
+        src/enemy_slow_motion/stalfos.cpp
         src/combat_meter.cpp
         src/config.cpp
         src/deferred_features.cpp

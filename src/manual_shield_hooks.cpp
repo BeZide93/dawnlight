@@ -172,7 +172,8 @@ bool switch_target_active(daAlink_c* link) {
 }
 
 bool manual_shield_button(daAlink_c* link) {
-    if (!manual_shielding_enabled() || link == nullptr || !mDoCPd_c::getHoldLockR(PAD_1)) {
+    if (!manual_shielding_enabled() || link == nullptr || link->checkWolf() ||
+        !mDoCPd_c::getHoldLockR(PAD_1)) {
         return false;
     }
 
@@ -184,7 +185,7 @@ bool manual_shield_attack_trigger(daAlink_c* link) {
 }
 
 bool shield_action_base_context(daAlink_c* link) {
-    return link != nullptr &&
+    return link != nullptr && !link->checkWolf() &&
            (dComIfGs_isEventBit(dSv_event_flag_c::F_0338) ||
                link->checkNoResetFlg3(daPy_py_c::FLG3_TRANING_SHIELD_ATTACK)) &&
            link->checkGuardActionChange() &&
@@ -212,7 +213,7 @@ HookAction before_sword_swing_trigger(ModContext*, void* args, void* retval, voi
 
 void after_set_shield_guard(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (!manual_shielding_enabled() || link == nullptr) {
+    if (!manual_shielding_enabled() || link == nullptr || link->checkWolf()) {
         return;
     }
 
@@ -228,6 +229,11 @@ void after_set_shield_guard(ModContext*, void* args, void*, void*) {
 
 HookAction before_guard_attack_init(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
+    // Guard attack initializes human animations and shield collision data.
+    if (link == nullptr || link->checkWolf()) {
+        *static_cast<int*>(retval) = 0;
+        return HOOK_SKIP_ORIGINAL;
+    }
     if (!manual_shielding_enabled() || s_manualGuardAttackOwner == link) {
         return HOOK_CONTINUE;
     }

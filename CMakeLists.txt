@@ -48,6 +48,7 @@ add_mod(dawnlight_mod
         src/aim_hooks.cpp
         src/bullet_time.cpp
         src/enemy_slow_motion.cpp
+        src/enemy_spawner.cpp
         src/enemy_slow_motion/darknut.cpp
         src/enemy_slow_motion/bokoblin.cpp
         src/enemy_slow_motion/mini_freezard.cpp

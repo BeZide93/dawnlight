@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "enemy_spawner.hpp"
 #include "service_imports.hpp"
 
 #include "mods/service.hpp"
@@ -170,6 +171,17 @@ void copy_wiiu_hud_settings(ModContext*, void*) {
 
 void copy_dawnlight_hud_settings(ModContext*, void*) {
     copy_hud_preset_settings(HudLayout::Dawnlight, "Dawnlight copied to Custom HUD.");
+}
+
+void spawn_selected_enemy(ModContext*, void*) {
+    const ModResult result = spawn_enemy_for_testing(enemy_spawner_profile());
+    if (result == MOD_OK) {
+        push_toast("Enemy Spawned", "Spawned the selected enemy in front of Link.");
+    } else if (result == MOD_UNAVAILABLE) {
+        push_toast("Enemy Spawn Failed", "Link must be active in a gameplay scene.", "warning");
+    } else {
+        push_toast("Enemy Spawn Failed", "The selected enemy could not be created.", "warning");
+    }
 }
 
 ModResult add_custom_transform_controls(
@@ -597,6 +609,16 @@ ModResult build_gameplay_tab(
     {
         return MOD_ERROR;
     }
+
+    if (add_section(ctx, left, "Enemy Spawner") != MOD_OK) return MOD_ERROR;
+    if (add_select(ctx, left, "Enemy", enemy_spawner_profile_config_var(),
+            kEnemySpawnerProfileLabels.data(), kEnemySpawnerProfileLabels.size(),
+            "Select an enemy with a Dawnlight slow-motion profile.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_button(ctx, left, "SPAWN", spawn_selected_enemy) != MOD_OK) return MOD_ERROR;
 
     if (add_section(ctx, left, "Boss Rush Hardmode") != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Arena Hazards", bossrush_hardmode_hazards_config_var(),

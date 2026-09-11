@@ -149,6 +149,8 @@ ConfigVarHandle manual_shielding_config_var();
 ConfigVarHandle r_jump_config_var();
 ConfigVarHandle stamina_config_var();
 ConfigVarHandle sprint_config_var();
+int enemy_spawner_profile();
+ConfigVarHandle enemy_spawner_profile_config_var();
 ConfigVarHandle z_item_slot_config_var();
 ConfigVarHandle dawnlight_touch_ui_config_var();
 ConfigVarHandle check_for_updates_config_var();

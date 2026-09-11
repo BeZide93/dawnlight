@@ -254,6 +254,7 @@ bool s_flurryRushActive = false;
 bool s_flurryLinkSlowed = false;
 bool s_flurryMeleePositioned = false;
 bool s_bulletTimeUsedForJump = false;
+bool s_bowBulletTimePending = false;
 std::uint64_t s_flurrySwordAttackSerial = 0;
 u16 s_flurryLastSwordProc = daAlink_c::PROC_WAIT;
 u8 s_flurryLastCutCount = 0;
@@ -2003,9 +2004,35 @@ bool selected_bow_button_requested(daAlink_c* link) {
 }
 
 bool bow_aim_requested(daAlink_c* link) {
-    return selected_bow_button_requested(link) ||
-           (link != nullptr && daPy_py_c::checkBowItem(link->mEquipItem) &&
-               link->checkReadyItem() && (link->itemTrigger() || link->itemButton()));
+    return link != nullptr && daPy_py_c::checkBowItem(link->mEquipItem) &&
+           link->checkReadyItem() &&
+           (selected_bow_button_requested(link) || link->itemTrigger() || link->itemButton());
+}
+
+void equip_selected_bow_for_bullet_time(daAlink_c* link) {
+    if (link == nullptr || daPy_py_c::checkBowItem(link->mEquipItem)) {
+        return;
+    }
+
+    const u32 buttons = static_cast<u32>(link->mItemTrigger) |
+                        static_cast<u32>(link->mItemButton);
+    constexpr std::array<u8, 3> slots = {
+        SELECT_ITEM_X,
+        SELECT_ITEM_Y,
+        SELECT_ITEM_DOWN,
+    };
+    for (const u8 slot : slots) {
+        if ((buttons & (1u << slot)) == 0) {
+            continue;
+        }
+        const u16 item = dComIfGp_getSelectItem(slot);
+        if (!daPy_py_c::checkBowItem(item)) {
+            continue;
+        }
+        link->mSelectItemId = slot;
+        link->itemEquip(item);
+        return;
+    }
 }
 
 void prepare_bow_aim(daAlink_c* link) {
@@ -2138,6 +2165,7 @@ void mark_manual_jump_started(daAlink_c* link) {
     s_manualJumpOwner = link;
     s_manualJumpStarted = Clock::now();
     s_bulletTimeUsedForJump = false;
+    s_bowBulletTimePending = false;
 }
 
 void clear_manual_jump(daAlink_c* link) {
@@ -2148,6 +2176,7 @@ void clear_manual_jump(daAlink_c* link) {
     stop_bullet_time();
     s_manualJumpOwner = nullptr;
     s_bulletTimeUsedForJump = false;
+    s_bowBulletTimePending = false;
 }
 
 void update_bullet_time_before_jump(daAlink_c* link) {
@@ -2168,8 +2197,20 @@ void update_bullet_time_before_jump(daAlink_c* link) {
         stop_bullet_time();
     }
 
-    if (!s_bulletTimeActive && !s_bulletTimeUsedForJump && bow_aim_requested(link)) {
-        start_bullet_time(link);
+    if (!s_bulletTimeActive && !s_bulletTimeUsedForJump) {
+        if (!s_bowBulletTimePending && selected_bow_button_requested(link) &&
+            !daPy_py_c::checkBowItem(link->mEquipItem))
+        {
+            equip_selected_bow_for_bullet_time(link);
+            s_bowBulletTimePending = true;
+        }
+
+        if ((s_bowBulletTimePending || bow_aim_requested(link)) &&
+            daPy_py_c::checkBowItem(link->mEquipItem) && link->checkReadyItem())
+        {
+            start_bullet_time(link);
+            s_bowBulletTimePending = false;
+        }
     }
 
     if (s_bulletTimeActive) {

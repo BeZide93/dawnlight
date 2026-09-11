@@ -76,7 +76,7 @@ ModResult install() {
 
 const EnemySlowProfile& baba_serpent_slow_profile() {
     static const EnemySlowProfile profile{fpcNm_E_HB_e, eligible, prepare, nullptr,
-        nullptr, install, nullptr, before_collision, after_execute, true};
+        nullptr, install, nullptr, before_collision, nullptr, true};
     return profile;
 }
 }

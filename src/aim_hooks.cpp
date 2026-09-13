@@ -440,7 +440,7 @@ bool fixed_clawshot_aim_active(daAlink_c* link) {
 bool fixed_camera_sight_active(daAlink_c* link) {
     return link != nullptr && use_scope_suppress_camera() &&
         (link->checkHookshotItem(link->mEquipItem) || link->checkIronBallEquip() ||
-            link->checkCopyRodEquip()) &&
+            link->checkCopyRodEquip() || link->mEquipItem == dItemNo_BOOMERANG_e) &&
         !link->checkWolf() && !link->checkAttentionLock() && !link->checkEventRun();
 }
 
@@ -651,9 +651,13 @@ void draw_subject_sight(daAlink_c* link, AimItem item) {
         }
         break;
     case AimItem::Boomerang:
-        link->setBoomerangSight();
-        link->mSight.onDrawFlg();
-        remember_custom_cinema_sight();
+        if (fixed_camera_sight_active(link)) {
+            draw_fixed_camera_sight(link);
+        } else {
+            link->setBoomerangSight();
+            link->mSight.onDrawFlg();
+            remember_custom_cinema_sight();
+        }
         break;
     case AimItem::Hookshot:
         if (fixed_clawshot_aim_active(link)) {

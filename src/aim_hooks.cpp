@@ -437,6 +437,13 @@ bool fixed_clawshot_aim_active(daAlink_c* link) {
         !link->checkAttentionLock() && !link->checkEventRun();
 }
 
+bool fixed_camera_sight_active(daAlink_c* link) {
+    return link != nullptr && use_scope_suppress_camera() &&
+        (link->checkHookshotItem(link->mEquipItem) || link->checkIronBallEquip() ||
+            link->checkCopyRodEquip()) &&
+        !link->checkWolf() && !link->checkAttentionLock() && !link->checkEventRun();
+}
+
 bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
     auto* actor = dComIfGp_getCamera(link->field_0x317c);
     if (actor == nullptr) return false;
@@ -658,12 +665,20 @@ void draw_subject_sight(daAlink_c* link, AimItem item) {
         }
         break;
     case AimItem::IronBall:
-        draw_iron_ball_sight(link);
+        if (fixed_camera_sight_active(link)) {
+            draw_fixed_camera_sight(link);
+        } else {
+            draw_iron_ball_sight(link);
+        }
         break;
     case AimItem::CopyRod:
-        link->setCopyRodSight();
-        link->mSight.onDrawFlg();
-        remember_custom_cinema_sight();
+        if (fixed_camera_sight_active(link)) {
+            draw_fixed_camera_sight(link);
+        } else {
+            link->setCopyRodSight();
+            link->mSight.onDrawFlg();
+            remember_custom_cinema_sight();
+        }
         break;
     }
 }
@@ -1045,8 +1060,7 @@ void after_camera_run(ModContext*, void* args, void*, void*) {
     }
 
     const bool subjectAiming = dComIfGp_checkPlayerStatus0(camera->mPadID, 0x1040);
-    if (dCamera_c::isAimActive() && fixed_clawshot_aim_active(link) &&
-        link->checkHookshotWait()) {
+    if (dCamera_c::isAimActive() && fixed_camera_sight_active(link)) {
         draw_fixed_camera_sight(link);
     } else if (s_customCinemaSightActive && subjectAiming && should_keep_cinema_bow_sight(link)) {
         draw_bow_trajectory_sight(link);

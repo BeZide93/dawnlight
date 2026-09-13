@@ -341,6 +341,14 @@ ModResult build_aiming_tab(
     {
         return MOD_ERROR;
     }
+    if (add_number(ctx, left, "3rd Person Reticle Y", third_person_reticle_offset_y_config_var(),
+            -40, 40, 1, " deg",
+            "Moves the 3rd Person aim reticle vertically. Positive values move it up; negative "
+            "values move it down.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Bullet Time", bullet_time_config_var(),
             "Slows gameplay while aiming the Bow during a manual R jump. Uses 20% stamina per "
             "second and ends when stamina is empty. Press A to cancel it.")

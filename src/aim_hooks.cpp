@@ -438,6 +438,27 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
     forward = actor->mCamera.mCenter - eye;
     if (forward.abs() <= 0.001f) return false;
     forward.normalize();
+    if (use_third_person_camera()) {
+        const float offset = static_cast<float>(third_person_reticle_offset_y());
+        if (std::fabs(offset) > 0.001f) {
+            // Convert the virtual 448px screen offset into the corresponding
+            // angle for the current third-person camera FOV.
+            const float halfFov = s_thirdPersonFovy * static_cast<float>(M_PI) / 360.0f;
+            const float screenOffset = (2.0f * offset / 448.0f) * std::tan(halfFov);
+            const float pitchOffset = std::atan(screenOffset);
+            cXyz right(forward.z, 0.0f, -forward.x);
+            if (right.abs() > 0.001f) {
+                right.normalize();
+                cXyz up(
+                    forward.y * right.z - forward.z * right.y,
+                    forward.z * right.x - forward.x * right.z,
+                    forward.x * right.y - forward.y * right.x);
+                up.normalize();
+                forward = forward * std::cos(pitchOffset) + up * std::sin(pitchOffset);
+                forward.normalize();
+            }
+        }
+    }
     target = eye + forward * 10000.0f;
     dBgS_ArrowLinChk line;
     line.Set(&eye, &target, link);

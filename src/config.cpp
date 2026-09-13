@@ -33,6 +33,7 @@ ConfigVarHandle s_newSaveMode = 0;
 ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
+ConfigVarHandle s_thirdPersonReticleOffsetY = 0;
 ConfigVarHandle s_bulletTime = 0;
 ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
@@ -858,6 +859,7 @@ ModResult register_config(ModError* error) {
         register_int("aim-mode", 2, s_aimMode) != MOD_OK ||
         register_bool("aim-movement", true, s_aimMovement) != MOD_OK ||
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
+        register_int("third-person-reticle-offset-y", 0, s_thirdPersonReticleOffsetY) != MOD_OK ||
         register_bool("bullet-time", true, s_bulletTime) != MOD_OK ||
         register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
@@ -1033,6 +1035,10 @@ bool aim_movement_enabled() {
 
 int cinema_zoom_percent() {
     return get_int(s_cinemaZoomPercent, 100, 25, 400);
+}
+
+int third_person_reticle_offset_y() {
+    return get_int(s_thirdPersonReticleOffsetY, 0, -40, 40);
 }
 
 bool bullet_time_enabled() {
@@ -1262,6 +1268,10 @@ ConfigVarHandle aim_movement_config_var() {
 
 ConfigVarHandle cinema_zoom_config_var() {
     return s_cinemaZoomPercent;
+}
+
+ConfigVarHandle third_person_reticle_offset_y_config_var() {
+    return s_thirdPersonReticleOffsetY;
 }
 
 ConfigVarHandle bullet_time_config_var() {

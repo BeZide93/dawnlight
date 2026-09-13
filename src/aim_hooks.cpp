@@ -478,7 +478,10 @@ void draw_subject_sight(daAlink_c* link, AimItem item) {
     case AimItem::Bow:
         if (link->mEquipItem != dItemNo_HAWK_ARROW_e) {
             link->setBowSight();
-            link->mSight.onDrawFlg();
+            // Vanilla setBowSight already honors Dusklight's reticle setting.
+            if (use_scope_suppress_camera()) {
+                link->mSight.onDrawFlg();
+            }
             remember_custom_cinema_sight();
         }
         break;

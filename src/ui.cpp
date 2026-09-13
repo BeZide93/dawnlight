@@ -175,11 +175,9 @@ void copy_dawnlight_hud_settings(ModContext*, void*) {
 
 void spawn_selected_enemy(ModContext*, void*) {
     const ModResult result = spawn_enemy_for_testing(enemy_spawner_profile());
-    if (result == MOD_OK) {
-        push_toast("Enemy Spawned", "Spawned the selected enemy in front of Link.");
-    } else if (result == MOD_UNAVAILABLE) {
+    if (result == MOD_UNAVAILABLE) {
         push_toast("Enemy Spawn Failed", "Link must be active in a gameplay scene.", "warning");
-    } else {
+    } else if (result != MOD_OK) {
         push_toast("Enemy Spawn Failed", "The selected enemy could not be created.", "warning");
     }
 }

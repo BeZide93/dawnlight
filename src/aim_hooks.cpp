@@ -420,6 +420,40 @@ void draw_camera_center_sight(daAlink_c* link) {
     remember_custom_cinema_sight();
 }
 
+bool trace_ready_bow_sight(daAlink_c* link, float distance, cXyz& position) {
+    if (!daAlink_c::checkBowItem(link->mEquipItem) || link->mItemAcKeep.getActor() != nullptr) {
+        return false;
+    }
+
+    // Use vanilla's pose-independent aimed launch point, not the lowered hand.
+    // The query writes mHeldItemRootPos; keep that gameplay state unchanged.
+    const cXyz savedRoot = link->mHeldItemRootPos;
+    s16 pitch;
+    s16 yaw;
+    const cXyz* launchPosition = link->checkBowCameraArrowPosP(&pitch, &yaw);
+    cXyz origin;
+    if (launchPosition != nullptr) {
+        origin = *launchPosition;
+    }
+    link->mHeldItemRootPos = savedRoot;
+    if (launchPosition == nullptr) {
+        return false;
+    }
+
+    const float horizontal = cM_scos(pitch);
+    cXyz direction(horizontal * cM_ssin(yaw), -cM_ssin(pitch), horizontal * cM_scos(yaw));
+    if (link->checkMagneBootsOn()) {
+        mDoMtx_multVecSR(link->getMagneBootsMtx(), &direction, &direction);
+    }
+    position = origin + direction * distance;
+    link->mArrowLinChk.Set(&origin, &position, link);
+    if (dComIfG_Bgsp().LineCross(&link->mArrowLinChk)) {
+        position = link->mArrowLinChk.GetCross();
+        link->onResetFlg0(daAlink_c::RFLG0_ITEM_SIGHT_BG_HIT);
+    }
+    return true;
+}
+
 void draw_bow_trajectory_sight(daAlink_c* link) {
     if (link == nullptr) {
         return;
@@ -430,7 +464,9 @@ void draw_bow_trajectory_sight(daAlink_c* link) {
     link->getArrowFlyData(&distance, &speed, TRUE);
 
     cXyz position;
-    link->checkSightLine(distance, &position);
+    if (!trace_ready_bow_sight(link, distance, position)) {
+        link->checkSightLine(distance, &position);
+    }
     link->mSight.setPos(&position);
     link->mSight.onDrawFlg();
     link->mSight.offLockFlg();

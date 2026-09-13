@@ -5,6 +5,7 @@
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"
+#include "d/actor/d_a_arrow.h"
 #include "d/d_camera.h"
 #include "d/d_com_inf_game.h"
 #include "f_op/f_op_camera_mng.h"
@@ -43,6 +44,8 @@ DEFINE_HOOK(&daAlink_c::procHookshotSubject, HookshotSubjectHook);
 DEFINE_HOOK(&daAlink_c::procIronBallSubject, IronBallSubjectHook);
 DEFINE_HOOK(&daAlink_c::procCopyRodSubject, CopyRodSubjectHook);
 DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
+DEFINE_HOOK(&daAlink_c::modelCalc, BowModelCalcHook);
+DEFINE_HOOK(&daArrow_c::arrowShooting, BowArrowShootingHook);
 DEFINE_HOOK(&dCamera_c::Run, CameraRunHook);
 DEFINE_HOOK(&dCamera_c::subjectCamera, SubjectCameraHook);
 DEFINE_HOOK(&dCamera_c::nextMode, CameraNextModeHook);
@@ -420,42 +423,123 @@ void draw_camera_center_sight(daAlink_c* link) {
     remember_custom_cinema_sight();
 }
 
-bool trace_ready_bow_sight(daAlink_c* link, float distance, cXyz& position) {
-    if (!daAlink_c::checkBowItem(link->mEquipItem) || link->mItemAcKeep.getActor() != nullptr) {
-        return false;
-    }
+bool fixed_bow_aim_active(daAlink_c* link) {
+    return link != nullptr && use_scope_suppress_camera() &&
+        daAlink_c::checkBowItem(link->mEquipItem) && !is_hawkeye_bow(link) &&
+        !link->checkWolf() && !link->checkAttentionLock() && !link->checkEventRun() &&
+        (dComIfGp_checkPlayerStatus0(0, 0x1000) || bullet_time_active_for(link));
+}
 
-    // Use vanilla's pose-independent aimed launch point, not the lowered hand.
-    // The query writes mHeldItemRootPos; keep that gameplay state unchanged.
-    const cXyz savedRoot = link->mHeldItemRootPos;
-    s16 pitch;
-    s16 yaw;
-    const cXyz* launchPosition = link->checkBowCameraArrowPosP(&pitch, &yaw);
-    cXyz origin;
-    if (launchPosition != nullptr) {
-        origin = *launchPosition;
-    }
-    link->mHeldItemRootPos = savedRoot;
-    if (launchPosition == nullptr) {
-        return false;
-    }
-
-    const float horizontal = cM_scos(pitch);
-    cXyz direction(horizontal * cM_ssin(yaw), -cM_ssin(pitch), horizontal * cM_scos(yaw));
-    if (link->checkMagneBootsOn()) {
-        mDoMtx_multVecSR(link->getMagneBootsMtx(), &direction, &direction);
-    }
-    position = origin + direction * distance;
-    link->mArrowLinChk.Set(&origin, &position, link);
-    if (dComIfG_Bgsp().LineCross(&link->mArrowLinChk)) {
-        position = link->mArrowLinChk.GetCross();
-        link->onResetFlg0(daAlink_c::RFLG0_ITEM_SIGHT_BG_HIT);
+bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
+    auto* actor = dComIfGp_getCamera(link->field_0x317c);
+    if (actor == nullptr) return false;
+    // Run's post-hook sees the new camera before camera_class::view is updated.
+    cXyz eye = actor->mCamera.mEye;
+    forward = actor->mCamera.mCenter - eye;
+    if (forward.abs() <= 0.001f) return false;
+    forward.normalize();
+    target = eye + forward * 10000.0f;
+    dBgS_ArrowLinChk line;
+    line.Set(&eye, &target, link);
+    if (dComIfG_Bgsp().LineCross(&line)) {
+        target = line.GetCross();
     }
     return true;
 }
 
+bool bow_launch_position(daAlink_c* link, cXyz& origin) {
+    // Query the aimed launch point without changing gameplay's item position.
+    const cXyz savedRoot = link->mHeldItemRootPos;
+    s16 pitch;
+    s16 yaw;
+    const cXyz* launchPosition = link->checkBowCameraArrowPosP(&pitch, &yaw);
+    if (launchPosition != nullptr) {
+        origin = *launchPosition;
+    }
+    link->mHeldItemRootPos = savedRoot;
+    return launchPosition != nullptr;
+}
+
+bool bow_target_direction(const cXyz& origin, const cXyz& target,
+    const cXyz& cameraForward, cXyz& direction) {
+    direction = target - origin;
+    // Do not shoot backwards when the camera is blocked behind Link.
+    if (direction.abs() <= 0.001f || direction.inprod(cameraForward) <= 0.0f) return false;
+    direction.normalize();
+    return true;
+}
+
+struct BowPoseCorrection {
+    daAlink_c* link = nullptr;
+    csXyz bodyAngle;
+    s16 torsoYaw = 0;
+};
+BowPoseCorrection s_bowPose;
+
+HookAction before_bow_model_calc(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    auto* model = mods::arg<J3DModel*>(args, 1);
+    if (!fixed_bow_aim_active(link) || model != link->mpLinkModel || s_bowPose.link != nullptr) {
+        return HOOK_CONTINUE;
+    }
+    cXyz target, forward, origin, direction;
+    if (!camera_bow_target(link, target, forward) || !bow_launch_position(link, origin) ||
+        !bow_target_direction(origin, target, forward, direction)) return HOOK_CONTINUE;
+    if (link->checkMagneBootsOn()) {
+        mDoMtx_multVecSR(link->getMagneBootsInvMtx(), &direction, &direction);
+    }
+    s_bowPose = {link, link->mBodyAngle, link->field_0x30c8};
+    link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
+    link->mBodyAngle.y = cM_atan2s(direction.x, direction.z) - link->shape_angle.y;
+    link->field_0x30c8 = link->mBodyAngle.y >> 1;
+    return HOOK_CONTINUE;
+}
+
+void after_bow_model_calc(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (s_bowPose.link != link || link == nullptr ||
+        mods::arg<J3DModel*>(args, 1) != link->mpLinkModel) return;
+    // Only the model receives parallax correction; input and camera angles do not.
+    link->mBodyAngle = s_bowPose.bodyAngle;
+    link->field_0x30c8 = s_bowPose.torsoYaw;
+    s_bowPose = {};
+}
+
+void after_bow_arrow_shooting(ModContext*, void* args, void*, void*) {
+    auto* arrow = mods::arg<daArrow_c*>(args, 0);
+    auto* link = daAlink_getAlinkActorClass();
+    if (arrow != nullptr && fixed_bow_aim_active(link) &&
+        (arrow->mArrowType == daArrow_c::ARROW_TYPE_NORMAL ||
+            arrow->mArrowType == daArrow_c::ARROW_TYPE_BOMB)) {
+        cXyz target, forward, direction;
+        if (camera_bow_target(link, target, forward) &&
+            bow_target_direction(arrow->current.pos, target, forward, direction)) {
+            const f32 speedMagnitude = arrow->speed.abs();
+            if (speedMagnitude <= 0.001f) return;
+            // Run after vanilla has selected the final charge launch position,
+            // but before setArrowAt registers the initial hit capsule.
+            arrow->current.angle.x = cM_atan2s(direction.y, direction.absXZ());
+            arrow->current.angle.y = cM_atan2s(direction.x, direction.z);
+            arrow->shape_angle.x = -arrow->current.angle.x;
+            arrow->shape_angle.y = arrow->current.angle.y;
+            arrow->speed = direction * speedMagnitude;
+        }
+    }
+}
+
 void draw_bow_trajectory_sight(daAlink_c* link) {
     if (link == nullptr) {
+        return;
+    }
+
+    if (fixed_bow_aim_active(link)) {
+        cXyz target, forward;
+        if (camera_bow_target(link, target, forward)) {
+            link->mSight.setPos(&target);
+            link->mSight.onDrawFlg();
+            link->mSight.offLockFlg();
+            remember_custom_cinema_sight();
+        }
         return;
     }
 
@@ -464,9 +548,7 @@ void draw_bow_trajectory_sight(daAlink_c* link) {
     link->getArrowFlyData(&distance, &speed, TRUE);
 
     cXyz position;
-    if (!trace_ready_bow_sight(link, distance, position)) {
-        link->checkSightLine(distance, &position);
-    }
+    link->checkSightLine(distance, &position);
     link->mSight.setPos(&position);
     link->mSight.onDrawFlg();
     link->mSight.offLockFlg();
@@ -1005,6 +1087,15 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
 #endif
     if (result == MOD_OK) {
         result = mods::hook_add_post<PlayerExecuteHook>(svc_hook, after_player_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<BowModelCalcHook>(svc_hook, before_bow_model_calc);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<BowModelCalcHook>(svc_hook, after_bow_model_calc);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<BowArrowShootingHook>(svc_hook, after_bow_arrow_shooting);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<SubjectCameraHook>(svc_hook, after_subject_camera);

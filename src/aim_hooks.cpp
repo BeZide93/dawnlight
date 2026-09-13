@@ -46,6 +46,7 @@ DEFINE_HOOK(&daAlink_c::procCopyRodSubject, CopyRodSubjectHook);
 DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
 DEFINE_HOOK(&daAlink_c::modelCalc, BowModelCalcHook);
 DEFINE_HOOK(&daArrow_c::arrowShooting, BowArrowShootingHook);
+DEFINE_HOOK(&daAlink_c::setHookshotPos, HookshotPosHook);
 DEFINE_HOOK(&dCamera_c::Run, CameraRunHook);
 DEFINE_HOOK(&dCamera_c::subjectCamera, SubjectCameraHook);
 DEFINE_HOOK(&dCamera_c::nextMode, CameraNextModeHook);
@@ -430,6 +431,12 @@ bool fixed_bow_aim_active(daAlink_c* link) {
         (dComIfGp_checkPlayerStatus0(0, 0x1000) || bullet_time_active_for(link));
 }
 
+bool fixed_clawshot_aim_active(daAlink_c* link) {
+    return link != nullptr && use_scope_suppress_camera() &&
+        link->checkHookshotItem(link->mEquipItem) && !link->checkWolf() &&
+        !link->checkAttentionLock() && !link->checkEventRun();
+}
+
 bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
     auto* actor = dComIfGp_getCamera(link->field_0x317c);
     if (actor == nullptr) return false;
@@ -466,6 +473,22 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
         target = line.GetCross();
     }
     return true;
+}
+
+void draw_fixed_camera_sight(daAlink_c* link) {
+    if (link == nullptr) {
+        return;
+    }
+
+    cXyz target, forward;
+    if (!camera_bow_target(link, target, forward)) {
+        return;
+    }
+
+    link->mSight.setPos(&target);
+    link->mSight.onDrawFlg();
+    link->mSight.offLockFlg();
+    remember_custom_cinema_sight();
 }
 
 bool bow_launch_position(daAlink_c* link, cXyz& origin) {
@@ -524,6 +547,38 @@ void after_bow_model_calc(ModContext*, void* args, void*, void*) {
     link->mBodyAngle = s_bowPose.bodyAngle;
     link->field_0x30c8 = s_bowPose.torsoYaw;
     s_bowPose = {};
+}
+
+struct ClawshotAimCorrection {
+    daAlink_c* link = nullptr;
+    csXyz bodyAngle;
+};
+ClawshotAimCorrection s_clawshotAim;
+
+HookAction before_hookshot_pos(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!fixed_clawshot_aim_active(link) || link->mItemMode != 2 ||
+        s_clawshotAim.link != nullptr) {
+        return HOOK_CONTINUE;
+    }
+
+    cXyz target, forward, direction;
+    if (!camera_bow_target(link, target, forward) ||
+        !bow_target_direction(link->mHeldItemRootPos, target, forward, direction)) {
+        return HOOK_CONTINUE;
+    }
+
+    s_clawshotAim = {link, link->mBodyAngle};
+    link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
+    link->mBodyAngle.y = cM_atan2s(direction.x, direction.z) - link->shape_angle.y;
+    return HOOK_CONTINUE;
+}
+
+void after_hookshot_pos(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (s_clawshotAim.link != link || link == nullptr) return;
+    link->mBodyAngle = s_clawshotAim.bodyAngle;
+    s_clawshotAim = {};
 }
 
 void after_bow_arrow_shooting(ModContext*, void* args, void*, void*) {
@@ -594,9 +649,13 @@ void draw_subject_sight(daAlink_c* link, AimItem item) {
         remember_custom_cinema_sight();
         break;
     case AimItem::Hookshot:
-        link->setHookshotSight();
-        link->mSight.onDrawFlg();
-        remember_custom_cinema_sight();
+        if (fixed_clawshot_aim_active(link)) {
+            draw_fixed_camera_sight(link);
+        } else {
+            link->setHookshotSight();
+            link->mSight.onDrawFlg();
+            remember_custom_cinema_sight();
+        }
         break;
     case AimItem::IronBall:
         draw_iron_ball_sight(link);
@@ -985,10 +1044,11 @@ void after_camera_run(ModContext*, void* args, void*, void*) {
         camera->mFovy = std::clamp(camera->mFovy / zoom, 10.0f, 120.0f);
     }
 
-    if (s_customCinemaSightActive &&
-        dComIfGp_checkPlayerStatus0(camera->mPadID, 0x1040) &&
-        should_keep_cinema_bow_sight(link))
-    {
+    const bool subjectAiming = dComIfGp_checkPlayerStatus0(camera->mPadID, 0x1040);
+    if (dCamera_c::isAimActive() && fixed_clawshot_aim_active(link) &&
+        link->checkHookshotWait()) {
+        draw_fixed_camera_sight(link);
+    } else if (s_customCinemaSightActive && subjectAiming && should_keep_cinema_bow_sight(link)) {
         draw_bow_trajectory_sight(link);
     }
 }
@@ -1114,6 +1174,12 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<BowModelCalcHook>(svc_hook, after_bow_model_calc);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<HookshotPosHook>(svc_hook, before_hookshot_pos);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<HookshotPosHook>(svc_hook, after_hookshot_pos);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<BowArrowShootingHook>(svc_hook, after_bow_arrow_shooting);

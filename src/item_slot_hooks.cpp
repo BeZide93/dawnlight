@@ -97,8 +97,10 @@ DEFINE_HOOK(&dMenu_Ring_c::isMixItemOn, RingIsMixItemOnHook);
 DEFINE_HOOK(&dMenu_Ring_c::isMixItemOff, RingIsMixItemOffHook);
 DEFINE_HOOK(&dMeter2_c::_delete, MeterDeleteHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, MeterDrawHook);
-DEFINE_HOOK(&dMeter2Draw_c::drawKantera, MeterDrawKanteraHook);
-DEFINE_HOOK(&dMeter2Draw_c::drawOxygen, MeterDrawOxygenHook);
+DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawKantera",
+    void(dMeter2Draw_c*, s32, f32, f32, f32), MeterDrawKanteraHook);
+DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawOxygen",
+    void(dMeter2Draw_c*, s32, f32, f32, f32), MeterDrawOxygenHook);
 DEFINE_HOOK(&dMeter2Draw_c::drawKanteraScreen, MeterGaugeScreenHook);
 DEFINE_HOOK(&J2DScreen::draw, ScreenDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::setButtonIconMidonaAlpha, MeterMidnaAlphaHook);

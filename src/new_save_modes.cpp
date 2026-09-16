@@ -108,6 +108,9 @@ constexpr u32 kBossRushHubMusicId = 0x0200007F;
 constexpr char kBossRushHubMusicDiscPath[] = "/Audiores/Stream/temp.ast";
 constexpr char kBossRushHubMusicFileName[] = "temp.ast";
 
+using FrameCtrlSetFrameFn = void (*)(J3DFrameCtrl*, f32);
+FrameCtrlSetFrameFn sFrameCtrlSetFrame = nullptr;
+
 constexpr std::array kAllLanguages{
     MESSAGE_LANGUAGE_ENGLISH,
     MESSAGE_LANGUAGE_GERMAN,
@@ -841,6 +844,12 @@ int hub_portal_index_for_warp(daObjBossWarp_c* warp) {
     return -1;
 }
 
+void set_animation_frame(mDoExt_baseAnm* animation, f32 frame) {
+    if (animation != nullptr && sFrameCtrlSetFrame != nullptr) {
+        sFrameCtrlSetFrame(animation->getFrameCtrl(), frame);
+    }
+}
+
 bool is_red_hub_portal_warp(daObjBossWarp_c* warp) {
     const int portal = hub_portal_index_for_warp(warp);
     return portal >= 0 && portal < static_cast<int>(kBossRushEntryCount) &&
@@ -853,9 +862,9 @@ void set_hub_portal_blue_state(daObjBossWarp_c* warp, bool needsAppear) {
         return;
     }
 
-    warp->mpBrkAnm->setFrame(warp->mpBrkAnm->getEndFrame());
+    set_animation_frame(warp->mpBrkAnm, warp->mpBrkAnm->getEndFrame());
     warp->mpBrkAnm->setPlaySpeed(0.0f);
-    warp->mpBtkAnm[1]->setFrame(warp->mpBtkAnm[1]->getEndFrame());
+    set_animation_frame(warp->mpBtkAnm[1], warp->mpBtkAnm[1]->getEndFrame());
     warp->mpBtkAnm[1]->setPlaySpeed(0.0f);
 }
 
@@ -866,9 +875,9 @@ void set_hub_portal_red_state(daObjBossWarp_c* warp) {
     const f32 endFrame = warp->mpBrkAnm->getEndFrame();
     const f32 redFrame =
         startFrame + (endFrame - startFrame) * kBossRushRedPortalBrkFrameFraction;
-    warp->mpBrkAnm->setFrame(std::clamp(redFrame, startFrame, endFrame));
+    set_animation_frame(warp->mpBrkAnm, std::clamp(redFrame, startFrame, endFrame));
     warp->mpBrkAnm->setPlaySpeed(0.0f);
-    warp->mpBtkAnm[1]->setFrame(warp->mpBtkAnm[1]->getEndFrame());
+    set_animation_frame(warp->mpBtkAnm[1], warp->mpBtkAnm[1]->getEndFrame());
     warp->mpBtkAnm[1]->setPlaySpeed(0.0f);
 }
 
@@ -3903,8 +3912,17 @@ ModResult on_bossrush_tick(void*, ModError*) {
 ModResult register_new_save_modes(ModError* error) {
     register_bossrush_hub_music_overlay();
 
-    ModResult result =
-        mods::hook_add_post<FileSelectNameInput2Hook>(svc_hook, on_file_select_name_input2_post);
+    void* frameCtrlSetFrame = nullptr;
+    ModResult result = svc_hook->resolve(
+        mod_ctx, "J3DFrameCtrl::setFrame", &frameCtrlSetFrame, nullptr);
+    if (result != MOD_OK || frameCtrlSetFrame == nullptr) {
+        return mods::set_error(error, result,
+            "failed to resolve Dusklight frame interpolation setter");
+    }
+    sFrameCtrlSetFrame = reinterpret_cast<FrameCtrlSetFrameFn>(frameCtrlSetFrame);
+
+    result = mods::hook_add_post<FileSelectNameInput2Hook>(
+        svc_hook, on_file_select_name_input2_post);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight new-save apply hook");
     }

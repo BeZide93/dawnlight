@@ -20,9 +20,6 @@ void finish_baba_stem(EnemySlowStep& step, Actor& actor, cXyz (&points)[12],
     auto* line = actor.stalkLine.getPos(0);
     for (int i = 0; i < 12; ++i) {
         line[i] = points[i];
-#if TARGET_PC
-        actor.mStalkLineInterpCurr[i] = points[i];
-#endif
         if (i > 0 && i < 11)
             set_enemy_stem_matrix(actor.thornModel[i], points[i], angles[i], i << 13, actor.thorn_size[i]);
     }

@@ -2516,9 +2516,6 @@ void fix_z_select_item_animation(dMenu_Ring_c* ring) {
         ring->field_0x528[kZItemSlot] = ring->mItemSlotPosY[cursor];
     }
     ring->field_0x538[kZItemSlot] = g_ringHIO.mSelectItemScale;
-#if TARGET_PC
-    ring->mSelectItemSlideElapsed[kZItemSlot] = 0.0f;
-#endif
 }
 
 bool z_mix_item_on(dMenu_Ring_c* ring) {

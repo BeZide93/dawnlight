@@ -175,6 +175,31 @@ bool use_cinema_camera() {
     return aim_mode() == AimMode::Cinema;
 }
 
+bool clawshot_hanging(const daAlink_c* link) {
+    if (link == nullptr) {
+        return false;
+    }
+
+    switch (link->mProcID) {
+    case daAlink_c::PROC_HOOKSHOT_ROOF_WAIT:
+    case daAlink_c::PROC_HOOKSHOT_ROOF_SHOOT:
+    case daAlink_c::PROC_HOOKSHOT_ROOF_BOOTS:
+    case daAlink_c::PROC_HOOKSHOT_WALL_WAIT:
+    case daAlink_c::PROC_HOOKSHOT_WALL_SHOOT:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool use_third_person_camera_for(daAlink_c* link) {
+    return use_third_person_camera() && !clawshot_hanging(link);
+}
+
+bool use_cinema_camera_for(daAlink_c* link) {
+    return use_cinema_camera() || (use_third_person_camera() && clawshot_hanging(link));
+}
+
 void remember_custom_cinema_sight() {
     if (use_cinema_camera() || use_third_person_camera()) {
         s_customCinemaSightActive = true;
@@ -452,7 +477,7 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
     forward = actor->mCamera.mCenter - eye;
     if (forward.abs() <= 0.001f) return false;
     forward.normalize();
-    if (use_third_person_camera()) {
+    if (use_third_person_camera_for(link)) {
         const float offset = static_cast<float>(third_person_reticle_offset_y());
         if (std::fabs(offset) > 0.001f) {
             // Convert the virtual 448px screen offset into the corresponding
@@ -482,6 +507,9 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
     return true;
 }
 
+bool bow_target_direction(const cXyz& origin, const cXyz& target,
+    const cXyz& cameraForward, cXyz& direction);
+
 void draw_fixed_camera_sight(daAlink_c* link) {
     if (link == nullptr) {
         return;
@@ -492,9 +520,25 @@ void draw_fixed_camera_sight(daAlink_c* link) {
         return;
     }
 
+    if (link->checkHookshotItem(link->mEquipItem)) {
+        cXyz direction;
+        if (bow_target_direction(link->mHeldItemRootPos, target, forward, direction)) {
+            const csXyz bodyAngle = link->mBodyAngle;
+            link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
+            link->mBodyAngle.y = cM_atan2s(direction.x, direction.z) - link->shape_angle.y;
+            // Preserve vanilla's hookable-surface test and lock flag, but run
+            // it along the same parallax-corrected ray as the custom camera.
+            link->setHookshotSight();
+            link->mBodyAngle = bodyAngle;
+        } else {
+            link->mSight.offLockFlg();
+        }
+    } else {
+        link->mSight.offLockFlg();
+    }
+
     link->mSight.setPos(&target);
     link->mSight.onDrawFlg();
-    link->mSight.offLockFlg();
     remember_custom_cinema_sight();
 }
 
@@ -693,7 +737,7 @@ bool should_keep_cinema_bow_sight(daAlink_c* link) {
 
 void keep_cinema_bow_sight(daAlink_c* link) {
     if (should_keep_cinema_bow_sight(link)) {
-        if (aim_movement_enabled() && use_cinema_camera()) {
+        if (aim_movement_enabled() && use_cinema_camera_for(link)) {
             aim_with_c_stick(link);
         }
         draw_camera_center_sight(link);
@@ -719,7 +763,7 @@ void normalize_forward_aim_speed(daAlink_c* link) {
 }
 
 void prepare_third_person_aim(daAlink_c* link) {
-    if (link == nullptr || !use_third_person_camera() || is_hawkeye_bow(link) ||
+    if (link == nullptr || !use_third_person_camera_for(link) || is_hawkeye_bow(link) ||
         link->checkMagneBootsOn() || s_thirdPersonAimActive)
     {
         return;
@@ -751,7 +795,7 @@ bool update_subject_aim(daAlink_c* link, AimItem item) {
         return false;
     }
 
-    if (use_cinema_camera()) {
+    if (use_cinema_camera_for(link)) {
         face_camera_view_yaw(link);
     }
 
@@ -1006,7 +1050,7 @@ bool player_in_supported_aim_state(dCamera_c* camera) {
 void after_subject_camera(ModContext*, void* args, void*, void*) {
     auto* camera = mods::arg<dCamera_c*>(args, 0);
     auto* link = daAlink_getAlinkActorClass();
-    if (!use_third_person_camera() || !s_thirdPersonAimActive || camera == nullptr ||
+    if (!use_third_person_camera_for(link) || !s_thirdPersonAimActive || camera == nullptr ||
         link == nullptr || !player_in_supported_aim_state(camera) ||
         is_hawkeye_bow(link) || link->checkMagneBootsOn() || camera->mCurMode != 8)
     {
@@ -1058,7 +1102,7 @@ void after_camera_run(ModContext*, void* args, void*, void*) {
     }
 
     const int zoomPercent = cinema_zoom_percent();
-    if (use_cinema_camera() && zoomPercent != 100) {
+    if (use_cinema_camera_for(link) && zoomPercent != 100) {
         const float zoom = std::clamp(static_cast<float>(zoomPercent) / 100.0f, 0.25f, 4.0f);
         camera->mFovy = std::clamp(camera->mFovy / zoom, 10.0f, 120.0f);
     }
@@ -1109,7 +1153,7 @@ void after_camera_next_type(ModContext*, void* args, void* retval, void*) {
 
 void after_player_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (link == nullptr || !use_third_person_camera() || is_hawkeye_bow(link) ||
+    if (link == nullptr || !use_third_person_camera_for(link) || is_hawkeye_bow(link) ||
         (!bullet_time_active_for(link) && !player_in_supported_aim_status(0)))
     {
         s_thirdPersonAimActive = false;
@@ -1218,7 +1262,7 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
 
 void prepare_bullet_time_bow_aim(daAlink_c* link) {
     prepare_third_person_aim(link);
-    if (link == nullptr || !use_cinema_camera() || is_hawkeye_bow(link)) {
+    if (link == nullptr || !use_cinema_camera_for(link) || is_hawkeye_bow(link)) {
         return;
     }
 
@@ -1247,7 +1291,7 @@ bool update_bullet_time_bow_aim(daAlink_c* link) {
         return true;
     }
 
-    if (use_cinema_camera()) {
+    if (use_cinema_camera_for(link)) {
         face_camera_view_yaw(link);
     } else {
         aim_with_c_stick(link);

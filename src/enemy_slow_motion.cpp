@@ -1,4 +1,5 @@
 #include "enemy_slow_motion.hpp"
+#include "enemy_hard_mode.hpp"
 #include "enemy_slow_motion/profile.hpp"
 #include "enemy_slow_motion/scope.hpp"
 #include "enemy_slow_motion/timing.hpp"
@@ -144,6 +145,13 @@ HookAction before_chase_linear(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
+float hard_mode_turn_scale(const EnemySlowStep& step, const s16* value) {
+    if (value != &step.actor->current.angle.y && value != &step.actor->shape_angle.y) {
+        return 1.0f;
+    }
+    return enemy_hard_mode_turn_scale(step);
+}
+
 HookAction before_chase_angle(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
     if (step == nullptr || step->actor == nullptr) return HOOK_CONTINUE;
@@ -151,10 +159,17 @@ HookAction before_chase_angle(ModContext*, void* args, void*, void*) {
         step->profile->beforeAngleChase(*step, mods::arg<s16*>(args, 0));
     for (auto* owned : step->chaseAngles) {
         if (owned == mods::arg<s16*>(args, 0)) {
+            const float hardScale = hard_mode_turn_scale(*step, owned);
             auto& divisor = mods::arg_ref<s16>(args, 2);
             auto& maximum = mods::arg_ref<s16>(args, 3);
-            if (divisor > 0) divisor = static_cast<s16>(std::min(32767.0f, std::ceil(divisor / step->scale)));
-            if (maximum > 0) maximum = static_cast<s16>(std::max(1L, std::lround(maximum * step->scale)));
+            if (divisor > 0) {
+                divisor = static_cast<s16>(std::clamp(
+                    std::lround(std::ceil(divisor / step->scale) / hardScale), 1L, 32767L));
+            }
+            if (maximum > 0) {
+                maximum = static_cast<s16>(std::clamp(
+                    std::lround(maximum * step->scale * hardScale), 1L, 32767L));
+            }
             break;
         }
     }
@@ -171,7 +186,12 @@ HookAction before_chase_angle_min(ModContext* ctx, void* args, void* ret, void* 
     auto* step = current_enemy_slow_step();
     if (owns_chase_angle(step, mods::arg<s16*>(args, 0))) {
         auto& minimum = mods::arg_ref<s16>(args, 4);
-        if (minimum > 0) minimum = static_cast<s16>(std::max(1L, std::lround(minimum * step->scale)));
+        if (minimum > 0) {
+            minimum = static_cast<s16>(std::clamp(
+                std::lround(minimum * step->scale *
+                    hard_mode_turn_scale(*step, mods::arg<s16*>(args, 0))),
+                1L, 32767L));
+        }
         return before_chase_angle(ctx, args, ret, data);
     }
     return HOOK_CONTINUE;
@@ -181,7 +201,12 @@ HookAction before_chase_short(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
     if (owns_chase_angle(step, mods::arg<s16*>(args, 0))) {
         auto& maximum = mods::arg_ref<s16>(args, 2);
-        if (maximum > 0) maximum = static_cast<s16>(std::max(1L, std::lround(maximum * step->scale)));
+        if (maximum > 0) {
+            maximum = static_cast<s16>(std::clamp(
+                std::lround(maximum * step->scale *
+                    hard_mode_turn_scale(*step, mods::arg<s16*>(args, 0))),
+                1L, 32767L));
+        }
     }
     return HOOK_CONTINUE;
 }
@@ -343,10 +368,13 @@ HookAction before_enemy_slow_execute(ModContext*, void* args, void*, void*) {
     auto* actor = mods::arg<fopAc_ac_c*>(args, 0);
     const auto* profile = find_profile(actor);
     EnemySlowStep step{};
-    if (enemy_uses_continuous_slow(actor) && s_depth < s_steps.size()) {
+    const bool usesSlowMotion = enemy_uses_continuous_slow(actor);
+    const bool usesHardMode = profile != nullptr && enemy_hard_mode_applies(profile->name) &&
+        profile->eligible(actor);
+    if ((usesSlowMotion || usesHardMode) && s_depth < s_steps.size()) {
         step.actor = actor;
         step.profile = profile;
-        step.scale = enemy_slow_motion_scale(actor);
+        step.scale = usesSlowMotion ? enemy_slow_motion_scale(actor) : 1.0f;
         step.facing = actor->shape_angle.y;
         step.speed = actor->speedF;
         step.originalPosition = actor->current.pos;
@@ -355,10 +383,13 @@ HookAction before_enemy_slow_execute(ModContext*, void* args, void*, void*) {
         step.originalAngles = actor->current.angle;
         step.originalShapeAngles = actor->shape_angle;
         auto& clock = clock_for(actor);
-        const bool timerTick = advance_enemy_timer(clock.fraction, step.scale);
+        const bool timerTick = usesSlowMotion
+            ? advance_enemy_timer(clock.fraction, step.scale)
+            : true;
         step.timerTick = timerTick;
         step.timerFraction = clock.fraction;
         profile->prepare(step, timerTick);
+        prepare_enemy_hard_mode(step);
         if (auto* animation = step.animations[0]; animation != nullptr) {
             const int frame = static_cast<int>(animation->getFrame());
             step.freshAnimationFrame = clock.animation != animation->getAnm() || clock.eventFrame != frame;
@@ -419,6 +450,7 @@ void reset_enemy_slow_motion() {
     s_animation = {};
     s_eventController = nullptr;
     s_updatedController = nullptr;
+    reset_enemy_hard_mode();
     for (const auto* profile : s_profiles) {
         if (profile->reset != nullptr) profile->reset();
     }

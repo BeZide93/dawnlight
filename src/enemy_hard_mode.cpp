@@ -3,6 +3,8 @@
 #include "config.hpp"
 #include "enemy_slow_motion/profile.hpp"
 
+#include "m_Do/m_Do_ext.h"
+
 #include "d/actor/d_a_b_gg.h"
 #include "d/actor/d_a_b_tn.h"
 #include "d/actor/d_a_e_dn.h"

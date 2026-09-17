@@ -313,12 +313,10 @@ and duplicate-event protections.
 - Does not receive a base `speedF` acceleration multiplier.
 - Alternates direct aim with a led shot toward
   `Link eye position - 20 Y + Link velocity * 10`.
-- Every fourth shot becomes a three-ball spread: the center projectile plus
+- Every shot becomes a three-ball spread: the center projectile plus
   two projectiles at `-0x900` and `+0x900` yaw.
 - The extra projectiles remain suspended until the native center projectile is
   released, then all three launch together from the Toadpoli's muzzle.
-- A spread is allowed only when at most three Toadpoli fireballs are active
-  before the shot.
 - Recursion and slow-motion duplicate guards prevent the extra projectiles from
   recursively producing more spreads or repeating on the same event frame.
 
@@ -385,7 +383,7 @@ for:
 
 - **Chilfos:** led spear aim and a limit of three active thrown spears.
 - **Stalhound:** one bounded follow-up pounce for selected actors.
-- **Fire Toadpoli:** alternating direct/led aim and a bounded three-ball spread.
+- **Fire Toadpoli:** alternating direct/led aim and a three-ball spread on every shot.
 
 The remaining profiles do not receive newly forced combos, counters, flanking
 formations, low-health phases, or replacement attack state machines.

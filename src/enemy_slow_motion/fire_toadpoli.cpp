@@ -21,9 +21,7 @@ struct ShotClock {
 
 std::array<ShotClock, 16> s_shotClocks{};
 ShotClock* s_creatingShot = nullptr;
-bool s_createSpread = false;
 bool s_spawningSpread = false;
-int s_ballCount = 0;
 
 ShotClock& shot_clock(fopAc_ac_c* actor) {
     const auto id = fopAcM_GetID(actor);
@@ -33,11 +31,6 @@ ShotClock& shot_clock(fopAc_ac_c* actor) {
         clock.id = id;
     }
     return clock;
-}
-
-void* count_balls(void* process, void*) {
-    if (fopAcM_IsActor(process) && fopAcM_GetName(process) == fpcNm_E_TK_BALL_e) ++s_ballCount;
-    return nullptr;
 }
 
 bool eligible(fopAc_ac_c* base) {
@@ -87,10 +80,6 @@ HookAction before_create_child(ModContext*, void* args, void* retval, void*) {
         clock.leadShot = (clock.shots & 1U) == 0;
         clock.primaryLaunched = false;
         s_creatingShot = &clock;
-
-        s_ballCount = 0;
-        fpcM_Search(count_balls, nullptr);
-        s_createSpread = clock.shots % 4 == 0 && s_ballCount <= 3;
     }
     return HOOK_CONTINUE;
 }
@@ -99,16 +88,13 @@ void after_create_child(ModContext*, void* args, void* retval, void*) {
     if (s_spawningSpread) return;
 
     auto* shot = s_creatingShot;
-    const bool createSpread = s_createSpread;
     s_creatingShot = nullptr;
-    s_createSpread = false;
     if (shot == nullptr || mods::arg<s16>(args, 0) != fpcNm_E_TK_BALL_e ||
         *static_cast<fpc_ProcID*>(retval) == fpcM_ERROR_PROCESS_ID_e) {
         return;
     }
 
     shot->primaryBall = *static_cast<fpc_ProcID*>(retval);
-    if (!createSpread) return;
 
     s_spawningSpread = true;
     for (std::size_t i = 0; i < shot->spreadBalls.size(); ++i) {
@@ -211,7 +197,6 @@ ModResult install() {
 void reset() {
     s_shotClocks = {};
     s_creatingShot = nullptr;
-    s_createSpread = false;
     s_spawningSpread = false;
 }
 }

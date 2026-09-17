@@ -317,6 +317,8 @@ and duplicate-event protections.
   two projectiles at `-0x900` and `+0x900` yaw.
 - The extra projectiles remain suspended until the native center projectile is
   released, then all three launch together from the Toadpoli's muzzle.
+- A spread is allowed only when at most three Toadpoli fireballs are active
+  before the shot.
 - Recursion and slow-motion duplicate guards prevent the extra projectiles from
   recursively producing more spreads or repeating on the same event frame.
 

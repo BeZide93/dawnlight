@@ -23,6 +23,7 @@ std::array<ShotClock, 16> s_shotClocks{};
 ShotClock* s_creatingShot = nullptr;
 bool s_createSpread = false;
 bool s_spawningSpread = false;
+int s_ballCount = 0;
 
 ShotClock& shot_clock(fopAc_ac_c* actor) {
     const auto id = fopAcM_GetID(actor);
@@ -32,6 +33,11 @@ ShotClock& shot_clock(fopAc_ac_c* actor) {
         clock.id = id;
     }
     return clock;
+}
+
+void* count_balls(void* process, void*) {
+    if (fopAcM_IsActor(process) && fopAcM_GetName(process) == fpcNm_E_TK_BALL_e) ++s_ballCount;
+    return nullptr;
 }
 
 bool eligible(fopAc_ac_c* base) {
@@ -81,7 +87,10 @@ HookAction before_create_child(ModContext*, void* args, void* retval, void*) {
         clock.leadShot = (clock.shots & 1U) == 0;
         clock.primaryLaunched = false;
         s_creatingShot = &clock;
-        s_createSpread = true;
+
+        s_ballCount = 0;
+        fpcM_Search(count_balls, nullptr);
+        s_createSpread = clock.shots % 1 == 0 && s_ballCount <= 3;
     }
     return HOOK_CONTINUE;
 }

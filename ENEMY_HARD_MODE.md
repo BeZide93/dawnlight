@@ -12,8 +12,9 @@ disabled by default. It does not change enemy health or damage.
 
 The same tab also contains:
 
-- `Boss Hard Mode`, the renamed `Arena Hazards` option. It currently controls
-  the additional hazards in the Ganondorf Boss Rush fight.
+- `Boss Hard Mode`, the renamed `Arena Hazards` option. It controls the boss
+  changes documented below as well as the additional hazards in the Ganondorf
+  Boss Rush fight.
 - `No Normal-Hit Invulnerability`, which removes Link's post-hit invulnerability
   after normal damage while preserving the full window for knockdowns.
 - The existing enemy HP and damage scaling settings.
@@ -26,6 +27,53 @@ knockdown process. Knockdowns retain ownership of their timer until it expires,
 including the remaining invulnerability after Link gets back up.
 
 The option is independent from `Enemy Hard Mode` and is disabled by default.
+
+## Boss Hard Mode
+
+The following changes are enabled together by `Boss Hard Mode`. They do not
+alter boss health or outgoing damage.
+
+### Ook (`E_MK` / `E_MK_BO`)
+
+- Ook's combat boomerang updates its outbound heading toward Link every frame.
+- Its outbound and return travel speed is doubled from `40` to `80` units per
+  frame.
+- Bridge, room-4, and other scripted boomerang sequences are excluded.
+
+### Diababa (`B_BQ`)
+
+- Two Water Toadpolis (`E_TK`) spawn once the active fight begins, positioned
+  `1200` units to Diababa's left and right in the poison-water arena.
+- The post-damage poison-attack interval is reduced from `80` to `53` frames,
+  making the attack occur approximately `1.5x` as often.
+
+### Dangoro (`E_GOB`)
+
+- Both melee wind-up timers are halved from `70` to `35` frames.
+- The initial roll start-up timer is reduced from `60` to `45` frames.
+- Active rolling movement is multiplied by `1.3x` before collision correction.
+
+### Fyrus (`E_FM`)
+
+- Walking, combat-running, and non-knockdown eye-hit recovery movement is
+  multiplied by `1.5x` before collision correction.
+- The non-knockdown recovery timer after an eye hit is reduced to `75%` of its
+  original duration.
+- A fire wave is forced after that recovery and after Fyrus completes his
+  stand-up sequence from a knockdown.
+- Fire-wave expansion animation advances `1.25x` as quickly; its collision
+  radius continues to use that same animation frame.
+
+### Death Sword (`E_VT`)
+
+- In the flying visible phase, the first two arrow hits no longer transition
+  Death Sword into its ground chase and melee sequence.
+- The third arrow hit performs the original transition and resets the counter.
+
+### Ganondorf (`B_GND`)
+
+- The existing Boss Rush behavior remains unchanged: three damaging arena
+  projectiles spawn every ten seconds during the direct Ganondorf fight.
 
 ## Shared behavior
 

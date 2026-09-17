@@ -667,8 +667,8 @@ ModResult build_hard_mode_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Boss Hard Mode", bossrush_hardmode_hazards_config_var(),
-            "Enables additional boss mechanics. Currently spawns three damaging projectiles "
-            "every 10 seconds during the Ganondorf Boss Rush fight.")
+            "Enables additional mechanics for supported bosses, including faster attacks, "
+            "reinforcements, and the Ganondorf Boss Rush arena hazards.")
         != MOD_OK)
     {
         return MOD_ERROR;

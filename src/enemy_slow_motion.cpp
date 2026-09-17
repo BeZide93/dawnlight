@@ -122,8 +122,9 @@ HookAction before_chase_target(ModContext*, void* args, void*, void*) {
     if (step != nullptr && step->profile->beforeFloatChase != nullptr)
         step->profile->beforeFloatChase(*step, mods::arg<float*>(args, 0));
     if (owns_chase_float(step, mods::arg<float*>(args, 0))) {
-        mods::arg_ref<float>(args, 2) *= step->scale;
-        mods::arg_ref<float>(args, 3) *= step->scale;
+        const float hardScale = enemy_hard_mode_chase_scale(*step, mods::arg<float*>(args, 0));
+        mods::arg_ref<float>(args, 2) *= step->scale * hardScale;
+        mods::arg_ref<float>(args, 3) *= step->scale * hardScale;
     }
     return HOOK_CONTINUE;
 }
@@ -131,8 +132,9 @@ HookAction before_chase_target(ModContext*, void* args, void*, void*) {
 HookAction before_chase_zero(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
     if (owns_chase_float(step, mods::arg<float*>(args, 0))) {
-        mods::arg_ref<float>(args, 1) *= step->scale;
-        mods::arg_ref<float>(args, 2) *= step->scale;
+        const float hardScale = enemy_hard_mode_chase_scale(*step, mods::arg<float*>(args, 0));
+        mods::arg_ref<float>(args, 1) *= step->scale * hardScale;
+        mods::arg_ref<float>(args, 2) *= step->scale * hardScale;
     }
     return HOOK_CONTINUE;
 }
@@ -140,7 +142,8 @@ HookAction before_chase_zero(ModContext*, void* args, void*, void*) {
 HookAction before_chase_linear(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
     if (owns_chase_float(step, mods::arg<float*>(args, 0))) {
-        mods::arg_ref<float>(args, 2) *= step->scale;
+        mods::arg_ref<float>(args, 2) *= step->scale *
+            enemy_hard_mode_chase_scale(*step, mods::arg<float*>(args, 0));
     }
     return HOOK_CONTINUE;
 }
@@ -410,8 +413,10 @@ HookAction before_enemy_slow_execute(ModContext*, void* args, void*, void*) {
 }
 
 void after_enemy_slow_execute(ModContext*, void*, void*, void*) {
-    if (auto* step = current_enemy_slow_step(); step != nullptr && step->actor != nullptr &&
-        step->profile->afterExecute != nullptr) step->profile->afterExecute(*step);
+    if (auto* step = current_enemy_slow_step(); step != nullptr && step->actor != nullptr) {
+        if (step->profile->afterExecute != nullptr) step->profile->afterExecute(*step);
+        finish_enemy_hard_mode(*step);
+    }
     if (s_depth != 0 && --s_depth < s_steps.size()) s_steps[s_depth] = {};
 }
 

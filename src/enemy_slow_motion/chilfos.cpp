@@ -1,4 +1,5 @@
 #include "profile.hpp"
+#include "../enemy_hard_mode.hpp"
 #include "m_Do/m_Do_ext.h"
 #include "d/actor/d_a_e_kk.h"
 #include "d/d_com_inf_game.h"
@@ -10,6 +11,14 @@ DEFINE_HOOK(&daE_KK_c::execute, ExecuteHook);
 DEFINE_HOOK(&daE_KK_c::executeAttack, AttackHook);
 DEFINE_HOOK(&fopAcM_createChild, SpearHook);
 DEFINE_HOOK_SYMBOL("Z2CreatureEnemy::startCreatureSound", Z2SoundHandlePool*(Z2CreatureEnemy*, JAISoundID, u32, s8), SoundHook);
+csXyz s_spearAngle{};
+int s_spearCount = 0;
+
+void* count_spears(void* process, void*) {
+    if (fopAcM_IsActor(process) && fopAcM_GetName(process) == fpcNm_E_KK_e &&
+        fopAcM_GetParam(process) == 0xFF0001) ++s_spearCount;
+    return nullptr;
+}
 
 EnemySlowStep* chilfos_step() {
     auto* step = current_enemy_slow_step();
@@ -39,14 +48,33 @@ void prepare(EnemySlowStep& step, bool timerTick) {
 
 HookAction before_spear(ModContext*, void* args, void* retval, void*) {
     auto* step = chilfos_step();
-    if (step != nullptr && !step->freshAnimationFrame &&
+    const bool isSpear = step != nullptr &&
         mods::arg<s16>(args, 0) == fpcNm_E_KK_e &&
         mods::arg<fpc_ProcID>(args, 1) == fopAcM_GetID(step->actor) &&
-        mods::arg<u32>(args, 2) == 0xFF0001) {
+        mods::arg<u32>(args, 2) == 0xFF0001;
+    if (isSpear && !step->freshAnimationFrame) {
         // executeSpearThrow ignores the result. Do not create another spear on
         // each subframe of the native int(frame)==23 condition.
         *static_cast<fpc_ProcID*>(retval) = fpcM_ERROR_PROCESS_ID_e;
         return HOOK_SKIP_ORIGINAL;
+    }
+    if (isSpear && enemy_hard_mode_applies(fpcNm_E_KK_e)) {
+        s_spearCount = 0;
+        fpcM_Search(count_spears, nullptr);
+        if (s_spearCount >= 3) {
+            *static_cast<fpc_ProcID*>(retval) = fpcM_ERROR_PROCESS_ID_e;
+            return HOOK_SKIP_ORIGINAL;
+        }
+
+        const auto* source = mods::arg<const csXyz*>(args, 5);
+        s_spearAngle = source != nullptr ? *source : step->actor->shape_angle;
+        auto* player = dComIfGp_getPlayer(0);
+        if (player != nullptr) {
+            const cXyz target = player->current.pos + player->speed * 8.0f;
+            const cXyz delta = target - step->actor->current.pos;
+            s_spearAngle.y = cM_atan2s(delta.x, delta.z);
+        }
+        mods::arg_ref<const csXyz*>(args, 5) = &s_spearAngle;
     }
     return HOOK_CONTINUE;
 }

@@ -484,33 +484,29 @@ struct HookshotActorTarget {
     bool found = false;
 };
 
+bool is_custom_hookshot_target(fopAc_ac_c* actor) {
+    if (actor == nullptr || fopAcM_GetName(actor) != fpcNm_Obj_SwHang_e) {
+        return false;
+    }
+
+    const int type = static_cast<daObjSwHang_c*>(actor)->getType();
+    return type == daObjSwHang_c::TYPE_3 || type == daObjSwHang_c::TYPE_4;
+}
+
 int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
     auto* actor = static_cast<fopAc_ac_c*>(actorPtr);
     auto* query = static_cast<HookshotActorTarget*>(dataPtr);
-    if (actor == nullptr || query == nullptr || actor == query->link) {
+    if (actor == nullptr || query == nullptr || actor == query->link ||
+        !is_custom_hookshot_target(actor)) {
         return 0;
     }
 
-    cXyz targetPosition;
-    f32 targetRadius;
-    switch (fopAcM_GetName(actor)) {
-    case fpcNm_Obj_SwHang_e: {
-        // The large City in the Sky ceiling switches are Obj_SwHang types 3/4.
-        // Their Clawshot sphere is offset above mHangPos and therefore cannot
-        // be found by aiming at actor->current.pos.
-        auto* switchHang = static_cast<daObjSwHang_c*>(actor);
-        targetPosition = switchHang->mCcSph.GetC();
-        targetRadius = switchHang->mCcSph.GetR();
-        break;
-    }
-    case fpcNm_E_PH_e:
-        // Keep support for actual Peahats, whose sphere is centered here.
-        targetPosition = actor->current.pos;
-        targetRadius = 80.0f;
-        break;
-    default:
-        return 0;
-    }
+    // Obj_SwHang types 3/4 use a large Clawshot sphere above mHangPos.
+    // Other variants either use different interaction rules or do not
+    // register this sphere, so they must stay on Vanilla's targeting path.
+    auto* switchHang = static_cast<daObjSwHang_c*>(actor);
+    const cXyz targetPosition = switchHang->mCcSph.GetC();
+    const f32 targetRadius = switchHang->mCcSph.GetR();
 
     const cXyz toTarget = targetPosition - query->eye;
     const f32 forwardDistance = toTarget.inprod(query->forward);
@@ -641,7 +637,9 @@ void draw_fixed_camera_sight(daAlink_c* link) {
             // cursor, this avoids repeatedly restarting its intro animation.
             if (hookshotActorTarget != nullptr) {
                 link->mHookTargetAcKeep.setData(hookshotActorTarget);
-            } else {
+            } else if (is_custom_hookshot_target(link->mHookTargetAcKeep.getActor())) {
+                // Drop only a target injected by this custom ray. A different
+                // actor may have been supplied by Vanilla's collision pass.
                 link->mHookTargetAcKeep.clearData();
             }
             link->setHookshotSight();

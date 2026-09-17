@@ -6,6 +6,7 @@
 #include "global.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_arrow.h"
+#include "d/actor/d_a_obj_swhang.h"
 #include "d/d_camera.h"
 #include "d/d_com_inf_game.h"
 #include "f_op/f_op_actor_iter.h"
@@ -485,27 +486,43 @@ struct HookshotActorTarget {
 int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
     auto* actor = static_cast<fopAc_ac_c*>(actorPtr);
     auto* query = static_cast<HookshotActorTarget*>(dataPtr);
-    if (actor == nullptr || query == nullptr || actor == query->link ||
-        fopAcM_GetName(actor) != fpcNm_E_PH_e ||
-        !fopAcM_CheckStatus(actor, fopAcStts_UNK_0x200000_e)) {
+    if (actor == nullptr || query == nullptr || actor == query->link) {
         return 0;
     }
 
-    // Peahats are the hanging ceiling targets used before the Aeralfos fight.
-    // Their hookshot collision is a radius-80 sphere centered on current.pos.
-    constexpr f32 kPeahatRadius = 80.0f;
-    const cXyz toTarget = actor->current.pos - query->eye;
+    cXyz targetPosition;
+    f32 targetRadius;
+    switch (fopAcM_GetName(actor)) {
+    case fpcNm_Obj_SwHang_e: {
+        // The large City in the Sky ceiling switches are Obj_SwHang types 3/4.
+        // Their Clawshot sphere is offset above mHangPos and therefore cannot
+        // be found by aiming at actor->current.pos.
+        auto* switchHang = static_cast<daObjSwHang_c*>(actor);
+        targetPosition = switchHang->mCcSph.GetC();
+        targetRadius = switchHang->mCcSph.GetR();
+        break;
+    }
+    case fpcNm_E_PH_e:
+        // Keep support for actual Peahats, whose sphere is centered here.
+        targetPosition = actor->current.pos;
+        targetRadius = 80.0f;
+        break;
+    default:
+        return 0;
+    }
+
+    const cXyz toTarget = targetPosition - query->eye;
     const f32 forwardDistance = toTarget.inprod(query->forward);
     if (forwardDistance <= 0.0f ||
-        forwardDistance - kPeahatRadius > query->backgroundDistance ||
-        (actor->current.pos - query->link->mHeldItemRootPos).abs() - kPeahatRadius >
+        forwardDistance - targetRadius > query->backgroundDistance ||
+        (targetPosition - query->link->mHeldItemRootPos).abs() - targetRadius >
             query->maxLength) {
         return 0;
     }
 
     const f32 perpendicularDistanceSq =
         std::max(0.0f, toTarget.inprod(toTarget) - forwardDistance * forwardDistance);
-    if (perpendicularDistanceSq > kPeahatRadius * kPeahatRadius ||
+    if (perpendicularDistanceSq > targetRadius * targetRadius ||
         (query->found &&
             (perpendicularDistanceSq > query->bestPerpendicularDistanceSq ||
                 (perpendicularDistanceSq == query->bestPerpendicularDistanceSq &&
@@ -513,7 +530,7 @@ int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
         return 0;
     }
 
-    query->position = actor->current.pos;
+    query->position = targetPosition;
     query->bestPerpendicularDistanceSq = perpendicularDistanceSq;
     query->bestForwardDistance = forwardDistance;
     query->found = true;

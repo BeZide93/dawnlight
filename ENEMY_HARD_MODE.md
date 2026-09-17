@@ -14,7 +14,18 @@ The same tab also contains:
 
 - `Boss Hard Mode`, the renamed `Arena Hazards` option. It currently controls
   the additional hazards in the Ganondorf Boss Rush fight.
+- `No Normal-Hit Invulnerability`, which removes Link's post-hit invulnerability
+  after normal damage while preserving the full window for knockdowns.
 - The existing enemy HP and damage scaling settings.
+
+### No Normal-Hit Invulnerability
+
+When this option is enabled, a newly assigned player damage timer is cleared
+unless the hit put Link into a large-damage, wall-impact, launch, or landing
+knockdown process. Knockdowns retain ownership of their timer until it expires,
+including the remaining invulnerability after Link gets back up.
+
+The option is independent from `Enemy Hard Mode` and is disabled by default.
 
 ## Shared behavior
 

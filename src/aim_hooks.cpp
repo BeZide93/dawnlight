@@ -499,10 +499,19 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
         }
     }
     target = eye + forward * 10000.0f;
-    dBgS_ArrowLinChk line;
-    line.Set(&eye, &target, link);
-    if (dComIfG_Bgsp().LineCross(&line)) {
-        target = line.GetCross();
+    if (link->checkHookshotItem(link->mEquipItem)) {
+        // Clawshot targets can use polygons which arrows deliberately pass
+        // through (for example City in the Sky's L7HsMato targets).
+        link->mRopeLinChk.Set(&eye, &target, link);
+        if (dComIfG_Bgsp().LineCross(&link->mRopeLinChk)) {
+            target = link->mRopeLinChk.GetCross();
+        }
+    } else {
+        dBgS_ArrowLinChk line;
+        line.Set(&eye, &target, link);
+        if (dComIfG_Bgsp().LineCross(&line)) {
+            target = line.GetCross();
+        }
     }
     return true;
 }

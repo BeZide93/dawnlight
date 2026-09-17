@@ -473,6 +473,7 @@ bool fixed_camera_sight_active(daAlink_c* link) {
 
 struct HookshotActorTarget {
     daAlink_c* link = nullptr;
+    fopAc_ac_c* actor = nullptr;
     cXyz eye;
     cXyz forward;
     cXyz position;
@@ -535,6 +536,7 @@ int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
     // the visible grab point below the sphere, and avoids shooting into the
     // solid cage geometry around the collision-volume center.
     query->position = actor->eyePos;
+    query->actor = actor;
     query->bestPerpendicularDistanceSq = perpendicularDistanceSq;
     query->bestForwardDistance = forwardDistance;
     query->found = true;
@@ -542,9 +544,9 @@ int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
 }
 
 bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward,
-    bool* hookshotActorTarget = nullptr) {
+    fopAc_ac_c** hookshotActorTarget = nullptr) {
     if (hookshotActorTarget != nullptr) {
-        *hookshotActorTarget = false;
+        *hookshotActorTarget = nullptr;
     }
     auto* actor = dComIfGp_getCamera(link->field_0x317c);
     if (actor == nullptr) return false;
@@ -595,7 +597,7 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward,
         if (query.found) {
             target = query.position;
             if (hookshotActorTarget != nullptr) {
-                *hookshotActorTarget = true;
+                *hookshotActorTarget = query.actor;
             }
         }
     } else {
@@ -617,15 +619,13 @@ void draw_fixed_camera_sight(daAlink_c* link) {
     }
 
     const bool hookshot = link->checkHookshotItem(link->mEquipItem);
-    if (hookshot) {
-        // setHookshotSight() does not clear a previous lock flag outside its
-        // ready state. Clear it before every custom query so moving away from
-        // an actor can never leave the yellow lock reticle stuck on screen.
-        link->mSight.offLockFlg();
+    if (hookshot && !link->checkHookshotWait()) {
+        link->mSight.offDrawFlg();
+        return;
     }
 
     cXyz target, forward;
-    bool hookshotActorTarget = false;
+    fopAc_ac_c* hookshotActorTarget = nullptr;
     if (!camera_bow_target(link, target, forward, &hookshotActorTarget)) {
         return;
     }
@@ -636,14 +636,25 @@ void draw_fixed_camera_sight(daAlink_c* link) {
             const csXyz bodyAngle = link->mBodyAngle;
             link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
             link->mBodyAngle.y = cM_atan2s(direction.x, direction.z) - link->shape_angle.y;
-            // Preserve vanilla's hookable-surface test and lock flag, but run
-            // it along the same parallax-corrected ray as the custom camera.
+            // Feed actor targets through Vanilla's keep object before asking
+            // Vanilla to update the reticle.  Besides selecting the yellow
+            // cursor, this avoids repeatedly restarting its intro animation.
+            if (hookshotActorTarget != nullptr) {
+                link->mHookTargetAcKeep.setData(hookshotActorTarget);
+            } else {
+                link->mHookTargetAcKeep.clearData();
+            }
             link->setHookshotSight();
             link->mBodyAngle = bodyAngle;
-            if (hookshotActorTarget) {
-                link->mSight.onLockFlg();
+
+            // setHookshotSight() deliberately clears this each frame after it
+            // has drawn the cursor.  Retain the selected actor so the release
+            // frame can enter the normal HookCarry/attachment path.
+            if (hookshotActorTarget != nullptr) {
+                link->mHookTargetAcKeep.setData(hookshotActorTarget);
             }
         } else {
+            link->mHookTargetAcKeep.clearData();
             link->mSight.offLockFlg();
         }
     } else {
@@ -732,9 +743,18 @@ HookAction before_hookshot_pos(ModContext*, void* args, void*, void*) {
     }
 
     cXyz target, forward, direction;
-    if (!camera_bow_target(link, target, forward) ||
+    fopAc_ac_c* hookshotActorTarget = nullptr;
+    if (!camera_bow_target(link, target, forward, &hookshotActorTarget) ||
         !bow_target_direction(link->mHeldItemRootPos, target, forward, direction)) {
         return HOOK_CONTINUE;
+    }
+
+    if (hookshotActorTarget != nullptr) {
+        // checkUpperItemActionHookshot() clears the ready-state actor exactly
+        // when it changes mItemMode to the release state.  Restore it here,
+        // after that transition and before Vanilla captures the shot target.
+        link->mHookTargetAcKeep.setData(hookshotActorTarget);
+        link->field_0x381c = hookshotActorTarget->eyePos;
     }
 
     s_clawshotAim = {link, link->mBodyAngle, direction};

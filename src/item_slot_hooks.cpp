@@ -3041,8 +3041,8 @@ void after_meter_move_button_cross(ModContext*, void* args, void*, void*) {
     }
 
     meter->field_0x1b4 = 0;
-    meter->field_0x15c = meter->mButtonCrossOFFPosY;
-    meter->mpMeterDraw->drawButtonCross(meter->mButtonCrossOFFPosX, meter->mButtonCrossOFFPosY);
+    meter->mPresentationTargets.crossX = meter->mButtonCrossOFFPosX;
+    meter->mPresentationTargets.crossY = meter->mButtonCrossOFFPosY;
 }
 
 HookAction before_meter_map_draw(ModContext*, void* args, void*, void*) {

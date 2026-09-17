@@ -8,6 +8,7 @@
 #include "d/actor/d_a_arrow.h"
 #include "d/d_camera.h"
 #include "d/d_com_inf_game.h"
+#include "f_op/f_op_actor_iter.h"
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "mods/hook.hpp"
@@ -469,7 +470,61 @@ bool fixed_camera_sight_active(daAlink_c* link) {
         !link->checkWolf() && !link->checkAttentionLock() && !link->checkEventRun();
 }
 
-bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
+struct HookshotActorTarget {
+    daAlink_c* link = nullptr;
+    cXyz eye;
+    cXyz forward;
+    cXyz position;
+    f32 backgroundDistance = 0.0f;
+    f32 maxLength = 0.0f;
+    f32 bestPerpendicularDistanceSq = 0.0f;
+    f32 bestForwardDistance = 0.0f;
+    bool found = false;
+};
+
+int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
+    auto* actor = static_cast<fopAc_ac_c*>(actorPtr);
+    auto* query = static_cast<HookshotActorTarget*>(dataPtr);
+    if (actor == nullptr || query == nullptr || actor == query->link ||
+        fopAcM_GetName(actor) != fpcNm_E_PH_e ||
+        !fopAcM_CheckStatus(actor, fopAcStts_UNK_0x200000_e)) {
+        return 0;
+    }
+
+    // Peahats are the hanging ceiling targets used before the Aeralfos fight.
+    // Their hookshot collision is a radius-80 sphere centered on current.pos.
+    constexpr f32 kPeahatRadius = 80.0f;
+    const cXyz toTarget = actor->current.pos - query->eye;
+    const f32 forwardDistance = toTarget.inprod(query->forward);
+    if (forwardDistance <= 0.0f ||
+        forwardDistance - kPeahatRadius > query->backgroundDistance ||
+        (actor->current.pos - query->link->mHeldItemRootPos).abs() - kPeahatRadius >
+            query->maxLength) {
+        return 0;
+    }
+
+    const f32 perpendicularDistanceSq =
+        std::max(0.0f, toTarget.inprod(toTarget) - forwardDistance * forwardDistance);
+    if (perpendicularDistanceSq > kPeahatRadius * kPeahatRadius ||
+        (query->found &&
+            (perpendicularDistanceSq > query->bestPerpendicularDistanceSq ||
+                (perpendicularDistanceSq == query->bestPerpendicularDistanceSq &&
+                    forwardDistance >= query->bestForwardDistance)))) {
+        return 0;
+    }
+
+    query->position = actor->current.pos;
+    query->bestPerpendicularDistanceSq = perpendicularDistanceSq;
+    query->bestForwardDistance = forwardDistance;
+    query->found = true;
+    return 0;
+}
+
+bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward,
+    bool* hookshotActorTarget = nullptr) {
+    if (hookshotActorTarget != nullptr) {
+        *hookshotActorTarget = false;
+    }
     auto* actor = dComIfGp_getCamera(link->field_0x317c);
     if (actor == nullptr) return false;
     // Run's post-hook sees the new camera before camera_class::view is updated.
@@ -506,6 +561,22 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
         if (dComIfG_Bgsp().LineCross(&link->mRopeLinChk)) {
             target = link->mRopeLinChk.GetCross();
         }
+
+        HookshotActorTarget query;
+        query.link = link;
+        query.eye = eye;
+        query.forward = forward;
+        query.backgroundDistance = (target - eye).abs();
+        query.maxLength = link->checkLv7BossRoom()
+            ? link->mpHIO->mItem.mHookshot.m.mBossMaxLength
+            : link->mpHIO->mItem.mHookshot.m.mMaxLength;
+        fopAcIt_Executor(find_hookshot_actor_target, &query);
+        if (query.found) {
+            target = query.position;
+            if (hookshotActorTarget != nullptr) {
+                *hookshotActorTarget = true;
+            }
+        }
     } else {
         dBgS_ArrowLinChk line;
         line.Set(&eye, &target, link);
@@ -525,7 +596,8 @@ void draw_fixed_camera_sight(daAlink_c* link) {
     }
 
     cXyz target, forward;
-    if (!camera_bow_target(link, target, forward)) {
+    bool hookshotActorTarget = false;
+    if (!camera_bow_target(link, target, forward, &hookshotActorTarget)) {
         return;
     }
 
@@ -539,6 +611,9 @@ void draw_fixed_camera_sight(daAlink_c* link) {
             // it along the same parallax-corrected ray as the custom camera.
             link->setHookshotSight();
             link->mBodyAngle = bodyAngle;
+            if (hookshotActorTarget) {
+                link->mSight.onLockFlg();
+            }
         } else {
             link->mSight.offLockFlg();
         }
@@ -612,6 +687,7 @@ void after_bow_model_calc(ModContext*, void* args, void*, void*) {
 struct ClawshotAimCorrection {
     daAlink_c* link = nullptr;
     csXyz bodyAngle;
+    cXyz direction;
 };
 ClawshotAimCorrection s_clawshotAim;
 
@@ -632,7 +708,7 @@ HookAction before_hookshot_pos(ModContext*, void* args, void*, void*) {
         return HOOK_CONTINUE;
     }
 
-    s_clawshotAim = {link, link->mBodyAngle};
+    s_clawshotAim = {link, link->mBodyAngle, direction};
     link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
     link->mBodyAngle.y = cM_atan2s(direction.x, direction.z) - link->shape_angle.y;
     return HOOK_CONTINUE;
@@ -641,6 +717,14 @@ HookAction before_hookshot_pos(ModContext*, void* args, void*, void*) {
 void after_hookshot_pos(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (s_clawshotAim.link != link || link == nullptr) return;
+    // setHookshotPos derives this vector from several animation/body angles.
+    // Keep the actual launch and ready-state collision capsule on the exact
+    // custom-camera ray, independent of later pose adjustments.
+    link->mIronBallCenterPos = s_clawshotAim.direction;
+    link->field_0x301c = cM_atan2s(-s_clawshotAim.direction.y,
+        s_clawshotAim.direction.absXZ());
+    link->field_0x301e = cM_atan2s(s_clawshotAim.direction.x,
+        s_clawshotAim.direction.z);
     link->mBodyAngle = s_clawshotAim.bodyAngle;
     s_clawshotAim = {};
 }

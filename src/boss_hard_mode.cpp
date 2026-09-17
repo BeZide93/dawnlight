@@ -268,7 +268,10 @@ void finish_fyrus(const ProcessFrame& frame) {
             const float delta = frameNow - state.waveFrame;
             if (delta >= 0.0f && delta < 20.0f) {
                 const float acceleratedFrame = frameNow + delta * 0.25f;
-                boss.mpAttackEfModelMorf[1]->setFrame(acceleratedFrame);
+                // J3DFrameCtrl::setFrame is not exported by every PC platform
+                // stub.  The field is public and this is exactly what the
+                // console inline implementation does, so update it directly.
+                boss.mpAttackEfModelMorf[1]->mFrameCtrl.mFrame = acceleratedFrame;
                 state.waveFrame = acceleratedFrame;
             } else {
                 state.waveFrame = frameNow;

@@ -357,7 +357,10 @@ void prepare_enemy_hard_mode(EnemySlowStep& step) {
 
     auto& clock = cadence_clock_for(step.actor);
     clock.phase = static_cast<std::uint8_t>((clock.phase + 1) % 3);
-    if (clock.phase == 0) shorten_attack_interval(step);
+    // Native logic removes three timer points over three frames. Applying one
+    // additional decrement on two cadence phases raises that to five points
+    // while preserving the per-actor staggering.
+    if (clock.phase < 2) shorten_attack_interval(step);
 }
 
 void finish_enemy_hard_mode(EnemySlowStep& step) {

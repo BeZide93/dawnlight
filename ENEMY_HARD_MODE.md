@@ -83,9 +83,10 @@ alter boss health or outgoing damage.
 
 ## Shared behavior
 
-All supported profiles use a per-actor three-phase cadence clock. On every
-third normal timer tick, selected timers receive one additional decrement.
-This makes the affected intervals approximately 25% shorter.
+All supported profiles use a per-actor three-phase cadence clock. On two of
+every three normal timer ticks, selected timers receive one additional
+decrement. Native logic therefore removes five timer points in three frames,
+making the affected intervals approximately 40% shorter.
 
 The initial cadence phase is derived from the actor's process ID. Groups
 therefore do not receive their extra timer decrement on the same frame.

@@ -530,7 +530,11 @@ int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
         return 0;
     }
 
-    query->position = targetPosition;
+    // Vanilla detects the collision volume but aims the sight and the launched
+    // Clawshot at the actor's eye position.  For Obj_SwHang this is mHangPos,
+    // the visible grab point below the sphere, and avoids shooting into the
+    // solid cage geometry around the collision-volume center.
+    query->position = actor->eyePos;
     query->bestPerpendicularDistanceSq = perpendicularDistanceSq;
     query->bestForwardDistance = forwardDistance;
     query->found = true;
@@ -612,13 +616,21 @@ void draw_fixed_camera_sight(daAlink_c* link) {
         return;
     }
 
+    const bool hookshot = link->checkHookshotItem(link->mEquipItem);
+    if (hookshot) {
+        // setHookshotSight() does not clear a previous lock flag outside its
+        // ready state. Clear it before every custom query so moving away from
+        // an actor can never leave the yellow lock reticle stuck on screen.
+        link->mSight.offLockFlg();
+    }
+
     cXyz target, forward;
     bool hookshotActorTarget = false;
     if (!camera_bow_target(link, target, forward, &hookshotActorTarget)) {
         return;
     }
 
-    if (link->checkHookshotItem(link->mEquipItem)) {
+    if (hookshot) {
         cXyz direction;
         if (bow_target_direction(link->mHeldItemRootPos, target, forward, direction)) {
             const csXyz bodyAngle = link->mBodyAngle;
@@ -1105,6 +1117,13 @@ HookAction replace_hookshot_subject(ModContext*, void* args, void* retval, void*
         } else {
             dComIfGp_setPlayerStatus0(0, 0x40000);
         }
+    }
+
+    // checkNextAction() may consume the held item-button frame after the
+    // function cleared mSight above. Keep the custom reticle visible for the
+    // complete ready/aiming state; the launched/returning states still hide it.
+    if (fixed_clawshot_aim_active(link) && link->checkHookshotWait()) {
+        draw_fixed_camera_sight(link);
     }
 
     *static_cast<int*>(retval) = 1;

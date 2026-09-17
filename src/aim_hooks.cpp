@@ -608,7 +608,11 @@ ClawshotAimCorrection s_clawshotAim;
 
 HookAction before_hookshot_pos(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (!fixed_clawshot_aim_active(link) || link->mItemMode != 2 ||
+    // Actor hook points (for example Obj_SwHang ceiling switches) are found by
+    // the ready-state attack capsule. Keep that capsule on the custom camera
+    // ray while aiming as well as when the clawshot is released.
+    if (!fixed_clawshot_aim_active(link) ||
+        (!link->checkHookshotWait() && link->mItemMode != 2) ||
         s_clawshotAim.link != nullptr) {
         return HOOK_CONTINUE;
     }

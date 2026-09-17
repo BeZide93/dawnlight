@@ -15,7 +15,6 @@
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
 #include "f_op/f_op_actor_mng.h"
-#include "f_pc/f_pc_method.h"
 #include "f_pc/f_pc_name.h"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
@@ -30,7 +29,21 @@
 namespace dawnlight {
 namespace {
 
-DEFINE_HOOK(&fpcMtd_Method, BossHardModeProcessHook);
+#if defined(__APPLE__)
+DEFINE_HOOK_SYMBOL("_ZL17daE_MK_BO_ExecuteP13e_mk_bo_class", int(e_mk_bo_class*),
+                   OokExecuteHook);
+DEFINE_HOOK_SYMBOL("_ZL14daB_BQ_ExecuteP10b_bq_class", int(b_bq_class*),
+                   DiababaExecuteHook);
+DEFINE_HOOK_SYMBOL("_ZL15daE_GOB_ExecuteP11e_gob_class", int(e_gob_class*),
+                   DangoroExecuteHook);
+DEFINE_HOOK_SYMBOL("_ZL14daE_FM_ExecuteP10e_fm_class", int(e_fm_class*),
+                   FyrusExecuteHook);
+#else
+DEFINE_HOOK_SYMBOL("daE_MK_BO_Execute", int(e_mk_bo_class*), OokExecuteHook);
+DEFINE_HOOK_SYMBOL("daB_BQ_Execute", int(b_bq_class*), DiababaExecuteHook);
+DEFINE_HOOK_SYMBOL("daE_GOB_Execute", int(e_gob_class*), DangoroExecuteHook);
+DEFINE_HOOK_SYMBOL("daE_FM_Execute", int(e_fm_class*), FyrusExecuteHook);
+#endif
 DEFINE_HOOK_SYMBOL("dBgS_Acch::CrrPos", void(dBgS_Acch*, dBgS&), BossHardModeCollisionHook);
 DEFINE_HOOK(&daE_VA_c::damage_check, DeathSwordDamageCheckHook);
 
@@ -73,8 +86,8 @@ struct DeathSwordDamageFrame {
 };
 
 std::array<BossState, 16> s_bossStates{};
-thread_local std::array<ProcessFrame, 32> s_processFrames{};
-thread_local std::size_t s_processDepth = 0;
+thread_local std::array<ProcessFrame, 8> s_bossExecuteFrames{};
+thread_local std::size_t s_bossExecuteDepth = 0;
 thread_local std::array<DeathSwordDamageFrame, 8> s_deathSwordDamageFrames{};
 thread_local std::size_t s_deathSwordDamageDepth = 0;
 
@@ -316,46 +329,42 @@ float movement_scale_for(const ProcessFrame& frame) {
     }
 }
 
-HookAction before_process_method(ModContext*, void* args, void*, void*) {
+HookAction before_boss_execute(ModContext*, void* args, void*, void*) {
     ProcessFrame frame{};
-    void* process = mods::arg<void*>(args, 1);
-    if (bossrush_hardmode_hazards_enabled() && process != nullptr &&
-        fopAcM_IsActor(process))
+    auto* actor = reinterpret_cast<fopAc_ac_c*>(mods::arg<void*>(args, 0));
+    if (bossrush_hardmode_hazards_enabled() && actor != nullptr &&
+        is_supported_boss_actor(fopAcM_GetName(actor)))
     {
-        auto* actor = static_cast<fopAc_ac_c*>(process);
-        const auto* methods = reinterpret_cast<const process_method_class*>(actor->sub_method);
-        if (methods != nullptr && mods::arg<process_method_func>(args, 0) == methods->execute_method &&
-            is_supported_boss_actor(fopAcM_GetName(actor)))
-        {
-            frame = snapshot_actor(actor);
-            if (fopAcM_GetName(actor) == fpcNm_E_MK_BO_e) {
-                advance_ook_boomerang(*reinterpret_cast<e_mk_bo_class*>(actor));
-            }
+        frame = snapshot_actor(actor);
+        if (fopAcM_GetName(actor) == fpcNm_E_MK_BO_e) {
+            advance_ook_boomerang(*reinterpret_cast<e_mk_bo_class*>(actor));
         }
     }
 
-    if (s_processDepth < s_processFrames.size()) s_processFrames[s_processDepth] = frame;
-    ++s_processDepth;
+    if (s_bossExecuteDepth < s_bossExecuteFrames.size()) {
+        s_bossExecuteFrames[s_bossExecuteDepth] = frame;
+    }
+    ++s_bossExecuteDepth;
     return HOOK_CONTINUE;
 }
 
-void after_process_method(ModContext*, void*, void*, void*) {
-    if (s_processDepth == 0) return;
-    --s_processDepth;
-    if (s_processDepth < s_processFrames.size()) {
-        finish_actor(s_processFrames[s_processDepth]);
-        s_processFrames[s_processDepth] = {};
+void after_boss_execute(ModContext*, void*, void*, void*) {
+    if (s_bossExecuteDepth == 0) return;
+    --s_bossExecuteDepth;
+    if (s_bossExecuteDepth < s_bossExecuteFrames.size()) {
+        finish_actor(s_bossExecuteFrames[s_bossExecuteDepth]);
+        s_bossExecuteFrames[s_bossExecuteDepth] = {};
     }
 }
 
 HookAction before_collision(ModContext*, void* args, void*, void*) {
-    if (!bossrush_hardmode_hazards_enabled() || s_processDepth == 0 ||
-        s_processDepth > s_processFrames.size())
+    if (!bossrush_hardmode_hazards_enabled() || s_bossExecuteDepth == 0 ||
+        s_bossExecuteDepth > s_bossExecuteFrames.size())
     {
         return HOOK_CONTINUE;
     }
 
-    auto& frame = s_processFrames[s_processDepth - 1];
+    auto& frame = s_bossExecuteFrames[s_bossExecuteDepth - 1];
     if (frame.actor == nullptr) return HOOK_CONTINUE;
 
     auto* acch = mods::arg<dBgS_Acch*>(args, 0);
@@ -426,11 +435,27 @@ void after_death_sword_damage(ModContext*, void* args, void*, void*) {
 }  // namespace
 
 ModResult install_boss_hard_mode_hooks(ModError* error) {
-    ModResult result = mods::hook::add_pre<BossHardModeProcessHook>(
-        svc_hook, before_process_method);
+    ModResult result = mods::hook::add_pre<OokExecuteHook>(svc_hook, before_boss_execute);
     if (result == MOD_OK) {
-        result = mods::hook::add_post<BossHardModeProcessHook>(
-            svc_hook, after_process_method);
+        result = mods::hook::add_post<OokExecuteHook>(svc_hook, after_boss_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_pre<DiababaExecuteHook>(svc_hook, before_boss_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<DiababaExecuteHook>(svc_hook, after_boss_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_pre<DangoroExecuteHook>(svc_hook, before_boss_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<DangoroExecuteHook>(svc_hook, after_boss_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_pre<FyrusExecuteHook>(svc_hook, before_boss_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<FyrusExecuteHook>(svc_hook, after_boss_execute);
     }
     if (result == MOD_OK) {
         result = mods::hook::add_pre<BossHardModeCollisionHook>(svc_hook, before_collision);

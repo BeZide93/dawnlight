@@ -6,8 +6,10 @@
 #include "global.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_arrow.h"
+#include "d/actor/d_a_obj_swhang.h"
 #include "d/d_camera.h"
 #include "d/d_com_inf_game.h"
+#include "f_op/f_op_actor_iter.h"
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "mods/hook.hpp"
@@ -469,7 +471,79 @@ bool fixed_camera_sight_active(daAlink_c* link) {
         !link->checkWolf() && !link->checkAttentionLock() && !link->checkEventRun();
 }
 
-bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
+struct HookshotActorTarget {
+    daAlink_c* link = nullptr;
+    fopAc_ac_c* actor = nullptr;
+    cXyz eye;
+    cXyz forward;
+    cXyz position;
+    f32 backgroundDistance = 0.0f;
+    f32 maxLength = 0.0f;
+    f32 bestPerpendicularDistanceSq = 0.0f;
+    f32 bestForwardDistance = 0.0f;
+    bool found = false;
+};
+
+bool is_custom_hookshot_target(fopAc_ac_c* actor) {
+    if (actor == nullptr || fopAcM_GetName(actor) != fpcNm_Obj_SwHang_e) {
+        return false;
+    }
+
+    const int type = static_cast<daObjSwHang_c*>(actor)->getType();
+    return type == daObjSwHang_c::TYPE_3 || type == daObjSwHang_c::TYPE_4;
+}
+
+int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
+    auto* actor = static_cast<fopAc_ac_c*>(actorPtr);
+    auto* query = static_cast<HookshotActorTarget*>(dataPtr);
+    if (actor == nullptr || query == nullptr || actor == query->link ||
+        !is_custom_hookshot_target(actor)) {
+        return 0;
+    }
+
+    // Obj_SwHang types 3/4 use a large Clawshot sphere above mHangPos.
+    // Other variants either use different interaction rules or do not
+    // register this sphere, so they must stay on Vanilla's targeting path.
+    auto* switchHang = static_cast<daObjSwHang_c*>(actor);
+    const cXyz targetPosition = switchHang->mCcSph.GetC();
+    const f32 targetRadius = switchHang->mCcSph.GetR();
+
+    const cXyz toTarget = targetPosition - query->eye;
+    const f32 forwardDistance = toTarget.inprod(query->forward);
+    if (forwardDistance <= 0.0f ||
+        forwardDistance - targetRadius > query->backgroundDistance ||
+        (targetPosition - query->link->mHeldItemRootPos).abs() - targetRadius >
+            query->maxLength) {
+        return 0;
+    }
+
+    const f32 perpendicularDistanceSq =
+        std::max(0.0f, toTarget.inprod(toTarget) - forwardDistance * forwardDistance);
+    if (perpendicularDistanceSq > targetRadius * targetRadius ||
+        (query->found &&
+            (perpendicularDistanceSq > query->bestPerpendicularDistanceSq ||
+                (perpendicularDistanceSq == query->bestPerpendicularDistanceSq &&
+                    forwardDistance >= query->bestForwardDistance)))) {
+        return 0;
+    }
+
+    // Vanilla detects the collision volume but aims the sight and the launched
+    // Clawshot at the actor's eye position.  For Obj_SwHang this is mHangPos,
+    // the visible grab point below the sphere, and avoids shooting into the
+    // solid cage geometry around the collision-volume center.
+    query->position = actor->eyePos;
+    query->actor = actor;
+    query->bestPerpendicularDistanceSq = perpendicularDistanceSq;
+    query->bestForwardDistance = forwardDistance;
+    query->found = true;
+    return 0;
+}
+
+bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward,
+    fopAc_ac_c** hookshotActorTarget = nullptr) {
+    if (hookshotActorTarget != nullptr) {
+        *hookshotActorTarget = nullptr;
+    }
     auto* actor = dComIfGp_getCamera(link->field_0x317c);
     if (actor == nullptr) return false;
     // Run's post-hook sees the new camera before camera_class::view is updated.
@@ -499,10 +573,35 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward) {
         }
     }
     target = eye + forward * 10000.0f;
-    dBgS_ArrowLinChk line;
-    line.Set(&eye, &target, link);
-    if (dComIfG_Bgsp().LineCross(&line)) {
-        target = line.GetCross();
+    if (link->checkHookshotItem(link->mEquipItem)) {
+        // Clawshot targets can use polygons which arrows deliberately pass
+        // through (for example City in the Sky's L7HsMato targets).
+        link->mRopeLinChk.Set(&eye, &target, link);
+        if (dComIfG_Bgsp().LineCross(&link->mRopeLinChk)) {
+            target = link->mRopeLinChk.GetCross();
+        }
+
+        HookshotActorTarget query;
+        query.link = link;
+        query.eye = eye;
+        query.forward = forward;
+        query.backgroundDistance = (target - eye).abs();
+        query.maxLength = link->checkLv7BossRoom()
+            ? link->mpHIO->mItem.mHookshot.m.mBossMaxLength
+            : link->mpHIO->mItem.mHookshot.m.mMaxLength;
+        fopAcIt_Executor(find_hookshot_actor_target, &query);
+        if (query.found) {
+            target = query.position;
+            if (hookshotActorTarget != nullptr) {
+                *hookshotActorTarget = query.actor;
+            }
+        }
+    } else {
+        dBgS_ArrowLinChk line;
+        line.Set(&eye, &target, link);
+        if (dComIfG_Bgsp().LineCross(&line)) {
+            target = line.GetCross();
+        }
     }
     return true;
 }
@@ -515,22 +614,45 @@ void draw_fixed_camera_sight(daAlink_c* link) {
         return;
     }
 
-    cXyz target, forward;
-    if (!camera_bow_target(link, target, forward)) {
+    const bool hookshot = link->checkHookshotItem(link->mEquipItem);
+    if (hookshot && !link->checkHookshotWait()) {
+        link->mSight.offDrawFlg();
         return;
     }
 
-    if (link->checkHookshotItem(link->mEquipItem)) {
+    cXyz target, forward;
+    fopAc_ac_c* hookshotActorTarget = nullptr;
+    if (!camera_bow_target(link, target, forward, &hookshotActorTarget)) {
+        return;
+    }
+
+    if (hookshot) {
         cXyz direction;
         if (bow_target_direction(link->mHeldItemRootPos, target, forward, direction)) {
             const csXyz bodyAngle = link->mBodyAngle;
             link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
             link->mBodyAngle.y = cM_atan2s(direction.x, direction.z) - link->shape_angle.y;
-            // Preserve vanilla's hookable-surface test and lock flag, but run
-            // it along the same parallax-corrected ray as the custom camera.
+            // Feed actor targets through Vanilla's keep object before asking
+            // Vanilla to update the reticle.  Besides selecting the yellow
+            // cursor, this avoids repeatedly restarting its intro animation.
+            if (hookshotActorTarget != nullptr) {
+                link->mHookTargetAcKeep.setData(hookshotActorTarget);
+            } else if (is_custom_hookshot_target(link->mHookTargetAcKeep.getActor())) {
+                // Drop only a target injected by this custom ray. A different
+                // actor may have been supplied by Vanilla's collision pass.
+                link->mHookTargetAcKeep.clearData();
+            }
             link->setHookshotSight();
             link->mBodyAngle = bodyAngle;
+
+            // setHookshotSight() deliberately clears this each frame after it
+            // has drawn the cursor.  Retain the selected actor so the release
+            // frame can enter the normal HookCarry/attachment path.
+            if (hookshotActorTarget != nullptr) {
+                link->mHookTargetAcKeep.setData(hookshotActorTarget);
+            }
         } else {
+            link->mHookTargetAcKeep.clearData();
             link->mSight.offLockFlg();
         }
     } else {
@@ -603,23 +725,37 @@ void after_bow_model_calc(ModContext*, void* args, void*, void*) {
 struct ClawshotAimCorrection {
     daAlink_c* link = nullptr;
     csXyz bodyAngle;
+    cXyz direction;
 };
 ClawshotAimCorrection s_clawshotAim;
 
 HookAction before_hookshot_pos(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (!fixed_clawshot_aim_active(link) || link->mItemMode != 2 ||
+    // Actor hook points (for example Obj_SwHang ceiling switches) are found by
+    // the ready-state attack capsule. Keep that capsule on the custom camera
+    // ray while aiming as well as when the clawshot is released.
+    if (!fixed_clawshot_aim_active(link) ||
+        (!link->checkHookshotWait() && link->mItemMode != 2) ||
         s_clawshotAim.link != nullptr) {
         return HOOK_CONTINUE;
     }
 
     cXyz target, forward, direction;
-    if (!camera_bow_target(link, target, forward) ||
+    fopAc_ac_c* hookshotActorTarget = nullptr;
+    if (!camera_bow_target(link, target, forward, &hookshotActorTarget) ||
         !bow_target_direction(link->mHeldItemRootPos, target, forward, direction)) {
         return HOOK_CONTINUE;
     }
 
-    s_clawshotAim = {link, link->mBodyAngle};
+    if (hookshotActorTarget != nullptr) {
+        // checkUpperItemActionHookshot() clears the ready-state actor exactly
+        // when it changes mItemMode to the release state.  Restore it here,
+        // after that transition and before Vanilla captures the shot target.
+        link->mHookTargetAcKeep.setData(hookshotActorTarget);
+        link->field_0x381c = hookshotActorTarget->eyePos;
+    }
+
+    s_clawshotAim = {link, link->mBodyAngle, direction};
     link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
     link->mBodyAngle.y = cM_atan2s(direction.x, direction.z) - link->shape_angle.y;
     return HOOK_CONTINUE;
@@ -628,6 +764,14 @@ HookAction before_hookshot_pos(ModContext*, void* args, void*, void*) {
 void after_hookshot_pos(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (s_clawshotAim.link != link || link == nullptr) return;
+    // setHookshotPos derives this vector from several animation/body angles.
+    // Keep the actual launch and ready-state collision capsule on the exact
+    // custom-camera ray, independent of later pose adjustments.
+    link->mIronBallCenterPos = s_clawshotAim.direction;
+    link->field_0x301c = cM_atan2s(-s_clawshotAim.direction.y,
+        s_clawshotAim.direction.absXZ());
+    link->field_0x301e = cM_atan2s(s_clawshotAim.direction.x,
+        s_clawshotAim.direction.z);
     link->mBodyAngle = s_clawshotAim.bodyAngle;
     s_clawshotAim = {};
 }
@@ -991,6 +1135,13 @@ HookAction replace_hookshot_subject(ModContext*, void* args, void* retval, void*
         } else {
             dComIfGp_setPlayerStatus0(0, 0x40000);
         }
+    }
+
+    // checkNextAction() may consume the held item-button frame after the
+    // function cleared mSight above. Keep the custom reticle visible for the
+    // complete ready/aiming state; the launched/returning states still hide it.
+    if (fixed_clawshot_aim_active(link) && link->checkHookshotWait()) {
+        draw_fixed_camera_sight(link);
     }
 
     *static_cast<int*>(retval) = 1;

@@ -97,6 +97,7 @@ DEFINE_HOOK(&dMenu_Ring_c::isMixItemOn, RingIsMixItemOnHook);
 DEFINE_HOOK(&dMenu_Ring_c::isMixItemOff, RingIsMixItemOffHook);
 DEFINE_HOOK(&dMeter2_c::_delete, MeterDeleteHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, MeterDrawHook);
+DEFINE_HOOK_SYMBOL("dMeter2_c::presentAnims", void(dMeter2_c*), MeterPresentAnimsHook);
 DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawKantera",
     void(dMeter2Draw_c*, s32, f32, f32, f32), MeterDrawKanteraHook);
 DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawOxygen",
@@ -2916,6 +2917,20 @@ void after_meter_draw(ModContext*, void* args, void*, void*) {
     }
 }
 
+void after_meter_present_anims(ModContext*, void* args, void*, void*) {
+    auto* meter = mods::arg<dMeter2_c*>(args, 0);
+    if (meter == nullptr || meter->mpMeterDraw == nullptr) {
+        return;
+    }
+
+    // Dusklight's variable-delta-time HUD presentation pass rewrites the native
+    // button and D-Pad transforms at the start of presentation frames. Reapply
+    // Dawnlight's layout after that pass so fixed and custom presets remain the
+    // final values that are drawn.
+    apply_wii_u_hud_layout(meter->mpMeterDraw);
+    apply_hud_backing_visibility(meter->mpMeterDraw);
+}
+
 void after_meter_draw_kantera(ModContext*, void* args, void*, void*) {
     if (hardcoded_hud_layout_enabled()) {
         auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
@@ -3026,8 +3041,8 @@ void after_meter_move_button_cross(ModContext*, void* args, void*, void*) {
     }
 
     meter->field_0x1b4 = 0;
-    meter->field_0x15c = meter->mButtonCrossOFFPosY;
-    meter->mpMeterDraw->drawButtonCross(meter->mButtonCrossOFFPosX, meter->mButtonCrossOFFPosY);
+    meter->mPresentationTargets.crossX = meter->mButtonCrossOFFPosX;
+    meter->mPresentationTargets.crossY = meter->mButtonCrossOFFPosY;
 }
 
 HookAction before_meter_map_draw(ModContext*, void* args, void*, void*) {
@@ -3625,6 +3640,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawHook>(svc_hook, after_meter_draw);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<MeterPresentAnimsHook>(
+            svc_hook, after_meter_present_anims);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawKanteraHook>(svc_hook, after_meter_draw_kantera);

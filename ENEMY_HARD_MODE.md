@@ -35,15 +35,18 @@ alter boss health or outgoing damage.
 
 ### Ook (`E_MK` / `E_MK_BO`)
 
-- Ook's combat boomerang updates its outbound heading toward Link every frame.
-- Its outbound and return travel speed is doubled from `40` to `80` units per
-  frame.
+- Ook's normal combat boomerang updates its outbound heading toward Link every
+  frame. Throws aimed upward at a selected Deku Baba retain their original
+  target so they can still knock it from the ceiling.
+- Its outbound and return travel speed is increased from `40` to `60` units per
+  frame (`1.5x`).
 - Bridge, room-4, and other scripted boomerang sequences are excluded.
 
 ### Diababa (`B_BQ`)
 
 - Two Water Toadpolis (`E_TK`) spawn once the active fight begins, positioned
-  `1200` units to Diababa's left and right in the poison-water arena.
+  `1200` units to Diababa's left and right and `1000` units forward near the
+  front edge of the poison water.
 - The post-damage poison-attack interval is reduced from `80` to `53` frames,
   making the attack occur approximately `1.5x` as often.
 
@@ -69,6 +72,9 @@ alter boss health or outgoing damage.
 - In the flying visible phase, the first two arrow hits no longer transition
   Death Sword into its ground chase and melee sequence.
 - The third arrow hit performs the original transition and resets the counter.
+- The randomized wait between ranged attacks in that phase is halved from
+  `150-209` to `75-105` frames. Attack animations and projectile event frames
+  retain their original speed.
 
 ### Ganondorf (`B_GND`)
 

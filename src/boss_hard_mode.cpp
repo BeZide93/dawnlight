@@ -45,6 +45,7 @@ DEFINE_HOOK_SYMBOL("daE_GOB_Execute", int(e_gob_class*), DangoroExecuteHook);
 DEFINE_HOOK_SYMBOL("daE_FM_Execute", int(e_fm_class*), FyrusExecuteHook);
 #endif
 DEFINE_HOOK_SYMBOL("dBgS_Acch::CrrPos", void(dBgS_Acch*, dBgS&), BossHardModeCollisionHook);
+DEFINE_HOOK(&daE_VA_c::execute, DeathSwordExecuteHook);
 DEFINE_HOOK(&daE_VA_c::damage_check, DeathSwordDamageCheckHook);
 
 constexpr s16 kDiababaActionWait = 1;
@@ -55,8 +56,9 @@ constexpr s16 kFyrusActionNormal = 0;
 constexpr s16 kFyrusActionFightRun = 1;
 constexpr s16 kFyrusActionDamageRun = 4;
 constexpr s16 kFyrusActionDown = 9;
-constexpr float kOokBoomerangBaseSpeed = 40.0f;
+constexpr float kOokBoomerangBonusSpeed = 20.0f;
 constexpr float kDiababaToadpoliSideOffset = 1200.0f;
+constexpr float kDiababaToadpoliForwardOffset = 1000.0f;
 constexpr u32 kToadpoliNoPathParameters = 0x00FF0000;
 
 struct BossState {
@@ -140,10 +142,17 @@ void advance_ook_boomerang(e_mk_bo_class& boomerang) {
         return;
     }
 
-    if (boomerang.mode <= 1) {
-        auto* player = dComIfGp_getPlayer(0);
-        if (player == nullptr) return;
-        cXyz target = player->current.pos;
+    // db is the Deku Baba selected by Ook's upward throw. On its first frame,
+    // mirror vanilla's initial heading so the speed bonus is already safe to
+    // apply; after that, only the normal combat throw homes toward Link.
+    fopAc_ac_c* targetActor = nullptr;
+    if (boomerang.mode == 0 && ook->db != nullptr) {
+        targetActor = &ook->db->enemy;
+    } else if (boomerang.mode <= 1 && ook->db == nullptr) {
+        targetActor = dComIfGp_getPlayer(0);
+    }
+    if (targetActor != nullptr) {
+        cXyz target = targetActor->current.pos;
         target.y += 100.0f;
         const cXyz delta = target - actor->current.pos;
         actor->current.angle.y = cM_atan2s(delta.x, delta.z);
@@ -152,9 +161,11 @@ void advance_ook_boomerang(e_mk_bo_class& boomerang) {
         boomerang.field_0x5e0 = target;
     }
 
-    const float horizontal = cM_scos(actor->current.angle.x) * kOokBoomerangBaseSpeed;
+    // Pre-advance by half of the original 40-unit movement; the original
+    // execute supplies the other 40 units for a 60-unit total (150%).
+    const float horizontal = cM_scos(actor->current.angle.x) * kOokBoomerangBonusSpeed;
     actor->current.pos.x += cM_ssin(actor->current.angle.y) * horizontal;
-    actor->current.pos.y -= cM_ssin(actor->current.angle.x) * kOokBoomerangBaseSpeed;
+    actor->current.pos.y -= cM_ssin(actor->current.angle.x) * kOokBoomerangBonusSpeed;
     actor->current.pos.z += cM_scos(actor->current.angle.y) * horizontal;
 }
 
@@ -174,6 +185,8 @@ void spawn_diababa_toadpoli(b_bq_class& diababa) {
         cXyz position = diababa.current.pos;
         position.x += side * cosY;
         position.z -= side * sinY;
+        position.x += kDiababaToadpoliForwardOffset * sinY;
+        position.z += kDiababaToadpoliForwardOffset * cosY;
 
         csXyz angle(0, diababa.shape_angle.y, 0);
         if (player != nullptr) {
@@ -298,6 +311,19 @@ void finish_fyrus(const ProcessFrame& frame) {
     }
 }
 
+void finish_death_sword(const ProcessFrame& frame) {
+    auto& boss = *static_cast<daE_VA_c*>(frame.actor);
+    if (frame.action == daE_VA_c::ACTION_OPACI_FLY_e && frame.mode == 2 &&
+        boss.mAction == daE_VA_c::ACTION_OPACI_FLY_e && boss.mMode == 3 &&
+        boss.mDownTimer > 0)
+    {
+        // Vanilla initializes this ranged-attack wait to a random 150-209
+        // frames. Halving the initialized value doubles the attack cadence
+        // without accelerating the attack animation or its projectile events.
+        boss.mDownTimer = std::max(1, (boss.mDownTimer + 1) / 2);
+    }
+}
+
 void finish_actor(const ProcessFrame& frame) {
     if (frame.actor == nullptr) return;
     switch (fopAcM_GetName(frame.actor)) {
@@ -309,6 +335,9 @@ void finish_actor(const ProcessFrame& frame) {
         break;
     case fpcNm_E_FM_e:
         finish_fyrus(frame);
+        break;
+    case fpcNm_E_VT_e:
+        finish_death_sword(frame);
         break;
     default:
         break;
@@ -456,6 +485,12 @@ ModResult install_boss_hard_mode_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook::add_post<FyrusExecuteHook>(svc_hook, after_boss_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_pre<DeathSwordExecuteHook>(svc_hook, before_boss_execute);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook::add_post<DeathSwordExecuteHook>(svc_hook, after_boss_execute);
     }
     if (result == MOD_OK) {
         result = mods::hook::add_pre<BossHardModeCollisionHook>(svc_hook, before_collision);

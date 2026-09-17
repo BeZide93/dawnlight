@@ -311,10 +311,12 @@ and duplicate-event protections.
 - Shortens `mActionTimer[0]` while action `2` is active.
 - Applies `1.25x` turning.
 - Does not receive a base `speedF` acceleration multiplier.
-- Alternates native/direct aim with a led shot toward
-  `Link position + Link velocity * 10`.
+- Alternates direct aim with a led shot toward
+  `Link eye position - 20 Y + Link velocity * 10`.
 - Every fourth shot becomes a three-ball spread: the center projectile plus
   two projectiles at `-0x900` and `+0x900` yaw.
+- The extra projectiles remain suspended until the native center projectile is
+  released, then all three launch together from the Toadpoli's muzzle.
 - A spread is allowed only when at most three Toadpoli fireballs are active
   before the shot.
 - Recursion and slow-motion duplicate guards prevent the extra projectiles from

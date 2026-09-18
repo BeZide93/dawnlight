@@ -12,6 +12,7 @@
 #include "d/d_meter2_draw.h"
 #include "d/d_meter2_info.h"
 #include "d/d_particle_name.h"
+#include "f_pc/f_pc_leaf.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_lib.h"
@@ -33,7 +34,7 @@ DEFINE_HOOK(&daArrow_c::arrowShooting, BowLaunchHook);
 DEFINE_HOOK(&daArrow_c::setArrowAt, BowColliderHook);
 DEFINE_HOOK(&daArrow_c::setArrowWaterNextPos, BowWaterHook);
 DEFINE_HOOK(&daArrow_c::execute, BowArrowExecuteHook);
-DEFINE_HOOK_SYMBOL("d_a_arrow.cpp#daArrow_delete", int(daArrow_c*), BowArrowDeleteHook);
+DEFINE_HOOK(&fpcLf_Delete, BowArrowDeleteHook);
 DEFINE_HOOK(&at_power_check, BowDamageHook);
 DEFINE_HOOK(&cCcS::ChkNoHitAtTg, BowCollisionFilterHook);
 DEFINE_HOOK(&cCcS::SetAtTgCommonHitInf, BowCollisionHitHook);
@@ -353,7 +354,14 @@ void after_arrow_execute(ModContext*, void* args, void*, void*) {
 }
 
 HookAction before_arrow_delete(ModContext*, void* args, void*, void*) {
-    auto* arrow = mods::arg<daArrow_c*>(args, 0);
+    // Use the public lifecycle entry point: the file-qualified static arrow
+    // deleter is absent from Android's symbol manifest. This runs before actor
+    // destruction, including deletion during scene teardown, not just requests.
+    auto* process = mods::arg<leafdraw_class*>(args, 0);
+    if (process == nullptr || fpcM_GetName(process) != fpcNm_ARROW_e) {
+        return HOOK_CONTINUE;
+    }
+    auto* arrow = static_cast<daArrow_c*>(process);
     if (auto* state = arrow_state(arrow)) {
         stop_flame(*state);
         restore_ignition_targets(*state);

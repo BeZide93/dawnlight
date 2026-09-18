@@ -1,4 +1,5 @@
 #include "bow_modes.hpp"
+#include "bow_volley.hpp"
 
 #include "fierce_deity.hpp"
 #include "service_imports.hpp"
@@ -16,6 +17,7 @@
 #include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_lib.h"
+#include "m_Do/m_Do_mtx.h"
 #include "mods/service.hpp"
 #include "mods/svc/hook.hpp"
 
@@ -62,6 +64,8 @@ struct ArrowState {
     bool launched = false;
     bool extinguished = false;
     u32 flame = 0;
+    cXyz flameVelocity{};
+    std::uint32_t volley = kNoBowVolley;
     dCcD_Cps lantern{};
     std::vector<std::pair<fpc_ProcID, cCcD_Obj*>> ignitionTargets;
 };
@@ -97,6 +101,21 @@ ArrowState* arrow_state(daArrow_c* arrow) {
     return it != s_arrows.end() && it->second->arrow == arrow ? it->second.get() : nullptr;
 }
 
+void lantern_hit(fopAc_ac_c*, dCcD_GObjInf*, fopAc_ac_c*, dCcD_GObjInf*);
+
+ArrowState& track_arrow(daArrow_c* arrow, BowMode mode) {
+    auto& entry = s_arrows[fopAcM_GetID(arrow)];
+    if (!entry) {
+        entry = std::make_unique<ArrowState>();
+        entry->arrow = arrow;
+        entry->lantern.Set(kLanternSource);
+        entry->lantern.SetStts(&arrow->field_0x64c);
+        entry->lantern.SetAtHitCallback(lantern_hit);
+    }
+    entry->mode = mode;
+    return *entry;
+}
+
 ArrowState* fire_state(cCcD_Obj* collider) {
     fopAc_ac_c* actor = collider != nullptr ? collider->GetAc() : nullptr;
     if (actor == nullptr || fopAcM_GetName(actor) != fpcNm_ARROW_e) {
@@ -111,6 +130,8 @@ ArrowState* fire_state(cCcD_Obj* collider) {
 void stop_flame(ArrowState& state) {
     if (state.flame != 0) {
         if (auto* emitter = dComIfGp_particle_getEmitter(state.flame)) {
+            emitter->setParticleCallBackPtr(nullptr);
+            emitter->setUserWork(0);
             emitter->stopCreateParticle();
             emitter->quitImmortalEmitter();
             emitter->becomeInvalidEmitter();
@@ -238,27 +259,30 @@ void after_bow_action(ModContext*, void*, void*, void*) {
     auto* actor = fopAcM_SearchByID(s_nockedArrow);
     s_nockedArrow = fpcM_ERROR_PROCESS_ID_e;
     if (actor == nullptr || fopAcM_GetName(actor) != fpcNm_ARROW_e ||
-        (fopAcM_GetParam(actor) != 1 && fopAcM_GetParam(actor) != 2) ||
-        s_releaseMode == BowMode::Normal)
+        (fopAcM_GetParam(actor) != 1 && fopAcM_GetParam(actor) != 2))
     {
         return;
     }
-    auto state = std::make_unique<ArrowState>();
-    state->arrow = static_cast<daArrow_c*>(actor);
-    state->mode = s_releaseMode;
-    state->lantern.Set(kLanternSource);
-    state->lantern.SetStts(&state->arrow->field_0x64c);
-    state->lantern.SetAtHitCallback(lantern_hit);
-    s_arrows.emplace(fopAcM_GetID(actor), std::move(state));
+    auto* arrow = static_cast<daArrow_c*>(actor);
+    if (s_releaseMode != BowMode::Fire) {
+        // A mode change and release can happen before the nocked arrow's next update.
+        // Retire its fire preview immediately, including when returning to Normal.
+        if (auto* previous = arrow_state(arrow)) {
+            stop_flame(*previous);
+            previous->mode = s_releaseMode;
+        }
+    }
+    if (s_releaseMode == BowMode::Normal) {
+        return;
+    }
+    auto& state = track_arrow(static_cast<daArrow_c*>(actor), s_releaseMode);
+    state.volley = s_releaseMode == BowMode::Triple ? fopAcM_GetID(actor) : kNoBowVolley;
     // Vanilla has already reserved the first arrow at the actual release.
     dComIfGp_setItemArrowNumCount(-(arrow_cost(s_releaseMode) - 1));
 }
 
-HookAction before_arrow_collider(ModContext*, void* args, void*, void*) {
-    auto* arrow = mods::arg<daArrow_c*>(args, 0);
+void apply_spread_flight(daArrow_c* arrow) {
     if (s_spreadSource != nullptr && arrow != s_spreadSource) {
-        // arrowShooting first applies native aiming (including charged/Hawkeye aim).
-        // Override only now, before the first collision capsule is registered.
         auto* source = s_spreadSource;
         arrow->current = source->current;
         arrow->old = source->old;
@@ -269,13 +293,14 @@ HookAction before_arrow_collider(ModContext*, void* args, void*, void*) {
         arrow->mFlyMax = source->mFlyMax;
         arrow->field_0x99c = source->field_0x99c;
         arrow->mOutLengthRate = source->mOutLengthRate;
-        const float sine = cM_ssin(s_spreadYaw);
-        const float cosine = cM_scos(s_spreadYaw);
-        arrow->speed.set(source->speed.x * cosine + source->speed.z * sine,
-                         source->speed.y,
-                         source->speed.z * cosine - source->speed.x * sine);
+        arrow->speed = bow_spread_velocity(source->speed, s_spreadYaw);
         arrow->speedF = source->speedF;
     }
+}
+
+HookAction before_arrow_collider(ModContext*, void* args, void*, void*) {
+    auto* arrow = mods::arg<daArrow_c*>(args, 0);
+    apply_spread_flight(arrow);
     if (auto* state = arrow_state(arrow); state != nullptr && state->mode == BowMode::Fire) {
         if (arrow->field_0x945 != 0 || arrow->field_0x943 != 0) {
             extinguish(*state);
@@ -305,11 +330,26 @@ void after_arrow_water(ModContext*, void* args, void* retval, void*) {
 void after_arrow_launch(ModContext*, void* args, void*, void*) {
     auto* arrow = mods::arg<daArrow_c*>(args, 0);
     auto* state = arrow_state(arrow);
-    if (state == nullptr || state->launched || s_spreadSource != nullptr) {
+    if (state == nullptr || state->launched) {
         return;
     }
+    // This post-hook runs AFTER Dawnlight's camera correction. Otherwise it aims
+    // the two side arrows back at the reticle and collapses the spread.
+    apply_spread_flight(arrow);
+    cXyz end = arrow->current.pos + arrow->speed * (arrow->mOutLengthRate + 1.0f);
+    if (arrow->field_0x945 == 0) {
+        arrow->setArrowWaterNextPos(&arrow->current.pos, &end);
+    }
+    arrow->field_0x56c.Set(&arrow->current.pos, &end, arrow);
+    if (dComIfG_Bgsp().LineCross(&arrow->field_0x56c)) {
+        end = arrow->field_0x56c.GetCross();
+    }
+    // Update the already-registered capsule in place, never register it twice.
+    static_cast<cM3dGCps*>(&arrow->field_0x688)->Set(
+        arrow->current.pos, end, arrow->field_0x688.GetR());
+    arrow->field_0x688.CalcAtVec();
     state->launched = true;
-    if (state->mode != BowMode::Triple) {
+    if (state->mode != BowMode::Triple || s_spreadSource != nullptr) {
         return;
     }
     s_spreadSource = arrow;
@@ -319,10 +359,11 @@ void after_arrow_launch(ModContext*, void* args, void*, void*) {
             dComIfGp_setItemArrowNumCount(1); // do not charge for a failed allocation
             continue;
         }
+        track_arrow(extra, BowMode::Triple).volley = state->volley;
         s_spreadYaw = yaw;
         fopAcM_SetParam(extra, fopAcM_GetParam(arrow));
         // Use the native wait -> flight transition, including blur and arrow lifetime.
-        // Side arrows have no mode entry, so they cannot recursively spawn a spread.
+        // The active spread source prevents side arrows from spawning more arrows.
         extra->procWait();
         extra->setNormalMatrix();
     }
@@ -332,11 +373,22 @@ void after_arrow_launch(ModContext*, void* args, void*, void*) {
 void after_arrow_execute(ModContext*, void* args, void*, void*) {
     auto* arrow = mods::arg<daArrow_c*>(args, 0);
     auto* state = arrow_state(arrow);
-    if (state == nullptr || state->mode != BowMode::Fire || !state->launched) {
+    const bool nocked = arrow->checkWait();
+    if (nocked && arrow->mArrowType == daArrow_c::ARROW_TYPE_NORMAL) {
+        auto* link = daAlink_getAlinkActorClass();
+        const bool preview = bow_active(link) && link->mItemAcKeep.getActor() == arrow;
+        if (preview && s_mode == BowMode::Fire) {
+            state = &track_arrow(arrow, BowMode::Fire);
+        } else if (state != nullptr) {
+            stop_flame(*state);
+            state->mode = BowMode::Normal;
+        }
+    }
+    if (state == nullptr || state->mode != BowMode::Fire || (!state->launched && !nocked)) {
         return;
     }
     if (arrow->field_0x945 != 0 || arrow->field_0x943 != 0 || arrow->field_0x93f != 0 ||
-        (fopAcM_GetParam(arrow) != 1 && fopAcM_GetParam(arrow) != 2))
+        (!nocked && fopAcM_GetParam(arrow) != 1 && fopAcM_GetParam(arrow) != 2))
     {
         stop_flame(*state);
         if (arrow->field_0x945 != 0 || arrow->field_0x943 != 0) {
@@ -347,10 +399,24 @@ void after_arrow_execute(ModContext*, void* args, void*, void*) {
     if (state->extinguished) {
         return;
     }
-    cXyz tip = arrow->current.pos + arrow->speed * arrow->mOutLengthRate;
+    cXyz tip;
+    if (nocked) {
+        const Vec localTip{0.0f, 0.0f, 90.0f};
+        mDoMtx_multVec(arrow->mpModel->getBaseTRMtx(), &localTip, &tip);
+    } else {
+        tip = arrow->current.pos + arrow->speed * arrow->mOutLengthRate;
+    }
+    // Use Link's resident lantern flame, which is available in every room.
+    // The old ARWFIR name-table entry is not the flame used by native fire arrows.
+    const cXyz scale(0.65f, 0.65f, 0.65f);
     state->flame = dComIfGp_particle_set(
-        state->flame, ID_IT_JN_ARWFIR_FIRE00, &tip, &arrow->tevStr, &arrow->shape_angle,
-        nullptr, 0xff, nullptr, -1, nullptr, nullptr, nullptr);
+        state->flame, ID_ZI_J_KANTERA_FIRE, &tip, &arrow->tevStr, &arrow->shape_angle,
+        &scale, 0xff, nullptr, -1, nullptr, nullptr, nullptr);
+    if (auto* emitter = dComIfGp_particle_getEmitter(state->flame)) {
+        state->flameVelocity = nocked ? cXyz::Zero : arrow->speed * 0.9f;
+        emitter->setParticleCallBackPtr(nocked ? nullptr : dPa_control_c::getParticleTracePCB());
+        emitter->setUserWork(nocked ? 0 : reinterpret_cast<uintptr_t>(&state->flameVelocity));
+    }
 }
 
 HookAction before_arrow_delete(ModContext*, void* args, void*, void*) {
@@ -407,6 +473,28 @@ HookAction before_collision(ModContext*, void* args, void*, void*) {
         attack = &state->lantern;
     }
     return HOOK_CONTINUE;
+}
+
+std::uint32_t collider_volley(cCcD_Obj* collider) {
+    auto* actor = collider != nullptr ? collider->GetAc() : nullptr;
+    if (actor != nullptr && fopAcM_GetName(actor) == fpcNm_ARROW_e) {
+        if (auto* state = arrow_state(static_cast<daArrow_c*>(actor))) {
+            return state->volley;
+        }
+    }
+    return kNoBowVolley;
+}
+
+HookAction before_collision_filter(ModContext* ctx, void* args, void* retval, void* data) {
+    auto* attack = mods::arg<cCcD_Obj*>(args, 1);
+    auto* target = mods::arg<cCcD_Obj*>(args, 2);
+    if (same_bow_volley(collider_volley(attack), collider_volley(target))) {
+        // Native arrows also accept arrow hits. The three overlapping launch
+        // capsules otherwise hit each other and all disappear on their first update.
+        *static_cast<bool*>(retval) = true;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return before_collision(ctx, args, retval, data);
 }
 
 HookAction before_collision_hit(ModContext* ctx, void* args, void* retval, void* data) {
@@ -495,19 +583,21 @@ void after_meter_draw(ModContext*, void*, void*, void*) {
 }  // namespace
 
 ModResult initialize_bow_modes(ModError* error) {
+    HookOptions afterAim = HOOK_OPTIONS_INIT;
+    afterAim.priority = -100; // priorities run high to low; camera correction uses zero
     const ModResult results[] = {
         mods::hook::add_pre<BowPlayerExecuteHook>(svc_hook, before_player_execute),
         mods::hook::add_post<BowPlayerExecuteHook>(svc_hook, after_player_execute),
         mods::hook::add_pre<BowActionHook>(svc_hook, before_bow_action),
         mods::hook::add_post<BowActionHook>(svc_hook, after_bow_action),
-        mods::hook::add_post<BowLaunchHook>(svc_hook, after_arrow_launch),
+        mods::hook::add_post<BowLaunchHook>(svc_hook, after_arrow_launch, &afterAim),
         mods::hook::add_pre<BowColliderHook>(svc_hook, before_arrow_collider),
         mods::hook::add_post<BowColliderHook>(svc_hook, after_arrow_collider),
         mods::hook::add_post<BowWaterHook>(svc_hook, after_arrow_water),
         mods::hook::add_post<BowArrowExecuteHook>(svc_hook, after_arrow_execute),
         mods::hook::add_pre<BowArrowDeleteHook>(svc_hook, before_arrow_delete),
         mods::hook::add_post<BowDamageHook>(svc_hook, after_attack_power),
-        mods::hook::add_pre<BowCollisionFilterHook>(svc_hook, before_collision),
+        mods::hook::add_pre<BowCollisionFilterHook>(svc_hook, before_collision_filter),
         mods::hook::add_pre<BowCollisionHitHook>(svc_hook, before_collision_hit),
         mods::hook::add_post<BowModeDrawHook>(svc_hook, after_meter_draw),
     };

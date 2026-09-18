@@ -12,6 +12,8 @@
 #include "mods/service.hpp"
 
 #include <cstring>
+#include <memory>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -21,6 +23,7 @@ namespace {
 constexpr u16 kBulblinFlame = 0x8113;
 JPAResourceManager* s_common = nullptr;
 JKRExpHeap* s_heap = nullptr;
+std::unique_ptr<u8[]> s_heapStorage;
 JPAResource* s_resource = nullptr;
 bool s_attempted = false;
 u16 s_effect = 0;
@@ -80,15 +83,25 @@ bool install_resource(JPAResourceManager* common) {
     if (effect == 0) return false;
     particle_resource::write16(bytes.data() + 16, effect);
 
-    // JPA retains pointers into the JPC. Own both bytes and parsed objects on one
-    // heap that survives room changes and can be released together on mod unload.
-    s_heap = JKRExpHeap::create(static_cast<u32>(bytes.size()) + 256 * 1024,
-                              JKRHeap::getSystemHeap(), false);
-    if (s_heap == nullptr) return false;
+    // The game's fixed system heap is already partitioned during play. The
+    // size-only create overload would allocate from it and abort on exhaustion,
+    // even with errorFlag=false. Back this JPA heap with mod-owned host memory;
+    // the parent only registers it for JKR disposer/texture lifetime tracking.
+    const u32 heapSize = static_cast<u32>(bytes.size()) + 256 * 1024;
+    s_heapStorage.reset(new (std::nothrow) u8[heapSize + 31]);
+    if (!s_heapStorage) return false;
+    auto* heapMemory = reinterpret_cast<void*>(
+        (reinterpret_cast<uintptr_t>(s_heapStorage.get()) + 31) & ~uintptr_t{31});
+    s_heap = JKRExpHeap::create(heapMemory, heapSize, JKRHeap::getSystemHeap(), false);
+    if (s_heap == nullptr) {
+        s_heapStorage.reset();
+        return false;
+    }
     auto* data = static_cast<u8*>(s_heap->alloc(static_cast<u32>(bytes.size()), 32));
     if (data == nullptr) {
         s_heap->destroy();
         s_heap = nullptr;
+        s_heapStorage.reset();
         return false;
     }
     std::memcpy(data, bytes.data(), bytes.size());
@@ -158,6 +171,8 @@ void shutdown_bow_fire_resource() {
     }
     if (s_heap != nullptr) s_heap->destroy();
     s_heap = nullptr;
+    // destroy() runs texture/disposer cleanup in this buffer; free it afterwards.
+    s_heapStorage.reset();
     s_resource = nullptr;
     s_common = nullptr;
     s_effect = 0;

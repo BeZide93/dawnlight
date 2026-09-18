@@ -162,6 +162,9 @@ and duplicate-event protections.
 - Also shortens `bow_shake_timer` when the actor has a bow animation.
 - Applies `1.2x` movement/approach acceleration.
 - Applies `1.25x` turning.
+- Every second bow shot becomes a three-arrow spread: the center arrow plus
+  two arrows at `-0x900` and `+0x900` yaw.
+- Extra arrows preserve the native arrow type and targeting parameters.
 - Retains the slow-motion arrow guard that prevents duplicate arrows.
 - Mounted Bulblins remain excluded by the profile eligibility checks.
 - Does not add projectile leading or force a new two-hit melee state.
@@ -317,8 +320,6 @@ and duplicate-event protections.
   two projectiles at `-0x900` and `+0x900` yaw.
 - The extra projectiles remain suspended until the native center projectile is
   released, then all three launch together from the Toadpoli's muzzle.
-- A spread is allowed only when at most three Toadpoli fireballs are active
-  before the shot.
 - Recursion and slow-motion duplicate guards prevent the extra projectiles from
   recursively producing more spreads or repeating on the same event frame.
 
@@ -386,6 +387,7 @@ for:
 - **Chilfos:** led spear aim and a limit of three active thrown spears.
 - **Stalhound:** one bounded follow-up pounce for selected actors.
 - **Fire Toadpoli:** alternating direct/led aim and a three-ball spread on every shot.
+- **Bulblin:** a three-arrow spread on every second bow shot.
 
 The remaining profiles do not receive newly forced combos, counters, flanking
 formations, low-health phases, or replacement attack state machines.

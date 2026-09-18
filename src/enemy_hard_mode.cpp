@@ -121,25 +121,9 @@ bool is_normal_combo_finisher(const daAlink_c* link, dCcD_GObjInf* collider) {
     }
 }
 
-bool uses_alternating_finisher_knockdown(s16 profileName) {
-    return profileName == fpcNm_E_OC_e || profileName == fpcNm_E_DN_e ||
-           profileName == fpcNm_E_MF_e;
-}
-
-HookAction before_normal_finisher_hit(ModContext*, void* args, void*, void*) {
-    auto* enemy = mods::arg<fopAc_ac_c*>(args, 0);
-    auto* attack = mods::arg<dCcU_AtInfo*>(args, 1);
-    auto* step = current_enemy_slow_step();
-    if (step == nullptr || step->actor != enemy || step->profile == nullptr ||
-        !uses_alternating_finisher_knockdown(step->profile->name) || attack == nullptr ||
-        attack->mpCollider == nullptr)
-    {
-        return HOOK_CONTINUE;
-    }
-
-    auto* collider = static_cast<dCcD_GObjInf*>(attack->mpCollider);
+void arm_normal_finisher_knockdown(fopAc_ac_c* enemy, dCcD_GObjInf* collider) {
     auto* link = daAlink_getAlinkActorClass();
-    if (!is_normal_combo_finisher(link, collider)) return HOOK_CONTINUE;
+    if (!is_normal_combo_finisher(link, collider)) return;
 
     auto& clock = cadence_clock_for(enemy);
     restore_finisher_collider(clock);
@@ -150,21 +134,42 @@ HookAction before_normal_finisher_hit(ModContext*, void* args, void*, void*) {
         clock.finisherColliderSpl = collider->GetAtSpl();
         collider->SetAtSpl(dCcG_At_Spl_UNK_0);
     }
+}
+
+HookAction before_normal_finisher_hit(ModContext*, void* args, void*, void*) {
+    auto* enemy = mods::arg<fopAc_ac_c*>(args, 0);
+    auto* attack = mods::arg<dCcU_AtInfo*>(args, 1);
+    auto* step = current_enemy_slow_step();
+    if (step == nullptr || step->actor != enemy || step->profile == nullptr ||
+        (step->profile->name != fpcNm_E_DN_e && step->profile->name != fpcNm_E_MF_e) ||
+        attack == nullptr ||
+        attack->mpCollider == nullptr)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    arm_normal_finisher_knockdown(
+        enemy, static_cast<dCcD_GObjInf*>(attack->mpCollider));
     return HOOK_CONTINUE;
 }
 
 HookAction before_bokoblin_cut_type(ModContext*, void* args, void* retval, void*) {
     auto* actor = mods::arg<daE_OC_c*>(args, 0);
     auto* step = current_enemy_slow_step();
-    if (step == nullptr || step->actor != actor ||
-        !cadence_clock_for(actor).suppressNormalFinisher)
+    if (step == nullptr || step->actor != actor || step->profile == nullptr ||
+        step->profile->name != fpcNm_E_OC_e)
     {
         return HOOK_CONTINUE;
     }
 
-    // Bokoblins separately classify the fourth combo hit as big damage even
-    // after the collider's special-hit flag is cleared. Use their ordinary
-    // vertical damage reaction for the non-knockdown finisher.
+    // Bokoblin calls this before cc_at_check(), unlike Lizalfos and Dynalfos.
+    // mAtInfo already contains the selected target collider at this point, so
+    // arm the alternating state here before the native combo-count shortcut.
+    arm_normal_finisher_knockdown(
+        actor, static_cast<dCcD_GObjInf*>(actor->mAtInfo.mpCollider));
+    if (!cadence_clock_for(actor).suppressNormalFinisher) return HOOK_CONTINUE;
+
+    // Use the ordinary vertical damage reaction for the non-knockdown hit.
     *static_cast<int*>(retval) = 2;
     return HOOK_SKIP_ORIGINAL;
 }

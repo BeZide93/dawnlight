@@ -46,7 +46,7 @@ namespace dawnlight {
 namespace {
 
 DEFINE_HOOK(&cc_at_check, NormalFinisherHitHook);
-DEFINE_HOOK(&daE_OC_c::getCutType, BokoblinCutTypeHook);
+DEFINE_HOOK(&daE_OC_c::damage_check, BokoblinDamageCheckHook);
 
 constexpr float kTurnScale = 1.25f;
 constexpr int kBokoblinDamageAction = 5;
@@ -141,7 +141,8 @@ HookAction before_normal_finisher_hit(ModContext*, void* args, void*, void*) {
     auto* attack = mods::arg<dCcU_AtInfo*>(args, 1);
     auto* step = current_enemy_slow_step();
     if (step == nullptr || step->actor != enemy || step->profile == nullptr ||
-        (step->profile->name != fpcNm_E_DN_e && step->profile->name != fpcNm_E_MF_e) ||
+        (step->profile->name != fpcNm_E_OC_e && step->profile->name != fpcNm_E_DN_e &&
+         step->profile->name != fpcNm_E_MF_e) ||
         attack == nullptr ||
         attack->mpCollider == nullptr)
     {
@@ -153,25 +154,27 @@ HookAction before_normal_finisher_hit(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
-HookAction before_bokoblin_cut_type(ModContext*, void* args, void* retval, void*) {
+void after_bokoblin_damage_check(ModContext*, void* args, void*, void*) {
     auto* actor = mods::arg<daE_OC_c*>(args, 0);
     auto* step = current_enemy_slow_step();
     if (step == nullptr || step->actor != actor || step->profile == nullptr ||
         step->profile->name != fpcNm_E_OC_e)
     {
-        return HOOK_CONTINUE;
+        return;
     }
 
-    // Bokoblin calls this before cc_at_check(), unlike Lizalfos and Dynalfos.
-    // mAtInfo already contains the selected target collider at this point, so
-    // arm the alternating state here before the native combo-count shortcut.
-    arm_normal_finisher_knockdown(
-        actor, static_cast<dCcD_GObjInf*>(actor->mAtInfo.mpCollider));
-    if (!cadence_clock_for(actor).suppressNormalFinisher) return HOOK_CONTINUE;
+    auto& clock = cadence_clock_for(actor);
+    if (!clock.suppressNormalFinisher || actor->health <= 1 ||
+        actor->mActionMode != kBokoblinBigDamageAction)
+    {
+        return;
+    }
 
-    // Use the ordinary vertical damage reaction for the non-knockdown hit.
-    *static_cast<int*>(retval) = 2;
-    return HOOK_SKIP_ORIGINAL;
+    // Bokoblin decides the combo-count knockdown before cc_at_check(), and the
+    // small getCutType() helper can be inlined into damage_check() in release
+    // builds. Correct the resulting action after the native hit processing so
+    // the first normal finisher uses an ordinary vertical damage reaction.
+    actor->setActionMode(kBokoblinDamageAction, 2);
 }
 
 template <typename T>
@@ -386,8 +389,8 @@ ModResult install_enemy_hard_mode_hooks() {
     ModResult result = mods::hook::add_pre<NormalFinisherHitHook>(
         svc_hook, before_normal_finisher_hit);
     if (result == MOD_OK) {
-        result = mods::hook::add_pre<BokoblinCutTypeHook>(
-            svc_hook, before_bokoblin_cut_type);
+        result = mods::hook::add_post<BokoblinDamageCheckHook>(
+            svc_hook, after_bokoblin_damage_check);
     }
     return result;
 }

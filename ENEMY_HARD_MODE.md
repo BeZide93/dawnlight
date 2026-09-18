@@ -123,6 +123,10 @@ and duplicate-event protections.
 
 - Shortens `field_0x6c0`, `field_0x6c2`, and `field_0x6c4`.
 - Reduces native waiting, attack, and reorientation intervals.
+- Alternates normal combo finishers per Bokoblin: the first uses the ordinary
+  damage reaction and every second finisher retains its native knockdown.
+- Reduces the grounded recovery after a surviving knockdown from the native
+  `45–55` timer points to the Dynalfos value of `5`.
 - Actor-ID cadence offsets stagger groups.
 - Does not enforce a two-hit combo or cap the number of active attackers.
 - The profile uses manual steering, so it receives no additional generic
@@ -174,6 +178,10 @@ and duplicate-event protections.
 - Shortens `timer[0]`, `timer[2]`, and `unk_timer_1`.
 - Applies `1.2x` movement/approach acceleration.
 - Applies `1.25x` turning.
+- Alternates normal combo finishers per Lizalfos: only every second one causes
+  its native knockdown.
+- Reduces the grounded recovery after a surviving knockdown from the native
+  `60–70` timer points to the Dynalfos value of `5`.
 - Makes native attacks, reactions, and reorientation available sooner.
 - Does not change sidestep randomness or force longer combo chains.
 
@@ -183,6 +191,8 @@ and duplicate-event protections.
   `field_0x6c0[3]`.
 - Applies `1.2x` movement/approach acceleration.
 - Applies `1.4x` turning.
+- Alternates normal combo finishers per Dynalfos so only every second one
+  causes a knockdown; its native `5`-point grounded recovery is preserved.
 - Retains the slow-motion protection for fight-run sidestep impulses.
 - Does not force guard, counter, or jump-attack transitions.
 

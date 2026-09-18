@@ -427,7 +427,8 @@ ModResult initialize_enemy_slow_motion() {
         const ModResult result = profile->install();
         if (result != MOD_OK) return result;
     }
-    ModResult result = mods::hook::add_pre<MoveHook>(svc_hook, before_move);
+    ModResult result = install_enemy_hard_mode_hooks();
+    if (result == MOD_OK) result = mods::hook::add_pre<MoveHook>(svc_hook, before_move);
     if (result == MOD_OK) result = mods::hook::add_pre<ProcessMethodHook>(svc_hook, before_process_method);
     if (result == MOD_OK) result = mods::hook::add_post<ProcessMethodHook>(svc_hook, after_process_method);
     if (result == MOD_OK) result = mods::hook::add_pre<CollisionHook>(svc_hook, before_collision);

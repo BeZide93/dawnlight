@@ -5,6 +5,7 @@
 
 #include "m_Do/m_Do_ext.h"
 
+#include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_b_gg.h"
 #include "d/actor/d_a_b_tn.h"
 #include "d/actor/d_a_e_ba.h"
@@ -33,6 +34,8 @@
 #include "d/actor/d_a_e_tt.h"
 #include "d/actor/d_a_e_ww.h"
 #include "d/actor/d_a_e_zs.h"
+#include "d/d_cc_d.h"
+#include "d/d_cc_uty.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_name.h"
 
@@ -42,16 +45,43 @@
 namespace dawnlight {
 namespace {
 
+DEFINE_HOOK(&cc_at_check, NormalFinisherHitHook);
+DEFINE_HOOK(&daE_OC_c::getCutType, BokoblinCutTypeHook);
+
 constexpr float kTurnScale = 1.25f;
+constexpr int kBokoblinDamageAction = 5;
+constexpr int kBokoblinBigDamageAction = 6;
+constexpr int kLizardDamageAction = 21;
+constexpr s16 kShortKnockdownRecovery = 5;
 
 struct CadenceClock {
     fopAc_ac_c* actor = nullptr;
     fpc_ProcID id = fpcM_ERROR_PROCESS_ID_e;
     std::uint8_t phase = 0;
     bool followUp = false;
+    std::uint8_t normalFinisherHits = 0;
+    bool suppressNormalFinisher = false;
+    dCcD_GObjInf* finisherCollider = nullptr;
+    dCcG_At_Spl finisherColliderSpl = dCcG_At_Spl_UNK_0;
 };
 
 std::array<CadenceClock, 64> s_cadenceClocks{};
+
+void restore_finisher_collider(CadenceClock& clock) {
+    if (clock.finisherCollider != nullptr) {
+        clock.finisherCollider->SetAtSpl(clock.finisherColliderSpl);
+        clock.finisherCollider = nullptr;
+    }
+    clock.suppressNormalFinisher = false;
+}
+
+void assign_clock(CadenceClock& clock, fopAc_ac_c* actor) {
+    restore_finisher_collider(clock);
+    clock = {};
+    clock.actor = actor;
+    clock.id = fopAcM_GetID(actor);
+    clock.phase = static_cast<std::uint8_t>(clock.id % 3);
+}
 
 CadenceClock& cadence_clock_for(fopAc_ac_c* actor) {
     for (auto& clock : s_cadenceClocks) {
@@ -59,15 +89,84 @@ CadenceClock& cadence_clock_for(fopAc_ac_c* actor) {
     }
     for (auto& clock : s_cadenceClocks) {
         if (clock.actor == nullptr || fopAcM_SearchByID(clock.id) != clock.actor) {
-            clock = {actor, fopAcM_GetID(actor),
-                     static_cast<std::uint8_t>(fopAcM_GetID(actor) % 3), false};
+            assign_clock(clock, actor);
             return clock;
         }
     }
     auto& clock = s_cadenceClocks[fopAcM_GetID(actor) % s_cadenceClocks.size()];
-    clock = {actor, fopAcM_GetID(actor),
-             static_cast<std::uint8_t>(fopAcM_GetID(actor) % 3), false};
+    assign_clock(clock, actor);
     return clock;
+}
+
+bool is_normal_combo_finisher(const daAlink_c* link, dCcD_GObjInf* collider) {
+    if (link == nullptr || collider == nullptr || link->mProcID != daAlink_c::PROC_CUT_FINISH ||
+        collider->GetAtSpl() != dCcG_At_Spl_UNK_1)
+    {
+        return false;
+    }
+
+    if (collider != &link->mAtCps[0] && collider != &link->mAtCps[1] &&
+        collider != &link->mAtCps[2])
+    {
+        return false;
+    }
+
+    switch (link->getCutType()) {
+    case daPy_py_c::CUT_TYPE_FINISH_LEFT:
+    case daPy_py_c::CUT_TYPE_FINISH_VERTICAL:
+    case daPy_py_c::CUT_TYPE_FINISH_RIGHT:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool uses_alternating_finisher_knockdown(s16 profileName) {
+    return profileName == fpcNm_E_OC_e || profileName == fpcNm_E_DN_e ||
+           profileName == fpcNm_E_MF_e;
+}
+
+HookAction before_normal_finisher_hit(ModContext*, void* args, void*, void*) {
+    auto* enemy = mods::arg<fopAc_ac_c*>(args, 0);
+    auto* attack = mods::arg<dCcU_AtInfo*>(args, 1);
+    auto* step = current_enemy_slow_step();
+    if (step == nullptr || step->actor != enemy || step->profile == nullptr ||
+        !uses_alternating_finisher_knockdown(step->profile->name) || attack == nullptr ||
+        attack->mpCollider == nullptr)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    auto* collider = static_cast<dCcD_GObjInf*>(attack->mpCollider);
+    auto* link = daAlink_getAlinkActorClass();
+    if (!is_normal_combo_finisher(link, collider)) return HOOK_CONTINUE;
+
+    auto& clock = cadence_clock_for(enemy);
+    restore_finisher_collider(clock);
+    ++clock.normalFinisherHits;
+    clock.suppressNormalFinisher = (clock.normalFinisherHits & 1U) != 0;
+    if (clock.suppressNormalFinisher) {
+        clock.finisherCollider = collider;
+        clock.finisherColliderSpl = collider->GetAtSpl();
+        collider->SetAtSpl(dCcG_At_Spl_UNK_0);
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction before_bokoblin_cut_type(ModContext*, void* args, void* retval, void*) {
+    auto* actor = mods::arg<daE_OC_c*>(args, 0);
+    auto* step = current_enemy_slow_step();
+    if (step == nullptr || step->actor != actor ||
+        !cadence_clock_for(actor).suppressNormalFinisher)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    // Bokoblins separately classify the fourth combo hit as big damage even
+    // after the collider's special-hit flag is cleared. Use their ordinary
+    // vertical damage reaction for the non-knockdown finisher.
+    *static_cast<int*>(retval) = 2;
+    return HOOK_SKIP_ORIGINAL;
 }
 
 template <typename T>
@@ -278,6 +377,16 @@ void shorten_attack_interval(EnemySlowStep& step) {
 
 }  // namespace
 
+ModResult install_enemy_hard_mode_hooks() {
+    ModResult result = mods::hook::add_pre<NormalFinisherHitHook>(
+        svc_hook, before_normal_finisher_hit);
+    if (result == MOD_OK) {
+        result = mods::hook::add_pre<BokoblinCutTypeHook>(
+            svc_hook, before_bokoblin_cut_type);
+    }
+    return result;
+}
+
 bool enemy_hard_mode_applies(int profileName) {
     if (!enemy_hard_mode_enabled()) return false;
     switch (profileName) {
@@ -374,11 +483,32 @@ void finish_enemy_hard_mode(EnemySlowStep& step) {
     if (step.actor == nullptr || step.profile == nullptr ||
         !enemy_hard_mode_applies(step.profile->name)) return;
 
+    auto& clock = cadence_clock_for(step.actor);
+    restore_finisher_collider(clock);
+
+    // Match the Dynalfos' native five-point recovery after a living enemy has
+    // completed its fall and entered the grounded knockdown state.
+    if (step.profile->name == fpcNm_E_OC_e) {
+        auto& actor = *static_cast<daE_OC_c*>(step.actor);
+        if (step.action == kBokoblinBigDamageAction && step.subaction == 4 &&
+            actor.mActionMode == kBokoblinBigDamageAction && actor.mOcState == 5 &&
+            actor.health > 0)
+        {
+            actor.field_0x6c0 = kShortKnockdownRecovery;
+        }
+    } else if (step.profile->name == fpcNm_E_DN_e) {
+        auto& actor = *reinterpret_cast<e_dn_class*>(step.actor);
+        if (step.action == kLizardDamageAction && step.subaction == 2 &&
+            actor.action == kLizardDamageAction && actor.mode == 3 && actor.actor.health > 0)
+        {
+            actor.timer[0] = kShortKnockdownRecovery;
+        }
+    }
+
     // A bounded second pounce makes some Stalhounds less predictable without
     // allowing an endless attack loop. Actor-ID parity also staggers packs.
     if (step.profile->name == fpcNm_E_SH_e) {
         auto& actor = *reinterpret_cast<e_sh_class*>(step.actor);
-        auto& clock = cadence_clock_for(step.actor);
         if (step.action != 3 && actor.field_0x676 == 3) {
             clock.followUp = (fopAcM_GetID(step.actor) & 1U) != 0;
         } else if (step.action == 3 && step.subaction == 4 &&
@@ -391,6 +521,7 @@ void finish_enemy_hard_mode(EnemySlowStep& step) {
 }
 
 void reset_enemy_hard_mode() {
+    for (auto& clock : s_cadenceClocks) restore_finisher_collider(clock);
     s_cadenceClocks = {};
 }
 

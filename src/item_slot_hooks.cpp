@@ -97,7 +97,6 @@ DEFINE_HOOK(&dMenu_Ring_c::isMixItemOn, RingIsMixItemOnHook);
 DEFINE_HOOK(&dMenu_Ring_c::isMixItemOff, RingIsMixItemOffHook);
 DEFINE_HOOK(&dMeter2_c::_delete, MeterDeleteHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, MeterDrawHook);
-DEFINE_HOOK_SYMBOL("dMeter2_c::presentAnims", void(dMeter2_c*), MeterPresentAnimsHook);
 DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawKantera",
     void(dMeter2Draw_c*, s32, f32, f32, f32), MeterDrawKanteraHook);
 DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawOxygen",
@@ -105,7 +104,6 @@ DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawOxygen",
 DEFINE_HOOK(&dMeter2Draw_c::drawKanteraScreen, MeterGaugeScreenHook);
 DEFINE_HOOK(&J2DScreen::draw, ScreenDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::setButtonIconMidonaAlpha, MeterMidnaAlphaHook);
-DEFINE_HOOK(&dMeter2Draw_c::drawButtonCross, MeterDrawButtonCrossHook);
 DEFINE_HOOK(&dMeter2_c::moveButtonCross, MeterMoveButtonCrossHook);
 DEFINE_HOOK(&dMeterButton_c::setString, MeterButtonSetStringHook);
 DEFINE_HOOK(&dMeterButton_c::_execute, MeterButtonExecuteHook);
@@ -1235,20 +1233,10 @@ void restore_applied_hud_pane_transform(const HudPaneSlot slot) {
     state = {};
 }
 
-void restore_shared_hud_layout_base() {
-    restore_applied_hud_pane_transform(HudPaneSlot::ButtonZ);
-    restore_applied_hud_pane_transform(HudPaneSlot::ItemZ);
-    restore_applied_hud_pane_transform(HudPaneSlot::LightZ);
-    restore_applied_hud_pane_transform(HudPaneSlot::TextZ);
-    restore_applied_hud_pane_transform(HudPaneSlot::DPad);
-    restore_applied_hud_pane_transform(HudPaneSlot::DPadItemsText);
-    restore_applied_hud_pane_transform(HudPaneSlot::DPadMapText);
-    restore_applied_hud_pane_transform(HudPaneSlot::Hearts);
-    restore_applied_hud_pane_transform(HudPaneSlot::RupeeIcon);
-    restore_applied_hud_pane_transform(HudPaneSlot::Rupee0);
-    restore_applied_hud_pane_transform(HudPaneSlot::Rupee1);
-    restore_applied_hud_pane_transform(HudPaneSlot::Rupee2);
-    restore_applied_hud_pane_transform(HudPaneSlot::Keys);
+void restore_hud_layout_base() {
+    for (std::size_t i = 0; i < static_cast<std::size_t>(HudPaneSlot::Count); ++i) {
+        restore_applied_hud_pane_transform(static_cast<HudPaneSlot>(i));
+    }
 }
 
 void clear_shared_hud_layout_cache() {
@@ -2880,7 +2868,7 @@ HookAction before_meter_delete(ModContext*, void*, void*, void*) {
     return HOOK_CONTINUE;
 }
 
-HookAction before_meter_draw_restore_shared_hud(ModContext*, void* args, void*, void*) {
+HookAction before_meter_draw_restore_hud(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
     J2DScreen* screen = meter != nullptr ? meter->mpScreen : nullptr;
     if (meter != s_hudLayoutMeter || screen != s_hudLayoutScreen) {
@@ -2890,7 +2878,7 @@ HookAction before_meter_draw_restore_shared_hud(ModContext*, void* args, void*, 
         return HOOK_CONTINUE;
     }
 
-    restore_shared_hud_layout_base();
+    restore_hud_layout_base();
     return HOOK_CONTINUE;
 }
 
@@ -2900,9 +2888,7 @@ HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
         update_z_hud_item(meter);
     }
     apply_round_xy_buttons(meter);
-    apply_wii_u_hud_layout(meter);
     apply_xy_ammo_layout(meter);
-    apply_hud_backing_visibility(meter);
     return HOOK_CONTINUE;
 }
 
@@ -2917,18 +2903,26 @@ void after_meter_draw(ModContext*, void* args, void*, void*) {
     }
 }
 
-void after_meter_present_anims(ModContext*, void* args, void*, void*) {
-    auto* meter = mods::arg<dMeter2_c*>(args, 0);
-    if (meter == nullptr || meter->mpMeterDraw == nullptr) {
-        return;
+HookAction before_meter_screen_draw_restore_hud(ModContext*, void* args, void*, void*) {
+    auto* screen = mods::arg<J2DScreen*>(args, 0);
+    if (s_hudLayoutMeter != nullptr && screen == s_hudLayoutScreen) {
+        // Presentation and other HUD mods can update the same panes between
+        // dMeter2Draw_c::draw and the final screen draw. Give them the native
+        // base instead of a transform that already contains Dawnlight's layout.
+        restore_hud_layout_base();
     }
+    return HOOK_CONTINUE;
+}
 
-    // Dusklight's variable-delta-time HUD presentation pass rewrites the native
-    // button and D-Pad transforms at the start of presentation frames. Reapply
-    // Dawnlight's layout after that pass so fixed and custom presets remain the
-    // final values that are drawn.
-    apply_wii_u_hud_layout(meter->mpMeterDraw);
-    apply_hud_backing_visibility(meter->mpMeterDraw);
+HookAction before_meter_screen_draw_apply_hud(ModContext*, void* args, void*, void*) {
+    auto* screen = mods::arg<J2DScreen*>(args, 0);
+    if (s_hudLayoutMeter != nullptr && screen == s_hudLayoutScreen) {
+        // Apply after Dusklight's presentation pass and normal-priority HUD
+        // mods, immediately before the gameplay HUD is drawn.
+        apply_wii_u_hud_layout(s_hudLayoutMeter);
+        apply_hud_backing_visibility(s_hudLayoutMeter);
+    }
+    return HOOK_CONTINUE;
 }
 
 void after_meter_draw_kantera(ModContext*, void* args, void*, void*) {
@@ -3013,20 +3007,6 @@ void after_meter_midna_alpha(ModContext*, void* args, void*, void*) {
     if (z_item_slot_active()) {
         move_midna_hud_to_dpad(meter);
     }
-}
-
-void after_meter_draw_button_cross(ModContext*, void* args, void*, void*) {
-    auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
-    if (meter == nullptr) {
-        return;
-    }
-
-    const DuskModHudTransform dpadTransform = hud_layout_dpad_transform();
-    apply_hud_pane_transform(HudPaneSlot::DPad, meter->mpButtonCrossParent,
-        hardcoded_hud_layout_enabled(), dpadTransform.offset_x, dpadTransform.offset_y,
-        dpadTransform.scale);
-    apply_dpad_text_layout(meter);
-    apply_dpad_detail_visibility(meter);
 }
 
 void after_meter_move_button_cross(ModContext*, void* args, void*, void*) {
@@ -3628,7 +3608,7 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<MeterDrawHook>(
-            svc_hook, before_meter_draw_restore_shared_hud, &sharedHudRestoreOptions);
+            svc_hook, before_meter_draw_restore_hud, &sharedHudRestoreOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<MeterDrawHook>(
@@ -3642,10 +3622,6 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_post<MeterDrawHook>(svc_hook, after_meter_draw);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_post<MeterPresentAnimsHook>(
-            svc_hook, after_meter_present_anims);
-    }
-    if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawKanteraHook>(svc_hook, after_meter_draw_kantera);
     }
     if (result == MOD_OK) {
@@ -3653,6 +3629,14 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<MeterGaugeScreenHook>(svc_hook, before_meter_gauge_screen);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ScreenDrawHook>(
+            svc_hook, before_meter_screen_draw_restore_hud, &sharedHudRestoreOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ScreenDrawHook>(
+            svc_hook, before_meter_screen_draw_apply_hud, &sharedHudApplyOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ScreenDrawHook>(
@@ -3670,9 +3654,6 @@ ModResult install_item_slot_hooks(ModError* error) {
     {
         result = mods::hook_add_post<MeterMidnaAlphaHook>(
             svc_hook, after_meter_midna_alpha, &touchInputApplyOptions);
-    }
-    if (result == MOD_OK) {
-        result = mods::hook_add_post<MeterDrawButtonCrossHook>(svc_hook, after_meter_draw_button_cross);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterMoveButtonCrossHook>(

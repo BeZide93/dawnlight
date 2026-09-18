@@ -28,6 +28,7 @@
 #include "d/actor/d_a_e_sf.h"
 #include "d/actor/d_a_e_sh.h"
 #include "d/actor/d_a_e_st.h"
+#include "d/actor/d_a_e_tk.h"
 #include "d/actor/d_a_e_tk2.h"
 #include "d/actor/d_a_e_tt.h"
 #include "d/actor/d_a_e_ww.h"
@@ -222,6 +223,11 @@ void shorten_attack_interval(EnemySlowStep& step) {
         }
         break;
     }
+    case fpcNm_E_TK_e: {
+        auto& actor = *static_cast<e_tk_class*>(step.actor);
+        if (actor.mAction == 2) shorten_timer(actor.mActionTimer[0]);
+        break;
+    }
     case fpcNm_E_TK2_e: {
         auto& actor = *static_cast<e_tk2_class*>(step.actor);
         if (actor.mAction == 2) shorten_timer(actor.mActionTimer[0]);
@@ -296,6 +302,7 @@ bool enemy_hard_mode_applies(int profileName) {
     case fpcNm_E_FS_e:
     case fpcNm_E_CR_e:
     case fpcNm_E_SH_e:
+    case fpcNm_E_TK_e:
     case fpcNm_E_TK2_e:
     case fpcNm_E_DD_e:
     case fpcNm_E_ST_e:

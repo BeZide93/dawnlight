@@ -323,6 +323,17 @@ and duplicate-event protections.
 - Recursion and slow-motion duplicate guards prevent the extra projectiles from
   recursively producing more spreads or repeating on the same event frame.
 
+### Water Toadpoli (`E_TK`)
+
+- Shortens `mActionTimer[0]` while action `2` is active.
+- Applies `1.25x` turning.
+- Does not receive a base `speedF` acceleration multiplier.
+- Every second shot becomes a three-ball spread: the center projectile plus
+  two projectiles at `-0x900` and `+0x900` yaw.
+- Non-spread shots retain the native aim and projectile initialization.
+- Spread projectiles use the shared suspended-ball release fix and launch
+  together from the Toadpoli's muzzle.
+
 ### Dodongo (`E_DD`)
 
 - During attack action `4`, shortens `field_0x6aa[0]` in the pre-breath
@@ -387,6 +398,7 @@ for:
 - **Chilfos:** led spear aim and a limit of three active thrown spears.
 - **Stalhound:** one bounded follow-up pounce for selected actors.
 - **Fire Toadpoli:** alternating direct/led aim and a three-ball spread on every shot.
+- **Water Toadpoli:** a three-ball spread on every second shot.
 - **Bulblin:** a three-arrow spread on every second bow shot.
 
 The remaining profiles do not receive newly forced combos, counters, flanking

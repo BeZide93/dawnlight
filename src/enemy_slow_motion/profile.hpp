@@ -114,6 +114,7 @@ const EnemySlowProfile& puppet_slow_profile();
 const EnemySlowProfile& bomskit_slow_profile();
 const EnemySlowProfile& stalhound_slow_profile();
 const EnemySlowProfile& fire_toadpoli_slow_profile();
+const EnemySlowProfile& normal_toadpoli_slow_profile();
 const EnemySlowProfile& bulblin_slow_profile();
 const EnemySlowProfile& lizalfos_slow_profile();
 const EnemySlowProfile& dodongo_slow_profile();

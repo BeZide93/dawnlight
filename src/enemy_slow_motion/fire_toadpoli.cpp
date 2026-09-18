@@ -1,5 +1,6 @@
 #include "profile.hpp"
 #include "../enemy_hard_mode.hpp"
+#include "d/actor/d_a_e_tk.h"
 #include "d/actor/d_a_e_tk2.h"
 #include "d/actor/d_a_e_tk_ball.h"
 #include "d/d_com_inf_game.h"
@@ -33,12 +34,18 @@ ShotClock& shot_clock(fopAc_ac_c* actor) {
     return clock;
 }
 
-bool eligible(fopAc_ac_c* base) {
-    return static_cast<e_tk2_class*>(base)->mpMorf != nullptr;
+bool is_toadpoli_profile(s16 name) {
+    return name == fpcNm_E_TK_e || name == fpcNm_E_TK2_e;
 }
 
+template <typename T>
+bool eligible(fopAc_ac_c* base) {
+    return static_cast<T*>(base)->mpMorf != nullptr;
+}
+
+template <typename T>
 void prepare(EnemySlowStep& step, bool timerTick) {
-    auto& actor = *static_cast<e_tk2_class*>(step.actor);
+    auto& actor = *static_cast<T*>(step.actor);
     step.animations = {actor.mpMorf};
     step.directCollision = &actor.mAcch;
     step.chaseFloats = {&actor.mAnimSpeed};
@@ -51,33 +58,63 @@ void prepare(EnemySlowStep& step, bool timerTick) {
     }
 }
 
+void prepare_normal(EnemySlowStep& step, bool timerTick) {
+    prepare<e_tk_class>(step, timerTick);
+    // Vanilla decrements this field through mActionTimer[3].
+    if (!timerTick) hold_enemy_timer(static_cast<e_tk_class*>(step.actor)->mExecuteState);
+}
+
+template <typename T>
 bool repeated_attack(const EnemySlowStep& step) {
-    const auto& actor = *static_cast<e_tk2_class*>(step.actor);
+    const auto& actor = *static_cast<T*>(step.actor);
     return !step.freshAnimationFrame && step.action == 2 && step.subaction == 1 &&
         actor.mAction == step.action && actor.mMode == step.subaction;
+}
+
+bool repeated_attack(const EnemySlowStep& step) {
+    return step.profile->name == fpcNm_E_TK_e
+        ? repeated_attack<e_tk_class>(step)
+        : repeated_attack<e_tk2_class>(step);
+}
+
+fpc_ProcID ball_id(const EnemySlowStep& step) {
+    return step.profile->name == fpcNm_E_TK_e
+        ? static_cast<e_tk_class*>(step.actor)->mBallID
+        : static_cast<e_tk2_class*>(step.actor)->mBallID;
+}
+
+void clear_ball_spawn(const EnemySlowStep& step) {
+    if (step.profile->name == fpcNm_E_TK_e) {
+        static_cast<e_tk_class*>(step.actor)->mTKBallSpawned = false;
+    } else {
+        static_cast<e_tk2_class*>(step.actor)->mTKBallSpawned = false;
+    }
 }
 
 HookAction before_create_child(ModContext*, void* args, void* retval, void*) {
     if (s_spawningSpread) return HOOK_CONTINUE;
     auto* step = current_enemy_slow_step();
     if (step != nullptr && step->actor != nullptr && step->profile != nullptr &&
-        step->profile->name == fpcNm_E_TK2_e && repeated_attack(*step) &&
+        is_toadpoli_profile(step->profile->name) && repeated_attack(*step) &&
         mods::arg<s16>(args, 0) == fpcNm_E_TK_BALL_e &&
         mods::arg<fpc_ProcID>(args, 1) == fopAcM_GetID(step->actor)) {
         // Keep the existing suspended ball ID instead of replacing it with an error.
-        *static_cast<fpc_ProcID*>(retval) = static_cast<e_tk2_class*>(step->actor)->mBallID;
+        *static_cast<fpc_ProcID*>(retval) = ball_id(*step);
         return HOOK_SKIP_ORIGINAL;
     }
     const bool isBall = step != nullptr && step->actor != nullptr &&
-        step->profile != nullptr && step->profile->name == fpcNm_E_TK2_e &&
+        step->profile != nullptr && is_toadpoli_profile(step->profile->name) &&
         mods::arg<s16>(args, 0) == fpcNm_E_TK_BALL_e &&
         mods::arg<fpc_ProcID>(args, 1) == fopAcM_GetID(step->actor);
-    if (isBall && enemy_hard_mode_applies(fpcNm_E_TK2_e)) {
+    if (isBall && enemy_hard_mode_applies(step->profile->name)) {
         auto& clock = shot_clock(step->actor);
         ++clock.shots;
+        const bool isFire = step->profile->name == fpcNm_E_TK2_e;
+        if (!isFire && (clock.shots & 1U) != 0) return HOOK_CONTINUE;
+
         clock.primaryBall = fpcM_ERROR_PROCESS_ID_e;
         clock.spreadBalls = {fpcM_ERROR_PROCESS_ID_e, fpcM_ERROR_PROCESS_ID_e};
-        clock.leadShot = (clock.shots & 1U) == 0;
+        clock.leadShot = isFire && (clock.shots & 1U) == 0;
         clock.primaryLaunched = false;
         s_creatingShot = &clock;
     }
@@ -108,7 +145,7 @@ void after_create_child(ModContext*, void* args, void* retval, void*) {
     s_spawningSpread = false;
 }
 
-bool launch_ball(fpc_ProcID id, e_tk2_class& parent, bool leadShot, s16 yawOffset) {
+bool launch_ball(fpc_ProcID id, fopAc_ac_c& parent, bool leadShot, s16 yawOffset) {
     auto* ball = static_cast<e_tk_ball_class*>(fopAcM_SearchByID(id));
     auto* player = dComIfGp_getPlayer(0);
     if (ball == nullptr || ball->mpModel == nullptr || player == nullptr) return false;
@@ -155,7 +192,7 @@ bool launch_ball(fpc_ProcID id, e_tk2_class& parent, bool leadShot, s16 yawOffse
 }
 
 void after_execute(EnemySlowStep& step) {
-    auto& parent = *static_cast<e_tk2_class*>(step.actor);
+    auto& parent = *step.actor;
     auto& shot = shot_clock(step.actor);
     if (shot.primaryBall == fpcM_ERROR_PROCESS_ID_e) return;
 
@@ -183,9 +220,10 @@ void after_execute(EnemySlowStep& step) {
 }
 
 void before_collision(EnemySlowStep& step) {
-    // The body is anchored to the lava height. Only its animation/turning moves.
-    step.directCollision = nullptr;
-    if (repeated_attack(step)) static_cast<e_tk2_class*>(step.actor)->mTKBallSpawned = false;
+    // Fire Toadpoli are anchored to the lava height. Water Toadpoli retain
+    // their collision pass so the shared runtime can scale swimming movement.
+    if (step.profile->name == fpcNm_E_TK2_e) step.directCollision = nullptr;
+    if (repeated_attack(step)) clear_ball_spawn(step);
 }
 
 ModResult install() {
@@ -203,7 +241,17 @@ void reset() {
 
 const EnemySlowProfile& fire_toadpoli_slow_profile() {
     static const EnemySlowProfile profile{
-        fpcNm_E_TK2_e, eligible, prepare, nullptr, nullptr, install, reset,
+        fpcNm_E_TK2_e, eligible<e_tk2_class>, prepare<e_tk2_class>,
+        nullptr, nullptr, install, reset,
+        before_collision, after_execute, true
+    };
+    return profile;
+}
+
+const EnemySlowProfile& normal_toadpoli_slow_profile() {
+    static const EnemySlowProfile profile{
+        fpcNm_E_TK_e, eligible<e_tk_class>, prepare_normal,
+        nullptr, nullptr, nullptr, nullptr,
         before_collision, after_execute, true
     };
     return profile;

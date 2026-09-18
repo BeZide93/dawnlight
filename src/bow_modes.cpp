@@ -1,5 +1,6 @@
 #include "bow_modes.hpp"
 #include "bow_volley.hpp"
+#include "config.hpp"
 
 #include "fierce_deity.hpp"
 #include "service_imports.hpp"
@@ -93,7 +94,8 @@ int arrow_cost(BowMode mode) {
 
 bool bow_active(daAlink_c* link) {
     // Bomb arrows retain their native item-action switch; the Hawkeye still uses it to zoom.
-    return link != nullptr && !link->checkWolf() && !fierce_deity_model_reload_active() &&
+    return arrow_modes_enabled() && link != nullptr && !link->checkWolf() &&
+           !fierce_deity_model_reload_active() &&
            (link->mEquipItem == dItemNo_BOW_e || link->mEquipItem == dItemNo_HAWK_ARROW_e) &&
            !link->checkEventRun() && !link->checkSceneChangeAreaStart() &&
            !link->checkDeadHP() && !dComIfGp_isPauseFlag() &&
@@ -198,6 +200,25 @@ void lantern_hit(fopAc_ac_c* actor, dCcD_GObjInf* hit,
 HookAction before_player_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (fierce_deity_model_reload_active()) {
+        return HOOK_CONTINUE;
+    }
+    if (!arrow_modes_enabled()) {
+        s_mode = BowMode::Normal;
+        s_noticeFrames = 0;
+        s_ammoWarning = false;
+        s_nockedArrow = fpcM_ERROR_PROCESS_ID_e;
+        s_releaseMode = BowMode::Normal;
+        // Retire the nocked preview before Link can release it. Keep paid shots
+        // (parameters 1/2), including those awaiting their first flight update.
+        for (auto& [id, state] : s_arrows) {
+            if (!state->launched && state->arrow->checkWait() &&
+                fopAcM_GetParam(state->arrow) == 0 && state->mode != BowMode::Normal)
+            {
+                stop_flame(*state);
+                state->mode = BowMode::Normal;
+                state->arrow->field_0x688.SetAtMtrl(dCcD_MTRL_NONE);
+            }
+        }
         return HOOK_CONTINUE;
     }
     if (s_playerId != fopAcM_GetID(link)) {

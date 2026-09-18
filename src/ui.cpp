@@ -599,6 +599,14 @@ ModResult build_gameplay_tab(
     }
 
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Arrow Modes", arrow_modes_config_var(),
+            "Press ZR while aiming the Bow to cycle Normal, Fire (2 arrows, +50% damage), "
+            "and Triple Shot (3 arrows). Fire arrows ignite lantern-compatible objects. "
+            "Disabling returns to normal arrows; arrows already fired keep their effects.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Flurry Rush", flurry_rush_config_var(),
             "Perfectly evade a locked enemy attack with a side jump or backflip to slow the "
             "dodge and enemies for three seconds. A sword attack closes to melee range and "

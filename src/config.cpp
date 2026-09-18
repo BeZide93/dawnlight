@@ -38,6 +38,7 @@ ConfigVarHandle s_bulletTime = 0;
 ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_greatSpinProjectile = 0;
+ConfigVarHandle s_arrowModes = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
 ConfigVarHandle s_stamina = 0;
@@ -867,6 +868,7 @@ ModResult register_config(ModError* error) {
         register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
+        register_bool("arrow-modes", true, s_arrowModes) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
@@ -1065,6 +1067,10 @@ bool fierce_deity_enabled() {
 
 bool great_spin_projectile_enabled() {
     return get_bool(s_greatSpinProjectile, true);
+}
+
+bool arrow_modes_enabled() {
+    return get_bool(s_arrowModes, true);
 }
 
 bool manual_shielding_enabled() {
@@ -1306,6 +1312,10 @@ ConfigVarHandle fierce_deity_config_var() {
 
 ConfigVarHandle great_spin_projectile_config_var() {
     return s_greatSpinProjectile;
+}
+
+ConfigVarHandle arrow_modes_config_var() {
+    return s_arrowModes;
 }
 
 ConfigVarHandle manual_shielding_config_var() {

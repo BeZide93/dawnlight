@@ -1,4 +1,5 @@
 #include "bow_modes.hpp"
+#include "bow_fire_resource.hpp"
 #include "bow_volley.hpp"
 #include "config.hpp"
 
@@ -7,15 +8,12 @@
 
 #include "JSystem/J2DGraph/J2DGrafContext.h"
 #include "JSystem/JParticle/JPAEmitter.h"
-#include "JSystem/JParticle/JPAEmitterManager.h"
-#include "JSystem/JParticle/JPAResourceManager.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_arrow.h"
 #include "d/d_cc_uty.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_meter2_draw.h"
 #include "d/d_meter2_info.h"
-#include "d/d_particle_name.h"
 #include "f_pc/f_pc_leaf.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"
@@ -48,7 +46,6 @@ DEFINE_HOOK(&dMeter2Draw_c::draw, BowModeDrawHook);
 enum class BowMode { Normal, Fire, Triple };
 constexpr int kNoticeFrames = 60;
 constexpr s16 kSpreadAngle = 0x900;
-constexpr u16 kBulblinArrowFlame = dPa_RM(ID_ZI_S_RD_ARROWFIRE_A); // native 0x8113
 
 // Native arrow attack power 2 maps to different damage values for different enemies.
 // Keep that power unchanged and multiply the resolved damage in at_power_check instead.
@@ -106,17 +103,6 @@ bool bow_aim_active(daAlink_c* link) {
     // Ready, reload, draw and shot animations all belong to active bow aiming.
     // Merely keeping the bow equipped after cancelling aim must leave ZR alone.
     return bow_active(link) && link->checkBowAnime();
-}
-
-u16 arrow_flame_effect() {
-    auto* manager = dPa_control_c::mEmitterMng;
-    auto* scene = manager != nullptr ? manager->getResourceManager(u8{1}) : nullptr;
-    if (scene != nullptr && scene->checkUserIndexDuplication(kBulblinArrowFlame)) {
-        return kBulblinArrowFlame;
-    }
-    // Some rooms omit Bulblin particles. Keep arrows visibly lit in those rooms
-    // instead of requesting a missing resource and silently losing the flame.
-    return ID_ZI_J_KANTERA_FIRE;
 }
 
 ArrowState* arrow_state(daArrow_c* arrow) {
@@ -449,17 +435,19 @@ void after_arrow_execute(ModContext*, void* args, void*, void*) {
     } else {
         tip = arrow->current.pos + arrow->speed * arrow->mOutLengthRate;
     }
-    const u16 effect = arrow_flame_effect();
+    const u16 effect = bow_fire_effect();
+    if (effect == 0) {
+        stop_flame(*state);
+        return;
+    }
     if (state->flameEffect != effect) {
         stop_flame(*state);
         state->flameEffect = effect;
     }
     // Match e_arrow::fire_eff_set: original Bulblin resource, full native scale,
     // no environment tint, and the same 0.9x velocity particle-trace callback.
-    const cXyz fallbackScale(0.65f, 0.65f, 0.65f);
     state->flame = dComIfGp_particle_set(
-        state->flame, effect, &tip, nullptr, &arrow->shape_angle,
-        effect == kBulblinArrowFlame ? nullptr : &fallbackScale,
+        state->flame, effect, &tip, nullptr, &arrow->shape_angle, nullptr,
         0xff, nullptr, -1, nullptr, nullptr, nullptr);
     if (auto* emitter = dComIfGp_particle_getEmitter(state->flame)) {
         state->flameVelocity = nocked ? cXyz::Zero : arrow->speed * 0.9f;
@@ -669,6 +657,7 @@ void shutdown_bow_modes() {
         }
     }
     s_arrows.clear();
+    shutdown_bow_fire_resource();
     s_mode = BowMode::Normal;
     s_playerId = fpcM_ERROR_PROCESS_ID_e;
     s_noticeFrames = 0;

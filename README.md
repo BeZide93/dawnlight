@@ -23,8 +23,8 @@ aiming, boss, and HUD features for Twilight Princess.
   arrows in a horizontal spread and costs 3 arrows. A brief arrow/flame/spread
   icon above Link shows the selected mode and ammunition cost (near the center
   in first-person aim); red indicates insufficient ammo and the shot is blocked.
-  Fire arrows use the native Bulblin flame while aiming and in flight, with a
-  lantern-flame fallback in rooms that lack the Bulblin particle resource.
+  Fire arrows use the native Bulblin flame while aiming and in flight in every
+  room. The effect and its textures are loaded once from the game disc.
   Holding the Bow without aiming leaves ZR available for normal actions.
   Disabling Arrow Modes returns to normal arrows without restarting; arrows
   already fired keep their effects.

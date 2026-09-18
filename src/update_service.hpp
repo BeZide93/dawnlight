@@ -7,6 +7,10 @@
 
 namespace dawnlight {
 
+// Dusklight now handles mod updates in its Mod Manager. Keep the standalone
+// implementation compiled so it can be restored with a single flag change.
+inline constexpr bool kDawnlightUpdateCheckerAvailable = false;
+
 extern bool g_configCheckForUpdatesEnabled;
 
 ModResult init_update_service(const LogService* log_svc, ModContext* mod_ctx, const UiService* ui_svc, const ConfigService* config_svc, ConfigVarHandle var_handle);

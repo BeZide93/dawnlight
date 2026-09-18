@@ -39,7 +39,6 @@ aiming, boss, and HUD features for Twilight Princess.
   horse, items, animations, and shields, plus shield visibility and eye movement
   controls.
 - Save compatibility and item integrity repairs.
-- Optional update checks against the Dawnlight GitHub releases.
 
 ## Installation
 

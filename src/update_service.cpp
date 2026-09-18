@@ -22,7 +22,7 @@
 
 namespace dawnlight {
 
-bool g_configCheckForUpdatesEnabled = true;
+bool g_configCheckForUpdatesEnabled = false;
 
 static const LogService* s_logSvc = nullptr;
 static ModContext* s_modCtx = nullptr;
@@ -384,7 +384,7 @@ ModResult init_update_service(const LogService* log_svc, ModContext* mod_ctx, co
     s_dialogShown = false;
     s_downloadState = DL_IDLE;
 
-    if (g_configCheckForUpdatesEnabled) {
+    if (kDawnlightUpdateCheckerAvailable && g_configCheckForUpdatesEnabled) {
         start_version_check_thread();
     }
 
@@ -392,7 +392,9 @@ ModResult init_update_service(const LogService* log_svc, ModContext* mod_ctx, co
 }
 
 void update_update_service(const LogService* log_svc, ModContext* mod_ctx, const UiService* ui_svc) {
-    if (!g_configCheckForUpdatesEnabled || !ui_svc || !mod_ctx) {
+    if (!kDawnlightUpdateCheckerAvailable || !g_configCheckForUpdatesEnabled ||
+        !ui_svc || !mod_ctx)
+    {
         return;
     }
 

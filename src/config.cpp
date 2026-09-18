@@ -127,7 +127,8 @@ void on_custom_model_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarVa
 void on_check_for_updates_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
     const ConfigVarValue*, void*) {
     if (value != nullptr) {
-        g_configCheckForUpdatesEnabled = value->bool_value;
+        g_configCheckForUpdatesEnabled =
+            kDawnlightUpdateCheckerAvailable && value->bool_value;
     }
 }
 
@@ -945,12 +946,16 @@ ModResult register_config(ModError* error) {
         }
     }
 
-    g_configCheckForUpdatesEnabled = get_bool(s_checkForUpdates, true);
-    ModResult subscribeResult = svc_config->subscribe(
-        mod_ctx, s_checkForUpdates, on_check_for_updates_changed, nullptr, nullptr);
-    if (subscribeResult != MOD_OK) {
-        return mods::set_error(
-            error, subscribeResult, "failed to subscribe to Dawnlight update-check changes");
+    ModResult subscribeResult = MOD_OK;
+    g_configCheckForUpdatesEnabled = false;
+    if constexpr (kDawnlightUpdateCheckerAvailable) {
+        g_configCheckForUpdatesEnabled = get_bool(s_checkForUpdates, true);
+        subscribeResult = svc_config->subscribe(
+            mod_ctx, s_checkForUpdates, on_check_for_updates_changed, nullptr, nullptr);
+        if (subscribeResult != MOD_OK) {
+            return mods::set_error(
+                error, subscribeResult, "failed to subscribe to Dawnlight update-check changes");
+        }
     }
 
     if (!get_bool(s_hudCombatMetersMigrated, false)) {
@@ -1087,7 +1092,7 @@ bool dawnlight_touch_ui_enabled() {
 }
 
 bool check_for_updates_enabled() {
-    return get_bool(s_checkForUpdates, true);
+    return kDawnlightUpdateCheckerAvailable && get_bool(s_checkForUpdates, true);
 }
 
 bool enemy_hard_mode_enabled() {

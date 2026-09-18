@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
+#include "update_service.hpp"
 
 #include "mods/service.hpp"
 #include "mods/svc/ui.h"
@@ -851,11 +852,13 @@ void open_settings(ModContext* ctx, void*) {
 
 ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModError*) {
     if (add_section(ctx, panel, "Dawnlight Settings") != MOD_OK) return MOD_ERROR;
-    if (add_toggle(ctx, panel, "CHECK FOR UPDATES", check_for_updates_config_var(),
-            "Checks BeZide93/dawnlight releases for a newer Dawnlight mod version.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
+    if constexpr (kDawnlightUpdateCheckerAvailable) {
+        if (add_toggle(ctx, panel, "CHECK FOR UPDATES", check_for_updates_config_var(),
+                "Checks BeZide93/dawnlight releases for a newer Dawnlight mod version.")
+            != MOD_OK)
+        {
+            return MOD_ERROR;
+        }
     }
     if (add_button(ctx, panel, "Open Dawnlight Settings", open_settings) != MOD_OK) {
         return MOD_ERROR;

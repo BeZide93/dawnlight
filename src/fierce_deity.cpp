@@ -37,6 +37,13 @@ constexpr float kMeterDrainPerSecond = 5.0f;
 
 using Clock = std::chrono::steady_clock;
 
+enum class ModelSwapState : u8 {
+    None,
+    Activating,
+    RestoreRequested,
+    Restoring,
+};
+
 struct RuntimeState {
     daAlink_c* link = nullptr;
     u16 linkId = 0;
@@ -44,8 +51,9 @@ struct RuntimeState {
     bool active = false;
     bool spinChargeArmed = false;
     bool equipmentOverridden = false;
-    bool modelSwapPending = false;
     bool modelSwapped = false;
+    bool modelReloadFrame = false;
+    ModelSwapState modelSwapState = ModelSwapState::None;
     u8 originalClothes = dItemNo_NONE_e;
     Clock::time_point lastDrainTime{};
 };
@@ -74,16 +82,24 @@ void restore_equipment_selection() {
 }
 
 void deactivate(daAlink_c* link, bool clearMeter) {
-    const bool restoreModel = s_state.active || s_state.modelSwapPending || s_state.modelSwapped;
+    const bool restoreModel = s_state.active ||
+                              s_state.modelSwapState != ModelSwapState::None ||
+                              s_state.modelSwapped;
     restore_equipment_selection();
     if (restoreModel && link != nullptr && !link->checkWolf() &&
         !link->checkSceneChangeAreaStart())
     {
-        link->setClothesChange(0);
+        if (s_state.modelSwapState == ModelSwapState::Activating) {
+            s_state.modelSwapState = ModelSwapState::RestoreRequested;
+        } else if (s_state.modelSwapState == ModelSwapState::None) {
+            link->setClothesChange(0);
+            s_state.modelSwapState = ModelSwapState::Restoring;
+        }
+    } else if (restoreModel) {
+        s_state.modelSwapState = ModelSwapState::None;
+        s_state.modelSwapped = false;
     }
     s_state.active = false;
-    s_state.modelSwapPending = false;
-    s_state.modelSwapped = false;
     s_state.spinChargeArmed = false;
     s_state.lastDrainTime = {};
     if (clearMeter) {
@@ -98,8 +114,9 @@ void reset_for_link(daAlink_c* link) {
     s_state.meter = 0.0f;
     s_state.active = false;
     s_state.spinChargeArmed = false;
-    s_state.modelSwapPending = false;
     s_state.modelSwapped = false;
+    s_state.modelReloadFrame = false;
+    s_state.modelSwapState = ModelSwapState::None;
     s_state.lastDrainTime = {};
 }
 
@@ -125,20 +142,45 @@ void activate(daAlink_c* link) {
     s_state.lastDrainTime = Clock::now();
     s_state.originalClothes = dComIfGs_getSelectEquipClothes();
     s_state.equipmentOverridden = true;
-    s_state.modelSwapPending = true;
     s_state.modelSwapped = false;
+    s_state.modelSwapState = ModelSwapState::Activating;
     dComIfGs_setSelectEquipClothes(dItemNo_ARMOR_e);
     dComIfGp_setSelectEquipClothes(dItemNo_ARMOR_e);
     link->setClothesChange(0);
 }
 
-void finish_model_swap(daAlink_c* link) {
-    if (!s_state.modelSwapPending || link == nullptr || link->mClothesChangeWaitTimer != 0) {
-        return;
+bool service_model_swap(daAlink_c* link) {
+    s_state.modelReloadFrame = false;
+    if (link == nullptr || s_state.modelSwapState == ModelSwapState::None) {
+        return false;
     }
-    restore_equipment_selection();
-    s_state.modelSwapPending = false;
-    s_state.modelSwapped = true;
+
+    s_state.modelReloadFrame = true;
+
+    if (link->mClothesChangeWaitTimer != 0) {
+        // loadModelDVD() normally runs at the start of execute(). Its timer-2 phase frees
+        // Link's model heap, so the rest of execute() must not touch animations that frame.
+        link->loadModelDVD();
+    }
+
+    if (link->mClothesChangeWaitTimer != 0) {
+        return true;
+    }
+
+    if (s_state.modelSwapState == ModelSwapState::RestoreRequested) {
+        link->setClothesChange(0);
+        s_state.modelSwapState = ModelSwapState::Restoring;
+    } else if (s_state.modelSwapState == ModelSwapState::Activating) {
+        restore_equipment_selection();
+        s_state.modelSwapState = ModelSwapState::None;
+        s_state.modelSwapped = true;
+    } else {
+        s_state.modelSwapState = ModelSwapState::None;
+        s_state.modelSwapped = false;
+    }
+
+    // Resume normal player execution on the next frame, after the completed model swap.
+    return true;
 }
 
 void update_spin_activation(daAlink_c* link) {
@@ -173,8 +215,9 @@ void update_drain(daAlink_c* link) {
     if (link->checkSceneChangeAreaStart()) {
         restore_equipment_selection();
         s_state.active = false;
-        s_state.modelSwapPending = false;
         s_state.modelSwapped = false;
+        s_state.modelReloadFrame = false;
+        s_state.modelSwapState = ModelSwapState::None;
         s_state.spinChargeArmed = false;
         s_state.meter = 0.0f;
         s_state.lastDrainTime = {};
@@ -204,7 +247,7 @@ void update_drain(daAlink_c* link) {
     }
 }
 
-HookAction before_player_execute(ModContext*, void* args, void*, void*) {
+HookAction before_player_execute(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!same_link(link)) {
         reset_for_link(link);
@@ -215,10 +258,15 @@ HookAction before_player_execute(ModContext*, void* args, void*, void*) {
 
     if (!fierce_deity_enabled()) {
         deactivate(link, true);
-        return HOOK_CONTINUE;
     }
 
-    return HOOK_CONTINUE;
+    if (!service_model_swap(link)) {
+        return HOOK_CONTINUE;
+    }
+    if (retval != nullptr) {
+        *static_cast<int*>(retval) = 1;
+    }
+    return HOOK_SKIP_ORIGINAL;
 }
 
 void after_player_execute(ModContext*, void* args, void*, void*) {
@@ -226,13 +274,14 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
     if (!same_link(link) || !fierce_deity_enabled()) {
         return;
     }
-    finish_model_swap(link);
-    update_spin_activation(link);
+    if (!s_state.modelReloadFrame) {
+        update_spin_activation(link);
+    }
     update_drain(link);
 }
 
 HookAction before_magic_armor_ability(ModContext*, void*, void* retval, void*) {
-    if (!s_state.active && !s_state.modelSwapPending) {
+    if (!s_state.active && s_state.modelSwapState == ModelSwapState::None) {
         return HOOK_CONTINUE;
     }
     *static_cast<BOOL*>(retval) = FALSE;
@@ -325,6 +374,10 @@ void shutdown_fierce_deity() {
 
 bool fierce_deity_active() {
     return s_state.active;
+}
+
+bool fierce_deity_model_reload_active() {
+    return s_state.modelReloadFrame;
 }
 
 }  // namespace dawnlight

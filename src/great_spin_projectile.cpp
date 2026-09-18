@@ -1,6 +1,7 @@
 #include "great_spin_projectile.hpp"
 
 #include "config.hpp"
+#include "fierce_deity.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
 
@@ -319,6 +320,9 @@ void update_spin_launch(daAlink_c* link) {
 
 void after_player_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (fierce_deity_model_reload_active()) {
+        return;
+    }
     if (link == nullptr || !great_spin_projectile_enabled() ||
         link->checkSceneChangeAreaStart())
     {

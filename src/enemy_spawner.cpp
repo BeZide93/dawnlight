@@ -5,6 +5,7 @@
 
 #include "SSystem/SComponent/c_math.h"
 #include "d/actor/d_a_alink.h"
+#include "d/actor/d_a_e_tk.h"
 #include "d/actor/d_a_e_tk2.h"
 #include "d/actor/d_a_e_zs.h"
 #include "d/d_com_inf_game.h"
@@ -25,6 +26,8 @@ constexpr std::array<ProfileName, kEnemySpawnerProfileLabels.size()> kEnemySpawn
     fpcNm_E_OC_e,  // Bokoblin
     fpcNm_E_FZ_e,  // Mini Freezard
     fpcNm_E_BA_e,  // Keese
+    fpcNm_E_BA_e,  // Fire Keese
+    fpcNm_E_BA_e,  // Ice Keese
     fpcNm_E_TT_e,  // Tektite
     fpcNm_E_GI_e,  // Gibdo
     fpcNm_NPC_GRA_e,  // Goron
@@ -34,11 +37,14 @@ constexpr std::array<ProfileName, kEnemySpawnerProfileLabels.size()> kEnemySpawn
     fpcNm_E_FB_e,  // Freezard
     fpcNm_E_BS_e,  // Stalchild
     fpcNm_E_BU_e,  // Bubble
+    fpcNm_E_BU_e,  // Fire Bubble
+    fpcNm_E_BU_e,  // Ice Bubble
     fpcNm_E_MS_e,  // Rat
     fpcNm_E_WW_e,  // White Wolfos
     fpcNm_E_FS_e,  // Puppet
     fpcNm_E_CR_e,  // Bomskit
     fpcNm_E_SH_e,  // Stalhound
+    fpcNm_E_TK_e,  // Water Toadpoli
     fpcNm_E_TK2_e,  // Fire Toadpoli
     fpcNm_E_RD_e,  // Bulblin
     fpcNm_E_DN_e,  // Lizalfos
@@ -58,6 +64,8 @@ constexpr std::array<u32, kEnemySpawnerProfiles.size()> kEnemySpawnerParameters{
     0x00ff0000,  // Bokoblin: no defeated switch
     0,           // Mini Freezard
     0xffff0f01,  // Keese: flying, default detection radius, no path/switch
+    0xffff1f01,  // Fire Keese: flying, default detection radius, no path/switch
+    0xffff2f01,  // Ice Keese: flying, default detection radius, no path/switch
     0x000000ff,  // Tektite: red, no defeated switch
     0x00ff01ff,  // Gibdo: awake, no activation/defeated switches
     0,           // Goron
@@ -67,11 +75,14 @@ constexpr std::array<u32, kEnemySpawnerProfiles.size()> kEnemySpawnerParameters{
     0x00ffff00,  // Freezard: no switches
     0x00ffff00,  // Stalchild: normal, default detection radius, no switch
     0xffff0f00,  // Bubble: no path/switch, default detection radius
+    0xffff1f00,  // Fire Bubble: no path/switch, default detection radius
+    0xffff2f00,  // Ice Bubble: no path/switch, default detection radius
     0xffff0000,  // Rat: no activation/defeated switches
     0x03000000,  // White Wolfos: individual, not the invisible pack controller
     0,           // Puppet
     0,           // Bomskit
     0x00ffff00,  // Stalhound: default detection/leash radii (night only)
+    0x00ff0000,  // Water Toadpoli: no path
     0,           // Fire Toadpoli
     0xff000100,  // Bulblin: club, no defeated switch
     0xff000000,  // Lizalfos: no defeated switch
@@ -108,7 +119,11 @@ HookAction before_process(ModContext*, void* args, void*, void*) {
     if (method == methods->delete_method) {
         s_testActors.erase(fopAcM_GetID(actor));
     } else if (method == methods->execute_method) {
-        if (fopAcM_GetName(actor) == fpcNm_E_TK2_e) {
+        if (fopAcM_GetName(actor) == fpcNm_E_TK_e) {
+            // Keep standalone test actors at the chosen spawn height in rooms
+            // without a suitable water surface.
+            static_cast<e_tk_class*>(actor)->mExecuteState = 2;
+        } else if (fopAcM_GetName(actor) == fpcNm_E_TK2_e) {
             // Vanilla anchors to lava after this timer expires. Test actors use
             // the ground chosen at spawn, including in rooms without lava.
             static_cast<e_tk2_class*>(actor)->mActionTimer[3] = 2;

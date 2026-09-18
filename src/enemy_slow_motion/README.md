@@ -27,6 +27,7 @@ interpolation. All other actors retain their previous behavior.
 | Puppet (`E_FS`) | Animation, movement, turning, gravity, timers, single attack-start event and continuous swept hitbox | Demo and pre-appearance relocation |
 | Bomskit (`E_CR`) | Animation, movement, bounce/gravity, head movement, timers and native egg cadence | None beyond the shared combat-slow gate |
 | Stalhound (`E_SH`) | Animation, movement, gravity, knockback, head angles, timers and mouth effects | Disappearance relocation remains native |
+| Water Toadpoli (`E_TK`) | Animation, swimming movement, turning, timers, and one water-ball creation/release per attack | Native water-surface anchoring and projectile movement path |
 | Fire Toadpoli (`E_TK2`) | Animation, turning, timers, one fireball creation/release per attack | Lava anchoring remains native; fireball actor still uses its existing movement path |
 | Stalfos (`E_SF`) | Body animation, movement, gravity, steering, head motion, timers and single sword-swing sound per animation frame | Scripted demos and seated intro |
 The user tested the core with Darknut, Bokoblin and Mini Freezard before commit

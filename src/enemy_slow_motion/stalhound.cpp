@@ -22,6 +22,7 @@ void prepare(EnemySlowStep& step, bool timerTick) {
     step.animations = {actor.mAnm_p};
     step.directCollision = &actor.mObjAcch;
     step.action = actor.field_0x676;
+    step.subaction = actor.field_0x678;
     step.chaseFloats = {&step.actor->speedF, &actor.field_0x6b4,
         &actor.field_0x6a4, &actor.field_0x66c};
     step.chaseAngles = {&step.actor->current.angle.y, &step.actor->shape_angle.y,

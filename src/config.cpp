@@ -46,6 +46,8 @@ ConfigVarHandle s_enemySpawnerProfile = 0;
 ConfigVarHandle s_zItemSlot = 0;
 ConfigVarHandle s_dawnlightTouchUi = 0;
 ConfigVarHandle s_checkForUpdates = 0;
+ConfigVarHandle s_enemyHardMode = 0;
+ConfigVarHandle s_removeNormalHitInvulnerability = 0;
 ConfigVarHandle s_bossrushHardmodeHazards = 0;
 ConfigVarHandle s_hideShield = 0;
 ConfigVarHandle s_eyeMovementRange = 0;
@@ -872,6 +874,9 @@ ModResult register_config(ModError* error) {
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
         register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
         register_bool("check-for-updates", true, s_checkForUpdates) != MOD_OK ||
+        register_bool("enemy-hard-mode", false, s_enemyHardMode) != MOD_OK ||
+        register_bool("remove-normal-hit-invulnerability", false,
+            s_removeNormalHitInvulnerability) != MOD_OK ||
         register_bool("bossrush-hardmode-hazards", false, s_bossrushHardmodeHazards) != MOD_OK ||
         register_bool("model-hide-shield", false, s_hideShield) != MOD_OK ||
         register_int("model-eye-movement-range-percent", 100, s_eyeMovementRange) != MOD_OK ||
@@ -1083,6 +1088,14 @@ bool dawnlight_touch_ui_enabled() {
 
 bool check_for_updates_enabled() {
     return get_bool(s_checkForUpdates, true);
+}
+
+bool enemy_hard_mode_enabled() {
+    return get_bool(s_enemyHardMode, false);
+}
+
+bool remove_normal_hit_invulnerability_enabled() {
+    return get_bool(s_removeNormalHitInvulnerability, false);
 }
 
 bool bossrush_hardmode_hazards_enabled() {
@@ -1325,6 +1338,14 @@ ConfigVarHandle dawnlight_touch_ui_config_var() {
 
 ConfigVarHandle check_for_updates_config_var() {
     return s_checkForUpdates;
+}
+
+ConfigVarHandle enemy_hard_mode_config_var() {
+    return s_enemyHardMode;
+}
+
+ConfigVarHandle remove_normal_hit_invulnerability_config_var() {
+    return s_removeNormalHitInvulnerability;
 }
 
 ConfigVarHandle bossrush_hardmode_hazards_config_var() {

@@ -1,8 +1,10 @@
 #include "bullet_time.hpp"
+#include "boss_hard_mode.hpp"
 #include "config.hpp"
 #include "fierce_deity.hpp"
 #include "great_spin_projectile.hpp"
 #include "model_overlays.hpp"
+#include "player_hard_mode.hpp"
 #include "save_compat.hpp"
 #include "save_state.hpp"
 #include "service_imports.hpp"
@@ -109,6 +111,16 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         return result;
     }
     if (const ModResult result = dawnlight::install_enemy_scaling_hooks(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::install_player_hard_mode_hooks(error);
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = dawnlight::install_boss_hard_mode_hooks(error);
+        result != MOD_OK)
+    {
         return result;
     }
     if (const ModResult result = dawnlight::init_update_service(

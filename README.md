@@ -27,6 +27,8 @@ aiming, boss, and HUD features for Twilight Princess.
   doubled sword damage.
 - Manual Shielding, R Jump, and a stamina-powered Sprint option.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
+- Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
+  faster tracking, and selected profile-specific mechanics.
 - Boss Rush Game Mode with the Garden of Twilight hub, individual boss portals,
   a complete-run portal, Cave of Ordeals access, hardmode arena hazards, save
   and resume support, and a Return to Hub Midna option.

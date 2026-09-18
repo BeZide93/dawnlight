@@ -632,9 +632,43 @@ ModResult build_gameplay_tab(
     }
     if (add_button(ctx, left, "SPAWN", spawn_selected_enemy) != MOD_OK) return MOD_ERROR;
 
-    if (add_section(ctx, left, "Boss Rush Hardmode") != MOD_OK) return MOD_ERROR;
-    if (add_toggle(ctx, left, "Arena Hazards", bossrush_hardmode_hazards_config_var(),
-            "Spawns three damaging projectiles every 10 seconds during active Boss Rush fights.")
+    if (add_section(ctx, left, "Compatibility") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Save Compatibility Repairs", save_compatibility_config_var(),
+            "Repairs known Dawnlight save-state issues while loading or progressing saves.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Item Integrity Fixes", item_integrity_config_var(),
+            "Keeps bottle contents and item combinations from turning into invalid items.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    return MOD_OK;
+}
+
+ModResult build_hard_mode_tab(
+    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
+    if (add_section(ctx, left, "Hard Mode") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Enemy Hard Mode", enemy_hard_mode_config_var(),
+            "Makes supported normal enemies attack sooner and track Link more quickly. Does not "
+            "change enemy health or damage.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "No Normal-Hit Invulnerability",
+            remove_normal_hit_invulnerability_config_var(),
+            "Removes Link's invulnerability after normal hits. Knockdowns keep their full "
+            "invulnerability window.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Boss Hard Mode", bossrush_hardmode_hazards_config_var(),
+            "Enables additional mechanics for supported bosses, including faster attacks, "
+            "reinforcements, and the Ganondorf Boss Rush arena hazards.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -655,19 +689,6 @@ ModResult build_gameplay_tab(
         return MOD_ERROR;
     }
 
-    if (add_section(ctx, left, "Compatibility") != MOD_OK) return MOD_ERROR;
-    if (add_toggle(ctx, left, "Save Compatibility Repairs", save_compatibility_config_var(),
-            "Repairs known Dawnlight save-state issues while loading or progressing saves.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    if (add_toggle(ctx, left, "Item Integrity Fixes", item_integrity_config_var(),
-            "Keeps bottle contents and item combinations from turning into invalid items.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
     return MOD_OK;
 }
 
@@ -802,7 +823,7 @@ void open_settings(ModContext* ctx, void*) {
         return;
     }
 
-    std::array<UiTabDesc, 6> tabs{};
+    std::array<UiTabDesc, 7> tabs{};
     for (auto& tab : tabs) {
         tab = UI_TAB_DESC_INIT;
     }
@@ -814,10 +835,12 @@ void open_settings(ModContext* ctx, void*) {
     tabs[2].build = build_hud_tab;
     tabs[3].title = "Gameplay";
     tabs[3].build = build_gameplay_tab;
-    tabs[4].title = "Models";
-    tabs[4].build = build_models_tab;
-    tabs[5].title = "Deferred";
-    tabs[5].build = build_deferred_tab;
+    tabs[4].title = "Hard Mode";
+    tabs[4].build = build_hard_mode_tab;
+    tabs[5].title = "Models";
+    tabs[5].build = build_models_tab;
+    tabs[6].title = "Deferred";
+    tabs[6].build = build_deferred_tab;
 
     UiWindowDesc desc = UI_WINDOW_DESC_INIT;
     desc.tabs = tabs.data();

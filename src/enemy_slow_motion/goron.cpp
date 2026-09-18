@@ -75,7 +75,8 @@ HookAction before_angle(ModContext*, void* args, void*, void*) {
     auto* step = goron_step();
     if (step != nullptr && mods::arg<s16*>(args, 0) == &step->actor->current.angle.y) {
         auto& rate = mods::arg_ref<s16>(args, 2);
-        rate = static_cast<s16>(std::max(1L, std::lround(rate * step->scale)));
+        rate = static_cast<s16>(std::max(1L, std::lround(
+            rate * step->scale)));
     }
     return HOOK_CONTINUE;
 }
@@ -99,7 +100,8 @@ HookAction before_turn(ModContext*, void* args, void* retval, void*) {
     int angle = static_cast<u16>(target - start);
     if (direction < 0) angle = -static_cast<u16>(0xffff - angle);
     const auto offset = static_cast<int>(angle * cM_ssin(amount));
-    amount += std::max(1L, std::lround(16384.0f / steps * step->scale));
+    amount += std::max(1L, std::lround(
+        16384.0f / steps * step->scale));
     if (amount >= 0x4000) {
         actor.current.angle.y = target;
         amount = 0x4000;

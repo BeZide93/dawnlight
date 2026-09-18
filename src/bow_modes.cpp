@@ -6,6 +6,8 @@
 
 #include "JSystem/J2DGraph/J2DGrafContext.h"
 #include "JSystem/JParticle/JPAEmitter.h"
+#include "JSystem/JParticle/JPAEmitterManager.h"
+#include "JSystem/JParticle/JPAResourceManager.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_arrow.h"
 #include "d/d_cc_uty.h"
@@ -45,6 +47,7 @@ DEFINE_HOOK(&dMeter2Draw_c::draw, BowModeDrawHook);
 enum class BowMode { Normal, Fire, Triple };
 constexpr int kNoticeFrames = 60;
 constexpr s16 kSpreadAngle = 0x900;
+constexpr u16 kBulblinArrowFlame = dPa_RM(ID_ZI_S_RD_ARROWFIRE_A); // native 0x8113
 
 // Native arrow attack power 2 maps to different damage values for different enemies.
 // Keep that power unchanged and multiply the resolved damage in at_power_check instead.
@@ -64,6 +67,7 @@ struct ArrowState {
     bool launched = false;
     bool extinguished = false;
     u32 flame = 0;
+    u16 flameEffect = 0;
     cXyz flameVelocity{};
     std::uint32_t volley = kNoBowVolley;
     dCcD_Cps lantern{};
@@ -94,6 +98,23 @@ bool bow_active(daAlink_c* link) {
            !link->checkEventRun() && !link->checkSceneChangeAreaStart() &&
            !link->checkDeadHP() && !dComIfGp_isPauseFlag() &&
            dMeter2Info_getWindowStatus() == 0 && dMeter2Info_getPauseStatus() == 0;
+}
+
+bool bow_aim_active(daAlink_c* link) {
+    // Ready, reload, draw and shot animations all belong to active bow aiming.
+    // Merely keeping the bow equipped after cancelling aim must leave ZR alone.
+    return bow_active(link) && link->checkBowAnime();
+}
+
+u16 arrow_flame_effect() {
+    auto* manager = dPa_control_c::mEmitterMng;
+    auto* scene = manager != nullptr ? manager->getResourceManager(u8{1}) : nullptr;
+    if (scene != nullptr && scene->checkUserIndexDuplication(kBulblinArrowFlame)) {
+        return kBulblinArrowFlame;
+    }
+    // Some rooms omit Bulblin particles. Keep arrows visibly lit in those rooms
+    // instead of requesting a missing resource and silently losing the flame.
+    return ID_ZI_J_KANTERA_FIRE;
 }
 
 ArrowState* arrow_state(daArrow_c* arrow) {
@@ -138,6 +159,7 @@ void stop_flame(ArrowState& state) {
         }
         state.flame = 0;
     }
+    state.flameEffect = 0;
 }
 
 void extinguish(ArrowState& state) {
@@ -183,7 +205,7 @@ HookAction before_player_execute(ModContext*, void* args, void*, void*) {
         s_mode = BowMode::Normal;
         s_noticeFrames = 0;
     }
-    if (!bow_active(link)) {
+    if (!bow_aim_active(link)) {
         s_noticeFrames = 0;
         return HOOK_CONTINUE;
     }
@@ -198,8 +220,8 @@ HookAction before_player_execute(ModContext*, void* args, void*, void*) {
         s_ammoWarning = false;
     }
 
-    // Consume ZR only during this player update. Jump, sprint and manual guard must
-    // not also fire when ZR changes the bow mode. Other controller fields stay intact.
+    // Consume ZR only while aiming. Jump, sprint and manual guard must not also
+    // fire when ZR changes the bow mode. Holding the bow alone keeps normal input.
     s_savedPad = pad;
     s_inputMasked = true;
     pad.mHoldLockR = 0;
@@ -376,7 +398,7 @@ void after_arrow_execute(ModContext*, void* args, void*, void*) {
     const bool nocked = arrow->checkWait();
     if (nocked && arrow->mArrowType == daArrow_c::ARROW_TYPE_NORMAL) {
         auto* link = daAlink_getAlinkActorClass();
-        const bool preview = bow_active(link) && link->mItemAcKeep.getActor() == arrow;
+        const bool preview = bow_aim_active(link) && link->mItemAcKeep.getActor() == arrow;
         if (preview && s_mode == BowMode::Fire) {
             state = &track_arrow(arrow, BowMode::Fire);
         } else if (state != nullptr) {
@@ -406,16 +428,23 @@ void after_arrow_execute(ModContext*, void* args, void*, void*) {
     } else {
         tip = arrow->current.pos + arrow->speed * arrow->mOutLengthRate;
     }
-    // Use Link's resident lantern flame, which is available in every room.
-    // The old ARWFIR name-table entry is not the flame used by native fire arrows.
-    const cXyz scale(0.65f, 0.65f, 0.65f);
+    const u16 effect = arrow_flame_effect();
+    if (state->flameEffect != effect) {
+        stop_flame(*state);
+        state->flameEffect = effect;
+    }
+    // Match e_arrow::fire_eff_set: original Bulblin resource, full native scale,
+    // no environment tint, and the same 0.9x velocity particle-trace callback.
+    const cXyz fallbackScale(0.65f, 0.65f, 0.65f);
     state->flame = dComIfGp_particle_set(
-        state->flame, ID_ZI_J_KANTERA_FIRE, &tip, &arrow->tevStr, &arrow->shape_angle,
-        &scale, 0xff, nullptr, -1, nullptr, nullptr, nullptr);
+        state->flame, effect, &tip, nullptr, &arrow->shape_angle,
+        effect == kBulblinArrowFlame ? nullptr : &fallbackScale,
+        0xff, nullptr, -1, nullptr, nullptr, nullptr);
     if (auto* emitter = dComIfGp_particle_getEmitter(state->flame)) {
         state->flameVelocity = nocked ? cXyz::Zero : arrow->speed * 0.9f;
-        emitter->setParticleCallBackPtr(nocked ? nullptr : dPa_control_c::getParticleTracePCB());
-        emitter->setUserWork(nocked ? 0 : reinterpret_cast<uintptr_t>(&state->flameVelocity));
+        const bool moving = state->flameVelocity.abs2() > 1.0f;
+        emitter->setParticleCallBackPtr(moving ? dPa_control_c::getParticleTracePCB() : nullptr);
+        emitter->setUserWork(moving ? reinterpret_cast<uintptr_t>(&state->flameVelocity) : 0);
     }
 }
 
@@ -522,7 +551,7 @@ void draw_arrow(J2DGrafContext* graf, float x, float y, float slant) {
 
 void after_meter_draw(ModContext*, void*, void*, void*) {
     auto* link = daAlink_getAlinkActorClass();
-    if (s_noticeFrames <= 0 || !bow_active(link) || dComIfGd_getView() == nullptr) {
+    if (s_noticeFrames <= 0 || !bow_aim_active(link) || dComIfGd_getView() == nullptr) {
         return;
     }
     auto* graf = dComIfGp_getCurrentGrafPort();

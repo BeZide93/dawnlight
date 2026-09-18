@@ -16,12 +16,15 @@ aiming, boss, and HUD features for Twilight Princess.
   oil, bottle contents, and combine prompts.
 - Aim Movement and Aim Mode settings with Vanilla, 3rd Person, and Cinema
   options.
-- Bow arrow modes: press ZR while holding the Bow to cycle Normal, Fire, and
+- Bow arrow modes: press ZR while aiming the Bow to cycle Normal, Fire, and
   Triple Shot. Fire arrows cost 2 arrows, deal 50% more damage, and ignite
   lantern-compatible torches, wood, and spiderwebs. Triple Shot fires three
   arrows in a horizontal spread and costs 3 arrows. A brief arrow/flame/spread
   icon above Link shows the selected mode and ammunition cost (near the center
   in first-person aim); red indicates insufficient ammo and the shot is blocked.
+  Fire arrows use the native Bulblin flame while aiming and in flight, with a
+  lantern-flame fallback in rooms that lack the Bulblin particle resource.
+  Holding the Bow without aiming leaves ZR available for normal actions.
   Fire arrows extinguish in water. Bomb arrows retain their native behavior;
   Hawkeye zoom remains available through the native item-action button.
 - Touch and gyro aiming support for the modded aiming modes.

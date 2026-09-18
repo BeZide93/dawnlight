@@ -9,7 +9,7 @@ mods that modify the third item slot, touch controls, or the gameplay HUD.
 | --- | --- |
 | Dawnlight | 2.3.4 |
 | Twilit Essentials | 1.1.9 |
-| Twilight HD HUD | 1.5.1 |
+| Twilight HD HUD | 2.1.1 |
 
 Compatibility may change in later releases when two mods hook the same game or
 Dusklight UI functions. After changing any item-slot or Dawnlight Touch UI
@@ -56,7 +56,7 @@ paths. Other Twilit Essentials features can remain enabled.
 
 ## Twilight HD HUD
 
-Tested with Twilight HD HUD 1.5.1.
+Tested with Twilight HD HUD 2.1.1.
 
 Twilight HD HUD currently owns its third-item behavior and does not expose a
 toggle that disables only that feature. When Twilight HD HUD is active, use:

@@ -46,6 +46,8 @@ add_mod(dawnlight_mod
     FEATURES game webgpu
     SOURCES
         src/aim_hooks.cpp
+        src/bow_modes.cpp
+        src/bow_fire_resource.cpp
         src/bullet_time.cpp
         src/enemy_slow_motion.cpp
         src/enemy_hard_mode.cpp

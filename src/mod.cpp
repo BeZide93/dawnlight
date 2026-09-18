@@ -1,3 +1,4 @@
+#include "bow_modes.hpp"
 #include "bullet_time.hpp"
 #include "boss_hard_mode.hpp"
 #include "config.hpp"
@@ -78,6 +79,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::initialize_bullet_time(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::initialize_bow_modes(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::initialize_great_spin_projectile(error);
         result != MOD_OK)
     {
@@ -143,6 +147,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_model_overlays();
+    dawnlight::shutdown_bow_modes();
     dawnlight::shutdown_great_spin_projectile();
     dawnlight::shutdown_fierce_deity();
     dawnlight::shutdown_bullet_time();

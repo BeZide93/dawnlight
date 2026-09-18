@@ -77,6 +77,21 @@ for the supported elements. Twilight HD HUD owns its artwork and base layout;
 Dawnlight applies the saved Custom HUD positions and scales afterward. Use the
 HUD Editor's copy action to initialize a Custom layout before editing it.
 
+## Arrow Modes and ZR input
+
+Dawnlight 3.1.0 adds `Arrow Modes` under `Gameplay -> Combat`. While enabled,
+ZR cycles Normal, Fire, and Triple Shot only during active Bow/Hawkeye aiming.
+Dawnlight's R Jump, Sprint, and Manual Shielding do not also activate from that
+press. Holding the Bow without aiming keeps the normal ZR actions available.
+
+Arrow Modes do not change the Z item slot settings described above. They work
+with Dawnlight's Vanilla, 3rd Person, and Cinema aiming modes; bomb arrows and
+the native Hawkeye zoom button keep their normal behavior.
+
+If another mod also assigns an action to ZR while aiming, disable one of the
+overlapping features. The `Arrow Modes` toggle applies without restarting and
+returns the Bow to normal arrows. Already-fired arrows keep their effects.
+
 ## All three mods
 
 When Dawnlight, Twilit Essentials, and Twilight HD HUD are active together,

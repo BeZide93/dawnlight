@@ -3,7 +3,6 @@
 #include "boss_rush/boss_rush.hpp"
 #include "boss_rush/boss_rush_common.hpp"
 #include "boss_rush/boss_rush_models.hpp"
-#include "boss_rush/boss_rush_hologram.hpp"
 #include "boss_rush/boss_rush_texts.hpp"
 #include "boss_rush/ganondorf_cape.hpp"
 #include "f_op/f_op_actor_iter.h"
@@ -3930,8 +3929,6 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
     result = mods::hook_add_pre<GanondorfBarrierExecuteHook>(svc_hook, on_ganondorf_barrier_execute_pre);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install Ganondorf barrier hook");
 
-    result = init_boss_rush_holograms(svc_hook);
-    if (result != MOD_OK) return mods::set_error(error, result, "failed to install gallery hologram hook");
     result = init_ganondorf_cape(svc_hook, svc_log, mod_ctx);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install gallery cape hooks");
     result = mods::hook_add_post<HubPotInitHook>(svc_hook, on_hub_pot_init_post);
@@ -3966,7 +3963,6 @@ ModResult uninstall_bossrush_hook(ModError* error, const char* message) {
 }
 
 ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
-    shutdown_boss_rush_holograms(svc_hook);
     mods::hook_uninstall<HubPotInitHook>(svc_hook);
     mods::hook_uninstall<HubDoorOpenHook>(svc_hook);
     mods::hook_uninstall<HubSwitchCheckHook>(svc_hook);

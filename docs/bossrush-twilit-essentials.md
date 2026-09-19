@@ -8,10 +8,7 @@ revision `1e7fb0afb828f924c165e8c57b7337304ed6cf4c`.
 Approach a miniature and call Midna to open **Fight [boss]? — Yes / No**,
 using Dawnlight main's confirmation flow. Only **Yes** starts the replay;
 **No** or cancel keeps Link in the hub. The direct **A / Fight** action is removed.
-Boss miniatures are blue, translucent holograms (44% opacity), switching to red
-after the first saved defeat. Weapons, multipart bosses and Ganondorf's animated
-cape share their owner's color. Defeated boss names also turn red. The central
-portal starts Dawnlight's complete run. The
+Defeated boss names turn red. The central portal starts Dawnlight's complete run. The
 exit door leads directly to the Cave of Ordeals; there is no separate Cave portal.
 While visiting the Cave in Boss Rush, its entrance exit and all Great Fairy
 return destinations lead back to the Boss Rush hub. Internal floor transitions
@@ -59,15 +56,6 @@ actor creation. This prevents the room's enemy-appearance gate from deleting
 test enemies while retaining the native Darknut/gate suppression. Unrelated
 actor calls do not inherit the exception, including nested calls.
 
-Hologram rendering is scoped to the gallery's model instances. Their packets
-enter the translucent draw buffer; a shape-draw hook applies the color and
-alpha blending after normal materials load, then restores the original GPU
-state. Shared archive materials are not recolored, so Enemy Spawner actors and
-real boss replays retain their appearance. Depth testing stays enabled and
-depth writes are disabled; texture alpha preserves cut-out surfaces. Death
-Sword uses this same draw path instead of the invisible-model pass. Ganondorf's
-separate cloth simulation feeds a matching translucent cape packet.
-
 Gallery loading/drawing use the live stay room, including the first arrival
 from a new save. Models use a persistent heap; archives are retained once,
 failed loads can retry, and callbacks are restored before resources are freed.
@@ -108,35 +96,3 @@ Visual behavior and live mod interaction still need an in-game check:
   normal entrance exit and each Great Fairy return choice on deeper floors;
   verify the hub spawn, camera, supplies and gallery, then re-enter the Cave.
   Continuing to another Cave floor must not return to the hub.
-
-Hologram validation: check every miniature and its attachments before/after a
-first defeat and after saving/reloading. View the room through each figure,
-check walls still occlude it, and spawn the same enemy beside its miniature
-to check appearance isolation. Inspect Death Sword and Ganondorf's cape.
-
-## Recovery after the initial hologram build
-
-The first hologram implementation could sample a TEV order's texture coordinate
-without checking whether that coordinate was active. Aurora leaves inactive
-pipeline texgens at `GX_MAX_TEXGENSRC` (21), then aborts shader generation with
-`unhandled tcg src 21`. Pipeline descriptions are cached before compilation;
-reloading the bad description can therefore abort the next app startup too.
-
-Hologram alpha sampling now requires an active, in-range coordinate and a
-supported independent matrix generator/source. Other materials use constant
-hologram opacity with no texture generators. Blue/red progress colors remain.
-The regression harness rejects zero generators, inactive higher slots, source
-21 and dependent emboss generators; valid texture cut-outs still work. The
-zero-generator case fails against the original implementation.
-
-If an affected build already poisoned the cache, first force-stop Dusklight
-and replace the mod with the fixed build. In the Android system file picker's
-**Dusklight Data** root, remove only `pipeline_cache.db` and, if present,
-`pipeline_cache.db-wal` and `pipeline_cache.db-shm`. These are regenerable
-pipeline-cache files in the app's data directory (the reported installation
-uses `/data/data/dev.twilitrealm.dusk/files`). Keep saves, mods, `config.json`
-and other files. Android's ordinary **Clear cache** button may not remove
-these files because they live in the app's files directory. Do not use
-**Clear storage/data** for this recovery. Pipeline preloading happens before
-mod initialization, so installing the fixed mod alone cannot repair an already
-cached invalid pipeline. The next launch rebuilds the removed cache.

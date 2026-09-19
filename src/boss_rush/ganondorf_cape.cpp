@@ -3,8 +3,6 @@
 #include "boss_rush.hpp"
 #include "boss_rush_common.hpp"
 #include "boss_rush_models.hpp"
-#include "boss_rush_hologram.hpp"
-#include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 
 #include "mods/svc/hook.hpp"
 #include "mods/svc/actor.h"
@@ -203,54 +201,11 @@ HookAction on_mant_execute_pre(ModContext*, void* args, void*, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
-// The cape is a custom cloth packet, not a J3DModel. Keep its simulation but
-// submit its current world-space mesh with the same translucent gallery color.
-class HologramCapePacket final : public J3DPacket {
-public:
-    cXyz positions[169];
-    GXColor color{};
-
-    void draw() override {
-        j3dSys.reinitGX();
-        GXClearVtxDesc();
-        GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
-        GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
-        GXSetNumChans(0);
-        GXSetNumTexGens(0);
-        GXSetCullMode(GX_CULL_NONE);
-        GXLoadPosMtxImm(j3dSys.getViewMtx(), GX_PNMTX0);
-        GXSetCurrentMtx(GX_PNMTX0);
-        apply_boss_rush_hologram_gx(color);
-        for (int row = 0; row < 12; ++row) {
-            GXBegin(GX_TRIANGLESTRIP, GX_VTXFMT0, 26);
-            for (int col = 0; col < 13; ++col) {
-                const cXyz& a = positions[row * 13 + col];
-                const cXyz& b = positions[(row + 1) * 13 + col];
-                GXPosition3f32(a.x, a.y, a.z);
-                GXPosition3f32(b.x, b.y, b.z);
-            }
-            GXEnd();
-        }
-        j3dSys.reinitGX();
-        J3DShape::resetVcdVatCache();
+HookAction on_mant_draw_pre(ModContext*, void*, void*, void*) {
+    if (!s_capeWanted) {
+        return HOOK_CONTINUE;
     }
-};
-HologramCapePacket s_hologramCape;
-
-HookAction on_mant_draw_pre(ModContext*, void* args, void* retval, void*) {
-    auto* m = mods::arg<mant_class*>(args, 0);
-    // Exact actor ID: a real/spawned cape must retain its normal appearance.
-    if (!m || !s_mantAlive || fopAcM_GetID(m) != s_mantId ||
-        !s_capeWanted || !is_in_boss_rush_chamber()) return HOOK_CONTINUE;
-    if (retval) *static_cast<int*>(retval) = 1;
-    if (s_shuttingDown || daAlink_getAlinkActorClass() == nullptr) return HOOK_SKIP_ORIGINAL;
-
-    for (size_t i = 0; i < g_bossGalleryCount; ++i) {
-        if (std::strcmp(g_bossGalleryTable[i].displayName, "Ganondorf") != 0) continue;
-        s_hologramCape.color = boss_rush_hologram_color(static_cast<u8>(i));
-        const cXyz* positions = m->field_0x0570.getPos();
-        for (int j = 0; j < 169; ++j) s_hologramCape.positions[j] = positions[j];
-        j3dSys.getDrawBuffer(1)->entryImm(&s_hologramCape, 0);
+    if (s_shuttingDown || daAlink_getAlinkActorClass() == nullptr) {
         return HOOK_SKIP_ORIGINAL;
     }
     return HOOK_CONTINUE;

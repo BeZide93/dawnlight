@@ -1,7 +1,6 @@
 // Adapted from F1mmel/dusklight-twilit-essentials, commit 1e7fb0afb828f924c165e8c57b7337304ed6cf4c.
 // See docs/bossrush-twilit-essentials.md for provenance and integration details.
 #include "boss_rush_models.hpp"
-#include "boss_rush_hologram.hpp"
 #include "boss_rush_common.hpp"
 #include "boss_rush.hpp"
 #include "gallery_resources.hpp"
@@ -186,6 +185,8 @@ struct RuntimeSlot {
     mDoExt_btkAnm* btk = nullptr;
     bool resolved = false;
     int retryFrames = 0;
+    mDoExt_invisibleModel deathSwordInvisModel;
+    bool hasInvisModel = false;
 };
 
 static RuntimeSlot s_slots[kMaxBossGalleryEntries];
@@ -209,6 +210,49 @@ static void build_boss_rush_load_order() {
         s_loadOrder[j] = candidate;
     }
     s_loadOrderBuilt = true;
+}
+
+void apply_deathsword_ghost_material(J3DModel* model) {
+    if (model == nullptr || model->getModelData() == nullptr) {
+        return;
+    }
+    J3DModelData* mData = model->getModelData();
+    const u16 matNum = mData->getMaterialNum();
+    for (u16 m = 0; m < matNum; ++m) {
+        J3DMaterial* mat = mData->getMaterialNodePointer(m);
+        if (mat == nullptr) {
+            continue;
+        }
+
+        mat->getZMode()->setUpdateEnable(1);
+        mat->setZCompLoc(1);
+        mat->setMaterialMode(4);
+
+        if (m == 0) {
+            J3DGXColor* kcol3 = mat->getTevKColor(3);
+            if (kcol3 != nullptr) {
+                kcol3->a = 0xFF;
+            }
+        } else {
+            J3DGXColor* kcol0 = mat->getTevKColor(0);
+            if (kcol0 != nullptr) {
+                kcol0->r = 0; kcol0->g = 0; kcol0->b = 0;
+            }
+            auto* col0 = mat->getTevColor(0);
+            if (col0 != nullptr) {
+                col0->r = 0; col0->g = 0; col0->b = 0;
+            }
+            J3DGXColor* kcol3 = mat->getTevKColor(3);
+            if (kcol3 != nullptr) {
+                kcol3->a = 0xFF;
+            }
+        }
+
+        J3DBlend* blend = mat->getBlend();
+        if (blend != nullptr) {
+            blend->setDstFactor(5);
+        }
+    }
 }
 
 void render_darkhammer_ball_and_chain(RuntimeSlot& slot, const BossGalleryEntry& boss,
@@ -504,6 +548,8 @@ void reset_boss_rush_models() {
         }
         slot.brk = nullptr;
         slot.btk = nullptr;
+        slot.deathSwordInvisModel = mDoExt_invisibleModel{};
+        slot.hasInvisModel = false;
         slot.resolved = false;
         slot.retryFrames = 0;
     }
@@ -514,13 +560,21 @@ void reset_boss_rush_models() {
 }
 
 void unload_boss_rush_models() {
-    clear_boss_rush_holograms();
     for (const auto& [joint, callback] : s_originalJointCallbacks) joint->setCallBack(callback);
     s_originalJointCallbacks.clear();
     const size_t count = g_bossGalleryCount < kMaxBossGalleryEntries ? g_bossGalleryCount
                                                                       : kMaxBossGalleryEntries;
     for (size_t i = 0; i < count; ++i) {
         RuntimeSlot& slot = s_slots[i];
+
+        if (slot.hasInvisModel) {
+            if (slot.deathSwordInvisModel.mpPackets != nullptr) {
+                JKR_DELETE_ARRAY(slot.deathSwordInvisModel.mpPackets);
+                slot.deathSwordInvisModel.mpPackets = nullptr;
+            }
+            slot.deathSwordInvisModel.mModel = nullptr;
+            slot.hasInvisModel = false;
+        }
 
         if (slot.bck != nullptr) {
             JKR_DELETE(slot.bck);
@@ -695,6 +749,12 @@ void draw_boss_rush_models(float floorY) {
                     }
                     slot.resolved = true;
 
+                    if (slot.model != nullptr && slot.model->getModelData() != nullptr &&
+                        std::strcmp(boss.displayName, "Death Sword") == 0) {
+                        slot.deathSwordInvisModel.create(slot.model, 1);
+                        slot.hasInvisModel = true;
+                    }
+
                     if ((kBossGalleryAnimEnabled || boss.forceAnim) && slot.model != nullptr &&
                         boss.bckName != nullptr && boss.bckName[0] != '\0') {
                         const char* animArc = (boss.animArcName != nullptr && boss.animArcName[0] != '\0')
@@ -842,30 +902,43 @@ void draw_boss_rush_models(float floorY) {
             pos.z += boss.radialOffset * (pos.z / kChamberCircleRadius);
         }
 
-        const auto registerModel = [tableIdx](J3DModel* model) {
-            register_boss_rush_hologram(model, static_cast<u8>(tableIdx));
-        };
-        registerModel(slot.model);
-        registerModel(slot.subModel);
-        registerModel(slot.subHandModel);
-        registerModel(slot.darkhammerBall);
-        registerModel(slot.ookBoomerang);
-        for (auto* model : slot.darkhammerChainLinks) registerModel(model);
-        for (auto* model : slot.blizzetaIceBlocks) registerModel(model);
-        for (auto* model : slot.mgnDropModels) registerModel(model);
-        for (auto* model : slot.partModels) registerModel(model);
-
         cXyz scale(boss.scale, boss.scale, boss.scale);
         if (slot.model != nullptr) {
-            if (slot.brk != nullptr) {
-                slot.brk->play();
-                slot.brk->entry(slot.model->getModelData());
+            if (std::strcmp(boss.displayName, "Death Sword") == 0) {
+                if (slot.bck != nullptr) {
+                    slot.bck->play();
+                    slot.bck->entry(slot.model->getModelData());
+                }
+                mDoMtx_stack_c::transS(pos.x, pos.y, pos.z);
+                mDoMtx_stack_c::ZXYrotM(angle.x, angle.y, angle.z);
+                slot.model->setBaseScale(scale);
+                slot.model->setBaseTRMtx(mDoMtx_stack_c::get());
+                slot.model->calc();
+
+                daAlink_c* alink = daAlink_getAlinkActorClass();
+                if (alink != nullptr) {
+                    g_env_light.settingTevStruct_colget_player(&alink->tevStr);
+                    g_env_light.setLightTevColorType_MAJI(slot.model, &alink->tevStr);
+                }
+
+                apply_deathsword_ghost_material(slot.model);
+
+                if (slot.hasInvisModel) {
+                    slot.deathSwordInvisModel.entryDL(nullptr);
+                } else {
+                    mDoExt_modelUpdateDL(slot.model);
+                }
+            } else {
+                if (slot.brk != nullptr) {
+                    slot.brk->play();
+                    slot.brk->entry(slot.model->getModelData());
+                }
+                if (slot.btk != nullptr) {
+                    slot.btk->play();
+                    slot.btk->entry(slot.model->getModelData());
+                }
+                renderModelAt(slot.model, pos, angle, scale, slot.bck);
             }
-            if (slot.btk != nullptr) {
-                slot.btk->play();
-                slot.btk->entry(slot.model->getModelData());
-            }
-            renderModelAt(slot.model, pos, angle, scale, slot.bck);
         }
         if (slot.subModel != nullptr) {
             cXyz subPos = pos;

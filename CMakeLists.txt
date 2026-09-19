@@ -100,7 +100,6 @@ add_mod(dawnlight_mod
         src/boss_rush/gallery_runtime.cpp
         src/boss_rush/gallery_entries.cpp
         src/boss_rush/gallery_resources.cpp
-        src/boss_rush/boss_rush_hologram.cpp
         src/boss_rush/boss_rush_models.cpp
         src/boss_rush/boss_rush_texts.cpp
         src/save_compat.cpp

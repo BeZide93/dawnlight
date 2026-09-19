@@ -6,10 +6,15 @@
 #include "f_op/f_op_overlap_mng.h"
 #include <cstring>
 
+bool is_boss_rush_chamber_room() {
+    const char* stage = dComIfGp_getStartStageName();
+    return stage != nullptr && std::strcmp(stage, kBossRushChamberStage) == 0 &&
+        dComIfGp_roomControl_getStayNo() == kBossRushChamberRoom;
+}
+
 bool is_in_boss_rush_chamber() {
     return dawnlight::save_state_boss_rush_active() && dawnlight::save_state_boss_rush_state() == 0 &&
-        std::strcmp(dComIfGp_getStartStageName(), kBossRushChamberStage) == 0 &&
-        dComIfGp_getStartStageRoomNo() == kBossRushChamberRoom;
+        is_boss_rush_chamber_room();
 }
 
 bool boss_rush_scene_load_stable() {

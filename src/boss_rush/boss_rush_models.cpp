@@ -184,6 +184,7 @@ struct RuntimeSlot {
     mDoExt_brkAnm* brk = nullptr;
     mDoExt_btkAnm* btk = nullptr;
     bool resolved = false;
+    int retryFrames = 0;
     mDoExt_invisibleModel deathSwordInvisModel;
     bool hasInvisModel = false;
 };
@@ -550,6 +551,7 @@ void reset_boss_rush_models() {
         slot.deathSwordInvisModel = mDoExt_invisibleModel{};
         slot.hasInvisModel = false;
         slot.resolved = false;
+        slot.retryFrames = 0;
     }
     for (int ti = 0; ti < 8; ++ti) {
         init_morph_tentacle(s_morphTent[ti], s_morphSink[ti]);
@@ -682,6 +684,7 @@ void unload_boss_rush_models() {
         }
 
         slot.resolved = false;
+        slot.retryFrames = 0;
     }
 }
 
@@ -697,6 +700,10 @@ void draw_boss_rush_models(float floorY) {
             const size_t circleSlot = s_loadOrder[orderIdx];
             const size_t tableIdx = boss_rush_get_active_gallery_table_index(circleSlot);
             RuntimeSlot& slot = s_slots[tableIdx];
+            if (slot.retryFrames > 0) {
+                --slot.retryFrames;
+                continue;
+            }
             if (slot.resolved) {
                 continue;
             }
@@ -722,13 +729,25 @@ void draw_boss_rush_models(float floorY) {
                                               ? loadObjectArchive(boss.btkArcName)
                                               : 0;
 
+            // Failed first-load requests must not permanently resolve an empty
+            // slot. Back off so one missing archive does not block the gallery.
+            if (archiveStatus < 0 || animArchiveStatus < 0 || subArchiveStatus < 0 ||
+                subAnimArchiveStatus < 0 || partsArchiveStatus < 0 ||
+                brkArchiveStatus < 0 || btkArchiveStatus < 0) {
+                slot.retryFrames = 60;
+                break;
+            }
+
             if (archiveStatus == 1 || animArchiveStatus == 1 || subArchiveStatus == 1 || subAnimArchiveStatus == 1 ||
                 partsArchiveStatus == 1 || brkArchiveStatus == 1 || btkArchiveStatus == 1) {
             } else {
-                slot.resolved = true;
-
                 if (archiveStatus == 0 && animArchiveStatus == 0) {
                     slot.model = loadBmdFromArc(boss.arcName, boss.bmdName);
+                    if (!slot.model) {
+                        slot.retryFrames = 60;
+                        break;
+                    }
+                    slot.resolved = true;
 
                     if (slot.model != nullptr && slot.model->getModelData() != nullptr &&
                         std::strcmp(boss.displayName, "Death Sword") == 0) {

@@ -88,6 +88,8 @@ DEFINE_HOOK(&dSv_memBit_c::isDungeonItem, HubDefeatCheckHook);
 DEFINE_HOOK(&dSv_info_c::isSwitch, HubSwitchCheckHook);
 DEFINE_HOOK(&dSv_danBit_c::isSwitch, GanondorfDanSwitchHook);
 DEFINE_HOOK(&daAlink_c::execute, BossRushAlinkExecuteHook);
+DEFINE_HOOK(&daAlink_c::orderZTalk, GanondorfOrderZTalkHook);
+DEFINE_HOOK(&daAlink_c::notTalk, GanondorfNotTalkHook);
 DEFINE_HOOK(&daAlink_c::draw, HubGalleryDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, HubLabelDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::getActionString, HubActionStringHook);
@@ -341,6 +343,7 @@ struct MidnaPromptPatchPoint {
     bool has_warp_choice() const { return nativeChoiceCount >= 3; }
 };
 struct MidnaFlowTopology {
+    uint16_t rootNode = mods::flow::kEnd;
     std::vector<MidnaPromptPatchPoint> prompts;
     size_t promptCount = 0;
     const void* resource = nullptr;
@@ -350,6 +353,7 @@ MidnaGroupMessages sMidnaRootMessages;
 mods::flow::Graph sMidnaRootFlowGraph;
 MidnaFlowTopology sMidnaFlowTopology;
 const void* sMidnaTopologyFailureResource = nullptr;
+bool sMidnaRootFlowGraphDirectDuel = false;
 uint32_t sMidnaRootFlowGraphTopologyVersion = 0;
 MidnaTransformOption sMidnaRootFlowGraphTransformOption = MidnaTransformOption::Unknown;
 std::vector<mods::flow::RegisteredMessage> sMidnaMessages;
@@ -604,10 +608,9 @@ void spawn_hub_supply_actors() {
 }
 
 bool is_boss_hub_stage_name() {
-    // Match Essentials' live chamber test, including during room initialization.
-    const char* stage = dComIfGp_getStartStageName();
-    return stage != nullptr && std::strcmp(stage, kBossRushReturnStage) == 0 &&
-           dComIfGp_roomControl_getStayNo() == kBossRushReturnRoom;
+    // Share the live-room test with gallery loading and drawing, including the
+    // first arrival from new-save creation (whose start-room metadata can differ).
+    return is_boss_rush_chamber_room();
 }
 
 bool is_bossrush_hub_active() {
@@ -1844,6 +1847,26 @@ bool find_bmg_section(const uint8_t* bmg, uint32_t tag, const uint8_t*& outSecti
     return false;
 }
 
+static uint16_t bmg_flow_init_node(const uint8_t* bmg, uint16_t label) {
+    const uint8_t* fli = nullptr;
+    size_t fliSize = 0;
+    if (!find_bmg_section(bmg, MULTI_CHAR('FLI1'), fli, fliSize) || fliSize < 0x10) {
+        return mods::flow::kEnd;
+    }
+    const uint16_t count = read_be16(fli + 8);
+    if (static_cast<size_t>(count) * 8 > fliSize - 0x10) {
+        return mods::flow::kEnd;
+    }
+    uint16_t result = mods::flow::kEnd;
+    for (uint16_t i = 0; i < count; ++i) {
+        const uint8_t* e = fli + 0x10 + static_cast<size_t>(i) * 8;
+        if (read_be16(e) == label) {
+            result = read_be16(e + 4);
+        }
+    }
+    return result;
+}
+
 struct MidnaBmgView {
     const uint8_t* inf = nullptr;
     size_t infSize = 0;
@@ -2136,6 +2159,8 @@ bool discover_midna_flow_topology() {
     }
 
     assign_unknown_midna_transform_options(topology);
+    const uint16_t root = bmg_flow_init_node(bmg, 0xbb9);
+    if (root < view.nodeCount) topology.rootNode = root;
     topology.version = sMidnaFlowTopology.version + 1;
     sMidnaFlowTopology = topology;
     sMidnaTopologyFailureResource = nullptr;
@@ -2343,6 +2368,7 @@ void shutdown_midna_flow() {
     sMidnaRootFlowMode = MidnaRootFlowMode::None;
     clear_pending_midna_flow_action();
     sMidnaRootFlowGraphTopologyVersion = 0;
+    sMidnaRootFlowGraphDirectDuel = false;
     sMidnaRootFlowGraphTransformOption = MidnaTransformOption::Unknown;
     sMidnaFlowTopology = {};
     sMidnaTopologyFailureResource = nullptr;
@@ -2413,6 +2439,19 @@ mods::flow::Graph build_midna_menu_graph() {
         return graph.commit();
     }
 
+    // Essentials bypasses the finale's native root branches. Keep Dawnlight's
+    // three choices, but enter their prompt directly in the ground-duel replay.
+    const MidnaPromptPatchPoint* directPrompt = nullptr;
+    if (is_direct_final_ganondorf_active() && sMidnaFlowTopology.rootNode != mods::flow::kEnd) {
+        for (const auto& patch : sMidnaFlowTopology.prompts) {
+            if (!directPrompt) directPrompt = &patch;
+            if (patch.transformOption == current_midna_transform_option()) {
+                directPrompt = &patch;
+                break;
+            }
+        }
+    }
+
     if (sMidnaFlowTopology.promptCount != 0) {
         for (size_t i = 0; i < sMidnaFlowTopology.promptCount; ++i) {
             const MidnaPromptPatchPoint& patch = sMidnaFlowTopology.prompts[i];
@@ -2436,6 +2475,11 @@ mods::flow::Graph build_midna_menu_graph() {
                 !patch_midna_prompt_with_vertical_select(
                     graph, patch.promptNode, kMidnaMenuPromptEntry, selection, 4))
             {
+                return graph.commit();
+            }
+            if (&patch == directPrompt && sMidnaFlowTopology.rootNode != patch.promptNode &&
+                !patch_midna_prompt_with_vertical_select(graph, sMidnaFlowTopology.rootNode,
+                    kMidnaMenuPromptEntry, selection, 4)) {
                 return graph.commit();
             }
         }
@@ -2506,12 +2550,14 @@ mods::flow::Graph build_midna_portal_graph() {
 }
 
 ModResult set_midna_root_flow_mode(MidnaRootFlowMode mode, ModError* error) {
+    const bool directDuel = is_direct_final_ganondorf_active();
     const MidnaTransformOption transformOption =
         mode == MidnaRootFlowMode::Menu ? current_midna_transform_option() :
                                           MidnaTransformOption::Unknown;
     if (sMidnaRootFlowMode == mode && sMidnaRootFlowGraph.handle() != 0 &&
         sMidnaRootFlowGraphTopologyVersion == sMidnaFlowTopology.version &&
-        sMidnaRootFlowGraphTransformOption == transformOption)
+        sMidnaRootFlowGraphTransformOption == transformOption &&
+        sMidnaRootFlowGraphDirectDuel == directDuel)
     {
         return MOD_OK;
     }
@@ -2532,6 +2578,7 @@ ModResult set_midna_root_flow_mode(MidnaRootFlowMode mode, ModError* error) {
     sMidnaRootFlowMode = mode;
     sMidnaRootFlowGraphTopologyVersion = sMidnaFlowTopology.version;
     sMidnaRootFlowGraphTransformOption = transformOption;
+    sMidnaRootFlowGraphDirectDuel = directDuel;
     svc_log->info(mod_ctx,
         mode == MidnaRootFlowMode::Portal ? "Dawnlight Midna portal flow installed" :
                                             "Dawnlight Midna menu flow installed");
@@ -3371,8 +3418,57 @@ void on_hub_action_string_post(ModContext*, void* args, void* retval, void*) {
         mods::arg<u8>(args, 1) == BUTTON_STATUS_OPEN) *static_cast<const char**>(retval) = "Fight";
 }
 
+bool can_call_midna_in_ganondorf_duel() {
+    if (!is_direct_final_ganondorf_active() || !sDirectFinalGanondorfStarted ||
+        !can_offer_midna_hub_warp() || dComIfGp_event_runCheck() || ui_document_visible()) {
+        return false;
+    }
+    auto* player = daAlink_getAlinkActorClass();
+    if (!player || player->checkDeadHP()) return false;
+    auto* boss = static_cast<b_gnd_class*>(fopAcM_SearchByName(fpcNm_B_GND_e));
+    if (!boss || boss->mDemoCamMode != 0 || boss->mActionMode >= kGanondorfActionEnd) return false;
+    auto* fader = mDoGph_gInf_c::getFader();
+    return !fader || (fader->getStatus() != JUTFader::FadeOut &&
+                      fader->getStatus() != JUTFader::None);
+}
+
+HookAction on_ganondorf_not_talk_pre(ModContext*, void*, void* retval, void*) {
+    if (!retval || !can_call_midna_in_ganondorf_duel()) return HOOK_CONTINUE;
+    *static_cast<BOOL*>(retval) = FALSE;
+    return HOOK_SKIP_ORIGINAL;
+}
+
+HookAction on_ganondorf_order_z_talk_pre(ModContext*, void* args, void* retval, void*) {
+    if (!args || !retval || !can_call_midna_in_ganondorf_duel()) return HOOK_CONTINUE;
+    auto* player = mods::arg<daAlink_c*>(args, 0);
+    if (!player) return HOOK_CONTINUE;
+
+    // Essentials orders the talk event directly: vanilla orderZTalk rejects
+    // F_0800 and checkMidnaRide(), both required by the direct finale setup.
+    dMeter2Info_onUseButton(METER2_USEBUTTON_Z);
+    *static_cast<int*>(retval) = 0;
+    if (!player->midnaTalkTrigger()) return HOOK_SKIP_ORIGINAL;
+    fopAc_ac_c* midna = daPy_py_c::getMidnaActor();
+    if (!midna) midna = fopAcM_SearchByName(fpcNm_MIDNA_e);
+    if (!midna) return HOOK_SKIP_ORIGINAL;
+
+    refresh_midna_root_flow_mode();
+    if (player->mMidnaMsg) {
+        dComIfGp_setMesgCameraInfoActor(player->mMidnaMsg, nullptr, nullptr, nullptr,
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    }
+    s32 ordered = fopAcM_orderTalkEvent(player, midna, 0x1FF, 0x400);
+    if (ordered == 0) ordered = fopAcM_orderTalkEvent(player, midna, 0, 0);
+    if (ordered != 0) {
+        player->field_0x35a0 = player->field_0x3594;
+        *static_cast<int*>(retval) = 1;
+    }
+    return HOOK_SKIP_ORIGINAL;
+}
+
 HookAction before_meter_execute(ModContext*, void*, void*, void*) {
     set_hub_portal_midna_meter_prompt();
+    if (can_call_midna_in_ganondorf_duel()) dMeter2Info_onUseButton(METER2_USEBUTTON_Z);
     if (is_bossrush_hub_active() && !dComIfGp_event_runCheck()) {
         const int portal = touched_hub_portal();
         if (portal >= 0 && portal < static_cast<int>(kBossRushEntryCount))
@@ -3745,6 +3841,10 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub switch hook");
     result = mods::hook_add_pre<GanondorfDanSwitchHook>(svc_hook, on_ganondorf_dan_switch_pre);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install duel switch hook");
+    result = mods::hook_add_pre<GanondorfOrderZTalkHook>(svc_hook, on_ganondorf_order_z_talk_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install duel Midna call hook");
+    result = mods::hook_add_pre<GanondorfNotTalkHook>(svc_hook, on_ganondorf_not_talk_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install duel Midna talk hook");
     result = mods::hook_add_post<BossRushAlinkExecuteHook>(svc_hook, on_bossrush_alink_execute_post);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install duel setup hook");
     result = mods::hook_add_pre<HubDefeatCheckHook>(svc_hook, on_hub_defeat_check_pre);
@@ -3779,6 +3879,8 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     mods::hook_uninstall<HubSwitchCheckHook>(svc_hook);
     mods::hook_uninstall<GanondorfDanSwitchHook>(svc_hook);
     mods::hook_uninstall<BossRushAlinkExecuteHook>(svc_hook);
+    mods::hook_uninstall<GanondorfOrderZTalkHook>(svc_hook);
+    mods::hook_uninstall<GanondorfNotTalkHook>(svc_hook);
     mods::hook_uninstall<HubDefeatCheckHook>(svc_hook);
     mods::hook_uninstall<HubGalleryDrawHook>(svc_hook);
     mods::hook_uninstall<HubLabelDrawHook>(svc_hook);

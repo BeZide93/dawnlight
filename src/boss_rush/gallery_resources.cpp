@@ -37,7 +37,14 @@ int loadObjectArchive(const char* arcName) {
         s_galleryArchives.insert(cleanName);
     }
     const int sync = dComIfG_syncObjectRes(cleanName);
-    return sync == 0 ? 0 : (sync < 0 ? -1 : 1);
+    if (sync < 0) {
+        // Drop only our reference, allowing a later frame to retry a failed
+        // first mount instead of keeping that failure until the next visit.
+        if (dComIfG_getObjectResInfo(cleanName)) dComIfG_deleteObjectResMain(cleanName);
+        s_galleryArchives.erase(cleanName);
+        return -1;
+    }
+    return sync == 0 ? 0 : 1;
 }
 
 void unloadObjectArchive(const char*) {

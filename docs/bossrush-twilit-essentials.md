@@ -48,6 +48,23 @@ separate Horseback Ganon replay or import Essentials' other game modes/settings.
 - GameModeService registration, save/resume, boss progress, rewards and Midna
   flow ownership remain in Dawnlight. The Dusklight host and SDK pin are unchanged.
 
+## First arrival and Ganondorf's Midna menu
+
+Hub logic, gallery loading and gallery drawing share the same live-room test.
+The first arrival after creating a save no longer depends on the entry room
+stored in start-stage metadata. Failed archive mounts release the gallery's
+reference and can be requested again. A slot is resolved only after its base
+model exists; failed requests back off and allow other miniatures to load.
+
+The direct Ganondorf replay uses Essentials' `notTalk` / `orderZTalk` approach
+to bypass the native finale flag and riding check, without clearing the finale
+flag. It orders a conversation with the native Midna actor, uses the configured
+Midna input binding, and enters Dawnlight's three-choice menu directly through
+the discovered flow-3001 root. The third choice still returns to the hub. The
+flow cache includes direct-duel state so this entry override is removed after
+leaving the replay. Calls remain disabled during setup, fades, other events,
+death and the victory sequence; vanilla play and the full finale are unchanged.
+
 ## Running alongside Twilit Essentials
 
 Use an Essentials build with the Boss Rush session-ownership fix. Older builds
@@ -67,8 +84,9 @@ GitHub Actions checks all configured target platforms. These checks do not
 validate in-game visuals
 or timing; these checks require Dusklight and game data:
 
-- Create a Boss Rush save and load an existing hub/run save; verify spawn,
-  camera, supplies, all 18 miniatures, animations and floating labels.
+- Create a Boss Rush save and verify all 18 miniatures appear on the first
+  visit without exiting the hub. Also load an existing hub/run save; verify
+  spawn, camera, supplies, animations and floating labels.
 - Start and finish a Darknut replay, return through Midna, die/retry, then repeat.
   Verify the room contains no live Darknut when used as the hub, no gate-opening
   cutscene plays on hub load/return, and the exit door is usable immediately.
@@ -80,6 +98,9 @@ or timing; these checks require Dusklight and game data:
 - Start the central full run, save/continue at a boss, and complete its finale.
 - Enter the Cave through the door, then use Midna's third option to return.
 - Replay Ganondorf twice; verify no horse intro, visible barrier, player control,
-  correct music, defeat detection and hub return.
+  correct music, defeat detection and hub return. During the playable duel,
+  use the configured Midna button, cancel once, then choose the third option
+  to return to the hub. Verify the call is blocked during setup/victory and
+  ordinary Midna behavior is restored after leaving the replay.
 - Repeat boss/hub transitions and return to the title screen while gallery
   archives are loading; check for memory growth or stale models.

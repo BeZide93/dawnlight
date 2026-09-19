@@ -5,8 +5,10 @@ and floating labels adapted from
 [Twilit Essentials](https://github.com/BeZide93/dawnlight-twilit-essentials/tree/805fac000711135ee2d85e086ab6100d767717bd/src/boss_rush),
 revision `805fac000711135ee2d85e086ab6100d767717bd`.
 
-Approach a miniature and press **A / Fight** to replay that encounter. Defeated
-boss names turn red. The central portal starts Dawnlight's complete run. The
+Approach a miniature and call Midna to open **Fight [boss]? — Yes / No**,
+using Dawnlight main's confirmation flow. Only **Yes** starts the replay;
+**No** or cancel keeps Link in the hub. The direct **A / Fight** action is removed.
+Defeated boss names turn red. The central portal starts Dawnlight's complete run. The
 exit door leads directly to the Cave of Ordeals; there is no separate Cave portal.
 Oil/red-potion stations and the fairy stand on the raised landing behind Ook.
 The small room beyond it contains three small chests for normal bombs,
@@ -71,6 +73,8 @@ functions against main. GitHub Actions builds the configured platforms.
 Visual behavior and live mod interaction still need an in-game check:
 
 - Create a Boss Rush save and check all 18 miniatures on the first arrival.
+- At a boss miniature, verify the Midna prompt, Yes/No/cancel behavior and
+  re-arming after walking away. A alone must not launch a fight.
 - Load an existing PR save with both mods active: check one gallery, supplies,
   music, no live Darknut and no gate-opening cutscene. Check bottles/fairy on
   the landing behind Ook and all three bomb chests inside the rear room. Break

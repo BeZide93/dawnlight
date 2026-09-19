@@ -10,7 +10,6 @@
 #include "d/d_meter2_draw.h"
 #include "d/d_camera.h"
 #include "f_op/f_op_camera_mng.h"
-#include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"
 #include "JSystem/JKernel/JKRHeap.h"
 #include "save_compat.hpp"
@@ -99,7 +98,6 @@ DEFINE_HOOK(&dSv_memBit_c::isDungeonItem, HubDefeatCheckHook);
 DEFINE_HOOK(&dSv_info_c::isSwitch, HubSwitchCheckHook);
 DEFINE_HOOK(&daAlink_c::draw, HubGalleryDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, HubLabelDrawHook);
-DEFINE_HOOK(&dMeter2Draw_c::getActionString, HubActionStringHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
@@ -1537,7 +1535,7 @@ void set_hub_portal_midna_meter_prompt() {
     }
 
     const int portal = touched_hub_portal();
-    if (portal != kBossRushRunPortalIndex || portal == sDismissedHubPortal || ui_document_visible()) {
+    if (portal < 0 || portal == sDismissedHubPortal || ui_document_visible()) {
         return;
     }
 
@@ -2756,14 +2754,6 @@ void update_bossrush_hub() {
     }
 
     int portal = touched_hub_portal();
-    if (portal >= 0 && portal < static_cast<int>(kBossRushEntryCount)) {
-        clear_hub_confirm_state();
-        if (can_open_save_prompt() && !ui_document_visible() && mDoCPd_c::getTrigA(PAD_1)) {
-            start_bossrush_entry(portal);
-        }
-        refresh_midna_root_flow_mode();
-        return;
-    }
     if (has_hub_portal_midna_prompt() && (portal >= 0 || dComIfGp_event_runCheck())) {
         refresh_midna_root_flow_mode();
         return;
@@ -3477,20 +3467,8 @@ void on_hub_label_draw_post(ModContext*, void*, void*, void*) {
         draw_boss_rush_texts(kBossRushHubY);
 }
 
-void on_hub_action_string_post(ModContext*, void* args, void* retval, void*) {
-    if (!is_bossrush_hub_active() || !args || !retval || dComIfGp_event_runCheck()) return;
-    const int portal = touched_hub_portal();
-    if (portal >= 0 && portal < static_cast<int>(kBossRushEntryCount) &&
-        mods::arg<u8>(args, 1) == BUTTON_STATUS_OPEN) *static_cast<const char**>(retval) = "Fight";
-}
-
 HookAction before_meter_execute(ModContext*, void*, void*, void*) {
     set_hub_portal_midna_meter_prompt();
-    if (is_bossrush_hub_active() && !dComIfGp_event_runCheck()) {
-        const int portal = touched_hub_portal();
-        if (portal >= 0 && portal < static_cast<int>(kBossRushEntryCount))
-            dComIfGp_setDoStatusForce(BUTTON_STATUS_OPEN, 0);
-    }
     return HOOK_CONTINUE;
 }
 
@@ -3929,8 +3907,6 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install gallery draw hook");
     result = mods::hook_add_post<HubLabelDrawHook>(svc_hook, on_hub_label_draw_post);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install gallery label hook");
-    result = mods::hook_add_post<HubActionStringHook>(svc_hook, on_hub_action_string_post);
-    if (result != MOD_OK) return mods::set_error(error, result, "failed to install gallery action hook");
     result = install_midna_flow(error);
     if (result != MOD_OK) {
         return result;
@@ -3957,7 +3933,6 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     mods::hook_uninstall<HubDefeatCheckHook>(svc_hook);
     mods::hook_uninstall<HubGalleryDrawHook>(svc_hook);
     mods::hook_uninstall<HubLabelDrawHook>(svc_hook);
-    mods::hook_uninstall<HubActionStringHook>(svc_hook);
     shutdown_midna_flow();
 
     if (!sBossRushHooksInstalled) {

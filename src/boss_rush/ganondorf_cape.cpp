@@ -69,8 +69,8 @@ int dummy_delete(void*)    { return 1; }
 
 void ensure_dummy_profile() {
     if (s_dummyRegistered || svc_actor == nullptr) return;
-    ActorProfileDesc d{};
-    std::strcpy(const_cast<char*>(d.name), "DawnGndCape");
+    // The SDK's const name[8] allows seven characters plus the terminator.
+    ActorProfileDesc d{.name = "DlGCape"};
     d.priority_group   = 4;
     d.process_size     = sizeof(b_gnd_class);
     d.draw_priority    = 0;

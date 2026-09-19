@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "enemy_spawner.hpp"
 #include "boss_rush/boss_rush.hpp"
 #include "boss_rush/boss_rush_common.hpp"
 #include "boss_rush/boss_rush_models.hpp"
@@ -3404,6 +3405,7 @@ bool ensure_bossrush_runtime_for_save() {
 }
 
 HookAction on_hub_defeat_check_pre(ModContext*, void* args, void* retval, void*) {
+    if (enemy_spawner_processing_test_actor()) return HOOK_CONTINUE;
     if (!is_bossrush_hub_active() || !args || !retval) return HOOK_CONTINUE;
     const int bit = mods::arg<int>(args, 1);
     if (bit != dSv_memBit_c::STAGE_BOSS_ENEMY && bit != dSv_memBit_c::STAGE_BOSS_ENEMY_2 &&
@@ -3414,9 +3416,14 @@ HookAction on_hub_defeat_check_pre(ModContext*, void* args, void* retval, void*)
 
 // Essentials overrides the room switch query itself: this covers the native
 // Darknut variant, room events and door bars before they can start their demos.
+// Tracked spawner actors use real save queries, so the engine's generic room
+// enemy-appearance gate does not discard them before their own create method.
 HookAction on_hub_switch_check_pre(ModContext*, void* args, void* retval, void*) {
+    if (enemy_spawner_processing_test_actor()) return HOOK_CONTINUE;
     if (!is_bossrush_hub_active() || !args || !retval) return HOOK_CONTINUE;
     if (mods::arg<int>(args, 2) != kBossRushReturnRoom) return HOOK_CONTINUE;
+    const int sw = mods::arg<int>(args, 1);
+    if (sw == -1 || sw == 0xFF) return HOOK_CONTINUE; // Native "no switch" sentinels.
     *static_cast<s32*>(retval) = 1;
     return HOOK_SKIP_ORIGINAL;
 }
@@ -3577,7 +3584,36 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
     const bool bossRushActive =
         (is_bossrush_game_mode_active() || ensure_bossrush_runtime_for_save()) &&
         is_boss_rush();
-    if (bossRushActive &&
+    // The entrance exit and every Great Fairy exit resolve through this call.
+    // Keep floor changes/retries inside D_SB01 and title/reset transitions intact.
+    if (bossRushActive && boss_rush_state() == kBossRushStateCaveOfOrdeals &&
+        is_current_stage_name(kCaveOfOrdealsStage) && stage &&
+        std::strcmp(stage, kCaveOfOrdealsStage) != 0 &&
+        !is_opening_stage(stage, point, room, layer) && !is_reset_to_opening_transition()) {
+        clear_pending_midna_flow_action();
+        clear_hub_confirm_state();
+        sHubExitPending = false;
+        sBossRushResumePending = false;
+        set_boss_rush_state(kBossRushStateHub);
+        set_boss_rush_index(0);
+        set_bossrush_return_place();
+        reset_hub_actor_ids();
+        reset_direct_final_boss_state();
+        reset_bossrush_hazards();
+        reset_bossrush_warp_audio();
+        sBossWarpArrivalPending = true;
+        play_bossrush_warp_sound();
+        set_next_stage_args(args, kBossRushReturnStage, kBossRushReturnPoint,
+            kBossRushReturnRoom, kBossRushReturnLayer);
+        // Match warp_to_hub without recursively requesting another scene.
+        mods::arg_ref<f32>(args, 4) = 0.0f;
+        mods::arg_ref<u32>(args, 5) = 0;
+        mods::arg_ref<int>(args, 6) = 1;
+        mods::arg_ref<s8>(args, 7) = 0;
+        mods::arg_ref<s16>(args, 8) = static_cast<s16>(0x8000);
+        mods::arg_ref<int>(args, 9) = 0;
+        mods::arg_ref<int>(args, 10) = 0;
+    } else if (bossRushActive &&
         is_vanilla_new_file_stage(stage, point, room, layer)) {
         prepare_bossrush_start();
         set_next_stage_args(args, kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom,

@@ -17,5 +17,8 @@ inline constexpr std::array<const char*, 33> kEnemySpawnerProfileLabels{
 };
 
 ModResult spawn_enemy_for_testing(int profileIndex);
+// True only while a tracked test actor's process method is running, including
+// the generic creation path before fopAcM_IsActor can recognize the actor.
+bool enemy_spawner_processing_test_actor();
 
 }  // namespace dawnlight

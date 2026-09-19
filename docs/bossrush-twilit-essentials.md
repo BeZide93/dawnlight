@@ -10,6 +10,10 @@ using Dawnlight main's confirmation flow. Only **Yes** starts the replay;
 **No** or cancel keeps Link in the hub. The direct **A / Fight** action is removed.
 Defeated boss names turn red. The central portal starts Dawnlight's complete run. The
 exit door leads directly to the Cave of Ordeals; there is no separate Cave portal.
+While visiting the Cave in Boss Rush, its entrance exit and all Great Fairy
+return destinations lead back to the Boss Rush hub. Internal floor transitions
+and Cave retries keep their original destinations; ordinary game saves and
+return-to-title/reset transitions are unaffected.
 Oil/red-potion stations and the fairy stand on the raised landing behind Ook.
 The small room beyond it contains three small chests for normal bombs,
 Bomblings and water bombs (30 each, subject to bag capacity). Their placement
@@ -45,6 +49,12 @@ Hub-only completion/switch overrides and the dungeon/zone reset suppress
 Darknut and the gate-opening demo. Native reward chests are removed before
 Dawnlight's supplies are spawned. SaveService keeps defeated-boss progress
 separately. The encounter indices, save schema and full-run finale are unchanged.
+
+The Enemy Spawner is enabled in the hub. Its tracked actors use real switch
+and boss-completion queries during their process methods, including generic
+actor creation. This prevents the room's enemy-appearance gate from deleting
+test enemies while retaining the native Darknut/gate suppression. Unrelated
+actor calls do not inherit the exception, including nested calls.
 
 Gallery loading/drawing use the live stay room, including the first arrival
 from a new save. Models use a persistent heap; archives are retained once,
@@ -82,4 +92,7 @@ Visual behavior and live mod interaction still need an in-game check:
 - Replay Ganondorf, check the light wall, call Midna and use the third option.
   Repeat after returning to the hub, and check death/retry and boss defeat.
 - Test a real Darknut replay, the central full run, saving/resuming, and the
-  Cave exit door followed by Midna's return option.
+  Cave exit door followed by Midna's return option. Leave the Cave via its
+  normal entrance exit and each Great Fairy return choice on deeper floors;
+  verify the hub spawn, camera, supplies and gallery, then re-enter the Cave.
+  Continuing to another Cave floor must not return to the hub.

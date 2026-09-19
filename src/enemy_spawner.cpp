@@ -1,6 +1,5 @@
 #include "enemy_spawner.hpp"
 
-#include "save_state.hpp"
 #include "service_imports.hpp"
 
 #include "SSystem/SComponent/c_math.h"
@@ -15,8 +14,8 @@
 #include "mods/hook.hpp"
 
 #include <array>
-#include <cstring>
 #include <unordered_set>
+#include <vector>
 
 namespace dawnlight {
 namespace {
@@ -100,6 +99,11 @@ DEFINE_HOOK(&daE_ZS_c::executeAppear, StaltroopAppearHook);
 DEFINE_HOOK(&daE_ZS_c::executeWait, StaltroopWaitHook);
 
 std::unordered_set<ActorId> s_testActors;
+struct TestActorProcessFrame {
+    const void* args;
+    bool isTestActor;
+};
+std::vector<TestActorProcessFrame> s_processFrames;
 bool s_processHookInstalled = false;
 bool s_appearHookInstalled = false;
 bool s_waitHookInstalled = false;
@@ -110,6 +114,9 @@ bool is_test_actor(fopAc_ac_c* actor) {
 
 HookAction before_process(ModContext*, void* args, void*, void*) {
     auto* process = mods::arg<void*>(args, 1);
+    // fopAc_Create checks the room's enemy-appearance switch before the actor's
+    // own create method. Track its ID before checking initialized actor type.
+    s_processFrames.push_back({args, process && s_testActors.contains(fpcM_GetID(process))});
     if (process == nullptr || !fopAcM_IsActor(process)) return HOOK_CONTINUE;
     auto* actor = static_cast<fopAc_ac_c*>(process);
     if (!is_test_actor(actor)) return HOOK_CONTINUE;
@@ -135,6 +142,13 @@ HookAction before_process(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
+void after_process(ModContext*, void* args, void*, void*) {
+    // Post-hooks also run if an earlier pre-hook skipped this process method.
+    // Only pop frames for calls whose pre-hook actually ran.
+    if (!s_processFrames.empty() && s_processFrames.back().args == args)
+        s_processFrames.pop_back();
+}
+
 HookAction before_staltroop_appear(ModContext*, void* args, void*, void*) {
     auto* actor = mods::arg<daE_ZS_c*>(args, 0);
     if (is_test_actor(actor) && actor->mMode == 0) actor->mMode = 1;
@@ -157,7 +171,9 @@ HookAction before_staltroop_wait(ModContext*, void* args, void*, void*) {
 
 ModResult install_test_hooks() {
     if (!s_processHookInstalled) {
-        const auto result = mods::hook::add_pre<SpawnerProcessHook>(svc_hook, before_process);
+        auto result = mods::hook::add_post<SpawnerProcessHook>(svc_hook, after_process);
+        if (result != MOD_OK) return result;
+        result = mods::hook::add_pre<SpawnerProcessHook>(svc_hook, before_process);
         if (result != MOD_OK) return result;
         s_processHookInstalled = true;
     }
@@ -176,15 +192,8 @@ ModResult install_test_hooks() {
 
 }  // namespace
 
-bool enemy_spawner_blocked_in_bossrush_hub() {
-    constexpr char kBossRushHubStage[] = "D_MN09C";
-    constexpr s8 kBossRushHubRoom = 0;
-    constexpr u8 kBossRushHubState = 0;
-    const char* stage = dComIfGp_getStartStageName();
-    return save_state_boss_rush_active() &&
-           save_state_boss_rush_state() == kBossRushHubState && stage != nullptr &&
-           std::strcmp(stage, kBossRushHubStage) == 0 &&
-           dComIfGp_getStartStageRoomNo() == kBossRushHubRoom;
+bool enemy_spawner_processing_test_actor() {
+    return !s_processFrames.empty() && s_processFrames.back().isTestActor;
 }
 
 ModResult spawn_enemy_for_testing(int profileIndex) {
@@ -193,11 +202,6 @@ ModResult spawn_enemy_for_testing(int profileIndex) {
         return MOD_INVALID_ARGUMENT;
     }
     if (svc_actor == nullptr || svc_actor->create_actor == nullptr) return MOD_UNAVAILABLE;
-    // The hub already keeps all boss portals, its barrier, and supply actors resident.
-    // Loading an additional enemy archive can exhaust the model heap; vanilla then
-    // aborts while initializing a texture from the failed allocation.
-    if (enemy_spawner_blocked_in_bossrush_hub()) return MOD_UNAVAILABLE;
-
     auto* link = daAlink_getAlinkActorClass();
     if (link == nullptr) return MOD_UNAVAILABLE;
 

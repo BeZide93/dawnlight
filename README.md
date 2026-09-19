@@ -33,7 +33,8 @@ aiming, boss, and HUD features for Twilight Princess.
   faster tracking, and selected profile-specific mechanics.
 - Boss Rush Game Mode with a Twilit Essentials-style Darknut arena hub:
   animated boss miniatures and floating labels, a central complete-run portal,
-  oil/red-potion refills, fairy, bomb chest, arrow and Deku-seed pots. The exit
+  oil/red-potion refills and fairy behind Ook, three bomb-type chests, and native
+  pots supplying arrows and Deku seeds. The exit
   door leads directly to the Cave of Ordeals. Includes warp transitions, direct
   Dawnlight Ganondorf duels, hardmode hazards, save/resume, and Midna's Return to Hub option.
   A separate stage identity keeps Essentials from recognizing Dawnlight's hub as its own.

@@ -42,6 +42,8 @@ class JPABaseEmitter;
 #include "d/actor/d_a_obj_oiltubo.h"
 #undef private
 #include "d/actor/d_a_tbox2.h"
+#include "d/actor/d_a_obj_carry.h"
+#include "d/d_bg_s_gnd_chk.h"
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_debug_viewer.h"
@@ -101,6 +103,7 @@ DEFINE_HOOK(&dMeter2Draw_c::getActionString, HubActionStringHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
+DEFINE_HOOK(&daObjCarry_c::preInit, HubPotInitHook);
 DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
 #if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
 DEFINE_HOOK_SYMBOL("_ZL15dScnPly_ExecuteP9dScnPly_c", int(void*), PlaySceneUpdateHook);
@@ -226,14 +229,10 @@ constexpr f32 kBossRushHubY = kBossChamberFloorY;
 constexpr f32 kGanondorfArenaY = 1100.0f;
 constexpr f32 kBossRushHubPortalRadius = kChamberCircleRadius;
 constexpr f32 kBossRushHubTriggerRadius = kBossInteractRadius;
-constexpr f32 kBossRushHubRefillDistance = kBossRushHubPortalRadius * 0.5f;
 constexpr f32 kBossRushHubRefillSpacing = 220.0f;
-constexpr f32 kBossRushHubPotDistance = 300.0f;
-constexpr f32 kBossRushHubPotSpacing = 150.0f;
 constexpr u8 kBossRushHubSupplyActorCount = 7;
+constexpr f32 kBossRushHubChestSpacing = 220.0f;
 constexpr u8 kBossRushHubSupplyCreateBatch = 1;
-constexpr u32 kBossRushCarryParameters = 0x00003FFF;
-constexpr s16 kBossRushSmallPotParams = 0x1040;
 constexpr u8 kBossRushBombChestNo = 0xFF;
 constexpr char kCaveOfOrdealsStage[] = "D_SB01";
 constexpr s16 kCaveOfOrdealsPoint = 0;
@@ -319,6 +318,9 @@ u8 sHubNextSupplyActorToSpawn = 0;
 bool sHubSupplyAnchorInitialized = false;
 cXyz sHubSupplyAnchor;
 s16 sHubSupplyFacing = 0;
+bool sHubBombChestLocated = false;
+cXyz sHubBombChestPosition;
+s16 sHubBombChestFacing = 0;
 int sPendingHubPortal = -1;
 int sDismissedHubPortal = -1;
 MidnaRootFlowMode sMidnaRootFlowMode = MidnaRootFlowMode::None;
@@ -508,22 +510,77 @@ cXyz hub_portal_position(u8 portal) {
     return pos;
 }
 
+bool hub_floor_at(cXyz& pos, f32 probeY) {
+    cXyz probe(pos.x, probeY, pos.z);
+    dBgS_ObjGndChk ground;
+    ground.SetPos(&probe);
+    const f32 floor = dComIfG_Bgsp().GroundCross(&ground);
+    if (floor == -1.0e9f) return false;
+    pos.y = floor;
+    return true;
+}
+
 bool initialize_hub_supply_anchor() {
-    if (sHubSupplyAnchorInitialized) {
+    if (sHubSupplyAnchorInitialized) return true;
+    if (!daPy_getPlayerActorClass()) return false;
+
+    const cXyz ook = hub_portal_position(0);
+    bool& foundChest = sHubBombChestLocated;
+    // Read the original treasure placement even if its actor was suppressed by
+    // completion flags. The rear alcove contains the Dominion Rod reward chest.
+    auto* room = dComIfGp_roomControl_getStatusRoomDt(kBossRushReturnRoom);
+    auto* treasures = room ? room->getTresure() : nullptr;
+    if (treasures) {
+        for (int i = 0; i < treasures->num; ++i) {
+            const auto& entry = treasures->m_entries[i];
+            const cXyz pos = entry.base.position;
+            if (std::strncmp(entry.name, "tbox", 4) != 0 || pos.z >= ook.z ||
+                (foundChest && pos.z >= sHubBombChestPosition.z)) continue;
+            sHubBombChestPosition = pos;
+            const csXyz angle = entry.base.angle;
+            sHubBombChestFacing = angle.y;
+            foundChest = true;
+        }
+    }
+    // Layer-specific treasure records are not retained in getTresure().
+    fopAcIt_Judge(+[](void* ptr, void* data) -> void* {
+        if (!ptr || !fopAcM_IsActor(ptr)) return nullptr;
+        auto* actor = static_cast<fopAc_ac_c*>(ptr);
+        const auto name = fopAcM_GetProfName(actor);
+        auto& found = *static_cast<bool*>(data);
+        if (fopAcM_GetRoomNo(actor) == kBossRushReturnRoom &&
+            (name == fpcNm_TBOX_e || name == fpcNm_TBOX2_e) &&
+            actor->home.pos.z < -kChamberCircleRadius &&
+            (!found || actor->home.pos.z < sHubBombChestPosition.z)) {
+            sHubBombChestPosition = actor->home.pos;
+            sHubBombChestFacing = actor->home.angle.y;
+            found = true;
+        }
+        return nullptr;
+    }, &foundChest);
+    if (!foundChest) return false;
+
+    // Walk toward the alcove and find the first raised, flat landing wide
+    // enough for both bottles. Check depth too, so a stair tread cannot match.
+    const f32 probeY = std::max(kBossRushHubY + 500.0f, sHubBombChestPosition.y + 300.0f);
+    for (f32 z = ook.z - 300.0f; z > sHubBombChestPosition.z + 250.0f; z -= 50.0f) {
+        cXyz center(ook.x, kBossRushHubY, z);
+        if (!hub_floor_at(center, probeY) || center.y < kBossRushHubY + 50.0f) continue;
+        bool flat = true;
+        for (f32 dx : {-200.0f, 0.0f, 200.0f}) {
+            for (f32 dz : {-100.0f, 0.0f, 100.0f}) {
+                cXyz edge(center.x + dx, center.y, center.z + dz);
+                if (!hub_floor_at(edge, probeY) || std::fabs(edge.y - center.y) > 2.0f)
+                    flat = false;
+            }
+        }
+        if (!flat) continue;
+        sHubSupplyAnchor = center;
+        sHubSupplyFacing = 0; // Face the arena from the landing behind Ook.
+        sHubSupplyAnchorInitialized = true;
         return true;
     }
-
-    daPy_py_c* player = daPy_getPlayerActorClass();
-    if (player == nullptr) {
-        return false;
-    }
-
-    // Fixed anchor: supplies never shift when entering from a different boss.
-    sHubSupplyAnchor = hub_center();
-    sHubSupplyAnchor.x = 650.0f;
-    sHubSupplyFacing = 0;
-    sHubSupplyAnchorInitialized = true;
-    return true;
+    return false; // Room collision can still be loading; retry next update.
 }
 
 cXyz hub_supply_position(f32 forwardOffset, f32 rightOffset) {
@@ -535,52 +592,48 @@ cXyz hub_supply_position(f32 forwardOffset, f32 rightOffset) {
     return pos;
 }
 
-fpc_ProcID create_hub_carry_pot(const cXyz& pos, u8 item, s16 carryParams) {
-    csXyz angle(static_cast<s16>(0xFF00 | item), sHubSupplyFacing, carryParams);
-    return create_actor(fpcNm_Obj_Carry_e, kBossRushCarryParameters, &pos,
-        kBossRushReturnRoom, &angle, nullptr, -1);
-}
-
 fpc_ProcID create_hub_supply_actor(u8 index) {
     const f32 refillSide = kBossRushHubRefillSpacing * 0.5f;
     csXyz angle(0, sHubSupplyFacing, 0);
 
     switch (index) {
     case 0: {
-        const cXyz pos = hub_supply_position(-kBossRushHubRefillDistance, -refillSide);
+        const cXyz pos = hub_supply_position(0.0f, -refillSide);
         return create_actor(fpcNm_OBJ_OILTUBO_e, 0xFFFFFFFF, &pos, kBossRushReturnRoom,
             &angle, nullptr, -1);
     }
     case 1: {
-        const cXyz pos = hub_supply_position(-kBossRushHubRefillDistance, refillSide);
+        const cXyz pos = hub_supply_position(0.0f, refillSide);
         return create_actor(fpcNm_OBJ_OILTUBO_e, 0xFFFFFFFF, &pos, kBossRushReturnRoom,
             &angle, nullptr, -1);
     }
     case 2: {
-        const cXyz pos = hub_supply_position(-kBossRushHubRefillDistance + 55.0f, refillSide);
+        const cXyz pos = hub_supply_position(55.0f, refillSide);
         return create_actor(fpcNm_TAG_BTLITM_e, dItemNo_RED_BOTTLE_2_e, &pos,
             kBossRushReturnRoom, &angle, nullptr, -1);
     }
-    case 3: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, -kBossRushHubPotSpacing);
-        return create_hub_carry_pot(pos, dItemNo_ARROW_30_e, kBossRushSmallPotParams);
-    }
-    case 4: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, 0.0f);
-        const u32 params = dItemNo_BOMB_30_e |
+    case 3:
+    case 5:
+    case 6: {
+        const u8 item = index == 3 ? dItemNo_BOMB_30_e :
+            (index == 5 ? dItemNo_BOMB_INSECT_30_e : dItemNo_WATER_BOMB_30_e);
+        const f32 offset = index == 3 ? 0.0f :
+            (index == 5 ? -kBossRushHubChestSpacing : kBossRushHubChestSpacing);
+        cXyz pos = sHubBombChestPosition;
+        pos.x += angle_cos(sHubBombChestFacing) * offset;
+        pos.z -= angle_sin(sHubBombChestFacing) * offset;
+        if (!hub_floor_at(pos, sHubBombChestPosition.y + 300.0f))
+            return fpcM_ERROR_PROCESS_ID_e;
+        const u32 params = item |
                            (static_cast<u32>(daTbox2_c::TYPE_SMALL_e) << 8) |
                            (static_cast<u32>(kBossRushBombChestNo) << 16);
         const csXyz chestAngle(
-            0, static_cast<s16>(sHubSupplyFacing + static_cast<s16>(0x8000)), 0);
+            0, sHubBombChestFacing, 0);
         return create_actor(fpcNm_TBOX2_e, params, &pos, kBossRushReturnRoom,
             &chestAngle, nullptr, -1);
     }
-    case 5: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, kBossRushHubPotSpacing);
-        return create_hub_carry_pot(pos, dItemNo_PACHINKO_SHOT_e, kBossRushSmallPotParams);
-    }
-    case 6: {
-        cXyz pos = hub_supply_position(-kBossRushHubRefillDistance, 0.0f);
+    case 4: {
+        cXyz pos = hub_supply_position(0.0f, 0.0f);
         pos.y += 80.0f;
         return fopAcM_createItem(&pos, dItemNo_RECOVERY_FAILY_e, -1,
             kBossRushReturnRoom, &angle, nullptr, 0);
@@ -664,6 +717,7 @@ void reset_hub_actor_ids() {
     sHubSettleFrames = 0;
     sHubNextSupplyActorToSpawn = 0;
     sHubSupplyAnchorInitialized = false;
+    sHubBombChestLocated = false;
     sPendingHubPortal = -1;
     sDismissedHubPortal = -1;
 }
@@ -2663,6 +2717,8 @@ void update_bossrush_hub() {
         return;
     }
     if (!sGalleryLoaded) {
+        // Capture the alcove placement before deleting its native reward actor.
+        initialize_hub_supply_anchor();
         // Remove only the native reward chest, before creating our bomb chest.
         fopAcIt_Judge(+[](void* ptr, void*) -> void* {
             if (!ptr || !fopAcM_IsActor(ptr)) return nullptr;
@@ -3375,6 +3431,29 @@ HookAction on_hub_switch_check_pre(ModContext*, void* args, void* retval, void*)
     return HOOK_SKIP_ORIGINAL;
 }
 
+void on_hub_pot_init_post(ModContext*, void* args, void*, void*) {
+    if (!args || !is_boss_rush() || boss_rush_state() != kBossRushStateHub ||
+        !is_current_stage_name(kBossRushChamberStage)) return;
+    auto* pot = mods::arg<daObjCarry_c*>(args, 0);
+    if (!pot || fopAcM_GetHomeRoomNo(pot) != kBossRushReturnRoom) return;
+    switch (pot->getType()) {
+    case daObjCarry_c::TYPE_TSUBO:
+    case daObjCarry_c::TYPE_OOTSUBO:
+    case daObjCarry_c::TYPE_TSUBO_2:
+    case daObjCarry_c::TYPE_AOTSUBO:
+    case daObjCarry_c::TYPE_TSUBO_S:
+    case daObjCarry_c::TYPE_TSUBO_B:
+        // Left/right as seen from the arena facing Ook. Use home coordinates
+        // so carrying a pot across the room cannot change its contents.
+        pot->mItemNo = 0xFF00 | (pot->home.pos.x < 0.0f ?
+            dItemNo_PACHINKO_SHOT_e : dItemNo_ARROW_30_e);
+        pot->field_0xd18 &= ~1u; // Direct item ID, not a random drop table.
+        break;
+    default:
+        break;
+    }
+}
+
 HookAction on_hub_door_open_pre(ModContext*, void*, void* retval, void*) {
     if (!is_bossrush_hub_active() && !(sHubExitPending && is_boss_hub_stage_name()))
         return HOOK_CONTINUE;
@@ -3838,6 +3917,8 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
 
     result = init_ganondorf_cape(svc_hook, svc_log, mod_ctx);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install gallery cape hooks");
+    result = mods::hook_add_post<HubPotInitHook>(svc_hook, on_hub_pot_init_post);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub pot drops");
     result = mods::hook_add_pre<HubDoorOpenHook>(svc_hook, on_hub_door_open_pre);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub door hook");
     result = mods::hook_add_pre<HubSwitchCheckHook>(svc_hook, on_hub_switch_check_pre);
@@ -3870,6 +3951,7 @@ ModResult uninstall_bossrush_hook(ModError* error, const char* message) {
 }
 
 ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
+    mods::hook_uninstall<HubPotInitHook>(svc_hook);
     mods::hook_uninstall<HubDoorOpenHook>(svc_hook);
     mods::hook_uninstall<HubSwitchCheckHook>(svc_hook);
     mods::hook_uninstall<HubDefeatCheckHook>(svc_hook);

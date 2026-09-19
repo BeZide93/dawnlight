@@ -8,8 +8,18 @@ revision `805fac000711135ee2d85e086ab6100d767717bd`.
 Approach a miniature and press **A / Fight** to replay that encounter. Defeated
 boss names turn red. The central portal starts Dawnlight's complete run. The
 exit door leads directly to the Cave of Ordeals; there is no separate Cave portal.
-Oil/red-potion stations, fairy, bomb chest, arrow/Deku-seed pots, custom music,
-and Midna's third **Return to Hub** choice remain available.
+Oil/red-potion stations and the fairy stand on the raised landing behind Ook.
+The small room beyond it contains three small chests for normal bombs,
+Bomblings and water bombs (30 each, subject to bag capacity). Their placement
+uses the original reward chest's position and facing, with 220-unit spacing.
+The landing is located using the room collision, checking both width and depth
+to avoid placing the bottles on a stair tread; its height is not the arena floor.
+
+The two existing pots on the left give Deku seeds; the three on the right give
+30 arrows each (viewed from the arena toward Ook). These are direct drops, not
+random heart tables, and use each pot's original position even when carried.
+The two additional Dawnlight pots are removed. Native Darknut encounters are
+unaffected. Custom music and Midna's third **Return to Hub** choice remain.
 
 ## Separate hub identity
 
@@ -62,7 +72,9 @@ Visual behavior and live mod interaction still need an in-game check:
 
 - Create a Boss Rush save and check all 18 miniatures on the first arrival.
 - Load an existing PR save with both mods active: check one gallery, supplies,
-  music, no live Darknut and no gate-opening cutscene.
+  music, no live Darknut and no gate-opening cutscene. Check bottles/fairy on
+  the landing behind Ook and all three bomb chests inside the rear room. Break
+  both left pots and all three right pots, then revisit to check their respawn.
 - Replay Ganondorf, check the light wall, call Midna and use the third option.
   Repeat after returning to the hub, and check death/retry and boss defeat.
 - Test a real Darknut replay, the central full run, saving/resuming, and the

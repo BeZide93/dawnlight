@@ -85,6 +85,9 @@ DEFINE_HOOK(
     SetNextStageHook);
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
 DEFINE_HOOK(&daDoor20_c::openInit, HubDoorOpenHook);
+DEFINE_HOOK(&daDoor20_c::chkStopF, HubDoorFrontStopHook);
+DEFINE_HOOK(&daDoor20_c::chkStopB, HubDoorBackStopHook);
+DEFINE_HOOK(&daDoor20_c::chkStopClose, HubDoorStopCloseHook);
 DEFINE_HOOK(&dSv_memBit_c::isDungeonItem, HubDefeatCheckHook);
 DEFINE_HOOK(&daAlink_c::draw, HubGalleryDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, HubLabelDrawHook);
@@ -3340,6 +3343,15 @@ HookAction on_hub_defeat_check_pre(ModContext*, void* args, void* retval, void*)
     return HOOK_SKIP_ORIGINAL;
 }
 
+// Initialize both sides without a bar and prevent it from closing again. Otherwise
+// the native enemy-clear door logic orders its gate-opening demo after hub load.
+// Query overrides leave dungeon switches and the real Darknut encounter intact.
+HookAction on_hub_door_stop_check_pre(ModContext*, void*, void* retval, void*) {
+    if (!is_bossrush_hub_active() || !retval) return HOOK_CONTINUE;
+    *static_cast<int*>(retval) = 0;
+    return HOOK_SKIP_ORIGINAL;
+}
+
 HookAction on_hub_door_open_pre(ModContext*, void*, void* retval, void*) {
     if (!is_bossrush_hub_active() && !(sHubExitPending && is_boss_hub_stage_name()))
         return HOOK_CONTINUE;
@@ -3747,6 +3759,12 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install gallery cape hooks");
     result = mods::hook_add_pre<HubDoorOpenHook>(svc_hook, on_hub_door_open_pre);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub door hook");
+    result = mods::hook_add_pre<HubDoorFrontStopHook>(svc_hook, on_hub_door_stop_check_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub front bar hook");
+    result = mods::hook_add_pre<HubDoorBackStopHook>(svc_hook, on_hub_door_stop_check_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub back bar hook");
+    result = mods::hook_add_pre<HubDoorStopCloseHook>(svc_hook, on_hub_door_stop_check_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub bar close hook");
     result = mods::hook_add_pre<HubDefeatCheckHook>(svc_hook, on_hub_defeat_check_pre);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub defeat hook");
     result = mods::hook_add_post<HubGalleryDrawHook>(svc_hook, on_hub_gallery_draw_post);
@@ -3776,6 +3794,9 @@ ModResult uninstall_bossrush_hook(ModError* error, const char* message) {
 
 ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     mods::hook_uninstall<HubDoorOpenHook>(svc_hook);
+    mods::hook_uninstall<HubDoorFrontStopHook>(svc_hook);
+    mods::hook_uninstall<HubDoorBackStopHook>(svc_hook);
+    mods::hook_uninstall<HubDoorStopCloseHook>(svc_hook);
     mods::hook_uninstall<HubDefeatCheckHook>(svc_hook);
     mods::hook_uninstall<HubGalleryDrawHook>(svc_hook);
     mods::hook_uninstall<HubLabelDrawHook>(svc_hook);

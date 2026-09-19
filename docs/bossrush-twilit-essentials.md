@@ -29,13 +29,24 @@ separate Horseback Ganon replay or import Essentials' other game modes/settings.
   camera-92 intro setup are removed.
 - Hub-only completion queries suppress the native Darknut. The same room remains
   a real fight when the GameMode state is Run/Replay. Native reward chests are
-  removed before spawning Dawnlight's supplies.
+  removed before spawning Dawnlight's supplies. Hub-only door-bar queries start
+  the exit unlocked and keep it unlocked, avoiding the native enemy-clear gate
+  cutscene without setting persistent dungeon switches.
 - Gallery allocations use a persistent heap. Archive references are acquired
   once, including pending loads, and released after all gallery models. Joint
   callbacks are restored before releasing shared model data. The existing enemy
   spawner guard now targets the new hub.
 - GameModeService registration, save/resume, boss progress, rewards and Midna
   flow ownership remain in Dawnlight. The Dusklight host and SDK pin are unchanged.
+
+## Running alongside Twilit Essentials
+
+Use an Essentials build with the Boss Rush session-ownership fix. Older builds
+activate their gallery just by entering `D_MN06B`, room 51, and draw a second set
+of miniatures and labels over Dawnlight's gallery. Essentials must require its
+own active Boss Rush session and must not adopt a session from the current room
+when enabled or reloaded. Update both mods and restart the game after replacing
+the packages.
 
 ## Validation
 
@@ -46,7 +57,13 @@ or timing; these checks require Dusklight and game data:
 - Create a Boss Rush save and load an existing hub/run save; verify spawn,
   camera, supplies, all 18 miniatures, animations and floating labels.
 - Start and finish a Darknut replay, return through Midna, die/retry, then repeat.
-  Verify the room contains no live Darknut when used as the hub.
+  Verify the room contains no live Darknut when used as the hub, no gate-opening
+  cutscene plays on hub load/return, and the exit door is usable immediately.
+- Repeat with both updated mods enabled; verify only Dawnlight's 18 miniatures
+  and labels appear, its supply chest remains, and each A press starts one fight.
+  With Essentials alone, enter its Boss Rush from the menu/portal and verify its
+  gallery, Darknut replay and return. A normal Darknut fight must not show a
+  gallery, including when enabling/reloading Essentials in that room.
 - Start the central full run, save/continue at a boss, and complete its finale.
 - Enter the Cave through the door, then use Midna's third option to return.
 - Replay Ganondorf twice; verify no horse intro, visible barrier, player control,

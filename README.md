@@ -35,7 +35,8 @@ aiming, boss, and HUD features for Twilight Princess.
   animated boss miniatures and floating labels, a central complete-run portal,
   oil/red-potion refills, fairy, bomb chest, arrow and Deku-seed pots. The exit
   door leads directly to the Cave of Ordeals. Includes warp transitions, direct
-  Ganondorf duels, hardmode hazards, save/resume, and Midna's Return to Hub option.
+  Dawnlight Ganondorf duels, hardmode hazards, save/resume, and Midna's Return to Hub option.
+  A separate stage identity keeps Essentials from recognizing Dawnlight's hub as its own.
   See [Boss Rush integration notes](docs/bossrush-twilit-essentials.md).
 - HUD Layout Editor for supported HUD elements, item/text/ammo offsets, button
   backing, D-Pad arrows and shadows, single-row hearts, round X/Y buttons, and

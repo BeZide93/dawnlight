@@ -1,106 +1,69 @@
 # Twilit Essentials Boss Rush hub
 
-The hub is now the Temple of Time Darknut chamber (`D_MN06B`, room 51),
-using the animated gallery and floating name/location labels from
-[BeZide93/dawnlight-twilit-essentials](https://github.com/BeZide93/dawnlight-twilit-essentials/tree/805fac000711135ee2d85e086ab6100d767717bd/src/boss_rush).
-Source revision: `805fac000711135ee2d85e086ab6100d767717bd`.
+The hub uses the Temple of Time Darknut chamber with the animated miniatures
+and floating labels adapted from
+[Twilit Essentials](https://github.com/BeZide93/dawnlight-twilit-essentials/tree/805fac000711135ee2d85e086ab6100d767717bd/src/boss_rush),
+revision `805fac000711135ee2d85e086ab6100d767717bd`.
 
 Approach a miniature and press **A / Fight** to replay that encounter. Defeated
-boss names turn red. The portal in the center retains Dawnlight's complete-run
-confirmation and progression. The physical exit door goes to the Cave of
-Ordeals; there is no separate Cave portal.
+boss names turn red. The central portal starts Dawnlight's complete run. The
+exit door leads directly to the Cave of Ordeals; there is no separate Cave portal.
+Oil/red-potion stations, fairy, bomb chest, arrow/Deku-seed pots, custom music,
+and Midna's third **Return to Hub** choice remain available.
 
-The oil and red-potion stations, fairy, bomb chest, arrow pot, Deku-seed pot,
-custom hub music, and third Midna **Return to Hub** choice remain available.
-Dawnlight's existing 18 encounter indices and save format are unchanged; the
-full run still includes the native final sequence. This port does not add a
-separate Horseback Ganon replay or import Essentials' other game modes/settings.
+## Separate hub identity
 
-## Implementation
+Dawnlight uses `D_DLBR0`, room 51, as its hub identity. Essentials checks for
+`D_MN06B`, room 51, so its existing physical-room check does not match this hub.
+The runtime stage name stays `D_DLBR0` throughout loading and gameplay.
 
-- `src/boss_rush/` adapts Essentials' model table, animated multipart models,
-  projected labels, Ganondorf cape, and resource helpers. No extracted assets
-  are added: models and animations come from the user's game archives.
-- Teleports use Essentials' scene fade parameters and warp sound on departure
-  and arrival. Hub entry uses an explicit restart position and camera reset.
-- The Ganondorf replay uses `D_MN09B`, point 1, dungeon switch 1, stable actor
-  initialization, native ground-duel state, fixed starting positions, barrier,
-  camera release, and battle music. Like Essentials, setup runs after Link's
-  execute callback and holds black while the actors initialize. The dungeon
-  switch-1 query is held true only for this replay. Barriers farther than 5000
-  units from `(0, 1100, 0)` do not count as the duel wall. The local wall uses
-  Essentials' exact `0xF0069600` parameters, room 0, zero angles/argument and unit
-  spawn scale; native `D_MN09B` behavior activates it. The old barrier execute
-  override and artificial switches 15/31 are removed. Fade-in waits for the
-  local barrier to execute, including if a spawn must be retried.
-- Hub entry copies Essentials' reset of saved/current dungeon bits, dungeon
-  switches and zone state before loading. Dawnlight's defeated-boss records stay
-  in its separate SaveService blob. Chamber detection uses the current stay room
-  as Essentials does. Hub-only completion and `dSv_info_c::isSwitch` overrides
-  suppress the native Darknut and report room 51 as unlocked before actors and
-  room events initialize. This replaces the insufficient door-only hooks. Real
-  Darknut Run/Replay encounters use the normal queries. Native reward chests are
-  removed before spawning Dawnlight's supplies.
-- Gallery allocations use a persistent heap. Archive references are acquired
-  once, including pending loads, and released after all gallery models. Joint
-  callbacks are restored before releasing shared model data. The existing enemy
-  spawner guard now targets the new hub.
-- GameModeService registration, save/resume, boss progress, rewards and Midna
-  flow ownership remain in Dawnlight. The Dusklight host and SDK pin are unchanged.
+Three narrow hooks provide the original assets without copying game archives:
 
-## First arrival and Ganondorf's Midna menu
+- Stage resource requests map `/res/Stage/D_DLBR0/` to `/res/Stage/D_MN06B/`.
+- The room-map cache reads `D_MN06B/room*.dzs` when MULT data is needed.
+- Audio scene lookup uses the Darknut arena's original sound banks.
 
-Hub logic, gallery loading and gallery drawing share the same live-room test.
-The first arrival after creating a save no longer depends on the entry room
-stored in start-stage metadata. Failed archive mounts release the gallery's
-reference and can be requested again. A slot is resolved only after its base
-model exists; failed requests back off and allow other miniatures to load.
+These hooks register before save loading. Return places and restarts use the
+alias. Existing PR hub saves are migrated; actual Darknut fights retain the
+original stage. This isolates the hub even with an older Essentials build.
+It does not change Essentials' behavior in other vanilla boss rooms; its
+separate session-ownership fix remains useful for those encounters.
 
-The direct Ganondorf replay uses Essentials' `notTalk` / `orderZTalk` approach
-to bypass the native finale flag and riding check, without clearing the finale
-flag. It orders a conversation with the native Midna actor, uses the configured
-Midna input binding, and enters Dawnlight's three-choice menu directly through
-the discovered flow-3001 root. The third choice still returns to the hub. The
-flow cache includes direct-duel state so this entry override is removed after
-leaving the replay. Calls remain disabled during setup, fades, other events,
-death and the victory sequence; vanilla play and the full finale are unchanged.
+Hub-only completion/switch overrides and the dungeon/zone reset suppress
+Darknut and the gate-opening demo. Native reward chests are removed before
+Dawnlight's supplies are spawned. SaveService keeps defeated-boss progress
+separately. The encounter indices, save schema and full-run finale are unchanged.
 
-## Running alongside Twilit Essentials
+Gallery loading/drawing use the live stay room, including the first arrival
+from a new save. Models use a persistent heap; archives are retained once,
+failed loads can retry, and callbacks are restored before resources are freed.
+Teleports retain the Essentials-style fades and departure/arrival warp sound.
 
-Use an Essentials build with the Boss Rush session-ownership fix. Older builds
-activate their gallery just by entering `D_MN06B`, room 51, and draw a second set
-of miniatures and labels over Dawnlight's gallery. Essentials must require its
-own active Boss Rush session and must not adopt a session from the current room
-when enabled or reloaded. Update both mods and restart the game after replacing
-the packages.
+## Ganondorf replay restored from main
+
+The direct replay uses Dawnlight main revision
+`3d38d31e759150fd2a63d25a5f5251cf6c0fd861`: `D_MN09C`, point 0, room 0,
+actor/cape readiness, demo state 92, and the existing barrier handling with
+switches 15/31. Its arena height remains 1100 independently of the new hub.
+The barrier override applies only to the duel; the Darknut hub needs no wall.
+
+The Essentials `D_MN09B` replay, dungeon-switch override, Link execute hook,
+Midna call overrides and forced dialogue-root routing are removed. Dawnlight's
+main Midna menu implementation, including its third return choice, is restored.
+Hub entry also clears the Midna-suppression flag and restores the utility event
+bit changed by the earlier PR duel so old PR saves can use the restored behavior.
 
 ## Validation
 
-A Linux RelWithDebInfo build is performed for this change. A standalone C++
-harness using the actual switch callbacks and barrier helper checks hub/fight
-isolation, replay-only dungeon switch 1, distant/local barriers, exact spawn
-arguments, duplicate suppression during creation, and retry after disappearance.
-GitHub Actions checks all configured target platforms. These checks do not
-validate in-game visuals
-or timing; these checks require Dusklight and game data:
+The Linux RelWithDebInfo build and a standalone harness check alias resource,
+map-cache and audio routing, isolation from vanilla rooms, and restored duel
+functions against main. GitHub Actions builds the configured platforms.
+Visual behavior and live mod interaction still need an in-game check:
 
-- Create a Boss Rush save and verify all 18 miniatures appear on the first
-  visit without exiting the hub. Also load an existing hub/run save; verify
-  spawn, camera, supplies, animations and floating labels.
-- Start and finish a Darknut replay, return through Midna, die/retry, then repeat.
-  Verify the room contains no live Darknut when used as the hub, no gate-opening
-  cutscene plays on hub load/return, and the exit door is usable immediately.
-- Repeat with both updated mods enabled; verify only Dawnlight's 18 miniatures
-  and labels appear, its supply chest remains, and each A press starts one fight.
-  With Essentials alone, enter its Boss Rush from the menu/portal and verify its
-  gallery, Darknut replay and return. A normal Darknut fight must not show a
-  gallery, including when enabling/reloading Essentials in that room.
-- Start the central full run, save/continue at a boss, and complete its finale.
-- Enter the Cave through the door, then use Midna's third option to return.
-- Replay Ganondorf twice; verify no horse intro, visible barrier, player control,
-  correct music, defeat detection and hub return. During the playable duel,
-  use the configured Midna button, cancel once, then choose the third option
-  to return to the hub. Verify the call is blocked during setup/victory and
-  ordinary Midna behavior is restored after leaving the replay.
-- Repeat boss/hub transitions and return to the title screen while gallery
-  archives are loading; check for memory growth or stale models.
+- Create a Boss Rush save and check all 18 miniatures on the first arrival.
+- Load an existing PR save with both mods active: check one gallery, supplies,
+  music, no live Darknut and no gate-opening cutscene.
+- Replay Ganondorf, check the light wall, call Midna and use the third option.
+  Repeat after returning to the hub, and check death/retry and boss defeat.
+- Test a real Darknut replay, the central full run, saving/resuming, and the
+  Cave exit door followed by Midna's return option.

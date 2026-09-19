@@ -25,6 +25,12 @@
 #include "m_Do/m_Do_Reset.h"
 class JPABaseEmitter;
 #include "d/actor/d_a_alink.h"
+#include "d/actor/d_a_obj_gb.h"
+#include "d/d_resorce.h"
+#include "d/d_lib.h"
+#include "JSystem/JKernel/JKRAramArchive.h"
+#include "JSystem/JKernel/JKRExpHeap.h"
+#include "Z2AudioLib/Z2SceneMgr.h"
 #include "d/actor/d_a_b_gnd.h"
 #include "d/actor/d_a_midna.h"
 #include "d/d_drawlist.h"
@@ -83,13 +89,12 @@ DEFINE_HOOK(
         &dComIfGp_setNextStage),
     SetNextStageHook);
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
+DEFINE_HOOK(&dRes_control_c::setRes, HubResourcePathHook);
+DEFINE_HOOK(&dStage_roomControl_c::roomDzs_c::add, HubRoomDzsHook);
+DEFINE_HOOK(&Z2SceneMgr::setSceneName, HubAudioSceneHook);
 DEFINE_HOOK(&daDoor20_c::openInit, HubDoorOpenHook);
 DEFINE_HOOK(&dSv_memBit_c::isDungeonItem, HubDefeatCheckHook);
 DEFINE_HOOK(&dSv_info_c::isSwitch, HubSwitchCheckHook);
-DEFINE_HOOK(&dSv_danBit_c::isSwitch, GanondorfDanSwitchHook);
-DEFINE_HOOK(&daAlink_c::execute, BossRushAlinkExecuteHook);
-DEFINE_HOOK(&daAlink_c::orderZTalk, GanondorfOrderZTalkHook);
-DEFINE_HOOK(&daAlink_c::notTalk, GanondorfNotTalkHook);
 DEFINE_HOOK(&daAlink_c::draw, HubGalleryDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, HubLabelDrawHook);
 DEFINE_HOOK(&dMeter2Draw_c::getActionString, HubActionStringHook);
@@ -101,10 +106,12 @@ DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
 DEFINE_HOOK_SYMBOL("_ZL15dScnPly_ExecuteP9dScnPly_c", int(void*), PlaySceneUpdateHook);
 DEFINE_HOOK_SYMBOL("_ZL12dScnPly_DrawP9dScnPly_c", int(void*), PlaySceneDrawHook);
 DEFINE_HOOK_SYMBOL("_ZL15daB_GND_ExecuteP11b_gnd_class", int(b_gnd_class*), GanondorfExecuteHook);
+DEFINE_HOOK_SYMBOL("_ZL16daObj_Gb_ExecuteP12obj_gb_class", int(obj_gb_class*), GanondorfBarrierExecuteHook);
 #else
 DEFINE_HOOK_SYMBOL("dScnPly_Execute", int(void*), PlaySceneUpdateHook);
 DEFINE_HOOK_SYMBOL("dScnPly_Draw", int(void*), PlaySceneDrawHook);
 DEFINE_HOOK_SYMBOL("daB_GND_Execute", int(b_gnd_class*), GanondorfExecuteHook);
+DEFINE_HOOK_SYMBOL("daObj_Gb_Execute", int(obj_gb_class*), GanondorfBarrierExecuteHook);
 #endif
 
 constexpr char kIntroSkipStage[] = "F_SP108";
@@ -197,7 +204,7 @@ constexpr BossRushEntry kBossRushEntries[] = {
     {"D_MN08D", 0, 50, 0, dStage_SaveTbl_LV8, BossRushEntry::Boss, "Zant", true},
     {"D_MN09A", 0, 50, 0, dStage_SaveTbl_LV9, BossRushEntry::FinalSequence, "Puppet Zelda", true},
     {"D_MN09A", 0, 50, 0, dStage_SaveTbl_LV9, BossRushEntry::BeastGanon, "Beast Ganon", false},
-    {"D_MN09B", 1, 0, 0, dStage_SaveTbl_LV9, BossRushEntry::FinalGanondorf, "Ganondorf", false},
+    {"D_MN09C", 0, 0, 0, dStage_SaveTbl_LV9, BossRushEntry::FinalGanondorf, "Ganondorf", false},
 };
 
 constexpr size_t kBossRushEntryCount = std::size(kBossRushEntries);
@@ -205,7 +212,7 @@ static_assert(kBossRushEntryCount <= 24, "Boss Rush defeated state exceeds SaveS
 constexpr const char* kBossRushRunName = "Boss Rush";
 constexpr const char* kBossRushGameModeId = "bossrush";
 constexpr s8 kBossRushReturnRoom = kBossRushChamberRoom;
-constexpr char kBossRushReturnStage[] = "D_MN06B";
+constexpr const char* kBossRushReturnStage = kBossRushChamberStage;
 constexpr s16 kBossRushReturnPoint = -1;
 constexpr s8 kBossRushReturnLayer = 0;
 constexpr u8 kBossRushStateHub = 0;
@@ -239,6 +246,11 @@ constexpr s16 kGanondorfActionWait = 10;
 constexpr s16 kGanondorfActionDown = 21;
 constexpr s16 kGanondorfActionEnd = 22;
 constexpr int kGanondorfIntroCam = 92;
+constexpr int kGanondorfIntroCamAfterBarrierSpawn = 2;
+constexpr int kDirectFinalBarrierOnSwitch = 15;
+constexpr int kDirectFinalBarrierOffSwitch = 31;
+constexpr s16 kDirectFinalBarrierAngleX =
+    static_cast<s16>((kDirectFinalBarrierOffSwitch << 8) | kDirectFinalBarrierOnSwitch);
 constexpr int kGanondorfEndDemoStart = 60;
 constexpr int kBossRushHazardIntervalFrames = 600;
 constexpr int kBossRushHazardProjectileCount = 3;
@@ -281,6 +293,7 @@ bool sAdvancePending = false;
 DataNewRestore sDataNewRestore;
 fpc_ProcID sHubPortalIds[kBossRushHubPortalCount];
 std::array<fpc_ProcID, kBossRushHubSupplyActorCount> sHubSupplyActorIds;
+fpc_ProcID sDirectFinalBossId = fpcM_ERROR_PROCESS_ID_e;
 fpc_ProcID sDirectFinalBarrierId = fpcM_ERROR_PROCESS_ID_e;
 struct PendingActorDelete {
     ActorId id = 0;
@@ -301,8 +314,6 @@ bool sBossRushResumePending = false;
 bool sBossWarpArrivalPending = false;
 bool sHubExitPending = false;
 bool sGalleryLoaded = false;
-int sDirectFinalHoldFrames = 0;
-fpc_ProcID sDirectFinalStableId = fpcM_ERROR_PROCESS_ID_e;
 bool sHubPortalsArmed = false;
 u8 sHubNextSupplyActorToSpawn = 0;
 bool sHubSupplyAnchorInitialized = false;
@@ -343,7 +354,6 @@ struct MidnaPromptPatchPoint {
     bool has_warp_choice() const { return nativeChoiceCount >= 3; }
 };
 struct MidnaFlowTopology {
-    uint16_t rootNode = mods::flow::kEnd;
     std::vector<MidnaPromptPatchPoint> prompts;
     size_t promptCount = 0;
     const void* resource = nullptr;
@@ -353,7 +363,6 @@ MidnaGroupMessages sMidnaRootMessages;
 mods::flow::Graph sMidnaRootFlowGraph;
 MidnaFlowTopology sMidnaFlowTopology;
 const void* sMidnaTopologyFailureResource = nullptr;
-bool sMidnaRootFlowGraphDirectDuel = false;
 uint32_t sMidnaRootFlowGraphTopologyVersion = 0;
 MidnaTransformOption sMidnaRootFlowGraphTransformOption = MidnaTransformOption::Unknown;
 std::vector<mods::flow::RegisteredMessage> sMidnaMessages;
@@ -440,8 +449,6 @@ void set_boss_rush(bool enabled) {
     save_state_set_boss_rush_active(enabled);
 }
 
-
-
 void mark_bossrush_portal_defeated(u8 index) {
     if (index < kBossRushEntryCount) save_state_mark_boss_defeated(index);
 }
@@ -500,8 +507,6 @@ cXyz hub_portal_position(u8 portal) {
     }
     return pos;
 }
-
-
 
 bool initialize_hub_supply_anchor() {
     if (sHubSupplyAnchorInitialized) {
@@ -741,12 +746,11 @@ void delete_hub_actors() {
 
 void reset_direct_final_boss_state() {
     delete_hub_actor(sDirectFinalBarrierId);
+    sDirectFinalBossId = fpcM_ERROR_PROCESS_ID_e;
     sDirectFinalBarrierId = fpcM_ERROR_PROCESS_ID_e;
     sDirectFinalBossIndex = -1;
     sDirectFinalGanondorfStarted = false;
     sDirectFinalGanondorfReadyFrames = 0;
-    sDirectFinalHoldFrames = 0;
-    sDirectFinalStableId = fpcM_ERROR_PROCESS_ID_e;
     sDirectFinalSceneTransitionStarted = false;
 }
 
@@ -755,8 +759,6 @@ void ensure_hub_actor_ids_initialized() {
         reset_hub_actor_ids();
     }
 }
-
-
 
 void spawn_hub_actors() {
     start_bossrush_hub_music();
@@ -811,8 +813,6 @@ void set_animation_frame(mDoExt_baseAnm* animation, f32 frame) {
     }
 }
 
-
-
 void set_hub_portal_blue_state(daObjBossWarp_c* warp, bool needsAppear) {
     if (needsAppear) {
         warp->set_appear();
@@ -824,8 +824,6 @@ void set_hub_portal_blue_state(daObjBossWarp_c* warp, bool needsAppear) {
     set_animation_frame(warp->mpBtkAnm[1], warp->mpBtkAnm[1]->getEndFrame());
     warp->mpBtkAnm[1]->setPlaySpeed(0.0f);
 }
-
-
 
 void reset_hub_runtime_when_away() {
     if (boss_rush_state() != kBossRushStateHub || !is_boss_hub_stage_name()) {
@@ -1126,16 +1124,6 @@ void prepare_final_battle_state(const BossRushEntry& entry) {
     }
 
     clear_final_ganondorf_setup_switches();
-    if (entry.clearMode == BossRushEntry::FinalGanondorf) {
-        set_saved_dungeon_switch(dStage_SaveTbl_LV9, 1, true);
-        dComIfGs_onSaveDunSwitch(1);
-        dComIfGs_offEventBit(dSv_event_flag_c::M_067);
-        dComIfGs_offEventBit(0x0540);
-        dComIfGs_onEventBit(dSv_event_flag_c::F_0800);
-        if (auto* player = daAlink_getAlinkActorClass(); player && player->checkMidnaRide()) {
-            player->offMidnaRide();
-        }
-    }
 }
 
 void prepare_bossrush_entry(const BossRushEntry& entry) {
@@ -1148,7 +1136,10 @@ void prepare_bossrush_entry(const BossRushEntry& entry) {
     }
 }
 
-
+bool direct_final_boss_request_active() {
+    return sDirectFinalBossId != fpcM_ERROR_PROCESS_ID_e &&
+           (fpcM_IsCreating(sDirectFinalBossId) || fopAcM_IsExecuting(sDirectFinalBossId));
+}
 
 bool is_direct_final_ganondorf_active();
 
@@ -1164,33 +1155,68 @@ void start_beast_ganon_transition_if_ready() {
     dStage_changeScene(1, 0.0f, 0, kFinalPuppetRoom, 0, -1);
 }
 
-
-void create_direct_final_barrier_if_needed() {
-    // Essentials checks the duel arena, not merely the first OBJ_GB in D_MN09B:
-    // the horseback section can already contain a barrier far from the duel.
-    const cXyz arenaCenter(0.0f, 1100.0f, 0.0f);
-    fopAc_ac_c* gb = fopAcM_SearchByName(fpcNm_OBJ_GB_e);
-    if (gb != nullptr) {
-        const f32 dx = gb->current.pos.x - arenaCenter.x;
-        const f32 dy = gb->current.pos.y - arenaCenter.y;
-        const f32 dz = gb->current.pos.z - arenaCenter.z;
-        if (dx * dx + dy * dy + dz * dz < 5000.0f * 5000.0f) {
-            sDirectFinalBarrierId = fopAcM_GetID(gb);
-            return;
-        }
-    }
-    if (sDirectFinalBarrierId != fpcM_ERROR_PROCESS_ID_e &&
-        (fpcM_IsCreating(sDirectFinalBarrierId) || fopAcM_IsExecuting(sDirectFinalBarrierId))) {
+void create_final_ganondorf_if_needed(const BossRushEntry& entry) {
+    if (fopAcM_SearchByName(fpcNm_B_GND_e) != NULL || direct_final_boss_request_active()) {
         return;
     }
-    if (sDirectFinalGanondorfReadyFrames < 5) return;
 
-    // Use Essentials' exact spawn parameters. D_MN09B makes the barrier active
-    // natively; no artificial room switches or per-frame actor field writes.
-    const csXyz angle(0, 0, 0);
-    const cXyz scale(1.0f, 1.0f, 1.0f);
-    sDirectFinalBarrierId = create_actor(fpcNm_OBJ_GB_e, 0xF0069600,
-        &arenaCenter, 0, &angle, &scale, 0);
+    cXyz bossPos(-600.0f, kGanondorfArenaY, 0.0f);
+    csXyz bossAngle(0, kGanondorfFacingAngle, 0);
+    sDirectFinalBossId =
+        create_actor(fpcNm_B_GND_e, 0, &bossPos, entry.room, &bossAngle, NULL, -1);
+}
+
+bool direct_final_barrier_active() {
+    if (sDirectFinalBarrierId != fpcM_ERROR_PROCESS_ID_e &&
+        (fpcM_IsCreating(sDirectFinalBarrierId) || fopAcM_IsExecuting(sDirectFinalBarrierId)))
+    {
+        return true;
+    }
+
+    obj_gb_class* barrier = static_cast<obj_gb_class*>(fopAcM_SearchByName(fpcNm_OBJ_GB_e));
+    if (barrier != NULL) {
+        sDirectFinalBarrierId = fopAcM_GetID(static_cast<fopAc_ac_c*>(barrier));
+        return true;
+    }
+
+    sDirectFinalBarrierId = fpcM_ERROR_PROCESS_ID_e;
+    return false;
+}
+
+bool should_force_ganondorf_barrier_visible() {
+    return is_direct_final_ganondorf_active();
+}
+
+void arm_ganondorf_barrier(obj_gb_class* barrier) {
+    if (barrier == NULL || !should_force_ganondorf_barrier_visible()) {
+        return;
+    }
+
+    const int roomNo = fopAcM_GetRoomNo(static_cast<fopAc_ac_c*>(barrier));
+    dComIfGs_onOneZoneSwitch(kDirectFinalBarrierOnSwitch, roomNo);
+    dComIfGs_offOneZoneSwitch(kDirectFinalBarrierOffSwitch, roomNo);
+    barrier->mSw1 = kDirectFinalBarrierOnSwitch;
+    barrier->mSw2 = kDirectFinalBarrierOffSwitch;
+    barrier->mIsFinalBattle = 0;
+    barrier->mBrkFrame = 29.0f;
+    barrier->mColorAlpha = 0xF0;
+    barrier->scale.x = 1.5f;
+    barrier->scale.y = 1.0f;
+}
+
+void create_direct_final_barrier_if_needed(b_gnd_class* ganondorf) {
+    if (ganondorf == NULL || direct_final_barrier_active()) {
+        return;
+    }
+
+    fopAc_ac_c* actor = static_cast<fopAc_ac_c*>(ganondorf);
+    cXyz barrierPos(0.0f, kGanondorfArenaY, 0.0f);
+    csXyz barrierAngle(kDirectFinalBarrierAngleX, 0, 0);
+    sDirectFinalBarrierId = create_actor(
+        fpcNm_OBJ_GB_e, 0xF0069600, &barrierPos, fopAcM_GetRoomNo(actor), &barrierAngle, NULL,
+        -1);
+    dComIfGs_onOneZoneSwitch(kDirectFinalBarrierOnSwitch, fopAcM_GetRoomNo(actor));
+    dComIfGs_offOneZoneSwitch(kDirectFinalBarrierOffSwitch, fopAcM_GetRoomNo(actor));
 }
 
 bool is_direct_final_ganondorf_active() {
@@ -1208,66 +1234,75 @@ bool is_direct_final_ganondorf_active() {
            is_current_direct_boss_stage(entry);
 }
 
-void start_final_ganondorf_if_ready() {
-    // Essentials' update_ganon_ground_duel: hold black before looking for actors,
-    // then pin the native duel until Ganondorf and the local barrier are ready.
-    if (sDirectFinalGanondorfStarted) return;
-    mDoGph_gInf_c::fadeOut(0.0f);
-    ++sDirectFinalHoldFrames;
-    daAlink_c* player = daAlink_getAlinkActorClass();
-    if (player == nullptr) return;
-    auto* ganondorf = static_cast<b_gnd_class*>(fopAcM_SearchByName(fpcNm_B_GND_e));
-    if (ganondorf == nullptr) return;
-    const fpc_ProcID id = fopAcM_GetID(ganondorf);
-    if (id != sDirectFinalStableId) {
-        sDirectFinalStableId = id;
+bool force_final_ganondorf_ground_start(b_gnd_class* ganondorf) {
+    daPy_py_c* player = daPy_getPlayerActorClass();
+    if (ganondorf == NULL || player == NULL) {
         sDirectFinalGanondorfReadyFrames = 0;
-        sDirectFinalBarrierId = fpcM_ERROR_PROCESS_ID_e;
-    } else {
-        ++sDirectFinalGanondorfReadyFrames;
+        return false;
     }
-    if (auto* rider = fopAcM_SearchByName(fpcNm_E_FK_e)) delete_hub_actor(fopAcM_GetID(rider));
-    create_direct_final_barrier_if_needed();
-    // Same horse-demo predicate and ground-duel state as Essentials' bbi helper.
-    if (ganondorf->mNoDrawTimer != 0 ||
-        (ganondorf->mActionMode >= 1 && ganondorf->mActionMode <= 6)) {
-        ganondorf->mNoDrawTimer = 0;
-        ganondorf->mActionMode = kGanondorfActionWait;
-        ganondorf->mMoveMode = 0;
-        ganondorf->mDrawHorse = 0;
-        ganondorf->mDemoCamMode = 0;
+
+    fopAc_ac_c* actor = static_cast<fopAc_ac_c*>(ganondorf);
+    if (!fopAcM_IsExecuting(fopAcM_GetID(actor))) {
+        sDirectFinalGanondorfReadyFrames = 0;
+        return false;
     }
-    ganondorf->health = 100;
-    ganondorf->current.pos.set(-600.0f, kGanondorfArenaY, 0.0f);
-    ganondorf->old.pos = ganondorf->current.pos;
-    ganondorf->shape_angle.y = ganondorf->current.angle.y = kGanondorfFacingAngle;
-    ganondorf->speed.zero();
-    ganondorf->speedF = 0.0f;
-    const s16 angle = static_cast<s16>(-0x4802);
-    player->current.pos.set(600.0f, kGanondorfArenaY, 0.0f);
-    player->old.pos = player->current.pos;
-    player->shape_angle.y = player->current.angle.y = angle;
-    player->speed.zero();
-    player->speedF = 0.0f;
-    player->cancelOriginalDemo();
-    dComIfGp_event_reset();
-    if (auto* cam = dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0))) {
-        const cXyz& pos = player->current.pos;
-        cXyz center(pos.x + angle_sin(angle) * 200.0f, pos.y + 100.0f,
-                    pos.z + angle_cos(angle) * 200.0f);
-        cXyz eye(pos.x - angle_sin(angle) * 450.0f, pos.y + 170.0f,
-                 pos.z - angle_cos(angle) * 450.0f);
-        cam->mCamera.Reset(center, eye);
-        cam->mCamera.Start();
-        cam->mCamera.SetTrimSize(0);
-        fopCamM_SetAngleY(cam, angle);
+
+    mant_class* mant = static_cast<mant_class*>(fopAcM_SearchByID(ganondorf->mMantChildID));
+    if (mant == NULL) {
+        sDirectFinalGanondorfReadyFrames = 0;
+        return false;
     }
-    if (sDirectFinalHoldFrames < 10 || sDirectFinalGanondorfReadyFrames < 5 ||
-        sDirectFinalBarrierId == fpcM_ERROR_PROCESS_ID_e ||
-        !fopAcM_IsExecuting(sDirectFinalBarrierId)) return;
-    sDirectFinalGanondorfStarted = true;
+
+    if (sDirectFinalGanondorfReadyFrames < 2) {
+        sDirectFinalGanondorfReadyFrames++;
+        return false;
+    }
+
+    player->onForceHorseGetOff();
+
+    actor->current.pos.set(-600.0f, kGanondorfArenaY, 0.0f);
+    actor->old.pos = actor->current.pos;
+    actor->speed.zero();
+    actor->speedF = 0.0f;
+    actor->shape_angle.x = actor->current.angle.x = 0;
+    actor->shape_angle.y = actor->current.angle.y = kGanondorfFacingAngle;
+    actor->shape_angle.z = actor->current.angle.z = 0;
+    actor->health = 100;
+    ganondorf->mNoDrawTimer = 0;
+    ganondorf->mActionMode = kGanondorfActionWait;
+    ganondorf->mMoveMode = 0;
+    ganondorf->mDrawHorse = FALSE;
+    ganondorf->mDemoCamMode = kGanondorfIntroCam;
+    ganondorf->mDemoCamTimer = kGanondorfIntroCamAfterBarrierSpawn;
+    ganondorf->mDamageInvulnerabilityTimer = 0;
+    ganondorf->field_0x1e08 = 0;
+    ganondorf->field_0x1e0a = 0;
+    ganondorf->field_0xc44[0] = 30;
+    ganondorf->field_0xc44[8] = 100;
+    ganondorf->mGakeChkType = 0;
+    ganondorf->field_0xc7d = 1;
+    ganondorf->field_0x2740 = 0;
+    ganondorf->field_0x2710.x = 55.0f;
+    mant->field_0x3969 = 1;
+    create_direct_final_barrier_if_needed(ganondorf);
     Z2GetAudioMgr()->bgmStart(Z2BGM_VS_GANON_04, 0, 0);
-    mDoGph_gInf_c::fadeIn(0.2f);
+
+    sDirectFinalGanondorfStarted = true;
+    return true;
+}
+
+void start_final_ganondorf_if_ready() {
+    b_gnd_class* ganondorf = static_cast<b_gnd_class*>(fopAcM_SearchByName(fpcNm_B_GND_e));
+    if (ganondorf == NULL) {
+        sDirectFinalGanondorfReadyFrames = 0;
+        return;
+    }
+
+    if (!sDirectFinalGanondorfStarted || ganondorf->mDrawHorse ||
+        ganondorf->mActionMode < kGanondorfActionWait)
+    {
+        force_final_ganondorf_ground_start(ganondorf);
+    }
 }
 
 void ensure_direct_final_boss_started() {
@@ -1292,6 +1327,7 @@ void ensure_direct_final_boss_started() {
 
     if (sDirectFinalBossIndex != index) {
         sDirectFinalBossIndex = index;
+        sDirectFinalBossId = fpcM_ERROR_PROCESS_ID_e;
         sDirectFinalGanondorfStarted = false;
         sDirectFinalSceneTransitionStarted = false;
         prepare_final_battle_state(entry);
@@ -1300,6 +1336,7 @@ void ensure_direct_final_boss_started() {
     if (entry.clearMode == BossRushEntry::BeastGanon) {
         start_beast_ganon_transition_if_ready();
     } else {
+        create_final_ganondorf_if_needed(entry);
         start_final_ganondorf_if_ready();
     }
 }
@@ -1311,6 +1348,10 @@ void play_bossrush_warp_sound() {
 }
 
 void reset_bossrush_room_flags() {
+    // Earlier PR builds persisted the Essentials duel's Midna-suppression
+    // flags. Restore Dawnlight's utility state when returning/loading the hub.
+    dComIfGs_offEventBit(dSv_event_flag_c::F_0800);
+    dComIfGs_onEventBit(dSv_event_flag_c::M_067);
     for (int s = 0; s < dSv_save_c::STAGE_MAX; ++s) {
         auto& bit = g_dComIfG_gameInfo.info.getSavedata().getSave(s).getBit();
         bit.offStageBossEnemy();
@@ -1570,8 +1611,6 @@ void unregister_bossrush_hub_music_overlay() {
     }
 }
 
-
-
 void close_midna_custom_dialog(daMidna_c* midna) {
     dMsgObject_onKillMessageFlag();
 
@@ -1701,8 +1740,6 @@ bool process_pending_midna_flow_action() {
 
     return true;
 }
-
-
 
 mods::flow::RegisteredMessage register_midna_message(const mods::flow::MessageBuilder& builder) {
     std::vector<mods::flow::MessageVariant> variants;
@@ -1845,26 +1882,6 @@ bool find_bmg_section(const uint8_t* bmg, uint32_t tag, const uint8_t*& outSecti
         offset += sectionSize;
     }
     return false;
-}
-
-static uint16_t bmg_flow_init_node(const uint8_t* bmg, uint16_t label) {
-    const uint8_t* fli = nullptr;
-    size_t fliSize = 0;
-    if (!find_bmg_section(bmg, MULTI_CHAR('FLI1'), fli, fliSize) || fliSize < 0x10) {
-        return mods::flow::kEnd;
-    }
-    const uint16_t count = read_be16(fli + 8);
-    if (static_cast<size_t>(count) * 8 > fliSize - 0x10) {
-        return mods::flow::kEnd;
-    }
-    uint16_t result = mods::flow::kEnd;
-    for (uint16_t i = 0; i < count; ++i) {
-        const uint8_t* e = fli + 0x10 + static_cast<size_t>(i) * 8;
-        if (read_be16(e) == label) {
-            result = read_be16(e + 4);
-        }
-    }
-    return result;
 }
 
 struct MidnaBmgView {
@@ -2159,8 +2176,6 @@ bool discover_midna_flow_topology() {
     }
 
     assign_unknown_midna_transform_options(topology);
-    const uint16_t root = bmg_flow_init_node(bmg, 0xbb9);
-    if (root < view.nodeCount) topology.rootNode = root;
     topology.version = sMidnaFlowTopology.version + 1;
     sMidnaFlowTopology = topology;
     sMidnaTopologyFailureResource = nullptr;
@@ -2368,7 +2383,6 @@ void shutdown_midna_flow() {
     sMidnaRootFlowMode = MidnaRootFlowMode::None;
     clear_pending_midna_flow_action();
     sMidnaRootFlowGraphTopologyVersion = 0;
-    sMidnaRootFlowGraphDirectDuel = false;
     sMidnaRootFlowGraphTransformOption = MidnaTransformOption::Unknown;
     sMidnaFlowTopology = {};
     sMidnaTopologyFailureResource = nullptr;
@@ -2439,19 +2453,6 @@ mods::flow::Graph build_midna_menu_graph() {
         return graph.commit();
     }
 
-    // Essentials bypasses the finale's native root branches. Keep Dawnlight's
-    // three choices, but enter their prompt directly in the ground-duel replay.
-    const MidnaPromptPatchPoint* directPrompt = nullptr;
-    if (is_direct_final_ganondorf_active() && sMidnaFlowTopology.rootNode != mods::flow::kEnd) {
-        for (const auto& patch : sMidnaFlowTopology.prompts) {
-            if (!directPrompt) directPrompt = &patch;
-            if (patch.transformOption == current_midna_transform_option()) {
-                directPrompt = &patch;
-                break;
-            }
-        }
-    }
-
     if (sMidnaFlowTopology.promptCount != 0) {
         for (size_t i = 0; i < sMidnaFlowTopology.promptCount; ++i) {
             const MidnaPromptPatchPoint& patch = sMidnaFlowTopology.prompts[i];
@@ -2475,11 +2476,6 @@ mods::flow::Graph build_midna_menu_graph() {
                 !patch_midna_prompt_with_vertical_select(
                     graph, patch.promptNode, kMidnaMenuPromptEntry, selection, 4))
             {
-                return graph.commit();
-            }
-            if (&patch == directPrompt && sMidnaFlowTopology.rootNode != patch.promptNode &&
-                !patch_midna_prompt_with_vertical_select(graph, sMidnaFlowTopology.rootNode,
-                    kMidnaMenuPromptEntry, selection, 4)) {
                 return graph.commit();
             }
         }
@@ -2550,14 +2546,12 @@ mods::flow::Graph build_midna_portal_graph() {
 }
 
 ModResult set_midna_root_flow_mode(MidnaRootFlowMode mode, ModError* error) {
-    const bool directDuel = is_direct_final_ganondorf_active();
     const MidnaTransformOption transformOption =
         mode == MidnaRootFlowMode::Menu ? current_midna_transform_option() :
                                           MidnaTransformOption::Unknown;
     if (sMidnaRootFlowMode == mode && sMidnaRootFlowGraph.handle() != 0 &&
         sMidnaRootFlowGraphTopologyVersion == sMidnaFlowTopology.version &&
-        sMidnaRootFlowGraphTransformOption == transformOption &&
-        sMidnaRootFlowGraphDirectDuel == directDuel)
+        sMidnaRootFlowGraphTransformOption == transformOption)
     {
         return MOD_OK;
     }
@@ -2578,7 +2572,6 @@ ModResult set_midna_root_flow_mode(MidnaRootFlowMode mode, ModError* error) {
     sMidnaRootFlowMode = mode;
     sMidnaRootFlowGraphTopologyVersion = sMidnaFlowTopology.version;
     sMidnaRootFlowGraphTransformOption = transformOption;
-    sMidnaRootFlowGraphDirectDuel = directDuel;
     svc_log->info(mod_ctx,
         mode == MidnaRootFlowMode::Portal ? "Dawnlight Midna portal flow installed" :
                                             "Dawnlight Midna menu flow installed");
@@ -3207,6 +3200,7 @@ void update_bossrush() {
 
     reset_hub_runtime_when_away();
     refresh_midna_root_flow_mode();
+    ensure_direct_final_boss_started();
     update_bossrush_hazards();
 
     if (bossrush_should_return_to_hub_after_death()) {
@@ -3381,13 +3375,6 @@ HookAction on_hub_switch_check_pre(ModContext*, void* args, void* retval, void*)
     return HOOK_SKIP_ORIGINAL;
 }
 
-HookAction on_ganondorf_dan_switch_pre(ModContext*, void* args, void* retval, void*) {
-    if (!is_direct_final_ganondorf_active() || !args || !retval) return HOOK_CONTINUE;
-    if (mods::arg<int>(args, 1) != 1) return HOOK_CONTINUE;
-    *static_cast<BOOL*>(retval) = TRUE;
-    return HOOK_SKIP_ORIGINAL;
-}
-
 HookAction on_hub_door_open_pre(ModContext*, void*, void* retval, void*) {
     if (!is_bossrush_hub_active() && !(sHubExitPending && is_boss_hub_stage_name()))
         return HOOK_CONTINUE;
@@ -3418,57 +3405,8 @@ void on_hub_action_string_post(ModContext*, void* args, void* retval, void*) {
         mods::arg<u8>(args, 1) == BUTTON_STATUS_OPEN) *static_cast<const char**>(retval) = "Fight";
 }
 
-bool can_call_midna_in_ganondorf_duel() {
-    if (!is_direct_final_ganondorf_active() || !sDirectFinalGanondorfStarted ||
-        !can_offer_midna_hub_warp() || dComIfGp_event_runCheck() || ui_document_visible()) {
-        return false;
-    }
-    auto* player = daAlink_getAlinkActorClass();
-    if (!player || player->checkDeadHP()) return false;
-    auto* boss = static_cast<b_gnd_class*>(fopAcM_SearchByName(fpcNm_B_GND_e));
-    if (!boss || boss->mDemoCamMode != 0 || boss->mActionMode >= kGanondorfActionEnd) return false;
-    auto* fader = mDoGph_gInf_c::getFader();
-    return !fader || (fader->getStatus() != JUTFader::FadeOut &&
-                      fader->getStatus() != JUTFader::None);
-}
-
-HookAction on_ganondorf_not_talk_pre(ModContext*, void*, void* retval, void*) {
-    if (!retval || !can_call_midna_in_ganondorf_duel()) return HOOK_CONTINUE;
-    *static_cast<BOOL*>(retval) = FALSE;
-    return HOOK_SKIP_ORIGINAL;
-}
-
-HookAction on_ganondorf_order_z_talk_pre(ModContext*, void* args, void* retval, void*) {
-    if (!args || !retval || !can_call_midna_in_ganondorf_duel()) return HOOK_CONTINUE;
-    auto* player = mods::arg<daAlink_c*>(args, 0);
-    if (!player) return HOOK_CONTINUE;
-
-    // Essentials orders the talk event directly: vanilla orderZTalk rejects
-    // F_0800 and checkMidnaRide(), both required by the direct finale setup.
-    dMeter2Info_onUseButton(METER2_USEBUTTON_Z);
-    *static_cast<int*>(retval) = 0;
-    if (!player->midnaTalkTrigger()) return HOOK_SKIP_ORIGINAL;
-    fopAc_ac_c* midna = daPy_py_c::getMidnaActor();
-    if (!midna) midna = fopAcM_SearchByName(fpcNm_MIDNA_e);
-    if (!midna) return HOOK_SKIP_ORIGINAL;
-
-    refresh_midna_root_flow_mode();
-    if (player->mMidnaMsg) {
-        dComIfGp_setMesgCameraInfoActor(player->mMidnaMsg, nullptr, nullptr, nullptr,
-            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
-    }
-    s32 ordered = fopAcM_orderTalkEvent(player, midna, 0x1FF, 0x400);
-    if (ordered == 0) ordered = fopAcM_orderTalkEvent(player, midna, 0, 0);
-    if (ordered != 0) {
-        player->field_0x35a0 = player->field_0x3594;
-        *static_cast<int*>(retval) = 1;
-    }
-    return HOOK_SKIP_ORIGINAL;
-}
-
 HookAction before_meter_execute(ModContext*, void*, void*, void*) {
     set_hub_portal_midna_meter_prompt();
-    if (can_call_midna_in_ganondorf_duel()) dMeter2Info_onUseButton(METER2_USEBUTTON_Z);
     if (is_bossrush_hub_active() && !dComIfGp_event_runCheck()) {
         const int portal = touched_hub_portal();
         if (portal >= 0 && portal < static_cast<int>(kBossRushEntryCount))
@@ -3526,6 +3464,52 @@ void set_next_stage_args(void* args, const char* stage, s16 point, s8 room, s8 l
     mods::arg_ref<s8>(args, 3) = layer;
 }
 
+// Keep the runtime stage identity private to Dawnlight. Only resource/audio
+// lookups use the original arena, so other mods never observe their hub stage.
+HookAction on_hub_resource_path_pre(ModContext*, void* args, void*, void*) {
+    if (args) {
+        const char* path = mods::arg<const char*>(args, 3);
+        if (path && std::strcmp(path, kBossRushChamberResourcePath) == 0)
+            mods::arg_ref<const char*>(args, 3) = "/res/Stage/D_MN06B/";
+    }
+    return HOOK_CONTINUE;
+}
+
+// MULT map data uses a second, archive-internal stage path. Mirror the native
+// room cache with the original asset name, without changing the live stage.
+HookAction on_hub_room_dzs_pre(ModContext*, void* args, void* retval, void*) {
+    if (!args || !retval || !is_current_stage_name(kBossRushChamberStage)) return HOOK_CONTINUE;
+    auto* cache = mods::arg<dStage_roomControl_c::roomDzs_c*>(args, 0);
+    const u8 index = mods::arg<u8>(args, 1);
+    const u8 room = mods::arg<u8>(args, 2);
+    *static_cast<void**>(retval) = nullptr;
+    if (!cache || index >= cache->m_num) return HOOK_SKIP_ORIGINAL;
+    void*& data = cache->m_dzs[index];
+    if (!data) {
+        char path[24];
+        std::snprintf(path, sizeof(path), "D_MN06B/room%u.dzs", room);
+        auto* archive = dComIfGp_getFieldMapArchive2();
+        if (!archive) return HOOK_SKIP_ORIGINAL;
+        const u32 size = dLib_getExpandSizeFromAramArchive(archive, path);
+        if (!size) return HOOK_SKIP_ORIGINAL;
+        data = mDoExt_getArchiveHeap()->alloc(size, -0x20);
+        if (data) archive->readResource(data, size, path);
+    }
+    *static_cast<void**>(retval) = data;
+    return HOOK_SKIP_ORIGINAL;
+}
+
+HookAction on_hub_audio_scene_pre(ModContext*, void* args, void*, void*) {
+    if (args) {
+        const char* stage = mods::arg<char*>(args, 1);
+        if (stage && std::strcmp(stage, kBossRushChamberStage) == 0) {
+            static char arenaStage[] = "D_MN06B";
+            mods::arg_ref<char*>(args, 1) = arenaStage;
+        }
+    }
+    return HOOK_CONTINUE;
+}
+
 HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
     const char* stage = mods::arg<const char*>(args, 0);
     const s16 point = mods::arg<s16>(args, 1);
@@ -3546,6 +3530,14 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
         set_next_stage_args(args, kIntroSkipStage, 0, kIntroSkipRoom, -1);
     }
 
+    // Migrate saves made with the earlier PR hub without intercepting a real
+    // Darknut encounter, which uses Run/Replay state and the original stage.
+    if (bossRushActive && boss_rush_state() == kBossRushStateHub && stage &&
+        std::strcmp(stage, "D_MN06B") == 0 && room == kBossRushReturnRoom) {
+        set_next_stage_args(args, kBossRushReturnStage, kBossRushReturnPoint,
+            kBossRushReturnRoom, kBossRushReturnLayer);
+    }
+
     if (bossRushActive && sBossRushResumePending &&
         std::strcmp(mods::arg<const char*>(args, 0), kBossRushReturnStage) == 0 &&
         mods::arg<s8>(args, 2) == kBossRushReturnRoom) {
@@ -3558,7 +3550,7 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
         }
     }
     // Save loading can request point 0; always seed the explicit hub restart
-    // position. Darknut replays use the same room but a different mode state.
+    // position. Darknut replays retain the original stage identity.
     if (bossRushActive && boss_rush_state() == kBossRushStateHub &&
         std::strcmp(mods::arg<const char*>(args, 0), kBossRushReturnStage) == 0 &&
         mods::arg<s8>(args, 2) == kBossRushReturnRoom) {
@@ -3722,8 +3714,6 @@ HookAction on_stage_change_pre(ModContext*, void* args, void* retval, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
-
-
 void on_play_scene_update_post(ModContext*, void*, void*, void*) {
     if (is_bossrush_game_mode_active() && can_update_bossrush_gameplay()) {
         update_bossrush();
@@ -3754,14 +3744,24 @@ HookAction on_ganondorf_execute_pre(ModContext*, void* args, void* retval, void*
         return HOOK_SKIP_ORIGINAL;
     }
 
+    create_direct_final_barrier_if_needed(ganondorf);
+
+    if (!sDirectFinalGanondorfStarted || ganondorf->mDrawHorse ||
+        ganondorf->mActionMode < kGanondorfActionWait)
+    {
+        force_final_ganondorf_ground_start(ganondorf);
+    }
+
     return HOOK_CONTINUE;
 }
 
-void on_bossrush_alink_execute_post(ModContext*, void*, void*, void*) {
-    // Essentials performs duel setup after Link executes, once per game tick.
-    if (is_bossrush_game_mode_active() && is_boss_rush()) {
-        ensure_direct_final_boss_started();
+HookAction on_ganondorf_barrier_execute_pre(ModContext*, void* args, void*, void*) {
+    if (!is_bossrush_game_mode_active() || !is_direct_final_ganondorf_active()) {
+        return HOOK_CONTINUE;
     }
+
+    arm_ganondorf_barrier(mods::arg<obj_gb_class*>(args, 0));
+    return HOOK_CONTINUE;
 }
 
 void reset_bossrush_runtime_state(bool deleteActors) {
@@ -3833,20 +3833,15 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
         return mods::set_error(error, result, "failed to install Dawnlight Ganondorf direct-start hook");
     }
 
+    result = mods::hook_add_pre<GanondorfBarrierExecuteHook>(svc_hook, on_ganondorf_barrier_execute_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install Ganondorf barrier hook");
+
     result = init_ganondorf_cape(svc_hook, svc_log, mod_ctx);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install gallery cape hooks");
     result = mods::hook_add_pre<HubDoorOpenHook>(svc_hook, on_hub_door_open_pre);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub door hook");
     result = mods::hook_add_pre<HubSwitchCheckHook>(svc_hook, on_hub_switch_check_pre);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub switch hook");
-    result = mods::hook_add_pre<GanondorfDanSwitchHook>(svc_hook, on_ganondorf_dan_switch_pre);
-    if (result != MOD_OK) return mods::set_error(error, result, "failed to install duel switch hook");
-    result = mods::hook_add_pre<GanondorfOrderZTalkHook>(svc_hook, on_ganondorf_order_z_talk_pre);
-    if (result != MOD_OK) return mods::set_error(error, result, "failed to install duel Midna call hook");
-    result = mods::hook_add_pre<GanondorfNotTalkHook>(svc_hook, on_ganondorf_not_talk_pre);
-    if (result != MOD_OK) return mods::set_error(error, result, "failed to install duel Midna talk hook");
-    result = mods::hook_add_post<BossRushAlinkExecuteHook>(svc_hook, on_bossrush_alink_execute_post);
-    if (result != MOD_OK) return mods::set_error(error, result, "failed to install duel setup hook");
     result = mods::hook_add_pre<HubDefeatCheckHook>(svc_hook, on_hub_defeat_check_pre);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub defeat hook");
     result = mods::hook_add_post<HubGalleryDrawHook>(svc_hook, on_hub_gallery_draw_post);
@@ -3877,10 +3872,6 @@ ModResult uninstall_bossrush_hook(ModError* error, const char* message) {
 ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     mods::hook_uninstall<HubDoorOpenHook>(svc_hook);
     mods::hook_uninstall<HubSwitchCheckHook>(svc_hook);
-    mods::hook_uninstall<GanondorfDanSwitchHook>(svc_hook);
-    mods::hook_uninstall<BossRushAlinkExecuteHook>(svc_hook);
-    mods::hook_uninstall<GanondorfOrderZTalkHook>(svc_hook);
-    mods::hook_uninstall<GanondorfNotTalkHook>(svc_hook);
     mods::hook_uninstall<HubDefeatCheckHook>(svc_hook);
     mods::hook_uninstall<HubGalleryDrawHook>(svc_hook);
     mods::hook_uninstall<HubLabelDrawHook>(svc_hook);
@@ -3938,6 +3929,10 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
             error, "failed to uninstall Dawnlight Ganondorf direct-start hook");
         result != MOD_OK)
     {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<GanondorfBarrierExecuteHook>(
+            error, "failed to uninstall Dawnlight Ganondorf barrier hook"); result != MOD_OK) {
         return result;
     }
     sBossRushHooksInstalled = false;
@@ -4039,6 +4034,14 @@ ModResult register_new_save_modes(ModError* error) {
     }
     sFrameCtrlSetFrame = reinterpret_cast<FrameCtrlSetFrameFn>(frameCtrlSetFrame);
 
+    // Install before save loading; archive requests precede room actor setup.
+    result = mods::hook_add_pre<HubResourcePathHook>(svc_hook, on_hub_resource_path_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub resource alias");
+    result = mods::hook_add_pre<HubRoomDzsHook>(svc_hook, on_hub_room_dzs_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub map alias");
+    result = mods::hook_add_pre<HubAudioSceneHook>(svc_hook, on_hub_audio_scene_pre);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to install hub audio alias");
+
     result = mods::hook_add_post<FileSelectNameInput2Hook>(
         svc_hook, on_file_select_name_input2_post);
     if (result != MOD_OK) {
@@ -4088,6 +4091,9 @@ void update_new_save_modes() {
 }
 
 void shutdown_new_save_modes() {
+    mods::hook_uninstall<HubResourcePathHook>(svc_hook);
+    mods::hook_uninstall<HubRoomDzsHook>(svc_hook);
+    mods::hook_uninstall<HubAudioSceneHook>(svc_hook);
     if (svc_game_mode != nullptr) {
         ModResult result = svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId);
         if (result != MOD_OK) {

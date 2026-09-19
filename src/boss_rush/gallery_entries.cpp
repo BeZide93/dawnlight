@@ -146,7 +146,7 @@ const BossGalleryEntry g_bossGalleryTable[] = {
     {"Beast Ganon",      "Hyrule Castle",       "B_mgn",  "mgn.bmd",    nullptr,  "mgn_wait.bck",      "D_MN09A", 2, 50, 1, 0.45f,  0.0f,  260.0f, 100.0f,
      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr,
      &kBeastGanonFightSpawnPos, static_cast<s16>(0)},
-    {"Ganondorf",    "Hyrule Castle",       "B_gnd",  "egnd.bmd",   nullptr,  "egnd_wait02.bck",   "D_MN09B", 1, 0,  0, 0.8f,  0.0f,  260.0f, 0.0f,
+    {"Ganondorf",    "Hyrule Castle",       "B_gnd",  "egnd.bmd",   nullptr,  "egnd_wait02.bck",   "D_MN09C", 0, 0,  0, 0.8f,  0.0f,  260.0f, 0.0f,
      nullptr, nullptr, nullptr, nullptr, nullptr, g_ganondorfParts, kGanondorfPartCount, nullptr, "egnd_core_beat.brk"},
 };
 const size_t g_bossGalleryCount = sizeof(g_bossGalleryTable) / sizeof(g_bossGalleryTable[0]);

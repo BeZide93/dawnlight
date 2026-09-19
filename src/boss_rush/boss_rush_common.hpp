@@ -82,7 +82,9 @@ constexpr float kBeastGanonBloodDropSpread = 120.0f;
 
 constexpr size_t kMaxBossGalleryEntries = 24;
 
-constexpr const char* kBossRushChamberStage = "D_MN06B";
+// Separate runtime identity prevents Essentials from claiming this room.
+constexpr const char* kBossRushChamberStage = "D_DLBR0";
+constexpr const char* kBossRushChamberResourcePath = "/res/Stage/D_DLBR0/";
 constexpr s8  kBossRushChamberRoom = 51;
 constexpr s16 kBossRushChamberPoint = -1;
 constexpr s8  kBossRushChamberLayer = 0;

@@ -1,6 +1,7 @@
 // Adapted from F1mmel/dusklight-twilit-essentials, commit 1e7fb0afb828f924c165e8c57b7337304ed6cf4c.
 // See docs/bossrush-twilit-essentials.md for provenance and integration details.
 #include "gallery_resources.hpp"
+#include "boss_rush_hologram.hpp"
 #include <set>
 #include <string>
 #include "d/d_com_inf_game.h"
@@ -412,7 +413,7 @@ void renderModelAt(J3DModel* model, const cXyz& pos, const csXyz& angle, const c
         g_env_light.setLightTevColorType_MAJI(model, &alink->tevStr);
     }
 
-    mDoExt_modelUpdateDL(model);
+    submit_boss_rush_hologram(model);
 }
 
 void renderModelAtMtx(J3DModel* model, MtxP mtx, mDoExt_bckAnm* bck) {
@@ -432,5 +433,5 @@ void renderModelAtMtx(J3DModel* model, MtxP mtx, mDoExt_bckAnm* bck) {
         g_env_light.setLightTevColorType_MAJI(model, &alink->tevStr);
     }
 
-    mDoExt_modelUpdateDL(model);
+    submit_boss_rush_hologram(model);
 }

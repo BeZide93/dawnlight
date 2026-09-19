@@ -96,6 +96,12 @@ add_mod(dawnlight_mod
         src/mod.cpp
         src/model_overlays.cpp
         src/new_save_modes.cpp
+        src/boss_rush/ganondorf_cape.cpp
+        src/boss_rush/gallery_runtime.cpp
+        src/boss_rush/gallery_entries.cpp
+        src/boss_rush/gallery_resources.cpp
+        src/boss_rush/boss_rush_models.cpp
+        src/boss_rush/boss_rush_texts.cpp
         src/save_compat.cpp
         src/save_state.cpp
         src/stamina.cpp

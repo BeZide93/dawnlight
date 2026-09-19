@@ -31,9 +31,12 @@ aiming, boss, and HUD features for Twilight Princess.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
 - Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
   faster tracking, and selected profile-specific mechanics.
-- Boss Rush Game Mode with the Garden of Twilight hub, individual boss portals,
-  a complete-run portal, Cave of Ordeals access, hardmode arena hazards, save
-  and resume support, and a Return to Hub Midna option.
+- Boss Rush Game Mode with a Twilit Essentials-style Darknut arena hub:
+  animated boss miniatures and floating labels, a central complete-run portal,
+  oil/red-potion refills, fairy, bomb chest, arrow and Deku-seed pots. The exit
+  door leads directly to the Cave of Ordeals. Includes warp transitions, direct
+  Ganondorf duels, hardmode hazards, save/resume, and Midna's Return to Hub option.
+  See [Boss Rush integration notes](docs/bossrush-twilit-essentials.md).
 - HUD Layout Editor for supported HUD elements, item/text/ammo offsets, button
   backing, D-Pad arrows and shadows, single-row hearts, round X/Y buttons, and
   HUD import/export.

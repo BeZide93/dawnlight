@@ -177,8 +177,8 @@ ModResult install_test_hooks() {
 }  // namespace
 
 bool enemy_spawner_blocked_in_bossrush_hub() {
-    constexpr char kBossRushHubStage[] = "D_MN09C";
-    constexpr s8 kBossRushHubRoom = 0;
+    constexpr char kBossRushHubStage[] = "D_MN06B";
+    constexpr s8 kBossRushHubRoom = 51;
     constexpr u8 kBossRushHubState = 0;
     const char* stage = dComIfGp_getStartStageName();
     return save_state_boss_rush_active() &&

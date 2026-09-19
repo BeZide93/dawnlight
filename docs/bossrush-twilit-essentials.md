@@ -25,13 +25,22 @@ separate Horseback Ganon replay or import Essentials' other game modes/settings.
   and arrival. Hub entry uses an explicit restart position and camera reset.
 - The Ganondorf replay uses `D_MN09B`, point 1, dungeon switch 1, stable actor
   initialization, native ground-duel state, fixed starting positions, barrier,
-  camera release, and battle music. The old manually spawned `D_MN09C` boss and
-  camera-92 intro setup are removed.
-- Hub-only completion queries suppress the native Darknut. The same room remains
-  a real fight when the GameMode state is Run/Replay. Native reward chests are
-  removed before spawning Dawnlight's supplies. Hub-only door-bar queries start
-  the exit unlocked and keep it unlocked, avoiding the native enemy-clear gate
-  cutscene without setting persistent dungeon switches.
+  camera release, and battle music. Like Essentials, setup runs after Link's
+  execute callback and holds black while the actors initialize. The dungeon
+  switch-1 query is held true only for this replay. Barriers farther than 5000
+  units from `(0, 1100, 0)` do not count as the duel wall. The local wall uses
+  Essentials' exact `0xF0069600` parameters, room 0, zero angles/argument and unit
+  spawn scale; native `D_MN09B` behavior activates it. The old barrier execute
+  override and artificial switches 15/31 are removed. Fade-in waits for the
+  local barrier to execute, including if a spawn must be retried.
+- Hub entry copies Essentials' reset of saved/current dungeon bits, dungeon
+  switches and zone state before loading. Dawnlight's defeated-boss records stay
+  in its separate SaveService blob. Chamber detection uses the current stay room
+  as Essentials does. Hub-only completion and `dSv_info_c::isSwitch` overrides
+  suppress the native Darknut and report room 51 as unlocked before actors and
+  room events initialize. This replaces the insufficient door-only hooks. Real
+  Darknut Run/Replay encounters use the normal queries. Native reward chests are
+  removed before spawning Dawnlight's supplies.
 - Gallery allocations use a persistent heap. Archive references are acquired
   once, including pending loads, and released after all gallery models. Joint
   callbacks are restored before releasing shared model data. The existing enemy
@@ -50,8 +59,12 @@ the packages.
 
 ## Validation
 
-A Linux RelWithDebInfo build is performed for this change. GitHub Actions checks
-all configured target platforms. Compilation does not validate in-game visuals
+A Linux RelWithDebInfo build is performed for this change. A standalone C++
+harness using the actual switch callbacks and barrier helper checks hub/fight
+isolation, replay-only dungeon switch 1, distant/local barriers, exact spawn
+arguments, duplicate suppression during creation, and retry after disappearance.
+GitHub Actions checks all configured target platforms. These checks do not
+validate in-game visuals
 or timing; these checks require Dusklight and game data:
 
 - Create a Boss Rush save and load an existing hub/run save; verify spawn,

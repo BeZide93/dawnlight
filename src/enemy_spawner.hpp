@@ -17,6 +17,5 @@ inline constexpr std::array<const char*, 33> kEnemySpawnerProfileLabels{
 };
 
 ModResult spawn_enemy_for_testing(int profileIndex);
-bool enemy_spawner_blocked_in_bossrush_hub();
 
 }  // namespace dawnlight

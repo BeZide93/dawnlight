@@ -1,6 +1,5 @@
 #include "enemy_spawner.hpp"
 
-#include "save_state.hpp"
 #include "service_imports.hpp"
 
 #include "SSystem/SComponent/c_math.h"
@@ -15,7 +14,6 @@
 #include "mods/hook.hpp"
 
 #include <array>
-#include <cstring>
 #include <unordered_set>
 
 namespace dawnlight {
@@ -176,28 +174,12 @@ ModResult install_test_hooks() {
 
 }  // namespace
 
-bool enemy_spawner_blocked_in_bossrush_hub() {
-    constexpr char kBossRushHubStage[] = "D_DLBR0";
-    constexpr s8 kBossRushHubRoom = 51;
-    constexpr u8 kBossRushHubState = 0;
-    const char* stage = dComIfGp_getStartStageName();
-    return save_state_boss_rush_active() &&
-           save_state_boss_rush_state() == kBossRushHubState && stage != nullptr &&
-           std::strcmp(stage, kBossRushHubStage) == 0 &&
-           dComIfGp_getStartStageRoomNo() == kBossRushHubRoom;
-}
-
 ModResult spawn_enemy_for_testing(int profileIndex) {
     if (profileIndex < 0 ||
         static_cast<std::size_t>(profileIndex) >= kEnemySpawnerProfiles.size()) {
         return MOD_INVALID_ARGUMENT;
     }
     if (svc_actor == nullptr || svc_actor->create_actor == nullptr) return MOD_UNAVAILABLE;
-    // The hub already keeps all boss portals, its barrier, and supply actors resident.
-    // Loading an additional enemy archive can exhaust the model heap; vanilla then
-    // aborts while initializing a texture from the failed allocation.
-    if (enemy_spawner_blocked_in_bossrush_hub()) return MOD_UNAVAILABLE;
-
     auto* link = daAlink_getAlinkActorClass();
     if (link == nullptr) return MOD_UNAVAILABLE;
 

@@ -24,10 +24,25 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     auto* order = tev->getTevOrder(0);
     GXTexCoordID coord = GX_TEXCOORD_NULL;
     GXTexMapID texture = GX_TEXMAP_NULL;
-    if (order && order->mTexCoord < 8 && order->getTexMap() < 8 &&
+    // TEV orders can name an UNUSED coordinate, even on untextured materials.
+    // Sampling it would make Aurora compile the default GX_MAX_TEXGENSRC (21)
+    // and persist that invalid pipeline, causing another abort on app startup.
+    if (order && order->mTexCoord < material->getTexGenNum() &&
+        order->mTexCoord < 8 && order->getTexMap() < 8 &&
         tev->getTexNo(order->getTexMap()) != 0xFFFF) {
-        coord = static_cast<GXTexCoordID>(order->mTexCoord);
-        texture = static_cast<GXTexMapID>(order->getTexMap());
+        const auto* texCoord = material->getTexCoord(order->mTexCoord);
+        if (texCoord) {
+            const u8 source = texCoord->getTexGenSrc();
+            const u8 type = texCoord->getTexGenType();
+            const bool supportedSource = source <= GX_TG_TEX7 ||
+                source == GX_TG_COLOR0 || source == GX_TG_COLOR1;
+            // Emboss generators depend on other coordinates/lighting. Use
+            // constant opacity for these and other unsupported generators.
+            if (supportedSource && (type == GX_TG_MTX2x4 || type == GX_TG_MTX3x4)) {
+                coord = static_cast<GXTexCoordID>(order->mTexCoord);
+                texture = static_cast<GXTexMapID>(order->getTexMap());
+            }
+        }
     }
     apply_boss_rush_hologram_gx(boss_rush_hologram_color(found->second), coord, texture);
     return HOOK_CONTINUE;
@@ -53,6 +68,7 @@ GXColor boss_rush_hologram_color(u8 bossIndex) {
 void apply_boss_rush_hologram_gx(GXColor color, GXTexCoordID coord, GXTexMapID texture) {
     // A luminous single-color projection, with texture alpha retained for
     // cut-out hair/wings. 44% opacity keeps the room visible through the model.
+    if (texture == GX_TEXMAP_NULL) GXSetNumTexGens(0);
     GXSetNumIndStages(0);
     GXSetNumTevStages(1);
     GXSetTevDirect(GX_TEVSTAGE0);

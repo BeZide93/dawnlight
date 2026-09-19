@@ -113,3 +113,30 @@ Hologram validation: check every miniature and its attachments before/after a
 first defeat and after saving/reloading. View the room through each figure,
 check walls still occlude it, and spawn the same enemy beside its miniature
 to check appearance isolation. Inspect Death Sword and Ganondorf's cape.
+
+## Recovery after the initial hologram build
+
+The first hologram implementation could sample a TEV order's texture coordinate
+without checking whether that coordinate was active. Aurora leaves inactive
+pipeline texgens at `GX_MAX_TEXGENSRC` (21), then aborts shader generation with
+`unhandled tcg src 21`. Pipeline descriptions are cached before compilation;
+reloading the bad description can therefore abort the next app startup too.
+
+Hologram alpha sampling now requires an active, in-range coordinate and a
+supported independent matrix generator/source. Other materials use constant
+hologram opacity with no texture generators. Blue/red progress colors remain.
+The regression harness rejects zero generators, inactive higher slots, source
+21 and dependent emboss generators; valid texture cut-outs still work. The
+zero-generator case fails against the original implementation.
+
+If an affected build already poisoned the cache, first force-stop Dusklight
+and replace the mod with the fixed build. In the Android system file picker's
+**Dusklight Data** root, remove only `pipeline_cache.db` and, if present,
+`pipeline_cache.db-wal` and `pipeline_cache.db-shm`. These are regenerable
+pipeline-cache files in the app's data directory (the reported installation
+uses `/data/data/dev.twilitrealm.dusk/files`). Keep saves, mods, `config.json`
+and other files. Android's ordinary **Clear cache** button may not remove
+these files because they live in the app's files directory. Do not use
+**Clear storage/data** for this recovery. Pipeline preloading happens before
+mod initialization, so installing the fixed mod alone cannot repair an already
+cached invalid pipeline. The next launch rebuilds the removed cache.

@@ -1,4 +1,4 @@
-// Adapted from BeZide93/dawnlight-twilit-essentials, commit 805fac000711135ee2d85e086ab6100d767717bd.
+// Adapted from F1mmel/dusklight-twilit-essentials, commit 1e7fb0afb828f924c165e8c57b7337304ed6cf4c.
 // See docs/bossrush-twilit-essentials.md for provenance and integration details.
 #include "gallery_resources.hpp"
 #include <set>

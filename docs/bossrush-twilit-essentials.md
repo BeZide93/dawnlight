@@ -2,8 +2,8 @@
 
 The hub uses the Temple of Time Darknut chamber with the animated miniatures
 and floating labels adapted from
-[Twilit Essentials](https://github.com/BeZide93/dawnlight-twilit-essentials/tree/805fac000711135ee2d85e086ab6100d767717bd/src/boss_rush),
-revision `805fac000711135ee2d85e086ab6100d767717bd`.
+[Twilit Essentials](https://github.com/F1mmel/dusklight-twilit-essentials/tree/1e7fb0afb828f924c165e8c57b7337304ed6cf4c/src/boss_rush),
+revision `1e7fb0afb828f924c165e8c57b7337304ed6cf4c`.
 
 Approach a miniature and call Midna to open **Fight [boss]? — Yes / No**,
 using Dawnlight main's confirmation flow. Only **Yes** starts the replay;

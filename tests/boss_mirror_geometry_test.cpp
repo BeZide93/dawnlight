@@ -11,39 +11,56 @@ Vec transform(const Matrix& m, const Vec& v) {
     return result;
 }
 bool close(float a,float b) { return std::abs(a-b)<0.02f; }
+Matrix compose(const Matrix& a,const Matrix& b) {
+    Matrix out{};
+    for (unsigned r=0;r<3;++r) {
+        for (unsigned c=0;c<3;++c) for (unsigned k=0;k<3;++k) out[r][c]+=a[r][k]*b[k][c];
+        out[r][3]=a[r][3];
+        for (unsigned k=0;k<3;++k) out[r][3]+=a[r][k]*b[k][3];
+    }
+    return out;
+}
 int main() {
     for (unsigned thin=0;thin<3;++thin) for (unsigned boss=0;boss<18;++boss) {
-        // Deliberately off-center bind geometry, as used by chamber props.
-        Vec min={1200,4500,-21000}, max={1400,4700,-20800};
+        Vec min={1200,4500,-21000},max={1400,4700,-20800};
         max[thin]=min[thin]+10;
         const Vec pivot={(min[0]+max[0])/2,(min[1]+max[1])/2,(min[2]+max[2])/2};
+        // A vanilla attachment can rotate/offset a model's local disc axis.
+        Matrix nativeMesh{};
+        const unsigned horizontal=thin==0 ? 2 : 0, vertical=thin==1 ? 2 : 1;
+        nativeMesh[0][horizontal]=-1;
+        nativeMesh[1][vertical]=1;
+        nativeMesh[2][thin]=thin==2 ? -1 : 1;
+        const Vec nativeCenter={1800,4800,-21000};
+        auto offset=vector_to_world(nativeMesh,pivot);
+        for (unsigned i=0;i<3;++i) nativeMesh[i][3]=nativeCenter[i]-offset[i];
+        Fit native;
+        assert(describe_disc(min,max,nativeMesh,native));
         const float angle=6.28318530718f*boss/18;
-        const Vec center={std::sin(angle)*1450,1340,std::cos(angle)*1450};
-        Fit fit;
-        assert(dawnlight::mirror_geometry::fit(min,max,center,angle+3.14159265359f,440,fit));
-        const auto actualCenter=transform(fit.meshToWorld,pivot);
-        for (unsigned i=0;i<3;++i) assert(close(actualCenter[i],center[i]));
-        assert(close(dot(fit.normal,fit.normal),1));
-        assert(close(dot(fit.right,fit.normal),0));
-        assert(close(dot(fit.up,fit.normal),0));
-        assert(close(dot(fit.right,fit.up),0));
-        assert(close(std::sqrt(dot(fit.right,fit.right)),360.8f));
-        assert(close(std::sqrt(dot(fit.up,fit.up)),360.8f));
-        assert(close(fit.halfDepth,11));
-        // Every mirror faces the center, without reflected/negative scale geometry.
-        assert(dot(fit.normal,{-center[0],0,-center[2]})>1449);
-        const auto& m=fit.meshToWorld;
-        const float det=m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-
-                        m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+
-                        m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
-        assert(det>0);
-        for (unsigned corner=0;corner<8;++corner) {
-            Vec v;
-            for (unsigned i=0;i<3;++i) v[i]=corner&(1u<<i)?max[i]:min[i];
-            auto world=transform(m,v);
-            for (unsigned i=0;i<3;++i) world[i]-=center[i];
-            assert(std::abs(dot(world,fit.normal))<=fit.halfDepth+0.02f);
+        const Vec groundPosition={std::sin(angle)*1450,1100,std::cos(angle)*1450};
+        Matrix placement;
+        assert(place_assembly(native,4600,groundPosition,angle+3.14159265359f,placement));
+        // The stand is moved with a rigid yaw/translation, never enlarged.
+        for (unsigned col=0;col<3;++col) {
+            float length=0;
+            for (unsigned row=0;row<3;++row) length+=placement[row][col]*placement[row][col];
+            assert(close(length,1));
         }
+        const Matrix mounted=compose(placement,nativeMesh);
+        Fit fit;
+        assert(describe_disc(min,max,mounted,fit));
+        assert(close(fit.center[0],groundPosition[0]));
+        assert(close(fit.center[2],groundPosition[2]));
+        assert(close(fit.center[1],1300)); // native 200-unit height above stand floor
+        assert(close(point_to_world(placement,{1800,4600,-21000})[1],1100));
+        assert(close(std::sqrt(dot(fit.right,fit.right)),164)); // artwork follows 200-unit asset
+        assert(close(std::sqrt(dot(fit.up,fit.up)),164));
+        assert(dot(fit.normal,{-fit.center[0],0,-fit.center[2]})>1449);
+        const Vec a=point_to_world(nativeMesh,min),b=point_to_world(nativeMesh,max);
+        const Vec x=point_to_world(mounted,min),y=point_to_world(mounted,max);
+        float nativeDistance=0,placedDistance=0;
+        for (unsigned i=0;i<3;++i) { nativeDistance+=(a[i]-b[i])*(a[i]-b[i]); placedDistance+=(x[i]-y[i])*(x[i]-y[i]); }
+        assert(close(std::sqrt(nativeDistance),std::sqrt(placedDistance)));
     }
     // Authored disc with a baked-in tilt, a rear face, and a raised outer rim.
     // The label must follow the inner front plane, not the AABB or rim plane.
@@ -68,9 +85,13 @@ int main() {
             min[i]=std::min(min[i],p[i]); max[i]=std::max(max[i],p[i]);
         }
         const float angle=6.28318530718f*boss/18;
-        const Vec center={std::sin(angle)*1450,1340,std::cos(angle)*1450};
-        Fit fit;
-        assert(dawnlight::mirror_geometry::fit(min,max,center,angle+3.14159265359f,440,fit));
+        const Vec groundPosition={std::sin(angle)*1450,1100,std::cos(angle)*1450};
+        const Matrix identity={{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
+        Fit native,fit;
+        Matrix placement;
+        assert(describe_disc(min,max,identity,native));
+        assert(place_assembly(native,4300,groundPosition,angle+3.14159265359f,placement));
+        assert(describe_disc(min,max,placement,fit));
         Face face;
         assert(mount_face(positions,normals,fit,face));
         Face smoothed;
@@ -96,8 +117,11 @@ int main() {
         assert(dot(face.normal,toHub)<0);
     }
     Fit fit;
-    assert(!dawnlight::mirror_geometry::fit({0,0,0},{0,0,0},{0,0,0},0,440,fit));
-    assert(!dawnlight::mirror_geometry::fit({0,0,0},{-1,100,100},{0,0,0},0,440,fit));
-    assert(!dawnlight::mirror_geometry::fit({0,0,0},{100,100,std::numeric_limits<float>::infinity()},{0,0,0},0,440,fit));
-    assert(!dawnlight::mirror_geometry::fit({0,0,0},{100,10,1},{0,0,0},0,440,fit));
+    const Matrix identity={{{1,0,0,0},{0,1,0,0},{0,0,1,0}}};
+    assert(!describe_disc({0,0,0},{0,0,0},identity,fit));
+    assert(!describe_disc({0,0,0},{-1,100,100},identity,fit));
+    assert(!describe_disc({0,0,0},{100,100,std::numeric_limits<float>::infinity()},identity,fit));
+    assert(!describe_disc({0,0,0},{100,10,1},identity,fit));
+    Matrix placement;
+    assert(!place_assembly(fit,std::numeric_limits<float>::infinity(),{0,0,0},0,placement));
 }

@@ -41,22 +41,28 @@ Only this original artwork is added to the packaged mod.
 
 ## Mirrors and rendering
 
-A dedicated `DLBMir` ActorService profile loads the complete `u_mr_mirror` model
-from the player's `MR-Table` archive at runtime. No Nintendo model or texture is
-included in the mod. The actor uses the engine's shared archive references and
-per-actor model heaps. It does not run Mirror Chamber switches, stairs, effects,
-cutscenes, or the native reflection actor's singleton logic.
+A dedicated `DLBMir` ActorService profile loads the complete `u_mr_mirror` disc
+and its `u_mr_table` frame/stand from the player's `MR-Table` archive at runtime.
+No Nintendo model or texture is included in the mod. Both models use native
+scale `(1, 1, 1)`. The stand is sampled at the final frame of `u_mr_table_up`,
+matching its raised Mirror Chamber pose. The mirror attaches to the stand's
+`MIRROR` joint with its own root transform preserved, as in the original game.
+The actor uses shared archive references and per-actor model heaps, without
+running chamber switches, stairs, effects, cutscenes or reflection singleton logic.
 
-All 18 mirrors face the hub center. Their 440-unit diameter fits the existing
-18-place ring. The renderer measures the loaded rigid mesh, compensates its
-bind-pose root/pivot and mounts the model and emblem in the same world frame.
-The symbol face is about 361 units across, compared with the previous 240-unit
-billboard. A nearly opaque dark circular face and slightly strengthened strokes
-improve distance contrast. The image stays fixed to the inward-facing front. Looking from behind hides the
-symbol instead of moving it onto the back. The original stone rim remains visible.
+The former fixed 440-unit diameter and 240-unit center height are removed.
+The entire posed assembly is placed with only yaw and translation, facing the
+hub center. The stand's posed geometry supplies the floor height. Empty
+attachment joints do not contribute zero-sized bounds to this grounding step.
+Neither the disc nor the stand is resized to fit the artwork. Instead, the symbol
+size follows the loaded vanilla disc dimensions, inset to leave the rim visible.
+The animation remains frozen in the raised pose and its shared joint calculator
+is restored after each evaluation/draw.
 
-The original model is rotated 180 degrees around its up axis so its authored front
-faces the hub center. Its baked-in tilt is preserved. The symbol plane is fitted
+A dark circular face and slightly strengthened strokes improve contrast. The
+image stays fixed to the inward-facing front; looking from behind hides the
+symbol instead of moving it onto the back. The native attachment, tilt and
+relative position between the mirror and its frame are preserved. The symbol plane is fitted
 to the loaded mesh's broad front surface using its vertex positions and authored
 normals, rather than the axis-aligned bounding box. Geometric plane candidates
 from inner vertices also handle smoothed bevel normals. Raised rim vertices are
@@ -87,7 +93,8 @@ existing behavior.
   reversed depth, 1×/4× MSAA, and one/two/three color attachments.
 
 - Geometry tests cover all 18 facing directions with each possible local disc
-  axis, offset pivots and invalid bounds. Additional tilted-disc tests cover
+  axis, native attachment offsets, unchanged scale/distances, grounded stands,
+  artwork sizing from the original dimensions and invalid bounds. Additional tilted-disc tests cover
   all 18 directions, the authored front, raised rims, plane alignment at all
   four corners and fixed inward-facing visibility.
 - An extracted spawn-function harness covers delayed loads, single-slot retries,
@@ -101,5 +108,5 @@ c++ -std=c++20 tests/boss_mirror_geometry_test.cpp -o /tmp/mirror-test
 ```
 
 The validation backend does not load game archives or render a game scene.
-In-game verification is still needed for the original model's fit, visibility
-from a distance, first hub entry, Midna prompts, defeat/reload colors and returns.
+In-game verification is still needed for the vanilla stand/disc fit and ground
+placement, distance visibility, first hub entry, Midna prompts, saved colors and returns.

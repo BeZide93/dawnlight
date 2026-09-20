@@ -13,47 +13,8 @@ using Matrix = std::array<std::array<float, 4>, 3>;
 struct Fit {
     Matrix meshToWorld{};
     Vec center{}, right{}, up{}, normal{};
-    float halfDepth = 0;
 };
 
-// The disc's single rigid mesh can have a different local axis or pivot from
-// its pedestal. Fit the loaded mesh itself, keeping a right-handed transform.
-inline bool fit(const Vec& min, const Vec& max, const Vec& center, float yaw,
-                float diameter, Fit& result) {
-    Vec span{}, midpoint{};
-    for (unsigned i = 0; i < 3; ++i) {
-        if (!std::isfinite(min[i]) || !std::isfinite(max[i]) || max[i] < min[i]) return false;
-        span[i] = max[i] - min[i];
-        midpoint[i] = (min[i]+max[i])*0.5f;
-    }
-    const unsigned thin = static_cast<unsigned>(std::min_element(span.begin(), span.end())-span.begin());
-    const unsigned horizontal = thin == 0 ? 2 : 0;
-    const unsigned vertical = thin == 1 ? 2 : 1;
-    const float extent = std::max(span[horizontal], span[vertical]);
-    if (extent < 1.0f || span[horizontal] < extent*0.5f || span[vertical] < extent*0.5f) return false;
-    const float scale = diameter/extent;
-    const float sine = std::sin(yaw), cosine = std::cos(yaw);
-    const Vec right = {cosine, 0, -sine}, up = {0, 1, 0}, normal = {sine, 0, cosine};
-    const float normalSign = thin == 2 ? 1.0f : -1.0f;
-    result = {};
-    result.center = center;
-    result.normal = normal;
-    result.halfDepth = span[thin]*scale*0.5f;
-    // The inset leaves the original stone rim visible around the symbol face.
-    const float faceSize = std::min(span[horizontal], span[vertical])*scale*0.82f;
-    for (unsigned row = 0; row < 3; ++row) {
-        result.right[row] = right[row]*faceSize;
-        result.up[row] = up[row]*faceSize;
-        auto& m = result.meshToWorld[row];
-        // The original disc's front is opposite our initial bounds-axis normal.
-        // Rotate the mesh 180 degrees about up; keep the emblem frame inward.
-        m[horizontal] = -right[row]*scale;
-        m[vertical] = up[row]*scale;
-        m[thin] = -normal[row]*scale*normalSign;
-        m[3] = center[row] - m[0]*midpoint[0] - m[1]*midpoint[1] - m[2]*midpoint[2];
-    }
-    return true;
-}
 
 struct Face { Vec center{}, right{}, up{}, normal{}; };
 inline float dot(const Vec& a, const Vec& b) {
@@ -73,6 +34,65 @@ inline Vec vector_to_world(const Matrix& m, const Vec& p) {
     for (unsigned row=0; row<3; ++row)
         out[row] = m[row][0]*p[0]+m[row][1]*p[1]+m[row][2]*p[2];
     return out;
+}
+
+inline Vec point_to_world(const Matrix& m, const Vec& p) {
+    Vec out=vector_to_world(m,p);
+    for (unsigned i=0;i<3;++i) out[i]+=m[i][3];
+    return out;
+}
+
+// Describe the vanilla disc under its actual attachment/root matrix. This
+// only measures it: no target diameter, scaling or pivot cancellation.
+inline bool describe_disc(const Vec& min, const Vec& max, const Matrix& meshToWorld, Fit& result) {
+    Vec span{}, midpoint{};
+    for (unsigned i=0;i<3;++i) {
+        if (!std::isfinite(min[i]) || !std::isfinite(max[i]) || max[i]<min[i]) return false;
+        span[i]=max[i]-min[i]; midpoint[i]=(min[i]+max[i])*0.5f;
+    }
+    const unsigned thin=static_cast<unsigned>(std::min_element(span.begin(),span.end())-span.begin());
+    const unsigned horizontal=thin==0 ? 2 : 0, vertical=thin==1 ? 2 : 1;
+    const float extent=std::max(span[horizontal],span[vertical]);
+    if (extent<1 || span[horizontal]<extent*0.5f || span[vertical]<extent*0.5f) return false;
+    Vec normal{}, localRight{}, localUp{};
+    // The complete mirror's authored front is opposite the old bounds normal.
+    normal[thin]=thin==2 ? -1.0f : 1.0f;
+    localRight[horizontal]=1; localUp[vertical]=1;
+    normal=vector_to_world(meshToWorld,normal);
+    const Vec r=vector_to_world(meshToWorld,localRight), u=vector_to_world(meshToWorld,localUp);
+    const float width=span[horizontal]*std::sqrt(dot(r,r));
+    const float height=span[vertical]*std::sqrt(dot(u,u));
+    if (!normalize(normal) || !std::isfinite(width) || !std::isfinite(height) || width<1 || height<1) return false;
+    Vec up={0,1,0};
+    for (unsigned i=0;i<3;++i) up[i]-=normal[i]*normal[1];
+    if (!normalize(up)) return false;
+    const Vec right=cross(up,normal);
+    result={};
+    result.meshToWorld=meshToWorld;
+    result.center=point_to_world(meshToWorld,midpoint);
+    result.normal=normal;
+    // Scale the artwork to the asset, never the asset to the artwork.
+    const float faceSize=std::min(width,height)*0.82f;
+    for (unsigned i=0;i<3;++i) {
+        result.right[i]=right[i]*faceSize;
+        result.up[i]=up[i]*faceSize;
+    }
+    return true;
+}
+
+// Move the entire posed frame + attached mirror with only yaw and translation.
+// Preserve their native relative transform, tilt and scale; ground the stand.
+inline bool place_assembly(const Fit& native, float floorY, const Vec& position,
+                           float inwardYaw, Matrix& placement) {
+    if (!std::isfinite(floorY) || native.normal[0]*native.normal[0]+native.normal[2]*native.normal[2]<0.01f) return false;
+    const float yaw=inwardYaw-std::atan2(native.normal[0],native.normal[2]);
+    const float sine=std::sin(yaw), cosine=std::cos(yaw);
+    placement={{{cosine,0,sine,0},{0,1,0,0},{-sine,0,cosine,0}}};
+    const Vec center=vector_to_world(placement,native.center);
+    placement[0][3]=position[0]-center[0];
+    placement[1][3]=position[1]-floorY;
+    placement[2][3]=position[2]-center[2];
+    return true;
 }
 
 // Find the broad inner front plane, rather than placing a label on the outer

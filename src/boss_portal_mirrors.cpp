@@ -17,8 +17,6 @@
 namespace dawnlight {
 namespace {
 constexpr char kArchive[] = "MR-Table";
-constexpr float kDiameter = 440.0f;
-constexpr float kCenterHeight = 240.0f;
 ProfileName sProfile = -1;
 ActorHandle sRegistration = 0;
 
@@ -57,6 +55,8 @@ class BossMirror : public fopAc_ac_c {
 public:
     request_of_phase_process_class phase{};
     J3DModel* model = nullptr;
+    J3DModel* frame = nullptr;
+    mDoExt_bckAnm raisedPose;
     BossPortalSymbolSurface surface{};
     bool ready = false;
 
@@ -69,7 +69,49 @@ public:
         if (!data || data->getJointNum() != 1 || !data->getShapeNum()) return 0;
         // The engine owns the per-actor heap; archive data is shared/refcounted.
         self->model = mDoExt_J3DModel__create(data, 0, 0x11000084);
-        return self->model != nullptr;
+        auto* frameData=static_cast<J3DModelData*>(dComIfG_getObjectRes(
+            kArchive,dRes_INDEX_MR_TABLE_BMD_U_MR_TABLE_e));
+        auto* pose=static_cast<J3DAnmTransform*>(dComIfG_getObjectRes(
+            kArchive,dRes_INDEX_MR_TABLE_BCK_U_MR_TABLE_UP_e));
+        if (!self->model || !frameData || !pose ||
+            frameData->getJointNum()<=U_MR_TABLE_JNT_MIRROR_e) return 0;
+        self->frame=mDoExt_J3DModel__create(frameData,0x80000,0x11000084);
+        // Sample the completed vanilla raising animation explicitly. No timer,
+        // room switches, stairs, sound, cutscenes or reflection actor are needed.
+        return self->frame && self->raisedPose.init(pose,0,0,0,0,-1,false);
+    }
+
+    void frame_pose(bool draw) {
+        auto* data=frame->getModelData();
+        auto* root=data->getJointNodePointer(0);
+        auto* previous=root->getMtxCalc();
+        raisedPose.entry(data,raisedPose.getBckAnm()->getFrameMax());
+        if (draw) mDoExt_modelUpdateDL(frame);
+        else frame->calc();
+        root->setMtxCalc(previous);
+    }
+
+    float frame_floor() {
+        float floor=std::numeric_limits<float>::infinity();
+        auto* data=frame->getModelData();
+        for (unsigned joint=0;joint<data->getJointNum();++joint) {
+            // Ignore empty attachment joints: their default zero bounds must
+            // not pull a world-authored chamber stand away from the hub floor.
+            for (auto* mesh=data->getJointNodePointer(joint)->getMesh();mesh;mesh=mesh->getNext()) {
+                auto* shape=mesh->getShape();
+                if (!shape) continue;
+                const auto& min=*shape->getMin();
+                const auto& max=*shape->getMax();
+                const auto& matrix=frame->getAnmMtx(joint);
+                for (unsigned corner=0;corner<8;++corner) {
+                    const float x=corner&1 ? max.x : min.x;
+                    const float y=corner&2 ? max.y : min.y;
+                    const float z=corner&4 ? max.z : min.z;
+                    floor=std::min(floor,matrix[1][0]*x+matrix[1][1]*y+matrix[1][2]*z+matrix[1][3]);
+                }
+            }
+        }
+        return floor;
     }
 
     bool place_model() {
@@ -89,24 +131,34 @@ public:
                 max[axis] = std::max(max[axis],b[axis]);
             }
         }
-        mirror_geometry::Fit fit;
-        const Vec center = {current.pos.x, current.pos.y+kCenterHeight, current.pos.z};
-        const float yaw = shape_angle.y*(6.2831853071795864769f/65536.0f);
-        if (!mirror_geometry::fit(min,max,center,yaw,kDiameter,fit)) return false;
-
-        // Cancel the mesh's bind-pose root transform before applying our fit.
-        // This keeps the emblem aligned even when the archive uses an offset pivot.
-        Mtx identity, inverseRoot, meshToWorld, base;
+        // First evaluate the entire assembly in the original chamber coordinates
+        // at scale 1, including the frame's raised attachment bone and disc root.
+        Mtx identity;
         MTXIdentity(identity);
-        model->setBaseTRMtx(identity);
+        frame->setBaseScale(cXyz(1,1,1));
+        frame->setBaseTRMtx(identity);
+        frame_pose(false);
         model->setBaseScale(cXyz(1,1,1));
+        model->setBaseTRMtx(frame->getAnmMtx(U_MR_TABLE_JNT_MIRROR_e));
         model->calc();
-        if (!MTXInverse(model->getAnmMtx(0),inverseRoot)) return false;
-        for (unsigned r = 0; r < 3; ++r)
-            for (unsigned c = 0; c < 4; ++c) meshToWorld[r][c] = fit.meshToWorld[r][c];
-        MTXConcat(meshToWorld,inverseRoot,base);
-        model->setBaseTRMtx(base);
+        auto read_matrix=[](const Mtx matrix) {
+            mirror_geometry::Matrix result{};
+            for (unsigned r=0;r<3;++r) for (unsigned c=0;c<4;++c) result[r][c]=matrix[r][c];
+            return result;
+        };
+        mirror_geometry::Fit native,fit;
+        if (!mirror_geometry::describe_disc(min,max,read_matrix(model->getAnmMtx(0)),native)) return false;
+        mirror_geometry::Matrix placement;
+        const float yaw=shape_angle.y*(6.2831853071795864769f/65536.0f);
+        if (!mirror_geometry::place_assembly(native,frame_floor(),
+                {current.pos.x,current.pos.y,current.pos.z},yaw,placement)) return false;
+        Mtx base;
+        for (unsigned r=0;r<3;++r) for (unsigned c=0;c<4;++c) base[r][c]=placement[r][c];
+        frame->setBaseTRMtx(base);
+        frame_pose(false);
+        model->setBaseTRMtx(frame->getAnmMtx(U_MR_TABLE_JNT_MIRROR_e));
         model->calc();
+        if (!mirror_geometry::describe_disc(min,max,read_matrix(model->getAnmMtx(0)),fit)) return false;
         const auto& vertices=data->getVertexData();
         const auto positions=read_vectors(vertices.getVtxPosArray(),
             std::min(vertices.getVtxNum(),vertices.getVtxArrNum(GX_VA_POS)),
@@ -137,7 +189,7 @@ int create_mirror(void* actor) {
     if (self->ready) return cPhs_COMPLEATE_e;
     const auto phase = dComIfG_resLoad(&self->phase,kArchive);
     if (phase != cPhs_COMPLEATE_e) return phase;
-    if (!fopAcM_entrySolidHeap(self,BossMirror::make_heap,0x10000) || !self->place_model()) {
+    if (!fopAcM_entrySolidHeap(self,BossMirror::make_heap,0x18000) || !self->place_model()) {
         svc_log->warn(mod_ctx,"Boss Rush mirror: could not initialize the complete Mirror Chamber disc");
         return cPhs_ERROR_e;
     }
@@ -153,7 +205,9 @@ int draw_mirror(void* actor) {
     auto* self = static_cast<BossMirror*>(actor);
     if (!self->ready) return 1;
     g_env_light.settingTevStruct(0x10,&self->current.pos,&self->tevStr);
+    g_env_light.setLightTevColorType_MAJI(self->frame,&self->tevStr);
     g_env_light.setLightTevColorType_MAJI(self->model,&self->tevStr);
+    self->frame_pose(true);
     mDoExt_modelUpdateDL(self->model);
     return 1;
 }

@@ -3,7 +3,7 @@
 Each of the 18 boss and miniboss destinations in the Boss Rush hub is a complete
 Mirror of Twilight from the Mirror Chamber. It replaces that boss's floor portal.
 A supplied black boss icon sits over translucent colored glass on the mirror
-face: light blue means undefeated, red means defeated, using the existing
+face: blue means undefeated, red means defeated, using the existing
 persistent save flags. The icon itself stays black in both states. The center Boss Rush
 and Cave of Ordeals floor portals remain available.
 
@@ -59,7 +59,7 @@ size follows the loaded vanilla disc dimensions, inset to leave the rim visible.
 The animation remains frozen in the raised pose and its shared joint calculator
 is restored after each evaluation/draw.
 
-A circular light-blue overlay at 58% opacity lets the original mirror show
+A circular blue overlay at 10% opacity lets the original mirror show
 through; defeated bosses use a red overlay at the same opacity. The supplied
 black icon is composited over it with its own alpha, so solid icon pixels remain
 opaque black while gaps reveal the translucent background. The image stays fixed to the inward-facing front; looking from behind hides the
@@ -81,7 +81,10 @@ the mirror actors before removing their profile.
 
 Hub spawning retains live and asynchronously loading IDs, retries missing slots
 individually and attempts at most one destination per tick. Midna's existing
-Fight / Yes / No prompt only becomes available once its mirror is ready. Hub
+Fight / Yes / No prompt only becomes available once its mirror is ready. Its
+150-unit interaction radius is centered 300 units in front of the mirror toward
+the hub center, at floor height, so Link can interact before reaching the pedestal.
+The two central floor portals keep their original trigger positions. Hub
 supplies, boss entry logic, saved progress and both center portals retain their
 existing behavior.
 
@@ -102,6 +105,8 @@ existing behavior.
   artwork sizing from the original dimensions and invalid bounds. Additional tilted-disc tests cover
   all 18 directions, the authored front, raised rims, plane alignment at all
   four corners and fixed inward-facing visibility.
+- Extracted prompt-function checks cover all 18 approach positions, separated
+  trigger areas, mirror readiness, vertical bounds and both center floor portals.
 - An extracted spawn-function harness covers delayed loads, single-slot retries,
   missing actors and keeping exactly 18 mirrors plus two center floor portals.
 

@@ -308,10 +308,10 @@ void stage(ModContext*, const GfxStageContext* context, void*) {
             vertex.clip[2] = device.uses_reversed_z ? -vertex.clip[2] : vertex.clip[2]+vertex.clip[3];
             vertex.uv[0] = (symbol.index%portal_art::kColumns + corner[0])*portal_art::kCell / portal_art::kWidth;
             vertex.uv[1] = (symbol.index/portal_art::kColumns + corner[1])*portal_art::kCell / portal_art::kHeight;
-            vertex.color[0] = symbol.defeated ? 1.0f : 0.55f;
-            vertex.color[1] = symbol.defeated ? 0.30f : 0.84f;
+            vertex.color[0] = symbol.defeated ? 1.0f : 0.0f;
+            vertex.color[1] = symbol.defeated ? 0.30f : 0.0f;
             vertex.color[2] = symbol.defeated ? 0.25f : 1.0f;
-            vertex.color[3] = 0.58f;
+            vertex.color[3] = 0.10f;
         }
     }
     Draw batch = {{}, vertexCount, pipeline, sBindings};

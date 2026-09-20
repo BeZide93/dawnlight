@@ -203,6 +203,7 @@ constexpr f32 kBossRushHubY = 1100.0f;
 constexpr f32 kBossRushHubPortalRadius = 1450.0f;
 constexpr f32 kBossRushHubCenterPortalOffset = 450.0f;
 constexpr f32 kBossRushHubTriggerRadius = 150.0f;
+constexpr f32 kBossRushMirrorPromptOffset = 300.0f;
 constexpr f32 kBossRushHubRefillDistance = kBossRushHubPortalRadius * 0.5f;
 constexpr f32 kBossRushHubRefillSpacing = 220.0f;
 constexpr f32 kBossRushHubPotDistance = 300.0f;
@@ -491,6 +492,19 @@ cXyz hub_portal_position(u8 portal) {
         pos.x += kBossRushHubCenterPortalOffset;
     } else if (portal == kBossRushCavePortalIndex) {
         pos.x -= kBossRushHubCenterPortalOffset;
+    }
+    return pos;
+}
+
+// Mirror interaction belongs on the approach side of its pedestal, at ground
+// level. Keep the two central floor portals anchored at their actual positions.
+cXyz hub_portal_prompt_position(u8 portal) {
+    cXyz pos = hub_portal_position(portal);
+    if (portal < kBossRushEntryCount) {
+        const cXyz center = hub_center();
+        const f32 inward = kBossRushMirrorPromptOffset / kBossRushHubPortalRadius;
+        pos.x += (center.x - pos.x) * inward;
+        pos.z += (center.z - pos.z) * inward;
     }
     return pos;
 }
@@ -807,7 +821,7 @@ int touched_hub_portal() {
             BossPortalSymbolSurface surface;
             if (!boss_portal_mirror_surface(sHubPortalIds[i], surface)) continue;
         }
-        cXyz pos = hub_portal_position(i);
+        cXyz pos = hub_portal_prompt_position(i);
         f32 distXZ = player->current.pos.absXZ(pos);
         f32 distY = player->current.pos.y - pos.y;
         if (distXZ < kBossRushHubTriggerRadius && distY < 200.0f && distY > -100.0f) {

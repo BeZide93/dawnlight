@@ -73,14 +73,14 @@ if __name__ == '__main__':
         for index, name in enumerate(portal_names):
             mask = atlas.crop(((index%COLUMNS)*CELL, (index//COLUMNS)*CELL,
                                (index%COLUMNS+1)*CELL, (index//COLUMNS+1)*CELL))
-            for state, color in enumerate(((140,214,255),(255,77,64))):
+            for state, color in enumerate(((0,0,255),(255,77,64))):
                 x, y = (index%3*2+state)*CELL, index//3*(CELL+24)
                 for cy in range(0,CELL,16):
                     for cx in range(0,CELL,16):
                         shade = 80 if (cx//16+cy//16)%2 else 120
                         draw.rectangle((x+cx,y+cy,x+cx+15,y+cy+15),fill=(shade,)*3)
                 glass = Image.new('RGBA',(CELL,CELL))
-                ImageDraw.Draw(glass).ellipse((0,0,CELL-1,CELL-1),fill=(*color,148))
+                ImageDraw.Draw(glass).ellipse((0,0,CELL-1,CELL-1),fill=(*color,26))
                 preview.paste(glass,(x,y),glass)
                 preview.paste((0,0,0),(x,y,x+CELL,y+CELL),mask)
                 draw.text((x+8,y+CELL+4),name+(' - defeated' if state else ''),fill='white')

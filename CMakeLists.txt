@@ -96,6 +96,8 @@ add_mod(dawnlight_mod
         src/mod.cpp
         src/model_overlays.cpp
         src/new_save_modes.cpp
+        src/boss_portal_symbols.cpp
+        src/boss_portal_mirrors.cpp
         src/save_compat.cpp
         src/save_state.cpp
         src/stamina.cpp

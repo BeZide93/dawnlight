@@ -1,4 +1,6 @@
 #include "config.hpp"
+#include "boss_portal_symbols.hpp"
+#include "boss_portal_mirrors.hpp"
 #include "save_compat.hpp"
 #include "save_state.hpp"
 #include "service_imports.hpp"
@@ -75,6 +77,10 @@ DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
 DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
 DEFINE_HOOK(&daAlink_c::dungeonReturnWarp, DungeonReturnWarpHook);
+DEFINE_HOOK(&daAlink_c::skipPortalObjWarp, SkipPortalObjWarpHook);
+DEFINE_HOOK(&daAlink_c::create, WarpPlayerCreateHook);
+DEFINE_HOOK(&daAlink_c::execute, WarpPlayerExecuteHook);
+DEFINE_HOOK(&daAlink_c::draw, WarpPlayerDrawHook);
 #if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
 DEFINE_HOOK_SYMBOL("_ZL15dScnPly_ExecuteP9dScnPly_c", int(void*), PlaySceneUpdateHook);
 DEFINE_HOOK_SYMBOL("_ZL12dScnPly_DrawP9dScnPly_c", int(void*), PlaySceneDrawHook);
@@ -201,21 +207,21 @@ constexpr f32 kBossRushHubY = 1100.0f;
 constexpr f32 kBossRushHubPortalRadius = 1450.0f;
 constexpr f32 kBossRushHubCenterPortalOffset = 450.0f;
 constexpr f32 kBossRushHubTriggerRadius = 150.0f;
+constexpr f32 kBossRushMirrorPromptOffset = 150.0f;
 constexpr f32 kBossRushHubRefillDistance = kBossRushHubPortalRadius * 0.5f;
 constexpr f32 kBossRushHubRefillSpacing = 220.0f;
-constexpr f32 kBossRushHubPotDistance = 300.0f;
+constexpr f32 kBossRushHubChestDistance = kBossRushHubRefillDistance + 200.0f;
 constexpr f32 kBossRushHubPotSpacing = 150.0f;
-constexpr u8 kBossRushHubSupplyActorCount = 7;
+constexpr u8 kBossRushHubSupplyActorCount = 10;
 constexpr u8 kBossRushHubSupplyCreateBatch = 1;
 constexpr u32 kBossRushCarryParameters = 0x00003FFF;
 constexpr s16 kBossRushSmallPotParams = 0x1040;
-constexpr u8 kBossRushBombChestNo = 0xFF;
+constexpr u8 kBossRushSupplyChestNo = 0xFF;
 constexpr char kCaveOfOrdealsStage[] = "D_SB01";
 constexpr const char* kCaveOfOrdealsName = "Cave of Ordeals";
 constexpr s16 kCaveOfOrdealsPoint = 0;
 constexpr s8 kCaveOfOrdealsRoom = 0;
 constexpr s8 kCaveOfOrdealsLayer = -1;
-constexpr u16 kCaveOfOrdealsWarpFallbackFrames = 60;
 constexpr f32 kBossRushRedPortalBrkFrameFraction = 0.2f;
 constexpr s16 kGanondorfFacingAngle = 0x37FE;
 constexpr s8 kFinalPuppetRoom = 50;
@@ -285,8 +291,25 @@ int sDirectFinalBossIndex = -1;
 bool sDirectFinalGanondorfStarted = false;
 int sDirectFinalGanondorfReadyFrames = 0;
 bool sDirectFinalSceneTransitionStarted = false;
-bool sCaveOfOrdealsWarpPending = false;
-u16 sCaveOfOrdealsWarpFrames = 0;
+bool sBossRushWarpPending = false;
+// Remains set through fade/load, including same-stage hub/Ganondorf reloads.
+bool sBossRushWarpInFlight = false;
+bool sBossRushDepartureStarted = false;
+bool sBossRushArrivalReady = false;
+bool sBossRushArrivalAnimating = false;
+bool sBossRushResetRunOnDeparture = false;
+u16 sBossRushWarpFrames = 0;
+bool sHubArrivalWarpPending = false;
+bool sCaveArrivalWarpPending = false;
+
+struct BossRushWarpDestination {
+    char stage[16] = {};
+    s16 point = 0;
+    s8 room = 0;
+    s8 layer = 0;
+};
+BossRushWarpDestination sBossRushWarpDestination{};
+void arm_bossrush_hub_return_warp();
 bool sHubActorIdsInitialized = false;
 bool sHubActorsSpawned = false;
 bool sHubPortalsArmed = false;
@@ -493,6 +516,19 @@ cXyz hub_portal_position(u8 portal) {
     return pos;
 }
 
+// Mirror interaction belongs on the approach side of its pedestal, at ground
+// level. Keep the two central floor portals anchored at their actual positions.
+cXyz hub_portal_prompt_position(u8 portal) {
+    cXyz pos = hub_portal_position(portal);
+    if (portal < kBossRushEntryCount) {
+        const cXyz center = hub_center();
+        const f32 inward = kBossRushMirrorPromptOffset / kBossRushHubPortalRadius;
+        pos.x += (center.x - pos.x) * inward;
+        pos.z += (center.z - pos.z) * inward;
+    }
+    return pos;
+}
+
 csXyz hub_portal_rotation(u8 portal) {
     if (portal >= kBossRushRunPortalIndex) {
         return csXyz(0, 0, 0);
@@ -532,6 +568,27 @@ fpc_ProcID create_hub_carry_pot(const cXyz& pos, u8 item, s16 carryParams) {
         kBossRushReturnRoom, &angle, nullptr, -1);
 }
 
+// Left/right are relative to the hub entrance facing; both groups are anchored
+// to the actual hub center. Pots flank each chest along the tangent of its ring.
+cXyz hub_side_supply_position(bool rightSide, f32 flankOffset = 0.0f) {
+    cXyz pos = hub_center();
+    const f32 side = rightSide ? kBossRushHubChestDistance : -kBossRushHubChestDistance;
+    pos.x += angle_cos(sHubSupplyFacing) * side + angle_sin(sHubSupplyFacing) * flankOffset;
+    pos.z += -angle_sin(sHubSupplyFacing) * side + angle_cos(sHubSupplyFacing) * flankOffset;
+    return pos;
+}
+
+fpc_ProcID create_hub_supply_chest(bool rightSide, u8 item) {
+    const cXyz pos = hub_side_supply_position(rightSide);
+    const cXyz center = hub_center();
+    const csXyz angle(0, cM_atan2s(center.x - pos.x, center.z - pos.z), 0);
+    const u32 params = item |
+                       (static_cast<u32>(daTbox2_c::TYPE_SMALL_e) << 8) |
+                       (static_cast<u32>(kBossRushSupplyChestNo) << 16);
+    return create_actor(fpcNm_TBOX2_e, params, &pos, kBossRushReturnRoom,
+        &angle, nullptr, -1);
+}
+
 fpc_ProcID create_hub_supply_actor(u8 index) {
     const f32 refillSide = kBossRushHubRefillSpacing * 0.5f;
     csXyz angle(0, sHubSupplyFacing, 0);
@@ -553,21 +610,14 @@ fpc_ProcID create_hub_supply_actor(u8 index) {
             kBossRushReturnRoom, &angle, nullptr, -1);
     }
     case 3: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, -kBossRushHubPotSpacing);
-        return create_hub_carry_pot(pos, dItemNo_ARROW_30_e, kBossRushSmallPotParams);
+        const cXyz pos = hub_side_supply_position(false, -kBossRushHubPotSpacing);
+        return create_hub_carry_pot(pos, dItemNo_PACHINKO_SHOT_e, kBossRushSmallPotParams);
     }
     case 4: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, 0.0f);
-        const u32 params = dItemNo_BOMB_30_e |
-                           (static_cast<u32>(daTbox2_c::TYPE_SMALL_e) << 8) |
-                           (static_cast<u32>(kBossRushBombChestNo) << 16);
-        const csXyz chestAngle(
-            0, static_cast<s16>(sHubSupplyFacing + static_cast<s16>(0x8000)), 0);
-        return create_actor(fpcNm_TBOX2_e, params, &pos, kBossRushReturnRoom,
-            &chestAngle, nullptr, -1);
+        return create_hub_supply_chest(false, dItemNo_BOMB_30_e);
     }
     case 5: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, kBossRushHubPotSpacing);
+        const cXyz pos = hub_side_supply_position(false, kBossRushHubPotSpacing);
         return create_hub_carry_pot(pos, dItemNo_PACHINKO_SHOT_e, kBossRushSmallPotParams);
     }
     case 6: {
@@ -575,6 +625,17 @@ fpc_ProcID create_hub_supply_actor(u8 index) {
         pos.y += 80.0f;
         return fopAcM_createItem(&pos, dItemNo_RECOVERY_FAILY_e, -1,
             kBossRushReturnRoom, &angle, nullptr, 0);
+    }
+    case 7: {
+        return create_hub_supply_chest(true, dItemNo_BOMB_INSECT_30_e);
+    }
+    case 8: {
+        const cXyz pos = hub_side_supply_position(true, -kBossRushHubPotSpacing);
+        return create_hub_carry_pot(pos, dItemNo_ARROW_30_e, kBossRushSmallPotParams);
+    }
+    case 9: {
+        const cXyz pos = hub_side_supply_position(true, kBossRushHubPotSpacing);
+        return create_hub_carry_pot(pos, dItemNo_ARROW_30_e, kBossRushSmallPotParams);
     }
     default:
         return fpcM_ERROR_PROCESS_ID_e;
@@ -609,7 +670,7 @@ bool is_boss_hub_stage_name() {
 }
 
 bool is_bossrush_hub_active() {
-    return is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
+    return !sBossRushWarpInFlight && is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
            is_boss_hub_stage_name();
 }
 
@@ -751,30 +812,17 @@ obj_gb_class* hub_barrier_actor() {
     return static_cast<obj_gb_class*>(fopAcM_SearchByID(sHubBarrierId));
 }
 
+bool hub_actor_exists_or_loading(fpc_ProcID id) {
+    return id != fpcM_ERROR_PROCESS_ID_e &&
+           (fpcM_IsCreating(id) || fopAcM_SearchByID(id) != nullptr);
+}
+
 void spawn_hub_actors() {
     start_bossrush_hub_music();
     ensure_hub_actor_ids_initialized();
-    if (sHubActorsSpawned) {
-        bool actorsAlive = sHubBarrierId != fpcM_ERROR_PROCESS_ID_e &&
-                           fopAcM_SearchByID(sHubBarrierId) != NULL;
-        for (u8 i = 0; actorsAlive && i < kBossRushHubPortalCount; i++) {
-            actorsAlive = sHubPortalIds[i] != fpcM_ERROR_PROCESS_ID_e &&
-                          fopAcM_SearchByID(sHubPortalIds[i]) != NULL;
-        }
-
-        if (actorsAlive) {
-            arm_ganondorf_barrier(hub_barrier_actor());
-            spawn_hub_supply_actors();
-            return;
-        }
-
-        reset_hub_actor_ids();
-    }
-
     cXyz center = hub_center();
     csXyz barrierAngle(kDirectFinalBarrierAngleX, 0, 0);
-    if (sHubBarrierId == fpcM_ERROR_PROCESS_ID_e ||
-        fopAcM_SearchByID(sHubBarrierId) == NULL)
+    if (!hub_actor_exists_or_loading(sHubBarrierId))
     {
         dComIfGs_onOneZoneSwitch(kDirectFinalBarrierOnSwitch, kBossRushReturnRoom);
         dComIfGs_offOneZoneSwitch(kDirectFinalBarrierOffSwitch, kBossRushReturnRoom);
@@ -785,31 +833,26 @@ void spawn_hub_actors() {
         }
     }
 
+    // Keep each live/loading slot. Retrying a missing actor must not reset
+    // all IDs and duplicate the other mirrors during asynchronous archive loads.
     u8 portalsCreated = 0;
-    while (sHubNextPortalToSpawn < kBossRushHubPortalCount &&
-           portalsCreated < kBossRushHubPortalCreateBatch)
-    {
+    for (u8 checked = 0; checked < kBossRushHubPortalCount; ++checked) {
         const u8 portal = sHubNextPortalToSpawn;
+        sHubNextPortalToSpawn = (sHubNextPortalToSpawn + 1) % kBossRushHubPortalCount;
+        if (hub_actor_exists_or_loading(sHubPortalIds[portal])) continue;
         cXyz pos = hub_portal_position(portal);
         csXyz rot = hub_portal_rotation(portal);
-        const fpc_ProcID portalId = fopAcM_createWarpHole(
-            &pos, &rot, kBossRushReturnRoom, kBossRushHubWarpSceneListNo, 0, 0xff);
-        if (portalId == fpcM_ERROR_PROCESS_ID_e) {
-            return;
-        }
+        const fpc_ProcID portalId = portal < kBossRushEntryCount
+            ? create_boss_portal_mirror(portal, pos, static_cast<s16>(rot.y + 0x8000), kBossRushReturnRoom)
+            : fopAcM_createWarpHole(&pos, &rot, kBossRushReturnRoom, kBossRushHubWarpSceneListNo, 0, 0xff);
         sHubPortalIds[portal] = portalId;
-        sHubNextPortalToSpawn++;
-        portalsCreated++;
+        // Bound both successful and failed attempts; the cursor gives every slot a turn.
+        if (++portalsCreated >= kBossRushHubPortalCreateBatch) break;
     }
-
-    if (sHubNextPortalToSpawn < kBossRushHubPortalCount) {
-        arm_ganondorf_barrier(hub_barrier_actor());
-        return;
-    }
-
+    sHubActorsSpawned = std::all_of(std::begin(sHubPortalIds), std::end(sHubPortalIds),
+                                    hub_actor_exists_or_loading);
     arm_ganondorf_barrier(hub_barrier_actor());
-    sHubActorsSpawned = true;
-    spawn_hub_supply_actors();
+    if (sHubActorsSpawned) spawn_hub_supply_actors();
 }
 
 int touched_hub_portal() {
@@ -819,7 +862,11 @@ int touched_hub_portal() {
     }
 
     for (u8 i = 0; i < kBossRushHubPortalCount; i++) {
-        cXyz pos = hub_portal_position(i);
+        if (i < kBossRushEntryCount) {
+            BossPortalSymbolSurface surface;
+            if (!boss_portal_mirror_surface(sHubPortalIds[i], surface)) continue;
+        }
+        cXyz pos = hub_portal_prompt_position(i);
         f32 distXZ = player->current.pos.absXZ(pos);
         f32 distY = player->current.pos.y - pos.y;
         if (distXZ < kBossRushHubTriggerRadius && distY < 200.0f && distY > -100.0f) {
@@ -1276,7 +1323,7 @@ void create_direct_final_barrier_if_needed(b_gnd_class* ganondorf) {
 }
 
 bool is_direct_final_ganondorf_active() {
-    if (!is_boss_rush() || boss_rush_state() != kBossRushStateReplay) {
+    if (sBossRushWarpInFlight || !is_boss_rush() || boss_rush_state() != kBossRushStateReplay) {
         return false;
     }
 
@@ -1397,6 +1444,129 @@ void ensure_direct_final_boss_started() {
     }
 }
 
+void clear_bossrush_warp_request() {
+    sBossRushWarpPending = false;
+    sBossRushDepartureStarted = false;
+    sBossRushWarpFrames = 0;
+    sBossRushWarpDestination = {};
+}
+
+void set_bossrush_warp_destination(const char* stage, s16 point, s8 room, s8 layer) {
+    std::strncpy(sBossRushWarpDestination.stage, stage,
+        sizeof(sBossRushWarpDestination.stage) - 1);
+    sBossRushWarpDestination.stage[sizeof(sBossRushWarpDestination.stage) - 1] = '\0';
+    sBossRushWarpDestination.point = point;
+    sBossRushWarpDestination.room = room;
+    sBossRushWarpDestination.layer = layer;
+}
+
+// Run Link's native dissolve/warp animation before changing scenes. The native
+// warp state eventually calls skipPortalObjWarp; its hook supplies the exact
+// destination. Do not let ordinary hub/boss logic run until a new Link is created.
+bool start_bossrush_warp(const char* stage, s16 point, s8 room, s8 layer) {
+    if (sBossRushWarpInFlight) {
+        return false;
+    }
+    set_bossrush_warp_destination(stage, point, room, layer);
+    sBossRushWarpPending = true;
+    sBossRushWarpInFlight = true;
+    sBossRushDepartureStarted = false;
+    sBossRushArrivalReady = false;
+    sBossRushWarpFrames = 0;
+    return true;
+}
+
+void finish_bossrush_departure() {
+    const BossRushWarpDestination destination = sBossRushWarpDestination;
+    // Destination flags must not affect the still-running source scene.
+    if (sBossRushResetRunOnDeparture) {
+        clear_all_boss_flags();
+        sBossRushResetRunOnDeparture = false;
+    }
+    if (boss_rush_state() == kBossRushStateReplay || boss_rush_state() == kBossRushStateRun) {
+        prepare_bossrush_entry(kBossRushEntries[boss_rush_index()]);
+    }
+    clear_bossrush_warp_request();
+    dComIfGp_setNextStage(destination.stage, destination.point, destination.room,
+        destination.layer);
+}
+
+void update_bossrush_warp() {
+    if (!sBossRushWarpPending || dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek()) {
+        return;
+    }
+
+    daAlink_c* link = daAlink_getAlinkActorClass();
+    if (link == nullptr || link->getClothesChangeWaitTimer() != 0 ||
+        link->mAnmHeap3.mAnimeHeap == nullptr || dComIfGp_event_runCheck()) {
+        return;
+    }
+    // Retry after dialogue/event teardown instead of silently skipping animation.
+    if (!sBossRushDepartureStarted || link->mProcID != daAlink_c::PROC_WARP) {
+        if (!link->procCoWarpInit(0, 1)) {
+            return;
+        }
+        sBossRushDepartureStarted = true;
+        sBossRushWarpFrames = 0;
+        link->field_0x347c = 4.6f;
+        if (daPy_py_c::checkNowWolf()) {
+            daMidna_c* midna = daPy_py_c::getMidnaActor();
+            if (midna != nullptr) {
+                midna->changeDemoMode(9);
+            }
+        }
+        return;
+    }
+    // Only a completed dissolve may use the fallback; never time out while Link
+    // is visibly standing in the source room.
+    if (++sBossRushWarpFrames >= 180 && link->field_0x347c <= -0.5f) {
+        finish_bossrush_departure();
+    }
+}
+
+void update_bossrush_arrival_warp(bool& pending, const char* stage) {
+    if (!pending || !sBossRushArrivalReady || sBossRushWarpInFlight ||
+        !is_current_stage_name(stage) || dComIfGp_isEnableNextStage() ||
+        fopOvlpM_IsPeek() || dComIfGp_event_runCheck()) {
+        return;
+    }
+    daAlink_c* link = daAlink_getAlinkActorClass();
+    if (link == nullptr) {
+        return;
+    }
+    if (link->getClothesChangeWaitTimer() != 0 || link->mAnmHeap3.mAnimeHeap == nullptr) {
+        return;
+    }
+
+    link->mNormalSpeed = 0.0f;
+    link->speed.set(0.0f, 0.0f, 0.0f);
+    const bool nativeArrival = link->mProcID == daAlink_c::PROC_WARP &&
+        link->mProcVar2.field_0x300c != 0;
+    if (nativeArrival || link->procCoWarpInit(1, 0)) {
+        link->mProcVar0.field_0x3008 = 38;
+        // Native wolf arrivals normally wait for a scripted demo signal. These
+        // arrivals are controlled by Dawnlight and have no such event script.
+        link->mProcVar5.field_0x3012 = 1;
+        link->offPlayerNoDraw();
+        pending = false;
+        sBossRushArrivalAnimating = true;
+        if (std::strcmp(stage, kCaveOfOrdealsStage) == 0) {
+            arm_bossrush_hub_return_warp();
+        }
+    }
+}
+
+void return_to_hub_after_replay_victory() {
+    // Match main's immediate scene change after a direct boss victory. Only
+    // manual Midna returns use the departure dissolve; hub arrival stays animated.
+    set_bossrush_return_place();
+    sHubArrivalWarpPending = true;
+    sBossRushArrivalReady = false;
+    sBossRushWarpInFlight = true;
+    dComIfGp_setNextStage(
+        kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom, kBossRushReturnLayer);
+}
+
 void set_bossrush_next_stage() {
     if (!is_boss_rush()) {
         return;
@@ -1405,14 +1575,14 @@ void set_bossrush_next_stage() {
     set_bossrush_return_place();
 
     if (boss_rush_state() == kBossRushStateHub) {
-        dComIfGp_setNextStage(
+        sHubArrivalWarpPending = true;
+        start_bossrush_warp(
             kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom, kBossRushReturnLayer);
         return;
     }
 
     const BossRushEntry& entry = kBossRushEntries[boss_rush_index()];
-    prepare_bossrush_entry(entry);
-    dComIfGp_setNextStage(entry.stage, entry.point, entry.room, entry.layer);
+    start_bossrush_warp(entry.stage, entry.point, entry.room, entry.layer);
 }
 
 void grant_victory_heart() {
@@ -1460,7 +1630,8 @@ void clear_pending_midna_flow_action() {
 }
 
 bool can_offer_midna_hub_warp() {
-    return is_boss_rush() && boss_rush_state() != kBossRushStateHub &&
+    return !sBossRushWarpInFlight && !sBossRushArrivalAnimating &&
+           is_boss_rush() && boss_rush_state() != kBossRushStateHub &&
            !is_boss_hub_stage_name() && !fopOvlpM_IsPeek() && !dComIfGp_isEnableNextStage() &&
            dMeter2Info_getGameOverType() == 0 && dComIfGp_getGameoverStatus() == 0 &&
            !has_pending_midna_flow_action();
@@ -1622,6 +1793,14 @@ void prepare_midna_hub_warp_item() {
     dComIfGs_setItem(SLOT_18, dItemNo_DUNGEON_BACK_e);
 }
 
+void arm_bossrush_hub_return_warp() {
+    set_bossrush_return_place();
+    reset_bossrush_warp_audio();
+    dComIfGs_setWarpItemData(kBossRushReturnStage, hub_center(), 0,
+        kBossRushReturnRoom, 0, 1);
+    dComIfGs_setItem(SLOT_18, dItemNo_DUNGEON_BACK_e);
+}
+
 void close_midna_custom_dialog(daMidna_c* midna) {
     dMsgObject_onKillMessageFlag();
 
@@ -1639,13 +1818,9 @@ void warp_to_bossrush_hub_from_midna(daMidna_c* midna) {
     prepare_midna_hub_warp_item();
     close_midna_custom_dialog(midna);
 
-    daAlink_c* player = daAlink_getAlinkActorClass();
-    if (player != NULL && player->procDungeonWarpReadyInit()) {
-        return;
-    }
-
-    dComIfGp_setNextStage(kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom,
-        kBossRushReturnLayer);
+    sHubArrivalWarpPending = true;
+    start_bossrush_warp(
+        kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom, kBossRushReturnLayer);
 }
 
 const char* bossrush_portal_name(int portal) {
@@ -1668,16 +1843,8 @@ void start_cave_of_ordeals_warp() {
     set_boss_rush_index(0);
     close_midna_custom_dialog(daPy_py_c::getMidnaActor());
 
-    daAlink_c* player = daAlink_getAlinkActorClass();
-    sCaveOfOrdealsWarpPending = true;
-    sCaveOfOrdealsWarpFrames = 0;
-    if (player != nullptr && player->procDungeonWarpInit()) {
-        return;
-    }
-
-    sCaveOfOrdealsWarpPending = false;
-    sCaveOfOrdealsWarpFrames = 0;
-    dComIfGp_setNextStage(
+    sCaveArrivalWarpPending = true;
+    start_bossrush_warp(
         kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom, kCaveOfOrdealsLayer);
 }
 
@@ -1694,7 +1861,7 @@ void start_bossrush_entry(int portal) {
         set_boss_rush_state(kBossRushStateRun);
         set_boss_rush_index(0);
         save_state_set_boss_rush_loop(0);
-        clear_all_boss_flags();
+        sBossRushResetRunOnDeparture = true;
         set_bossrush_next_stage();
         return;
     }
@@ -1702,7 +1869,6 @@ void start_bossrush_entry(int portal) {
     if (portal >= 0 && portal < static_cast<int>(kBossRushEntryCount)) {
         set_boss_rush_state(kBossRushStateReplay);
         set_boss_rush_index(static_cast<u8>(portal));
-        clear_boss_flags(kBossRushEntries[portal]);
         set_bossrush_next_stage();
     }
 }
@@ -1757,8 +1923,7 @@ bool process_pending_midna_flow_action() {
         return true;
     }
 
-    if (sPendingMidnaFlowAction == PendingMidnaFlowAction::HubPortal &&
-        sPendingMidnaFlowPortal == kBossRushCavePortalIndex && dComIfGp_event_runCheck())
+    if (dComIfGp_event_runCheck())
     {
         close_midna_custom_dialog(daPy_py_c::getMidnaActor());
         return true;
@@ -1778,27 +1943,6 @@ bool process_pending_midna_flow_action() {
     }
 
     return true;
-}
-
-void update_cave_of_ordeals_warp() {
-    if (!sCaveOfOrdealsWarpPending) {
-        return;
-    }
-
-    if (dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek()) {
-        sCaveOfOrdealsWarpPending = false;
-        sCaveOfOrdealsWarpFrames = 0;
-        return;
-    }
-
-    if (++sCaveOfOrdealsWarpFrames < kCaveOfOrdealsWarpFallbackFrames) {
-        return;
-    }
-
-    sCaveOfOrdealsWarpPending = false;
-    sCaveOfOrdealsWarpFrames = 0;
-    dComIfGp_setNextStage(kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom,
-        kCaveOfOrdealsLayer, 0.0f, 12, 0, 0, 0, 1, 0);
 }
 
 mods::flow::RegisteredMessage register_midna_message(const mods::flow::MessageBuilder& builder) {
@@ -2765,7 +2909,7 @@ void finish_prompt_and_advance() {
 
 bool restore_bossrush_hub_load_state() {
     if (!is_boss_hub_stage_name() || boss_rush_state() == kBossRushStateHub ||
-        sCaveOfOrdealsWarpPending ||
+        sBossRushWarpPending ||
         dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek())
     {
         return false;
@@ -3193,6 +3337,14 @@ void update_bossrush() {
         return;
     }
 
+    if (sBossRushWarpInFlight) {
+        update_bossrush_warp();
+        return;
+    }
+    if (sHubArrivalWarpPending || sCaveArrivalWarpPending || sBossRushArrivalAnimating) {
+        return;
+    }
+
     if (restore_bossrush_hub_load_state()) {
         return;
     }
@@ -3208,8 +3360,7 @@ void update_bossrush() {
         reset_hub_runtime_when_away();
         reset_direct_final_boss_state();
         reset_bossrush_hazards();
-        update_cave_of_ordeals_warp();
-        if (!sCaveOfOrdealsWarpPending) {
+        if (!sBossRushWarpPending) {
             refresh_midna_root_flow_mode();
         }
         return;
@@ -3249,7 +3400,7 @@ void update_bossrush() {
             clear_boss_flags(entry);
             set_boss_rush_state(kBossRushStateHub);
             set_boss_rush_index(0);
-            set_bossrush_next_stage();
+            return_to_hub_after_replay_victory();
             return;
         }
 
@@ -3432,6 +3583,8 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
     if (bossRushActive &&
         is_vanilla_new_file_stage(stage, point, room, layer)) {
         prepare_bossrush_start();
+        sHubArrivalWarpPending = true;
+        sBossRushArrivalReady = false;
         set_next_stage_args(args, kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom,
             kBossRushReturnLayer);
     } else if (is_intro_skipped() && is_vanilla_new_file_stage(stage, point, room, layer)) {
@@ -3491,7 +3644,7 @@ bool redirect_replay_to_hub(const BossRushEntry& entry) {
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
     dComIfGp_event_reset();
-    set_bossrush_next_stage();
+    return_to_hub_after_replay_victory();
     return true;
 }
 
@@ -3592,19 +3745,75 @@ HookAction on_stage_change_pre(ModContext*, void* args, void* retval, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
-HookAction on_dungeon_return_warp_pre(ModContext*, void*, void*, void*) {
-    if (!sCaveOfOrdealsWarpPending || !is_bossrush_game_mode_active() ||
-        !is_boss_rush() ||
-        boss_rush_state() != kBossRushStateCaveOfOrdeals)
-    {
+HookAction on_skip_portal_obj_warp_pre(ModContext*, void*, void*, void*) {
+    if (!sBossRushWarpInFlight || !is_bossrush_game_mode_active() || !is_boss_rush()) {
         return HOOK_CONTINUE;
     }
 
-    sCaveOfOrdealsWarpPending = false;
-    sCaveOfOrdealsWarpFrames = 0;
-    dComIfGp_setNextStage(kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom,
-        kCaveOfOrdealsLayer, 0.0f, 12, 0, 0, 0, 1, 0);
+    if (sBossRushWarpPending) {
+        finish_bossrush_departure();
+    }
+    // Native PROC_WARP can call again while the fade is in progress. Do not let
+    // that second call overwrite our exact destination with an old map portal.
     return HOOK_SKIP_ORIGINAL;
+}
+
+HookAction on_dungeon_return_warp_pre(ModContext*, void*, void*, void*) {
+    if (sBossRushWarpPending && is_bossrush_game_mode_active() && is_boss_rush()) {
+        finish_bossrush_departure();
+        return HOOK_SKIP_ORIGINAL;
+    }
+
+    if (is_bossrush_game_mode_active() && is_boss_rush() &&
+        boss_rush_state() == kBossRushStateCaveOfOrdeals)
+    {
+        // The hub return item is armed when Cave's arrival animation starts.
+        // Let the native method perform the saved hub destination transition.
+        sHubArrivalWarpPending = true;
+        sBossRushArrivalReady = false;
+    }
+    return HOOK_CONTINUE;
+}
+
+// Player creation is the scene boundary, not the stage name: hub and the
+// Ganondorf duel deliberately share D_MN09C. This also precedes the first draw.
+void on_warp_player_create_post(ModContext*, void*, void* retval, void*) {
+    if (!is_bossrush_game_mode_active() || !is_boss_rush() || retval == nullptr ||
+        *static_cast<int*>(retval) != cPhs_COMPLEATE_e || sBossRushWarpPending) {
+        return;
+    }
+    sBossRushWarpInFlight = false;
+    sBossRushArrivalReady = true;
+}
+
+HookAction on_warp_player_execute_pre(ModContext*, void* args, void*, void*) {
+    if (!is_bossrush_game_mode_active() || !is_boss_rush()) {
+        return HOOK_CONTINUE;
+    }
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (sBossRushArrivalAnimating && link->mProcID != daAlink_c::PROC_WARP) {
+        sBossRushArrivalAnimating = false;
+    }
+    update_bossrush_arrival_warp(sHubArrivalWarpPending, kBossRushReturnStage);
+    update_bossrush_arrival_warp(sCaveArrivalWarpPending, kCaveOfOrdealsStage);
+    if (sBossRushWarpInFlight || sBossRushArrivalAnimating) {
+        // Native event-script warps are protected by an event; our independent
+        // warp must protect Link explicitly without stopping his actor update.
+        link->mDamageTimer = std::max<s16>(link->mDamageTimer, 2);
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction on_warp_player_draw_pre(ModContext*, void*, void* retval, void*) {
+    if (is_bossrush_game_mode_active() && is_boss_rush() && sBossRushArrivalReady &&
+        !sBossRushWarpInFlight && (sHubArrivalWarpPending || sCaveArrivalWarpPending)) {
+        // Fade/animation-resource waits must not expose a fully opaque Link.
+        if (retval != nullptr) {
+            *static_cast<int*>(retval) = 1;
+        }
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
 }
 
 void on_play_scene_update_post(ModContext*, void*, void*, void*) {
@@ -3621,6 +3830,13 @@ HookAction on_play_scene_draw_pre(ModContext*, void*, void*, void*) {
 }
 
 HookAction on_ganondorf_execute_pre(ModContext*, void* args, void* retval, void*) {
+    if (is_bossrush_game_mode_active() && is_boss_rush() && sBossRushWarpInFlight &&
+        (sBossRushDepartureStarted || dComIfGp_isEnableNextStage())) {
+        if (retval != nullptr) {
+            *static_cast<int*>(retval) = 1;
+        }
+        return HOOK_SKIP_ORIGINAL;
+    }
     if (!is_bossrush_game_mode_active() || !is_direct_final_ganondorf_active()) {
         return HOOK_CONTINUE;
     }
@@ -3663,8 +3879,13 @@ void reset_bossrush_runtime_state(bool deleteActors) {
     sSavePromptId = fpcM_ERROR_PROCESS_ID_e;
     clear_hub_confirm_state();
     clear_pending_midna_flow_action();
-    sCaveOfOrdealsWarpPending = false;
-    sCaveOfOrdealsWarpFrames = 0;
+    clear_bossrush_warp_request();
+    sBossRushWarpInFlight = false;
+    sBossRushArrivalReady = false;
+    sBossRushArrivalAnimating = false;
+    sBossRushResetRunOnDeparture = false;
+    sHubArrivalWarpPending = false;
+    sCaveArrivalWarpPending = false;
     reset_bossrush_hub_banner_state();
     if (deleteActors) {
         delete_hub_actors();
@@ -3707,6 +3928,24 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
     result = mods::hook_add_pre<DungeonReturnWarpHook>(svc_hook, on_dungeon_return_warp_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Cave warp hook");
+    }
+
+    result = mods::hook_add_pre<SkipPortalObjWarpHook>(svc_hook, on_skip_portal_obj_warp_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight Boss Rush warp destination hook");
+    }
+
+    result = mods::hook_add_post<WarpPlayerCreateHook>(svc_hook, on_warp_player_create_post);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight warp scene-boundary hook");
+    }
+    result = mods::hook_add_pre<WarpPlayerExecuteHook>(svc_hook, on_warp_player_execute_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight warp arrival hook");
+    }
+    result = mods::hook_add_pre<WarpPlayerDrawHook>(svc_hook, on_warp_player_draw_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight warp visibility hook");
     }
 
     result = mods::hook_add_pre<MeterExecuteHook>(svc_hook, before_meter_execute);
@@ -3791,8 +4030,32 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     {
         return result;
     }
+    if (const ModResult result = uninstall_bossrush_hook<SkipPortalObjWarpHook>(
+            error, "failed to uninstall Dawnlight Boss Rush warp destination hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
     if (const ModResult result = uninstall_bossrush_hook<MeterExecuteHook>(
             error, "failed to uninstall Dawnlight Midna hub prompt meter hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<WarpPlayerCreateHook>(
+            error, "failed to uninstall Dawnlight warp scene-boundary hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<WarpPlayerExecuteHook>(
+            error, "failed to uninstall Dawnlight warp arrival hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<WarpPlayerDrawHook>(
+            error, "failed to uninstall Dawnlight warp visibility hook");
         result != MOD_OK)
     {
         return result;
@@ -3909,6 +4172,17 @@ ModResult on_bossrush_tick(void*, ModError*) {
 
 }  // namespace
 
+bool get_boss_portal_symbol(unsigned index, BossPortalSymbolSurface& surface, bool& defeated) {
+    static_assert(kBossPortalSymbolCount == kBossRushEntryCount);
+    if (index >= kBossRushEntryCount || !is_bossrush_game_mode_active() ||
+        !is_bossrush_hub_active() || !can_update_bossrush_gameplay() ||
+        dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek() || dComIfGp_isPauseFlag() ||
+        ui_document_visible() || sHubPortalIds[index] == fpcM_ERROR_PROCESS_ID_e) return false;
+    if (!boss_portal_mirror_surface(sHubPortalIds[index], surface)) return false;
+    defeated = bossrush_portal_defeated(static_cast<u8>(index));
+    return true;
+}
+
 ModResult register_new_save_modes(ModError* error) {
     register_bossrush_hub_music_overlay();
 
@@ -3962,6 +4236,9 @@ ModResult register_new_save_modes(ModError* error) {
         return mods::set_error(error, result, "failed to register Dawnlight Boss Rush game mode");
     }
 
+    result = initialize_boss_portal_mirrors(error);
+    if (result != MOD_OK) return result;
+    initialize_boss_portal_symbols();
     return MOD_OK;
 }
 
@@ -3970,6 +4247,7 @@ void update_new_save_modes() {
 }
 
 void shutdown_new_save_modes() {
+    shutdown_boss_portal_symbols();
     if (svc_game_mode != nullptr) {
         ModResult result = svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId);
         if (result != MOD_OK) {
@@ -3986,6 +4264,7 @@ void shutdown_new_save_modes() {
     unregister_bossrush_title_logo();
     unregister_bossrush_hub_music_overlay();
     retry_pending_actor_deletes();
+    shutdown_boss_portal_mirrors();
     sBossRushGameModeActive = false;
 }
 

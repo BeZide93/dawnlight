@@ -1,9 +1,10 @@
 # Boss portal symbols
 
-Each of the 18 boss and miniboss portals in the main-branch Boss Rush hub has an
-original abstract emblem. The emblems float above the live portals and face the
-camera. Blue means undefeated; red means defeated, using the same persistent
-save flags as the portals themselves.
+Each of the 18 boss and miniboss destinations in the Boss Rush hub is a complete
+Mirror of Twilight from the Mirror Chamber. It replaces that boss's floor portal.
+An original abstract emblem sits on the mirror face: blue means undefeated, red
+means defeated, using the existing persistent save flags. The center Boss Rush
+and Cave of Ordeals floor portals remain available.
 
 ![Original emblem artwork](../art/boss-portal-symbols.svg)
 
@@ -38,22 +39,34 @@ strings are split into small chunks for MSVC compatibility. The runtime creates
 five mip levels and uses linear filtering for smooth edges at different distances.
 Only this original artwork is added to the packaged mod.
 
-## Rendering and lifecycle
+## Mirrors and rendering
 
-The renderer registers a GfxService scene hook and creates its GPU resources
-lazily when a live hub portal is visible. It does not modify game model materials
-or GX state. One batch draws camera-facing quads with a subtle vertical bob,
-normal scene depth testing and no depth writes. Transparent quads are sorted
-back to front. Other stages, transitions and menus do not draw these symbols.
+A dedicated `DLBMir` ActorService profile loads the complete `u_mr_mirror` model
+from the player's `MR-Table` archive at runtime. No Nintendo model or texture is
+included in the mod. The actor uses the engine's shared archive references and
+per-actor model heaps. It does not run Mirror Chamber switches, stairs, effects,
+cutscenes, or the native reflection actor's singleton logic.
 
-Pipelines match the current scene layout, including MSAA, forward/reversed depth
-and additional render targets used by deferred rendering. Only scene color is
-written. Game state and vertex generation stay on the game thread; the render
-worker receives a small immutable batch and only calls WebGPU. Resources are
-released during mod shutdown.
+All 18 mirrors face the hub center. Their 440-unit diameter fits the existing
+18-place ring. The renderer measures the loaded rigid mesh, compensates its
+bind-pose root/pivot and mounts the model and emblem in the same world frame.
+The symbol face is about 361 units across, compared with the previous 240-unit
+billboard. A nearly opaque dark circular face and slightly strengthened strokes
+improve distance contrast. The image stays fixed to the mirror, with a readable
+label on the back as well. The original stone rim remains visible.
 
-The center Boss Rush and Cave of Ordeals portals, portal prompts, hub supplies,
-boss entry logic and save format retain their main-branch behavior.
+The existing GfxService renderer draws the emblem faces with scene depth testing
+and depth writes. Transparent corners are discarded; later translucent effects
+cannot paint through the solid mirror face. Pipelines match MSAA, reversed depth
+and deferred render layouts. It never edits the model's materials or GX state.
+GPU resources initialize lazily and are released on shutdown. ActorService drains
+the mirror actors before removing their profile.
+
+Hub spawning retains live and asynchronously loading IDs, retries missing slots
+individually and attempts at most one destination per tick. Midna's existing
+Fight / Yes / No prompt only becomes available once its mirror is ready. Hub
+supplies, boss entry logic, saved progress and both center portals retain their
+existing behavior.
 
 ## Validation
 
@@ -64,6 +77,18 @@ boss entry logic and save format retain their main-branch behavior.
   texture upload, mip chain, bindings and 12 pipeline combinations: forward and
   reversed depth, 1×/4× MSAA, and one/two/three color attachments.
 
-The validation backend does not render a game scene. In-game verification is
-still needed: first entry into a fresh Boss Rush save, defeat/reload color
-persistence, camera occlusion, re-entry from a boss and graphics setting changes.
+- Geometry tests cover all 18 facing directions with each possible local disc
+  axis, offset pivots, front/back surface alignment and invalid bounds.
+- An extracted spawn-function harness covers delayed loads, single-slot retries,
+  missing actors and keeping exactly 18 mirrors plus two center floor portals.
+
+Run the geometry test with:
+
+```sh
+c++ -std=c++20 tests/boss_mirror_geometry_test.cpp -o /tmp/mirror-test
+/tmp/mirror-test
+```
+
+The validation backend does not load game archives or render a game scene.
+In-game verification is still needed for the original model's fit, visibility
+from a distance, first hub entry, Midna prompts, defeat/reload colors and returns.

@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "boss_portal_symbols.hpp"
+#include "boss_portal_mirrors.hpp"
 #include "save_compat.hpp"
 #include "save_state.hpp"
 #include "service_imports.hpp"
@@ -752,30 +753,17 @@ obj_gb_class* hub_barrier_actor() {
     return static_cast<obj_gb_class*>(fopAcM_SearchByID(sHubBarrierId));
 }
 
+bool hub_actor_exists_or_loading(fpc_ProcID id) {
+    return id != fpcM_ERROR_PROCESS_ID_e &&
+           (fpcM_IsCreating(id) || fopAcM_SearchByID(id) != nullptr);
+}
+
 void spawn_hub_actors() {
     start_bossrush_hub_music();
     ensure_hub_actor_ids_initialized();
-    if (sHubActorsSpawned) {
-        bool actorsAlive = sHubBarrierId != fpcM_ERROR_PROCESS_ID_e &&
-                           fopAcM_SearchByID(sHubBarrierId) != NULL;
-        for (u8 i = 0; actorsAlive && i < kBossRushHubPortalCount; i++) {
-            actorsAlive = sHubPortalIds[i] != fpcM_ERROR_PROCESS_ID_e &&
-                          fopAcM_SearchByID(sHubPortalIds[i]) != NULL;
-        }
-
-        if (actorsAlive) {
-            arm_ganondorf_barrier(hub_barrier_actor());
-            spawn_hub_supply_actors();
-            return;
-        }
-
-        reset_hub_actor_ids();
-    }
-
     cXyz center = hub_center();
     csXyz barrierAngle(kDirectFinalBarrierAngleX, 0, 0);
-    if (sHubBarrierId == fpcM_ERROR_PROCESS_ID_e ||
-        fopAcM_SearchByID(sHubBarrierId) == NULL)
+    if (!hub_actor_exists_or_loading(sHubBarrierId))
     {
         dComIfGs_onOneZoneSwitch(kDirectFinalBarrierOnSwitch, kBossRushReturnRoom);
         dComIfGs_offOneZoneSwitch(kDirectFinalBarrierOffSwitch, kBossRushReturnRoom);
@@ -786,31 +774,26 @@ void spawn_hub_actors() {
         }
     }
 
+    // Keep each live/loading slot. Retrying a missing actor must not reset
+    // all IDs and duplicate the other mirrors during asynchronous archive loads.
     u8 portalsCreated = 0;
-    while (sHubNextPortalToSpawn < kBossRushHubPortalCount &&
-           portalsCreated < kBossRushHubPortalCreateBatch)
-    {
+    for (u8 checked = 0; checked < kBossRushHubPortalCount; ++checked) {
         const u8 portal = sHubNextPortalToSpawn;
+        sHubNextPortalToSpawn = (sHubNextPortalToSpawn + 1) % kBossRushHubPortalCount;
+        if (hub_actor_exists_or_loading(sHubPortalIds[portal])) continue;
         cXyz pos = hub_portal_position(portal);
         csXyz rot = hub_portal_rotation(portal);
-        const fpc_ProcID portalId = fopAcM_createWarpHole(
-            &pos, &rot, kBossRushReturnRoom, kBossRushHubWarpSceneListNo, 0, 0xff);
-        if (portalId == fpcM_ERROR_PROCESS_ID_e) {
-            return;
-        }
+        const fpc_ProcID portalId = portal < kBossRushEntryCount
+            ? create_boss_portal_mirror(portal, pos, static_cast<s16>(rot.y + 0x8000), kBossRushReturnRoom)
+            : fopAcM_createWarpHole(&pos, &rot, kBossRushReturnRoom, kBossRushHubWarpSceneListNo, 0, 0xff);
         sHubPortalIds[portal] = portalId;
-        sHubNextPortalToSpawn++;
-        portalsCreated++;
+        // Bound both successful and failed attempts; the cursor gives every slot a turn.
+        if (++portalsCreated >= kBossRushHubPortalCreateBatch) break;
     }
-
-    if (sHubNextPortalToSpawn < kBossRushHubPortalCount) {
-        arm_ganondorf_barrier(hub_barrier_actor());
-        return;
-    }
-
+    sHubActorsSpawned = std::all_of(std::begin(sHubPortalIds), std::end(sHubPortalIds),
+                                    hub_actor_exists_or_loading);
     arm_ganondorf_barrier(hub_barrier_actor());
-    sHubActorsSpawned = true;
-    spawn_hub_supply_actors();
+    if (sHubActorsSpawned) spawn_hub_supply_actors();
 }
 
 int touched_hub_portal() {
@@ -820,6 +803,10 @@ int touched_hub_portal() {
     }
 
     for (u8 i = 0; i < kBossRushHubPortalCount; i++) {
+        if (i < kBossRushEntryCount) {
+            BossPortalSymbolSurface surface;
+            if (!boss_portal_mirror_surface(sHubPortalIds[i], surface)) continue;
+        }
         cXyz pos = hub_portal_position(i);
         f32 distXZ = player->current.pos.absXZ(pos);
         f32 distY = player->current.pos.y - pos.y;
@@ -3910,15 +3897,13 @@ ModResult on_bossrush_tick(void*, ModError*) {
 
 }  // namespace
 
-bool get_boss_portal_symbol(unsigned index, cXyz& position, bool& defeated) {
+bool get_boss_portal_symbol(unsigned index, BossPortalSymbolSurface& surface, bool& defeated) {
     static_assert(kBossPortalSymbolCount == kBossRushEntryCount);
     if (index >= kBossRushEntryCount || !is_bossrush_game_mode_active() ||
         !is_bossrush_hub_active() || !can_update_bossrush_gameplay() ||
         dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek() || dComIfGp_isPauseFlag() ||
         ui_document_visible() || sHubPortalIds[index] == fpcM_ERROR_PROCESS_ID_e) return false;
-    const auto* portal = fopAcM_SearchByID(sHubPortalIds[index]);
-    if (portal == nullptr || fpcM_IsCreating(sHubPortalIds[index])) return false;
-    position = portal->current.pos;
+    if (!boss_portal_mirror_surface(sHubPortalIds[index], surface)) return false;
     defeated = bossrush_portal_defeated(static_cast<u8>(index));
     return true;
 }
@@ -3976,6 +3961,8 @@ ModResult register_new_save_modes(ModError* error) {
         return mods::set_error(error, result, "failed to register Dawnlight Boss Rush game mode");
     }
 
+    result = initialize_boss_portal_mirrors(error);
+    if (result != MOD_OK) return result;
     initialize_boss_portal_symbols();
     return MOD_OK;
 }
@@ -4002,6 +3989,7 @@ void shutdown_new_save_modes() {
     unregister_bossrush_title_logo();
     unregister_bossrush_hub_music_overlay();
     retry_pending_actor_deletes();
+    shutdown_boss_portal_mirrors();
     sBossRushGameModeActive = false;
 }
 

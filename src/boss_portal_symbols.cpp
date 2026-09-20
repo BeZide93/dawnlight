@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -15,7 +14,7 @@
 namespace dawnlight {
 namespace {
 static_assert(kBossPortalSymbolCount == portal_art::kCount);
-struct Vertex { float clip[4], uv[2], color[4]; };
+struct Vertex { float clip[4], uv[2], color[4], face[2]; };
 struct Draw {
     GfxRange vertices;
     uint32_t count;
@@ -41,20 +40,33 @@ struct VertexOut {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
     @location(1) color: vec4f,
+    @location(2) face: vec2f,
 };
 @group(0) @binding(0) var mask: texture_2d<f32>;
 @group(0) @binding(1) var maskSampler: sampler;
 @vertex fn vs(@location(0) position: vec4f, @location(1) uv: vec2f,
-              @location(2) color: vec4f) -> VertexOut {
+              @location(2) color: vec4f, @location(3) face: vec2f) -> VertexOut {
     var out: VertexOut;
     out.position = position;
     out.uv = uv;
     out.color = color;
+    out.face = face;
     return out;
 }
 @fragment fn fs(in: VertexOut) -> @location(0) vec4f {
-    let alpha = textureSample(mask, maskSampler, in.uv).r * in.color.a;
-    return vec4f(in.color.rgb, alpha);
+    // A small symmetric stroke expansion survives minification without jagged outlines.
+    let texel = vec2f(0.65) / vec2f(textureDimensions(mask));
+    var ink = textureSample(mask, maskSampler, in.uv).r;
+    ink = max(ink, textureSample(mask, maskSampler, in.uv + vec2f(texel.x, 0)).r);
+    ink = max(ink, textureSample(mask, maskSampler, in.uv - vec2f(texel.x, 0)).r);
+    ink = max(ink, textureSample(mask, maskSampler, in.uv + vec2f(0, texel.y)).r);
+    ink = max(ink, textureSample(mask, maskSampler, in.uv - vec2f(0, texel.y)).r);
+    let radius = length(in.face - vec2f(0.5));
+    let disc = 1.0 - smoothstep(0.485, 0.5, radius);
+    if (disc < 0.001) { discard; }
+    let rim = smoothstep(0.455, 0.47, radius) * (1.0 - smoothstep(0.47, 0.485, radius));
+    let background = vec3f(0.004, 0.009, 0.018) + in.color.rgb * rim * 0.25;
+    return vec4f(mix(background, in.color.rgb, ink), disc * in.color.a);
 }
 )";
 
@@ -172,17 +184,19 @@ WGPURenderPipeline pipeline_for(const GfxDeviceInfo& device, const GfxRenderTarg
     for (const auto& pipeline : sPipelines) {
         if (pipeline.layout == layout.key && pipeline.reversed == device.uses_reversed_z) return pipeline.handle;
     }
-    WGPUVertexAttribute attributes[3] = {WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT};
+    WGPUVertexAttribute attributes[4] = {WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT};
     attributes[0].format = WGPUVertexFormat_Float32x4;
     attributes[0].offset = offsetof(Vertex, clip);
     attributes[1].format = WGPUVertexFormat_Float32x2;
     attributes[1].offset = offsetof(Vertex, uv);
     attributes[2].format = WGPUVertexFormat_Float32x4;
     attributes[2].offset = offsetof(Vertex, color);
-    for (unsigned i = 0; i < 3; ++i) attributes[i].shaderLocation = i;
+    attributes[3].format = WGPUVertexFormat_Float32x2;
+    attributes[3].offset = offsetof(Vertex, face);
+    for (unsigned i = 0; i < 4; ++i) attributes[i].shaderLocation = i;
     WGPUVertexBufferLayout buffer = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
     buffer.arrayStride = sizeof(Vertex);
-    buffer.attributeCount = 3;
+    buffer.attributeCount = 4;
     buffer.attributes = attributes;
     WGPUBlendState blend = WGPU_BLEND_STATE_INIT;
     blend.color.srcFactor = WGPUBlendFactor_SrcAlpha;
@@ -197,7 +211,7 @@ WGPURenderPipeline pipeline_for(const GfxDeviceInfo& device, const GfxRenderTarg
     fragment.targets = targets;
     WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
     depth.format = layout.depth_stencil_format;
-    depth.depthWriteEnabled = WGPUOptionalBool_False;
+    depth.depthWriteEnabled = WGPUOptionalBool_True;
     depth.depthCompare = device.uses_reversed_z ? WGPUCompareFunction_GreaterEqual : WGPUCompareFunction_LessEqual;
     WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
     desc.label = label("Dawnlight boss portal symbols");
@@ -229,22 +243,34 @@ void draw(ModContext*, const GfxDrawContext* context, const void* data, size_t s
 void stage(ModContext*, const GfxStageContext* context, void*) {
     if (sFailed || !context->game_view) return;
     const auto& view = *static_cast<const view_class*>(context->game_view);
-    struct Symbol { unsigned index; float center[3]; bool defeated; };
+    struct Symbol {
+        unsigned index;
+        BossPortalSymbolSurface surface;
+        float cameraZ;
+        bool defeated;
+    };
     std::array<Symbol, kBossPortalSymbolCount> symbols;
     unsigned count = 0;
-    const double time = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     for (unsigned index = 0; index < kBossPortalSymbolCount; ++index) {
-        cXyz world;
+        BossPortalSymbolSurface surface;
         bool defeated;
-        if (!get_boss_portal_symbol(index, world, defeated)) continue;
-        world.y += 280.0f + 8.0f * static_cast<float>(std::sin(time*1.4 + index*0.4));
-        Symbol symbol = {index, {}, defeated};
-        for (unsigned row = 0; row < 3; ++row) {
-            symbol.center[row] = view.viewMtx[row][0]*world.x + view.viewMtx[row][1]*world.y +
-                                 view.viewMtx[row][2]*world.z + view.viewMtx[row][3];
-        }
-        if (symbol.center[2] >= -view.near_) continue;
-        symbols[count++] = symbol;
+        if (!get_boss_portal_symbol(index, surface, defeated)) continue;
+        const auto& n = surface.normal;
+        const cXyz eye = view.lookat.eye - surface.center;
+        const float side = eye.x*n.x + eye.y*n.y + eye.z*n.z >= 0 ? 1.0f : -1.0f;
+        // Fixed to the visible face of the disc, never a camera-facing billboard.
+        // Also label the back so walking behind a mirror still identifies its boss.
+        surface.center += n*((surface.halfDepth+1.5f)*side);
+        surface.right *= side;
+        const auto& c = surface.center;
+        const float z = view.viewMtx[2][0]*c.x + view.viewMtx[2][1]*c.y +
+                        view.viewMtx[2][2]*c.z + view.viewMtx[2][3];
+        const auto& r = surface.right;
+        const auto& u = surface.up;
+        const float radius = 0.5f*(std::abs(view.viewMtx[2][0]*r.x + view.viewMtx[2][1]*r.y + view.viewMtx[2][2]*r.z) +
+                                  std::abs(view.viewMtx[2][0]*u.x + view.viewMtx[2][1]*u.y + view.viewMtx[2][2]*u.z));
+        if (z-radius >= -view.near_) continue;
+        symbols[count++] = {index, surface, z, defeated};
     }
     if (!count) return;
     GfxDeviceInfo device = GFX_DEVICE_INFO_INIT;
@@ -262,7 +288,7 @@ void stage(ModContext*, const GfxStageContext* context, void*) {
         svc_log->warn(mod_ctx, "Boss portal symbols: pipeline initialization failed");
         return;
     }
-    std::sort(symbols.begin(), symbols.begin()+count, [](const Symbol& a, const Symbol& b) { return a.center[2] < b.center[2]; });
+    std::sort(symbols.begin(), symbols.begin()+count, [](const Symbol& a, const Symbol& b) { return a.cameraZ < b.cameraZ; });
     std::array<Vertex, kBossPortalSymbolCount*6> vertices;
     unsigned vertexCount = 0;
     constexpr float corners[6][2] = {{0,0},{1,0},{0,1},{0,1},{1,0},{1,1}};
@@ -270,12 +296,19 @@ void stage(ModContext*, const GfxStageContext* context, void*) {
         const auto& symbol = symbols[i];
         for (const auto& corner : corners) {
             auto& vertex = vertices[vertexCount++];
-            const float x = symbol.center[0] + (corner[0]-0.5f)*240.0f;
-            const float y = symbol.center[1] + (0.5f-corner[1])*240.0f;
-            for (unsigned row = 0; row < 4; ++row) {
-                vertex.clip[row] = view.projMtx[row][0]*x + view.projMtx[row][1]*y +
-                                   view.projMtx[row][2]*symbol.center[2] + view.projMtx[row][3];
+            const auto& face = symbol.surface;
+            const cXyz world = face.center + face.right*(corner[0]-0.5f) + face.up*(0.5f-corner[1]);
+            float camera[3];
+            for (unsigned row = 0; row < 3; ++row) {
+                camera[row] = view.viewMtx[row][0]*world.x + view.viewMtx[row][1]*world.y +
+                              view.viewMtx[row][2]*world.z + view.viewMtx[row][3];
             }
+            for (unsigned row = 0; row < 4; ++row) {
+                vertex.clip[row] = view.projMtx[row][0]*camera[0] + view.projMtx[row][1]*camera[1] +
+                                   view.projMtx[row][2]*camera[2] + view.projMtx[row][3];
+            }
+            vertex.face[0] = corner[0];
+            vertex.face[1] = corner[1];
             // GX clip depth is [-w, 0]. Match Aurora's projection conversion.
             vertex.clip[2] = device.uses_reversed_z ? -vertex.clip[2] : vertex.clip[2]+vertex.clip[3];
             vertex.uv[0] = (symbol.index%portal_art::kColumns + corner[0])*portal_art::kCell / portal_art::kWidth;
@@ -283,7 +316,7 @@ void stage(ModContext*, const GfxStageContext* context, void*) {
             vertex.color[0] = symbol.defeated ? 1.0f : 0.12f;
             vertex.color[1] = symbol.defeated ? 0.16f : 0.58f;
             vertex.color[2] = symbol.defeated ? 0.12f : 1.0f;
-            vertex.color[3] = 0.94f;
+            vertex.color[3] = 0.99f;
         }
     }
     Draw batch = {{}, vertexCount, pipeline, sBindings};

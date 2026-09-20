@@ -2,42 +2,39 @@
 
 Each of the 18 boss and miniboss destinations in the Boss Rush hub is a complete
 Mirror of Twilight from the Mirror Chamber. It replaces that boss's floor portal.
-An original abstract emblem sits on the mirror face: blue means undefeated, red
-means defeated, using the existing persistent save flags. The center Boss Rush
+A supplied black boss icon sits over translucent colored glass on the mirror
+face: light blue means undefeated, red means defeated, using the existing
+persistent save flags. The icon itself stays black in both states. The center Boss Rush
 and Cave of Ordeals floor portals remain available.
-
-![Original emblem artwork](../art/boss-portal-symbols.svg)
 
 ## Artwork and provenance
 
-`art/boss-portal-symbols.svg` is the editable source, newly drawn for Dawnlight.
-Curved paths, rounded strokes and a shared broken-ring frame give the symbols a
-consistent appearance. The motifs refer to weapons, elements or broad creature
-shapes; they contain no extracted game textures, model renders or traced game
-art. The artwork, generator and renderer were written for this change. No code
+`art/boss-icons/` contains the 18 transparent PNGs supplied by the user in
+`Twilight_Princess_Boss_Symbole_Schwarz_PNG.zip`, preserved byte for byte.
+These replace the previous hand-drawn SVG emblems. The generator matches each
+filename to the boss name in `kBossRushEntries` in `src/new_save_modes.cpp`,
+including spaces converted to underscores; missing or extra PNGs fail generation.
+No game archive is read by the generator. The mod embeds only the supplied icons'
+alpha masks; the game's mirror models/textures are loaded at runtime. No code
 or assets were taken from Twilit Essentials or PR #23.
-
-The SVG's 18 symbols follow `kBossRushEntries` in `src/new_save_modes.cpp`:
-boomerang, plant, rock, flame/chains, toad, tentacles, spectral sword, skull,
-flail, ice crystal, armor, spider, winged sword, dragon, mask, marionette,
-boar and crowned sword. The generator checks the names and ordering.
 
 ## Regenerate
 
 Normal builds use the checked-in generated header and require no graphics tools.
-To edit the artwork and regenerate the embedded mask:
+To replace the source PNGs and regenerate the embedded mask:
 
 ```sh
-python -m pip install CairoSVG==2.9.1 Pillow==12.3.0
+python -m pip install Pillow==12.3.0
 python tools/generate_boss_symbols.py --preview /tmp/boss-symbols.png
 ```
 
-The generator rasterizes each vector at 1024×1024 and downsamples to 256×256
-with Lanczos filtering. The atlas contains only alpha, so both state colors use
-the exact same shape. A bounded RLE decoder reads the embedded atlas. Base64
-strings are split into small chunks for MSVC compatibility. The runtime creates
-five mip levels and uses linear filtering for smooth edges at different distances.
-Only this original artwork is added to the packaged mod.
+The generator crops transparent margins and fits each silhouette inside the
+circular face, preserving aspect ratio and all supplied details. Lanczos resizing
+produces antialiased 256×256 masks. The atlas contains only alpha; the shader
+renders it as black ink in both states. A bounded RLE decoder reads the embedded
+atlas. Base64 strings are split into small chunks for MSVC compatibility. The
+runtime creates five mip levels and uses linear filtering for smooth edges at
+different distances. The optional preview shows both states over a checkerboard.
 
 ## Mirrors and rendering
 
@@ -62,8 +59,10 @@ size follows the loaded vanilla disc dimensions, inset to leave the rim visible.
 The animation remains frozen in the raised pose and its shared joint calculator
 is restored after each evaluation/draw.
 
-A dark circular face and slightly strengthened strokes improve contrast. The
-image stays fixed to the inward-facing front; looking from behind hides the
+A circular light-blue overlay at 58% opacity lets the original mirror show
+through; defeated bosses use a red overlay at the same opacity. The supplied
+black icon is composited over it with its own alpha, so solid icon pixels remain
+opaque black while gaps reveal the translucent background. The image stays fixed to the inward-facing front; looking from behind hides the
 symbol instead of moving it onto the back. The native attachment, tilt and
 relative position between the mirror and its frame are preserved. The symbol plane is fitted
 to the loaded mesh's broad front surface using its vertex positions and authored
@@ -89,7 +88,9 @@ existing behavior.
 ## Validation
 
 - Local Linux release-with-debug-info build and `.dusk` packaging passed.
-- C++ atlas decoding was compared byte for byte with the SVG generator output.
+- C++ atlas decoding was compared byte for byte with the PNG generator output.
+- All 18 source PNGs match the supplied ZIP byte for byte; silhouettes fit inside
+  the circular face without stretching or clipping.
 - All 18 artwork names and portal indices match.
 - The pinned Dawn library's validation backend accepted the actual shader,
   texture upload, mip chain, bindings and 12 pipeline combinations: forward and

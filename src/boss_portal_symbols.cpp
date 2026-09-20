@@ -54,19 +54,16 @@ struct VertexOut {
     return out;
 }
 @fragment fn fs(in: VertexOut) -> @location(0) vec4f {
-    // A small symmetric stroke expansion survives minification without jagged outlines.
-    let texel = vec2f(0.65) / vec2f(textureDimensions(mask));
-    var ink = textureSample(mask, maskSampler, in.uv).r;
-    ink = max(ink, textureSample(mask, maskSampler, in.uv + vec2f(texel.x, 0)).r);
-    ink = max(ink, textureSample(mask, maskSampler, in.uv - vec2f(texel.x, 0)).r);
-    ink = max(ink, textureSample(mask, maskSampler, in.uv + vec2f(0, texel.y)).r);
-    ink = max(ink, textureSample(mask, maskSampler, in.uv - vec2f(0, texel.y)).r);
+    let ink = textureSample(mask, maskSampler, in.uv).r;
     let radius = length(in.face - vec2f(0.5));
     let disc = 1.0 - smoothstep(0.485, 0.5, radius);
     if (disc < 0.001) { discard; }
-    let rim = smoothstep(0.455, 0.47, radius) * (1.0 - smoothstep(0.47, 0.485, radius));
-    let background = vec3f(0.004, 0.009, 0.018) + in.color.rgb * rim * 0.25;
-    return vec4f(mix(background, in.color.rgb, ink), disc * in.color.a);
+    // Opaque black ink OVER translucent colored glass. Composite locally in
+    // premultiplied form, then return straight alpha for the pipeline blend.
+    // This keeps the silhouette black while the mirror shows through its gaps.
+    let glassAlpha = (1.0 - ink) * in.color.a;
+    let alpha = ink + glassAlpha;
+    return vec4f(in.color.rgb * glassAlpha / max(alpha, 0.001), disc * alpha);
 }
 )";
 
@@ -110,7 +107,7 @@ bool create_art(const GfxDeviceInfo& device) {
     std::vector<uint8_t> pixels;
     if (!decode_mask(pixels)) return false;
     WGPUTextureDescriptor texture = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    texture.label = label("Dawnlight original boss emblems");
+    texture.label = label("Dawnlight supplied boss icons");
     texture.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     texture.dimension = WGPUTextureDimension_2D;
     texture.size = {portal_art::kWidth, portal_art::kHeight, 1};
@@ -311,10 +308,10 @@ void stage(ModContext*, const GfxStageContext* context, void*) {
             vertex.clip[2] = device.uses_reversed_z ? -vertex.clip[2] : vertex.clip[2]+vertex.clip[3];
             vertex.uv[0] = (symbol.index%portal_art::kColumns + corner[0])*portal_art::kCell / portal_art::kWidth;
             vertex.uv[1] = (symbol.index/portal_art::kColumns + corner[1])*portal_art::kCell / portal_art::kHeight;
-            vertex.color[0] = symbol.defeated ? 1.0f : 0.12f;
-            vertex.color[1] = symbol.defeated ? 0.16f : 0.58f;
-            vertex.color[2] = symbol.defeated ? 0.12f : 1.0f;
-            vertex.color[3] = 0.99f;
+            vertex.color[0] = symbol.defeated ? 1.0f : 0.55f;
+            vertex.color[1] = symbol.defeated ? 0.30f : 0.84f;
+            vertex.color[2] = symbol.defeated ? 0.25f : 1.0f;
+            vertex.color[3] = 0.58f;
         }
     }
     Draw batch = {{}, vertexCount, pipeline, sBindings};

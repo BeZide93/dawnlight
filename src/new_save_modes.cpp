@@ -35,9 +35,14 @@ class JPABaseEmitter;
 #include "d/d_meter2.h"
 #include "d/d_meter2_info.h"
 #include "d/d_msg_object.h"
+#include "d/d_resorce.h"
 #include "d/d_s_name.h"
 #include "d/d_save.h"
 #include "d/d_stage.h"
+#include "d/d_lib.h"
+#include "JSystem/JKernel/JKRAramArchive.h"
+#include "JSystem/JKernel/JKRExpHeap.h"
+#include "Z2AudioLib/Z2SceneMgr.h"
 #include "f_op/f_op_msg_mng.h"
 #include "f_op/f_op_overlap_mng.h"
 #include "f_pc/f_pc_name.h"
@@ -72,6 +77,12 @@ DEFINE_HOOK(
         &dComIfGp_setNextStage),
     SetNextStageHook);
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
+DEFINE_HOOK(&dRes_control_c::setRes, BossRushAreaResourceHook);
+DEFINE_HOOK(&dStage_roomControl_c::roomDzs_c::add, BossRushAreaRoomDataHook);
+DEFINE_HOOK(&Z2SceneMgr::setSceneName, BossRushAreaAudioHook);
+DEFINE_HOOK(&dSv_memBit_c::isDungeonItem, BossRushAreaDungeonBitHook);
+DEFINE_HOOK(&dSv_info_c::isSwitch, BossRushAreaSwitchHook);
+DEFINE_HOOK(&dStage_searchName, BossRushAreaActorNameHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
@@ -194,6 +205,14 @@ constexpr s8 kBossRushReturnRoom = 0;
 constexpr char kBossRushReturnStage[] = "D_MN09C";
 constexpr s16 kBossRushReturnPoint = 0;
 constexpr s8 kBossRushReturnLayer = 0;
+// Private runtime identity for the empty connector room. Its resources are
+// supplied by the vanilla Darknut arena through the hooks below.
+constexpr char kBossRushDarknutAreaStage[] = "D_DLBR0";
+constexpr char kBossRushDarknutAreaResourcePath[] = "/res/Stage/D_DLBR0/";
+constexpr char kBossRushDarknutSourceStage[] = "D_MN06B";
+constexpr s16 kBossRushDarknutAreaPoint = -1;
+constexpr s8 kBossRushDarknutAreaRoom = 51;
+constexpr s8 kBossRushDarknutAreaLayer = 0;
 constexpr u8 kBossRushStateHub = 0;
 constexpr u8 kBossRushStateRun = 1;
 constexpr u8 kBossRushStateReplay = 2;
@@ -669,9 +688,142 @@ bool is_boss_hub_stage_name() {
            dComIfGp_getStartStageRoomNo() == kBossRushReturnRoom;
 }
 
+bool is_bossrush_darknut_area_stage() {
+    return std::strcmp(dComIfGp_getStartStageName(), kBossRushDarknutAreaStage) == 0 &&
+           dComIfGp_getStartStageRoomNo() == kBossRushDarknutAreaRoom;
+}
+
 bool is_bossrush_hub_active() {
     return !sBossRushWarpInFlight && is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
            is_boss_hub_stage_name();
+}
+
+bool is_bossrush_darknut_area_active() {
+    return is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
+           is_bossrush_darknut_area_stage();
+}
+
+// Supply the cleared-room state before native actors are created. This also
+// works on save reload and does not change the real Temple of Time boss flags.
+HookAction on_bossrush_area_dungeon_bit_pre(ModContext*, void* args, void* retval, void*) {
+    if (!is_bossrush_darknut_area_active() || args == nullptr || retval == nullptr) {
+        return HOOK_CONTINUE;
+    }
+    const int bit = mods::arg<int>(args, 1);
+    if (bit != dSv_memBit_c::STAGE_BOSS_ENEMY &&
+        bit != dSv_memBit_c::STAGE_BOSS_ENEMY_2 &&
+        bit != dSv_memBit_c::STAGE_BOSS_DEMO) {
+        return HOOK_CONTINUE;
+    }
+    *static_cast<s32*>(retval) = 1;
+    return HOOK_SKIP_ORIGINAL;
+}
+
+HookAction on_bossrush_area_switch_pre(ModContext*, void* args, void* retval, void*) {
+    if (!is_bossrush_darknut_area_active() || args == nullptr || retval == nullptr) {
+        return HOOK_CONTINUE;
+    }
+    const int bit = mods::arg<int>(args, 1);
+    const int room = mods::arg<int>(args, 2);
+    if ((room != kBossRushDarknutAreaRoom && room != -1) || bit < 0 || bit >= 0xff) {
+        return HOOK_CONTINUE;
+    }
+    // Initialize the room's gate in its open state rather than triggering the
+    // native post-Darknut opening event after Link has already appeared.
+    *static_cast<BOOL*>(retval) = TRUE;
+    return HOOK_SKIP_ORIGINAL;
+}
+
+void on_bossrush_area_actor_name_post(ModContext*, void*, void* retval, void*) {
+    if (!is_bossrush_darknut_area_active() || retval == nullptr) {
+        return;
+    }
+    auto*& actor = *static_cast<dStage_objectNameInf**>(retval);
+    if (actor == nullptr) {
+        return;
+    }
+    switch (actor->procname) {
+    case fpcNm_B_TN_e:
+    case fpcNm_TBOX_e:
+    case fpcNm_TBOX2_e:
+    case fpcNm_Obj_Carry_e:
+    case fpcNm_TAG_EVT_e:
+    case fpcNm_TAG_MSG_e:
+    case fpcNm_TAG_EVTAREA_e:
+    case fpcNm_TAG_EVTMSG_e:
+        // Stage creation frees the unused spawn parameters when lookup fails.
+        // Leave doors, collision, lighting and the room geometry intact.
+        actor = nullptr;
+        break;
+    default:
+        break;
+    }
+}
+
+HookAction on_bossrush_area_resource_path_pre(ModContext*, void* args, void*, void*) {
+    if (args == nullptr) {
+        return HOOK_CONTINUE;
+    }
+
+    const char* path = mods::arg<const char*>(args, 3);
+    if (path != nullptr && std::strcmp(path, kBossRushDarknutAreaResourcePath) == 0) {
+        static const char sourcePath[] = "/res/Stage/D_MN06B/";
+        mods::arg_ref<const char*>(args, 3) = sourcePath;
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction on_bossrush_area_room_data_pre(ModContext*, void* args, void* retval, void*) {
+    if (args == nullptr || retval == nullptr ||
+        std::strcmp(dComIfGp_getStartStageName(), kBossRushDarknutAreaStage) != 0)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    auto* roomCache = mods::arg<dStage_roomControl_c::roomDzs_c*>(args, 0);
+    const u8 cacheIndex = mods::arg<u8>(args, 1);
+    const u8 roomNo = mods::arg<u8>(args, 2);
+    *static_cast<void**>(retval) = nullptr;
+    if (roomCache == nullptr || cacheIndex >= roomCache->m_num) {
+        return HOOK_SKIP_ORIGINAL;
+    }
+
+    void*& roomData = roomCache->m_dzs[cacheIndex];
+    if (roomData == nullptr) {
+        char resourceName[32];
+        std::snprintf(resourceName, sizeof(resourceName), "%s/room%u.dzs",
+            kBossRushDarknutSourceStage, roomNo);
+        auto* archive = dComIfGp_getFieldMapArchive2();
+        if (archive == nullptr) {
+            return HOOK_SKIP_ORIGINAL;
+        }
+
+        const u32 size = dLib_getExpandSizeFromAramArchive(archive, resourceName);
+        if (size == 0) {
+            return HOOK_SKIP_ORIGINAL;
+        }
+
+        roomData = mDoExt_getArchiveHeap()->alloc(size, -0x20);
+        if (roomData != nullptr) {
+            archive->readResource(roomData, size, resourceName);
+        }
+    }
+
+    *static_cast<void**>(retval) = roomData;
+    return HOOK_SKIP_ORIGINAL;
+}
+
+HookAction on_bossrush_area_audio_pre(ModContext*, void* args, void*, void*) {
+    if (args == nullptr) {
+        return HOOK_CONTINUE;
+    }
+
+    char* stage = mods::arg<char*>(args, 1);
+    if (stage != nullptr && std::strcmp(stage, kBossRushDarknutAreaStage) == 0) {
+        static char sourceStage[] = "D_MN06B";
+        mods::arg_ref<char*>(args, 1) = sourceStage;
+    }
+    return HOOK_CONTINUE;
 }
 
 bool is_opening_stage(const char* stage, s16 point, s16 room, s16 layer) {
@@ -724,6 +876,8 @@ void ensure_hub_actor_ids_initialized();
 void arm_ganondorf_barrier(obj_gb_class* barrier);
 void start_bossrush_hub_music();
 void stop_bossrush_hub_music();
+void clear_hub_confirm_state();
+void reset_bossrush_hazards();
 
 void queue_actor_delete(ActorId id) {
     for (const PendingActorDelete& pending : sPendingActorDeletes) {
@@ -1821,6 +1975,39 @@ void warp_to_bossrush_hub_from_midna(daMidna_c* midna) {
     sHubArrivalWarpPending = true;
     start_bossrush_warp(
         kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom, kBossRushReturnLayer);
+}
+
+void prepare_darknut_area_entry() {
+    set_boss_rush_state(kBossRushStateHub);
+    set_boss_rush_index(0);
+    set_bossrush_return_place();
+    clear_pending_midna_flow_action();
+    clear_hub_confirm_state();
+    reset_hub_actor_ids();
+    reset_direct_final_boss_state();
+    reset_bossrush_hazards();
+}
+
+void prepare_cave_return_from_darknut_area() {
+    set_boss_rush_state(kBossRushStateCaveOfOrdeals);
+    set_boss_rush_index(0);
+    set_bossrush_return_place();
+    reset_hub_actor_ids();
+    reset_direct_final_boss_state();
+    reset_bossrush_hazards();
+}
+
+void prepare_hub_return_from_cave() {
+    set_boss_rush_state(kBossRushStateHub);
+    set_boss_rush_index(0);
+    set_bossrush_return_place();
+    clear_pending_midna_flow_action();
+    clear_hub_confirm_state();
+    reset_hub_actor_ids();
+    reset_direct_final_boss_state();
+    reset_bossrush_hazards();
+    sHubArrivalWarpPending = true;
+    sBossRushArrivalReady = false;
 }
 
 const char* bossrush_portal_name(int portal) {
@@ -3312,6 +3499,16 @@ bool bossrush_should_return_to_hub_after_death() {
     return player != nullptr && player->checkDeadHP();
 }
 
+void update_bossrush_darknut_area() {
+    // This room is only a connector between the Cave and its exit. Keep all
+    // hub-owned runtime actors and presentation state disabled while Link is
+    // here; the vanilla room geometry remains available through the aliases.
+    reset_hub_runtime_when_away();
+    reset_direct_final_boss_state();
+    reset_bossrush_hazards();
+    refresh_midna_root_flow_mode();
+}
+
 void update_bossrush() {
     if (!is_boss_rush()) {
         clear_pending_midna_flow_action();
@@ -3352,7 +3549,11 @@ void update_bossrush() {
     if (boss_rush_state() == kBossRushStateHub) {
         reset_direct_final_boss_state();
         reset_bossrush_hazards();
-        update_bossrush_hub();
+        if (is_bossrush_darknut_area_active()) {
+            update_bossrush_darknut_area();
+        } else {
+            update_bossrush_hub();
+        }
         return;
     }
 
@@ -3580,7 +3781,32 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
     const bool bossRushActive =
         (is_bossrush_game_mode_active() || ensure_bossrush_runtime_for_save()) &&
         is_boss_rush();
-    if (bossRushActive &&
+    if (bossRushActive && boss_rush_state() == kBossRushStateCaveOfOrdeals &&
+        is_current_stage_name(kCaveOfOrdealsStage) && stage != nullptr &&
+        std::strcmp(stage, kCaveOfOrdealsStage) != 0 &&
+        !is_opening_stage(stage, point, room, layer) && !is_reset_to_opening_transition()) {
+        // The entrance door is in room 0. External exits on the deeper
+        // floors are the Great Fairy returns (including her spring choices).
+        // Same-stage floor changes were excluded above and keep vanilla routing.
+        if (dComIfGp_roomControl_getStayNo() == kCaveOfOrdealsRoom &&
+            std::strcmp(stage, kBossRushReturnStage) != 0) {
+            prepare_darknut_area_entry();
+            set_next_stage_args(args, kBossRushDarknutAreaStage, kBossRushDarknutAreaPoint,
+                kBossRushDarknutAreaRoom, kBossRushDarknutAreaLayer);
+        } else {
+            prepare_hub_return_from_cave();
+            set_next_stage_args(args, kBossRushReturnStage, kBossRushReturnPoint,
+                kBossRushReturnRoom, kBossRushReturnLayer);
+        }
+    } else if (bossRushActive && boss_rush_state() == kBossRushStateHub &&
+               is_bossrush_darknut_area_stage() && stage != nullptr &&
+               std::strcmp(stage, kBossRushDarknutAreaStage) != 0 &&
+               std::strcmp(stage, kBossRushReturnStage) != 0 &&
+               !is_opening_stage(stage, point, room, layer) && !is_reset_to_opening_transition()) {
+        prepare_cave_return_from_darknut_area();
+        set_next_stage_args(args, kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom,
+            kCaveOfOrdealsLayer);
+    } else if (bossRushActive &&
         is_vanilla_new_file_stage(stage, point, room, layer)) {
         prepare_bossrush_start();
         sHubArrivalWarpPending = true;
@@ -4195,6 +4421,35 @@ ModResult register_new_save_modes(ModError* error) {
     }
     sFrameCtrlSetFrame = reinterpret_cast<FrameCtrlSetFrameFn>(frameCtrlSetFrame);
 
+    // The connector uses a private stage name but reuses the original
+    // Darknut room archive and scene audio.
+    result = mods::hook_add_pre<BossRushAreaResourceHook>(
+        svc_hook, on_bossrush_area_resource_path_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area resource alias");
+    }
+    result = mods::hook_add_pre<BossRushAreaRoomDataHook>(svc_hook, on_bossrush_area_room_data_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area room alias");
+    }
+    result = mods::hook_add_pre<BossRushAreaAudioHook>(svc_hook, on_bossrush_area_audio_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area audio alias");
+    }
+
+    result = mods::hook_add_pre<BossRushAreaDungeonBitHook>(svc_hook, on_bossrush_area_dungeon_bit_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area completion state");
+    }
+    result = mods::hook_add_pre<BossRushAreaSwitchHook>(svc_hook, on_bossrush_area_switch_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area gate state");
+    }
+    result = mods::hook_add_post<BossRushAreaActorNameHook>(svc_hook, on_bossrush_area_actor_name_post);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area actor filter");
+    }
+
     result = mods::hook_add_post<FileSelectNameInput2Hook>(
         svc_hook, on_file_select_name_input2_post);
     if (result != MOD_OK) {
@@ -4248,6 +4503,12 @@ void update_new_save_modes() {
 
 void shutdown_new_save_modes() {
     shutdown_boss_portal_symbols();
+    mods::hook_uninstall<BossRushAreaResourceHook>(svc_hook);
+    mods::hook_uninstall<BossRushAreaRoomDataHook>(svc_hook);
+    mods::hook_uninstall<BossRushAreaAudioHook>(svc_hook);
+    mods::hook_uninstall<BossRushAreaDungeonBitHook>(svc_hook);
+    mods::hook_uninstall<BossRushAreaSwitchHook>(svc_hook);
+    mods::hook_uninstall<BossRushAreaActorNameHook>(svc_hook);
     if (svc_game_mode != nullptr) {
         ModResult result = svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId);
         if (result != MOD_OK) {

@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "boss_portal_symbols.hpp"
 #include "save_compat.hpp"
 #include "save_state.hpp"
 #include "service_imports.hpp"
@@ -3909,6 +3910,19 @@ ModResult on_bossrush_tick(void*, ModError*) {
 
 }  // namespace
 
+bool get_boss_portal_symbol(unsigned index, cXyz& position, bool& defeated) {
+    static_assert(kBossPortalSymbolCount == kBossRushEntryCount);
+    if (index >= kBossRushEntryCount || !is_bossrush_game_mode_active() ||
+        !is_bossrush_hub_active() || !can_update_bossrush_gameplay() ||
+        dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek() || dComIfGp_isPauseFlag() ||
+        ui_document_visible() || sHubPortalIds[index] == fpcM_ERROR_PROCESS_ID_e) return false;
+    const auto* portal = fopAcM_SearchByID(sHubPortalIds[index]);
+    if (portal == nullptr || fpcM_IsCreating(sHubPortalIds[index])) return false;
+    position = portal->current.pos;
+    defeated = bossrush_portal_defeated(static_cast<u8>(index));
+    return true;
+}
+
 ModResult register_new_save_modes(ModError* error) {
     register_bossrush_hub_music_overlay();
 
@@ -3962,6 +3976,7 @@ ModResult register_new_save_modes(ModError* error) {
         return mods::set_error(error, result, "failed to register Dawnlight Boss Rush game mode");
     }
 
+    initialize_boss_portal_symbols();
     return MOD_OK;
 }
 
@@ -3970,6 +3985,7 @@ void update_new_save_modes() {
 }
 
 void shutdown_new_save_modes() {
+    shutdown_boss_portal_symbols();
     if (svc_game_mode != nullptr) {
         ModResult result = svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId);
         if (result != MOD_OK) {

@@ -335,7 +335,7 @@ void stage(ModContext*, const GfxStageContext* context, void*) {
             vertex.color[0] = symbol.defeated ? 1.0f : 0.0f;
             vertex.color[1] = symbol.defeated ? 0.30f : 0.0f;
             vertex.color[2] = symbol.defeated ? 0.25f : 1.0f;
-            vertex.color[3] = 0.10f;
+            vertex.color[3] = 0.30f;
         }
     }
     Draw batch = {{}, vertexCount, pipeline, sBindings};

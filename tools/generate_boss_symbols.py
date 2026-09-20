@@ -80,7 +80,7 @@ if __name__ == '__main__':
                         shade = 80 if (cx//16+cy//16)%2 else 120
                         draw.rectangle((x+cx,y+cy,x+cx+15,y+cy+15),fill=(shade,)*3)
                 glass = Image.new('RGBA',(CELL,CELL))
-                ImageDraw.Draw(glass).ellipse((0,0,CELL-1,CELL-1),fill=(*color,26))
+                ImageDraw.Draw(glass).ellipse((0,0,CELL-1,CELL-1),fill=(*color,77))
                 preview.paste(glass,(x,y),glass)
                 preview.paste((0,0,0),(x,y,x+CELL,y+CELL),mask)
                 draw.text((x+8,y+CELL+4),name+(' - defeated' if state else ''),fill='white')

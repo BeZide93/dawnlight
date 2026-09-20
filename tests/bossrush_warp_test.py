@@ -27,6 +27,9 @@ assert "prepare_bossrush_entry(entry)" not in function("set_bossrush_next_stage"
 assert "kBossRushCavePortalIndex" not in function("process_pending_midna_flow_action")
 assert "sBossRushWarpInFlight" in function("is_direct_final_ganondorf_active")
 assert "sBossRushDepartureStarted || dComIfGp_isEnableNextStage()" in function("on_ganondorf_execute_pre")
+assert "return_to_hub_after_replay_victory()" in update
+assert "return_to_hub_after_replay_victory()" in function("redirect_replay_to_hub")
+assert "start_bossrush_warp(" in function("warp_to_bossrush_hub_from_midna")
 for hook in ("WarpPlayerCreateHook", "WarpPlayerExecuteHook", "WarpPlayerDrawHook"):
     assert f"uninstall_bossrush_hook<{hook}>" in source
 
@@ -44,6 +47,8 @@ constexpr int cPhs_COMPLEATE_e = 4;
 constexpr int kBossRushStateHub = 0, kBossRushStateReplay = 2, kBossRushStateRun = 1;
 const char* kBossRushReturnStage = "D_MN09C";
 const char* kCaveOfOrdealsStage = "D_SB01";
+constexpr s16 kBossRushReturnPoint=0;
+constexpr s8 kBossRushReturnRoom=0, kBossRushReturnLayer=-1;
 bool active = true, bossRush = true, next = false, peek = false, event = false;
 bool wolf = false, havePlayer = true;
 int state = 2, prepared = 0, resets = 0, armed = 0, changes = 0;
@@ -93,6 +98,7 @@ int kBossRushEntries[] = {0};
 void prepare_bossrush_entry(int) { ++prepared; }
 void clear_all_boss_flags() { ++resets; }
 void arm_bossrush_hub_return_warp() { ++armed; }
+void set_bossrush_return_place() {}
 void dComIfGp_setNextStage(const char* stage, s16 point, s8 room, s8 layer) {
     ++changes; next=true; destinationStage=stage; destinationPoint=point;
     destinationRoom=room; destinationLayer=layer;
@@ -103,6 +109,7 @@ functions = "\n".join(function(name) for name in (
     "clear_bossrush_warp_request", "set_bossrush_warp_destination",
     "start_bossrush_warp", "finish_bossrush_departure", "update_bossrush_warp",
     "update_bossrush_arrival_warp", "on_skip_portal_obj_warp_pre",
+    "return_to_hub_after_replay_victory",
     "on_warp_player_create_post", "on_warp_player_execute_pre", "on_warp_player_draw_pre",
 ))
 
@@ -186,6 +193,17 @@ int main() {
     assert(resets==0); player.field_0x347c=-0.5f;
     for (int n=0;n<180;++n) update_bossrush_warp();
     assert(resets==1 && changes==1 && prepared==1);
+    // Direct-fight victory transitions immediately, but hub arrival still waits
+    // for the new player (especially when returning from the same Ganondorf stage).
+    reset(); state=kBossRushStateHub;
+    return_to_hub_after_replay_victory();
+    assert(changes==1 && destinationStage==kBossRushReturnStage);
+    assert(player.initCount==0 && !sBossRushWarpPending && sBossRushWarpInFlight);
+    update_bossrush_arrival_warp(sHubArrivalWarpPending,kBossRushReturnStage);
+    assert(player.initCount==0);
+    next=false; player={}; created();
+    update_bossrush_arrival_warp(sHubArrivalWarpPending,kBossRushReturnStage);
+    assert(player.initDirection==1 && !sHubArrivalWarpPending);
     reset(); active=false;
     assert(on_skip_portal_obj_warp_pre(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
     assert(on_warp_player_draw_pre(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);

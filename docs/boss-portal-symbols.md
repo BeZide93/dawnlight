@@ -99,9 +99,11 @@ existing behavior.
 
 ## Boss Rush warp animation
 
-All Boss Rush transitions use Link's native `PROC_WARP` animation. Hub departures
+Boss Rush portal and manual return transitions use Link's native `PROC_WARP` animation. Hub departures
 to a boss, the Boss Rush run, or the Cave of Ordeals call `procCoWarpInit(0, 1)`;
-returns use the same departure animation. Hub and Cave arrivals call
+manual Midna returns use the same departure animation. Automatic returns after
+winning a direct boss/miniboss fight use main's immediate scene change, including
+the direct final battles, without an extra departure dissolve. Hub and Cave arrivals call
 `procCoWarpInit(1, 0)` after the target scene has loaded. Boss-room arrival is
 unchanged. Dawnlight independently redirects the native portal completion to the
 requested point, room and layer. All Midna choices wait for dialogue teardown.

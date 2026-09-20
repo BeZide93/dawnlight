@@ -1531,6 +1531,17 @@ void update_bossrush_arrival_warp(bool& pending, const char* stage) {
     }
 }
 
+void return_to_hub_after_replay_victory() {
+    // Match main's immediate scene change after a direct boss victory. Only
+    // manual Midna returns use the departure dissolve; hub arrival stays animated.
+    set_bossrush_return_place();
+    sHubArrivalWarpPending = true;
+    sBossRushArrivalReady = false;
+    sBossRushWarpInFlight = true;
+    dComIfGp_setNextStage(
+        kBossRushReturnStage, kBossRushReturnPoint, kBossRushReturnRoom, kBossRushReturnLayer);
+}
+
 void set_bossrush_next_stage() {
     if (!is_boss_rush()) {
         return;
@@ -3364,7 +3375,7 @@ void update_bossrush() {
             clear_boss_flags(entry);
             set_boss_rush_state(kBossRushStateHub);
             set_boss_rush_index(0);
-            set_bossrush_next_stage();
+            return_to_hub_after_replay_victory();
             return;
         }
 
@@ -3608,7 +3619,7 @@ bool redirect_replay_to_hub(const BossRushEntry& entry) {
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
     dComIfGp_event_reset();
-    set_bossrush_next_stage();
+    return_to_hub_after_replay_victory();
     return true;
 }
 

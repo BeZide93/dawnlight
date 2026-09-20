@@ -72,12 +72,21 @@ downweighted and rear planes are excluded. All four symbol corners use this same
 plane with a fixed 0.4-unit normal offset to avoid z-fighting. No camera-dependent
 rotation, flipping or front/back relocation is applied.
 
-The existing GfxService renderer draws the emblem faces with scene depth testing
-and depth writes. Transparent corners are discarded; later translucent effects
-cannot paint through the solid mirror face. Pipelines match MSAA, reversed depth
-and deferred render layouts. It never edits the model's materials or GX state.
-GPU resources initialize lazily and are released on shutdown. ActorService drains
-the mirror actors before removing their profile.
+The GfxService renderer prepares each view's vertices after opaque geometry,
+then submits its single overlay batch after `dComIfGd_drawXluListDark`, when the
+normal and dark translucent material lists have finished. The pinned SDK has no
+post-translucent world-camera stage, so a post-hook supplies this insertion point
+before post-processing and the HUD. GfxService flushes pending GX commands before
+inserting the overlay. No extra opaque background is drawn.
+
+Scene depth testing remains enabled, but depth writes are disabled: a 10%-opaque
+circle must not act as an opaque depth barrier for the native mirror materials.
+Transparent corners are discarded. Consumed batches cannot draw twice, and a
+before-HUD cleanup discards any frame-local batch whose translucent pass was
+skipped. Shutdown removes the post-hook and both stage hooks before releasing
+GPU resources. Pipelines match MSAA, reversed depth and deferred render layouts;
+no shared model materials or GX state are edited. ActorService drains mirror
+actors before removing their profile.
 
 Hub spawning retains live and asynchronously loading IDs, retries missing slots
 individually and attempts at most one destination per tick. Midna's existing
@@ -99,6 +108,9 @@ existing behavior.
   texture upload, mip chain, bindings and 12 pipeline combinations: forward and
   reversed depth, 1×/4× MSAA, and one/two/three color attachments.
 
+- Pipeline checks also require depth writes to be disabled and source-alpha
+  blending to be enabled. Extracted dispatch checks cover one submission per view
+  and discarding stale batches when a translucent pass is skipped.
 - Geometry tests cover all 18 facing directions with each possible local disc
   axis, native attachment offsets, unchanged scale/distances, buried platform
   tops and foundations with the native mirror height preserved,

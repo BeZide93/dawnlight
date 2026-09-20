@@ -2,6 +2,8 @@
 #include "service_imports.hpp"
 #include "generated/boss_portal_art.hpp"
 #include "f_op/f_op_view.h"
+#include "d/d_com_inf_game.h"
+#include "mods/svc/hook.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,6 +15,7 @@
 
 namespace dawnlight {
 namespace {
+DEFINE_HOOK(&dComIfGd_drawXluListDark, MirrorTranslucentEndHook);
 static_assert(kBossPortalSymbolCount == portal_art::kCount);
 struct Vertex { float clip[4], uv[2], color[4], face[2]; };
 struct Draw {
@@ -25,6 +28,10 @@ static_assert(sizeof(Draw) <= GFX_INLINE_DRAW_PAYLOAD_SIZE);
 struct Pipeline { uint64_t layout; bool reversed; WGPURenderPipeline handle; };
 GfxDrawTypeHandle sDraw = 0;
 GfxStageHookHandle sStage = 0;
+GfxStageHookHandle sFrameEnd = 0;
+bool sTranslucentHook = false;
+Draw sPendingDraw{};
+bool sHasPendingDraw = false;
 WGPUTexture sTexture = nullptr;
 WGPUTextureView sTextureView = nullptr;
 WGPUSampler sSampler = nullptr;
@@ -208,7 +215,8 @@ WGPURenderPipeline pipeline_for(const GfxDeviceInfo& device, const GfxRenderTarg
     fragment.targets = targets;
     WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
     depth.format = layout.depth_stencil_format;
-    depth.depthWriteEnabled = WGPUOptionalBool_True;
+    // A translucent tint must not occlude later game materials/effects.
+    depth.depthWriteEnabled = WGPUOptionalBool_False;
     depth.depthCompare = device.uses_reversed_z ? WGPUCompareFunction_GreaterEqual : WGPUCompareFunction_LessEqual;
     WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
     desc.label = label("Dawnlight boss portal symbols");
@@ -237,7 +245,23 @@ void draw(ModContext*, const GfxDrawContext* context, const void* data, size_t s
     wgpuRenderPassEncoderDraw(context->pass, batch.count, 1, 0, 0);
 }
 
+void discard_pending_draw(ModContext*, const GfxStageContext*, void*) {
+    // Stream ranges are frame-local. Never retain one if a debug/alternate
+    // scene path skipped the normal translucent pass.
+    sHasPendingDraw = false;
+}
+
+void after_translucent(ModContext*, void*, void*, void*) {
+    if (!sHasPendingDraw) return;
+    sHasPendingDraw = false;
+    // The pinned SDK's last world-camera stage is BEFORE the XLU lists. Submit
+    // after both normal and dark XLU materials, before post-processing/HUD.
+    // GfxService::push_draw flushes the GX queue before inserting our draw.
+    svc_gfx->push_draw(mod_ctx, sDraw, &sPendingDraw, sizeof(sPendingDraw));
+}
+
 void stage(ModContext*, const GfxStageContext* context, void*) {
+    sHasPendingDraw = false;
     if (sFailed || !context->game_view) return;
     const auto& view = *static_cast<const view_class*>(context->game_view);
     struct Symbol {
@@ -316,13 +340,14 @@ void stage(ModContext*, const GfxStageContext* context, void*) {
     }
     Draw batch = {{}, vertexCount, pipeline, sBindings};
     if (svc_gfx->push_verts(mod_ctx, vertices.data(), vertexCount*sizeof(Vertex), alignof(Vertex), &batch.vertices) == MOD_OK) {
-        svc_gfx->push_draw(mod_ctx, sDraw, &batch, sizeof(batch));
+        sPendingDraw = batch;
+        sHasPendingDraw = true;
     }
 }
 } // namespace
 
 void initialize_boss_portal_symbols() {
-    if (sStage || !svc_gfx) return;
+    if (sStage || !svc_gfx || !svc_hook) return;
     const GfxDrawTypeDesc drawDesc = {sizeof(GfxDrawTypeDesc), "Dawnlight boss symbols", draw, nullptr};
     if (svc_gfx->register_draw_type(mod_ctx, &drawDesc, &sDraw) != MOD_OK) {
         svc_log->warn(mod_ctx, "Boss portal symbols: unable to register drawing");
@@ -330,16 +355,34 @@ void initialize_boss_portal_symbols() {
     }
     const GfxStageHookDesc stageDesc = {sizeof(GfxStageHookDesc), stage, nullptr};
     if (svc_gfx->register_stage_hook(mod_ctx, GFX_STAGE_SCENE_AFTER_OPAQUE, &stageDesc, &sStage) != MOD_OK) {
-        svc_gfx->unregister_draw_type(mod_ctx, sDraw);
-        sDraw = 0;
+        shutdown_boss_portal_symbols();
         svc_log->warn(mod_ctx, "Boss portal symbols: unable to register scene hook");
+        return;
     }
+    const GfxStageHookDesc endDesc = {sizeof(GfxStageHookDesc), discard_pending_draw, nullptr};
+    if (svc_gfx->register_stage_hook(mod_ctx, GFX_STAGE_FRAME_BEFORE_HUD, &endDesc, &sFrameEnd) != MOD_OK) {
+        shutdown_boss_portal_symbols();
+        svc_log->warn(mod_ctx, "Boss portal symbols: unable to register frame cleanup");
+        return;
+    }
+    if (mods::hook::add_post<MirrorTranslucentEndHook>(svc_hook, after_translucent) != MOD_OK) {
+        // add_post may have installed its trampoline before failing.
+        mods::hook::uninstall<MirrorTranslucentEndHook>(svc_hook);
+        shutdown_boss_portal_symbols();
+        svc_log->warn(mod_ctx, "Boss portal symbols: unable to register translucent draw hook");
+        return;
+    }
+    sTranslucentHook = true;
 }
 
 void shutdown_boss_portal_symbols() {
+    sHasPendingDraw = false;
+    if (sTranslucentHook) mods::hook::uninstall<MirrorTranslucentEndHook>(svc_hook);
+    sTranslucentHook = false;
+    if (sFrameEnd) svc_gfx->unregister_stage_hook(mod_ctx, sFrameEnd);
     if (sStage) svc_gfx->unregister_stage_hook(mod_ctx, sStage);
     if (sDraw) svc_gfx->unregister_draw_type(mod_ctx, sDraw);
-    sStage = sDraw = 0;
+    sFrameEnd = sStage = sDraw = 0;
     for (const auto& pipeline : sPipelines) wgpuRenderPipelineRelease(pipeline.handle);
     sPipelines.clear();
     if (sBindings) wgpuBindGroupRelease(sBindings);

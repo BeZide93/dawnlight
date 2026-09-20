@@ -210,13 +210,13 @@ constexpr f32 kBossRushHubTriggerRadius = 150.0f;
 constexpr f32 kBossRushMirrorPromptOffset = 150.0f;
 constexpr f32 kBossRushHubRefillDistance = kBossRushHubPortalRadius * 0.5f;
 constexpr f32 kBossRushHubRefillSpacing = 220.0f;
-constexpr f32 kBossRushHubPotDistance = 300.0f;
+constexpr f32 kBossRushHubChestDistance = kBossRushHubRefillDistance + 200.0f;
 constexpr f32 kBossRushHubPotSpacing = 150.0f;
-constexpr u8 kBossRushHubSupplyActorCount = 7;
+constexpr u8 kBossRushHubSupplyActorCount = 10;
 constexpr u8 kBossRushHubSupplyCreateBatch = 1;
 constexpr u32 kBossRushCarryParameters = 0x00003FFF;
 constexpr s16 kBossRushSmallPotParams = 0x1040;
-constexpr u8 kBossRushBombChestNo = 0xFF;
+constexpr u8 kBossRushSupplyChestNo = 0xFF;
 constexpr char kCaveOfOrdealsStage[] = "D_SB01";
 constexpr const char* kCaveOfOrdealsName = "Cave of Ordeals";
 constexpr s16 kCaveOfOrdealsPoint = 0;
@@ -568,6 +568,27 @@ fpc_ProcID create_hub_carry_pot(const cXyz& pos, u8 item, s16 carryParams) {
         kBossRushReturnRoom, &angle, nullptr, -1);
 }
 
+// Left/right are relative to the hub entrance facing; both groups are anchored
+// to the actual hub center. Pots flank each chest along the tangent of its ring.
+cXyz hub_side_supply_position(bool rightSide, f32 flankOffset = 0.0f) {
+    cXyz pos = hub_center();
+    const f32 side = rightSide ? kBossRushHubChestDistance : -kBossRushHubChestDistance;
+    pos.x += angle_cos(sHubSupplyFacing) * side + angle_sin(sHubSupplyFacing) * flankOffset;
+    pos.z += -angle_sin(sHubSupplyFacing) * side + angle_cos(sHubSupplyFacing) * flankOffset;
+    return pos;
+}
+
+fpc_ProcID create_hub_supply_chest(bool rightSide, u8 item) {
+    const cXyz pos = hub_side_supply_position(rightSide);
+    const cXyz center = hub_center();
+    const csXyz angle(0, cM_atan2s(center.x - pos.x, center.z - pos.z), 0);
+    const u32 params = item |
+                       (static_cast<u32>(daTbox2_c::TYPE_SMALL_e) << 8) |
+                       (static_cast<u32>(kBossRushSupplyChestNo) << 16);
+    return create_actor(fpcNm_TBOX2_e, params, &pos, kBossRushReturnRoom,
+        &angle, nullptr, -1);
+}
+
 fpc_ProcID create_hub_supply_actor(u8 index) {
     const f32 refillSide = kBossRushHubRefillSpacing * 0.5f;
     csXyz angle(0, sHubSupplyFacing, 0);
@@ -589,21 +610,14 @@ fpc_ProcID create_hub_supply_actor(u8 index) {
             kBossRushReturnRoom, &angle, nullptr, -1);
     }
     case 3: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, -kBossRushHubPotSpacing);
-        return create_hub_carry_pot(pos, dItemNo_ARROW_30_e, kBossRushSmallPotParams);
+        const cXyz pos = hub_side_supply_position(false, -kBossRushHubPotSpacing);
+        return create_hub_carry_pot(pos, dItemNo_PACHINKO_SHOT_e, kBossRushSmallPotParams);
     }
     case 4: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, 0.0f);
-        const u32 params = dItemNo_BOMB_30_e |
-                           (static_cast<u32>(daTbox2_c::TYPE_SMALL_e) << 8) |
-                           (static_cast<u32>(kBossRushBombChestNo) << 16);
-        const csXyz chestAngle(
-            0, static_cast<s16>(sHubSupplyFacing + static_cast<s16>(0x8000)), 0);
-        return create_actor(fpcNm_TBOX2_e, params, &pos, kBossRushReturnRoom,
-            &chestAngle, nullptr, -1);
+        return create_hub_supply_chest(false, dItemNo_BOMB_30_e);
     }
     case 5: {
-        const cXyz pos = hub_supply_position(kBossRushHubPotDistance, kBossRushHubPotSpacing);
+        const cXyz pos = hub_side_supply_position(false, kBossRushHubPotSpacing);
         return create_hub_carry_pot(pos, dItemNo_PACHINKO_SHOT_e, kBossRushSmallPotParams);
     }
     case 6: {
@@ -611,6 +625,17 @@ fpc_ProcID create_hub_supply_actor(u8 index) {
         pos.y += 80.0f;
         return fopAcM_createItem(&pos, dItemNo_RECOVERY_FAILY_e, -1,
             kBossRushReturnRoom, &angle, nullptr, 0);
+    }
+    case 7: {
+        return create_hub_supply_chest(true, dItemNo_BOMB_INSECT_30_e);
+    }
+    case 8: {
+        const cXyz pos = hub_side_supply_position(true, -kBossRushHubPotSpacing);
+        return create_hub_carry_pot(pos, dItemNo_ARROW_30_e, kBossRushSmallPotParams);
+    }
+    case 9: {
+        const cXyz pos = hub_side_supply_position(true, kBossRushHubPotSpacing);
+        return create_hub_carry_pot(pos, dItemNo_ARROW_30_e, kBossRushSmallPotParams);
     }
     default:
         return fpcM_ERROR_PROCESS_ID_e;

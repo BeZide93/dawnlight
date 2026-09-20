@@ -93,9 +93,14 @@ individually and attempts at most one destination per tick. Midna's existing
 Fight / Yes / No prompt only becomes available once its mirror is ready. Its
 150-unit interaction radius is centered 150 units in front of the mirror toward
 the hub center, at floor height, so Link can interact before reaching the pedestal.
-The two central floor portals keep their original trigger positions. Hub
-supplies, boss entry logic, saved progress and both center portals retain their
-existing behavior.
+The two central floor portals keep their original trigger positions.
+
+Hub supplies have two symmetric groups relative to the entrance facing. The left
+group has a 30-bomb chest flanked by two Deku Seed pots; the right group has a
+30-Bombling chest flanked by two 30-arrow pots. Both chests face the hub center at
+a radius of 925 units (200 beyond the refill placement distance). Each pot sits
+150 units to either side of its chest along the tangent. These four pots replace
+the previous two pots. The refill stations and fairy retain their positions.
 
 ## Boss Rush warp animation
 

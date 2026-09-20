@@ -104,9 +104,24 @@ to a boss, the Boss Rush run, or the Cave of Ordeals call `procCoWarpInit(0, 1)`
 returns use the same departure animation. Hub and Cave arrivals call
 `procCoWarpInit(1, 0)` after the target scene has loaded. Boss-room arrival is
 unchanged. Dawnlight independently redirects the native portal completion to the
-requested point, room and layer, with a safe direct-stage fallback if the native
-player actor is unavailable. Cave arrival also re-arms the dungeon-return item so
-both the Cave exit and the large-fairy return arrive back in the Boss Rush hub.
+requested point, room and layer. All Midna choices wait for dialogue teardown.
+Departure retries wait for a ready player and do not time out into an immediate
+teleport. The fallback can change scenes only after the dissolve has finished.
+
+An in-flight latch suspends normal hub, boss-spawn and progression logic until
+Link's next actor creation completes, even for the hub and Ganondorf duel sharing
+the same stage. Boss flags are prepared only at departure completion. Ganondorf
+execution is suspended during the dissolve/fade, and Link is protected against
+damage during departure/arrival. Death cutscenes may finish before departure.
+
+Arrival initialization runs before Link's actor update. A draw guard hides him
+while the new scene waits for fade/resources/events, preventing an opaque first
+frame. Wolf arrivals explicitly release the native scripted-animation wait.
+Cave arrival also re-arms the dungeon-return item to the hub.
+
+Run the extracted warp lifecycle regression checks with
+`python3 tests/bossrush_warp_test.py`. These exercise the actual source functions
+with engine stubs; they do not replace an in-game animation test.
 
 ## Validation
 

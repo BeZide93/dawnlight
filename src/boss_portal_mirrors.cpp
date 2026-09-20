@@ -91,29 +91,6 @@ public:
         root->setMtxCalc(previous);
     }
 
-    float frame_floor() {
-        float floor=std::numeric_limits<float>::infinity();
-        auto* data=frame->getModelData();
-        for (unsigned joint=0;joint<data->getJointNum();++joint) {
-            // Ignore empty attachment joints: their default zero bounds must
-            // not pull a world-authored chamber stand away from the hub floor.
-            for (auto* mesh=data->getJointNodePointer(joint)->getMesh();mesh;mesh=mesh->getNext()) {
-                auto* shape=mesh->getShape();
-                if (!shape) continue;
-                const auto& min=*shape->getMin();
-                const auto& max=*shape->getMax();
-                const auto& matrix=frame->getAnmMtx(joint);
-                for (unsigned corner=0;corner<8;++corner) {
-                    const float x=corner&1 ? max.x : min.x;
-                    const float y=corner&2 ? max.y : min.y;
-                    const float z=corner&4 ? max.z : min.z;
-                    floor=std::min(floor,matrix[1][0]*x+matrix[1][1]*y+matrix[1][2]*z+matrix[1][3]);
-                }
-            }
-        }
-        return floor;
-    }
-
     bool place_model() {
         using mirror_geometry::Vec;
         auto* data = model->getModelData();
@@ -150,7 +127,7 @@ public:
         if (!mirror_geometry::describe_disc(min,max,read_matrix(model->getAnmMtx(0)),native)) return false;
         mirror_geometry::Matrix placement;
         const float yaw=shape_angle.y*(6.2831853071795864769f/65536.0f);
-        if (!mirror_geometry::place_assembly(native,frame_floor(),
+        if (!mirror_geometry::place_assembly(native,
                 {current.pos.x,current.pos.y,current.pos.z},yaw,placement)) return false;
         Mtx base;
         for (unsigned r=0;r<3;++r) for (unsigned c=0;c<4;++c) base[r][c]=placement[r][c];

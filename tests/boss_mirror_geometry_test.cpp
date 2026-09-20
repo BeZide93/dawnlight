@@ -39,7 +39,7 @@ int main() {
         const float angle=6.28318530718f*boss/18;
         const Vec groundPosition={std::sin(angle)*1450,1100,std::cos(angle)*1450};
         Matrix placement;
-        assert(place_assembly(native,4600,groundPosition,angle+3.14159265359f,placement));
+        assert(place_assembly(native,groundPosition,angle+3.14159265359f,placement));
         // The stand is moved with a rigid yaw/translation, never enlarged.
         for (unsigned col=0;col<3;++col) {
             float length=0;
@@ -51,8 +51,13 @@ int main() {
         assert(describe_disc(min,max,mounted,fit));
         assert(close(fit.center[0],groundPosition[0]));
         assert(close(fit.center[2],groundPosition[2]));
-        assert(close(fit.center[1],1300)); // native 200-unit height above stand floor
-        assert(close(point_to_world(placement,{1800,4600,-21000})[1],1100));
+        assert(close(fit.center[1],1284.3701f)); // native height above the buried platform
+        // Regression: the platform TOP must be underground. Grounding its
+        // bottom instead raises a wall beneath every mirror (the reported bug).
+        assert(close(point_to_world(placement,{1800,4613.6299f,-21000})[1],1098));
+        for (float masonryY : {4300.0f,4400.0f,4600.0f,4613.6299f}) {
+            assert(point_to_world(placement,{1800,masonryY,-21000})[1]<groundPosition[1]);
+        }
         assert(close(std::sqrt(dot(fit.right,fit.right)),164)); // artwork follows 200-unit asset
         assert(close(std::sqrt(dot(fit.up,fit.up)),164));
         assert(dot(fit.normal,{-fit.center[0],0,-fit.center[2]})>1449);
@@ -68,7 +73,7 @@ int main() {
         std::vector<Vec> positions;
         std::vector<Vec> normals;
         const float sn=std::sin(tilt), cs=std::cos(tilt);
-        auto local=[&](float x,float y,float z) -> Vec { return {x+1200, cs*y-sn*z+4500, sn*y+cs*z-21000}; };
+        auto local=[&](float x,float y,float z) -> Vec { return {x+1200, cs*y-sn*z+4800, sn*y+cs*z-21000}; };
         for (unsigned i=0;i<32;++i) {
             const float a=6.28318530718f*i/32;
             for (float z : {-5.0f,5.0f}) positions.push_back(local(75*std::cos(a),75*std::sin(a),z));
@@ -90,7 +95,7 @@ int main() {
         Fit native,fit;
         Matrix placement;
         assert(describe_disc(min,max,identity,native));
-        assert(place_assembly(native,4300,groundPosition,angle+3.14159265359f,placement));
+        assert(place_assembly(native,groundPosition,angle+3.14159265359f,placement));
         assert(describe_disc(min,max,placement,fit));
         Face face;
         assert(mount_face(positions,normals,fit,face));
@@ -123,5 +128,5 @@ int main() {
     assert(!describe_disc({0,0,0},{100,100,std::numeric_limits<float>::infinity()},identity,fit));
     assert(!describe_disc({0,0,0},{100,10,1},identity,fit));
     Matrix placement;
-    assert(!place_assembly(fit,std::numeric_limits<float>::infinity(),{0,0,0},0,placement));
+    assert(!place_assembly(fit,{0,std::numeric_limits<float>::infinity(),0},0,placement));
 }

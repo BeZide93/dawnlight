@@ -80,17 +80,26 @@ inline bool describe_disc(const Vec& min, const Vec& max, const Matrix& meshToWo
     return true;
 }
 
+// MR-Table is authored in chamber coordinates and includes the stone platform.
+// The standing panel's native Y is recorded by the SDK mirror-table actor in
+// l_minPos/l_maxPos (src/d/actor/d_a_obj_mirror_table.cpp). Align that surface,
+// not the bottom of the masonry, to the hub floor. A small burial avoids a
+// coplanar platform top showing through the existing floor.
+inline constexpr float kChamberPlatformY = 4613.6299f;
+inline constexpr float kPlatformBurial = 2.0f;
+
 // Move the entire posed frame + attached mirror with only yaw and translation.
-// Preserve their native relative transform, tilt and scale; ground the stand.
-inline bool place_assembly(const Fit& native, float floorY, const Vec& position,
+// Preserve their native relative transform, tilt and scale.
+inline bool place_assembly(const Fit& native, const Vec& position,
                            float inwardYaw, Matrix& placement) {
-    if (!std::isfinite(floorY) || native.normal[0]*native.normal[0]+native.normal[2]*native.normal[2]<0.01f) return false;
+    for (float value : position) if (!std::isfinite(value)) return false;
+    if (native.normal[0]*native.normal[0]+native.normal[2]*native.normal[2]<0.01f) return false;
     const float yaw=inwardYaw-std::atan2(native.normal[0],native.normal[2]);
     const float sine=std::sin(yaw), cosine=std::cos(yaw);
     placement={{{cosine,0,sine,0},{0,1,0,0},{-sine,0,cosine,0}}};
     const Vec center=vector_to_world(placement,native.center);
     placement[0][3]=position[0]-center[0];
-    placement[1][3]=position[1]-floorY;
+    placement[1][3]=position[1]-kChamberPlatformY-kPlatformBurial;
     placement[2][3]=position[2]-center[2];
     return true;
 }

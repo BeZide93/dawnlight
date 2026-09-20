@@ -52,8 +52,11 @@ running chamber switches, stairs, effects, cutscenes or reflection singleton log
 
 The former fixed 440-unit diameter and 240-unit center height are removed.
 The entire posed assembly is placed with only yaw and translation, facing the
-hub center. The stand's posed geometry supplies the floor height. Empty
-attachment joints do not contribute zero-sized bounds to this grounding step.
+hub center. The frame model also contains the chamber's stone platform, so its
+lowest vertex is not a suitable floor anchor. Placement instead uses the native
+standing-panel height (Y = 4613.6299, documented in the SDK mirror-table actor)
+and buries that surface 2 units below the hub floor. The platform underneath it
+stays underground; the frame, attached mirror and fitted symbol move together.
 Neither the disc nor the stand is resized to fit the artwork. Instead, the symbol
 size follows the loaded vanilla disc dimensions, inset to leave the rim visible.
 The animation remains frozen in the raised pose and its shared joint calculator
@@ -93,7 +96,8 @@ existing behavior.
   reversed depth, 1×/4× MSAA, and one/two/three color attachments.
 
 - Geometry tests cover all 18 facing directions with each possible local disc
-  axis, native attachment offsets, unchanged scale/distances, grounded stands,
+  axis, native attachment offsets, unchanged scale/distances, buried platform
+  tops and foundations with the native mirror height preserved,
   artwork sizing from the original dimensions and invalid bounds. Additional tilted-disc tests cover
   all 18 directions, the authored front, raised rims, plane alignment at all
   four corners and fixed inward-facing visibility.

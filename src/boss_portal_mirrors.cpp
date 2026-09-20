@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <cstring>
+#include <vector>
 
 namespace dawnlight {
 namespace {
@@ -19,6 +21,37 @@ constexpr float kDiameter = 440.0f;
 constexpr float kCenterHeight = 240.0f;
 ProfileName sProfile = -1;
 ActorHandle sRegistration = 0;
+
+// Dusklight's J3D loader converts vertex arrays to host byte order. Preserve
+// the format/stride rather than treating every archive as an array of floats.
+std::vector<mirror_geometry::Vec> read_vectors(const void* data, unsigned count,
+                                              unsigned stride, int type, unsigned frac) {
+    const unsigned bytes=type==GX_F32 ? 4 : (type==GX_S16 || type==GX_U16) ? 2 :
+                         (type==GX_S8 || type==GX_U8) ? 1 : 0;
+    if (!data || !bytes || stride<3*bytes || count>65536 || frac>31) return {};
+    std::vector<mirror_geometry::Vec> result;
+    result.reserve(count);
+    const auto* input=static_cast<const unsigned char*>(data);
+    for (unsigned i=0;i<count;++i) {
+        mirror_geometry::Vec v{};
+        bool valid=true;
+        for (unsigned axis=0;axis<3;++axis) {
+            const auto* p=input+i*stride+axis*bytes;
+            float value=0;
+            switch (type) {
+            case GX_F32: std::memcpy(&value,p,4); break;
+            case GX_S16: { s16 n; std::memcpy(&n,p,2); value=n; break; }
+            case GX_U16: { u16 n; std::memcpy(&n,p,2); value=n; break; }
+            case GX_S8: { s8 n; std::memcpy(&n,p,1); value=n; break; }
+            case GX_U8: value=*p; break;
+            }
+            v[axis]=type==GX_F32 ? value : std::ldexp(value,-static_cast<int>(frac));
+            valid=valid && std::isfinite(v[axis]);
+        }
+        if (valid) result.push_back(v);
+    }
+    return result;
+}
 
 class BossMirror : public fopAc_ac_c {
 public:
@@ -74,11 +107,21 @@ public:
         MTXConcat(meshToWorld,inverseRoot,base);
         model->setBaseTRMtx(base);
         model->calc();
-        surface.center.set(fit.center[0],fit.center[1],fit.center[2]);
-        surface.right.set(fit.right[0],fit.right[1],fit.right[2]);
-        surface.up.set(fit.up[0],fit.up[1],fit.up[2]);
-        surface.normal.set(fit.normal[0],fit.normal[1],fit.normal[2]);
-        surface.halfDepth = fit.halfDepth;
+        const auto& vertices=data->getVertexData();
+        const auto positions=read_vectors(vertices.getVtxPosArray(),
+            std::min(vertices.getVtxNum(),vertices.getVtxArrNum(GX_VA_POS)),
+            vertices.getVtxArrStride(GX_VA_POS),vertices.getVtxPosType(),vertices.getVtxPosFrac());
+        const auto normals=read_vectors(vertices.getVtxNrmArray(),vertices.getNrmNum(),
+            vertices.getVtxArrStride(GX_VA_NRM),vertices.getVtxNrmType(),vertices.getVtxNrmFrac());
+        mirror_geometry::Face face;
+        if (!mirror_geometry::mount_face(positions,normals,fit,face)) {
+            svc_log->warn(mod_ctx,"Boss Rush mirror: no broad inward-facing surface found in the loaded mesh");
+            return false;
+        }
+        surface.center.set(face.center[0],face.center[1],face.center[2]);
+        surface.right.set(face.right[0],face.right[1],face.right[2]);
+        surface.up.set(face.up[0],face.up[1],face.up[2]);
+        surface.normal.set(face.normal[0],face.normal[1],face.normal[2]);
         attention_info.flags = 0;
         eyePos = attention_info.position = surface.center;
         // Only 18 small static models; avoid culling against the archive's old pivot.

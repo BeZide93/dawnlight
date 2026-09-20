@@ -257,11 +257,9 @@ void stage(ModContext*, const GfxStageContext* context, void*) {
         if (!get_boss_portal_symbol(index, surface, defeated)) continue;
         const auto& n = surface.normal;
         const cXyz eye = view.lookat.eye - surface.center;
-        const float side = eye.x*n.x + eye.y*n.y + eye.z*n.z >= 0 ? 1.0f : -1.0f;
-        // Fixed to the visible face of the disc, never a camera-facing billboard.
-        // Also label the back so walking behind a mirror still identifies its boss.
-        surface.center += n*((surface.halfDepth+1.5f)*side);
-        surface.right *= side;
+        // The label is permanently mounted on the inward-facing front plane.
+        // Looking from behind hides it; the camera never changes its transform.
+        if (eye.x*n.x + eye.y*n.y + eye.z*n.z <= 0.0f) continue;
         const auto& c = surface.center;
         const float z = view.viewMtx[2][0]*c.x + view.viewMtx[2][1]*c.y +
                         view.viewMtx[2][2]*c.z + view.viewMtx[2][3];

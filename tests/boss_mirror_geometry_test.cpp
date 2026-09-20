@@ -5,7 +5,6 @@
 #include <limits>
 
 using namespace dawnlight::mirror_geometry;
-float dot(const Vec& a, const Vec& b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
 Vec transform(const Matrix& m, const Vec& v) {
     Vec result{};
     for (unsigned r=0;r<3;++r) result[r]=dot({m[r][0],m[r][1],m[r][2]},v)+m[r][3];
@@ -45,6 +44,56 @@ int main() {
             for (unsigned i=0;i<3;++i) world[i]-=center[i];
             assert(std::abs(dot(world,fit.normal))<=fit.halfDepth+0.02f);
         }
+    }
+    // Authored disc with a baked-in tilt, a rear face, and a raised outer rim.
+    // The label must follow the inner front plane, not the AABB or rim plane.
+    for (float tilt : {-0.22f, 0.0f, 0.22f}) for (unsigned boss=0;boss<18;++boss) {
+        std::vector<Vec> positions;
+        std::vector<Vec> normals;
+        const float sn=std::sin(tilt), cs=std::cos(tilt);
+        auto local=[&](float x,float y,float z) -> Vec { return {x+1200, cs*y-sn*z+4500, sn*y+cs*z-21000}; };
+        for (unsigned i=0;i<32;++i) {
+            const float a=6.28318530718f*i/32;
+            for (float z : {-5.0f,5.0f}) positions.push_back(local(75*std::cos(a),75*std::sin(a),z));
+            positions.push_back(local(100*std::cos(a),100*std::sin(a),-8));
+        }
+        positions.push_back(local(0,0,-5));
+        positions.push_back(local(0,0,5));
+        // Complete mirror's authored front is negative local Z.
+        normals.push_back({0,sn,-cs});
+        normals.push_back({0,-sn,cs});
+        normals.push_back({1,0,0});
+        Vec min=positions[0],max=positions[0];
+        for (const auto& p:positions) for(unsigned i=0;i<3;++i) {
+            min[i]=std::min(min[i],p[i]); max[i]=std::max(max[i],p[i]);
+        }
+        const float angle=6.28318530718f*boss/18;
+        const Vec center={std::sin(angle)*1450,1340,std::cos(angle)*1450};
+        Fit fit;
+        assert(dawnlight::mirror_geometry::fit(min,max,center,angle+3.14159265359f,440,fit));
+        Face face;
+        assert(mount_face(positions,normals,fit,face));
+        Face smoothed;
+        const std::vector<Vec> bevelNormals={{1,0,0}};
+        assert(mount_face(positions,bevelNormals,fit,smoothed));
+        assert(dot(smoothed.normal,face.normal)>0.99999f);
+        Vec expected=vector_to_world(fit.meshToWorld,normals[0]);
+        assert(normalize(expected));
+        assert(dot(face.normal,expected)>0.99999f);
+        assert(dot(face.normal,fit.normal)>0.97f);
+        assert(close(dot(face.right,face.normal),0));
+        assert(close(dot(face.up,face.normal),0));
+        const Vec front=transform(fit.meshToWorld,local(0,0,-5));
+        for (float x : {-0.5f,0.5f}) for (float y : {-0.5f,0.5f}) {
+            Vec corner;
+            for(unsigned i=0;i<3;++i) corner[i]=face.center[i]+x*face.right[i]+y*face.up[i]-front[i];
+            assert(close(dot(corner,expected),0.4f));
+        }
+        // Camera side affects visibility only, never changes this fixed frame.
+        Vec toHub={-face.center[0],0,-face.center[2]};
+        assert(dot(face.normal,toHub)>0);
+        for(float& x:toHub) x=-x;
+        assert(dot(face.normal,toHub)<0);
     }
     Fit fit;
     assert(!dawnlight::mirror_geometry::fit({0,0,0},{0,0,0},{0,0,0},0,440,fit));

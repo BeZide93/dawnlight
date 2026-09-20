@@ -52,8 +52,17 @@ All 18 mirrors face the hub center. Their 440-unit diameter fits the existing
 bind-pose root/pivot and mounts the model and emblem in the same world frame.
 The symbol face is about 361 units across, compared with the previous 240-unit
 billboard. A nearly opaque dark circular face and slightly strengthened strokes
-improve distance contrast. The image stays fixed to the mirror, with a readable
-label on the back as well. The original stone rim remains visible.
+improve distance contrast. The image stays fixed to the inward-facing front. Looking from behind hides the
+symbol instead of moving it onto the back. The original stone rim remains visible.
+
+The original model is rotated 180 degrees around its up axis so its authored front
+faces the hub center. Its baked-in tilt is preserved. The symbol plane is fitted
+to the loaded mesh's broad front surface using its vertex positions and authored
+normals, rather than the axis-aligned bounding box. Geometric plane candidates
+from inner vertices also handle smoothed bevel normals. Raised rim vertices are
+downweighted and rear planes are excluded. All four symbol corners use this same
+plane with a fixed 0.4-unit normal offset to avoid z-fighting. No camera-dependent
+rotation, flipping or front/back relocation is applied.
 
 The existing GfxService renderer draws the emblem faces with scene depth testing
 and depth writes. Transparent corners are discarded; later translucent effects
@@ -78,7 +87,9 @@ existing behavior.
   reversed depth, 1×/4× MSAA, and one/two/three color attachments.
 
 - Geometry tests cover all 18 facing directions with each possible local disc
-  axis, offset pivots, front/back surface alignment and invalid bounds.
+  axis, offset pivots and invalid bounds. Additional tilted-disc tests cover
+  all 18 directions, the authored front, raised rims, plane alignment at all
+  four corners and fixed inward-facing visibility.
 - An extracted spawn-function harness covers delayed loads, single-slot retries,
   missing actors and keeping exactly 18 mirrors plus two center floor portals.
 

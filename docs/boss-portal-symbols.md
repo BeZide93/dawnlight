@@ -97,6 +97,17 @@ The two central floor portals keep their original trigger positions. Hub
 supplies, boss entry logic, saved progress and both center portals retain their
 existing behavior.
 
+## Boss Rush warp animation
+
+All Boss Rush transitions use Link's native `PROC_WARP` animation. Hub departures
+to a boss, the Boss Rush run, or the Cave of Ordeals call `procCoWarpInit(0, 1)`;
+returns use the same departure animation. Hub and Cave arrivals call
+`procCoWarpInit(1, 0)` after the target scene has loaded. Boss-room arrival is
+unchanged. Dawnlight independently redirects the native portal completion to the
+requested point, room and layer, with a safe direct-stage fallback if the native
+player actor is unavailable. Cave arrival also re-arms the dungeon-return item so
+both the Cave exit and the large-fairy return arrive back in the Boss Rush hub.
+
 ## Validation
 
 - Local Linux release-with-debug-info build and `.dusk` packaging passed.

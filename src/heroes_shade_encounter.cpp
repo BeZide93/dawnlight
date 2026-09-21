@@ -46,6 +46,7 @@ struct Fighter {
     float orbitRadius = 150;
     bool swordContact = false;
     bool jumpLaunched = false;
+    bool helmTurnPending = false;
     bool animationStarted = false;
     cXyz jumpTarget{0,0,0};
     cXyz jumpBodyOffset{0,0,0};
@@ -263,6 +264,7 @@ void select_phase(daNpc_Kn_c* actor,Fighter& entry) {
     stop_blade_sweeps(entry);
     entry.chain.counters=0;
     entry.swordContact=false;
+    entry.helmTurnPending=false;
     entry.cooldown=attack_cooldown(entry);
     entry.reset=false;
 }
@@ -372,10 +374,23 @@ HookAction before_approach(ModContext*,void* args,void*,void*) {
 }
 void after_approach(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
-    if (fighter(actor) && !sBattle.recovery && !sBattle.dying && actor->speedF>0) {
-        actor->speedF=kApproachSpeed;
+    auto* entry=fighter(actor);
+    if (!entry || sBattle.recovery || sBattle.dying) return;
+    if (entry->helmTurnPending) {
+        // Native approach enables forward speed before its gradual turn has
+        // reached Link. After Helm Splitter that produces an arc when Link is
+        // behind the landing stance. Keep the native turn, but do it in place.
+        const s16 remaining=static_cast<s16>(fopAcM_searchPlayerAngleY(actor)-actor->current.angle.y);
+        if (std::abs(static_cast<int>(remaining))>0x400) {
+            actor->speedF=0;
+            actor->speed.x=actor->speed.z=0;
+            return;
+        }
+        entry->helmTurnPending=false;
     }
+    if (actor->speedF>0) actor->speedF=kApproachSpeed;
 }
+
 HookAction accessory_motion(ModContext*,void* args,void* result,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (!fighter(actor) || actor->mpPodModel) return HOOK_CONTINUE;
@@ -410,6 +425,7 @@ void start_attack(daNpc_Kn_c* actor,Fighter& entry) {
         sphere.ClrAtHit();
     }
     entry.jumpLaunched=false;
+    entry.helmTurnPending=false;
     const auto* body=actor->mpModelMorf[0]->getModel()->getAnmMtx(actor->getBackboneJointNo());
     entry.jumpBodyOffset.set(body[0][3]-actor->current.pos.x,0,body[2][3]-actor->current.pos.z);
     const auto offset=actor->current.pos-daPy_getPlayerActorClass()->current.pos;
@@ -463,7 +479,7 @@ void after_jump_pose(ModContext*,void* args,void*,void*) {
     actor->eyePos+=correction;
     actor->attention_info.position+=correction;
 }
-void finish_helm_splitter(daNpc_Kn_c* actor,const Fighter& entry) {
+void finish_helm_splitter(daNpc_Kn_c* actor,Fighter& entry) {
     if (!entry.animationStarted || entry.offense!=shade::helm_splitter ||
         actor->mMotionSeqMngr.getNo()!=shade::helm_splitter) return;
     // The BCK ends displaced and facing backwards. Our pose hook has already
@@ -472,6 +488,7 @@ void finish_helm_splitter(daNpc_Kn_c* actor,const Fighter& entry) {
     // 594-unit root offset. Native ready/walk blending can resume next tick.
     actor->setAngle(static_cast<s16>(actor->current.angle.y+0x8000));
     actor->mMotionSeqMngr.setNo(6,0,1,0);
+    entry.helmTurnPending=true;
 }
 HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
@@ -494,6 +511,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         // Resolve blocks, successful Hidden Skills and follow-ups natively
         // before deciding whether to retaliate. A hit is not itself a block.
         entry->offense=-1;
+        entry->helmTurnPending=false; // real hit reactions retain their movement
         entry->chain.cancel();
         entry->cooldown=attack_cooldown(*entry);
         return HOOK_CONTINUE;

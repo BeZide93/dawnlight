@@ -91,7 +91,12 @@ The record clears on the next phase or a new encounter.
   with zero blend before clearing the attack. Position stays at the landing
   point. This avoids one uncorrected frame of the old 594-unit root offset and
   avoids blending that displaced root back into the ready pose. Normal combat
-  stance blending resumes on the next tick.
+  stance blending resumes on the next tick. If Link is behind this stance,
+  native approach turns toward him in place: forward and X/Z speed stay zero
+  until the remaining yaw error is at most `0x400` (5.625 degrees). This prevents
+  the walking arc produced by turning and moving at the same time. Link already
+  in front resumes the normal approach immediately. Real hit reactions, a new
+  attack and phase reset clear the turn guard; vertical motion is unaffected.
   Target-relative movement uses `posMove`; a scoped `beforeMove` hook adds
   gravity for that path, since only `posMoveF` normally integrates it. Native
   forward movement still applies its own gravity once.
@@ -176,7 +181,7 @@ early and late moving blade contact, stationary poses, consumed shield/hit
 contacts, Back Slice's first cut and non-damaging steps, sweep endpoints,
 Jump Strike's two-contact limit, interrupted/recovering actors, and the actual
 jump-pose hook preserving height/orientation on both models, the root-neutral
-Helm Splitter handoff, and one-contact double removal with phase-scoped respawn
+Helm Splitter handoff and turn-in-place recovery (including wrapped yaw), and one-contact double removal with phase-scoped respawn
 suppression.
 
 Device checklist (still required):
@@ -193,7 +198,9 @@ Device checklist (still required):
    Check Back Slice from several directions, while moving and near a wall;
    he should circle Link and damage on the cut without a delayed follow-up.
    Helm Splitter should pass over Link and connect on its turning cut. Its final
-   stance must remain visible, with no position snap when combat resumes. Jump
+   stance must remain visible, with no position snap when combat resumes.
+   Stand behind him at the end of the stance: he must turn in place rather than
+   glide in a circle. Repeat in front; normal approach should resume directly. Jump
    Strike should allow damage on both distinct blows when native invulnerability
    permits it. Dodge jumps after takeoff; no remote damage should occur.
 5. Test every counter above, particularly Ending Blow and the head-lock follow-up.

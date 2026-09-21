@@ -130,7 +130,7 @@ struct HurtCylinder {
 struct Fighter {
     int id=42, divide=0;
     int offense=shade::helm_splitter;
-    bool animationStarted=true, deleting=false;
+    bool animationStarted=true, deleting=false, helmTurnPending=false;
     shade::BladeMotion blade;
     std::array<dCcD_Cps,2> bladeSweeps;
     cXyz jumpBodyOffset{5,0,10};
@@ -150,11 +150,16 @@ struct daNpc_Kn_c {
     void setAngle(s16 y) { current.angle.y=y; }
     struct { cXyz position; } attention_info;
     cXyz eyePos;
+    cXyz speed;
+    float speedF=0;
     int getBackboneJointNo() { return 1; }
     std::array<Sphere,2> mSphCc;
 };
 Fighter* fighter(daNpc_Kn_c* a) { return a->owned ? &a->entry : nullptr; }
 shade::Battle sBattle;
+constexpr float kApproachSpeed=6;
+s16 playerYaw=0;
+s16 fopAcM_searchPlayerAngleY(daNpc_Kn_c*) { return playerYaw; }
 int removed=0;
 void remove_actor(int id) { assert(id==42); ++removed; }
 struct Space {
@@ -292,6 +297,7 @@ int main() {
     const auto yaw=a.current.angle.y;
     finish_helm_splitter(&a,a.entry);
     assert(a.mMotionSeqMngr.no==6 && a.mMotionSeqMngr.blend==0);
+    assert(a.entry.helmTurnPending);
     assert(a.current.angle.y==static_cast<s16>(yaw+0x8000));
     assert(a.current.pos.x==pos.x && a.current.pos.z==pos.z);
     finish_helm_splitter(&a,a.entry); // cannot flip twice after switching stance
@@ -299,6 +305,39 @@ int main() {
     a.mMotionSeqMngr.no=shade::helm_splitter; a.entry.animationStarted=false;
     finish_helm_splitter(&a,a.entry);
     assert(a.mMotionSeqMngr.no==shade::helm_splitter);
+
+    // Reproduce native turn-plus-walk after the stance with Link behind.
+    // The actual post-hook must retain yaw and vertical motion while blocking
+    // forward/XZ translation until the remaining turn is small enough.
+    a.entry.animationStarted=true; a.entry.helmTurnPending=true;
+    a.current.angle.y=0; playerYaw=static_cast<s16>(0x8000);
+    for (int turn=0;turn<16;++turn) {
+        a.current.angle.y=static_cast<s16>(turn*0x800);
+        a.speedF=3; a.speed={2,-4,3};
+        after_approach(nullptr,&a,nullptr,nullptr);
+        assert(a.entry.helmTurnPending && a.speedF==0);
+        assert(a.speed.x==0 && a.speed.z==0 && a.speed.y==-4);
+        assert(a.current.angle.y==static_cast<s16>(turn*0x800));
+    }
+    a.current.angle.y=playerYaw; a.speedF=3;
+    after_approach(nullptr,&a,nullptr,nullptr);
+    assert(!a.entry.helmTurnPending && a.speedF==kApproachSpeed);
+    // Link already in front: movement resumes immediately, including yaw wrap.
+    a.entry.helmTurnPending=true;
+    a.current.angle.y=32760; playerYaw=-32760; a.speedF=3;
+    after_approach(nullptr,&a,nullptr,nullptr);
+    assert(!a.entry.helmTurnPending && a.speedF==kApproachSpeed);
+    // Only the post-Helm turn is constrained, never an ordinary native approach.
+    a.current.angle.y=0; playerYaw=static_cast<s16>(0x8000); a.speedF=3;
+    after_approach(nullptr,&a,nullptr,nullptr);
+    assert(a.speedF==kApproachSpeed);
+    a.entry.helmTurnPending=true; a.owned=false; a.speedF=3;
+    after_approach(nullptr,&a,nullptr,nullptr);
+    assert(a.speedF==3);
+    a.owned=true; sBattle.recovery=1;
+    after_approach(nullptr,&a,nullptr,nullptr);
+    assert(a.speedF==3);
+    sBattle.recovery=0;
 
     // A real Jump Strike contact removes either double, never the main Shade,
     // a whiff, a projectile or an unrelated actor hitting during Link's jump.
@@ -348,7 +387,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("defeat_double_on_jump_strike", "bool") + checks
+source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("defeat_double_on_jump_strike", "bool") + function("after_approach", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

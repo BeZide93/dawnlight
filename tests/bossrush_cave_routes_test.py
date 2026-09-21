@@ -20,10 +20,6 @@ def function(name, source=source):
 
 
 stubs = r'''
-#include "packet_chain.hpp"
-using dawnlight::break_packet_cycle;
-using dawnlight::break_link_cycle;
-#include <cstdio>
 #include <cassert>
 #include <cstring>
 #include <string>
@@ -54,22 +50,6 @@ int fopAcM_GetName(fopAc_ac_c* p) { return p->profile; }
 std::unordered_set<ActorId> s_testActors;
 std::vector<std::pair<void*, bool>> s_testProcessStack;
 struct ModContext {}; struct dSv_save_c {};
-using u32 = unsigned;
-struct J3DPacket {
-    J3DPacket* next=nullptr;
-    J3DPacket* getNextPacket() { return next; }
-    void setNextPacket(J3DPacket* p) { next=p; }
-};
-struct J3DDrawBuffer { J3DPacket** mpBuffer; u32 mEntryTableSize; };
-struct J3DMatPacket { J3DPacket* shape; J3DPacket* getShapePacket() { return shape; } };
-struct mDoExt_3DlineMat_c { mDoExt_3DlineMat_c* field_0x4=nullptr; };
-struct mDoExt_3DlineMatSortPacket {
-    mDoExt_3DlineMat_c* head=nullptr;
-    mDoExt_3DlineMat_c* getFirstMat() { return head; }
-};
-int repairMessages=0;
-struct Logger { void warn(ModContext*, const char*) { ++repairMessages; } } logger;
-Logger* svc_log=&logger; ModContext* mod_ctx=nullptr;
 struct dMenu_save_c { int mEndStatus=2; int getEndStatus() { return mEndStatus; } };
 struct dGameover_c { bool mIsDemoSave=false; dMenu_save_c* dMs_c=nullptr; };
 int gameOverStatus=0;
@@ -96,7 +76,6 @@ constexpr s16 kBossRushReturnPoint=0, kCaveOfOrdealsPoint=0;
 constexpr s8 kBossRushReturnRoom=0, kBossRushReturnLayer=0;
 constexpr s8 kBossRushDarknutAreaRoom=51, kBossRushDarknutAreaLayer=0;
 constexpr s8 kCaveOfOrdealsRoom=0, kCaveOfOrdealsLayer=-1, kIntroSkipRoom=0;
-unsigned sArenaPacketRepairsLogged=0;
 bool active=true, resetting=false;
 bool sHubArrivalWarpPending=false, sBossRushArrivalReady=true;
 int state=3, bossIndex=0, stay=0;
@@ -139,9 +118,7 @@ functions = "\n".join(function(name, spawner) for name in (
 )) + "\n"
 assert "add_post<SpawnerProcessHook>(svc_hook, after_process)" in spawner
 functions += "\n".join(function(name) for name in (
-    "is_bossrush_darknut_area_active", "log_arena_queue_repair", "check_arena_packet_chain",
-    "on_arena_material_entry_pre", "on_arena_line_entry_pre",
-    "on_arena_draw_buffer_pre", "on_arena_material_draw_pre", "on_bossrush_area_dungeon_bit_pre",
+    "is_bossrush_darknut_area_active", "on_bossrush_area_dungeon_bit_pre",
     "on_bossrush_area_switch_pre", "on_bossrush_area_actor_name_post",
     "prepare_darknut_area_entry", "prepare_cave_entrance_return",
     "prepare_hub_return_from_cave", "set_next_stage_args", "on_cave_gameover_close_pre", "on_set_next_stage_pre",
@@ -165,68 +142,6 @@ void route(const char* requested, const char* expected, int expectedState, int e
     assert(mods::arg<float>(args,4)==7.5 && mods::arg<unsigned>(args,5)==9);
 }
 int main() {
-    J3DPacket a,b; a.next=&b; b.next=&a;
-    J3DPacket* buckets[]={nullptr,&a};
-    J3DDrawBuffer buffer{buckets,2}; J3DMatPacket material{&a};
-    std::any drawArgs[]={static_cast<const J3DDrawBuffer*>(&buffer)};
-    std::any materialArgs[]={&material};
-    for (const char* stage : {"D_MN06B","D_SB01","D_MN09C"}) {
-        reset(stage,51,0);
-        assert(on_arena_draw_buffer_pre(nullptr,drawArgs,nullptr,nullptr)==HOOK_CONTINUE);
-        assert(on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr)==HOOK_CONTINUE);
-        assert(b.next==&a && repairMessages==0);
-    }
-    reset("D_DLBR0",51,0); active=false;
-    on_arena_draw_buffer_pre(nullptr,drawArgs,nullptr,nullptr);
-    on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr);
-    assert(b.next==&a && repairMessages==0);
-    active=true;
-    assert(on_arena_draw_buffer_pre(nullptr,drawArgs,nullptr,nullptr)==HOOK_CONTINUE);
-    assert(a.next==&b && b.next==nullptr && repairMessages==1);
-    b.next=&a;
-    assert(on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr)==HOOK_CONTINUE);
-    assert(a.next==&b && b.next==nullptr && repairMessages==2);
-    on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr);
-    assert(repairMessages==2);
-
-    // Sorting can encounter a material cycle before either draw guard runs.
-    b.next=&a;
-    std::any entryArgs[]={&material,&buffer};
-    assert(on_arena_material_entry_pre(nullptr,entryArgs,nullptr,nullptr)==HOOK_CONTINUE);
-    assert(a.next==&b && b.next==nullptr);
-    // A stalk/rope already in the current list must not be prepended again.
-    mDoExt_3DlineMat_c stalk,rope;
-    mDoExt_3DlineMatSortPacket lines;
-    auto submitLine = [&](mDoExt_3DlineMat_c* mat) {
-        std::any args[]={&lines,mat};
-        const auto action=on_arena_line_entry_pre(nullptr,args,nullptr,nullptr);
-        if (action==HOOK_CONTINUE) { mat->field_0x4=lines.head; lines.head=mat; }
-        return action;
-    };
-    assert(submitLine(&stalk)==HOOK_CONTINUE);
-    assert(submitLine(&stalk)==HOOK_SKIP_ORIGINAL);
-    assert(stalk.field_0x4==nullptr);
-    assert(submitLine(&rope)==HOOK_CONTINUE);
-    assert(submitLine(&stalk)==HOOK_SKIP_ORIGINAL);
-    assert(lines.head==&rope && rope.field_0x4==&stalk && stalk.field_0x4==nullptr);
-    // Also recover a pre-existing cycle, preserving both unique lines.
-    stalk.field_0x4=&rope;
-    assert(submitLine(&stalk)==HOOK_SKIP_ORIGINAL);
-    assert(rope.field_0x4==&stalk && stalk.field_0x4==nullptr);
-    lines.head=nullptr; // native per-frame reset
-    assert(submitLine(&stalk)==HOOK_CONTINUE);
-    for (const char* stage : {"D_MN06B","D_SB01","D_MN09C"}) {
-        reset(stage,51,0); b.next=&a;
-        on_arena_material_entry_pre(nullptr,entryArgs,nullptr,nullptr);
-        assert(b.next==&a);
-        std::any args[]={&lines,&stalk};
-        assert(on_arena_line_entry_pre(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
-    }
-    reset("D_DLBR0",51,0); active=false;
-    std::any lineArgs[]={&lines,&stalk};
-    assert(on_arena_line_entry_pre(nullptr,lineArgs,nullptr,nullptr)==HOOK_CONTINUE);
-    on_arena_material_entry_pre(nullptr,entryArgs,nullptr,nullptr);
-    assert(b.next==&a);
     // Entrance exit goes to the private, empty Darknut room in hub state.
     reset(); route("F_SP124","D_DLBR0",0,51,0,0);
     assert(!sHubArrivalWarpPending);

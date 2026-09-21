@@ -1,8 +1,5 @@
 #include "config.hpp"
 #include "enemy_spawner.hpp"
-#include "packet_chain.hpp"
-#include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
-#include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "boss_portal_symbols.hpp"
 #include "boss_portal_mirrors.hpp"
 #include "save_compat.hpp"
@@ -88,11 +85,6 @@ DEFINE_HOOK(&Z2SceneMgr::setSceneName, BossRushAreaAudioHook);
 DEFINE_HOOK(&dSv_memBit_c::isDungeonItem, BossRushAreaDungeonBitHook);
 DEFINE_HOOK(&dSv_info_c::isSwitch, BossRushAreaSwitchHook);
 DEFINE_HOOK(&dStage_searchName, BossRushAreaActorNameHook);
-DEFINE_HOOK(&J3DDrawBuffer::drawHead, ArenaDrawHeadHook);
-DEFINE_HOOK(&J3DDrawBuffer::drawTail, ArenaDrawTailHook);
-DEFINE_HOOK(&J3DMatPacket::draw, ArenaMaterialDrawHook);
-DEFINE_HOOK(&J3DMatPacket::entry, ArenaMaterialEntryHook);
-DEFINE_HOOK(&mDoExt_3DlineMatSortPacket::setMat, ArenaLineEntryHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
@@ -713,78 +705,6 @@ bool is_bossrush_hub_active() {
 bool is_bossrush_darknut_area_active() {
     return is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
            is_bossrush_darknut_area_stage();
-}
-
-// Device logs confirm cyclic material lists in the connector. Repair before
-// both sorting and drawing; also prevent duplicate line materials (Deku Baba's
-// stalk), whose separate chain is walked during interpolation and drawing.
-unsigned sArenaPacketRepairsLogged = 0;
-void log_arena_queue_repair(void* packet, const char* kind) {
-    if (sArenaPacketRepairsLogged < 4) {
-        ++sArenaPacketRepairsLogged;
-        char message[160];
-        std::snprintf(message, sizeof(message),
-            "Dawnlight arena: draw queue guard: %s (%p)",
-            kind, static_cast<void*>(packet));
-        svc_log->warn(mod_ctx, message);
-    }
-}
-
-void check_arena_packet_chain(J3DPacket* packet, const char* kind) {
-    if (break_packet_cycle(packet)) log_arena_queue_repair(packet, kind);
-}
-
-HookAction on_arena_material_entry_pre(ModContext*, void* args, void*, void*) {
-    if (!is_bossrush_darknut_area_active() || args == nullptr) return HOOK_CONTINUE;
-    const auto* buffer = mods::arg<J3DDrawBuffer*>(args, 1);
-    // Native material sorting traverses the buckets before the draw hooks run.
-    if (buffer != nullptr && buffer->mpBuffer != nullptr) {
-        for (u32 i = 0; i < buffer->mEntryTableSize; ++i) {
-            check_arena_packet_chain(buffer->mpBuffer[i], "material before sort");
-        }
-    }
-    return HOOK_CONTINUE;
-}
-
-HookAction on_arena_line_entry_pre(ModContext*, void* args, void*, void*) {
-    if (!is_bossrush_darknut_area_active() || args == nullptr) return HOOK_CONTINUE;
-    auto* packet = mods::arg<mDoExt_3DlineMatSortPacket*>(args, 0);
-    auto* incoming = mods::arg<mDoExt_3DlineMat_c*>(args, 1);
-    if (packet == nullptr || incoming == nullptr) return HOOK_CONTINUE;
-    auto* head = packet->getFirstMat();
-    if (break_link_cycle(head,
-            [](mDoExt_3DlineMat_c* p) { return p->field_0x4; },
-            [](mDoExt_3DlineMat_c* p) { p->field_0x4 = nullptr; })) {
-        log_arena_queue_repair(head, "line");
-    }
-    for (auto* mat = head; mat != nullptr; mat = mat->field_0x4) {
-        if (mat == incoming) {
-            // setMat prepends by changing incoming->next. Repeating a material
-            // already in this list would create a self-cycle or a longer cycle.
-            // Keep its existing entry; reset() permits entry again next frame.
-            log_arena_queue_repair(incoming, "duplicate line submission");
-            return HOOK_SKIP_ORIGINAL;
-        }
-    }
-    return HOOK_CONTINUE;
-}
-
-HookAction on_arena_draw_buffer_pre(ModContext*, void* args, void*, void*) {
-    if (!is_bossrush_darknut_area_active() || args == nullptr) return HOOK_CONTINUE;
-    const auto* buffer = mods::arg<const J3DDrawBuffer*>(args, 0);
-    if (buffer != nullptr && buffer->mpBuffer != nullptr) {
-        for (u32 i = 0; i < buffer->mEntryTableSize; ++i) {
-            check_arena_packet_chain(buffer->mpBuffer[i], "material");
-        }
-    }
-    return HOOK_CONTINUE;
-}
-
-HookAction on_arena_material_draw_pre(ModContext*, void* args, void*, void*) {
-    if (!is_bossrush_darknut_area_active() || args == nullptr) return HOOK_CONTINUE;
-    auto* material = mods::arg<J3DMatPacket*>(args, 0);
-    if (material != nullptr) check_arena_packet_chain(material->getShapePacket(), "shape");
-    return HOOK_CONTINUE;
 }
 
 // Supply the cleared-room state before native actors are created. This also
@@ -2066,7 +1986,6 @@ void warp_to_bossrush_hub_from_midna(daMidna_c* midna) {
 }
 
 void prepare_darknut_area_entry() {
-    sArenaPacketRepairsLogged = 0;
     // A positive spawn can still inherit a previous warp/demo mode unless
     // the restart override is cleared before dStage_playerInit runs.
     dComIfGs_setRestartRoomParam(0);
@@ -4578,27 +4497,6 @@ ModResult register_new_save_modes(ModError* error) {
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area gate state");
     }
-    result = mods::hook_add_pre<ArenaMaterialEntryHook>(svc_hook, on_arena_material_entry_pre);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install arena queue entry guard");
-    }
-    result = mods::hook_add_pre<ArenaLineEntryHook>(svc_hook, on_arena_line_entry_pre);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install arena queue entry guard");
-    }
-    result = mods::hook_add_pre<ArenaDrawHeadHook>(svc_hook, on_arena_draw_buffer_pre);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install arena draw queue guard");
-    }
-    result = mods::hook_add_pre<ArenaDrawTailHook>(svc_hook, on_arena_draw_buffer_pre);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install arena draw queue guard");
-    }
-    result = mods::hook_add_pre<ArenaMaterialDrawHook>(svc_hook, on_arena_material_draw_pre);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install arena draw queue guard");
-    }
-
     result = mods::hook_add_post<BossRushAreaActorNameHook>(svc_hook, on_bossrush_area_actor_name_post);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area actor filter");
@@ -4662,11 +4560,6 @@ void shutdown_new_save_modes() {
     mods::hook_uninstall<BossRushAreaAudioHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaDungeonBitHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaSwitchHook>(svc_hook);
-    mods::hook_uninstall<ArenaLineEntryHook>(svc_hook);
-    mods::hook_uninstall<ArenaMaterialEntryHook>(svc_hook);
-    mods::hook_uninstall<ArenaMaterialDrawHook>(svc_hook);
-    mods::hook_uninstall<ArenaDrawTailHook>(svc_hook);
-    mods::hook_uninstall<ArenaDrawHeadHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaActorNameHook>(svc_hook);
     if (svc_game_mode != nullptr) {
         ModResult result = svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId);

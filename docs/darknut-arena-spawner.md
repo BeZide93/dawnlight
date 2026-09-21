@@ -1,90 +1,71 @@
-# Empty Darknut arena: spawner regression
+# Enemy Spawner: scene ownership and arena admission
 
-The September 21 Android logs describe two different failures:
+## Root cause of duplicate drawing and hub-return crashes
 
-- At `9b03f77`, successive Bokoblin processes are created and discarded before
-  their resources load. The room's forced cleared switch also reaches
-  `fopAc_Create`, which rejects ordinary enemies before profile creation.
-- The Goron bypasses that enemy-group check and reaches resource loading, then
-  the renderer aborts. The earlier Bokoblin crashes have the same renderer stack.
+`spawn_enemy_for_testing` runs from a mod settings UI callback. The ActorService
+forwards creation to `fopAcM_create`; `fpcM_Create` records `fpcLy_CurrentLayer()`
+in the asynchronous creation request. The caller's current layer is not
+necessarily the player's scene layer. Setting `room_num` only sets the room
+field: it does not set scene ownership.
 
-The latter stack was resolved against the v2.0.1 Android binary matching build
-ID `8431032be1f483cf884995a28bddd81556950b09` (Dusklight `422d7bb1`). It reaches
-`ByteBuffer::append` through `gfx::push` and `GX_AURORA_DRAW_INDEXED`'s index upload.
-This is the fixed index staging buffer's capacity abort. The log does **not**
-identify the offending model, index count, or reason for excessive submissions.
-The `152118` log reproduces it with vanilla Link and only Dawnlight enabled.
+A UI request on the root layer creates a root-owned enemy. This violates two
+engine assumptions:
 
-## Changes
+- `dScnPly_Draw` draws actors through the global actor draw queue. The root
+  traversal in `fpcM_DrawIterater` also draws a root-owned enemy directly.
+  Submitting the same intrusive J3D packets twice creates cycles and can destroy
+  links to other packets, including Link's. Breaking the resulting cycle cannot
+  reconstruct the lost links.
+- Scene deletion removes the scene's descendants. A root-owned enemy survives
+  removal of the player and can dereference the missing player during its next
+  update.
 
-- Restore the nested process tracking from `61b89c5`, including tracking before
-  the engine assigns `actor_type` and paired pre/post callbacks.
-- Let manually spawned processes query native switch/completion values. Keep
-  forced cleared values for native room objects only. Leave room `-1` and
-  invalid switch sentinels alone. No save flags are written.
-- Restore the stage-name actor filter to keep authored supplies and event
-  triggers out of the empty connector. Numeric ActorService creation bypasses
-  that lookup.
-- Check material and shape draw queues for cycles before drawing in `D_DLBR0`,
-  room 51, in Boss Rush. A cycle would repeatedly submit geometry until the
-  renderer aborts. Break only its closing link, preserving each distinct packet
-  and the existing order; leave valid lists and other rooms untouched.
+The device logs first showed an index staging-buffer capacity abort, then
+confirmed repeated cyclic material queues with the temporary draw guards. The
+`211904` log shows a different failure: a SIGSEGV at `cLib_targetAngleY` with fault
+address `0x5ac`, during the spawned Bomskit's update. This matches a missing
+player position during the reported hub transition. Together with Link becoming
+invisible after any spawn, these observations fit the scene-ownership failure
+above. The new patch still requires device validation.
 
-The draw-list change is defensive: a cycle is a candidate cause, **not proven
-by the crash log**. If it runs, the log contains `Dawnlight arena: repaired cyclic
-material draw queue` or `... cyclic shape draw queue` (up to four messages per
-entry). An index-buffer crash without either message needs further renderer
-investigation; it must not be reported as a confirmed cycle failure.
+## Current fix
+
+`create_test_actor_in_player_layer` temporarily selects Link's owner layer while
+submitting the asynchronous ActorService request. It restores the caller's
+previous layer on success, failure or exception. The request retains the player
+layer after restoration. Missing players, root/null player layers, deleting
+layers and pending stage transitions are rejected.
+
+Native scene traversal now owns both drawing and deletion. The temporary J3D
+material/shape/line cycle-repair hooks from `0a66046` and `4912865` have been
+removed: they treated damaged queues after the duplicate draw had already
+occurred and could not recover discarded packet links. No renderer buffer size
+or model visibility flags are changed.
+
+The following arena fixes remain:
+
+- Manually spawned processes use native switch/completion queries, including
+  base creation before `actor_type` exists. Native room objects see the cleared
+  arena state. No real Temple of Time save bits are written.
+- Successful child requests inherit the spawner exemption. Bomskit eggs must
+  pass room admission before their initialization; otherwise native deletion
+  calls `stopAnime` on an uninitialized sound object. Descendants are tracked
+  individually and ordinary native children remain unaffected.
+- The private arena remains empty of authored bosses, supplies and event tags.
 
 ## Validation
 
-- `python tests/bossrush_cave_routes_test.py`: production process hooks, nested
-  creation, native-state passthrough, room isolation, draw-guard scope, Cave
-  routes and both Continue answers.
-- `python tests/bossrush_packet_chains_test.py`: null/acyclic queues, self-cycles,
-  prefix-plus-cycle queues, long queues and repeated repair; unique packets and
-  order preserved.
-- `python tests/bossrush_warp_test.py`: existing warp lifecycle regression checks.
-- C++ syntax checks against the pinned Dusklight SDK for both changed units.
+- `python tests/enemy_spawner_scene_test.py` exercises the production creation
+  helper against stubbed engine layer rules. It reproduces the old double draw,
+  lost Link packet and orphan actor, then checks scene ownership, single drawing
+  and scene cleanup with the fix. It also checks asynchronous ownership capture,
+  layer restoration, error/exception paths and unavailable scene states.
+- `python tests/bossrush_cave_routes_test.py` checks room isolation, nested
+  process context, child admission/cleanup, Cave routes and Continue behavior.
+- `python tests/bossrush_warp_test.py` checks the existing warp lifecycle.
+- C++ syntax checks cover both modified units against the pinned SDK.
 
-Android/device validation is still required: spawn Bokoblin and Goron in the
-empty arena, then exit/re-enter and repeat. Retain the complete log, including
-any repair messages. This patch does not change renderer buffer sizes or import
-Twilit Essentials code. PR23 is unchanged.
-
-
-## Bomskit and Deku Baba follow-up
-
-The later `Boomskit.log` and `Deku_baba.log` both contain material-cycle repair
-messages from `0a66046`. Cyclic material lists are therefore now observed on the
-device, rather than merely a candidate. Most other spawns work according to the
-user's test.
-
-Bomskit creates an `E_CR_EGG` child. Only the parent's ID was exempt from the
-arena's cleared-room queries. The native room enemy gate consequently rejects
-the egg before its profile initialization. Its deletion unconditionally calls
-`Z2Creature::stopAnime`; that matches this log's SIGSEGV and deletion stack. Track
-successful child creation IDs whenever the parent belongs to the spawner,
-including further descendants, before their asynchronous base creation begins.
-Native children remain unaffected; deletion removes each tracked ID separately.
-
-The Deku Baba log ends after resource loading and a material-cycle repair, with
-no crash stack. Its stalk uses a different intrusive list:
-`mDoExt_3DlineMatSortPacket::setMat` prepends the material, and both interpolation
-refresh and drawing walk `field_0x4` until null. Submitting an existing member
-again forms a cycle outside the previous J3D packet guard. Reject duplicate line
-submissions within the current list, repair existing line cycles, and allow the
-material again after native list reset. Also repair material buckets before
-`J3DMatPacket::entry`, since native sorting itself traverses those buckets.
-These guards remain restricted to the Boss Rush connector.
-
-New guard messages start with `Dawnlight arena: draw queue guard:` and identify
-material, shape, line, or duplicate line submission. The device log does not
-prove which additional traversal stalls Deku Baba; the patch covers both the
-sort-time and stalk-list gaps. A new in-game test is still needed.
-
-Regression coverage now includes asynchronous child admission before actor
-initialization, grandchildren, failed/native child requests, independent child
-cleanup, material sorting before draw, duplicate stalk submissions, line-list
-reset and stage/save isolation. All three existing test scripts and both C++
-syntax checks pass.
+Device check: after a fresh launch, spawn several enemy types, verify Link stays
+visible, then return to the hub. Re-enter the arena and repeat with Bomskit eggs
+and Deku Baba. The old queue-guard messages should no longer occur because those
+hooks have been removed. PR23 is unchanged; no Twilit Essentials code is used.

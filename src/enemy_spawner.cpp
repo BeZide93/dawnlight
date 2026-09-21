@@ -11,6 +11,7 @@
 #include "d/d_com_inf_game.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_method.h"
+#include "f_pc/f_pc_layer.h"
 #include "f_pc/f_pc_name.h"
 #include "mods/hook.hpp"
 
@@ -184,6 +185,27 @@ HookAction before_staltroop_wait(ModContext*, void* args, void*, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
+ModResult create_test_actor_in_player_layer(daAlink_c* player, ProfileName profile,
+    const ActorSpawnParams& params, ActorId& id) {
+    if (player == nullptr || dComIfGp_isEnableNextStage()) return MOD_UNAVAILABLE;
+    auto* layer = player->layer_tag.layer;
+    if (layer == nullptr || layer == fpcLy_RootLayer() || fpcLy_IsDeletingMesg(layer)) {
+        return MOD_UNAVAILABLE;
+    }
+
+    // UI callbacks run outside actor execution, often on the root layer.
+    // ActorService forwards that current layer to the async creation request;
+    // room_num alone does not assign scene ownership. A root actor is drawn
+    // both by the play scene's actor queue AND root traversal, and survives
+    // play-scene deletion. Use Link's owner for drawing and scene teardown.
+    struct RestoreLayer {
+        layer_class* previous;
+        ~RestoreLayer() { fpcLy_SetCurrentLayer(previous); }
+    } restore{fpcLy_CurrentLayer()};
+    fpcLy_SetCurrentLayer(layer);
+    return svc_actor->create_actor(mod_ctx, profile, &params, &id);
+}
+
 ModResult install_test_hooks() {
     if (!s_childHookInstalled) {
         const auto result = mods::hook::add_post<SpawnerChildHook>(svc_hook, after_create_child);
@@ -277,7 +299,7 @@ ModResult spawn_enemy_for_testing(int profileIndex) {
     };
 
     ActorId actorId = fpcM_ERROR_PROCESS_ID_e;
-    const auto result = svc_actor->create_actor(mod_ctx, profile, &params, &actorId);
+    const auto result = create_test_actor_in_player_layer(link, profile, params, actorId);
     if (result == MOD_OK) s_testActors.insert(actorId);
     return result;
 }

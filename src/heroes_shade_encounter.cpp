@@ -176,6 +176,7 @@ DEFINE_HOOK(&daNpc_Kn_c::calcSwordAttackMove, ShadeApproachHook);
 DEFINE_HOOK(&daNpc_Kn_c::ctrlMotion, ShadeMotionHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterSetMotionAnm, ShadeAccessoryMotionHook);
 DEFINE_HOOK(&daNpc_Kn_c::beforeMove, ShadeMovementHook);
+DEFINE_HOOK(&daNpc_Kn_c::afterMoved, ShadeLandingHook);
 DEFINE_HOOK(&daNpc_Kn_c::setAttnPos, ShadeJumpPoseHook);
 DEFINE_HOOK(&daNpc_Kn_c::setCollisionSword, ShadeSwordHook);
 DEFINE_HOOK(&daObjKnBullet_c::Create, ShadeBulletHook);
@@ -448,11 +449,37 @@ void move_toward(daNpc_Kn_c* actor,const cXyz& target,float speed,float stop_dis
 }
 void before_movement(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
-    if (!fighter(actor) || sBattle.recovery || sBattle.dying || actor->speedF!=0) return;
+    if (!fighter(actor) || sBattle.dying || actor->speedF!=0) return;
+    if (sBattle.recovery && shade::knockdown_landing_motion(actor->mMotionSeqMngr.getNo())<0) return;
     // We decouple movement from facing for the orbit. Native execute therefore
     // chooses posMove, which unlike posMoveF does NOT integrate gravity. Apply
     // it exactly once here, including after a jump is interrupted by a block.
     actor->speed.y=std::max(actor->speed.y+actor->gravity,fopAcM_GetMaxFallSpeed(actor));
+}
+void hold_recovery(daNpc_Kn_c* actor) {
+    // Recovery blocks new attacks, not the physical knockback already in flight.
+    // Otherwise the airborne (tilted) pose can be frozen at floor height.
+    if (shade::knockdown_landing_motion(actor->mMotionSeqMngr.getNo())>=0) return;
+    actor->speedF=0;
+    actor->speed.zero();
+}
+void after_knockdown_movement(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    auto* entry=fighter(actor);
+    if (!entry || entry->deleting || sBattle.dying) return;
+    // Ending Blow already owns its landing/down flag and follow-up window.
+    if (!entry->divide && actor->mActionMode==3) return;
+    const int landing=shade::knockdown_landing_motion(actor->mMotionSeqMngr.getNo());
+    if (landing<0 || actor->speed.y>0 || !actor->mAcch.ChkGroundHit()) return;
+    // This runs after background collision resolves this frame's floor contact,
+    // before animation/model calculation. No manual model tilt or Y offset.
+    actor->speedF=0;
+    actor->speed.zero();
+    actor->mTargetPos=actor->current.pos;
+    actor->field_0x15bc=0;
+    actor->mFaceMotionSeqMngr.setNo(1,-1,0,0);
+    actor->mMotionSeqMngr.setNo(landing,-1,0,0);
+    actor->setLandingPrtcl();
 }
 void after_jump_pose(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
@@ -497,8 +524,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     entry->swordContact=false;
     if (sBattle.dying) return HOOK_CONTINUE;
     if (sBattle.recovery) {
-        actor->speedF=0;
-        actor->speed.zero();
+        hold_recovery(actor);
         return HOOK_SKIP_ORIGINAL;
     }
     const auto& phase=shade::phases[sBattle.phase];
@@ -880,6 +906,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeAccessoryMotionHook,accessory_motion);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);
+    POST(ShadeLandingHook,after_knockdown_movement);
     POST(ShadeJumpPoseHook,after_jump_pose);
     PRE(ShadeApproachHook,before_approach); POST(ShadeApproachHook,after_approach);
     POST(ShadeBulletHook,after_bullet);
@@ -955,6 +982,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeAccessoryMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMovementHook>(svc_hook);
+    mods::hook::uninstall<ShadeLandingHook>(svc_hook);
     mods::hook::uninstall<ShadeJumpPoseHook>(svc_hook);
     mods::hook::uninstall<ShadeSwordHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletHook>(svc_hook);

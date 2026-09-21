@@ -35,6 +35,7 @@ struct cXyz {
     cXyz() = default;
     cXyz(float a,float b,float c):x(a),y(b),z(c) {}
     cXyz& operator+=(const cXyz& b) { x+=b.x; y+=b.y; z+=b.z; return *this; }
+    void zero() { x=y=z=0; }
     cXyz operator-(const cXyz& b) const { return {x-b.x,y-b.y,z-b.z}; }
 };
 using Mtx = float[3][4];
@@ -143,7 +144,12 @@ struct daNpc_Kn_c {
     unsigned mPodAnmFlags=0x41;
     int field_0x15cd=1;
     Fighter entry;
-    Motion mMotionSeqMngr;
+    Motion mMotionSeqMngr, mFaceMotionSeqMngr;
+    int mActionMode=19, field_0x15bc=0, landings=0;
+    struct { bool grounded=false; bool ChkGroundHit() const { return grounded; } } mAcch;
+    cXyz mTargetPos;
+    float gravity=-3;
+    void setLandingPrtcl() { ++landings; }
     Morf morf, ghost;
     std::array<Morf*,2> mpModelMorf{&morf,&ghost};
     struct { cXyz pos{100,0,300}; struct { s16 y=1234; } angle; } current;
@@ -158,6 +164,7 @@ struct daNpc_Kn_c {
 Fighter* fighter(daNpc_Kn_c* a) { return a->owned ? &a->entry : nullptr; }
 shade::Battle sBattle;
 constexpr float kApproachSpeed=6;
+float fopAcM_GetMaxFallSpeed(daNpc_Kn_c*) { return -40; }
 s16 playerYaw=0;
 s16 fopAcM_searchPlayerAngleY(daNpc_Kn_c*) { return playerYaw; }
 int removed=0;
@@ -339,6 +346,61 @@ int main() {
     assert(a.speedF==3);
     sBattle.recovery=0;
 
+    // Recovery must let physical knockback finish, then select the native
+    // landing/lying sequence at real floor contact. Exercise main and doubles,
+    // both directions, and the spin double both with and without global recovery.
+    for (int divide : {0,1,2}) for (int motion : {14,18}) for (int recovery : {0,45}) {
+        daNpc_Kn_c fallen;
+        fallen.entry.divide=divide;
+        fallen.mActionMode=divide ? 22 : 19;
+        fallen.mMotionSeqMngr.no=motion;
+        fallen.speedF=-6; fallen.speed={0,12,0};
+        sBattle.recovery=recovery;
+        hold_recovery(&fallen);
+        assert(fallen.speedF==-6 && fallen.speed.y==12);
+        before_movement(nullptr,&fallen,nullptr,nullptr);
+        assert(fallen.speed.y==12); // posMoveF owns gravity on this path
+        fallen.speedF=0;
+        before_movement(nullptr,&fallen,nullptr,nullptr);
+        assert(fallen.speed.y==9); // posMove still needs gravity during recovery
+        fallen.speed.y=-4;
+        after_knockdown_movement(nullptr,&fallen,nullptr,nullptr);
+        assert(fallen.mMotionSeqMngr.no==motion && fallen.landings==0); // airborne
+        fallen.mAcch.grounded=true; fallen.speed.y=3;
+        after_knockdown_movement(nullptr,&fallen,nullptr,nullptr);
+        assert(fallen.mMotionSeqMngr.no==motion); // still ascending
+        fallen.speed.y=-4; fallen.speedF=-6; fallen.field_0x15bc=1;
+        after_knockdown_movement(nullptr,&fallen,nullptr,nullptr);
+        assert(fallen.mMotionSeqMngr.no==(motion==18 ? 19 : 15));
+        assert(fallen.speedF==0 && fallen.speed.y==0 && fallen.field_0x15bc==0);
+        assert(fallen.mTargetPos.x==fallen.current.pos.x);
+        assert(fallen.landings==1);
+        after_knockdown_movement(nullptr,&fallen,nullptr,nullptr);
+        assert(fallen.landings==1); // do not restart the landing/lying animation
+        fallen.speedF=6; fallen.speed={1,2,3};
+        hold_recovery(&fallen);
+        assert(fallen.speedF==0 && fallen.speed.x==0 && fallen.speed.y==0 && fallen.speed.z==0);
+    }
+    daNpc_Kn_c finishing;
+    finishing.mActionMode=3; finishing.mMotionSeqMngr.no=18;
+    finishing.mAcch.grounded=true; finishing.speed.y=-1;
+    after_knockdown_movement(nullptr,&finishing,nullptr,nullptr);
+    assert(finishing.mMotionSeqMngr.no==18 && finishing.landings==0); // native Ending Blow
+    finishing.mActionMode=22; finishing.entry.divide=1; finishing.owned=false;
+    after_knockdown_movement(nullptr,&finishing,nullptr,nullptr);
+    assert(finishing.landings==0); // story teacher unchanged
+    finishing.owned=true; finishing.entry.deleting=true;
+    after_knockdown_movement(nullptr,&finishing,nullptr,nullptr);
+    assert(finishing.landings==0);
+    finishing.entry.deleting=false; sBattle.dying=true;
+    after_knockdown_movement(nullptr,&finishing,nullptr,nullptr);
+    assert(finishing.landings==0);
+    sBattle.dying=false; sBattle.recovery=45;
+    finishing.mMotionSeqMngr.no=9; finishing.speed.y=0;
+    before_movement(nullptr,&finishing,nullptr,nullptr);
+    assert(finishing.speed.y==0); // recovery still holds non-falling fighters
+    sBattle.recovery=0;
+
     // A real Jump Strike contact removes either double, never the main Shade,
     // a whiff, a projectile or an unrelated actor hitting during Link's jump.
     daNpc_Kn_c clone;
@@ -387,7 +449,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("defeat_double_on_jump_strike", "bool") + function("after_approach", "void") + checks
+source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("defeat_double_on_jump_strike", "bool") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

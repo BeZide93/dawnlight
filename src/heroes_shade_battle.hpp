@@ -61,6 +61,12 @@ struct AttackChain {
     }
 };
 
+// The native forward/backward airborne reactions each have a matching
+// landing sequence which advances into a flat lying pose.
+inline int knockdown_landing_motion(int motion) {
+    return motion==18 ? 19 : motion==14 ? 15 : -1;
+}
+
 inline bool jumping_attack(int attack) {
     return attack == helm_splitter || attack == jump_strike;
 }

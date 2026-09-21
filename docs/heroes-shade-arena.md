@@ -101,6 +101,16 @@ The record clears on the next phase or a new encounter.
   gravity for that path, since only `posMoveF` normally integrates it. Native
   forward movement still applies its own gravity once.
 
+Successful-counter recovery suppresses attacks for 45 ticks, but does not freeze
+an airborne knockback. Forward/backward fall motions 18/14 retain velocity and
+gravity. A scoped post-`afterMoved` hook checks actual floor contact after native
+background collision, then changes them to their matching landing/lying sequences
+19/15 and clears slide velocity. This also applies to Spin Attack knockdowns of
+the doubles, with or without global recovery. It never forces an arbitrary model
+tilt or height, restarts an existing landing, or changes the main Shade's native
+Ending Blow action 3 and its down/finishing flags. Both visible models continue
+through the engine's shared motion controller.
+
 Native approach speed remains six units per tick. Sword and ball attack power
 remain 2. Successful counters still grant 45 ticks of recovery; lesson follow-up
 windows are unchanged. All tuning applies only to tracked arena fighters, leaving
@@ -182,7 +192,8 @@ contacts, Back Slice's first cut and non-damaging steps, sweep endpoints,
 Jump Strike's two-contact limit, interrupted/recovering actors, and the actual
 jump-pose hook preserving height/orientation on both models, the root-neutral
 Helm Splitter handoff and turn-in-place recovery (including wrapped yaw), and one-contact double removal with phase-scoped respawn
-suppression.
+suppression. The fixture also checks both knockback directions for main/doubles,
+recovery gravity, grounded-only landing transitions, and Ending Blow isolation.
 
 Device checklist (still required):
 
@@ -204,6 +215,9 @@ Device checklist (still required):
    Strike should allow damage on both distinct blows when native invulnerability
    permits it. Dodge jumps after takeoff; no remote damage should occur.
 5. Test every counter above, particularly Ending Blow and the head-lock follow-up.
+   Check ordinary counter knockdowns and Spin Attack knockdowns of both doubles:
+   the fall must finish in a flat ground pose rather than a tilted flight pose.
+   The Ending Blow waiting pose and its prompt must still work.
    Check attack collisions and both doubles in the final phases. Hit each double
    once with Jump Strike: only that double disappears, stays gone for the phase,
    and does not damage the main Shade merely by disappearing. During special

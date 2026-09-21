@@ -215,6 +215,7 @@ HUD layout export where the same fields are available.
 ## Developer Notes
 
 - [Enemy Spawner: confirmed scene-ownership fix and adding new enemies](docs/darknut-arena-spawner.md)
+- [Hero's Shade arena encounter](docs/heroes-shade-arena.md)
 
 ## LLM Disclaimer
 

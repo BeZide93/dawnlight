@@ -58,6 +58,13 @@ The following arena fixes remain:
   individually and ordinary native children remain unaffected.
 - The private arena remains empty of authored bosses, supplies and event tags.
 
+## Standalone arena encounters
+
+`create_standalone_actor(profile, params, id)` exposes the same layer helper and
+immediate process-ID registration to scripted encounters. Hero's Shade uses this
+entry point; it installs the same admission/child hooks without going through the
+settings UI. Native room switches and unrelated actors keep their existing scope.
+
 ## Adding another enemy
 
 The scene-ownership fix is shared by the entire spawner; **do not copy it into

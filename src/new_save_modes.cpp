@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "enemy_spawner.hpp"
+#include "heroes_shade_encounter.hpp"
 #include "boss_portal_symbols.hpp"
 #include "boss_portal_mirrors.hpp"
 #include "save_compat.hpp"
@@ -3511,9 +3512,9 @@ bool bossrush_should_return_to_hub_after_death() {
 }
 
 void update_bossrush_darknut_area() {
-    // This room is only a connector between the Cave and its exit. Keep all
-    // hub-owned runtime actors and presentation state disabled while Link is
-    // here; the vanilla room geometry remains available through the aliases.
+    update_heroes_shade_arena();
+    // Keep the arena encounter separate from hub supplies and presentation.
+    // Vanilla room geometry remains available through the resource aliases.
     reset_hub_runtime_when_away();
     reset_direct_final_boss_state();
     reset_bossrush_hazards();
@@ -4545,6 +4546,8 @@ ModResult register_new_save_modes(ModError* error) {
 
     result = initialize_boss_portal_mirrors(error);
     if (result != MOD_OK) return result;
+    result = initialize_heroes_shade_encounter(error);
+    if (result != MOD_OK) return result;
     initialize_boss_portal_symbols();
     return MOD_OK;
 }
@@ -4554,6 +4557,7 @@ void update_new_save_modes() {
 }
 
 void shutdown_new_save_modes() {
+    shutdown_heroes_shade_encounter();
     shutdown_boss_portal_symbols();
     mods::hook_uninstall<BossRushAreaResourceHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaRoomDataHook>(svc_hook);

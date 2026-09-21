@@ -25,6 +25,12 @@ namespace {
 constexpr ActorId kNone = fpcM_ERROR_PROCESS_ID_e;
 constexpr u32 kShadeParams = 0x00ffff07; // lesson 7 resources, no path
 constexpr char kSwordArchive[] = "MstrSword";
+constexpr int kAttackCooldown = 40;
+constexpr int kBackSliceCooldown = 24;
+constexpr int kDoubleAttackDelay = 15;
+constexpr int kCounterCooldown = 60;
+constexpr s16 kNativeAttackDelay = 30;
+constexpr float kApproachSpeed = 6.0f;
 ProfileName sProfile = -1;
 ActorHandle sRegistration = 0;
 ActorId sPedestal = kNone;
@@ -33,7 +39,7 @@ struct Fighter {
     int divide = 0;
     int offense = -1;
     int attackTicks = 0;
-    int cooldown = 100;
+    int cooldown = kAttackCooldown;
     bool reset = true;
     bool deleting = false;
 };
@@ -41,6 +47,11 @@ std::array<Fighter, 3> sFighters;
 shade::Battle sBattle;
 bool sStopping = false;
 std::unordered_set<ActorId> sProjectiles;
+
+int attack_cooldown(const Fighter& entry) {
+    return (sBattle.phase == 3 ? kBackSliceCooldown : kAttackCooldown) +
+        entry.divide * kDoubleAttackDelay;
+}
 
 bool ui_document_visible() {
     bool visible = false;
@@ -123,6 +134,7 @@ DEFINE_HOOK(&daNpc_Kn_c::Delete, ShadeDeleteHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtProc, ShadeEventHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtOrder, ShadeOrderHook);
 DEFINE_HOOK(&daNpc_Kn_c::action, ShadeActionHook);
+DEFINE_HOOK(&daNpc_Kn_c::calcSwordAttackMove, ShadeApproachHook);
 DEFINE_HOOK(&daNpc_Kn_c::setCollisionSword, ShadeSwordHook);
 DEFINE_HOOK(&daObjKnBullet_c::Create, ShadeBulletHook);
 DEFINE_HOOK(&daObjKnBullet_c::Delete, ShadeBulletDeleteHook);
@@ -191,7 +203,7 @@ void select_phase(daNpc_Kn_c* actor,Fighter& entry) {
     actor->field_0x15af=1;
     entry.offense=-1;
     entry.attackTicks=0;
-    entry.cooldown=140+entry.divide*35;
+    entry.cooldown=attack_cooldown(entry);
     entry.reset=false;
 }
 HookAction before_execute(ModContext*,void* args,void* result,void*) {
@@ -278,6 +290,22 @@ HookAction delete_bullet(ModContext*,void* args,void*,void*) {
 
 // Teaching actions provide native guarding, knockdowns, head-lock and shield
 // reflection. Demonstration animations add an offensive attack for each skill.
+HookAction before_approach(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    if (fighter(actor) && !sBattle.recovery && !sBattle.dying) {
+        // Clamp only the ordinary attack delay, not the lesson's counter window.
+        actor->field_0x15d0=std::min(actor->field_0x15d0,kNativeAttackDelay);
+    }
+    return HOOK_CONTINUE;
+}
+void after_approach(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    // Native movement still decides when to approach, stop, slide or turn.
+    // Set an absolute speed here so repeated calls cannot multiply it each tick.
+    if (fighter(actor) && !sBattle.recovery && !sBattle.dying && actor->speedF>0) {
+        actor->speedF=kApproachSpeed;
+    }
+}
 HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
@@ -291,14 +319,17 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     if (entry->offense>=0 && (actor->mCylCc.ChkTgHit() || actor->mCylCc.ChkTgShieldHit())) {
         // Counters remain effective during a demonstration attack as well.
         entry->offense=-1;
-        entry->cooldown=140;
+        entry->cooldown=kCounterCooldown;
         return HOOK_CONTINUE;
     }
     if (entry->offense<0) {
+        // Count elapsed combat time even during native movement/attacks. Start
+        // the next special only once the native counter/follow-up has finished.
+        if (entry->cooldown>0) --entry->cooldown;
         // Leave native follow-ups and the full ball throw uninterrupted.
         if (phase.attack<0 || actor->mMode!=2 || actor->mActionMode!=phase.action ||
             actor->mMotionSeqMngr.getNo()!=9) return HOOK_CONTINUE;
-        if (entry->cooldown>0) { --entry->cooldown; return HOOK_CONTINUE; }
+        if (entry->cooldown>0) return HOOK_CONTINUE;
         if ((actor->current.pos-daPy_getPlayerActorClass()->current.pos).absXZ()>320) return HOOK_CONTINUE;
         entry->offense=phase.attack;
         entry->attackTicks=0;
@@ -312,12 +343,12 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     // Root translation is not applied by the teacher outside its demo script.
     // Supply bounded approach/lunge movement; background collision remains native.
     if (sBattle.phase==3 && entry->attackTicks<24) actor->setAngle(static_cast<s16>(actor->mCurAngle.y+0x300));
-    if ((sBattle.phase==3 || sBattle.phase==5) && entry->attackTicks<25) actor->speedF=5;
+    if ((sBattle.phase==3 || sBattle.phase==5) && entry->attackTicks<25) actor->speedF=8;
     if ((sBattle.phase==4 || sBattle.phase==6) && entry->attackTicks==12 && actor->mAcch.ChkGroundHit()) {
         actor->speed.y=24;
-        actor->speedF=6;
+        actor->speedF=9;
     }
-    if ((sBattle.phase==4 || sBattle.phase==6) && !actor->mAcch.ChkGroundHit()) actor->speedF=6;
+    if ((sBattle.phase==4 || sBattle.phase==6) && !actor->mAcch.ChkGroundHit()) actor->speedF=9;
     if (sBattle.phase==7 && entry->attackTicks>=18 && entry->attackTicks<42) {
         actor->setAngle(static_cast<s16>(actor->mCurAngle.y+0xaaa));
     }
@@ -327,7 +358,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     // Prefer the real animation end, retaining a bound for unexpected resources.
     if ((entry->attackTicks>2 && finished) || entry->attackTicks>=180) {
         entry->offense=-1;
-        entry->cooldown=140+entry->divide*35;
+        entry->cooldown=attack_cooldown(*entry);
         actor->mMode=1;
     }
     return HOOK_SKIP_ORIGINAL;
@@ -565,6 +596,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeDeleteHook,before_delete);
     PRE(ShadeEventHook,no_event); PRE(ShadeOrderHook,no_order);
     PRE(ShadeActionHook,combat_action); PRE(ShadeSwordHook,sword_collision);
+    PRE(ShadeApproachHook,before_approach); POST(ShadeApproachHook,after_approach);
     POST(ShadeBulletHook,after_bullet);
     PRE(ShadeBulletDeleteHook,delete_bullet);
     POST(ShadeChildHook,after_child);
@@ -634,6 +666,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeEventHook>(svc_hook);
     mods::hook::uninstall<ShadeOrderHook>(svc_hook);
     mods::hook::uninstall<ShadeActionHook>(svc_hook);
+    mods::hook::uninstall<ShadeApproachHook>(svc_hook);
     mods::hook::uninstall<ShadeSwordHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletDeleteHook>(svc_hook);

@@ -30,6 +30,16 @@ The demonstration animations are adapted into attacks with bounded movement and
 sword collision windows. The native teacher normally uses these as demonstrations,
 not autonomous boss attacks. Ordinary sword attacks still use the native attack
 spheres. Sword and ball attack power is set to 2 instead of tutorial zero damage.
+Special attacks wait 40 simulation ticks between attempts, or 24 for Back Slice
+(previously 140). This delay also counts down during native movement/attacks,
+but specials still wait for the ready stance so counter follow-ups can complete.
+Doubles are staggered by 15 ticks per double. Interrupting a special grants a
+60-tick special-attack delay. Ordinary sword-attack startup waits at most 30 ticks
+instead of the teacher's randomized 120–210. Native approach movement is 6 units
+per tick instead of 2; slash lunges use 8 instead of 5, and jumping attacks use 9
+instead of 6 horizontally. Animation playback, damage windows, counter windows
+and the 45-tick recovery after a successful counter are unchanged. These settings
+apply only to the arena's tracked fighters, not story Hidden Skill lessons.
 The ball remains `KN_BULLET`, including the engine's shield-reflection logic and
 return trajectory. If the room has no lesson particle bank, an original glowing
 orb packet makes the projectile visible without replacing the room's particles.

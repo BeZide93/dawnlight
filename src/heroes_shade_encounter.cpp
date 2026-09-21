@@ -129,32 +129,10 @@ void remove_companions() {
         boss->parentActorID = kNone;
     }
 }
-bool defeat_double_on_jump_strike(daNpc_Kn_c* actor,Fighter& entry) {
-    if (!entry.divide || entry.deleting || !actor->mCylCc.ChkTgHit()) return false;
-    auto* player=daPy_getPlayerActorClass();
-    const auto* hit=actor->mCylCc.GetTgHitObj();
-    const int cut=player->getCutType();
-    if (actor->mCylCc.GetTgHitAc()!=player || !hit ||
-        !hit->ChkAtType(AT_TYPE_NORMAL_SWORD|AT_TYPE_MASTER_SWORD) ||
-        (cut!=daPy_py_c::CUT_TYPE_LARGE_JUMP_INIT && cut!=daPy_py_c::CUT_TYPE_LARGE_JUMP &&
-         cut!=daPy_py_c::CUT_TYPE_LARGE_JUMP_FINISH)) return false;
-    // One actual Jump Strike contact removes a double, in either final phase.
-    // Keep this outside the actor slot: Delete clears that slot asynchronously.
-    sBattle.defeated_doubles |= 1u << entry.divide;
-    entry.deleting=true;
-    actor->mNoDraw=true;
-    actor->field_0x15af=0;
-    actor->mCylCc.OffTgSetBit();
-    actor->mCylCc.OffCoSetBit();
-    for (auto& sphere:actor->mSphCc) { sphere.OffAtSetBit(); sphere.ClrAtHit(); }
-    stop_blade_sweeps(entry);
-    remove_actor(entry.id);
-    return true;
-}
 void add_doubles(daNpc_Kn_c* boss) {
     for (unsigned i=1;i<sFighters.size();++i) {
         auto& entry=sFighters[i];
-        if ((sBattle.defeated_doubles & (1u << i)) || pending_or_live(entry.id)) continue;
+        if (pending_or_live(entry.id)) continue;
         entry = {};
         entry.divide = i;
         cXyz pos=boss->current.pos;
@@ -172,6 +150,7 @@ DEFINE_HOOK(&daNpc_Kn_c::Delete, ShadeDeleteHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtProc, ShadeEventHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtOrder, ShadeOrderHook);
 DEFINE_HOOK(&daNpc_Kn_c::action, ShadeActionHook);
+DEFINE_HOOK(&daNpc_Kn_c::teach01_swordFinishWait, ShadeEndingBlowHook);
 DEFINE_HOOK(&daNpc_Kn_c::calcSwordAttackMove, ShadeApproachHook);
 DEFINE_HOOK(&daNpc_Kn_c::ctrlMotion, ShadeMotionHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterSetMotionAnm, ShadeAccessoryMotionHook);
@@ -231,8 +210,16 @@ HookAction no_order(ModContext*,void* args,void*,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     if (!entry->divide) {
+        const int previous_health=sBattle.health;
         sBattle.event(actor->mEvtNo);
         actor->health=sBattle.health;
+        if (actor->mEvtNo==11 && sBattle.health<previous_health) {
+            // The native reflected-ball success requests a lesson event but
+            // no damage animation. Show one short flinch for the accepted hit.
+            actor->mFaceMotionSeqMngr.setNo(1,-1,0,0);
+            actor->mMotionSeqMngr.setNo(29,0,1,0); // KN_DAMAGE_S -> KN_WAIT_A
+            actor->field_0x15bc=0;
+        }
         // Recover from the teacher's failure branch without ordering its lecture.
         if ((actor->mEvtNo==1 || actor->mEvtNo==2 || actor->mEvtNo==4) && !sBattle.recovery) {
             entry->reset=true;
@@ -284,11 +271,6 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     if (dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
         daAlink_getAlinkActorClass()->checkDeadHP()) {
         stop_blade_sweeps(*entry);
-        *static_cast<int*>(result)=1;
-        return HOOK_SKIP_ORIGINAL;
-    }
-    // Read last collision results before native action/reset can consume them.
-    if (defeat_double_on_jump_strike(actor,*entry)) {
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
     }
@@ -516,6 +498,18 @@ void finish_helm_splitter(daNpc_Kn_c* actor,Fighter& entry) {
     actor->setAngle(static_cast<s16>(actor->current.angle.y+0x8000));
     actor->mMotionSeqMngr.setNo(6,0,1,0);
     entry.helmTurnPending=true;
+}
+HookAction before_ending_blow_wait(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    const auto* entry=fighter(actor);
+    if (!entry || entry->divide || sBattle.recovery || sBattle.dying) return HOOK_CONTINUE;
+    // Only accelerate the actual vulnerable lying window. The native routine
+    // still owns fall/landing, the finishing hit, expiry and an in-progress
+    // Ending Blow. One extra decrement plus its own decrement gives 2x speed.
+    if (actor->mMode==2 && actor->checkDownFlg() &&
+        actor->mMotionSeqMngr.getNo()==19 && actor->mMotionSeqMngr.getStepNo()>0 &&
+        actor->field_0xdec>1) --actor->field_0xdec;
+    return HOOK_CONTINUE;
 }
 HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
@@ -902,6 +896,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeDeleteHook,before_delete);
     PRE(ShadeEventHook,no_event); PRE(ShadeOrderHook,no_order);
     PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
+    PRE(ShadeEndingBlowHook,before_ending_blow_wait);
     PRE(ShadeSwordHook,sword_collision);
     PRE(ShadeAccessoryMotionHook,accessory_motion);
     POST(ShadeMotionHook,after_motion);
@@ -978,6 +973,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeEventHook>(svc_hook);
     mods::hook::uninstall<ShadeOrderHook>(svc_hook);
     mods::hook::uninstall<ShadeActionHook>(svc_hook);
+    mods::hook::uninstall<ShadeEndingBlowHook>(svc_hook);
     mods::hook::uninstall<ShadeApproachHook>(svc_hook);
     mods::hook::uninstall<ShadeAccessoryMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMotionHook>(svc_hook);

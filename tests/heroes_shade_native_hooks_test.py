@@ -77,14 +77,7 @@ struct Cylinder {
     float GetR() const { return 30; }
     float GetH() const { return 150; }
 };
-struct daPy_py_c {
-    enum { CUT_TYPE_LARGE_JUMP_INIT=11, CUT_TYPE_LARGE_JUMP=12, CUT_TYPE_LARGE_JUMP_FINISH=13 };
-};
-struct Player : daPy_py_c {
-    std::array<Cylinder,3> mTgCyls;
-    int cut=0;
-    int getCutType() const { return cut; }
-} player;
+struct Player { std::array<Cylinder,3> mTgCyls; } player;
 Player* daAlink_getAlinkActorClass() { return &player; }
 Player* daPy_getPlayerActorClass() { return &player; }
 struct Sphere {
@@ -112,24 +105,9 @@ struct dCcD_Cps : Sphere, cM3dGCps {
     dCcD_Cps() { damage=2; }
     void SetAtVec(const cXyz&) {}
 };
-constexpr unsigned AT_TYPE_NORMAL_SWORD=1, AT_TYPE_MASTER_SWORD=2;
-struct AttackObject {
-    unsigned type=AT_TYPE_MASTER_SWORD;
-    bool ChkAtType(unsigned mask) const { return (type&mask)!=0; }
-};
-struct HurtCylinder {
-    bool hit=false, targetEnabled=true, coEnabled=true;
-    void* source=&player;
-    AttackObject attack;
-    AttackObject* object=&attack;
-    bool ChkTgHit() const { return hit; }
-    void* GetTgHitAc() const { return source; }
-    const AttackObject* GetTgHitObj() const { return object; }
-    void OffTgSetBit() { targetEnabled=false; }
-    void OffCoSetBit() { coEnabled=false; }
-};
 struct Fighter {
-    int id=42, divide=0;
+    int divide=0;
+    bool reset=false;
     int offense=shade::helm_splitter;
     bool animationStarted=true, deleting=false, helmTurnPending=false;
     shade::BladeMotion blade;
@@ -139,13 +117,17 @@ struct Fighter {
 struct daNpc_Kn_c {
     bool owned=true, mNoDraw=false;
     int field_0x15af=1;
-    HurtCylinder mCylCc;
+    int mEvtNo=0, health=8;
+    bool mSpeakEvent=false;
     void* mpPodModel=nullptr;
     unsigned mPodAnmFlags=0x41;
     int field_0x15cd=1;
     Fighter entry;
     Motion mMotionSeqMngr, mFaceMotionSeqMngr;
     int mActionMode=19, field_0x15bc=0, landings=0;
+    int mMode=2, field_0xdec=0;
+    bool down=false;
+    bool checkDownFlg() const { return down; }
     struct { bool grounded=false; bool ChkGroundHit() const { return grounded; } } mAcch;
     cXyz mTargetPos;
     float gravity=-3;
@@ -167,8 +149,6 @@ constexpr float kApproachSpeed=6;
 float fopAcM_GetMaxFallSpeed(daNpc_Kn_c*) { return -40; }
 s16 playerYaw=0;
 s16 fopAcM_searchPlayerAngleY(daNpc_Kn_c*) { return playerYaw; }
-int removed=0;
-void remove_actor(int id) { assert(id==42); ++removed; }
 struct Space {
     int registered=0;
     void Set(Sphere* sphere) { assert(sphere->enabled && sphere->damage==2); ++registered; }
@@ -401,46 +381,66 @@ int main() {
     assert(finishing.speed.y==0); // recovery still holds non-falling fighters
     sBattle.recovery=0;
 
-    // A real Jump Strike contact removes either double, never the main Shade,
-    // a whiff, a projectile or an unrelated actor hitting during Link's jump.
-    daNpc_Kn_c clone;
-    player.cut=daPy_py_c::CUT_TYPE_LARGE_JUMP;
-    clone.mCylCc.hit=true;
-    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
-    clone.entry.divide=1; clone.mCylCc.hit=false;
-    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
-    clone.mCylCc.hit=true; player.cut=0;
-    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
-    player.cut=daPy_py_c::CUT_TYPE_LARGE_JUMP;
-    clone.mCylCc.source=&a;
-    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
-    clone.mCylCc.source=&player; clone.mCylCc.attack.type=4;
-    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
-    clone.mCylCc.attack.type=AT_TYPE_NORMAL_SWORD; clone.mCylCc.object=nullptr;
-    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
-    clone.mCylCc.object=&clone.mCylCc.attack;
-    for (int cut : {daPy_py_c::CUT_TYPE_LARGE_JUMP_INIT,
-                    daPy_py_c::CUT_TYPE_LARGE_JUMP,daPy_py_c::CUT_TYPE_LARGE_JUMP_FINISH}) {
-        for (int divide : {1,2}) {
-            sBattle={}; sBattle.phase=divide==1 ? 6 : 7;
-            clone.entry.deleting=false; clone.entry.divide=divide;
-            clone.mNoDraw=false; clone.field_0x15af=1;
-            for (auto& sphere:clone.mSphCc) sphere.OnAtSetBit();
-            for (auto& sweep:clone.entry.bladeSweeps) sweep.OnAtSetBit();
-            player.cut=cut;
-            assert(defeat_double_on_jump_strike(&clone,clone.entry));
-            assert(sBattle.defeated_doubles==(1u<<divide));
-            assert(sBattle.health==8 && sBattle.recovery==0); // no boss damage/event
-            assert(clone.mNoDraw && clone.field_0x15af==0 && clone.entry.deleting);
-            assert(!clone.mCylCc.targetEnabled && !clone.mCylCc.coEnabled);
-            for (auto& sphere:clone.mSphCc) assert(!sphere.enabled);
-            for (auto& sweep:clone.entry.bladeSweeps) assert(!sweep.enabled);
-            assert(!defeat_double_on_jump_strike(&clone,clone.entry));
-            clone.entry={}; // native Delete clears the slot; suppression survives
-            assert(sBattle.defeated_doubles==(1u<<divide));
+    // The actual hook doubles countdown speed only during the vulnerable
+    // ground window; ordinary and odd timer lengths expire in ceil(N/2) ticks.
+    daNpc_Kn_c ending;
+    ending.mActionMode=3; ending.down=true;
+    ending.mMotionSeqMngr.no=19; ending.mMotionSeqMngr.step=1;
+    for (int duration : {1,2,3,30,59,120}) {
+        ending.field_0xdec=duration;
+        int ticks=0;
+        while (ending.field_0xdec>0) {
+            assert(before_ending_blow_wait(nullptr,&ending,nullptr,nullptr)==HOOK_CONTINUE);
+            --ending.field_0xdec; // native countdown once per waiting tick
+            ++ticks;
         }
+        assert(ticks==(duration+1)/2);
     }
-    assert(removed==6);
+    before_ending_blow_wait(nullptr,&ending,nullptr,nullptr);
+    assert(ending.field_0xdec==0); // no unsigned/signed underflow at expiry
+    for (int mode : {0,1,3}) {
+        ending.mMode=mode; ending.field_0xdec=30;
+        before_ending_blow_wait(nullptr,&ending,nullptr,nullptr);
+        assert(ending.field_0xdec==30);
+    }
+    ending.mMode=2; ending.down=false;
+    before_ending_blow_wait(nullptr,&ending,nullptr,nullptr);
+    assert(ending.field_0xdec==30);
+    ending.down=true; ending.mMotionSeqMngr.step=0;
+    before_ending_blow_wait(nullptr,&ending,nullptr,nullptr);
+    assert(ending.field_0xdec==30); // landing has not finished
+    ending.mMotionSeqMngr.step=1; ending.mMotionSeqMngr.no=20;
+    before_ending_blow_wait(nullptr,&ending,nullptr,nullptr);
+    assert(ending.field_0xdec==30); // successful finishing-hit animation
+    ending.mMotionSeqMngr.no=19; ending.entry.divide=1;
+    before_ending_blow_wait(nullptr,&ending,nullptr,nullptr);
+    assert(ending.field_0xdec==30);
+    ending.entry.divide=0; ending.owned=false;
+    before_ending_blow_wait(nullptr,&ending,nullptr,nullptr);
+    assert(ending.field_0xdec==30); // native story lesson unaffected
+
+    // The existing native success event must charge damage once and play a
+    // short flinch once; repeated events during recovery cannot restart it.
+    daNpc_Kn_c reflected;
+    sBattle={}; sBattle.phase=2;
+    reflected.mEvtNo=11; reflected.field_0x15bc=1;
+    assert(no_order(nullptr,&reflected,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+    assert(sBattle.health==7 && reflected.health==7 && sBattle.recovery==45);
+    assert(reflected.mMotionSeqMngr.no==29 && reflected.field_0x15bc==0);
+    assert(reflected.mEvtNo==0);
+    reflected.mMotionSeqMngr.no=0; reflected.mEvtNo=11;
+    no_order(nullptr,&reflected,nullptr,nullptr);
+    assert(sBattle.health==7 && reflected.mMotionSeqMngr.no==0);
+    sBattle={}; reflected.mEvtNo=7;
+    no_order(nullptr,&reflected,nullptr,nullptr);
+    assert(sBattle.health==7 && reflected.mMotionSeqMngr.no==0); // other counters unchanged
+    sBattle={}; sBattle.phase=2;
+    reflected.entry.divide=1; reflected.mEvtNo=11;
+    no_order(nullptr,&reflected,nullptr,nullptr);
+    assert(sBattle.health==8 && reflected.mMotionSeqMngr.no==0);
+    reflected.entry.divide=0; reflected.owned=false; reflected.mEvtNo=11;
+    assert(no_order(nullptr,&reflected,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(sBattle.health==8 && reflected.mEvtNo==11);
 
     a.owned=false;
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);
@@ -449,7 +449,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("defeat_double_on_jump_strike", "bool") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + checks
+source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

@@ -33,17 +33,18 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
 | Jump Strike | Jump Strike; two doubles participate |
 | Great Spin | Great Spin; two doubles participate |
 
-### Double removal
+### Double reactions and Ending Blow window
 
-In both final phases, a single actual Link sword contact during Jump Strike
-(`LARGE_JUMP_INIT`, `LARGE_JUMP` or `LARGE_JUMP_FINISH`) removes the struck double.
-The execute hook reads the collision before native lesson handling can consume
-it, disables its hit volumes and rendering, and requests normal actor deletion.
-A Jump Strike without contact, a projectile, another actor's attack, or an
-ordinary sword swing does not trigger this rule. The main Shade keeps his native
-counter/health rules. Defeated double slots are recorded in the battle state,
-not the actor slot: asynchronous deletion cannot cause immediate respawning.
-The record clears on the next phase or a new encounter.
+Jump Strike uses the native double hit reaction again: there is no execute-hook
+instant hide/delete or defeated-slot mask. Native knockback, landing and the
+existing disappearance flow run normally. The shared grounded-landing correction
+below remains active for doubles, including Jump Strike and Spin Attack falls.
+
+Once the main Shade is flat on the ground with the Ending Blow down flag active,
+the native waiting timer advances by two ticks per update instead of one. This
+halves the remaining vulnerable window (rounded up for odd tick counts). Flight,
+landing, successful finishing-hit animations and story lessons keep their timing.
+Native expiry still waits for an already-started Ending Blow to resolve.
 
 ### Blocks and combos
 
@@ -117,7 +118,11 @@ windows are unchanged. All tuning applies only to tracked arena fighters, leavin
 story Hidden Skill lessons untouched. No shared animation tables are modified.
 
 The ball remains `KN_BULLET`, including the engine's shield-reflection logic and
-return trajectory. If the room has no lesson particle bank, an original glowing
+return trajectory. An accepted reflected-ball success (event 11) also starts
+native sequence 29 (`KN_DAMAGE_S` followed by `KN_WAIT_A`) once, providing a short
+visible flinch. The health decrease and 45-tick recovery remain unchanged; repeat
+events during recovery cannot replay the flinch or charge another hit.
+If the room has no lesson particle bank, an original glowing
 orb packet makes the projectile visible without replacing the room's particles.
 
 ## Isolation and lifecycle
@@ -191,8 +196,8 @@ early and late moving blade contact, stationary poses, consumed shield/hit
 contacts, Back Slice's first cut and non-damaging steps, sweep endpoints,
 Jump Strike's two-contact limit, interrupted/recovering actors, and the actual
 jump-pose hook preserving height/orientation on both models, the root-neutral
-Helm Splitter handoff and turn-in-place recovery (including wrapped yaw), and one-contact double removal with phase-scoped respawn
-suppression. The fixture also checks both knockback directions for main/doubles,
+Helm Splitter handoff and turn-in-place recovery (including wrapped yaw),
+the halved Ending Blow countdown, and one flinch per accepted reflected-ball hit. The fixture also checks both knockback directions for main/doubles,
 recovery gravity, grounded-only landing transitions, and Ending Blow isolation.
 
 Device checklist (still required):
@@ -200,7 +205,8 @@ Device checklist (still required):
 1. Enter from the Cave, inspect the sword/plinth placement, press A once and
    confirm exactly one visible main Shade appears.
 2. Take an unguarded sword and ball hit; block normally; reflect the ball using
-   Shield Attack. Confirm the return hit damages Shade and does not open a lesson.
+   Shield Attack. Confirm the return hit damages Shade, makes him briefly flinch
+   exactly once and does not open a lesson.
 3. Have Shade block four distinct sword attacks: the second and fourth should
    trigger a sword riposte followed by Back Slice. A successful Shield Attack or
    other Hidden Skill must instead retain its vulnerable follow-up.
@@ -218,9 +224,10 @@ Device checklist (still required):
    Check ordinary counter knockdowns and Spin Attack knockdowns of both doubles:
    the fall must finish in a flat ground pose rather than a tilted flight pose.
    The Ending Blow waiting pose and its prompt must still work.
-   Check attack collisions and both doubles in the final phases. Hit each double
-   once with Jump Strike: only that double disappears, stays gone for the phase,
-   and does not damage the main Shade merely by disappearing. During special
+   Check attack collisions and both doubles in the final phases. Jump Strike
+   must play their native hit/fall/landing response before disappearance.
+   Verify the main Shade's Ending Blow opportunity ends in half the previous
+   waiting time, while an already-started Ending Blow still completes. During special
    attacks, check unguarded blade contact and a shield block followed by lowering
    the shield: no delayed second hit should appear. Let Mortal Draw run repeatedly
    and replay the encounter to exercise the previously crashing accessory path.

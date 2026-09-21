@@ -67,7 +67,7 @@ template<class T> T& arg_ref(void* args, int n) { return *std::any_cast<T>(&stat
 }
 constexpr int kBossRushStateHub=0, kBossRushStateCaveOfOrdeals=3;
 const char* kBossRushReturnStage="D_MN09C";
-const char* kBossRushDarknutAreaStage="D_DLBR0";
+const char* kBossRushDarknutAreaStage="D_MN06B";
 const char* kCaveOfOrdealsStage="D_SB01";
 const char* kIntroSkipStage="F_SP108";
 constexpr s16 kBossRushReturnPoint=0, kCaveOfOrdealsPoint=0;
@@ -143,14 +143,14 @@ void route(const char* requested, const char* expected, int expectedState, int e
 }
 int main() {
     // Entrance exit goes to the private, empty Darknut room in hub state.
-    reset(); route("F_SP124","D_DLBR0",0,51,0,0);
+    reset(); route("F_SP124","D_MN06B",0,51,0,0);
     assert(!sHubArrivalWarpPending);
     // dStage_playerInit uses restart coordinates and unmodified room bits for
     // point -1. Other points use authored coordinates but can still inherit a
     // warp/demo parameter override. Exercise the destination after that boundary.
     for (unsigned stale : {0u, 0xCA000u, 0xCA009u}) {
         reset(); restartParam=stale;
-        route("F_SP124","D_DLBR0",0,51,0,0);
+        route("F_SP124","D_MN06B",0,51,0,0);
         assert(restartParam==0);
         const unsigned authoredParam=0x10000u;
         unsigned playerParam=kBossRushDarknutAreaPoint==-1 ? restartParam :
@@ -190,7 +190,7 @@ int main() {
                 assert(restartParam==0 && !sHubArrivalWarpPending);
                 // After scene initialization, the normal exit still goes to the arena.
                 gameOverStatus=0; stay=0;
-                route("F_SP124","D_DLBR0",0,51,0,0);
+                route("F_SP124","D_MN06B",0,51,0,0);
             }
         }
     }
@@ -213,11 +213,11 @@ int main() {
     on_cave_gameover_close_pre(nullptr,pendingArgs,nullptr,nullptr);
     assert(pendingMenu.mEndStatus==2);
     // Both arena doors lead to the Cave entrance, including Temple destination.
-    reset("D_DLBR0",51,0); route("D_MN06","D_SB01",3,0,0,-1);
-    reset("D_DLBR0",51,0); route("D_MN06B","D_SB01",3,0,0,-1);
+    reset("D_MN06B",51,0); route("D_MN06","D_SB01",3,0,0,-1);
+    reset("D_MN06B",51,0); route("D_MN06B","D_SB01",3,0,0,-1);
     // Explicit hub returns must not be captured by the entrance route.
     reset(); route("D_MN09C","D_MN09C",0,0,0,0);
-    reset("D_DLBR0",51,0); route("D_MN09C","D_MN09C",0,12,42,2);
+    reset("D_MN06B",51,0); route("D_MN09C","D_MN09C",0,12,42,2);
     // Vanilla saves, actual Darknut fights and title/reset paths pass through.
     reset(); active=false; route("F_SP124","F_SP124",3,12,42,2);
     reset("D_MN06B",51,2); route("D_MN06","D_MN06",2,12,42,2);
@@ -225,7 +225,7 @@ int main() {
     reset(); resetting=true; route("F_SP124","F_SP124",3,12,42,2);
     // Completion/gate overrides must be in effect before actor creation and
     // must leave the real arena and non-Boss-Rush saves alone.
-    reset("D_DLBR0",51,0);
+    reset("D_MN06B",51,0);
     for (int bit : {3,5,7}) {
         std::any args[]={nullptr,bit}; int result=0;
         assert(on_bossrush_area_dungeon_bit_pre(nullptr,args,&result,nullptr)==HOOK_SKIP_ORIGINAL);
@@ -305,7 +305,7 @@ int main() {
         on_bossrush_area_actor_name_post(nullptr,nullptr,&actor,nullptr);
         assert(actor==&info);
     }
-    reset("D_DLBR0",51,0); active=false;
+    reset("D_MN06B",51,0); active=false;
     std::any args[]={nullptr,3,51}; int result=0;
     assert(on_bossrush_area_dungeon_bit_pre(nullptr,args,&result,nullptr)==HOOK_CONTINUE);
     assert(on_bossrush_area_switch_pre(nullptr,args,&result,nullptr)==HOOK_CONTINUE);

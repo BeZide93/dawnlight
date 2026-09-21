@@ -1,6 +1,7 @@
 #include "enemy_spawner.hpp"
 
 #include "service_imports.hpp"
+#include "save_state.hpp"
 
 #include "SSystem/SComponent/c_math.h"
 #include "d/actor/d_a_alink.h"
@@ -14,6 +15,7 @@
 #include "mods/hook.hpp"
 
 #include <array>
+#include <cstring>
 #include <unordered_set>
 
 namespace dawnlight {

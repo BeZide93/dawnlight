@@ -4485,14 +4485,10 @@ result = mods::hook_add_pre<BossRushAreaResourceHook>(svc_hook, on_bossrush_area
         return mods::set_error(error, result, "failed to install Boss Rush area audio alias");
     }
 
-    result = mods::hook_add_pre<BossRushAreaDungeonBitHook>(svc_hook, on_bossrush_area_dungeon_bit_pre);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install Boss Rush area completion state");
-    }
-    result = mods::hook_add_pre<BossRushAreaSwitchHook>(svc_hook, on_bossrush_area_switch_pre);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install Boss Rush area gate state");
-    }
+    // Do not override the borrowed arena's dungeon/switch queries globally.
+    // PR23's working Enemy Spawner did not install these hooks; forcing every
+    // room switch/boss bit to "cleared" makes standalone enemies immediately
+    // retire and breaks NPC initialization (notably Goron).
     result = mods::hook_add_post<BossRushAreaActorNameHook>(svc_hook, on_bossrush_area_actor_name_post);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area actor filter");

@@ -76,6 +76,7 @@ constexpr s8 kBossRushReturnRoom=0, kBossRushReturnLayer=0;
 constexpr s8 kBossRushDarknutAreaRoom=51, kBossRushDarknutAreaLayer=0;
 constexpr s8 kCaveOfOrdealsRoom=0, kCaveOfOrdealsLayer=-1, kIntroSkipRoom=0;
 bool active=true, resetting=false;
+bool s_testEnemyCreateInProgress=false;
 bool sHubArrivalWarpPending=false, sBossRushArrivalReady=true;
 int state=3, bossIndex=0, stay=0;
 unsigned restartParam=0;
@@ -238,6 +239,14 @@ int main() {
     // Simulate the exact first-create boundary: the process is registered but
     // does not have actor_type yet. Native enemy admission must see switch off.
     process_class testEnemy{42}, nativeGate{43};
+    // Production create_actor enters native creation before it returns actorId,
+    // so the actor cannot be in s_testActors yet. The explicit create scope
+    // must expose an uncleared room during that window.
+    assert(!s_testActors.contains(42));
+    s_testEnemyCreateInProgress=true;
+    checkRoom(0);
+    s_testEnemyCreateInProgress=false;
+    checkRoom(1);
     s_testActors.insert(42);
     std::any processArgs[]={process_method_func(nullptr),static_cast<void*>(&testEnemy)};
     std::any switchArgs[]={nullptr,2,51}; int switchResult=-1;

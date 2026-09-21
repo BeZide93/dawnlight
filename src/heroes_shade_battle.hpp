@@ -24,7 +24,9 @@ inline constexpr int jump_strike = 10;
 // Native sequences keep their sequence number when they return to the ready
 // stance. Checking only sequence 9 would strand the offensive controller.
 inline bool ready_motion(int motion, int step) {
-    return motion == 9 || ((motion == sword || motion == 27 || motion == 24) && step >= 1);
+    // Ending Blow's ordinary hit reaction (31) returns to the walking stance;
+    // the arena must resume attacking once that reaction/sliding has finished.
+    return motion == 9 || ((motion == sword || motion == 27 || motion == 24 || motion == 31) && step >= 1);
 }
 
 struct AttackChain {

@@ -63,7 +63,7 @@ int main() {
 
     // The native sequence keeps its number after the swing/block. These
     // returns must admit another attack without cutting off the reaction.
-    for (int motion : {sword,27,24}) {
+    for (int motion : {sword,27,24,31}) {
         assert(!ready_motion(motion,0));
         assert(ready_motion(motion,1));
     }

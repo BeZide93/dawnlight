@@ -45,8 +45,9 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
   stagger their full-combo delay by 15 ticks per double. The old native random
   single-attack timer is disabled only for owned arena fighters, so it cannot
   interrupt or starve the combo controller.
-- Native sequences 25 (sword), 27 (block) and 24 (readying) retain their sequence
-  number when they enter the ready stance in step 1. Those return steps are now
+- Native sequences 25 (sword), 27 (block), 24 (readying) and 31 (the opening
+  lesson's hit reaction) retain their sequence number when they return to a
+  ready/walking stance in step 1. Those return steps are now
   recognized; requiring sequence 9 alone previously suppressed later attacks.
 - Back Slice uses animation progress to follow a semicircle around Link at a
   150-unit radius, with bounded movement through native collision. The cut then

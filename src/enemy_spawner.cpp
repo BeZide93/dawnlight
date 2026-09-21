@@ -98,6 +98,7 @@ constexpr std::array<u32, kEnemySpawnerProfiles.size()> kEnemySpawnerParameters{
 };
 
 DEFINE_HOOK(&fpcMtd_Method, SpawnerProcessHook);
+DEFINE_HOOK(&fopAcM_createChild, SpawnerChildHook);
 DEFINE_HOOK(&daE_ZS_c::executeAppear, StaltroopAppearHook);
 DEFINE_HOOK(&daE_ZS_c::executeWait, StaltroopWaitHook);
 
@@ -106,11 +107,24 @@ std::unordered_set<ActorId> s_testActors;
 // innermost process so a nested gate/NPC never inherits a test enemy's state.
 std::vector<std::pair<void*, bool>> s_testProcessStack;
 bool s_processHookInstalled = false;
+bool s_childHookInstalled = false;
 bool s_appearHookInstalled = false;
 bool s_waitHookInstalled = false;
 
 bool is_test_actor(fopAc_ac_c* actor) {
     return actor != nullptr && s_testActors.contains(fopAcM_GetID(actor));
+}
+
+void after_create_child(ModContext*, void* args, void* retval, void*) {
+    if (args == nullptr || retval == nullptr) return;
+    const auto parent = mods::arg<fpc_ProcID>(args, 1);
+    const auto child = *static_cast<fpc_ProcID*>(retval);
+    // Child creation is asynchronous. Register the returned ID now, before
+    // fopAc_Create checks room admission (and before actor_type exists).
+    // This includes descendants, but never unrelated native room actors.
+    if (child != fpcM_ERROR_PROCESS_ID_e && s_testActors.contains(parent)) {
+        s_testActors.insert(child);
+    }
 }
 
 HookAction before_process(ModContext*, void* args, void*, void*) {
@@ -171,6 +185,11 @@ HookAction before_staltroop_wait(ModContext*, void* args, void*, void*) {
 }
 
 ModResult install_test_hooks() {
+    if (!s_childHookInstalled) {
+        const auto result = mods::hook::add_post<SpawnerChildHook>(svc_hook, after_create_child);
+        if (result != MOD_OK) return result;
+        s_childHookInstalled = true;
+    }
     if (!s_processHookInstalled) {
         const auto result = mods::hook::add_pre<SpawnerProcessHook>(svc_hook, before_process);
         if (result != MOD_OK) return result;

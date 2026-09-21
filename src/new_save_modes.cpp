@@ -91,6 +91,8 @@ DEFINE_HOOK(&dStage_searchName, BossRushAreaActorNameHook);
 DEFINE_HOOK(&J3DDrawBuffer::drawHead, ArenaDrawHeadHook);
 DEFINE_HOOK(&J3DDrawBuffer::drawTail, ArenaDrawTailHook);
 DEFINE_HOOK(&J3DMatPacket::draw, ArenaMaterialDrawHook);
+DEFINE_HOOK(&J3DMatPacket::entry, ArenaMaterialEntryHook);
+DEFINE_HOOK(&mDoExt_3DlineMatSortPacket::setMat, ArenaLineEntryHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
@@ -713,20 +715,58 @@ bool is_bossrush_darknut_area_active() {
            is_bossrush_darknut_area_stage();
 }
 
-// The Android crash resolves to Aurora's fixed index staging buffer. Cyclic
-// J3D lists are one possible source of unbounded index submissions. Keep this
-// defensive repair local to the connector and log actual repairs so a device
-// run can distinguish this case from a different renderer failure.
+// Device logs confirm cyclic material lists in the connector. Repair before
+// both sorting and drawing; also prevent duplicate line materials (Deku Baba's
+// stalk), whose separate chain is walked during interpolation and drawing.
 unsigned sArenaPacketRepairsLogged = 0;
-void check_arena_packet_chain(J3DPacket* packet, const char* kind) {
-    if (break_packet_cycle(packet) && sArenaPacketRepairsLogged < 4) {
+void log_arena_queue_repair(void* packet, const char* kind) {
+    if (sArenaPacketRepairsLogged < 4) {
         ++sArenaPacketRepairsLogged;
         char message[160];
         std::snprintf(message, sizeof(message),
-            "Dawnlight arena: repaired cyclic %s draw queue (%p)",
+            "Dawnlight arena: draw queue guard: %s (%p)",
             kind, static_cast<void*>(packet));
         svc_log->warn(mod_ctx, message);
     }
+}
+
+void check_arena_packet_chain(J3DPacket* packet, const char* kind) {
+    if (break_packet_cycle(packet)) log_arena_queue_repair(packet, kind);
+}
+
+HookAction on_arena_material_entry_pre(ModContext*, void* args, void*, void*) {
+    if (!is_bossrush_darknut_area_active() || args == nullptr) return HOOK_CONTINUE;
+    const auto* buffer = mods::arg<J3DDrawBuffer*>(args, 1);
+    // Native material sorting traverses the buckets before the draw hooks run.
+    if (buffer != nullptr && buffer->mpBuffer != nullptr) {
+        for (u32 i = 0; i < buffer->mEntryTableSize; ++i) {
+            check_arena_packet_chain(buffer->mpBuffer[i], "material before sort");
+        }
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction on_arena_line_entry_pre(ModContext*, void* args, void*, void*) {
+    if (!is_bossrush_darknut_area_active() || args == nullptr) return HOOK_CONTINUE;
+    auto* packet = mods::arg<mDoExt_3DlineMatSortPacket*>(args, 0);
+    auto* incoming = mods::arg<mDoExt_3DlineMat_c*>(args, 1);
+    if (packet == nullptr || incoming == nullptr) return HOOK_CONTINUE;
+    auto* head = packet->getFirstMat();
+    if (break_link_cycle(head,
+            [](mDoExt_3DlineMat_c* p) { return p->field_0x4; },
+            [](mDoExt_3DlineMat_c* p) { p->field_0x4 = nullptr; })) {
+        log_arena_queue_repair(head, "line");
+    }
+    for (auto* mat = head; mat != nullptr; mat = mat->field_0x4) {
+        if (mat == incoming) {
+            // setMat prepends by changing incoming->next. Repeating a material
+            // already in this list would create a self-cycle or a longer cycle.
+            // Keep its existing entry; reset() permits entry again next frame.
+            log_arena_queue_repair(incoming, "duplicate line submission");
+            return HOOK_SKIP_ORIGINAL;
+        }
+    }
+    return HOOK_CONTINUE;
 }
 
 HookAction on_arena_draw_buffer_pre(ModContext*, void* args, void*, void*) {
@@ -4538,6 +4578,14 @@ ModResult register_new_save_modes(ModError* error) {
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area gate state");
     }
+    result = mods::hook_add_pre<ArenaMaterialEntryHook>(svc_hook, on_arena_material_entry_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install arena queue entry guard");
+    }
+    result = mods::hook_add_pre<ArenaLineEntryHook>(svc_hook, on_arena_line_entry_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install arena queue entry guard");
+    }
     result = mods::hook_add_pre<ArenaDrawHeadHook>(svc_hook, on_arena_draw_buffer_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install arena draw queue guard");
@@ -4614,6 +4662,8 @@ void shutdown_new_save_modes() {
     mods::hook_uninstall<BossRushAreaAudioHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaDungeonBitHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaSwitchHook>(svc_hook);
+    mods::hook_uninstall<ArenaLineEntryHook>(svc_hook);
+    mods::hook_uninstall<ArenaMaterialEntryHook>(svc_hook);
     mods::hook_uninstall<ArenaMaterialDrawHook>(svc_hook);
     mods::hook_uninstall<ArenaDrawTailHook>(svc_hook);
     mods::hook_uninstall<ArenaDrawHeadHook>(svc_hook);

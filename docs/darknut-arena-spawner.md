@@ -51,3 +51,40 @@ Android/device validation is still required: spawn Bokoblin and Goron in the
 empty arena, then exit/re-enter and repeat. Retain the complete log, including
 any repair messages. This patch does not change renderer buffer sizes or import
 Twilit Essentials code. PR23 is unchanged.
+
+
+## Bomskit and Deku Baba follow-up
+
+The later `Boomskit.log` and `Deku_baba.log` both contain material-cycle repair
+messages from `0a66046`. Cyclic material lists are therefore now observed on the
+device, rather than merely a candidate. Most other spawns work according to the
+user's test.
+
+Bomskit creates an `E_CR_EGG` child. Only the parent's ID was exempt from the
+arena's cleared-room queries. The native room enemy gate consequently rejects
+the egg before its profile initialization. Its deletion unconditionally calls
+`Z2Creature::stopAnime`; that matches this log's SIGSEGV and deletion stack. Track
+successful child creation IDs whenever the parent belongs to the spawner,
+including further descendants, before their asynchronous base creation begins.
+Native children remain unaffected; deletion removes each tracked ID separately.
+
+The Deku Baba log ends after resource loading and a material-cycle repair, with
+no crash stack. Its stalk uses a different intrusive list:
+`mDoExt_3DlineMatSortPacket::setMat` prepends the material, and both interpolation
+refresh and drawing walk `field_0x4` until null. Submitting an existing member
+again forms a cycle outside the previous J3D packet guard. Reject duplicate line
+submissions within the current list, repair existing line cycles, and allow the
+material again after native list reset. Also repair material buckets before
+`J3DMatPacket::entry`, since native sorting itself traverses those buckets.
+These guards remain restricted to the Boss Rush connector.
+
+New guard messages start with `Dawnlight arena: draw queue guard:` and identify
+material, shape, line, or duplicate line submission. The device log does not
+prove which additional traversal stalls Deku Baba; the patch covers both the
+sort-time and stalk-list gaps. A new in-game test is still needed.
+
+Regression coverage now includes asynchronous child admission before actor
+initialization, grandchildren, failed/native child requests, independent child
+cleanup, material sorting before draw, duplicate stalk submissions, line-list
+reset and stage/save isolation. All three existing test scripts and both C++
+syntax checks pass.

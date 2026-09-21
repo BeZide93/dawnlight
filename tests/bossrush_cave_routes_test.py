@@ -22,6 +22,7 @@ def function(name, source=source):
 stubs = r'''
 #include "packet_chain.hpp"
 using dawnlight::break_packet_cycle;
+using dawnlight::break_link_cycle;
 #include <cstdio>
 #include <cassert>
 #include <cstring>
@@ -32,7 +33,8 @@ using s8 = signed char; using s16 = short; using s32 = int; using BOOL = int;
 constexpr int TRUE=1, FALSE=0;
 #include <unordered_set>
 #include <vector>
-using ActorId = unsigned;
+using ActorId = unsigned; using fpc_ProcID = unsigned;
+constexpr fpc_ProcID fpcM_ERROR_PROCESS_ID_e=~0u;
 using process_method_func = int (*)(void*);
 struct process_method_class { process_method_func create_method, delete_method, execute_method; };
 struct process_class { ActorId id; bool initialized=false; };
@@ -60,6 +62,11 @@ struct J3DPacket {
 };
 struct J3DDrawBuffer { J3DPacket** mpBuffer; u32 mEntryTableSize; };
 struct J3DMatPacket { J3DPacket* shape; J3DPacket* getShapePacket() { return shape; } };
+struct mDoExt_3DlineMat_c { mDoExt_3DlineMat_c* field_0x4=nullptr; };
+struct mDoExt_3DlineMatSortPacket {
+    mDoExt_3DlineMat_c* head=nullptr;
+    mDoExt_3DlineMat_c* getFirstMat() { return head; }
+};
 int repairMessages=0;
 struct Logger { void warn(ModContext*, const char*) { ++repairMessages; } } logger;
 Logger* svc_log=&logger; ModContext* mod_ctx=nullptr;
@@ -128,11 +135,12 @@ spawner = (Path(__file__).resolve().parents[1] / "src/enemy_spawner.cpp").read_t
 # Compile the real process callbacks too: the room check runs before actor_type
 # has been initialized, and nested native processes must retain cleared flags.
 functions = "\n".join(function(name, spawner) for name in (
-    "is_test_actor", "before_process", "after_process", "enemy_spawner_process_active",
+    "is_test_actor", "after_create_child", "before_process", "after_process", "enemy_spawner_process_active",
 )) + "\n"
 assert "add_post<SpawnerProcessHook>(svc_hook, after_process)" in spawner
 functions += "\n".join(function(name) for name in (
-    "is_bossrush_darknut_area_active", "check_arena_packet_chain",
+    "is_bossrush_darknut_area_active", "log_arena_queue_repair", "check_arena_packet_chain",
+    "on_arena_material_entry_pre", "on_arena_line_entry_pre",
     "on_arena_draw_buffer_pre", "on_arena_material_draw_pre", "on_bossrush_area_dungeon_bit_pre",
     "on_bossrush_area_switch_pre", "on_bossrush_area_actor_name_post",
     "prepare_darknut_area_entry", "prepare_cave_entrance_return",
@@ -181,6 +189,44 @@ int main() {
     on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr);
     assert(repairMessages==2);
 
+    // Sorting can encounter a material cycle before either draw guard runs.
+    b.next=&a;
+    std::any entryArgs[]={&material,&buffer};
+    assert(on_arena_material_entry_pre(nullptr,entryArgs,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(a.next==&b && b.next==nullptr);
+    // A stalk/rope already in the current list must not be prepended again.
+    mDoExt_3DlineMat_c stalk,rope;
+    mDoExt_3DlineMatSortPacket lines;
+    auto submitLine = [&](mDoExt_3DlineMat_c* mat) {
+        std::any args[]={&lines,mat};
+        const auto action=on_arena_line_entry_pre(nullptr,args,nullptr,nullptr);
+        if (action==HOOK_CONTINUE) { mat->field_0x4=lines.head; lines.head=mat; }
+        return action;
+    };
+    assert(submitLine(&stalk)==HOOK_CONTINUE);
+    assert(submitLine(&stalk)==HOOK_SKIP_ORIGINAL);
+    assert(stalk.field_0x4==nullptr);
+    assert(submitLine(&rope)==HOOK_CONTINUE);
+    assert(submitLine(&stalk)==HOOK_SKIP_ORIGINAL);
+    assert(lines.head==&rope && rope.field_0x4==&stalk && stalk.field_0x4==nullptr);
+    // Also recover a pre-existing cycle, preserving both unique lines.
+    stalk.field_0x4=&rope;
+    assert(submitLine(&stalk)==HOOK_SKIP_ORIGINAL);
+    assert(rope.field_0x4==&stalk && stalk.field_0x4==nullptr);
+    lines.head=nullptr; // native per-frame reset
+    assert(submitLine(&stalk)==HOOK_CONTINUE);
+    for (const char* stage : {"D_MN06B","D_SB01","D_MN09C"}) {
+        reset(stage,51,0); b.next=&a;
+        on_arena_material_entry_pre(nullptr,entryArgs,nullptr,nullptr);
+        assert(b.next==&a);
+        std::any args[]={&lines,&stalk};
+        assert(on_arena_line_entry_pre(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
+    }
+    reset("D_DLBR0",51,0); active=false;
+    std::any lineArgs[]={&lines,&stalk};
+    assert(on_arena_line_entry_pre(nullptr,lineArgs,nullptr,nullptr)==HOOK_CONTINUE);
+    on_arena_material_entry_pre(nullptr,entryArgs,nullptr,nullptr);
+    assert(b.next==&a);
     // Entrance exit goes to the private, empty Darknut room in hub state.
     reset(); route("F_SP124","D_DLBR0",0,51,0,0);
     assert(!sHubArrivalWarpPending);
@@ -324,6 +370,28 @@ int main() {
     after_process(nullptr,processArgs,nullptr,nullptr);
     checkRoom(1);
     assert(!enemy_spawner_process_active() && s_testProcessStack.empty());
+    // The spawner exemption follows asynchronously created eggs/other children.
+    // Registration happens before the base actor is initialized or admitted.
+    fpc_ProcID childId=44;
+    std::any childArgs[]={s16(0),fpc_ProcID(42)};
+    after_create_child(nullptr,childArgs,&childId,nullptr);
+    assert(s_testActors.contains(childId));
+    process_class egg{childId};
+    std::any eggArgs[]={process_method_func(nullptr),static_cast<void*>(&egg)};
+    before_process(nullptr,eggArgs,nullptr,nullptr);
+    assert(enemy_spawner_process_active()); checkRoom(0);
+    after_process(nullptr,eggArgs,nullptr,nullptr); checkRoom(1);
+    childArgs[1]=childId; fpc_ProcID grandchildId=45;
+    after_create_child(nullptr,childArgs,&grandchildId,nullptr);
+    assert(s_testActors.contains(grandchildId));
+    childArgs[1]=fpc_ProcID(43); fpc_ProcID nativeChildId=46;
+    after_create_child(nullptr,childArgs,&nativeChildId,nullptr);
+    assert(!s_testActors.contains(nativeChildId));
+    childArgs[1]=fpc_ProcID(42); fpc_ProcID failure=fpcM_ERROR_PROCESS_ID_e;
+    after_create_child(nullptr,childArgs,&failure,nullptr);
+    assert(!s_testActors.contains(failure));
+    after_create_child(nullptr,nullptr,&failure,nullptr);
+    after_create_child(nullptr,childArgs,nullptr,nullptr);
     // Scope still works for an initialized actor during execution/deletion.
     process_method_class methods{nullptr, +[](void*){return 1;}, +[](void*){return 1;}};
     fopAc_ac_c initializedEnemy; initializedEnemy.id=42;
@@ -336,6 +404,13 @@ int main() {
     assert(!s_testActors.contains(42));
     after_process(nullptr,processArgs,nullptr,nullptr);
     assert(!enemy_spawner_process_active());
+    // Removing the parent does not retire a live child; each ID is cleaned up
+    // by its own delete callback, including descendants.
+    assert(s_testActors.contains(childId) && s_testActors.contains(grandchildId));
+    initializedEnemy.id=childId;
+    before_process(nullptr,processArgs,nullptr,nullptr);
+    after_process(nullptr,processArgs,nullptr,nullptr);
+    assert(!s_testActors.contains(childId) && s_testActors.contains(grandchildId));
     for (int profile=0;profile<=testDoorProfile;++profile) {
         dStage_objectNameInf info{profile}; auto* result=&info;
         on_bossrush_area_actor_name_post(nullptr,nullptr,&result,nullptr);

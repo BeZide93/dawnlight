@@ -108,6 +108,10 @@ std::vector<std::pair<void*, bool>> s_testProcessStack;
 bool s_processHookInstalled = false;
 bool s_appearHookInstalled = false;
 bool s_waitHookInstalled = false;
+// create_actor enters native profile/base creation before it returns the ActorId.
+// Keep that window explicit so arena state hooks can admit the test enemy before
+// s_testActors can contain its final process ID.
+bool s_testEnemyCreateInProgress = false;
 
 bool is_test_actor(fopAc_ac_c* actor) {
     return actor != nullptr && s_testActors.contains(fopAcM_GetID(actor));
@@ -197,7 +201,8 @@ ModResult install_test_hooks() {
 }  // namespace
 
 bool enemy_spawner_process_active() {
-    return !s_testProcessStack.empty() && s_testProcessStack.back().second;
+    return s_testEnemyCreateInProgress ||
+           (!s_testProcessStack.empty() && s_testProcessStack.back().second);
 }
 
 bool enemy_spawner_blocked_in_bossrush_hub() {
@@ -260,6 +265,10 @@ ModResult spawn_enemy_for_testing(int profileIndex) {
     };
 
     ActorId actorId = fpcM_ERROR_PROCESS_ID_e;
+    struct CreateScope {
+        CreateScope() { s_testEnemyCreateInProgress = true; }
+        ~CreateScope() { s_testEnemyCreateInProgress = false; }
+    } createScope;
     const auto result = svc_actor->create_actor(mod_ctx, profile, &params, &actorId);
     if (result == MOD_OK) s_testActors.insert(actorId);
     return result;

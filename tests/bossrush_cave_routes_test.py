@@ -239,6 +239,14 @@ int main() {
     // Simulate the exact first-create boundary: the process is registered but
     // does not have actor_type yet. Native enemy admission must see switch off.
     process_class testEnemy{42}, nativeGate{43};
+    std::any processArgs[]={process_method_func(nullptr),static_cast<void*>(&testEnemy)};
+    std::any switchArgs[]={nullptr,2,51}; int switchResult=-1;
+    std::any bossArgs[]={nullptr,3}; int bossResult=-1;
+    auto checkRoom = [&](int cleared) {
+        assert(on_bossrush_area_switch_pre(nullptr,switchArgs,&switchResult,nullptr)==HOOK_SKIP_ORIGINAL);
+        assert(on_bossrush_area_dungeon_bit_pre(nullptr,bossArgs,&bossResult,nullptr)==HOOK_SKIP_ORIGINAL);
+        assert(switchResult==cleared && bossResult==cleared);
+    };
     // Production create_actor enters native creation before it returns actorId,
     // so the actor cannot be in s_testActors yet. The explicit create scope
     // must expose an uncleared room during that window.
@@ -248,14 +256,6 @@ int main() {
     s_testEnemyCreateInProgress=false;
     checkRoom(1);
     s_testActors.insert(42);
-    std::any processArgs[]={process_method_func(nullptr),static_cast<void*>(&testEnemy)};
-    std::any switchArgs[]={nullptr,2,51}; int switchResult=-1;
-    std::any bossArgs[]={nullptr,3}; int bossResult=-1;
-    auto checkRoom = [&](int cleared) {
-        assert(on_bossrush_area_switch_pre(nullptr,switchArgs,&switchResult,nullptr)==HOOK_SKIP_ORIGINAL);
-        assert(on_bossrush_area_dungeon_bit_pre(nullptr,bossArgs,&bossResult,nullptr)==HOOK_SKIP_ORIGINAL);
-        assert(switchResult==cleared && bossResult==cleared);
-    };
     assert(!enemy_spawner_process_active());
     before_process(nullptr,processArgs,nullptr,nullptr);
     assert(enemy_spawner_process_active());

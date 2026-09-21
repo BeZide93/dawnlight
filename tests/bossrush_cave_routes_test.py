@@ -28,7 +28,13 @@ stubs = r'''
 using s8 = signed char; using s16 = short; using s32 = int; using BOOL = int;
 constexpr int TRUE=1;
 struct ModContext {}; struct dSv_save_c {};
-struct dMenu_save_c { int mEndStatus=2; int getEndStatus() { return mEndStatus; } };
+struct dMenu_save_c {
+    enum { CURSOR_NO, CURSOR_YES };
+    enum { PROC_GAME_CONTINUE=0x22, PROC_GAME_CONTINUE3=0x24, PROC_SAVE_WAIT=0x29 };
+    int mEndStatus=2;
+    int mYesNoCursor=CURSOR_NO, mUseType=2, mMenuProc=PROC_GAME_CONTINUE;
+    int getEndStatus() { return mEndStatus; }
+};
 struct dGameover_c { bool mIsDemoSave=false; dMenu_save_c* dMs_c=nullptr; };
 enum class CaveGameOverChoice { None, Retry, Hub };
 CaveGameOverChoice sCaveGameOverChoice=CaveGameOverChoice::None;
@@ -92,7 +98,7 @@ functions = "\n".join(function(name) for name in (
     "is_bossrush_darknut_area_active", "on_bossrush_area_dungeon_bit_pre",
     "on_bossrush_area_switch_pre", "on_bossrush_area_actor_name_post",
     "prepare_darknut_area_entry", "prepare_cave_entrance_return",
-    "prepare_hub_return_from_cave", "set_next_stage_args", "on_cave_gameover_close_pre", "on_set_next_stage_pre",
+    "prepare_hub_return_from_cave", "set_next_stage_args", "on_cave_continue_selection_post", "on_cave_gameover_close_pre", "on_set_next_stage_pre",
 ))
 
 cases = r'''
@@ -151,9 +157,20 @@ int main() {
             for (int answer : {0,1}) {
                 reset("D_SB01",floor);
                 dMenu_save_c menu{answer}; dGameover_c gameover{true,&menu};
+                menu.mYesNoCursor=answer;
+                std::any selectionArgs[]={&menu};
+                on_cave_continue_selection_post(nullptr,selectionArgs,nullptr,nullptr);
+                assert(sCaveGameOverChoice==CaveGameOverChoice::None); // not accepted yet
+                menu.mMenuProc=answer ? dMenu_save_c::PROC_SAVE_WAIT : dMenu_save_c::PROC_GAME_CONTINUE3;
+                on_cave_continue_selection_post(nullptr,selectionArgs,nullptr,nullptr);
+                assert(sCaveGameOverChoice==(answer ? CaveGameOverChoice::Retry : CaveGameOverChoice::Hub));
+                // The downstream resume status may already have been normalized.
+                menu.mEndStatus=1;
                 std::any closeArgs[]={&gameover};
                 assert(on_cave_gameover_close_pre(nullptr,closeArgs,nullptr,nullptr)==HOOK_CONTINUE);
                 assert(menu.mEndStatus==1); // No must not trigger native onReset().
+                on_cave_gameover_close_pre(nullptr,closeArgs,nullptr,nullptr);
+                on_cave_continue_selection_post(nullptr,selectionArgs,nullptr,nullptr);
                 assert(sCaveGameOverChoice==(answer ? CaveGameOverChoice::Retry : CaveGameOverChoice::Hub));
                 restartParam=0xC9009;
                 route(nativeTarget,answer ? "D_SB01" : "D_MN09C",answer ? 3 : 0,0,0,answer ? -1 : 0);
@@ -166,6 +183,14 @@ int main() {
             }
         }
     }
+    // Fallback close handling uses the confirmed cursor, not the mutable status.
+    reset();
+    dMenu_save_c fallback{1}; fallback.mYesNoCursor=dMenu_save_c::CURSOR_NO;
+    dGameover_c fallbackGameover{true,&fallback}; std::any fallbackArgs[]={&fallbackGameover};
+    on_cave_gameover_close_pre(nullptr,fallbackArgs,nullptr,nullptr);
+    on_cave_gameover_close_pre(nullptr,fallbackArgs,nullptr,nullptr);
+    assert(sCaveGameOverChoice==CaveGameOverChoice::Hub);
+    route("F_SP124","D_MN09C",0,0,0,0);
     // mIsDemoSave is also true after the normal death animation handshake;
     // only the game-over type distinguishes demo/save prompts from death.
     // Other saves, other rooms and demo/save prompts retain native semantics.
@@ -180,6 +205,10 @@ int main() {
         std::any args[]={&gameover};
         assert(on_cave_gameover_close_pre(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
         assert(menu.mEndStatus==0 && sCaveGameOverChoice==CaveGameOverChoice::None);
+        menu.mMenuProc=dMenu_save_c::PROC_GAME_CONTINUE3;
+        std::any selectionArgs[]={&menu};
+        on_cave_continue_selection_post(nullptr,selectionArgs,nullptr,nullptr);
+        assert(sCaveGameOverChoice==CaveGameOverChoice::None);
     }
     reset();
     dMenu_save_c pendingMenu{2}; dGameover_c pendingGameover{false,&pendingMenu};

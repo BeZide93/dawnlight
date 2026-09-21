@@ -78,6 +78,7 @@ DEFINE_HOOK(
     SetNextStageHook);
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
 DEFINE_HOOK(&dGameover_c::saveClose_proc, CaveGameOverCloseHook);
+DEFINE_HOOK(&dMenu_save_c::gameContinue, CaveContinueSelectionHook);
 DEFINE_HOOK(&dRes_control_c::setRes, BossRushAreaResourceHook);
 DEFINE_HOOK(&dStage_roomControl_c::roomDzs_c::add, BossRushAreaRoomDataHook);
 DEFINE_HOOK(&Z2SceneMgr::setSceneName, BossRushAreaAudioHook);
@@ -3780,6 +3781,29 @@ void set_next_stage_args(void* args, const char* stage, s16 point, s8 room, s8 l
     mods::arg_ref<s8>(args, 3) = layer;
 }
 
+void on_cave_continue_selection_post(ModContext*, void* args, void*, void*) {
+    if (args == nullptr || !is_bossrush_game_mode_active() || !is_boss_rush() ||
+        boss_rush_state() != kBossRushStateCaveOfOrdeals ||
+        !is_current_stage_name(kCaveOfOrdealsStage) ||
+        dMeter2Info_getGameOverType() != 0 || is_reset_to_opening_transition() ||
+        sCaveGameOverChoice != CaveGameOverChoice::None) {
+        return;
+    }
+    auto* menu = mods::arg<dMenu_save_c*>(args, 0);
+    // gameContinue stays in PROC_GAME_CONTINUE until an answer is accepted.
+    // Normal death menus use type 2; save/demo menus must keep native behavior.
+    if (menu == nullptr || menu->mUseType != 2 ||
+        (menu->mMenuProc != dMenu_save_c::PROC_GAME_CONTINUE3 &&
+         menu->mMenuProc != dMenu_save_c::PROC_SAVE_WAIT)) {
+        return;
+    }
+    if (menu->mYesNoCursor == dMenu_save_c::CURSOR_YES) {
+        sCaveGameOverChoice = CaveGameOverChoice::Retry;
+    } else if (menu->mYesNoCursor == dMenu_save_c::CURSOR_NO) {
+        sCaveGameOverChoice = CaveGameOverChoice::Hub;
+    }
+}
+
 HookAction on_cave_gameover_close_pre(ModContext*, void* args, void*, void*) {
     if (args == nullptr || !is_bossrush_game_mode_active() || !is_boss_rush() ||
         boss_rush_state() != kBossRushStateCaveOfOrdeals ||
@@ -3795,7 +3819,17 @@ HookAction on_cave_gameover_close_pre(ModContext*, void* args, void*, void*) {
     if (choice != 0 && choice != 1) {
         return HOOK_CONTINUE;
     }
-    sCaveGameOverChoice = choice == 1 ? CaveGameOverChoice::Retry : CaveGameOverChoice::Hub;
+    // EndStatus is a resume/reset control value, not a stable record of the
+    // answer: we set it to 1 below for both answers. Preserve the selection
+    // captured by gameContinue, including on repeated close callbacks.
+    if (sCaveGameOverChoice == CaveGameOverChoice::None) {
+        const auto cursor = gameover->dMs_c->mYesNoCursor;
+        if (cursor != dMenu_save_c::CURSOR_YES && cursor != dMenu_save_c::CURSOR_NO) {
+            return HOOK_CONTINUE;
+        }
+        sCaveGameOverChoice = cursor == dMenu_save_c::CURSOR_YES ?
+            CaveGameOverChoice::Retry : CaveGameOverChoice::Hub;
+    }
     // Both choices resume play in Boss Rush. Let the native close/death path
     // unpause, restore health/items and perform its fade; No must not reset
     // the app to the title screen. Resolve the saved choice at that transition.
@@ -4181,6 +4215,11 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush scene hook");
     }
 
+    result = mods::hook_add_post<CaveContinueSelectionHook>(svc_hook, on_cave_continue_selection_post);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush Cave selection hook");
+    }
+
     result = mods::hook_add_pre<CaveGameOverCloseHook>(svc_hook, on_cave_gameover_close_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush Cave continue hook");
@@ -4282,6 +4321,12 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
 
     if (const ModResult result = uninstall_bossrush_hook<StageChangeSceneHook>(
             error, "failed to uninstall Dawnlight Boss Rush scene hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<CaveContinueSelectionHook>(
+            error, "failed to uninstall Boss Rush Cave selection hook");
         result != MOD_OK)
     {
         return result;

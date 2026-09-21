@@ -83,13 +83,31 @@ struct BladeMotion {
     int step = -1;
     float frame = -1;
     bool resolved = false;
+    unsigned contacts = 0;
+    unsigned clear_samples = 0;
+    bool sweep = false;
+
+    void contact() {
+        if (!resolved) { resolved=true; ++contacts; clear_samples=0; }
+    }
 
     bool sample(int next_attack, int next_step, float next_frame,
-                const std::array<BladePoint,2>& points) {
+                const std::array<BladePoint,2>& points, bool clear_of_target=false) {
         const bool continuous=attack==next_attack && step==next_step && next_frame>frame;
+        const bool cut_entry=attack==back_slice && next_attack==back_slice && step==1 && next_step==2;
         const float travel=std::max(blade_distance_squared(points[0],previous[0]),
                                     blade_distance_squared(points[1],previous[1]));
+        sweep=continuous && travel<=300.0f*300.0f;
+        if (resolved && next_attack==jump_strike && contacts==1) {
+            // Jump Strike has two blows in one native motion. Rearm only after
+            // the blade has visibly withdrawn, never while it remains on Link.
+            clear_samples=sweep && clear_of_target ? clear_samples+1 : 0;
+            if (clear_samples>=2) resolved=false;
+        }
         attack=next_attack; step=next_step; frame=next_frame; previous=points;
+        // Register the first cut pose immediately. Do not sweep the preceding
+        // non-damaging roll into this strike.
+        if (cut_entry && !resolved) return true;
         if (resolved || !continuous || !striking_step(attack,step)) return false;
         if (attack==sword) return frame>=30 && frame<=40; // native ordinary swing
         // Special animation lengths/windups differ. Use the posed blade's
@@ -100,7 +118,30 @@ struct BladeMotion {
     }
 };
 
+// Conservative separation from a hurt-cylinder's bounding box, with blade
+// thickness and a margin. A false result keeps the strike consumed; it never
+// grants another hit just because one of the two blade points left the body.
+inline bool blade_clear_of_body(const std::array<BladePoint,2>& points,
+                                BladePoint base, float radius, float height) {
+    constexpr float margin=45;
+    return std::max(points[0].x,points[1].x)+margin < base.x-radius ||
+        std::min(points[0].x,points[1].x)-margin > base.x+radius ||
+        std::max(points[0].z,points[1].z)+margin < base.z-radius ||
+        std::min(points[0].z,points[1].z)-margin > base.z+radius ||
+        std::max(points[0].y,points[1].y)+margin < base.y ||
+        std::min(points[0].y,points[1].y)-margin > base.y+height;
+}
+
 struct GroundPoint { float x, z; };
+inline GroundPoint jump_landing_target(int attack, GroundPoint origin, GroundPoint target) {
+    const float dx=target.x-origin.x, dz=target.z-origin.z;
+    const float distance=std::sqrt(dx*dx+dz*dz);
+    if (distance<0.001f) return target;
+    // Helm Splitter turns around during the somersault: land beyond Link so
+    // its backwards-facing cut points at him. Jump Strike stays in front.
+    const float offset=attack==helm_splitter ? 140.0f : -std::min(110.0f,distance);
+    return {target.x+dx/distance*offset,target.z+dz/distance*offset};
+}
 inline GroundPoint back_slice_offset(float start_angle, float start_radius, int step, float progress) {
     constexpr float pi = 3.14159265358979323846f;
     progress = std::clamp(progress, 0.0f, 1.0f);

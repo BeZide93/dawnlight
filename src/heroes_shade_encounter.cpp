@@ -40,12 +40,15 @@ struct Fighter {
     int cooldown = kAttackCooldown;
     shade::AttackChain chain;
     shade::BladeMotion blade;
+    // Stable storage, shared native actor status; no new actor or draw entry.
+    std::array<dCcD_Cps,2> bladeSweeps;
     float orbitAngle = 0;
     float orbitRadius = 150;
     bool swordContact = false;
     bool jumpLaunched = false;
     bool animationStarted = false;
     cXyz jumpTarget{0,0,0};
+    cXyz jumpBodyOffset{0,0,0};
     bool reset = true;
     bool deleting = false;
 };
@@ -53,6 +56,13 @@ std::array<Fighter, 3> sFighters;
 shade::Battle sBattle;
 bool sStopping = false;
 std::unordered_set<ActorId> sProjectiles;
+
+void stop_blade_sweeps(Fighter& entry) {
+    for (auto& sweep:entry.bladeSweeps) {
+        sweep.OffAtSetBit();
+        sweep.ClrAtHit();
+    }
+}
 
 int attack_cooldown(const Fighter& entry) {
     return kAttackCooldown + entry.divide * kDoubleAttackDelay;
@@ -143,6 +153,7 @@ DEFINE_HOOK(&daNpc_Kn_c::calcSwordAttackMove, ShadeApproachHook);
 DEFINE_HOOK(&daNpc_Kn_c::ctrlMotion, ShadeMotionHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterSetMotionAnm, ShadeAccessoryMotionHook);
 DEFINE_HOOK(&daNpc_Kn_c::beforeMove, ShadeMovementHook);
+DEFINE_HOOK(&daNpc_Kn_c::setAttnPos, ShadeJumpPoseHook);
 DEFINE_HOOK(&daNpc_Kn_c::setCollisionSword, ShadeSwordHook);
 DEFINE_HOOK(&daObjKnBullet_c::Create, ShadeBulletHook);
 DEFINE_HOOK(&daObjKnBullet_c::Delete, ShadeBulletDeleteHook);
@@ -170,6 +181,20 @@ void after_reset(ModContext*,void* args,void*,void*) {
         actor->parentActorID=entry->divide ? sFighters[0].id : kNone;
         actor->health=8;
         for (auto& sphere:actor->mSphCc) sphere.SetAtAtp(2);
+        const dCcD_SrcCps source{daNpc_Kn_c::mCcDSph.mObjInf,
+            {{{0,0,0},{0,0,0},30}}};
+        for (auto& sweep:entry->bladeSweeps) {
+            sweep.Set(source);
+            sweep.SetStts(&actor->mCcStts);
+            sweep.SetAtType(AT_TYPE_800);
+            sweep.SetAtAtp(2);
+            sweep.SetAtSpl(dCcG_At_Spl_UNK_1);
+            sweep.SetAtSe(dCcD_SE_HARD_BODY);
+            sweep.OnAtSPrmBit(0xc);
+            sweep.OffAtNoConHit();
+            sweep.OffCoSetBit();
+            sweep.OffAtSetBit();
+        }
     }
 }
 HookAction no_event(ModContext*,void* args,void* result,void*) {
@@ -213,6 +238,7 @@ void select_phase(daNpc_Kn_c* actor,Fighter& entry) {
     entry.attackTicks=0;
     entry.chain.cancel();
     entry.blade={};
+    stop_blade_sweeps(entry);
     entry.chain.counters=0;
     entry.swordContact=false;
     entry.cooldown=attack_cooldown(entry);
@@ -223,6 +249,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     if (sStopping || entry->deleting || !arena() || !daAlink_getAlinkActorClass()) {
+        stop_blade_sweeps(*entry);
         entry->deleting=true;
         remove_actor(entry->id);
         *static_cast<int*>(result)=1;
@@ -231,6 +258,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     // Events/warp/death may freeze actor execution without deleting the room yet.
     if (dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
         daAlink_getAlinkActorClass()->checkDeadHP()) {
+        stop_blade_sweeps(*entry);
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
     }
@@ -268,6 +296,7 @@ HookAction before_delete(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (auto* entry=fighter(actor)) {
         if (!entry->divide) remove_companions();
+        stop_blade_sweeps(*entry);
         actor->mType=6;
         *entry={};
     }
@@ -348,11 +377,14 @@ void start_attack(daNpc_Kn_c* actor,Fighter& entry) {
     entry.attackTicks=0;
     entry.animationStarted=false;
     entry.blade={};
+    stop_blade_sweeps(entry);
     for (auto& sphere:actor->mSphCc) {
         sphere.OffAtSetBit();
         sphere.ClrAtHit();
     }
     entry.jumpLaunched=false;
+    const auto* body=actor->mpModelMorf[0]->getModel()->getAnmMtx(actor->getBackboneJointNo());
+    entry.jumpBodyOffset.set(body[0][3]-actor->current.pos.x,0,body[2][3]-actor->current.pos.z);
     const auto offset=actor->current.pos-daPy_getPlayerActorClass()->current.pos;
     entry.orbitAngle=std::atan2(offset.x,offset.z);
     entry.orbitRadius=offset.absXZ();
@@ -378,6 +410,31 @@ void before_movement(ModContext*,void* args,void*,void*) {
     // chooses posMove, which unlike posMoveF does NOT integrate gravity. Apply
     // it exactly once here, including after a jump is interrupted by a block.
     actor->speed.y=std::max(actor->speed.y+actor->gravity,fopAcM_GetMaxFallSpeed(actor));
+}
+void after_jump_pose(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    auto* entry=fighter(actor);
+    if (!entry || !entry->animationStarted || !shade::jumping_attack(entry->offense) ||
+        actor->mMotionSeqMngr.getNo()!=entry->offense || sBattle.recovery || sBattle.dying) return;
+    // These demonstration BCKs already contain a jump and forward travel
+    // (native Helm Splitter ends 594 units forward). Retain the authored height
+    // and rotation, but anchor horizontal body translation to collision-tested
+    // actor movement. Update both visible models before sword/cylinder setup.
+    const auto* body=actor->mpModelMorf[0]->getModel()->getAnmMtx(actor->getBackboneJointNo());
+    const cXyz correction(actor->current.pos.x+entry->jumpBodyOffset.x-body[0][3],0,
+                          actor->current.pos.z+entry->jumpBodyOffset.z-body[2][3]);
+    for (auto* morf:actor->mpModelMorf) {
+        if (!morf) continue;
+        auto* model=morf->getModel();
+        Mtx base;
+        MTXCopy(model->getBaseTRMtx(),base);
+        base[0][3]+=correction.x;
+        base[2][3]+=correction.z;
+        model->setBaseTRMtx(base);
+        morf->modelCalc(); // pose only: no animation advance or draw registration
+    }
+    actor->eyePos+=correction;
+    actor->attention_info.position+=correction;
 }
 HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
@@ -438,10 +495,15 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
             if (!entry->jumpLaunched && progress>=0.2f && actor->mAcch.ChkGroundHit()) {
                 entry->jumpLaunched=true;
                 entry->jumpTarget=player->current.pos;
-                actor->setAngle(cLib_targetAngleY(&actor->current.pos,&entry->jumpTarget));
-                actor->speed.y=24;
+                const auto target=shade::jump_landing_target(entry->offense,
+                    {actor->current.pos.x,actor->current.pos.z},
+                    {player->current.pos.x,player->current.pos.z});
+                entry->jumpTarget.x=target.x; entry->jumpTarget.z=target.z;
+                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+                // Vertical jump travel is already in the BCK; adding another
+                // physical jump lifts the blade above Link at the impact pose.
             }
-            if (entry->jumpLaunched && progress<0.75f) move_toward(actor,entry->jumpTarget,12,110);
+            if (entry->jumpLaunched && progress<0.75f) move_toward(actor,entry->jumpTarget,12,0);
         } else {
             // Reacquire Link before the Back Slice cut; stop at sword reach.
             // Once the swing is committed, dodging still works.
@@ -488,6 +550,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     if (!entry) return HOOK_CONTINUE;
     if (entry->offense<0 && !sBattle.recovery && !sBattle.dying) {
         entry->blade={};
+        stop_blade_sweeps(*entry);
         return HOOK_CONTINUE;
     }
     // Called after playAllAnm / setAttnPos / modelCalc: these are the same
@@ -499,18 +562,27 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
         MTXMultVec(actor->mpModelMorf[0]->getModel()->getAnmMtx(13),&offset,&positions[i]);
         points[i]={positions[i].x,positions[i].y,positions[i].z};
         auto& sphere=actor->mSphCc[i];
-        // A shield block also consumes this strike, so a blade resting against
-        // Link cannot deal delayed damage when the shield is lowered.
+        // All contact volumes share one strike budget, including shield hits.
         if ((sphere.ChkAtHit() || sphere.ChkAtShieldHit()) &&
-            sphere.GetAtHitAc()==daPy_getPlayerActorClass()) entry->blade.resolved=true;
+            sphere.GetAtHitAc()==daPy_getPlayerActorClass()) entry->blade.contact();
+        auto& sweep=entry->bladeSweeps[i];
+        if ((sweep.ChkAtHit() || sweep.ChkAtShieldHit()) &&
+            sweep.GetAtHitAc()==daPy_getPlayerActorClass()) entry->blade.contact();
     }
+    const auto previous=entry->blade.previous;
     const bool attacking=entry->offense>=0 && entry->animationStarted &&
         actor->mMotionSeqMngr.getNo()==entry->offense &&
         !sBattle.recovery && !sBattle.dying && !entry->deleting;
     bool active=false;
     if (attacking) {
+        bool clear_of_target=true;
+        for (const auto& target:daAlink_getAlinkActorClass()->mTgCyls) {
+            const auto& center=target.GetC();
+            clear_of_target &= shade::blade_clear_of_body(points,
+                {center.x,center.y,center.z},target.GetR(),target.GetH());
+        }
         active=entry->blade.sample(entry->offense,actor->mMotionSeqMngr.getStepNo(),
-                                   actor->mpModelMorf[0]->getFrame(),points);
+                                   actor->mpModelMorf[0]->getFrame(),points,clear_of_target);
     } else entry->blade={};
     for (unsigned i=0;i<positions.size();++i) {
         auto& sphere=actor->mSphCc[i];
@@ -522,6 +594,18 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
             dComIfG_Ccsp()->Set(&sphere);
         } else sphere.OffAtSetBit();
         sphere.ClrAtHit();
+        auto& sweep=entry->bladeSweeps[i];
+        if (active && entry->blade.sweep && entry->offense!=shade::sword) {
+            // Trace the actual blade points between consecutive poses. A fast
+            // cut can cross Link entirely between two endpoint sphere tests.
+            const cXyz start(previous[i].x,previous[i].y,previous[i].z);
+            static_cast<cM3dGCps*>(&sweep)->Set(start,positions[i],30);
+            cXyz direction=positions[i]-start;
+            sweep.SetAtVec(direction);
+            sweep.OnAtSetBit();
+            dComIfG_Ccsp()->Set(&sweep);
+        } else sweep.OffAtSetBit();
+        sweep.ClrAtHit();
     }
     return HOOK_SKIP_ORIGINAL;
 }
@@ -740,6 +824,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeAccessoryMotionHook,accessory_motion);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);
+    POST(ShadeJumpPoseHook,after_jump_pose);
     PRE(ShadeApproachHook,before_approach); POST(ShadeApproachHook,after_approach);
     POST(ShadeBulletHook,after_bullet);
     PRE(ShadeBulletDeleteHook,delete_bullet);
@@ -814,6 +899,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeAccessoryMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMovementHook>(svc_hook);
+    mods::hook::uninstall<ShadeJumpPoseHook>(svc_hook);
     mods::hook::uninstall<ShadeSwordHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletDeleteHook>(svc_hook);

@@ -11,8 +11,8 @@ root = Path(__file__).resolve().parents[1]
 encounter = (root / "src/heroes_shade_encounter.cpp").read_text()
 
 
-def function(name):
-    start = encounter.index(f"HookAction {name}(")
+def function(name, result="HookAction"):
+    start = encounter.index(f"{result} {name}(")
     end = encounter.index("\n}\n", start) + 3
     return encounter[start:end]
 
@@ -21,6 +21,7 @@ fixture = r'''
 #include "heroes_shade_battle.hpp"
 #include <array>
 #include <cassert>
+#include <cstring>
 namespace shade = dawnlight::shade;
 struct ModContext {};
 enum HookAction { HOOK_CONTINUE, HOOK_SKIP_ORIGINAL };
@@ -31,27 +32,48 @@ struct cXyz {
     float x=0, y=0, z=0;
     cXyz() = default;
     cXyz(float a,float b,float c):x(a),y(b),z(c) {}
+    cXyz& operator+=(const cXyz& b) { x+=b.x; y+=b.y; z+=b.z; return *this; }
+    cXyz operator-(const cXyz& b) const { return {x-b.x,y-b.y,z-b.z}; }
 };
-struct Matrix { cXyz translation; };
-void MTXMultVec(const Matrix* m,const cXyz* in,cXyz* out) {
-    *out={in->x+m->translation.x,in->y+m->translation.y,in->z+m->translation.z};
+using Mtx = float[3][4];
+void MTXCopy(const Mtx in,Mtx out) { std::memcpy(out,in,sizeof(Mtx)); }
+void MTXMultVec(const Mtx m,const cXyz* in,cXyz* out) {
+    *out={in->x+m[0][3],in->y+m[1][3],in->z+m[2][3]};
 }
 struct Model {
-    Matrix blade;
-    Matrix* getAnmMtx(int joint) { assert(joint==13); return &blade; }
+    Mtx blade{},body{},base{};
+    cXyz authoredBody{20,200,594};
+    auto getAnmMtx(int joint) -> float (*)[4] { assert(joint==1 || joint==13); return joint==1 ? body : blade; }
+    auto getBaseTRMtx() -> float (*)[4] { return base; }
+    void setBaseTRMtx(const Mtx m) { MTXCopy(m,base); }
 };
 struct Morf {
     Model model;
     float frame=0;
+    int calculations=0;
     Model* getModel() { return &model; }
     float getFrame() { return frame; }
+    void modelCalc() {
+        ++calculations;
+        MTXCopy(model.base,model.body);
+        model.body[0][3]+=model.authoredBody.x;
+        model.body[1][3]+=model.authoredBody.y;
+        model.body[2][3]+=model.authoredBody.z;
+    }
 };
 struct Motion {
     int no=shade::helm_splitter, step=0;
     int getNo() { return no; }
     int getStepNo() { return step; }
 };
-int player;
+struct Cylinder {
+    cXyz center;
+    const cXyz& GetC() const { return center; }
+    float GetR() const { return 30; }
+    float GetH() const { return 150; }
+};
+struct Player { std::array<Cylinder,3> mTgCyls; } player;
+Player* daAlink_getAlinkActorClass() { return &player; }
 void* daPy_getPlayerActorClass() { return &player; }
 struct Sphere {
     cXyz center;
@@ -69,10 +91,21 @@ struct Sphere {
     void OffAtSetBit() { enabled=false; }
     void ClrAtHit() { hit=shield=false; target=nullptr; }
 };
+struct cM3dGCps {
+    cXyz start,end;
+    float radius=0;
+    void Set(const cXyz& a,const cXyz& b,float r) { start=a; end=b; radius=r; }
+};
+struct dCcD_Cps : Sphere, cM3dGCps {
+    dCcD_Cps() { damage=2; }
+    void SetAtVec(const cXyz&) {}
+};
 struct Fighter {
     int offense=shade::helm_splitter;
     bool animationStarted=true, deleting=false;
     shade::BladeMotion blade;
+    std::array<dCcD_Cps,2> bladeSweeps;
+    cXyz jumpBodyOffset{5,0,10};
 };
 struct daNpc_Kn_c {
     bool owned=true;
@@ -81,8 +114,12 @@ struct daNpc_Kn_c {
     int field_0x15cd=1;
     Fighter entry;
     Motion mMotionSeqMngr;
-    Morf morf;
-    std::array<Morf*,1> mpModelMorf{&morf};
+    Morf morf, ghost;
+    std::array<Morf*,2> mpModelMorf{&morf,&ghost};
+    struct { cXyz pos{100,0,300}; } current;
+    struct { cXyz position; } attention_info;
+    cXyz eyePos;
+    int getBackboneJointNo() { return 1; }
     std::array<Sphere,2> mSphCc;
 };
 Fighter* fighter(daNpc_Kn_c* a) { return a->owned ? &a->entry : nullptr; }
@@ -112,27 +149,57 @@ int main() {
 
     auto sample=[&](float frame,float z) {
         a.morf.frame=frame;
-        a.morf.model.blade.translation={0,100,z};
+        a.morf.model.blade[1][3]=100;
+        a.morf.model.blade[2][3]=z;
         space.registered=0;
         assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
         return space.registered;
     };
     assert(sample(0,0)==0);
-    assert(sample(5,15)==2); // formerly outside the 40%-75% gate
+    assert(sample(5,15)==4); // formerly outside the 40%-75% gate
     assert(a.mSphCc[0].center.x==60 && a.mSphCc[1].center.x==120);
     assert(a.mSphCc[0].center.y==100 && a.mSphCc[0].center.z==15);
     assert(a.mSphCc[0].radius==30);
     assert(sample(6,15)==0); // stationary blade does not cause late damage
     assert(!a.mSphCc[0].enabled && !a.mSphCc[1].enabled);
-    assert(sample(55,30)==2); // actual late cut must not be discarded either
+    assert(sample(55,30)==4); // actual late cut must not be discarded either
     a.mSphCc[0].shield=true; a.mSphCc[0].target=&player;
     assert(sample(56,45)==0);
     assert(sample(57,60)==0); // lowering the shield cannot revive this strike
     a.entry.blade={};
     assert(sample(0,0)==0);
-    assert(sample(5,15)==2);
+    assert(sample(5,15)==4);
     a.mSphCc[1].hit=true; a.mSphCc[1].target=&player;
     assert(sample(6,30)==0); // one damaging contact per attack
+
+    // Actual hook registration traces both blade points, not a distant
+    // sphere frozen at the previous position. A shield hit on either swept
+    // volume consumes the shared strike just like a native sphere hit.
+    a.entry.blade={};
+    assert(sample(0,-100)==0);
+    assert(sample(1,100)==4);
+    assert(a.entry.bladeSweeps[0].start.z==-100);
+    assert(a.entry.bladeSweeps[0].end.z==100);
+    a.entry.bladeSweeps[1].shield=true;
+    a.entry.bladeSweeps[1].target=&player;
+    assert(sample(2,110)==0);
+    assert(!a.entry.bladeSweeps[0].enabled);
+
+    a.entry.blade={}; a.entry.offense=shade::jump_strike;
+    a.mMotionSeqMngr.no=shade::jump_strike;
+    assert(sample(0,0)==0);
+    assert(sample(1,10)==4);
+    a.mSphCc[0].hit=true; a.mSphCc[0].target=&player;
+    assert(sample(2,20)==0);
+    assert(sample(3,30)==0); // still on the body, never rearms
+    assert(sample(4,150)==0); // withdrawal sample 1
+    assert(sample(5,180)==4); // withdrawal sample 2, second cut allowed
+    assert(sample(6,0)==4); // return toward Link
+    a.entry.bladeSweeps[0].hit=true;
+    a.entry.bladeSweeps[0].target=&player;
+    assert(sample(7,10)==0);
+    assert(sample(8,150)==0);
+    assert(sample(9,180)==0); // no third strike in the same animation
 
     a.entry.blade={}; a.entry.offense=shade::back_slice;
     a.mMotionSeqMngr.no=shade::back_slice;
@@ -142,8 +209,8 @@ int main() {
         assert(sample(5,15)==0); // sidestep and roll never hurt
     }
     a.mMotionSeqMngr.step=2;
-    assert(sample(0,0)==0);
-    assert(sample(5,15)==2);
+    assert(sample(0,0)==2); // cut begins now, without tracing the roll
+    assert(sample(5,15)==4);
     a.mMotionSeqMngr.no=27; // interrupted by a real block, stale offense ignored
     assert(sample(6,30)==0);
     a.mMotionSeqMngr.no=shade::back_slice;
@@ -156,12 +223,43 @@ int main() {
     a.entry.deleting=true;
     assert(sample(10,90)==0);
 
+    // Execute the real post-pose correction on both visible models. Authored
+    // vertical travel and orientation stay intact; only X/Z root travel moves.
+    a.entry.deleting=false;
+    a.entry.offense=shade::helm_splitter;
+    a.mMotionSeqMngr.no=shade::helm_splitter;
+    for (auto* m:a.mpModelMorf) {
+        m->model.base[0][0]=0.5f; m->model.base[0][2]=-0.8f;
+        m->model.base[0][3]=100; m->model.base[1][3]=25; m->model.base[2][3]=300;
+        m->modelCalc();
+    }
+    a.eyePos={120,250,894}; a.attention_info.position={120,280,894};
+    const auto frame=a.morf.frame;
+    after_jump_pose(nullptr,&a,nullptr,nullptr);
+    for (auto* m:a.mpModelMorf) {
+        assert(m->model.body[0][3]==105 && m->model.body[2][3]==310);
+        assert(m->model.body[1][3]==225);
+        assert(m->model.base[0][0]==0.5f && m->model.base[0][2]==-0.8f);
+        assert(m->calculations==2);
+    }
+    assert(a.morf.frame==frame);
+    assert(a.eyePos.x==105 && a.eyePos.y==250 && a.eyePos.z==310);
+    assert(a.attention_info.position.y==280);
+    a.entry.offense=shade::sword;
+    after_jump_pose(nullptr,&a,nullptr,nullptr);
+    assert(a.morf.calculations==2);
+    a.entry.offense=shade::helm_splitter; a.owned=false;
+    after_jump_pose(nullptr,&a,nullptr,nullptr);
+    assert(a.morf.calculations==2);
+
     a.owned=false;
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);
 }
 '''
 
-source = fixture + function("accessory_motion") + function("sword_collision") + checks
+start = encounter.index("void stop_blade_sweeps(")
+end = encounter.index("\n}\n",start)+3
+source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

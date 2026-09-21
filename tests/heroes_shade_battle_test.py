@@ -55,7 +55,7 @@ int main() {
         assert(!blade.sample(attack,step,55,pose)); // frozen animation
         pose[0].z=pose[1].z=1000;
         assert(!blade.sample(attack,step,56,pose)); // discontinuity
-        blade.resolved=true;
+        blade.contact();
         pose[0].z=pose[1].z=1012;
         assert(!blade.sample(attack,step,57,pose)); // shield/hit consumes strike
         blade={}; // next attack starts afresh, without a sweep from the last one
@@ -77,6 +77,44 @@ int main() {
     assert(ordinary.sample(sword,0,40,ordinary_pose));
     assert(!ordinary.sample(sword,0,41,ordinary_pose));
     assert(!ordinary.sample(sword,1,35,ordinary_pose));
+
+    BladeMotion cut;
+    auto pose=ordinary_pose;
+    assert(!cut.sample(back_slice,1,5,pose));
+    assert(cut.sample(back_slice,2,0,pose) && !cut.sweep);
+    pose[0].z=pose[1].z=20;
+    assert(cut.sample(back_slice,2,1,pose) && cut.sweep);
+
+    BladeMotion jump;
+    assert(!jump.sample(jump_strike,0,0,pose));
+    jump.contact();
+    for (int frame=1;frame<=10;++frame) {
+        pose[0].z=pose[1].z=frame*10;
+        assert(!jump.sample(jump_strike,0,frame,pose,false));
+    }
+    pose[0].z=pose[1].z=150;
+    assert(!jump.sample(jump_strike,0,11,pose,true));
+    pose[0].z=pose[1].z=180;
+    assert(jump.sample(jump_strike,0,12,pose,true));
+    jump.contact();
+    for (int frame=13;frame<30;++frame) {
+        pose[0].z=pose[1].z=frame*10;
+        assert(!jump.sample(jump_strike,0,frame,pose,true));
+    }
+    assert(jump.contacts==2);
+    const BladePoint body{0,0,0};
+    assert(!blade_clear_of_body({{{-100,100,0},{100,100,0}}},body,30,150));
+    assert(!blade_clear_of_body({{{60,100,0},{120,100,0}}},body,30,150));
+    assert(blade_clear_of_body({{{60,200,0},{120,200,0}}},body,30,150));
+    for (float angle : {0.0f,0.7f,1.57f,3.14f,-2.4f}) {
+        const GroundPoint link{std::sin(angle)*300,std::cos(angle)*300};
+        const auto helm=jump_landing_target(helm_splitter,{0,0},link);
+        const auto jumpEnd=jump_landing_target(jump_strike,{0,0},link);
+        assert(std::abs(std::hypot(helm.x,helm.z)-440)<0.01f);
+        assert(std::abs(std::hypot(jumpEnd.x,jumpEnd.z)-190)<0.01f);
+    }
+    const auto same=jump_landing_target(helm_splitter,{0,0},{0,0});
+    assert(same.x==0 && same.z==0);
 
     // The native sequence keeps its number after the swing/block. These
     // returns must admit another attack without cutting off the reaction.

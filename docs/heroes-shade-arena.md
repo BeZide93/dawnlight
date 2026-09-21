@@ -45,12 +45,16 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
   `modelCalc`, `setCollisionSword` samples both blade points from joint 13 of
   the visible model (native local X offsets 60/120, radius 30). In the striking
   step, a moving blade enables those native hit volumes at their current pose;
-  there is no delayed proximity hit. Idle poses, frozen frames, step/animation
-  changes and large discontinuities do not generate a strike. A player hit or
-  shield block consumes that attack's contact until the next attack starts.
-  Back Slice's sidestep and roll remain non-damaging. Damage power is explicitly
-  set when the volumes are registered, and Link's native shield/invulnerability
-  handling still decides the result of contact.
+  there is no delayed proximity hit. Two stable capsule colliders also trace
+  those points between consecutive poses, so fast cuts cannot pass through Link
+  between sphere samples. Back Slice activates its first cut pose immediately,
+  without tracing the preceding non-damaging roll. Frozen frames, interrupted
+  motions and large discontinuities cannot generate swept hits.
+  A player hit or shield block consumes the strike. Jump Strike alone can rearm
+  once, after both blade points remain clearly separated from all of Link's hurt
+  cylinders for two samples. This permits its second blow without repeated hits
+  from a blade resting on Link. Damage power remains 2; native shield and
+  invulnerability handling still decide whether each contact damages Link.
 - Gaps are six simulation ticks within a combo and 18 between combos. Doubles
   stagger their full-combo delay by 15 ticks per double. The old native random
   single-attack timer is disabled only for owned arena fighters, so it cannot
@@ -62,13 +66,17 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
 - Back Slice uses animation progress to follow a semicircle around Link at a
   150-unit radius, with bounded movement through native collision. The cut then
   faces Link and closes to sword reach. Sidestep/roll frames never deal damage.
-- Jumps launch once from their actual animation progress, aim at Link's position
-  at takeoff, and finish after landing. Movement uses the chosen attack rather
-  than the current lesson phase. Link can evade the committed target.
+- Jump animations already contain vertical motion and forward root travel.
+  Do not add a second physical jump: it puts the sword above Link at impact.
+  A post-`setAttnPos` hook anchors the backbone's X/Z position to actor movement
+  on both visible models while preserving authored height and orientation.
+  It recalculates the pose before collision setup, without advancing animation
+  or registering another draw entry. Helm Splitter commits to a landing 140
+  units beyond Link, where its turning cut faces him; Jump Strike stops 110
+  units before him. Targets are captured at takeoff, so Link can evade them.
   Target-relative movement uses `posMove`; a scoped `beforeMove` hook adds
   gravity for that path, since only `posMoveF` normally integrates it. Native
-  forward movement still applies its own gravity once, and interrupted jumps
-  continue falling.
+  forward movement still applies its own gravity once.
 
 Native approach speed remains six units per tick. Sword and ball attack power
 remain 2. Successful counters still grant 45 ticks of recovery; lesson follow-up
@@ -101,6 +109,9 @@ orb packet makes the projectile visible without replacing the room's particles.
   previously verified player-layer ownership and per-process room-state isolation
   also apply to Shade and native child projectiles. See
   [the spawner fix](darknut-arena-spawner.md).
+- Swept blade colliders live in the fixed fighter array and share the native
+  actor's collision status. Disable them and clear hit references on phase/attack
+  changes, event/warp/death pauses and deletion before resetting the fighter.
 - Companions and balls are removed on phase changes, victory or departure.
   Pending creation requests are cancelled, and normal scene deletion owns all
   actors. Unloading the mod drains only this encounter's deletion tags before
@@ -144,7 +155,9 @@ collision behavior.
 The native-hook fixture compiles the actual accessory/collision hook functions
 against a minimal engine API. It checks absent/present/unowned accessories,
 early and late moving blade contact, stationary poses, consumed shield/hit
-contacts, Back Slice's non-damaging steps and interrupted/recovering actors.
+contacts, Back Slice's first cut and non-damaging steps, sweep endpoints,
+Jump Strike's two-contact limit, interrupted/recovering actors, and the actual
+jump-pose hook preserving height/orientation on both models.
 
 Device checklist (still required):
 
@@ -158,7 +171,10 @@ Device checklist (still required):
 4. Without damaging him, observe the opening combos: two sword attacks then
    Helm Splitter, followed by combos ending in Back Slice and Jump Strike.
    Check Back Slice from several directions, while moving and near a wall;
-   he should circle Link and turn into the cut. Dodge jumps after takeoff.
+   he should circle Link and damage on the cut without a delayed follow-up.
+   Helm Splitter should pass over Link and connect on its turning cut. Jump
+   Strike should allow damage on both distinct blows when native invulnerability
+   permits it. Dodge jumps after takeoff; no remote damage should occur.
 5. Test every counter above, particularly Ending Blow and the head-lock follow-up.
    Check attack collisions and both doubles in the final phases. During special
    attacks, check unguarded blade contact and a shield block followed by lowering

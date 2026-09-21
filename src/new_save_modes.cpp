@@ -77,6 +77,7 @@ DEFINE_HOOK(
         &dComIfGp_setNextStage),
     SetNextStageHook);
 DEFINE_HOOK(&dStage_changeScene, StageChangeSceneHook);
+DEFINE_HOOK(&dGameover_c::saveClose_proc, CaveGameOverCloseHook);
 DEFINE_HOOK(&dRes_control_c::setRes, BossRushAreaResourceHook);
 DEFINE_HOOK(&dStage_roomControl_c::roomDzs_c::add, BossRushAreaRoomDataHook);
 DEFINE_HOOK(&Z2SceneMgr::setSceneName, BossRushAreaAudioHook);
@@ -322,6 +323,8 @@ bool sBossRushResetRunOnDeparture = false;
 u16 sBossRushWarpFrames = 0;
 bool sHubArrivalWarpPending = false;
 bool sCaveArrivalWarpPending = false;
+enum class CaveGameOverChoice { None, Retry, Hub };
+CaveGameOverChoice sCaveGameOverChoice = CaveGameOverChoice::None;
 
 struct BossRushWarpDestination {
     char stage[16] = {};
@@ -1993,7 +1996,7 @@ void prepare_darknut_area_entry() {
     reset_bossrush_hazards();
 }
 
-void prepare_cave_return_from_darknut_area() {
+void prepare_cave_entrance_return() {
     set_boss_rush_state(kBossRushStateCaveOfOrdeals);
     set_boss_rush_index(0);
     set_bossrush_return_place();
@@ -3526,6 +3529,7 @@ void update_bossrush() {
     }
 
     if (is_reset_to_opening_transition()) {
+        sCaveGameOverChoice = CaveGameOverChoice::None;
         sAdvancePending = false;
         sSavePromptId = fpcM_ERROR_PROCESS_ID_e;
         reset_hub_actor_ids();
@@ -3776,6 +3780,29 @@ void set_next_stage_args(void* args, const char* stage, s16 point, s8 room, s8 l
     mods::arg_ref<s8>(args, 3) = layer;
 }
 
+HookAction on_cave_gameover_close_pre(ModContext*, void* args, void*, void*) {
+    if (args == nullptr || !is_bossrush_game_mode_active() || !is_boss_rush() ||
+        boss_rush_state() != kBossRushStateCaveOfOrdeals ||
+        !is_current_stage_name(kCaveOfOrdealsStage) ||
+        dMeter2Info_getGameOverType() != 0 || is_reset_to_opening_transition()) {
+        return HOOK_CONTINUE;
+    }
+    auto* gameover = mods::arg<dGameover_c*>(args, 0);
+    if (gameover == nullptr || gameover->dMs_c == nullptr) {
+        return HOOK_CONTINUE;
+    }
+    const auto choice = gameover->dMs_c->getEndStatus();
+    if (choice != 0 && choice != 1) {
+        return HOOK_CONTINUE;
+    }
+    sCaveGameOverChoice = choice == 1 ? CaveGameOverChoice::Retry : CaveGameOverChoice::Hub;
+    // Both choices resume play in Boss Rush. Let the native close/death path
+    // unpause, restore health/items and perform its fade; No must not reset
+    // the app to the title screen. Resolve the saved choice at that transition.
+    gameover->dMs_c->mEndStatus = 1;
+    return HOOK_CONTINUE;
+}
+
 HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
     const char* stage = mods::arg<const char*>(args, 0);
     const s16 point = mods::arg<s16>(args, 1);
@@ -3787,6 +3814,22 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
         (is_bossrush_game_mode_active() || ensure_bossrush_runtime_for_save()) &&
         is_boss_rush();
     if (bossRushActive && boss_rush_state() == kBossRushStateCaveOfOrdeals &&
+        is_current_stage_name(kCaveOfOrdealsStage) &&
+        sCaveGameOverChoice != CaveGameOverChoice::None &&
+        !is_opening_stage(stage, point, room, layer) && !is_reset_to_opening_transition()) {
+        const auto choice = sCaveGameOverChoice;
+        sCaveGameOverChoice = CaveGameOverChoice::None;
+        dComIfGs_setRestartRoomParam(0);
+        if (choice == CaveGameOverChoice::Retry) {
+            prepare_cave_entrance_return();
+            set_next_stage_args(args, kCaveOfOrdealsStage, kCaveOfOrdealsPoint,
+                kCaveOfOrdealsRoom, kCaveOfOrdealsLayer);
+        } else {
+            prepare_hub_return_from_cave();
+            set_next_stage_args(args, kBossRushReturnStage, kBossRushReturnPoint,
+                kBossRushReturnRoom, kBossRushReturnLayer);
+        }
+    } else if (bossRushActive && boss_rush_state() == kBossRushStateCaveOfOrdeals &&
         is_current_stage_name(kCaveOfOrdealsStage) && stage != nullptr &&
         std::strcmp(stage, kCaveOfOrdealsStage) != 0 &&
         !is_opening_stage(stage, point, room, layer) && !is_reset_to_opening_transition()) {
@@ -3808,7 +3851,7 @@ HookAction on_set_next_stage_pre(ModContext*, void* args, void*, void*) {
                std::strcmp(stage, kBossRushDarknutAreaStage) != 0 &&
                std::strcmp(stage, kBossRushReturnStage) != 0 &&
                !is_opening_stage(stage, point, room, layer) && !is_reset_to_opening_transition()) {
-        prepare_cave_return_from_darknut_area();
+        prepare_cave_entrance_return();
         set_next_stage_args(args, kCaveOfOrdealsStage, kCaveOfOrdealsPoint, kCaveOfOrdealsRoom,
             kCaveOfOrdealsLayer);
     } else if (bossRushActive &&
@@ -4116,6 +4159,7 @@ void reset_bossrush_runtime_state(bool deleteActors) {
     sBossRushArrivalAnimating = false;
     sBossRushResetRunOnDeparture = false;
     sHubArrivalWarpPending = false;
+    sCaveGameOverChoice = CaveGameOverChoice::None;
     sCaveArrivalWarpPending = false;
     reset_bossrush_hub_banner_state();
     if (deleteActors) {
@@ -4135,6 +4179,11 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
     ModResult result = mods::hook_add_pre<StageChangeSceneHook>(svc_hook, on_stage_change_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush scene hook");
+    }
+
+    result = mods::hook_add_pre<CaveGameOverCloseHook>(svc_hook, on_cave_gameover_close_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush Cave continue hook");
     }
 
     result = mods::hook_add_pre<MessageSetDemoHook>(svc_hook, on_message_set_demo_pre);
@@ -4233,6 +4282,12 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
 
     if (const ModResult result = uninstall_bossrush_hook<StageChangeSceneHook>(
             error, "failed to uninstall Dawnlight Boss Rush scene hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<CaveGameOverCloseHook>(
+            error, "failed to uninstall Boss Rush Cave continue hook");
         result != MOD_OK)
     {
         return result;

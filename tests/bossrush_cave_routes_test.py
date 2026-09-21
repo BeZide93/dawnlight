@@ -28,6 +28,12 @@ stubs = r'''
 using s8 = signed char; using s16 = short; using s32 = int; using BOOL = int;
 constexpr int TRUE=1;
 struct ModContext {}; struct dSv_save_c {};
+struct dMenu_save_c { int mEndStatus=2; int getEndStatus() { return mEndStatus; } };
+struct dGameover_c { bool mIsDemoSave=false; dMenu_save_c* dMs_c=nullptr; };
+enum class CaveGameOverChoice { None, Retry, Hub };
+CaveGameOverChoice sCaveGameOverChoice=CaveGameOverChoice::None;
+int gameOverType=0;
+int dMeter2Info_getGameOverType() { return gameOverType; }
 struct dSv_memBit_c { enum { STAGE_BOSS_ENEMY=3, STAGE_BOSS_DEMO=5, STAGE_BOSS_ENEMY_2=7 }; };
 enum { fpcNm_B_TN_e, fpcNm_TBOX_e, fpcNm_TBOX2_e, fpcNm_Obj_Carry_e,
        fpcNm_TAG_EVT_e, fpcNm_TAG_MSG_e, fpcNm_TAG_EVTAREA_e, fpcNm_TAG_EVTMSG_e,
@@ -85,14 +91,15 @@ stubs = stubs.replace("@ARENA_POINT@", re.search(
 functions = "\n".join(function(name) for name in (
     "is_bossrush_darknut_area_active", "on_bossrush_area_dungeon_bit_pre",
     "on_bossrush_area_switch_pre", "on_bossrush_area_actor_name_post",
-    "prepare_darknut_area_entry", "prepare_cave_return_from_darknut_area",
-    "prepare_hub_return_from_cave", "set_next_stage_args", "on_set_next_stage_pre",
+    "prepare_darknut_area_entry", "prepare_cave_entrance_return",
+    "prepare_hub_return_from_cave", "set_next_stage_args", "on_cave_gameover_close_pre", "on_set_next_stage_pre",
 ))
 
 cases = r'''
 void reset(const char* stage="D_SB01", int room=0, int mode=3) {
     current=stage; stay=room; state=mode; active=true; resetting=false;
     sHubArrivalWarpPending=false; sBossRushArrivalReady=true;
+    sCaveGameOverChoice=CaveGameOverChoice::None; gameOverType=0;
 }
 void route(const char* requested, const char* expected, int expectedState, int expectedRoom,
            int expectedPoint, int expectedLayer) {
@@ -136,6 +143,49 @@ int main() {
         // Descending/continuing inside the Cave must retain the exact spawn.
         reset("D_SB01",floor); route("D_SB01","D_SB01",3,12,42,2);
     }
+    // Continue decisions override both the entrance exit and deeper-room
+    // restart destinations, and are consumed exactly once. The close hook
+    // retains the native resume path (status 1), including for No.
+    for (int floor : {0,9,19,29,39,49}) {
+        for (const char* nativeTarget : {"F_SP124","D_SB01","D_MN09C"}) {
+            for (int answer : {0,1}) {
+                reset("D_SB01",floor);
+                dMenu_save_c menu{answer}; dGameover_c gameover{true,&menu};
+                std::any closeArgs[]={&gameover};
+                assert(on_cave_gameover_close_pre(nullptr,closeArgs,nullptr,nullptr)==HOOK_CONTINUE);
+                assert(menu.mEndStatus==1); // No must not trigger native onReset().
+                assert(sCaveGameOverChoice==(answer ? CaveGameOverChoice::Retry : CaveGameOverChoice::Hub));
+                restartParam=0xC9009;
+                route(nativeTarget,answer ? "D_SB01" : "D_MN09C",answer ? 3 : 0,0,0,answer ? -1 : 0);
+                assert(sCaveGameOverChoice==CaveGameOverChoice::None && restartParam==0);
+                assert(sHubArrivalWarpPending==!answer);
+                if (answer) {
+                    stay=0;
+                    route("F_SP124","D_DLBR0",0,51,0,0);
+                }
+            }
+        }
+    }
+    // mIsDemoSave is also true after the normal death animation handshake;
+    // only the game-over type distinguishes demo/save prompts from death.
+    // Other saves, other rooms and demo/save prompts retain native semantics.
+    for (int scenario=0;scenario<5;++scenario) {
+        reset();
+        if (scenario==0) active=false;
+        if (scenario==1) current="D_MN06B";
+        if (scenario==2) gameOverType=1;
+        if (scenario==3) resetting=true;
+        if (scenario==4) gameOverType=2;
+        dMenu_save_c menu{0}; dGameover_c gameover{true,&menu};
+        std::any args[]={&gameover};
+        assert(on_cave_gameover_close_pre(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
+        assert(menu.mEndStatus==0 && sCaveGameOverChoice==CaveGameOverChoice::None);
+    }
+    reset();
+    dMenu_save_c pendingMenu{2}; dGameover_c pendingGameover{false,&pendingMenu};
+    std::any pendingArgs[]={&pendingGameover};
+    on_cave_gameover_close_pre(nullptr,pendingArgs,nullptr,nullptr);
+    assert(sCaveGameOverChoice==CaveGameOverChoice::None);
     // Both arena doors lead to the Cave entrance, including Temple destination.
     reset("D_DLBR0",51,0); route("D_MN06","D_SB01",3,0,0,-1);
     reset("D_DLBR0",51,0); route("D_MN06B","D_SB01",3,0,0,-1);

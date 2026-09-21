@@ -11,12 +11,15 @@
 #include "d/d_com_inf_game.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_method.h"
+#include "f_pc/f_pc_layer.h"
 #include "f_pc/f_pc_name.h"
 #include "mods/hook.hpp"
 
 #include <array>
 #include <cstring>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace dawnlight {
 namespace {
@@ -96,11 +99,16 @@ constexpr std::array<u32, kEnemySpawnerProfiles.size()> kEnemySpawnerParameters{
 };
 
 DEFINE_HOOK(&fpcMtd_Method, SpawnerProcessHook);
+DEFINE_HOOK(&fopAcM_createChild, SpawnerChildHook);
 DEFINE_HOOK(&daE_ZS_c::executeAppear, StaltroopAppearHook);
 DEFINE_HOOK(&daE_ZS_c::executeWait, StaltroopWaitHook);
 
 std::unordered_set<ActorId> s_testActors;
+// fpcMtd_Method nests (base actor creation calls profile creation). Track the
+// innermost process so a nested gate/NPC never inherits a test enemy's state.
+std::vector<std::pair<void*, bool>> s_testProcessStack;
 bool s_processHookInstalled = false;
+bool s_childHookInstalled = false;
 bool s_appearHookInstalled = false;
 bool s_waitHookInstalled = false;
 
@@ -108,8 +116,23 @@ bool is_test_actor(fopAc_ac_c* actor) {
     return actor != nullptr && s_testActors.contains(fopAcM_GetID(actor));
 }
 
+void after_create_child(ModContext*, void* args, void* retval, void*) {
+    if (args == nullptr || retval == nullptr) return;
+    const auto parent = mods::arg<fpc_ProcID>(args, 1);
+    const auto child = *static_cast<fpc_ProcID*>(retval);
+    // Child creation is asynchronous. Register the returned ID now, before
+    // fopAc_Create checks room admission (and before actor_type exists).
+    // This includes descendants, but never unrelated native room actors.
+    if (child != fpcM_ERROR_PROCESS_ID_e && s_testActors.contains(parent)) {
+        s_testActors.insert(child);
+    }
+}
+
 HookAction before_process(ModContext*, void* args, void*, void*) {
     auto* process = mods::arg<void*>(args, 1);
+    // The room's enemy-appearance switch is read in base creation, before the
+    // first fopAcM_IsActor check can succeed. Process IDs already exist here.
+    s_testProcessStack.emplace_back(args, process != nullptr && s_testActors.contains(fpcM_GetID(process)));
     if (process == nullptr || !fopAcM_IsActor(process)) return HOOK_CONTINUE;
     auto* actor = static_cast<fopAc_ac_c*>(process);
     if (!is_test_actor(actor)) return HOOK_CONTINUE;
@@ -135,6 +158,13 @@ HookAction before_process(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
+void after_process(ModContext*, void* args, void*, void*) {
+    // Another mod may skip the call before our pre callback is reached.
+    if (!s_testProcessStack.empty() && s_testProcessStack.back().first == args) {
+        s_testProcessStack.pop_back();
+    }
+}
+
 HookAction before_staltroop_appear(ModContext*, void* args, void*, void*) {
     auto* actor = mods::arg<daE_ZS_c*>(args, 0);
     if (is_test_actor(actor) && actor->mMode == 0) actor->mMode = 1;
@@ -155,10 +185,41 @@ HookAction before_staltroop_wait(ModContext*, void* args, void*, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
+ModResult create_test_actor_in_player_layer(daAlink_c* player, ProfileName profile,
+    const ActorSpawnParams& params, ActorId& id) {
+    if (player == nullptr || dComIfGp_isEnableNextStage()) return MOD_UNAVAILABLE;
+    auto* layer = player->layer_tag.layer;
+    if (layer == nullptr || layer == fpcLy_RootLayer() || fpcLy_IsDeletingMesg(layer)) {
+        return MOD_UNAVAILABLE;
+    }
+
+    // UI callbacks run outside actor execution, often on the root layer.
+    // ActorService forwards that current layer to the async creation request;
+    // room_num alone does not assign scene ownership. A root actor is drawn
+    // both by the play scene's actor queue AND root traversal, and survives
+    // play-scene deletion. Use Link's owner for drawing and scene teardown.
+    struct RestoreLayer {
+        layer_class* previous;
+        ~RestoreLayer() { fpcLy_SetCurrentLayer(previous); }
+    } restore{fpcLy_CurrentLayer()};
+    fpcLy_SetCurrentLayer(layer);
+    return svc_actor->create_actor(mod_ctx, profile, &params, &id);
+}
+
 ModResult install_test_hooks() {
+    if (!s_childHookInstalled) {
+        const auto result = mods::hook::add_post<SpawnerChildHook>(svc_hook, after_create_child);
+        if (result != MOD_OK) return result;
+        s_childHookInstalled = true;
+    }
     if (!s_processHookInstalled) {
         const auto result = mods::hook::add_pre<SpawnerProcessHook>(svc_hook, before_process);
         if (result != MOD_OK) return result;
+        const auto postResult = mods::hook::add_post<SpawnerProcessHook>(svc_hook, after_process);
+        if (postResult != MOD_OK) {
+            mods::hook::uninstall<SpawnerProcessHook>(svc_hook);
+            return postResult;
+        }
         s_processHookInstalled = true;
     }
     if (!s_appearHookInstalled) {
@@ -175,6 +236,10 @@ ModResult install_test_hooks() {
 }
 
 }  // namespace
+
+bool enemy_spawner_process_active() {
+    return !s_testProcessStack.empty() && s_testProcessStack.back().second;
+}
 
 bool enemy_spawner_blocked_in_bossrush_hub() {
     constexpr char kBossRushHubStage[] = "D_MN09C";
@@ -193,9 +258,7 @@ ModResult spawn_enemy_for_testing(int profileIndex) {
         return MOD_INVALID_ARGUMENT;
     }
     if (svc_actor == nullptr || svc_actor->create_actor == nullptr) return MOD_UNAVAILABLE;
-    // The hub already keeps all boss portals, its barrier, and supply actors resident.
-    // Loading an additional enemy archive can exhaust the model heap; vanilla then
-    // aborts while initializing a texture from the failed allocation.
+    // Keep the existing mirror-hub restriction; the separate empty arena is allowed.
     if (enemy_spawner_blocked_in_bossrush_hub()) return MOD_UNAVAILABLE;
 
     auto* link = daAlink_getAlinkActorClass();
@@ -236,7 +299,7 @@ ModResult spawn_enemy_for_testing(int profileIndex) {
     };
 
     ActorId actorId = fpcM_ERROR_PROCESS_ID_e;
-    const auto result = svc_actor->create_actor(mod_ctx, profile, &params, &actorId);
+    const auto result = create_test_actor_in_player_layer(link, profile, params, actorId);
     if (result == MOD_OK) s_testActors.insert(actorId);
     return result;
 }

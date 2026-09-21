@@ -212,6 +212,10 @@ Custom from the GameCube, X-Box, Wii-U, or Dawnlight presets.
 The `hud_layout_settings.json` format is compatible with the Dawnlight fork's
 HUD layout export where the same fields are available.
 
+## Developer Notes
+
+- [Enemy Spawner: confirmed scene-ownership fix and adding new enemies](docs/darknut-arena-spawner.md)
+
 ## LLM Disclaimer
 
 Parts of Dawnlight's source code and documentation were created or modified

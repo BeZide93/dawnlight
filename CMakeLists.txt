@@ -14,7 +14,9 @@ add_subdirectory("${DUSKLIGHT_DIR}/sdk" dusklight-sdk EXCLUDE_FROM_ALL)
 # Dawnlight's touch aim compatibility hooks mirror Dusklight's private touch-control ABI.
 # Desktop Linux has no touch UI, so keep the private host headers out of that build.
 set(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS ON)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
+   (APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_OSX_ARCHITECTURES STREQUAL "arm64") OR
+   (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$"))
     set(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS OFF)
 endif()
 

@@ -41,8 +41,9 @@ existing disappearance flow run normally. The shared grounded-landing correction
 below remains active for doubles, including Jump Strike and Spin Attack falls.
 
 Once the main Shade is flat on the ground with the Ending Blow down flag active,
-the native waiting timer advances by two ticks per update instead of one. This
-halves the remaining vulnerable window (rounded up for odd tick counts). Flight,
+the native waiting timer advances by eight ticks per update instead of one. This
+quarters the previously halved window: one eighth of the original duration, rounded
+up to a full simulation tick. Flight,
 landing, successful finishing-hit animations and story lessons keep their timing.
 Native expiry still waits for an already-started Ending Blow to resolve.
 
@@ -66,7 +67,8 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   A player hit or shield block consumes the strike. Jump Strike alone can rearm
   once, after both blade points remain clearly separated from all of Link's hurt
   cylinders for two samples. This permits its second blow without repeated hits
-  from a blade resting on Link. Damage power remains 2; native shield and
+  from a blade resting on Link. Normal sword damage is 4 quarter-heart units
+  (one heart); specials use 8 (two hearts). Native shield and
   invulnerability handling still decide whether each contact damages Link.
 - Gaps are six simulation ticks within a combo and 18 between combos. Doubles
   stagger their full-combo delay by 15 ticks per double. The old native random
@@ -112,9 +114,11 @@ tilt or height, restarts an existing landing, or changes the main Shade's native
 Ending Blow action 3 and its down/finishing flags. Both visible models continue
 through the engine's shared motion controller.
 
-Native approach speed remains six units per tick. Sword and ball attack power
-remain 2. Successful counters still grant 45 ticks of recovery; lesson follow-up
-windows are unchanged. All tuning applies only to tracked arena fighters, leaving
+Native approach speed remains six units per tick. Ordinary sword swings use
+attack power 4 (one heart). All special blade strikes, their swept volumes and
+the light ball use power 8 (two hearts) per accepted hit. Native damage modifiers
+and invulnerability still apply. Successful counters still grant 45 ticks of
+recovery; only the Ending Blow waiting window is accelerated as described above. All tuning applies only to tracked arena fighters, leaving
 story Hidden Skill lessons untouched. No shared animation tables are modified.
 
 The ball remains `KN_BULLET`, including the engine's shield-reflection logic and
@@ -197,14 +201,15 @@ contacts, Back Slice's first cut and non-damaging steps, sweep endpoints,
 Jump Strike's two-contact limit, interrupted/recovering actors, and the actual
 jump-pose hook preserving height/orientation on both models, the root-neutral
 Helm Splitter handoff and turn-in-place recovery (including wrapped yaw),
-the halved Ending Blow countdown, and one flinch per accepted reflected-ball hit. The fixture also checks both knockback directions for main/doubles,
+the eight-times-faster Ending Blow countdown and normal/special collision power, and one flinch per accepted reflected-ball hit. The fixture also checks both knockback directions for main/doubles,
 recovery gravity, grounded-only landing transitions, and Ending Blow isolation.
 
 Device checklist (still required):
 
 1. Enter from the Cave, inspect the sword/plinth placement, press A once and
    confirm exactly one visible main Shade appears.
-2. Take an unguarded sword and ball hit; block normally; reflect the ball using
+2. Verify one heart from an ordinary sword hit and two from a special/ball hit
+   with normal damage settings. Block normally; reflect the ball using
    Shield Attack. Confirm the return hit damages Shade, makes him briefly flinch
    exactly once and does not open a lesson.
 3. Have Shade block four distinct sword attacks: the second and fourth should
@@ -226,7 +231,7 @@ Device checklist (still required):
    The Ending Blow waiting pose and its prompt must still work.
    Check attack collisions and both doubles in the final phases. Jump Strike
    must play their native hit/fall/landing response before disappearance.
-   Verify the main Shade's Ending Blow opportunity ends in half the previous
+   Verify the main Shade's Ending Blow opportunity lasts one quarter of the previously halved
    waiting time, while an already-started Ending Blow still completes. During special
    attacks, check unguarded blade contact and a shield block followed by lowering
    the shield: no delayed second hit should appear. Let Mortal Draw run repeatedly

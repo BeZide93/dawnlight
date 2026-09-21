@@ -183,14 +183,14 @@ void after_reset(ModContext*,void* args,void*,void*) {
         actor->mNoDraw=false;
         actor->parentActorID=entry->divide ? sFighters[0].id : kNone;
         actor->health=8;
-        for (auto& sphere:actor->mSphCc) sphere.SetAtAtp(2);
+        for (auto& sphere:actor->mSphCc) sphere.SetAtAtp(shade::normal_attack_power);
         const dCcD_SrcCps source{daNpc_Kn_c::mCcDSph.mObjInf,
             {{{0,0,0},{0,0,0},30}}};
         for (auto& sweep:entry->bladeSweeps) {
             sweep.Set(source);
             sweep.SetStts(&actor->mCcStts);
             sweep.SetAtType(AT_TYPE_800);
-            sweep.SetAtAtp(2);
+            sweep.SetAtAtp(shade::special_attack_power);
             sweep.SetAtSpl(dCcG_At_Spl_UNK_1);
             sweep.SetAtSe(dCcD_SE_HARD_BODY);
             sweep.OnAtSPrmBit(0xc);
@@ -318,7 +318,7 @@ void after_bullet(ModContext*,void* args,void* result,void*) {
     if (*static_cast<int*>(result)!=cPhs_COMPLEATE_e) return;
     auto* bullet=mods::arg<daObjKnBullet_c*>(args,0);
     if (bullet->parentActorID==sFighters[0].id && sFighters[0].id!=kNone) {
-        bullet->mCcSph.SetAtAtp(2); // tutorial balls normally have zero damage
+        bullet->mCcSph.SetAtAtp(shade::special_attack_power); // tutorial balls normally have zero damage
     }
 }
 
@@ -505,10 +505,11 @@ HookAction before_ending_blow_wait(ModContext*,void* args,void*,void*) {
     if (!entry || entry->divide || sBattle.recovery || sBattle.dying) return HOOK_CONTINUE;
     // Only accelerate the actual vulnerable lying window. The native routine
     // still owns fall/landing, the finishing hit, expiry and an in-progress
-    // Ending Blow. One extra decrement plus its own decrement gives 2x speed.
+    // Ending Blow. Seven extra ticks plus its native tick give 8x speed:
+    // one quarter of the previously halved window.
     if (actor->mMode==2 && actor->checkDownFlg() &&
         actor->mMotionSeqMngr.getNo()==19 && actor->mMotionSeqMngr.getStepNo()>0 &&
-        actor->field_0xdec>1) --actor->field_0xdec;
+        actor->field_0xdec>1) actor->field_0xdec=std::max(1,actor->field_0xdec-7);
     return HOOK_CONTINUE;
 }
 HookAction combat_action(ModContext*,void* args,void*,void*) {
@@ -625,6 +626,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     if (entry->offense<0 && !sBattle.recovery && !sBattle.dying) {
+        for (auto& sphere:actor->mSphCc) sphere.SetAtAtp(shade::normal_attack_power);
         entry->blade={};
         stop_blade_sweeps(*entry);
         return HOOK_CONTINUE;
@@ -665,7 +667,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
         if (active) {
             sphere.SetC(positions[i]);
             sphere.SetR(30); // native blade coverage; no delayed area-damage proxy
-            sphere.SetAtAtp(2);
+            sphere.SetAtAtp(shade::attack_power(entry->offense));
             sphere.OnAtSetBit();
             dComIfG_Ccsp()->Set(&sphere);
         } else sphere.OffAtSetBit();
@@ -678,6 +680,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
             static_cast<cM3dGCps*>(&sweep)->Set(start,positions[i],30);
             cXyz direction=positions[i]-start;
             sweep.SetAtVec(direction);
+            sweep.SetAtAtp(shade::special_attack_power);
             sweep.OnAtSetBit();
             dComIfG_Ccsp()->Set(&sweep);
         } else sweep.OffAtSetBit();

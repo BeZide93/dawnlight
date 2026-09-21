@@ -106,7 +106,7 @@ struct dCcD_Cps : Sphere, cM3dGCps {
     void SetAtVec(const cXyz&) {}
 };
 struct Fighter {
-    int divide=0;
+    int id=42, divide=0;
     bool reset=false;
     int offense=shade::helm_splitter;
     bool animationStarted=true, deleting=false, helmTurnPending=false;
@@ -145,13 +145,16 @@ struct daNpc_Kn_c {
 };
 Fighter* fighter(daNpc_Kn_c* a) { return a->owned ? &a->entry : nullptr; }
 shade::Battle sBattle;
+constexpr int kNone=-1, cPhs_COMPLEATE_e=4;
+std::array<Fighter,3> sFighters;
+struct daObjKnBullet_c { int parentActorID=42; Sphere mCcSph; };
 constexpr float kApproachSpeed=6;
 float fopAcM_GetMaxFallSpeed(daNpc_Kn_c*) { return -40; }
 s16 playerYaw=0;
 s16 fopAcM_searchPlayerAngleY(daNpc_Kn_c*) { return playerYaw; }
 struct Space {
-    int registered=0;
-    void Set(Sphere* sphere) { assert(sphere->enabled && sphere->damage==2); ++registered; }
+    int registered=0, expectedDamage=8;
+    void Set(Sphere* sphere) { assert(sphere->enabled && sphere->damage==expectedDamage); ++registered; }
 } space;
 Space* dComIfG_Ccsp() { return &space; }
 '''
@@ -247,6 +250,32 @@ int main() {
     sBattle.dying=false;
     a.entry.deleting=true;
     assert(sample(10,90)==0);
+
+    // Switch from a special to an ordinary combo swing. Damage must change
+    // on both current blade volumes, including the native fallback afterward.
+    a.entry.deleting=false; a.entry.blade={}; a.entry.offense=shade::sword;
+    a.mMotionSeqMngr.no=shade::sword; a.mMotionSeqMngr.step=0;
+    space.expectedDamage=4;
+    assert(sample(0,0)==0);
+    assert(sample(30,10)==2);
+    for (const auto& sphere:a.mSphCc) assert(sphere.damage==4);
+    a.entry.offense=-1;
+    for (auto& sphere:a.mSphCc) sphere.damage=8;
+    assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);
+    for (const auto& sphere:a.mSphCc) assert(sphere.damage==4);
+    a.entry.offense=shade::helm_splitter;
+    space.expectedDamage=8;
+
+    daObjKnBullet_c bullet;
+    int createResult=0;
+    after_bullet(nullptr,&bullet,&createResult,nullptr);
+    assert(bullet.mCcSph.damage==0); // still creating
+    createResult=cPhs_COMPLEATE_e;
+    after_bullet(nullptr,&bullet,&createResult,nullptr);
+    assert(bullet.mCcSph.damage==8); // light ball is a special attack
+    bullet.parentActorID=99; bullet.mCcSph.damage=0;
+    after_bullet(nullptr,&bullet,&createResult,nullptr);
+    assert(bullet.mCcSph.damage==0); // story/unrelated projectile unchanged
 
     // Execute the real post-pose correction on both visible models. Authored
     // vertical travel and orientation stay intact; only X/Z root travel moves.
@@ -381,12 +410,12 @@ int main() {
     assert(finishing.speed.y==0); // recovery still holds non-falling fighters
     sBattle.recovery=0;
 
-    // The actual hook doubles countdown speed only during the vulnerable
-    // ground window; ordinary and odd timer lengths expire in ceil(N/2) ticks.
+    // The actual hook advances eight ticks only during the vulnerable
+    // ground window; ordinary and odd timer lengths expire in ceil(N/8) ticks.
     daNpc_Kn_c ending;
     ending.mActionMode=3; ending.down=true;
     ending.mMotionSeqMngr.no=19; ending.mMotionSeqMngr.step=1;
-    for (int duration : {1,2,3,30,59,120}) {
+    for (int duration : {1,2,3,7,8,9,30,59,120}) {
         ending.field_0xdec=duration;
         int ticks=0;
         while (ending.field_0xdec>0) {
@@ -394,7 +423,7 @@ int main() {
             --ending.field_0xdec; // native countdown once per waiting tick
             ++ticks;
         }
-        assert(ticks==(duration+1)/2);
+        assert(ticks==(duration+7)/8);
     }
     before_ending_blow_wait(nullptr,&ending,nullptr,nullptr);
     assert(ending.field_0xdec==0); // no unsigned/signed underflow at expiry
@@ -449,7 +478,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + checks
+source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

@@ -20,6 +20,12 @@ inline constexpr int sword = 25;
 inline constexpr int back_slice = 17;
 inline constexpr int helm_splitter = 13;
 inline constexpr int jump_strike = 10;
+// Link's base damage is counted in quarter-heart units.
+inline constexpr int normal_attack_power = 4;
+inline constexpr int special_attack_power = 8;
+inline int attack_power(int attack) {
+    return attack<0 || attack==sword ? normal_attack_power : special_attack_power;
+}
 
 // Native sequences keep their sequence number when they return to the ready
 // stance. Checking only sequence 9 would strand the offensive controller.

@@ -209,7 +209,7 @@ constexpr s16 kBossRushReturnPoint = 0;
 constexpr s8 kBossRushReturnLayer = 0;
 // Private runtime identity for the empty connector room. Its resources are
 // supplied by the vanilla Darknut arena through the hooks below.
-constexpr char kBossRushDarknutAreaStage[] = "D_MN06B";
+constexpr char kBossRushDarknutAreaStage[] = "D_DLBR0";
 constexpr char kBossRushDarknutAreaResourcePath[] = "/res/Stage/D_DLBR0/";
 constexpr char kBossRushDarknutSourceStage[] = "D_MN06B";
 // Use the room's authored Link spawn. -1 would reuse the Cave restart
@@ -4474,10 +4474,19 @@ ModResult register_new_save_modes(ModError* error) {
 
     // The connector uses a private stage name but reuses the original
     // Darknut room archive and scene audio.
-    // The connector now uses the vanilla D_MN06B stage identity directly.  Do not
-    // install the former D_DLBR0 resource/room/audio alias hooks: duplicating the
-    // room through a synthetic stage caused a second global actor/resource setup
-    // and Android aborted while constructing Midna.
+result = mods::hook_add_pre<BossRushAreaResourceHook>(svc_hook, on_bossrush_area_resource_path_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area resource alias");
+    }
+    result = mods::hook_add_pre<BossRushAreaRoomDataHook>(svc_hook, on_bossrush_area_room_data_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area room data alias");
+    }
+    result = mods::hook_add_pre<BossRushAreaAudioHook>(svc_hook, on_bossrush_area_audio_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area audio alias");
+    }
+
     result = mods::hook_add_pre<BossRushAreaDungeonBitHook>(svc_hook, on_bossrush_area_dungeon_bit_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area completion state");

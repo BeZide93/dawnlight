@@ -21,7 +21,6 @@
 #include <unordered_set>
 
 namespace dawnlight {
-bool ui_document_visible();
 namespace {
 constexpr ActorId kNone = fpcM_ERROR_PROCESS_ID_e;
 constexpr u32 kShadeParams = 0x00ffff07; // lesson 7 resources, no path
@@ -42,6 +41,11 @@ std::array<Fighter, 3> sFighters;
 shade::Battle sBattle;
 bool sStopping = false;
 std::unordered_set<ActorId> sProjectiles;
+
+bool ui_document_visible() {
+    bool visible = false;
+    return svc_ui->is_any_document_visible(mod_ctx, &visible) == MOD_OK && visible;
+}
 
 bool arena() {
     return save_state_boss_rush_active() && save_state_boss_rush_state() == 0 &&

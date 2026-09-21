@@ -29,6 +29,21 @@ int main() {
         battle.event(24);
         assert(!battle.tick() && battle.health==0);
     }
+    Battle doubles;
+    doubles.phase=6; doubles.defeated_doubles=6;
+    for (int i=0;i<599;++i) {
+        assert(!doubles.tick());
+        assert(doubles.defeated_doubles==6);
+    }
+    assert(doubles.tick() && doubles.phase==7 && doubles.defeated_doubles==0);
+    doubles.defeated_doubles=2;
+    doubles.event(phases[7].success);
+    for (int i=0;i<44;++i) {
+        assert(!doubles.tick());
+        assert(doubles.defeated_doubles==2);
+    }
+    assert(doubles.tick() && doubles.defeated_doubles==0);
+
     // A missed skill cannot soft-lock the fight or count as a successful hit.
     Battle timeout;
     for (unsigned phase=0;phase<16;++phase) {

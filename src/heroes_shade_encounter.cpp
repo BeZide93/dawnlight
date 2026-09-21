@@ -128,10 +128,32 @@ void remove_companions() {
         boss->parentActorID = kNone;
     }
 }
+bool defeat_double_on_jump_strike(daNpc_Kn_c* actor,Fighter& entry) {
+    if (!entry.divide || entry.deleting || !actor->mCylCc.ChkTgHit()) return false;
+    auto* player=daPy_getPlayerActorClass();
+    const auto* hit=actor->mCylCc.GetTgHitObj();
+    const int cut=player->getCutType();
+    if (actor->mCylCc.GetTgHitAc()!=player || !hit ||
+        !hit->ChkAtType(AT_TYPE_NORMAL_SWORD|AT_TYPE_MASTER_SWORD) ||
+        (cut!=daPy_py_c::CUT_TYPE_LARGE_JUMP_INIT && cut!=daPy_py_c::CUT_TYPE_LARGE_JUMP &&
+         cut!=daPy_py_c::CUT_TYPE_LARGE_JUMP_FINISH)) return false;
+    // One actual Jump Strike contact removes a double, in either final phase.
+    // Keep this outside the actor slot: Delete clears that slot asynchronously.
+    sBattle.defeated_doubles |= 1u << entry.divide;
+    entry.deleting=true;
+    actor->mNoDraw=true;
+    actor->field_0x15af=0;
+    actor->mCylCc.OffTgSetBit();
+    actor->mCylCc.OffCoSetBit();
+    for (auto& sphere:actor->mSphCc) { sphere.OffAtSetBit(); sphere.ClrAtHit(); }
+    stop_blade_sweeps(entry);
+    remove_actor(entry.id);
+    return true;
+}
 void add_doubles(daNpc_Kn_c* boss) {
     for (unsigned i=1;i<sFighters.size();++i) {
         auto& entry=sFighters[i];
-        if (pending_or_live(entry.id)) continue;
+        if ((sBattle.defeated_doubles & (1u << i)) || pending_or_live(entry.id)) continue;
         entry = {};
         entry.divide = i;
         cXyz pos=boss->current.pos;
@@ -259,6 +281,11 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     if (dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
         daAlink_getAlinkActorClass()->checkDeadHP()) {
         stop_blade_sweeps(*entry);
+        *static_cast<int*>(result)=1;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    // Read last collision results before native action/reset can consume them.
+    if (defeat_double_on_jump_strike(actor,*entry)) {
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
     }
@@ -436,6 +463,16 @@ void after_jump_pose(ModContext*,void* args,void*,void*) {
     actor->eyePos+=correction;
     actor->attention_info.position+=correction;
 }
+void finish_helm_splitter(daNpc_Kn_c* actor,const Fighter& entry) {
+    if (!entry.animationStarted || entry.offense!=shade::helm_splitter ||
+        actor->mMotionSeqMngr.getNo()!=shade::helm_splitter) return;
+    // The BCK ends displaced and facing backwards. Our pose hook has already
+    // consumed its translation, so keep actor position and transfer only yaw.
+    // Install the matching root-neutral stance without blending from the old
+    // 594-unit root offset. Native ready/walk blending can resume next tick.
+    actor->setAngle(static_cast<s16>(actor->current.angle.y+0x8000));
+    actor->mMotionSeqMngr.setNo(6,0,1,0);
+}
 HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
@@ -520,6 +557,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         (actor->speed.y<=0 && actor->mAcch.ChkGroundHit());
     if ((finished && landed) || entry->attackTicks>=240) {
         if (entry->attackTicks>=240) entry->chain.cancel();
+        if (finished && landed) finish_helm_splitter(actor,*entry);
         entry->offense=-1;
         entry->cooldown=entry->chain.remaining ? kComboGap : attack_cooldown(*entry);
         actor->speedF=0;

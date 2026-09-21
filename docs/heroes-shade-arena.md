@@ -33,6 +33,18 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
 | Jump Strike | Jump Strike; two doubles participate |
 | Great Spin | Great Spin; two doubles participate |
 
+### Double removal
+
+In both final phases, a single actual Link sword contact during Jump Strike
+(`LARGE_JUMP_INIT`, `LARGE_JUMP` or `LARGE_JUMP_FINISH`) removes the struck double.
+The execute hook reads the collision before native lesson handling can consume
+it, disables its hit volumes and rendering, and requests normal actor deletion.
+A Jump Strike without contact, a projectile, another actor's attack, or an
+ordinary sword swing does not trigger this rule. The main Shade keeps his native
+counter/health rules. Defeated double slots are recorded in the battle state,
+not the actor slot: asynchronous deletion cannot cause immediate respawning.
+The record clears on the next phase or a new encounter.
+
 ### Blocks and combos
 
 - Each second **sword attack blocked by Shade** starts a sword riposte followed
@@ -74,6 +86,12 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
   or registering another draw entry. Helm Splitter commits to a landing 140
   units beyond Link, where its turning cut faces him; Jump Strike stops 110
   units before him. Targets are captured at takeoff, so Link can evade them.
+  On natural completion, Helm Splitter keeps its authored ending pose, then
+  transfers the final half-turn into actor yaw and installs native stance 6
+  with zero blend before clearing the attack. Position stays at the landing
+  point. This avoids one uncorrected frame of the old 594-unit root offset and
+  avoids blending that displaced root back into the ready pose. Normal combat
+  stance blending resumes on the next tick.
   Target-relative movement uses `posMove`; a scoped `beforeMove` hook adds
   gravity for that path, since only `posMoveF` normally integrates it. Native
   forward movement still applies its own gravity once.
@@ -157,7 +175,9 @@ against a minimal engine API. It checks absent/present/unowned accessories,
 early and late moving blade contact, stationary poses, consumed shield/hit
 contacts, Back Slice's first cut and non-damaging steps, sweep endpoints,
 Jump Strike's two-contact limit, interrupted/recovering actors, and the actual
-jump-pose hook preserving height/orientation on both models.
+jump-pose hook preserving height/orientation on both models, the root-neutral
+Helm Splitter handoff, and one-contact double removal with phase-scoped respawn
+suppression.
 
 Device checklist (still required):
 
@@ -172,11 +192,14 @@ Device checklist (still required):
    Helm Splitter, followed by combos ending in Back Slice and Jump Strike.
    Check Back Slice from several directions, while moving and near a wall;
    he should circle Link and damage on the cut without a delayed follow-up.
-   Helm Splitter should pass over Link and connect on its turning cut. Jump
+   Helm Splitter should pass over Link and connect on its turning cut. Its final
+   stance must remain visible, with no position snap when combat resumes. Jump
    Strike should allow damage on both distinct blows when native invulnerability
    permits it. Dodge jumps after takeoff; no remote damage should occur.
 5. Test every counter above, particularly Ending Blow and the head-lock follow-up.
-   Check attack collisions and both doubles in the final phases. During special
+   Check attack collisions and both doubles in the final phases. Hit each double
+   once with Jump Strike: only that double disappears, stays gone for the phase,
+   and does not damage the main Shade merely by disappearing. During special
    attacks, check unguarded blade contact and a shield block followed by lowering
    the shield: no delayed second hit should appear. Let Mortal Draw run repeatedly
    and replay the encounter to exercise the previously crashing accessory path.

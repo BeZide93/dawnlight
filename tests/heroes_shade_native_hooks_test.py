@@ -22,6 +22,8 @@ fixture = r'''
 #include <array>
 #include <cassert>
 #include <cstring>
+#include <cstdint>
+using s16 = std::int16_t;
 namespace shade = dawnlight::shade;
 struct ModContext {};
 enum HookAction { HOOK_CONTINUE, HOOK_SKIP_ORIGINAL };
@@ -65,6 +67,8 @@ struct Motion {
     int no=shade::helm_splitter, step=0;
     int getNo() { return no; }
     int getStepNo() { return step; }
+    float blend=-1;
+    void setNo(int n,float b,int,int) { no=n; blend=b; step=0; }
 };
 struct Cylinder {
     cXyz center;
@@ -72,9 +76,16 @@ struct Cylinder {
     float GetR() const { return 30; }
     float GetH() const { return 150; }
 };
-struct Player { std::array<Cylinder,3> mTgCyls; } player;
+struct daPy_py_c {
+    enum { CUT_TYPE_LARGE_JUMP_INIT=11, CUT_TYPE_LARGE_JUMP=12, CUT_TYPE_LARGE_JUMP_FINISH=13 };
+};
+struct Player : daPy_py_c {
+    std::array<Cylinder,3> mTgCyls;
+    int cut=0;
+    int getCutType() const { return cut; }
+} player;
 Player* daAlink_getAlinkActorClass() { return &player; }
-void* daPy_getPlayerActorClass() { return &player; }
+Player* daPy_getPlayerActorClass() { return &player; }
 struct Sphere {
     cXyz center;
     float radius=0;
@@ -100,7 +111,24 @@ struct dCcD_Cps : Sphere, cM3dGCps {
     dCcD_Cps() { damage=2; }
     void SetAtVec(const cXyz&) {}
 };
+constexpr unsigned AT_TYPE_NORMAL_SWORD=1, AT_TYPE_MASTER_SWORD=2;
+struct AttackObject {
+    unsigned type=AT_TYPE_MASTER_SWORD;
+    bool ChkAtType(unsigned mask) const { return (type&mask)!=0; }
+};
+struct HurtCylinder {
+    bool hit=false, targetEnabled=true, coEnabled=true;
+    void* source=&player;
+    AttackObject attack;
+    AttackObject* object=&attack;
+    bool ChkTgHit() const { return hit; }
+    void* GetTgHitAc() const { return source; }
+    const AttackObject* GetTgHitObj() const { return object; }
+    void OffTgSetBit() { targetEnabled=false; }
+    void OffCoSetBit() { coEnabled=false; }
+};
 struct Fighter {
+    int id=42, divide=0;
     int offense=shade::helm_splitter;
     bool animationStarted=true, deleting=false;
     shade::BladeMotion blade;
@@ -108,7 +136,9 @@ struct Fighter {
     cXyz jumpBodyOffset{5,0,10};
 };
 struct daNpc_Kn_c {
-    bool owned=true;
+    bool owned=true, mNoDraw=false;
+    int field_0x15af=1;
+    HurtCylinder mCylCc;
     void* mpPodModel=nullptr;
     unsigned mPodAnmFlags=0x41;
     int field_0x15cd=1;
@@ -116,7 +146,8 @@ struct daNpc_Kn_c {
     Motion mMotionSeqMngr;
     Morf morf, ghost;
     std::array<Morf*,2> mpModelMorf{&morf,&ghost};
-    struct { cXyz pos{100,0,300}; } current;
+    struct { cXyz pos{100,0,300}; struct { s16 y=1234; } angle; } current;
+    void setAngle(s16 y) { current.angle.y=y; }
     struct { cXyz position; } attention_info;
     cXyz eyePos;
     int getBackboneJointNo() { return 1; }
@@ -124,6 +155,8 @@ struct daNpc_Kn_c {
 };
 Fighter* fighter(daNpc_Kn_c* a) { return a->owned ? &a->entry : nullptr; }
 shade::Battle sBattle;
+int removed=0;
+void remove_actor(int id) { assert(id==42); ++removed; }
 struct Space {
     int registered=0;
     void Set(Sphere* sphere) { assert(sphere->enabled && sphere->damage==2); ++registered; }
@@ -252,6 +285,62 @@ int main() {
     after_jump_pose(nullptr,&a,nullptr,nullptr);
     assert(a.morf.calculations==2);
 
+    // Helm recovery normalizes the root BEFORE disabling the pose correction.
+    a.owned=true; a.entry.offense=shade::helm_splitter;
+    a.mMotionSeqMngr.no=shade::helm_splitter;
+    const auto pos=a.current.pos;
+    const auto yaw=a.current.angle.y;
+    finish_helm_splitter(&a,a.entry);
+    assert(a.mMotionSeqMngr.no==6 && a.mMotionSeqMngr.blend==0);
+    assert(a.current.angle.y==static_cast<s16>(yaw+0x8000));
+    assert(a.current.pos.x==pos.x && a.current.pos.z==pos.z);
+    finish_helm_splitter(&a,a.entry); // cannot flip twice after switching stance
+    assert(a.current.angle.y==static_cast<s16>(yaw+0x8000));
+    a.mMotionSeqMngr.no=shade::helm_splitter; a.entry.animationStarted=false;
+    finish_helm_splitter(&a,a.entry);
+    assert(a.mMotionSeqMngr.no==shade::helm_splitter);
+
+    // A real Jump Strike contact removes either double, never the main Shade,
+    // a whiff, a projectile or an unrelated actor hitting during Link's jump.
+    daNpc_Kn_c clone;
+    player.cut=daPy_py_c::CUT_TYPE_LARGE_JUMP;
+    clone.mCylCc.hit=true;
+    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
+    clone.entry.divide=1; clone.mCylCc.hit=false;
+    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
+    clone.mCylCc.hit=true; player.cut=0;
+    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
+    player.cut=daPy_py_c::CUT_TYPE_LARGE_JUMP;
+    clone.mCylCc.source=&a;
+    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
+    clone.mCylCc.source=&player; clone.mCylCc.attack.type=4;
+    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
+    clone.mCylCc.attack.type=AT_TYPE_NORMAL_SWORD; clone.mCylCc.object=nullptr;
+    assert(!defeat_double_on_jump_strike(&clone,clone.entry));
+    clone.mCylCc.object=&clone.mCylCc.attack;
+    for (int cut : {daPy_py_c::CUT_TYPE_LARGE_JUMP_INIT,
+                    daPy_py_c::CUT_TYPE_LARGE_JUMP,daPy_py_c::CUT_TYPE_LARGE_JUMP_FINISH}) {
+        for (int divide : {1,2}) {
+            sBattle={}; sBattle.phase=divide==1 ? 6 : 7;
+            clone.entry.deleting=false; clone.entry.divide=divide;
+            clone.mNoDraw=false; clone.field_0x15af=1;
+            for (auto& sphere:clone.mSphCc) sphere.OnAtSetBit();
+            for (auto& sweep:clone.entry.bladeSweeps) sweep.OnAtSetBit();
+            player.cut=cut;
+            assert(defeat_double_on_jump_strike(&clone,clone.entry));
+            assert(sBattle.defeated_doubles==(1u<<divide));
+            assert(sBattle.health==8 && sBattle.recovery==0); // no boss damage/event
+            assert(clone.mNoDraw && clone.field_0x15af==0 && clone.entry.deleting);
+            assert(!clone.mCylCc.targetEnabled && !clone.mCylCc.coEnabled);
+            for (auto& sphere:clone.mSphCc) assert(!sphere.enabled);
+            for (auto& sweep:clone.entry.bladeSweeps) assert(!sweep.enabled);
+            assert(!defeat_double_on_jump_strike(&clone,clone.entry));
+            clone.entry={}; // native Delete clears the slot; suppression survives
+            assert(sBattle.defeated_doubles==(1u<<divide));
+        }
+    }
+    assert(removed==6);
+
     a.owned=false;
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);
 }
@@ -259,7 +348,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + checks
+source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("defeat_double_on_jump_strike", "bool") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

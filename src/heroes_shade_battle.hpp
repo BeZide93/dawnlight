@@ -160,6 +160,7 @@ inline GroundPoint approach_velocity(float dx, float dz, float max_speed, float 
 }
 struct Battle {
     unsigned phase = 0;
+    unsigned defeated_doubles = 0; // retained after actor deletion, cleared per phase
     int health = 8;
     int remaining = 600;
     int recovery = 0;
@@ -180,6 +181,7 @@ struct Battle {
         if (health == 0) { dying = true; return true; }
         if (advance || --remaining == 0) {
             phase = (phase + 1) % phases.size();
+            defeated_doubles = 0;
             remaining = 600;
             advance = false;
             return true;

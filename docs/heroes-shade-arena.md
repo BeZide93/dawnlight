@@ -7,13 +7,59 @@ resolved against the loaded room collision. Face it in human form and press
 plinth: this does not run the story sword-pickup event or replace Link's weapon.
 After victory, interact again to replay. Leaving the room discards the fight.
 
+## Intro and victory scenes
+
+The sword now starts a short original boss introduction. Shade stays hidden
+through asynchronous creation and until the native potential demo event has
+been accepted. The camera eases toward him with letterboxing; blue spectral
+ribbons precede his native materialization. Two original captions refer to his
+unfinished teaching and Link's inherited courage, followed by a sword-ready
+pose before combat begins.
+
+After the last successful counter, doubles and projectiles are removed. Shade
+finishes any airborne fall and uses his native get-up animation when needed.
+He praises Link as a true hero and asks him to carry their legacy into the world.
+His native warp-out is accompanied by gold light ribbons and a brief afterglow;
+only then is the actor deleted and gameplay restored. The captions have German
+and English variants (English fallback for the other supported languages).
+Each page automatically advances after 120 simulation ticks, and the controller
+waits for the actual native message to finish instead of cutting it off at an
+assumed time. Appearance takes 54 ticks including anticipation; departure plus
+afterglow takes 75. Recovery and dialogue have bounded failure timeouts.
+
+Implementation and lifecycle details:
+
+- `heroes_shade_cinema.hpp` owns the shot sequence; only the main actor's native
+  execute hook advances it. Drawing cannot advance dialogue or battle state.
+- The scene orders its own potential demo event, then uses the native camera
+  and Link's original-demo mode. It never runs the teaching event scripts or
+  writes lesson/save flags. Battle phase timers, offensive actions, body targets
+  and blade colliders are suspended throughout the scene.
+- The camera dolly checks room geometry. Restoration records process IDs for
+  the camera and player so room teardown cannot alter replacement instances.
+  Stage departure, player death, unexpected actor deletion and mod shutdown
+  release acquired control. A failed async spawn can be retried at the sword.
+- Captions are registered with MessageService. Cancellation only closes the
+  matching owned message; it never deletes the shared `dMsgObject` actor.
+- Native `ctrlWarp` state 3 materializes and state 1 disappears. The controller
+  never advances departure into state 2, which would teleport/reappear again.
+  The original translucent ribbons use their own stable packet in the pedestal
+  actor. No shared model material, external mod code or game asset is packaged.
+
+Run `python tests/heroes_shade_cinema_test.py` for the real controller's event,
+caption, warp, pause, timeout and cleanup paths against native API stubs. The
+existing native-hook fixture also verifies that scene swords cannot register
+hits and scene events cannot consume boss health. On-device checks still needed:
+first arrival (no one-frame pop), caption readability, victory after both fall
+directions, camera near arena walls, replay, and leaving/unloading during a scene.
+
 ## Combat
 
 Hero's Shade has eight health points. Each successful native lesson counter
 removes one point; a missed opportunity changes the phase after 600 simulation
 ticks without damaging him. Success gives 45 ticks of recovery, followed by the
-next phase. The fight cycles until his health reaches zero, then uses his native
-warp-out animation. This is a new boss controller, not the original lesson event.
+next phase. The fight cycles until his health reaches zero, then starts the
+victory scene above. This is a new boss controller, not the original lesson event.
 
 The lesson phase determines which counter damages Shade; it no longer restricts
 his offensive move selection. Outside the reflection phase, he uses three-hit

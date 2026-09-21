@@ -19,6 +19,7 @@ def function(name, result="HookAction"):
 
 fixture = r'''
 #include "heroes_shade_battle.hpp"
+#include "heroes_shade_cinema.hpp"
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -145,6 +146,7 @@ struct daNpc_Kn_c {
 };
 Fighter* fighter(daNpc_Kn_c* a) { return a->owned ? &a->entry : nullptr; }
 shade::Battle sBattle;
+shade::Cinema sCinema;
 constexpr int kNone=-1, cPhs_COMPLEATE_e=4;
 std::array<Fighter,3> sFighters;
 struct daObjKnBullet_c { int parentActorID=42; Sphere mCcSph; };
@@ -162,6 +164,17 @@ Space* dComIfG_Ccsp() { return &space; }
 checks = r'''
 int main() {
     daNpc_Kn_c a;
+    // Cutscenes cannot register a sword hit or consume another lesson counter.
+    sCinema.begin(false);
+    a.mEvtNo=shade::phases[0].success;
+    no_order(nullptr,&a,nullptr,nullptr);
+    assert(sBattle.health==8 && a.mEvtNo==0);
+    for (auto& sphere:a.mSphCc) { sphere.enabled=true; sphere.hit=true; }
+    for (auto& sweep:a.entry.bladeSweeps) { sweep.enabled=true; sweep.hit=true; }
+    assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+    for (const auto& sphere:a.mSphCc) assert(!sphere.enabled && !sphere.hit);
+    for (const auto& sweep:a.entry.bladeSweeps) assert(!sweep.enabled && !sweep.hit);
+    sCinema={};
     // The real crash path: lesson-7 heap has no sheath calculator. The hook
     // must bypass native init(modify=true), with a successful body result.
     bool result=false;
@@ -478,7 +491,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
+source = fixture + function("cinema_landing", "bool") + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

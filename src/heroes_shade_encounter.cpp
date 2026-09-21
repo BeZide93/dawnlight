@@ -25,11 +25,9 @@ namespace {
 constexpr ActorId kNone = fpcM_ERROR_PROCESS_ID_e;
 constexpr u32 kShadeParams = 0x00ffff07; // lesson 7 resources, no path
 constexpr char kSwordArchive[] = "MstrSword";
-constexpr int kAttackCooldown = 40;
-constexpr int kBackSliceCooldown = 24;
+constexpr int kAttackCooldown = 18;
+constexpr int kComboGap = 6;
 constexpr int kDoubleAttackDelay = 15;
-constexpr int kCounterCooldown = 60;
-constexpr s16 kNativeAttackDelay = 30;
 constexpr float kApproachSpeed = 6.0f;
 ProfileName sProfile = -1;
 ActorHandle sRegistration = 0;
@@ -40,6 +38,13 @@ struct Fighter {
     int offense = -1;
     int attackTicks = 0;
     int cooldown = kAttackCooldown;
+    shade::AttackChain chain;
+    float orbitAngle = 0;
+    float orbitRadius = 150;
+    bool swordContact = false;
+    bool jumpLaunched = false;
+    bool animationStarted = false;
+    cXyz jumpTarget{0,0,0};
     bool reset = true;
     bool deleting = false;
 };
@@ -49,8 +54,7 @@ bool sStopping = false;
 std::unordered_set<ActorId> sProjectiles;
 
 int attack_cooldown(const Fighter& entry) {
-    return (sBattle.phase == 3 ? kBackSliceCooldown : kAttackCooldown) +
-        entry.divide * kDoubleAttackDelay;
+    return kAttackCooldown + entry.divide * kDoubleAttackDelay;
 }
 
 bool ui_document_visible() {
@@ -135,6 +139,8 @@ DEFINE_HOOK(&daNpc_Kn_c::evtProc, ShadeEventHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtOrder, ShadeOrderHook);
 DEFINE_HOOK(&daNpc_Kn_c::action, ShadeActionHook);
 DEFINE_HOOK(&daNpc_Kn_c::calcSwordAttackMove, ShadeApproachHook);
+DEFINE_HOOK(&daNpc_Kn_c::ctrlMotion, ShadeMotionHook);
+DEFINE_HOOK(&daNpc_Kn_c::beforeMove, ShadeMovementHook);
 DEFINE_HOOK(&daNpc_Kn_c::setCollisionSword, ShadeSwordHook);
 DEFINE_HOOK(&daObjKnBullet_c::Create, ShadeBulletHook);
 DEFINE_HOOK(&daObjKnBullet_c::Delete, ShadeBulletDeleteHook);
@@ -203,6 +209,9 @@ void select_phase(daNpc_Kn_c* actor,Fighter& entry) {
     actor->field_0x15af=1;
     entry.offense=-1;
     entry.attackTicks=0;
+    entry.chain.cancel();
+    entry.chain.counters=0;
+    entry.swordContact=false;
     entry.cooldown=attack_cooldown(entry);
     entry.reset=false;
 }
@@ -288,80 +297,170 @@ HookAction delete_bullet(ModContext*,void* args,void*,void*) {
     return HOOK_CONTINUE;
 }
 
-// Teaching actions provide native guarding, knockdowns, head-lock and shield
-// reflection. Demonstration animations add an offensive attack for each skill.
+// Native lessons still decide whether Link landed the required counter. Our
+// controller owns attack scheduling, so native random attacks cannot starve a
+// combo or leave it waiting for sequence 9 after returning to the ready pose.
+int waiting_action(const Fighter& entry) {
+    const auto& phase=shade::phases[sBattle.phase];
+    return entry.divide ? (phase.type==5 ? 14 : 20) : phase.action;
+}
 HookAction before_approach(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (fighter(actor) && !sBattle.recovery && !sBattle.dying) {
-        // Clamp only the ordinary attack delay, not the lesson's counter window.
-        actor->field_0x15d0=std::min(actor->field_0x15d0,kNativeAttackDelay);
+        actor->field_0x15d0=0; // ordinary sword attacks now belong to the combo
     }
     return HOOK_CONTINUE;
 }
 void after_approach(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
-    // Native movement still decides when to approach, stop, slide or turn.
-    // Set an absolute speed here so repeated calls cannot multiply it each tick.
     if (fighter(actor) && !sBattle.recovery && !sBattle.dying && actor->speedF>0) {
         actor->speedF=kApproachSpeed;
     }
 }
+void after_motion(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    auto* entry=fighter(actor);
+    if (!entry) return;
+    const bool attacking=entry->offense>=0 && actor->mMotionSeqMngr.getNo()==entry->offense &&
+        !actor->mMotionSeqMngr.checkEntryNewMotion();
+    if (attacking) entry->animationStarted=true;
+    const float rate=attacking && entry->offense==shade::sword &&
+        actor->mMotionSeqMngr.getStepNo()==0 ? 1.65f : 1.0f;
+    for (auto* model:actor->mpModelMorf) if (model) model->setPlaySpeed(rate);
+}
+void start_attack(daNpc_Kn_c* actor,Fighter& entry) {
+    entry.offense=entry.chain.next();
+    entry.attackTicks=0;
+    entry.animationStarted=false;
+    entry.jumpLaunched=false;
+    const auto offset=actor->current.pos-daPy_getPlayerActorClass()->current.pos;
+    entry.orbitAngle=std::atan2(offset.x,offset.z);
+    entry.orbitRadius=offset.absXZ();
+    actor->speedF=0;
+    actor->speed.x=actor->speed.z=0;
+    actor->field_0x15bc=0;
+    actor->field_0x15ce=0;
+    actor->mMotionSeqMngr.setNo(entry.offense,3,1,0);
+    actor->mFaceMotionSeqMngr.setNo(1,-1,0,0);
+    actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+}
+void move_toward(daNpc_Kn_c* actor,const cXyz& target,float speed,float stop_distance) {
+    const auto delta=target-actor->current.pos;
+    const auto velocity=shade::approach_velocity(delta.x,delta.z,speed,stop_distance);
+    actor->speedF=0;
+    actor->speed.x=velocity.x;
+    actor->speed.z=velocity.z;
+}
+void before_movement(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    if (!fighter(actor) || sBattle.recovery || sBattle.dying || actor->speedF!=0) return;
+    // We decouple movement from facing for the orbit. Native execute therefore
+    // chooses posMove, which unlike posMoveF does NOT integrate gravity. Apply
+    // it exactly once here, including after a jump is interrupted by a block.
+    actor->speed.y=std::max(actor->speed.y+actor->gravity,fopAcM_GetMaxFallSpeed(actor));
+}
 HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
-    if (!entry || sBattle.dying) return HOOK_CONTINUE;
+    if (!entry) return HOOK_CONTINUE;
+    entry->swordContact=false;
+    if (sBattle.dying) return HOOK_CONTINUE;
     if (sBattle.recovery) {
         actor->speedF=0;
         actor->speed.zero();
         return HOOK_SKIP_ORIGINAL;
     }
     const auto& phase=shade::phases[sBattle.phase];
-    if (entry->offense>=0 && (actor->mCylCc.ChkTgHit() || actor->mCylCc.ChkTgShieldHit())) {
-        // Counters remain effective during a demonstration attack as well.
+    auto* player=daPy_getPlayerActorClass();
+    if (actor->mCylCc.ChkTgHit() || actor->mCylCc.ChkTgShieldHit()) {
+        auto* hit=actor->mCylCc.GetTgHitObj();
+        entry->swordContact=actor->mCylCc.ChkTgHit() &&
+            actor->mCylCc.GetTgHitAc()==player && hit &&
+            hit->ChkAtType(AT_TYPE_NORMAL_SWORD|AT_TYPE_MASTER_SWORD);
+        // Resolve blocks, successful Hidden Skills and follow-ups natively
+        // before deciding whether to retaliate. A hit is not itself a block.
         entry->offense=-1;
-        entry->cooldown=kCounterCooldown;
+        entry->chain.cancel();
+        entry->cooldown=attack_cooldown(*entry);
         return HOOK_CONTINUE;
     }
     if (entry->offense<0) {
-        // Count elapsed combat time even during native movement/attacks. Start
-        // the next special only once the native counter/follow-up has finished.
         if (entry->cooldown>0) --entry->cooldown;
-        // Leave native follow-ups and the full ball throw uninterrupted.
-        if (phase.attack<0 || actor->mMode!=2 || actor->mActionMode!=phase.action ||
-            actor->mMotionSeqMngr.getNo()!=9) return HOOK_CONTINUE;
+        if (phase.attack<0 || actor->mMode!=2 || actor->mActionMode!=waiting_action(*entry) ||
+            actor->field_0x15bc || !shade::ready_motion(actor->mMotionSeqMngr.getNo(),
+                                                      actor->mMotionSeqMngr.getStepNo())) {
+            return HOOK_CONTINUE;
+        }
         if (entry->cooldown>0) return HOOK_CONTINUE;
-        if ((actor->current.pos-daPy_getPlayerActorClass()->current.pos).absXZ()>320) return HOOK_CONTINUE;
-        entry->offense=phase.attack;
-        entry->attackTicks=0;
-        actor->mMotionSeqMngr.setNo(phase.attack,-1,1,0);
-        actor->mFaceMotionSeqMngr.setNo(1,-1,0,0);
-        actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+        if ((actor->current.pos-player->current.pos).absXZ()>300) return HOOK_CONTINUE;
+        if (!entry->chain.remaining) entry->chain.begin(sBattle.phase);
+        start_attack(actor,*entry);
     }
     ++entry->attackTicks;
     actor->mCcStts.Move();
     actor->speedF=0;
-    // Root translation is not applied by the teacher outside its demo script.
-    // Supply bounded approach/lunge movement; background collision remains native.
-    if (sBattle.phase==3 && entry->attackTicks<24) actor->setAngle(static_cast<s16>(actor->mCurAngle.y+0x300));
-    if ((sBattle.phase==3 || sBattle.phase==5) && entry->attackTicks<25) actor->speedF=8;
-    if ((sBattle.phase==4 || sBattle.phase==6) && entry->attackTicks==12 && actor->mAcch.ChkGroundHit()) {
-        actor->speed.y=24;
-        actor->speedF=9;
-    }
-    if ((sBattle.phase==4 || sBattle.phase==6) && !actor->mAcch.ChkGroundHit()) actor->speedF=9;
-    if (sBattle.phase==7 && entry->attackTicks>=18 && entry->attackTicks<42) {
-        actor->setAngle(static_cast<s16>(actor->mCurAngle.y+0xaaa));
-    }
+    actor->speed.x=actor->speed.z=0;
     const int step=actor->mMotionSeqMngr.getStepNo();
-    const bool finished=entry->offense==17 ? step>=3 :
-        (step>0 || actor->mpModelMorf[0]->isStop());
-    // Prefer the real animation end, retaining a bound for unexpected resources.
-    if ((entry->attackTicks>2 && finished) || entry->attackTicks>=180) {
+    const float frame=actor->mpModelMorf[0]->getFrame();
+    const float end=actor->mpModelMorf[0]->getEndFrame();
+    const float progress=end>0 ? std::clamp(frame/end,0.0f,1.0f) : 0;
+    if (entry->animationStarted) {
+        if (entry->offense==shade::back_slice && step<2) {
+            // Sidestep and roll follow a semicircle around Link, not a forward
+            // drift along the Shade's continually rotating facing direction.
+            const auto offset=shade::back_slice_offset(entry->orbitAngle,entry->orbitRadius,step,progress);
+            cXyz target=player->current.pos;
+            target.x+=offset.x; target.z+=offset.z;
+            move_toward(actor,target,14,0);
+            actor->setAngle(step==1 && actor->speed.absXZ()>0.01f ?
+                cLib_targetAngleY(&actor->current.pos,&target) : fopAcM_searchPlayerAngleY(actor));
+        } else if (shade::jumping_attack(entry->offense)) {
+            if (!entry->jumpLaunched && progress>=0.2f && actor->mAcch.ChkGroundHit()) {
+                entry->jumpLaunched=true;
+                entry->jumpTarget=player->current.pos;
+                actor->setAngle(cLib_targetAngleY(&actor->current.pos,&entry->jumpTarget));
+                actor->speed.y=24;
+            }
+            if (entry->jumpLaunched && progress<0.75f) move_toward(actor,entry->jumpTarget,12,110);
+        } else {
+            // Reacquire Link before the Back Slice cut; stop at sword reach.
+            // Once the swing is committed, dodging still works.
+            if (progress<0.4f || (entry->offense==shade::back_slice && step==2)) {
+                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+                move_toward(actor,player->current.pos,10,120);
+            }
+        }
+    }
+    const bool finished=entry->animationStarted && !actor->mMotionSeqMngr.checkEntryNewMotion() &&
+        (entry->offense==shade::back_slice ? step>=3 :
+         (step>0 || actor->mpModelMorf[0]->isStop()));
+    const bool landed=!shade::jumping_attack(entry->offense) || !entry->jumpLaunched ||
+        (actor->speed.y<=0 && actor->mAcch.ChkGroundHit());
+    if ((finished && landed) || entry->attackTicks>=240) {
+        if (entry->attackTicks>=240) entry->chain.cancel();
         entry->offense=-1;
-        entry->cooldown=attack_cooldown(*entry);
+        entry->cooldown=entry->chain.remaining ? kComboGap : attack_cooldown(*entry);
+        actor->speedF=0;
+        actor->speed.x=actor->speed.z=0;
         actor->mMode=1;
     }
     return HOOK_SKIP_ORIGINAL;
+}
+void after_combat_action(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    auto* entry=fighter(actor);
+    if (!entry || !entry->swordContact || sBattle.dying || sBattle.recovery) return;
+    entry->swordContact=false;
+    // Sequence 27 is the native sword-block reaction. Damage, Shield Attack
+    // openings, head-locks and other successful lesson counters are excluded.
+    if (actor->mEvtNo || actor->mActionMode!=waiting_action(*entry) ||
+        actor->mMotionSeqMngr.getNo()!=27 || !actor->mMotionSeqMngr.checkEntryNewMotion()) return;
+    entry->chain.blocked_sword();
+    if (entry->chain.counters) {
+        entry->chain.cancel();
+        entry->chain.begin(sBattle.phase);
+        start_attack(actor,*entry); // second block: sword riposte, then Back Slice
+    }
 }
 HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
@@ -369,7 +468,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     if (!entry) return HOOK_CONTINUE;
     if (entry->offense<0 && !sBattle.recovery && !sBattle.dying) return HOOK_CONTINUE;
     const bool active=entry->offense>=0 && !sBattle.recovery && !sBattle.dying &&
-        shade::attack_window(sBattle.phase,actor->mMotionSeqMngr.getStepNo(),
+        shade::attack_window(entry->offense,actor->mMotionSeqMngr.getStepNo(),
             actor->mpModelMorf[0]->getFrame(),actor->mpModelMorf[0]->getEndFrame());
     for (unsigned i=0;i<2;++i) {
         auto& sphere=actor->mSphCc[i];
@@ -595,7 +694,10 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeExecuteHook,before_execute); POST(ShadeExecuteHook,after_execute);
     PRE(ShadeDeleteHook,before_delete);
     PRE(ShadeEventHook,no_event); PRE(ShadeOrderHook,no_order);
-    PRE(ShadeActionHook,combat_action); PRE(ShadeSwordHook,sword_collision);
+    PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
+    PRE(ShadeSwordHook,sword_collision);
+    POST(ShadeMotionHook,after_motion);
+    POST(ShadeMovementHook,before_movement);
     PRE(ShadeApproachHook,before_approach); POST(ShadeApproachHook,after_approach);
     POST(ShadeBulletHook,after_bullet);
     PRE(ShadeBulletDeleteHook,delete_bullet);
@@ -667,6 +769,8 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeOrderHook>(svc_hook);
     mods::hook::uninstall<ShadeActionHook>(svc_hook);
     mods::hook::uninstall<ShadeApproachHook>(svc_hook);
+    mods::hook::uninstall<ShadeMotionHook>(svc_hook);
+    mods::hook::uninstall<ShadeMovementHook>(svc_hook);
     mods::hook::uninstall<ShadeSwordHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletDeleteHook>(svc_hook);

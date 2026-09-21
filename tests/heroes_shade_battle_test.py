@@ -1,4 +1,4 @@
-"""Exercise encounter progression and damaging animation windows without game assets."""
+"""Exercise progression, counter/combo scheduling and target-relative movement."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -40,18 +40,94 @@ int main() {
     battle={};
     assert(battle.health==8 && battle.phase==0 && !battle.dying);
     for (unsigned phase=0;phase<phases.size();++phase) {
+        const int attack=phases[phase].attack;
+        if (attack<0) continue; // native projectile owns its collision
         const int step=phase==3 ? 2 : 0;
-        assert(!attack_window(phase,step,0,60));
-        assert(!attack_window(phase,step,23,60));
-        assert(attack_window(phase,step,24,60));
-        assert(attack_window(phase,step,40,60));
-        assert(!attack_window(phase,step,45,60));
-        assert(!attack_window(phase,step,60,60));
-        assert(!attack_window(phase,step+1,30,60));
-        assert(!attack_window(phase,step,10,0));
+        assert(!attack_window(attack,step,0,60));
+        assert(!attack_window(attack,step,23,60));
+        assert(attack_window(attack,step,24,60));
+        assert(attack_window(attack,step,40,60));
+        assert(!attack_window(attack,step,45,60));
+        assert(!attack_window(attack,step,60,60));
+        assert(!attack_window(attack,step+1,30,60));
+        assert(!attack_window(attack,step,10,0));
     }
-    assert(!attack_window(3,0,30,60)); // sidestep is not the cut
-    assert(!attack_window(3,1,30,60)); // neither is the roll
+    assert(!attack_window(back_slice,0,30,60)); // sidestep is not the cut
+    assert(!attack_window(back_slice,1,30,60)); // neither is the roll
+    assert(!attack_window(-1,0,30,60));
+    assert(!attack_window(sword,0,29,60));
+    assert(attack_window(sword,0,30,60));
+    assert(attack_window(sword,0,40,60));
+    assert(!attack_window(sword,0,41,60));
+    assert(!attack_window(sword,1,35,60));
+
+    // The native sequence keeps its number after the swing/block. These
+    // returns must admit another attack without cutting off the reaction.
+    for (int motion : {sword,27,24}) {
+        assert(!ready_motion(motion,0));
+        assert(ready_motion(motion,1));
+    }
+    assert(ready_motion(9,0));
+    for (int motion : {11,18,19,28,30,31}) assert(!ready_motion(motion,0));
+
+    // Every second confirmed block queues one riposte. Cancelling an attack
+    // does not forget the first block, and two separate pairs stay distinct.
+    AttackChain counter;
+    counter.blocked_sword();
+    assert(counter.blocks==1 && counter.counters==0);
+    counter.cancel();
+    counter.blocked_sword();
+    assert(counter.blocks==0 && counter.counters==1);
+    counter.blocked_sword(); counter.blocked_sword();
+    assert(counter.counters==2);
+    for (int n=0;n<2;++n) {
+        counter.begin(0);
+        assert(counter.next()==sword);
+        assert(counter.next()==back_slice);
+        assert(counter.next()==-1);
+    }
+    assert(counter.counters==0);
+
+    // Even the opening lesson gets both jumps and Back Slice, with two sword
+    // attacks per combo. The lesson's own move remains in the rotation.
+    for (unsigned phase=0;phase<phases.size();++phase) {
+        if (phases[phase].attack<0) continue;
+        AttackChain combo;
+        const int finishers[]={helm_splitter,back_slice,jump_strike,phases[phase].attack};
+        for (int finisher : finishers) {
+            combo.begin(phase);
+            assert(combo.next()==sword);
+            assert(combo.next()==sword);
+            assert(combo.next()==finisher);
+            assert(combo.next()==-1);
+        }
+    }
+
+    // Rotate the same maneuver through all directions: the roll must end on
+    // Link's opposite side at sword reach, not drift along Shade's old facing.
+    for (float angle : {0.0f,0.7f,1.57f,3.14f,-2.4f}) {
+        auto point=back_slice_offset(angle,280,0,0);
+        const auto finish=back_slice_offset(angle,280,1,1);
+        assert(point.x*finish.x+point.z*finish.z<0);
+        assert(std::abs(std::hypot(finish.x,finish.z)-150)<0.01f);
+        const auto seam0=back_slice_offset(angle,280,0,1);
+        const auto seam1=back_slice_offset(angle,280,1,0);
+        assert(std::hypot(seam0.x-seam1.x,seam0.z-seam1.z)<0.01f);
+        for (int step=0;step<2;++step) {
+            for (int frame=1;frame<=30;++frame) {
+                const auto target=back_slice_offset(angle,280,step,frame/30.0f);
+                const auto v=approach_velocity(target.x-point.x,target.z-point.z,14,0);
+                assert(std::hypot(v.x,v.z)<=14.001f);
+                point.x+=v.x; point.z+=v.z;
+            }
+        }
+        assert(std::hypot(point.x-finish.x,point.z-finish.z)<15);
+    }
+    // Never overshoot the target or divide by zero during the follow-up cut.
+    const auto stopped=approach_velocity(0,0,10,120);
+    assert(stopped.x==0 && stopped.z==0);
+    const auto near=approach_velocity(123,0,10,120);
+    assert(std::abs(near.x-3)<0.001f && near.z==0);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
@@ -61,4 +137,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror",
                     "-I", str(root/"src"), str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("Hero's Shade progression, replay and attack windows: passed")
+print("Hero's Shade progression, blocks, combos, readiness and targeted movement: passed")

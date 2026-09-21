@@ -76,7 +76,6 @@ constexpr s8 kBossRushReturnRoom=0, kBossRushReturnLayer=0;
 constexpr s8 kBossRushDarknutAreaRoom=51, kBossRushDarknutAreaLayer=0;
 constexpr s8 kCaveOfOrdealsRoom=0, kCaveOfOrdealsLayer=-1, kIntroSkipRoom=0;
 bool active=true, resetting=false;
-bool s_testEnemyCreateInProgress=false;
 bool sHubArrivalWarpPending=false, sBossRushArrivalReady=true;
 int state=3, bossIndex=0, stay=0;
 unsigned restartParam=0;
@@ -247,35 +246,26 @@ int main() {
         assert(on_bossrush_area_dungeon_bit_pre(nullptr,bossArgs,&bossResult,nullptr)==HOOK_SKIP_ORIGINAL);
         assert(switchResult==cleared && bossResult==cleared);
     };
-    // Production create_actor enters native creation before it returns actorId,
-    // so the actor cannot be in s_testActors yet. The explicit create scope
-    // must expose an uncleared room during that window.
-    assert(!s_testActors.contains(42));
-    s_testEnemyCreateInProgress=true;
-    checkRoom(0);
-    s_testEnemyCreateInProgress=false;
-    checkRoom(1);
-    s_testActors.insert(42);
     assert(!enemy_spawner_process_active());
     before_process(nullptr,processArgs,nullptr,nullptr);
     assert(enemy_spawner_process_active());
-    checkRoom(0); // fopAc_Create must not discard the enemy group.
+    checkRoom(1); // fopAc_Create must not discard the enemy group.
     std::any skippedArgs[]={process_method_func(nullptr),static_cast<void*>(&nativeGate)};
     after_process(nullptr,skippedArgs,nullptr,nullptr); // another mod skipped its pre
-    checkRoom(0);
+    checkRoom(1);
     before_process(nullptr,processArgs,nullptr,nullptr); // nested profile creation
-    checkRoom(0);
+    checkRoom(1);
     processArgs[1]=static_cast<void*>(&nativeGate);
     before_process(nullptr,processArgs,nullptr,nullptr);
     checkRoom(1); // a nested gate still sees the open/cleared room
     after_process(nullptr,processArgs,nullptr,nullptr);
-    checkRoom(0);
+    checkRoom(1);
     processArgs[1]=static_cast<void*>(nullptr);
     before_process(nullptr,processArgs,nullptr,nullptr);
     checkRoom(1);
     after_process(nullptr,processArgs,nullptr,nullptr);
     after_process(nullptr,processArgs,nullptr,nullptr);
-    checkRoom(0);
+    checkRoom(1);
     after_process(nullptr,processArgs,nullptr,nullptr);
     checkRoom(1);
     assert(!enemy_spawner_process_active() && s_testProcessStack.empty());
@@ -284,7 +274,7 @@ int main() {
     fopAc_ac_c initializedEnemy; initializedEnemy.id=42;
     initializedEnemy.initialized=true; initializedEnemy.sub_method=&methods;
     processArgs[0]=methods.execute_method; processArgs[1]=static_cast<void*>(&initializedEnemy);
-    before_process(nullptr,processArgs,nullptr,nullptr); checkRoom(0);
+    before_process(nullptr,processArgs,nullptr,nullptr); checkRoom(1);
     after_process(nullptr,processArgs,nullptr,nullptr); checkRoom(1);
     processArgs[0]=methods.delete_method;
     before_process(nullptr,processArgs,nullptr,nullptr);

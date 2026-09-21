@@ -43,13 +43,16 @@ const char* kBossRushReturnStage="D_MN09C";
 const char* kBossRushDarknutAreaStage="D_DLBR0";
 const char* kCaveOfOrdealsStage="D_SB01";
 const char* kIntroSkipStage="F_SP108";
-constexpr s16 kBossRushReturnPoint=0, kBossRushDarknutAreaPoint=-1, kCaveOfOrdealsPoint=0;
+constexpr s16 kBossRushReturnPoint=0, kCaveOfOrdealsPoint=0;
+@ARENA_POINT@
 constexpr s8 kBossRushReturnRoom=0, kBossRushReturnLayer=0;
 constexpr s8 kBossRushDarknutAreaRoom=51, kBossRushDarknutAreaLayer=0;
 constexpr s8 kCaveOfOrdealsRoom=0, kCaveOfOrdealsLayer=-1, kIntroSkipRoom=0;
 bool active=true, resetting=false;
 bool sHubArrivalWarpPending=false, sBossRushArrivalReady=true;
 int state=3, bossIndex=0, stay=0;
+unsigned restartParam=0;
+void dComIfGs_setRestartRoomParam(unsigned value) { restartParam=value; }
 std::string current="D_SB01";
 bool is_bossrush_game_mode_active() { return active; }
 bool ensure_bossrush_runtime_for_save() { return active; }
@@ -74,6 +77,10 @@ void reset_hub_actor_ids() {}
 void reset_direct_final_boss_state() {}
 void reset_bossrush_hazards() {}
 '''
+
+# Read the real destination point so the test catches accidental restart spawns.
+stubs = stubs.replace("@ARENA_POINT@", re.search(
+    r"constexpr s16 kBossRushDarknutAreaPoint = [^;]+;", source).group())
 
 functions = "\n".join(function(name) for name in (
     "is_bossrush_darknut_area_active", "on_bossrush_area_dungeon_bit_pre",
@@ -100,8 +107,25 @@ void route(const char* requested, const char* expected, int expectedState, int e
 }
 int main() {
     // Entrance exit goes to the private, empty Darknut room in hub state.
-    reset(); route("F_SP124","D_DLBR0",0,51,-1,0);
+    reset(); route("F_SP124","D_DLBR0",0,51,0,0);
     assert(!sHubArrivalWarpPending);
+    // dStage_playerInit uses restart coordinates and unmodified room bits for
+    // point -1. Other points use authored coordinates but can still inherit a
+    // warp/demo parameter override. Exercise the destination after that boundary.
+    for (unsigned stale : {0u, 0xCA000u, 0xCA009u}) {
+        reset(); restartParam=stale;
+        route("F_SP124","D_DLBR0",0,51,0,0);
+        assert(restartParam==0);
+        const unsigned authoredParam=0x10000u;
+        unsigned playerParam=kBossRushDarknutAreaPoint==-1 ? restartParam :
+            ((restartParam!=0 ? restartParam : authoredParam) & ~0x3fu) | kBossRushDarknutAreaRoom;
+        assert(playerParam==(authoredParam | 51u));
+        current=kBossRushDarknutAreaStage; stay=playerParam & 0x3f;
+        assert(is_bossrush_darknut_area_active());
+        dStage_objectNameInf info{fpcNm_B_TN_e}; auto* actor=&info;
+        on_bossrush_area_actor_name_post(nullptr,nullptr,&actor,nullptr);
+        assert(actor==nullptr);
+    }
     // Fairy exits on every tenth floor, including alternate fountain choices.
     for (int floor : {9,19,29,39,49}) {
         for (const char* spring : {"F_SP108","F_SP115","F_SP116","F_SP113"}) {

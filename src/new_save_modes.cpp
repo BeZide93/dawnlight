@@ -210,7 +210,9 @@ constexpr s8 kBossRushReturnLayer = 0;
 constexpr char kBossRushDarknutAreaStage[] = "D_DLBR0";
 constexpr char kBossRushDarknutAreaResourcePath[] = "/res/Stage/D_DLBR0/";
 constexpr char kBossRushDarknutSourceStage[] = "D_MN06B";
-constexpr s16 kBossRushDarknutAreaPoint = -1;
+// Use the room's authored Link spawn. -1 would reuse the Cave restart
+// position/parameters and can overwrite the destination room with room 0.
+constexpr s16 kBossRushDarknutAreaPoint = 0;
 constexpr s8 kBossRushDarknutAreaRoom = 51;
 constexpr s8 kBossRushDarknutAreaLayer = 0;
 constexpr u8 kBossRushStateHub = 0;
@@ -1978,6 +1980,9 @@ void warp_to_bossrush_hub_from_midna(daMidna_c* midna) {
 }
 
 void prepare_darknut_area_entry() {
+    // A positive spawn can still inherit a previous warp/demo mode unless
+    // the restart override is cleared before dStage_playerInit runs.
+    dComIfGs_setRestartRoomParam(0);
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
     set_bossrush_return_place();

@@ -39,6 +39,7 @@ struct Fighter {
     int attackTicks = 0;
     int cooldown = kAttackCooldown;
     shade::AttackChain chain;
+    shade::BladeMotion blade;
     float orbitAngle = 0;
     float orbitRadius = 150;
     bool swordContact = false;
@@ -140,6 +141,7 @@ DEFINE_HOOK(&daNpc_Kn_c::evtOrder, ShadeOrderHook);
 DEFINE_HOOK(&daNpc_Kn_c::action, ShadeActionHook);
 DEFINE_HOOK(&daNpc_Kn_c::calcSwordAttackMove, ShadeApproachHook);
 DEFINE_HOOK(&daNpc_Kn_c::ctrlMotion, ShadeMotionHook);
+DEFINE_HOOK(&daNpc_Kn_c::afterSetMotionAnm, ShadeAccessoryMotionHook);
 DEFINE_HOOK(&daNpc_Kn_c::beforeMove, ShadeMovementHook);
 DEFINE_HOOK(&daNpc_Kn_c::setCollisionSword, ShadeSwordHook);
 DEFINE_HOOK(&daObjKnBullet_c::Create, ShadeBulletHook);
@@ -210,6 +212,7 @@ void select_phase(daNpc_Kn_c* actor,Fighter& entry) {
     entry.offense=-1;
     entry.attackTicks=0;
     entry.chain.cancel();
+    entry.blade={};
     entry.chain.counters=0;
     entry.swordContact=false;
     entry.cooldown=attack_cooldown(entry);
@@ -317,6 +320,18 @@ void after_approach(ModContext*,void* args,void*,void*) {
         actor->speedF=kApproachSpeed;
     }
 }
+HookAction accessory_motion(ModContext*,void* args,void* result,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    if (!fighter(actor) || actor->mpPodModel) return HOOK_CONTINUE;
+    // The arena creates the lesson-7 heap, which has no sheath model or
+    // mPodBck matrix calculator. Native afterSetMotionAnm calls init(modify=true)
+    // for Mortal Draw and dereferences that absent calculator. The body motion
+    // has already been installed by setMotionAnm; only skip the absent prop.
+    actor->mPodAnmFlags=0;
+    actor->field_0x15cd=0;
+    *static_cast<bool*>(result)=true;
+    return HOOK_SKIP_ORIGINAL;
+}
 void after_motion(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
@@ -332,6 +347,11 @@ void start_attack(daNpc_Kn_c* actor,Fighter& entry) {
     entry.offense=entry.chain.next();
     entry.attackTicks=0;
     entry.animationStarted=false;
+    entry.blade={};
+    for (auto& sphere:actor->mSphCc) {
+        sphere.OffAtSetBit();
+        sphere.ClrAtHit();
+    }
     entry.jumpLaunched=false;
     const auto offset=actor->current.pos-daPy_getPlayerActorClass()->current.pos;
     entry.orbitAngle=std::atan2(offset.x,offset.z);
@@ -466,17 +486,38 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (entry->offense<0 && !sBattle.recovery && !sBattle.dying) return HOOK_CONTINUE;
-    const bool active=entry->offense>=0 && !sBattle.recovery && !sBattle.dying &&
-        shade::attack_window(entry->offense,actor->mMotionSeqMngr.getStepNo(),
-            actor->mpModelMorf[0]->getFrame(),actor->mpModelMorf[0]->getEndFrame());
-    for (unsigned i=0;i<2;++i) {
+    if (entry->offense<0 && !sBattle.recovery && !sBattle.dying) {
+        entry->blade={};
+        return HOOK_CONTINUE;
+    }
+    // Called after playAllAnm / setAttnPos / modelCalc: these are the same
+    // posed joints as the visible sword, not last tick's pose or a timer proxy.
+    std::array<cXyz,2> positions;
+    std::array<shade::BladePoint,2> points;
+    for (unsigned i=0;i<positions.size();++i) {
+        cXyz offset(60.0f+60*i,0,0);
+        MTXMultVec(actor->mpModelMorf[0]->getModel()->getAnmMtx(13),&offset,&positions[i]);
+        points[i]={positions[i].x,positions[i].y,positions[i].z};
+        auto& sphere=actor->mSphCc[i];
+        // A shield block also consumes this strike, so a blade resting against
+        // Link cannot deal delayed damage when the shield is lowered.
+        if ((sphere.ChkAtHit() || sphere.ChkAtShieldHit()) &&
+            sphere.GetAtHitAc()==daPy_getPlayerActorClass()) entry->blade.resolved=true;
+    }
+    const bool attacking=entry->offense>=0 && entry->animationStarted &&
+        actor->mMotionSeqMngr.getNo()==entry->offense &&
+        !sBattle.recovery && !sBattle.dying && !entry->deleting;
+    bool active=false;
+    if (attacking) {
+        active=entry->blade.sample(entry->offense,actor->mMotionSeqMngr.getStepNo(),
+                                   actor->mpModelMorf[0]->getFrame(),points);
+    } else entry->blade={};
+    for (unsigned i=0;i<positions.size();++i) {
         auto& sphere=actor->mSphCc[i];
         if (active) {
-            cXyz offset(60.0f+60*i,0,0),pos;
-            MTXMultVec(actor->mpModelMorf[0]->getModel()->getAnmMtx(13),&offset,&pos);
-            sphere.SetC(pos);
-            sphere.SetR(35);
+            sphere.SetC(positions[i]);
+            sphere.SetR(30); // native blade coverage; no delayed area-damage proxy
+            sphere.SetAtAtp(2);
             sphere.OnAtSetBit();
             dComIfG_Ccsp()->Set(&sphere);
         } else sphere.OffAtSetBit();
@@ -696,6 +737,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeEventHook,no_event); PRE(ShadeOrderHook,no_order);
     PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
     PRE(ShadeSwordHook,sword_collision);
+    PRE(ShadeAccessoryMotionHook,accessory_motion);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);
     PRE(ShadeApproachHook,before_approach); POST(ShadeApproachHook,after_approach);
@@ -769,6 +811,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeOrderHook>(svc_hook);
     mods::hook::uninstall<ShadeActionHook>(svc_hook);
     mods::hook::uninstall<ShadeApproachHook>(svc_hook);
+    mods::hook::uninstall<ShadeAccessoryMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMovementHook>(svc_hook);
     mods::hook::uninstall<ShadeSwordHook>(svc_hook);

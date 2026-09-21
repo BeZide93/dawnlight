@@ -42,24 +42,41 @@ int main() {
     for (unsigned phase=0;phase<phases.size();++phase) {
         const int attack=phases[phase].attack;
         if (attack<0) continue; // native projectile owns its collision
-        const int step=phase==3 ? 2 : 0;
-        assert(!attack_window(attack,step,0,60));
-        assert(!attack_window(attack,step,23,60));
-        assert(attack_window(attack,step,24,60));
-        assert(attack_window(attack,step,40,60));
-        assert(!attack_window(attack,step,45,60));
-        assert(!attack_window(attack,step,60,60));
-        assert(!attack_window(attack,step+1,30,60));
-        assert(!attack_window(attack,step,10,0));
+        const int step=attack==back_slice ? 2 : 0;
+        BladeMotion blade;
+        std::array<BladePoint,2> pose{{{60,100,0},{120,100,0}}};
+        assert(!blade.sample(attack,step,0,pose)); // seed from the actual model
+        pose[0].z=pose[1].z=12;
+        assert(blade.sample(attack,step,5,pose)); // early physical swing
+        assert(!blade.sample(attack,step,6,pose)); // held blade cannot hurt
+        pose[0].z=pose[1].z=24;
+        assert(blade.sample(attack,step,55,pose)); // late swing is not discarded
+        pose[0].z=pose[1].z=36;
+        assert(!blade.sample(attack,step,55,pose)); // frozen animation
+        pose[0].z=pose[1].z=1000;
+        assert(!blade.sample(attack,step,56,pose)); // discontinuity
+        blade.resolved=true;
+        pose[0].z=pose[1].z=1012;
+        assert(!blade.sample(attack,step,57,pose)); // shield/hit consumes strike
+        blade={}; // next attack starts afresh, without a sweep from the last one
+        assert(!blade.sample(attack,step,0,pose));
+        pose[0].z=pose[1].z=1024;
+        assert(blade.sample(attack,step,1,pose));
     }
-    assert(!attack_window(back_slice,0,30,60)); // sidestep is not the cut
-    assert(!attack_window(back_slice,1,30,60)); // neither is the roll
-    assert(!attack_window(-1,0,30,60));
-    assert(!attack_window(sword,0,29,60));
-    assert(attack_window(sword,0,30,60));
-    assert(attack_window(sword,0,40,60));
-    assert(!attack_window(sword,0,41,60));
-    assert(!attack_window(sword,1,35,60));
+    assert(!striking_step(back_slice,0)); // sidestep is not the cut
+    assert(!striking_step(back_slice,1)); // neither is the roll
+    assert(striking_step(back_slice,2));
+    assert(!striking_step(back_slice,3)); // ready pose
+    assert(!striking_step(-1,0));
+    assert(!striking_step(999,0));
+    BladeMotion ordinary;
+    std::array<BladePoint,2> ordinary_pose{{{60,100,0},{120,100,0}}};
+    assert(!ordinary.sample(sword,0,0,ordinary_pose));
+    assert(!ordinary.sample(sword,0,29,ordinary_pose));
+    assert(ordinary.sample(sword,0,30,ordinary_pose));
+    assert(ordinary.sample(sword,0,40,ordinary_pose));
+    assert(!ordinary.sample(sword,0,41,ordinary_pose));
+    assert(!ordinary.sample(sword,1,35,ordinary_pose));
 
     // The native sequence keeps its number after the swing/block. These
     // returns must admit another attack without cutting off the reaction.
@@ -137,4 +154,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror",
                     "-I", str(root/"src"), str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("Hero's Shade progression, blocks, combos, readiness and targeted movement: passed")
+print("Hero's Shade progression, blocks, combos, blade contact, readiness and targeted movement: passed")

@@ -64,17 +64,41 @@ struct AttackChain {
 inline bool jumping_attack(int attack) {
     return attack == helm_splitter || attack == jump_strike;
 }
-inline bool attack_window(int attack, int step, float frame, float end) {
-    if (end<=0 || frame<0) return false;
-    if (attack == sword) return step == 0 && frame >= 30 && frame <= 40;
+inline bool striking_step(int attack, int step) {
+    if (attack == sword) return step == 0;
     // The Back Slice sequence has a sidestep and roll before the sword cut.
     if (step!=(attack==back_slice ? 2 : 0)) return false;
-    bool known = false;
-    for (const auto& phase : phases) if (phase.attack == attack && attack >= 0) known = true;
-    if (!known) return false;
-    const float progress=frame/end;
-    return progress>=0.4f && progress<0.75f;
+    for (const auto& phase : phases) if (phase.attack == attack && attack >= 0) return true;
+    return false;
 }
+
+struct BladePoint { float x, y, z; };
+inline float blade_distance_squared(const BladePoint& a, const BladePoint& b) {
+    const float x=a.x-b.x, y=a.y-b.y, z=a.z-b.z;
+    return x*x+y*y+z*z;
+}
+struct BladeMotion {
+    std::array<BladePoint,2> previous{};
+    int attack = -1;
+    int step = -1;
+    float frame = -1;
+    bool resolved = false;
+
+    bool sample(int next_attack, int next_step, float next_frame,
+                const std::array<BladePoint,2>& points) {
+        const bool continuous=attack==next_attack && step==next_step && next_frame>frame;
+        const float travel=std::max(blade_distance_squared(points[0],previous[0]),
+                                    blade_distance_squared(points[1],previous[1]));
+        attack=next_attack; step=next_step; frame=next_frame; previous=points;
+        if (resolved || !continuous || !striking_step(attack,step)) return false;
+        if (attack==sword) return frame>=30 && frame<=40; // native ordinary swing
+        // Special animation lengths/windups differ. Use the posed blade's
+        // movement, not an invented common percentage of the animation. The
+        // native collision volumes decide whether that blade actually hits.
+        // Stationary poses and discontinuities (e.g. a warp) cannot hit.
+        return travel>=1.0f && travel<=300.0f*300.0f;
+    }
+};
 
 struct GroundPoint { float x, z; };
 inline GroundPoint back_slice_offset(float start_angle, float start_radius, int step, float progress) {

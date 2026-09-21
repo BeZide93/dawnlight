@@ -41,6 +41,16 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
   Hidden Skill openings do not count as blocks and retain native follow-ups.
 - Ordinary sword animations play at 1.65 times normal speed. Their damage window
   remains animation frames 30–40; both visible models share the playback speed.
+- Specials no longer share an arbitrary 40–75% animation window. After native
+  `modelCalc`, `setCollisionSword` samples both blade points from joint 13 of
+  the visible model (native local X offsets 60/120, radius 30). In the striking
+  step, a moving blade enables those native hit volumes at their current pose;
+  there is no delayed proximity hit. Idle poses, frozen frames, step/animation
+  changes and large discontinuities do not generate a strike. A player hit or
+  shield block consumes that attack's contact until the next attack starts.
+  Back Slice's sidestep and roll remain non-damaging. Damage power is explicitly
+  set when the volumes are registered, and Link's native shield/invulnerability
+  handling still decides the result of contact.
 - Gaps are six simulation ticks within a combo and 18 between combos. Doubles
   stagger their full-combo delay by 15 ticks per double. The old native random
   single-attack timer is disabled only for owned arena fighters, so it cannot
@@ -76,6 +86,11 @@ orb packet makes the projectile visible without replacing the room's particles.
 - All combat animations are in the native `KN_a` archive. Creation uses the
   lesson-7 resource pattern; `mType` changes only during combat execution and is
   restored to 6 before drawing/deletion. Resource unload matches resource load.
+- The lesson-7 heap has no sheath (`mpPodModel`) or sheath animation calculator.
+  For tracked fighters without that prop, `afterSetMotionAnm` skips only the
+  accessory update, clears accessory playback flags and returns success. Body
+  motion was already installed by `setMotionAnm`. Do not allocate an accessory
+  calculator outside actor heap creation merely to satisfy this callback.
 - During native reset, a temporary double index suppresses the automatic Golden
   Wolf spawn; the no-path parameter remains `0xff`. Afterwards the intended
   main/double identity and visibility are restored.
@@ -96,12 +111,24 @@ orb packet makes the projectile visible without replacing the room's particles.
   The plinth and fallback orb are original procedural geometry. No game asset
   files or Twilit Essentials code were added to the mod package.
 
+### Crash diagnosis (2026-09-21)
+
+The Android log `dusklight-20260921-230304.log` reports a null dereference in
+`mDoExt_bckAnm::init`, called by `daNpc_Kn_c::afterSetMotionAnm`, `setMotionAnm`
+and `ctrlMotion`. Mortal Draw selects a sheath animation whose native update
+uses `init(..., modify=true)`. That path dereferences the calculator normally
+allocated with `modify=false` only in the lesson-5 (`mType == 4`) heap. The arena
+creates lesson 7 and changes combat types at runtime, so that calculator was
+never created. The scoped accessory hook above prevents this specific path;
+it does not skip body animation or change ordinary story actors.
+
 ## Verification
 
 Automated checks:
 
 ```sh
 python tests/heroes_shade_battle_test.py
+python tests/heroes_shade_native_hooks_test.py
 python tests/enemy_spawner_scene_test.py
 python tests/bossrush_cave_routes_test.py
 python tests/bossrush_warp_test.py
@@ -109,11 +136,15 @@ python tests/bossrush_warp_test.py
 
 These cover phase success/failure, repeated-hit immunity, timeout/replay,
 every-second-block ripostes, combo rotation (including early jumps), native ready
-return steps, per-attack damage windows, bounded Back Slice trajectories across
+return steps, pose-based blade activation, bounded Back Slice trajectories across
 multiple starting angles, scene ownership, routes and existing warp behavior.
 A full Linux mod build also verifies compilation, linking and packaging.
 These checks cannot substitute for a device playtest of native animation and
 collision behavior.
+The native-hook fixture compiles the actual accessory/collision hook functions
+against a minimal engine API. It checks absent/present/unowned accessories,
+early and late moving blade contact, stationary poses, consumed shield/hit
+contacts, Back Slice's non-damaging steps and interrupted/recovering actors.
 
 Device checklist (still required):
 
@@ -129,7 +160,10 @@ Device checklist (still required):
    Check Back Slice from several directions, while moving and near a wall;
    he should circle Link and turn into the cut. Dodge jumps after takeoff.
 5. Test every counter above, particularly Ending Blow and the head-lock follow-up.
-   Check attack collisions and both doubles in the final phases.
+   Check attack collisions and both doubles in the final phases. During special
+   attacks, check unguarded blade contact and a shield block followed by lowering
+   the shield: no delayed second hit should appear. Let Mortal Draw run repeatedly
+   and replay the encounter to exercise the previously crashing accessory path.
 6. Win and replay; leave/warp during a projectile or double spawn; re-enter and
    reload a save. Confirm Link stays visible and no enemy survives in the hub.
 7. Visit a normal Hidden Skill lesson on a story save; confirm it is unchanged.

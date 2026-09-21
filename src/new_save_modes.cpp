@@ -4485,15 +4485,18 @@ result = mods::hook_add_pre<BossRushAreaResourceHook>(svc_hook, on_bossrush_area
         return mods::set_error(error, result, "failed to install Boss Rush area audio alias");
     }
 
-    // Do not override the borrowed arena's dungeon/switch queries globally.
-    // PR23's working Enemy Spawner did not install these hooks; forcing every
-    // room switch/boss bit to "cleared" makes standalone enemies immediately
-    // retire and breaks NPC initialization (notably Goron).
-    result = mods::hook_add_post<BossRushAreaActorNameHook>(svc_hook, on_bossrush_area_actor_name_post);
+    // Match the working PR23 Darknut-room setup: keep the borrowed room in
+    // its cleared state through the room's normal boss/switch queries. Do not
+    // filter actor profile lookup globally; that also affects actors created
+    // later through the Enemy Spawner.
+    result = mods::hook_add_pre<BossRushAreaDungeonBitHook>(svc_hook, on_bossrush_area_dungeon_bit_pre);
     if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install Boss Rush area actor filter");
+        return mods::set_error(error, result, "failed to install Boss Rush area completion state");
     }
-
+    result = mods::hook_add_pre<BossRushAreaSwitchHook>(svc_hook, on_bossrush_area_switch_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area gate state");
+    }
     result = mods::hook_add_post<FileSelectNameInput2Hook>(
         svc_hook, on_file_select_name_input2_post);
     if (result != MOD_OK) {

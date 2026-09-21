@@ -719,7 +719,7 @@ HookAction on_bossrush_area_dungeon_bit_pre(ModContext*, void* args, void* retva
         bit != dSv_memBit_c::STAGE_BOSS_DEMO) {
         return HOOK_CONTINUE;
     }
-    *static_cast<s32*>(retval) = enemy_spawner_process_active() ? 0 : 1;
+    *static_cast<s32*>(retval) = 1;
     return HOOK_SKIP_ORIGINAL;
 }
 
@@ -732,12 +732,10 @@ HookAction on_bossrush_area_switch_pre(ModContext*, void* args, void* retval, vo
     if ((room != kBossRushDarknutAreaRoom && room != -1) || bit < 0 || bit >= 0xff) {
         return HOOK_CONTINUE;
     }
-    // Initialize the room's gate in its open state rather than triggering the
-    // native post-Darknut opening event after Link has already appeared.
-    // Test enemies need an uncleared room during base creation and execution;
-    // otherwise fopAc_Create rejects the entire enemy group. Keep the cleared
-    // state for native room actors so spawning cannot restart the gate demo.
-    *static_cast<BOOL*>(retval) = enemy_spawner_process_active() ? FALSE : TRUE;
+    // Match the working PR23 hub behavior: the borrowed Darknut room stays
+    // permanently cleared. Enemy Spawner actors are standalone actors and must
+    // not temporarily reopen the room's native switches/events during creation.
+    *static_cast<BOOL*>(retval) = TRUE;
     return HOOK_SKIP_ORIGINAL;
 }
 

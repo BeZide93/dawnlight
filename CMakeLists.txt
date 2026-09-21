@@ -100,6 +100,7 @@ add_mod(dawnlight_mod
         src/new_save_modes.cpp
         src/boss_portal_symbols.cpp
         src/boss_portal_mirrors.cpp
+        src/heroes_shade_encounter.cpp
         src/save_compat.cpp
         src/save_state.cpp
         src/stamina.cpp

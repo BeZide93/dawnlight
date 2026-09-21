@@ -237,6 +237,15 @@ ModResult install_test_hooks() {
 
 }  // namespace
 
+ModResult create_standalone_actor(ProfileName profile, const ActorSpawnParams& params, ActorId& id) {
+    if (!svc_actor || !svc_actor->create_actor) return MOD_UNAVAILABLE;
+    const auto hooks = install_test_hooks();
+    if (hooks != MOD_OK) return hooks;
+    const auto result = create_test_actor_in_player_layer(daAlink_getAlinkActorClass(), profile, params, id);
+    if (result == MOD_OK) s_testActors.insert(id);
+    return result;
+}
+
 bool enemy_spawner_process_active() {
     return !s_testProcessStack.empty() && s_testProcessStack.back().second;
 }

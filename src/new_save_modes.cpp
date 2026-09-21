@@ -1,5 +1,8 @@
 #include "config.hpp"
 #include "enemy_spawner.hpp"
+#include "packet_chain.hpp"
+#include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
+#include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "boss_portal_symbols.hpp"
 #include "boss_portal_mirrors.hpp"
 #include "save_compat.hpp"
@@ -85,6 +88,9 @@ DEFINE_HOOK(&Z2SceneMgr::setSceneName, BossRushAreaAudioHook);
 DEFINE_HOOK(&dSv_memBit_c::isDungeonItem, BossRushAreaDungeonBitHook);
 DEFINE_HOOK(&dSv_info_c::isSwitch, BossRushAreaSwitchHook);
 DEFINE_HOOK(&dStage_searchName, BossRushAreaActorNameHook);
+DEFINE_HOOK(&J3DDrawBuffer::drawHead, ArenaDrawHeadHook);
+DEFINE_HOOK(&J3DDrawBuffer::drawTail, ArenaDrawTailHook);
+DEFINE_HOOK(&J3DMatPacket::draw, ArenaMaterialDrawHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
@@ -707,10 +713,45 @@ bool is_bossrush_darknut_area_active() {
            is_bossrush_darknut_area_stage();
 }
 
+// The Android crash resolves to Aurora's fixed index staging buffer. Cyclic
+// J3D lists are one possible source of unbounded index submissions. Keep this
+// defensive repair local to the connector and log actual repairs so a device
+// run can distinguish this case from a different renderer failure.
+unsigned sArenaPacketRepairsLogged = 0;
+void check_arena_packet_chain(J3DPacket* packet, const char* kind) {
+    if (break_packet_cycle(packet) && sArenaPacketRepairsLogged < 4) {
+        ++sArenaPacketRepairsLogged;
+        char message[160];
+        std::snprintf(message, sizeof(message),
+            "Dawnlight arena: repaired cyclic %s draw queue (%p)",
+            kind, static_cast<void*>(packet));
+        svc_log->warn(mod_ctx, message);
+    }
+}
+
+HookAction on_arena_draw_buffer_pre(ModContext*, void* args, void*, void*) {
+    if (!is_bossrush_darknut_area_active() || args == nullptr) return HOOK_CONTINUE;
+    const auto* buffer = mods::arg<const J3DDrawBuffer*>(args, 0);
+    if (buffer != nullptr && buffer->mpBuffer != nullptr) {
+        for (u32 i = 0; i < buffer->mEntryTableSize; ++i) {
+            check_arena_packet_chain(buffer->mpBuffer[i], "material");
+        }
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction on_arena_material_draw_pre(ModContext*, void* args, void*, void*) {
+    if (!is_bossrush_darknut_area_active() || args == nullptr) return HOOK_CONTINUE;
+    auto* material = mods::arg<J3DMatPacket*>(args, 0);
+    if (material != nullptr) check_arena_packet_chain(material->getShapePacket(), "shape");
+    return HOOK_CONTINUE;
+}
+
 // Supply the cleared-room state before native actors are created. This also
 // works on save reload and does not change the real Temple of Time boss flags.
 HookAction on_bossrush_area_dungeon_bit_pre(ModContext*, void* args, void* retval, void*) {
-    if (!is_bossrush_darknut_area_active() || args == nullptr || retval == nullptr) {
+    if (!is_bossrush_darknut_area_active() || args == nullptr || retval == nullptr ||
+        enemy_spawner_process_active()) {
         return HOOK_CONTINUE;
     }
     const int bit = mods::arg<int>(args, 1);
@@ -724,17 +765,19 @@ HookAction on_bossrush_area_dungeon_bit_pre(ModContext*, void* args, void* retva
 }
 
 HookAction on_bossrush_area_switch_pre(ModContext*, void* args, void* retval, void*) {
-    if (!is_bossrush_darknut_area_active() || args == nullptr || retval == nullptr) {
+    if (!is_bossrush_darknut_area_active() || args == nullptr || retval == nullptr ||
+        enemy_spawner_process_active()) {
         return HOOK_CONTINUE;
     }
     const int bit = mods::arg<int>(args, 1);
     const int room = mods::arg<int>(args, 2);
-    if ((room != kBossRushDarknutAreaRoom && room != -1) || bit < 0 || bit >= 0xff) {
+    if (room != kBossRushDarknutAreaRoom || bit < 0 || bit >= 0xff) {
         return HOOK_CONTINUE;
     }
-    // Match the working PR23 hub behavior: the borrowed Darknut room stays
-    // permanently cleared. Enemy Spawner actors are standalone actors and must
-    // not temporarily reopen the room's native switches/events during creation.
+    // Initialize the room's gate in its open state rather than triggering the
+    // native post-Darknut opening event after Link has already appeared.
+    // Manually spawned actors use native queries (above), including activation
+    // switches and invalid-switch sentinels. Do not force all their switches off.
     *static_cast<BOOL*>(retval) = TRUE;
     return HOOK_SKIP_ORIGINAL;
 }
@@ -1983,6 +2026,7 @@ void warp_to_bossrush_hub_from_midna(daMidna_c* midna) {
 }
 
 void prepare_darknut_area_entry() {
+    sArenaPacketRepairsLogged = 0;
     // A positive spawn can still inherit a previous warp/demo mode unless
     // the restart override is cleared before dStage_playerInit runs.
     dComIfGs_setRestartRoomParam(0);
@@ -4472,23 +4516,20 @@ ModResult register_new_save_modes(ModError* error) {
 
     // The connector uses a private stage name but reuses the original
     // Darknut room archive and scene audio.
-result = mods::hook_add_pre<BossRushAreaResourceHook>(svc_hook, on_bossrush_area_resource_path_pre);
+    result = mods::hook_add_pre<BossRushAreaResourceHook>(
+        svc_hook, on_bossrush_area_resource_path_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area resource alias");
     }
     result = mods::hook_add_pre<BossRushAreaRoomDataHook>(svc_hook, on_bossrush_area_room_data_pre);
     if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install Boss Rush area room data alias");
+        return mods::set_error(error, result, "failed to install Boss Rush area room alias");
     }
     result = mods::hook_add_pre<BossRushAreaAudioHook>(svc_hook, on_bossrush_area_audio_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area audio alias");
     }
 
-    // Match the working PR23 Darknut-room setup: keep the borrowed room in
-    // its cleared state through the room's normal boss/switch queries. Do not
-    // filter actor profile lookup globally; that also affects actors created
-    // later through the Enemy Spawner.
     result = mods::hook_add_pre<BossRushAreaDungeonBitHook>(svc_hook, on_bossrush_area_dungeon_bit_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area completion state");
@@ -4497,6 +4538,24 @@ result = mods::hook_add_pre<BossRushAreaResourceHook>(svc_hook, on_bossrush_area
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush area gate state");
     }
+    result = mods::hook_add_pre<ArenaDrawHeadHook>(svc_hook, on_arena_draw_buffer_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install arena draw queue guard");
+    }
+    result = mods::hook_add_pre<ArenaDrawTailHook>(svc_hook, on_arena_draw_buffer_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install arena draw queue guard");
+    }
+    result = mods::hook_add_pre<ArenaMaterialDrawHook>(svc_hook, on_arena_material_draw_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install arena draw queue guard");
+    }
+
+    result = mods::hook_add_post<BossRushAreaActorNameHook>(svc_hook, on_bossrush_area_actor_name_post);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Boss Rush area actor filter");
+    }
+
     result = mods::hook_add_post<FileSelectNameInput2Hook>(
         svc_hook, on_file_select_name_input2_post);
     if (result != MOD_OK) {
@@ -4555,6 +4614,9 @@ void shutdown_new_save_modes() {
     mods::hook_uninstall<BossRushAreaAudioHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaDungeonBitHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaSwitchHook>(svc_hook);
+    mods::hook_uninstall<ArenaMaterialDrawHook>(svc_hook);
+    mods::hook_uninstall<ArenaDrawTailHook>(svc_hook);
+    mods::hook_uninstall<ArenaDrawHeadHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaActorNameHook>(svc_hook);
     if (svc_game_mode != nullptr) {
         ModResult result = svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId);

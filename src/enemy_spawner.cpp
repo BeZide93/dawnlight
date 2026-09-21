@@ -1,7 +1,7 @@
 #include "enemy_spawner.hpp"
 
-#include "service_imports.hpp"
 #include "save_state.hpp"
+#include "service_imports.hpp"
 
 #include "SSystem/SComponent/c_math.h"
 #include "d/actor/d_a_alink.h"
@@ -17,6 +17,8 @@
 #include <array>
 #include <cstring>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace dawnlight {
 namespace {
@@ -100,6 +102,9 @@ DEFINE_HOOK(&daE_ZS_c::executeAppear, StaltroopAppearHook);
 DEFINE_HOOK(&daE_ZS_c::executeWait, StaltroopWaitHook);
 
 std::unordered_set<ActorId> s_testActors;
+// fpcMtd_Method nests (base actor creation calls profile creation). Track the
+// innermost process so a nested gate/NPC never inherits a test enemy's state.
+std::vector<std::pair<void*, bool>> s_testProcessStack;
 bool s_processHookInstalled = false;
 bool s_appearHookInstalled = false;
 bool s_waitHookInstalled = false;
@@ -110,6 +115,9 @@ bool is_test_actor(fopAc_ac_c* actor) {
 
 HookAction before_process(ModContext*, void* args, void*, void*) {
     auto* process = mods::arg<void*>(args, 1);
+    // The room's enemy-appearance switch is read in base creation, before the
+    // first fopAcM_IsActor check can succeed. Process IDs already exist here.
+    s_testProcessStack.emplace_back(args, process != nullptr && s_testActors.contains(fpcM_GetID(process)));
     if (process == nullptr || !fopAcM_IsActor(process)) return HOOK_CONTINUE;
     auto* actor = static_cast<fopAc_ac_c*>(process);
     if (!is_test_actor(actor)) return HOOK_CONTINUE;
@@ -133,6 +141,13 @@ HookAction before_process(ModContext*, void* args, void*, void*) {
         }
     }
     return HOOK_CONTINUE;
+}
+
+void after_process(ModContext*, void* args, void*, void*) {
+    // Another mod may skip the call before our pre callback is reached.
+    if (!s_testProcessStack.empty() && s_testProcessStack.back().first == args) {
+        s_testProcessStack.pop_back();
+    }
 }
 
 HookAction before_staltroop_appear(ModContext*, void* args, void*, void*) {
@@ -159,6 +174,11 @@ ModResult install_test_hooks() {
     if (!s_processHookInstalled) {
         const auto result = mods::hook::add_pre<SpawnerProcessHook>(svc_hook, before_process);
         if (result != MOD_OK) return result;
+        const auto postResult = mods::hook::add_post<SpawnerProcessHook>(svc_hook, after_process);
+        if (postResult != MOD_OK) {
+            mods::hook::uninstall<SpawnerProcessHook>(svc_hook);
+            return postResult;
+        }
         s_processHookInstalled = true;
     }
     if (!s_appearHookInstalled) {
@@ -175,6 +195,10 @@ ModResult install_test_hooks() {
 }
 
 }  // namespace
+
+bool enemy_spawner_process_active() {
+    return !s_testProcessStack.empty() && s_testProcessStack.back().second;
+}
 
 bool enemy_spawner_blocked_in_bossrush_hub() {
     constexpr char kBossRushHubStage[] = "D_MN09C";
@@ -193,7 +217,9 @@ ModResult spawn_enemy_for_testing(int profileIndex) {
         return MOD_INVALID_ARGUMENT;
     }
     if (svc_actor == nullptr || svc_actor->create_actor == nullptr) return MOD_UNAVAILABLE;
+    // Keep the existing mirror-hub restriction; the separate empty arena is allowed.
     if (enemy_spawner_blocked_in_bossrush_hub()) return MOD_UNAVAILABLE;
+
     auto* link = daAlink_getAlinkActorClass();
     if (link == nullptr) return MOD_UNAVAILABLE;
 

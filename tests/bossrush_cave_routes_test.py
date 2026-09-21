@@ -20,6 +20,9 @@ def function(name, source=source):
 
 
 stubs = r'''
+#include "packet_chain.hpp"
+using dawnlight::break_packet_cycle;
+#include <cstdio>
 #include <cassert>
 #include <cstring>
 #include <string>
@@ -49,6 +52,17 @@ int fopAcM_GetName(fopAc_ac_c* p) { return p->profile; }
 std::unordered_set<ActorId> s_testActors;
 std::vector<std::pair<void*, bool>> s_testProcessStack;
 struct ModContext {}; struct dSv_save_c {};
+using u32 = unsigned;
+struct J3DPacket {
+    J3DPacket* next=nullptr;
+    J3DPacket* getNextPacket() { return next; }
+    void setNextPacket(J3DPacket* p) { next=p; }
+};
+struct J3DDrawBuffer { J3DPacket** mpBuffer; u32 mEntryTableSize; };
+struct J3DMatPacket { J3DPacket* shape; J3DPacket* getShapePacket() { return shape; } };
+int repairMessages=0;
+struct Logger { void warn(ModContext*, const char*) { ++repairMessages; } } logger;
+Logger* svc_log=&logger; ModContext* mod_ctx=nullptr;
 struct dMenu_save_c { int mEndStatus=2; int getEndStatus() { return mEndStatus; } };
 struct dGameover_c { bool mIsDemoSave=false; dMenu_save_c* dMs_c=nullptr; };
 int gameOverStatus=0;
@@ -75,6 +89,7 @@ constexpr s16 kBossRushReturnPoint=0, kCaveOfOrdealsPoint=0;
 constexpr s8 kBossRushReturnRoom=0, kBossRushReturnLayer=0;
 constexpr s8 kBossRushDarknutAreaRoom=51, kBossRushDarknutAreaLayer=0;
 constexpr s8 kCaveOfOrdealsRoom=0, kCaveOfOrdealsLayer=-1, kIntroSkipRoom=0;
+unsigned sArenaPacketRepairsLogged=0;
 bool active=true, resetting=false;
 bool sHubArrivalWarpPending=false, sBossRushArrivalReady=true;
 int state=3, bossIndex=0, stay=0;
@@ -117,7 +132,8 @@ functions = "\n".join(function(name, spawner) for name in (
 )) + "\n"
 assert "add_post<SpawnerProcessHook>(svc_hook, after_process)" in spawner
 functions += "\n".join(function(name) for name in (
-    "is_bossrush_darknut_area_active", "on_bossrush_area_dungeon_bit_pre",
+    "is_bossrush_darknut_area_active", "check_arena_packet_chain",
+    "on_arena_draw_buffer_pre", "on_arena_material_draw_pre", "on_bossrush_area_dungeon_bit_pre",
     "on_bossrush_area_switch_pre", "on_bossrush_area_actor_name_post",
     "prepare_darknut_area_entry", "prepare_cave_entrance_return",
     "prepare_hub_return_from_cave", "set_next_stage_args", "on_cave_gameover_close_pre", "on_set_next_stage_pre",
@@ -141,6 +157,30 @@ void route(const char* requested, const char* expected, int expectedState, int e
     assert(mods::arg<float>(args,4)==7.5 && mods::arg<unsigned>(args,5)==9);
 }
 int main() {
+    J3DPacket a,b; a.next=&b; b.next=&a;
+    J3DPacket* buckets[]={nullptr,&a};
+    J3DDrawBuffer buffer{buckets,2}; J3DMatPacket material{&a};
+    std::any drawArgs[]={static_cast<const J3DDrawBuffer*>(&buffer)};
+    std::any materialArgs[]={&material};
+    for (const char* stage : {"D_MN06B","D_SB01","D_MN09C"}) {
+        reset(stage,51,0);
+        assert(on_arena_draw_buffer_pre(nullptr,drawArgs,nullptr,nullptr)==HOOK_CONTINUE);
+        assert(on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr)==HOOK_CONTINUE);
+        assert(b.next==&a && repairMessages==0);
+    }
+    reset("D_DLBR0",51,0); active=false;
+    on_arena_draw_buffer_pre(nullptr,drawArgs,nullptr,nullptr);
+    on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr);
+    assert(b.next==&a && repairMessages==0);
+    active=true;
+    assert(on_arena_draw_buffer_pre(nullptr,drawArgs,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(a.next==&b && b.next==nullptr && repairMessages==1);
+    b.next=&a;
+    assert(on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(a.next==&b && b.next==nullptr && repairMessages==2);
+    on_arena_material_draw_pre(nullptr,materialArgs,nullptr,nullptr);
+    assert(repairMessages==2);
+
     // Entrance exit goes to the private, empty Darknut room in hub state.
     reset(); route("F_SP124","D_DLBR0",0,51,0,0);
     assert(!sHubArrivalWarpPending);
@@ -197,7 +237,7 @@ int main() {
     for (int scenario=0;scenario<5;++scenario) {
         reset();
         if (scenario==0) active=false;
-        if (scenario==1) current="D_DLBR0";
+        if (scenario==1) current="D_MN06B";
         if (scenario==2) gameOverType=1;
         if (scenario==3) resetting=true;
         if (scenario==4) gameOverType=2;
@@ -219,7 +259,7 @@ int main() {
     reset("D_DLBR0",51,0); route("D_MN09C","D_MN09C",0,12,42,2);
     // Vanilla saves, actual Darknut fights and title/reset paths pass through.
     reset(); active=false; route("F_SP124","F_SP124",3,12,42,2);
-    reset("D_DLBR0",51,2); route("D_MN06","D_MN06",2,12,42,2);
+    reset("D_MN06B",51,2); route("D_MN06","D_MN06",2,12,42,2);
     reset(); route("TITLE","TITLE",3,12,42,2);
     reset(); resetting=true; route("F_SP124","F_SP124",3,12,42,2);
     // Completion/gate overrides must be in effect before actor creation and
@@ -230,42 +270,57 @@ int main() {
         assert(on_bossrush_area_dungeon_bit_pre(nullptr,args,&result,nullptr)==HOOK_SKIP_ORIGINAL);
         assert(result==1);
     }
-    for (int room : {51,-1}) {
+    for (int room : {51}) {
         std::any args[]={nullptr,2,room}; int result=0;
         assert(on_bossrush_area_switch_pre(nullptr,args,&result,nullptr)==HOOK_SKIP_ORIGINAL);
         assert(result==1);
     }
+    for (int room : {-1,0,50,52}) {
+        std::any args[]={nullptr,2,room}; int result=-1;
+        assert(on_bossrush_area_switch_pre(nullptr,args,&result,nullptr)==HOOK_CONTINUE);
+        assert(result==-1);
+    }
+    for (int bit : {-1,255,256}) {
+        std::any args[]={nullptr,bit,51}; int result=-1;
+        assert(on_bossrush_area_switch_pre(nullptr,args,&result,nullptr)==HOOK_CONTINUE);
+        assert(result==-1);
+    }
     // Simulate the exact first-create boundary: the process is registered but
-    // does not have actor_type yet. Native enemy admission must see switch off.
+    // does not have actor_type yet. Its queries must use the native save state.
     process_class testEnemy{42}, nativeGate{43};
+    s_testActors.insert(42);
     std::any processArgs[]={process_method_func(nullptr),static_cast<void*>(&testEnemy)};
     std::any switchArgs[]={nullptr,2,51}; int switchResult=-1;
     std::any bossArgs[]={nullptr,3}; int bossResult=-1;
     auto checkRoom = [&](int cleared) {
-        assert(on_bossrush_area_switch_pre(nullptr,switchArgs,&switchResult,nullptr)==HOOK_SKIP_ORIGINAL);
-        assert(on_bossrush_area_dungeon_bit_pre(nullptr,bossArgs,&bossResult,nullptr)==HOOK_SKIP_ORIGINAL);
-        assert(switchResult==cleared && bossResult==cleared);
+        for (int native : {0,1}) {
+            switchResult=native; bossResult=native;
+            const auto action=cleared ? HOOK_SKIP_ORIGINAL : HOOK_CONTINUE;
+            assert(on_bossrush_area_switch_pre(nullptr,switchArgs,&switchResult,nullptr)==action);
+            assert(on_bossrush_area_dungeon_bit_pre(nullptr,bossArgs,&bossResult,nullptr)==action);
+            assert(switchResult==(cleared ? 1 : native) && bossResult==switchResult);
+        }
     };
     assert(!enemy_spawner_process_active());
     before_process(nullptr,processArgs,nullptr,nullptr);
     assert(enemy_spawner_process_active());
-    checkRoom(1); // fopAc_Create must not discard the enemy group.
+    checkRoom(0); // fopAc_Create uses native admission, not the forced cleared state.
     std::any skippedArgs[]={process_method_func(nullptr),static_cast<void*>(&nativeGate)};
     after_process(nullptr,skippedArgs,nullptr,nullptr); // another mod skipped its pre
-    checkRoom(1);
+    checkRoom(0);
     before_process(nullptr,processArgs,nullptr,nullptr); // nested profile creation
-    checkRoom(1);
+    checkRoom(0);
     processArgs[1]=static_cast<void*>(&nativeGate);
     before_process(nullptr,processArgs,nullptr,nullptr);
     checkRoom(1); // a nested gate still sees the open/cleared room
     after_process(nullptr,processArgs,nullptr,nullptr);
-    checkRoom(1);
+    checkRoom(0);
     processArgs[1]=static_cast<void*>(nullptr);
     before_process(nullptr,processArgs,nullptr,nullptr);
     checkRoom(1);
     after_process(nullptr,processArgs,nullptr,nullptr);
     after_process(nullptr,processArgs,nullptr,nullptr);
-    checkRoom(1);
+    checkRoom(0);
     after_process(nullptr,processArgs,nullptr,nullptr);
     checkRoom(1);
     assert(!enemy_spawner_process_active() && s_testProcessStack.empty());
@@ -274,7 +329,7 @@ int main() {
     fopAc_ac_c initializedEnemy; initializedEnemy.id=42;
     initializedEnemy.initialized=true; initializedEnemy.sub_method=&methods;
     processArgs[0]=methods.execute_method; processArgs[1]=static_cast<void*>(&initializedEnemy);
-    before_process(nullptr,processArgs,nullptr,nullptr); checkRoom(1);
+    before_process(nullptr,processArgs,nullptr,nullptr); checkRoom(0);
     after_process(nullptr,processArgs,nullptr,nullptr); checkRoom(1);
     processArgs[0]=methods.delete_method;
     before_process(nullptr,processArgs,nullptr,nullptr);
@@ -286,7 +341,7 @@ int main() {
         on_bossrush_area_actor_name_post(nullptr,nullptr,&result,nullptr);
         assert((result!=nullptr)==(profile==testDoorProfile));
     }
-    for (const char* stage : {"D_DLBR0","D_SB01","D_MN09C"}) {
+    for (const char* stage : {"D_MN06B","D_SB01","D_MN09C"}) {
         reset(stage,51,0);
         std::any args[]={nullptr,3,51}; int result=0;
         assert(on_bossrush_area_dungeon_bit_pre(nullptr,args,&result,nullptr)==HOOK_CONTINUE);
@@ -308,5 +363,5 @@ with tempfile.TemporaryDirectory() as temporary:
     cpp = folder / "routes.cpp"
     binary = folder / "routes"
     cpp.write_text(stubs + functions + cases)
-    subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", str(cpp), "-o", str(binary)], check=True)
+    subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-I", str(Path(__file__).resolve().parents[1] / "src"), str(cpp), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

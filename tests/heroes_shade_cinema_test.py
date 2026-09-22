@@ -190,7 +190,7 @@ checks = r'''
 void reset() {
     boss={}; body={}; player={}; camera={}; message={}; sFighters={};
     sCinema={}; sCinemaRuntime={};
-    wolf={};wolf.mAnm_p=&wolf.animation;wolfReady=wolfPending=true;
+    wolf={};wolf.id=43;wolf.mAnm_p=&wolf.animation;wolfReady=wolfPending=true;
     sShadeWolf={};sShadeWolf.id=43;wolfDeletes=0;
     mDoGph_gInf_c::enabled=false;mDoGph_gInf_c::rate=0;mDoGph_gInf_c::speed=0;
     audio={};sShadeMusic={};hasAudio=inArena=true;nextStage=false;
@@ -364,15 +364,25 @@ int main() {
     message.status=1; tick(); tick(); assert(message.msg_idx==104);
     message.status=1; tick();
     assert(sCinema.shot==shade::Shot::Depart && deletes==0);
-    float alpha=1;
+    bool sawDeparture=false;
     for (int i=0;i<400 && sCinema.shot==shade::Shot::Depart;++i) {
         const bool before=sShadeWolf.swapped;
+        const bool wasVisible=sShadeWolf.visible();
         tick();
         if (!before && sShadeWolf.swapped) assert(mDoGph_gInf_c::rate==1 && wolf.mAnm==2);
-        if (sShadeWolf.swapped) { assert(sShadeWolf.opacity<=alpha);alpha=sShadeWolf.opacity; }
+        if (wasVisible && !sShadeWolf.visible()) {
+            assert(sShadeWolf.departed && mDoGph_gInf_c::rate==1);
+            assert(wolf.howls==1 && wolfDeletes==1 && wolf.mHide);
+            sawDeparture=true;
+            // Exercise deferred deletion: later lookups can no longer access it.
+            wolfReady=wolfPending=false;
+        }
+        auto* w=&wolf;int result=0;
+        assert(wolf_draw(nullptr,&w,&result,nullptr)==
+            (sShadeWolf.visible() ? HOOK_CONTINUE : HOOK_SKIP_ORIGINAL));
     }
     assert(sCinema.shot==shade::Shot::Afterglow && deletes==0 && boss.mNoDraw);
-    assert(!sShadeWolf.active && sShadeWolf.opacity==0 && !mDoGph_gInf_c::enabled);
+    assert(sawDeparture && !sShadeWolf.active && !sShadeWolf.visible() && !mDoGph_gInf_c::enabled);
     for (int i=0;i<30;++i) tick();
     assert(deletes==1 && eventResets==1 && player.cancels==1 && !sCinema.active());
     assert(titleStarts==0); // no title during the victory scene
@@ -418,6 +428,29 @@ int main() {
     reset();wolfReady=false;sCinema.begin(false);
     for(int i=0;i<180;++i) tick();
     assert(deletes==1 && wolfDeletes==1 && !sCinema.active() && player.starts==0);
+    // Pause/UI during the departure howl and final white flash must freeze
+    // animation, white-screen progress and deletion. Abort remains idempotent.
+    for (bool duringFlash : {false,true}) {
+        reset();accept(true);sCinema.enter(shade::Shot::Depart);sShadeWolf.begin(&boss,false);
+        for(int i=0;i<400;++i) {
+            tick();
+            if(sShadeWolf.departing && sShadeWolf.howling &&
+               (duringFlash ? sShadeWolf.flashStart>=0 : sShadeWolf.flashStart<0)) break;
+        }
+        assert(sShadeWolf.departing && sShadeWolf.howling && sShadeWolf.visible());
+        const int time=sCinema.ticks;const float frame=wolf.animation.frame;
+        const float white=mDoGph_gInf_c::rate;const int removed=wolfDeletes;
+        paused=true;for(int i=0;i<30;++i) tick();paused=false;
+        ui=true;for(int i=0;i<30;++i) tick();ui=false;
+        assert(sCinema.ticks==time && wolf.animation.frame==frame &&
+               mDoGph_gInf_c::rate==white && wolfDeletes==removed);
+        release_cinema();release_cinema();
+        assert(!sShadeWolf.visible() && !sCinema.active() && !mDoGph_gInf_c::enabled);
+        auto* w=&wolf;int result=0;
+        assert(wolf_draw(nullptr,&w,&result,nullptr)==HOOK_SKIP_ORIGINAL);
+        wolf.id=99; // Unowned story wolves retain the native renderer.
+        assert(wolf_draw(nullptr,&w,&result,nullptr)==HOOK_CONTINUE);
+    }
     // A replacement stage fade must survive cleanup; our white overlay must not.
     reset();sShadeWolf.flash(1);release_cinema();assert(!mDoGph_gInf_c::enabled);
     reset();sShadeWolf.flash(1);mDoGph_gInf_c::color={0,0,0,255};
@@ -440,7 +473,7 @@ with tempfile.TemporaryDirectory() as tmp:
     exe = Path(tmp) / "cinema"
     wolf_source=(root / 'src/heroes_shade_wolf.inc').read_text()
     wolf_runtime=wolf_source[:wolf_source.index('DEFINE_HOOK(')]
-    cpp.write_text(fixture.replace('// WOLF_RUNTIME', wolf_runtime) + runtime + "\n" + "\n".join(function(name) for name in (
+    cpp.write_text(fixture.replace('// WOLF_RUNTIME', wolf_runtime) + wolf_source[wolf_source.index('HookAction wolf_draw('):] + runtime + "\n" + "\n".join(function(name) for name in (
         "close_cinema_line", "start_cinema_line", "release_cinema", "finish_cinema", "cinema_pose", "tick_cinema")) +
         source[source.index('HookAction draw_cinema('):source.index('void after_execute(')] + checks)
     subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror", "-I", str(root / "src"),

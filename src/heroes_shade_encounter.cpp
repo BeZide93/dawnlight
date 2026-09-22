@@ -1428,7 +1428,6 @@ void shutdown_heroes_shade_encounter() {
     sProjectiles.clear();
     sPedestal=kNone;
     sShadeWolf.id=kNone;
-    sShadeWolfFade.model=nullptr;
     for (auto& line:sLines) line.reset();
     sBossTitle.reset();
     mods::hook::uninstall<ShadeMusicFrameworkHook>(svc_hook);

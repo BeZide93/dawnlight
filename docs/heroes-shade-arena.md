@@ -64,14 +64,16 @@ After the last successful counter, doubles and projectiles are removed. Shade
 finishes any airborne fall and uses his native get-up animation when needed.
 He praises Link as a true hero and asks him to carry their legacy into the world.
 A second full-screen white flash transforms him back into the seated Golden
-Wolf. The wolf stays fully visible for one second after the flash clears, fades
-smoothly to invisible over three seconds, and leaves a one-second empty-space hold;
-only then is the actor deleted and gameplay restored. The captions have German
+Wolf. The wolf stays fully visible for one second after the flash clears, then
+plays the native transformation howl again. A further full-screen white flash
+covers its disappearance: it is hidden and queued for native deletion while the
+screen is fully white. The flash clears onto the empty arena, followed by a
+one-second hold before gameplay is restored. The captions have German
 and English variants (English fallback for the other supported languages).
 Each page automatically advances after 120 simulation ticks, and the controller
 waits for the actual native message to finish instead of cutting it off at an
-assumed time. The intro follows the actual howl clip, with a bounded timeout.
-Both white flashes rise over 12 ticks, hold opaque for six ticks before the model
+assumed time. Both howls follow the actual animation clip, with a bounded timeout.
+All white flashes rise over 12 ticks, hold opaque for six ticks before the model
 swap, then clear over 18 ticks (30 simulation ticks/second). Recovery and dialogue
 have bounded failure timeouts.
 
@@ -120,29 +122,21 @@ Implementation and lifecycle details:
   swapping visibility. Camera framing follows the wolf's lower seated height.
   The Shade Draw hook enforces visibility even if native execution resets its
   own flag. Dialogue and combat begin only after the intro flash has cleared.
-- The wolf fade renders the existing native skeletal model in the translucent
-  list, multiplying its original texture alpha with one extra GPU texture stage.
-  The shader preserves fur cutouts and native animated colors. It does not edit
-  shared model materials, archives or display-list allocations. A free texture
-  slot is selected per material; the actor's native model supplies all geometry.
-  Materials with zero texture generators get one position-based identity texgen
-  for the uniform fade mask. Existing texture generators/UV transforms remain
-  unchanged. This fixes the victory-time `unhandled tcg src 21` abort: sampling
-  coordinate zero with no active texgen left Aurora's source at its invalid
-  `GX_MAX_TEXGENSRC` sentinel. Setup runs after native display lists so they
-  cannot overwrite the added generator.
+- Visible wolves always use the native Golden Wolf Draw method. The former
+  translucent draw packet, alpha-mask texture, extra TEV stage and texgen
+  modifications are removed completely after the victory fade still crashed.
+  Departure uses the existing white-screen overlay and native actor deletion;
+  no model transparency, material edits or custom wolf render packets remain.
+  The actor ID stays owned until cleanup, so deferred draws remain hidden.
 - Cancellation, actor/pedestal deletion and shutdown remove the wolf and cancel
   pending creation. Cleanup clears only the owned white fade; a replacement
   scene fade is preserved. Pause/UI freezes the cinematic and wolf animation.
   No game assets are bundled. The former flame and CoWarp implementations are
   removed.
-- `tests/heroes_shade_wolf_fade_test.py` reproduces source 21 with the old
-  zero-texgen state, using Aurora's real enum/config and pipeline-copy code.
-  It runs the production fade-stage setup across textured/untextured material
-  switches and checks valid position-based fallback and untouched native UVs.
 - `tests/heroes_shade_cinema_test.py` runs the production wolf and cinematic
   controller against native stubs: asynchronous loading, howl/white-swap order,
-  dialogue/title timing, pause, gradual outro opacity, cleanup and replacement
+  dialogue/title timing, pause, departure howl, deletion under full white, native
+  wolf draw visibility, cleanup and replacement
   fades. The native-hook suite checks combat isolation. Rendered appearance,
   camera composition and final audio/animation synchronization require in-game
   validation.

@@ -8,7 +8,6 @@ inline constexpr int flash_hold_ticks = 6;
 inline constexpr int flash_fall_ticks = 18;
 inline constexpr int flash_total_ticks = flash_rise_ticks + flash_hold_ticks + flash_fall_ticks;
 inline constexpr int wolf_hold_ticks = 30;
-inline constexpr int wolf_fade_ticks = 90;
 enum class Shot { None, Request, Arrival, Recover, Words1, Words2, Ready, BossName, Depart, Afterglow };
 struct Cinema {
     Shot shot = Shot::None;

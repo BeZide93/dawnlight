@@ -219,28 +219,28 @@ int main() {
     }
     int windTime=t.clock.ticks;t.suspend();assert(t.clock.ticks==windTime);
     float previous=0;
-    for(int i=0;i<150;++i) {
+    for(int i=0;i<90;++i) {
         assert(!tick() && player.power>previous && player.power<=55);
-        assert(player.power-previous<0.6f); // smooth ramp, no full-strength jump
-        if(i<149) assert(player.power<55); // full strength only at the end of five seconds
+        assert(player.power-previous<1.0f); // smooth ramp, no full-strength jump
+        if(i<89) assert(player.power<55); // full strength only at the end of three seconds
         previous=player.power;
     }
-    assert(player.forces==150 && player.power==55 && player.yaw==0x4000 && player.heavyAware==1);
-    for(int i=180;i<270;++i) assert(!tick());
-    assert(player.forces==240 && player.power==55);
+    assert(player.forces==90 && player.power==55 && player.yaw==0x4000 && player.heavyAware==1);
+    for(int i=120;i<210;++i) assert(!tick());
+    assert(player.forces==180 && player.power==55);
     player.boots=true;
-    for(int i=270;i<900;++i) assert(!tick()); // no automatic timeout, even in Iron Boots
-    assert(player.forces==240 && t.clock.ticks==900);
+    for(int i=210;i<900;++i) assert(!tick()); // no automatic timeout, even in Iron Boots
+    assert(player.forces==180 && t.clock.ticks==900);
     player.boots=false;
-    assert(!tick() && player.forces==241 && player.power==55);
+    assert(!tick() && player.forces==181 && player.power==55);
     t.clock.release_wind();
-    assert(tick() && player.forces==241); // no new force after interacting at the sword
+    assert(tick() && player.forces==181); // no new force after interacting at the sword
     t.cancel();t.clock.begin(shade::Trial::Wind); // restart does not retain strong wind
     player.boots=false;player.forces=0;
     assert(!t.clock.windReleased);
     for(int i=0;i<30;++i) assert(!tick() && player.forces==0);
     player.boots=true;
-    for(int i=0;i<150;++i) assert(!tick() && player.forces==0); // boots also suppress ramp
+    for(int i=0;i<90;++i) assert(!tick() && player.forces==0); // boots also suppress ramp
     t.cancel();assert(!t.clock.active() && !t.visible);
     assert(!t.shield.tg && !t.flame.at);
     for (int i=0;i<2;++i) assert(!t.eyeTargets[i].tg && !t.beams[i].at);

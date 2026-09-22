@@ -24,7 +24,6 @@ fixture = r'''
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 #include <initializer_list>
 using u8 = uint8_t;
 using fpc_ProcID = uint32_t;
@@ -63,17 +62,10 @@ struct dCcU_AtInfo {
     Collider* mpCollider;
     unsigned mHitType = HIT_TYPE_LINK_NORMAL_ATTACK;
 };
-struct LogService { void (*info)(ModContext*, const char*); };
-LogService* svc_log = nullptr;
-ModContext* mod_ctx = nullptr;
-struct Diagnostics { bool playerLogged = false; };
-void log_runtime(const char*) {}
 int spinUpdates = 0, drainUpdates = 0;
 void update_spin_activation(daAlink_c*) { ++spinUpdates; }
 void update_drain(daAlink_c*) { ++drainUpdates; }
 void deactivate(daAlink_c*, bool);
-Diagnostics s_diagnostics;
-void log_damage_check(fopAc_ac_c*, dCcU_AtInfo*) {}
 bool enabled = true;
 daAlink_c* currentLink = nullptr;
 daAlink_c* daAlink_getAlinkActorClass() { return currentLink; }
@@ -127,7 +119,7 @@ int main() {
     void* hit[] = {&enemy, &attack};
     void* deletion[] = {static_cast<leafdraw_class*>(&link)};
 
-    // Reproduce the log: save loaded, owner absent, then actual actor dispatch
+    // Save loaded, owner absent, then actual actor dispatch
     // without ever calling daAlink_c::execute's entry hook. Only the innermost
     // Link execute dispatch may bind the owner or advance the state machine.
     on_save_started(nullptr, 0, nullptr);
@@ -146,7 +138,7 @@ int main() {
     assert(run_dispatch(target, &link) == 0);
     assert(same_link(&link) && spinUpdates == 1 && drainUpdates == 1);
     for (int i = 0; i < 6; ++i) after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 30.0f); // all six valid hits in the attached log
+    assert(s_state.meter == 30.0f); // six valid sword hits
     assert(run_dispatch(outer, &link) == 0);
     assert(spinUpdates == 1 && drainUpdates == 1); // no duplicate post tick
 
@@ -171,7 +163,7 @@ int main() {
     after_damage_check(nullptr, hit, nullptr, nullptr);
     assert(s_state.meter == 5.0f);
 
-    // Exercise the actual sword predicate (the old fixture bypassed it). Ordon
+    // Exercise the actual sword predicate. Ordon
     // and wooden swords use NORMAL only; the Master Sword adds MASTER.
     for (unsigned sword : {AT_TYPE_NORMAL_SWORD,
                            AT_TYPE_NORMAL_SWORD | AT_TYPE_MASTER_SWORD}) {

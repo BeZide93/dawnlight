@@ -2,7 +2,6 @@
 
 #include "combat_meter.hpp"
 #include "config.hpp"
-#include "hud_layout.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
 
@@ -20,13 +19,11 @@
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
-#include "mods/svc/log.h"
 #include "mods/svc/save.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 
 namespace dawnlight {
 namespace {
@@ -74,17 +71,6 @@ struct RuntimeState {
 
 RuntimeState s_state;
 SaveObserverHandle s_saveObserver = 0;
-
-// Bounded per-session diagnostics: distinguish missing charge from a suppressed
-// HUD without logging every frame or changing the player's save/equipment.
-struct Diagnostics {
-    bool playerLogged = false;
-    bool hudLogged = false;
-    bool chargedHudLogged = false;
-    bool drawLogged = false;
-    unsigned hitLogs = 0;
-};
-Diagnostics s_diagnostics;
 
 bool is_sword_attack(const dCcU_AtInfo* attack) {
     return attack != nullptr && attack->mpCollider != nullptr &&
@@ -145,43 +131,10 @@ bool same_link(daAlink_c* link) {
     return link != nullptr && s_state.link == link && s_state.linkId == fopAcM_GetID(link);
 }
 
-void log_runtime(const char* reason, dMeter2Draw_c* meter = nullptr) {
-    if (svc_log == nullptr) {
-        return;
-    }
-    auto* link = daAlink_getAlinkActorClass();
-    const auto transform = hud_layout_fierce_deity_bar_transform();
-    const bool panesReady = meter != nullptr && meter->mpKanteraScreen != nullptr &&
-        meter->mpMagicParent != nullptr && meter->mpMagicBase != nullptr &&
-        meter->mpMagicFrameL != nullptr && meter->mpMagicMeter != nullptr &&
-        meter->mpMagicFrameR != nullptr && meter->mpLifeParent != nullptr;
-    char message[768];
-    std::snprintf(message, sizeof(message),
-        "Dawnlight Fierce Deity [%s]: stage=%s enabled=%d player=%u owner=%u same=%d "
-        "charge=%.1f active=%d swap=%u sword=%u window=%u pause=%u gamePause=%d "
-        "event=%d shop=%d talk=%d panes=%d layout=(%.1f,%.1f,%.3f)",
-        reason, dComIfGp_getStartStageName(), int(fierce_deity_enabled()),
-        unsigned(fopAcM_GetID(link)), unsigned(s_state.linkId), int(same_link(link)),
-        double(s_state.meter), int(s_state.active), unsigned(s_state.modelSwapState),
-        unsigned(dComIfGs_getSelectEquipSword()), unsigned(dMeter2Info_getWindowStatus()),
-        unsigned(dMeter2Info_getPauseStatus()), int(dComIfGp_isPauseFlag()),
-        int(dComIfGp_event_runCheck()), int(dMeter2Info_isShopTalkFlag()),
-        int(dMsgObject_isTalkNowCheck()), int(panesReady), double(transform.offset_x),
-        double(transform.offset_y), double(transform.scale));
-    svc_log->info(mod_ctx, message);
-}
-
-void on_save_started(ModContext*, uint32_t slot, void*) {
+void on_save_started(ModContext*, uint32_t, void*) {
     // SaveService runs after the new slot has been installed, including reloading
     // the same slot. Drop every transient flag without touching save equipment.
     reset_for_link(nullptr);
-    s_diagnostics = {};
-    if (svc_log != nullptr) {
-        char message[128];
-        std::snprintf(message, sizeof(message),
-            "Dawnlight Fierce Deity: reset transient state for save slot %u", unsigned(slot));
-        svc_log->info(mod_ctx, message);
-    }
 }
 
 HookAction before_player_delete(ModContext*, void* args, void*, void*) {
@@ -366,10 +319,6 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
     if (link == nullptr) {
         return;
     }
-    if (!s_diagnostics.playerLogged) {
-        log_runtime("player ready");
-        s_diagnostics.playerLogged = true;
-    }
     if (!same_link(link) || !fierce_deity_enabled()) {
         return;
     }
@@ -401,28 +350,9 @@ void after_attack_power_check(ModContext*, void* args, void*, void*) {
         static_cast<u32>(attack->mAttackPower) * 2U, 0xFFFFU));
 }
 
-void log_damage_check(fopAc_ac_c* enemy, dCcU_AtInfo* attack) {
-    if (s_diagnostics.hitLogs < 8 && attack != nullptr && svc_log != nullptr) {
-        ++s_diagnostics.hitLogs;
-        char message[256];
-        std::snprintf(message, sizeof(message),
-            "Dawnlight Fierce Deity [hit %u]: target=%d group=%d attacker=%u "
-            "type=0x%08x hitType=%u power=%u sword=%d owned=%d",
-            s_diagnostics.hitLogs, enemy != nullptr ? int(fopAcM_GetName(enemy)) : -1,
-            enemy != nullptr ? int(fopAcM_GetGroup(enemy)) : -1,
-            unsigned(fopAcM_GetID(attack->mpActor)),
-            attack->mpCollider != nullptr ? unsigned(attack->mpCollider->GetAtType()) : 0U,
-            unsigned(attack->mHitType), unsigned(attack->mAttackPower),
-            int(is_sword_attack(attack)), int(attack->mpActor == s_state.link));
-        svc_log->info(mod_ctx, message);
-        log_runtime("hit state");
-    }
-}
-
 void after_damage_check(ModContext*, void* args, void*, void*) {
     auto* enemy = mods::arg<fopAc_ac_c*>(args, 0);
     auto* attack = mods::arg<dCcU_AtInfo*>(args, 1);
-    log_damage_check(enemy, attack);
     if (!fierce_deity_enabled() || s_state.active || enemy == nullptr || attack == nullptr ||
         !same_link(daAlink_getAlinkActorClass()) ||
         !is_sword_attack(attack) || attack->mpActor != s_state.link ||
@@ -435,20 +365,10 @@ void after_damage_check(ModContext*, void* args, void*, void*) {
 }
 
 void draw_fierce_meter(dMeter2Draw_c* meter) {
-    if (!s_diagnostics.hudLogged ||
-        (s_state.meter > 0.0f && !s_diagnostics.chargedHudLogged)) {
-        log_runtime(s_state.meter > 0.0f ? "charged HUD" : "initial HUD", meter);
-        s_diagnostics.hudLogged = true;
-        s_diagnostics.chargedHudLogged |= s_state.meter > 0.0f;
-    }
     if (!fierce_deity_enabled() || !same_link(daAlink_getAlinkActorClass()) ||
         s_state.meter <= 0.0f || menu_or_pause_active())
     {
         return;
-    }
-    if (!s_diagnostics.drawLogged) {
-        log_runtime("drawing meter", meter);
-        s_diagnostics.drawLogged = true;
     }
     draw_combat_meter(meter, s_state.meter, CombatMeterStyle::FierceDeity,
         stamina_meter_visible() ? 1 : 0);
@@ -517,7 +437,6 @@ void shutdown_fierce_deity() {
         deactivate(link, true);
     }
     s_state = {};
-    s_diagnostics = {};
 }
 
 bool fierce_deity_active() {

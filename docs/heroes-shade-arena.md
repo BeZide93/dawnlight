@@ -132,7 +132,9 @@ Implementation and lifecycle details:
   The scene manager is obtained through the imported `Z2AudioMgr::mAudioMgrPtr`.
   Do not use `Z2GetSceneMgr()` in mod code: its template singleton storage is
   unannotated and becomes a separate null variable inside the mod. The host
-  `JAUSectionHeap` singleton is explicitly imported for shared-sample rebinding.
+  `JAUSectionHeap` is reached through `mSoundMgr.getSeqMgr()->getSeqDataMgr()`,
+  which `Z2AudioMgr::init` binds to the section heap. This also avoids importing
+  unexported template data, which is rejected by the Windows/Android/Apple SDKs.
   This distinction explains the missing readiness/failure messages in the
   2026-09-22 22:02:54 log; the old loader returned before making any request.
   The wave test models a null mod-local scene singleton and a live host manager.

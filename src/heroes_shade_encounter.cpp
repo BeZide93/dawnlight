@@ -43,10 +43,6 @@
 #include <cstdio>
 #include <unordered_set>
 
-// JASGlobalInstance's header defines unannotated template storage. Import the
-// host's heap singleton explicitly instead of creating a null copy in the mod.
-template<> DUSK_GAME_DATA JAUSectionHeap* JASGlobalInstance<JAUSectionHeap>::sInstance;
-
 namespace dawnlight {
 namespace {
 constexpr ActorId kNone = fpcM_ERROR_PROCESS_ID_e;

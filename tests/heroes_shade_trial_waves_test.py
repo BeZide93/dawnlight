@@ -24,7 +24,7 @@ struct Bank {
     Arc* getWaveArc(unsigned id){return &arcs.at(id);}
 } bank;
 using JAUSectionHeap=Bank;
-template<class T> struct JASGlobalInstance {static T* getInstance(){return &bank;}};
+using JASWaveBank=Bank;
 struct Z2SceneMgr {
     unsigned char loadedSeWave_1=0,loadedSeWave_2=0,loadedDemoWave=0;
     unsigned char requestSeWave_1=0,requestSeWave_2=0,requestDemoWave=0;
@@ -42,11 +42,14 @@ struct Z2SceneMgr {
         for(auto& group:bank.arcs)group.bound=false;
         return true;
     }
-} scene;
+};
+struct SeqMgr {Bank* getSeqDataMgr(){return &bank;}};
+struct SoundMgr {SeqMgr seq;SeqMgr* getSeqMgr(){return &seq;}};
+struct Z2AudioMgr:Z2SceneMgr {SoundMgr mSoundMgr;} scene;
 // Match mod linkage: the unexported template singleton is a null local copy,
 // while Z2AudioMgr's explicitly imported pointer reaches the host scene.
 Z2SceneMgr* Z2GetSceneMgr(){return nullptr;}
-Z2SceneMgr* Z2GetAudioMgr(){return &scene;}
+Z2AudioMgr* Z2GetAudioMgr(){return &scene;}
 struct Log {
     int warnings=0,ready=0;
     void warn(void*,const char*){++warnings;}

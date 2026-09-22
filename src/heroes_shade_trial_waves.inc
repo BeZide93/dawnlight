@@ -1,3 +1,13 @@
+// Z2AudioMgr::init installs sectionHeap->getSeqSeqDataMgr() on its sequence
+// manager; that interface belongs to the host JAUSectionHeap. Follow this
+// existing owner instead of importing unexported JASGlobalInstance storage.
+JASWaveBank* trial_wave_bank() {
+    auto* audio=Z2GetAudioMgr();
+    if (!audio) return nullptr;
+    auto* heap=static_cast<JAUSectionHeap*>(audio->mSoundMgr.getSeqMgr()->getSeqDataMgr());
+    return heap ? heap->getWaveBankTable().getWaveBank(0) : nullptr;
+}
+
 // The arena aliases the Darknut room (SE 0x15/0x17). Model archives do not
 // load sound samples. Add the native scene sets for normal Temple of Time
 // Beamos, Fyrus, Palace of Twilight's Phantom Zant, and Hyrule Castle's barrier.
@@ -61,8 +71,7 @@ struct ShadeTrialWaves {
             // Native WSYS groups share sample IDs. Erasing one clears its
             // bindings without restoring still-loaded duplicates. Rebind those
             // through their native callback, without loading/erasing them.
-            auto* heap=JASGlobalInstance<JAUSectionHeap>::getInstance();
-            auto* bank=heap ? heap->getWaveBankTable().getWaveBank(0) : nullptr;
+            auto* bank=trial_wave_bank();
             if (bank) for (u32 i=0;i<bank->getArcCount();++i) {
                 auto* arc=bank->getWaveArc(i);
                 if (arc && arc->getStatus()==2) arc->onLoadDone();
@@ -80,8 +89,7 @@ HookAction before_trial_wave_load(ModContext*,void* args,void* result,void*) {
     auto* scene=mods::arg<Z2SceneMgr*>(args,0);
     if (!sTrialWaves.owns(id) || scene->getSeLoadStatus(id)==0) return HOOK_CONTINUE;
     if (scene->getSeLoadStatus(id)==2) {
-        auto* heap=JASGlobalInstance<JAUSectionHeap>::getInstance();
-        auto* bank=heap ? heap->getWaveBankTable().getWaveBank(0) : nullptr;
+        auto* bank=trial_wave_bank();
         if (auto* arc=bank ? bank->getWaveArc(id) : nullptr) arc->onLoadDone();
     }
     *static_cast<bool*>(result)=true;

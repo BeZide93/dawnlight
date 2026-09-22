@@ -27,8 +27,8 @@ the source PNG with `python tools/generate_pedestal_texture.py`.
 
 The sword now starts a short original boss introduction. Shade stays hidden
 through asynchronous creation and until the native potential demo event has
-been accepted. The camera eases toward him with letterboxing; Link's native CoWarp material
-and arrival particles materialize Shade from the ground upward. Two original captions refer to his
+been accepted. The camera eases toward him with letterboxing; a large flame rises
+at his position and reveals him as it burns down. Two original captions refer to his
 unfinished teaching and Link's inherited courage, followed by a sword-ready
 pose before combat begins. During the final 30% of the pointing/ready gesture
 (`KN_DEMO_KAMAE`, sequence 24 step 0), the native boss-name banner displays
@@ -59,14 +59,15 @@ text before gameplay resumes; replacement messages are never touched.
 After the last successful counter, doubles and projectiles are removed. Shade
 finishes any airborne fall and uses his native get-up animation when needed.
 He praises Link as a true hero and asks him to carry their legacy into the world.
-Link's CoWarp dissolve removes him from the top downward, with the native
-departure particles and a brief afterglow;
+A second large flame envelops him; the body disappears inside it, then the flame
+burns down and the camera holds briefly on the empty spot;
 only then is the actor deleted and gameplay restored. The captions have German
 and English variants (English fallback for the other supported languages).
 Each page automatically advances after 120 simulation ticks, and the controller
 waits for the actual native message to finish instead of cutting it off at an
-assumed time. Appearance takes 145 ticks (45-tick CoWarp arrival hold plus
-100-tick material reveal); departure takes 100 ticks plus a 30-tick afterglow. Recovery and dialogue have bounded failure timeouts.
+assumed time. Appearance and departure each take 120 simulation ticks (four seconds), with
+an additional 30-tick empty-space hold after departure. Recovery and dialogue
+have bounded failure timeouts.
 
 The accepted intro starts Darknut's native cinematic stream (`0x2000037`).
 When the introduction ends (including the boss-name banner), the encounter switches
@@ -98,49 +99,37 @@ Implementation and lifecycle details:
   release acquired control. A failed async spawn can be retried at the sword.
 - Captions are registered with MessageService. Cancellation only closes the
   matching owned message; it never deletes the shared `dMsgObject` actor.
-- `heroes_shade_warp.inc` reuses the game's `Always/warp_tex` material setup
-  (`loaderBasicBmd(BMWE)` and `setWarpSRT`), CoWarp particles `0x9F3`/`0x9F4`
-  and `Z2SE_AL_WARP_OUT`/`Z2SE_AL_WARP_IN_TATE`. Texture scroll is 0.15 per
-  simulation tick; the 100-tick dissolve edge is scaled to Shade's height.
-  Native skeleton poses and the ghost/opaque body passes are preserved. The old
-  squash animation and procedural appearance ribbons are removed.
-- Visibility is enforced in the main fighter's `Draw` hook, not just through
-  `mNoDraw`: native `daNpc_Kn_c::twilight()` can clear that flag later in execute.
-  The intro event-request period submits neither body, so the complete actor
-  cannot appear before the warp sound/particles start. The 45-tick arrival hold
-  also submits no geometry; the moving warp material then reveals both private
-  bodies. Departure's final frame, afterglow and pending deletion stay hidden
-  even if the native flag is cleared. Victory recovery, dialogue, combat,
-  doubles and unrelated Shade actors keep their normal draw path. The draw hook
-  is removed with the other encounter hooks on shutdown.
-- Warp models have separate materials, texture matrices, display lists and raw
-  archive bytes. A fresh `/res/Object/KN_a.arc` is read into a dedicated heap:
-  re-parsing the already loaded archive would endian-swap live vertex data again.
-  The BMWE material-capacity and joint-count checks precede use. Link's player
-  procedure, model and teleport destination are never changed. No game asset is
-  bundled, and shared KN_a material data is never edited.
-- Models are prepared once on first appearance and reused for replay. The heap
-  reserves up to 8 MiB during initialization, then shrinks to actual usage.
-  Particles use event movement so they remain visible during the cinematic;
-  cutscene cancellation clears them. Fighter deletion stops the effect, while
-  pedestal deletion and mod shutdown unlink the private archive and free its heap.
-  Missing/incompatible resources log a warning once and cannot strand the
-  encounter. This fallback only shows particles during arrival and reveals the
-  original body when the arrival shot ends; it does **not** provide a progressive
-  dissolve. Departure hides the fallback body halfway through the effect.
-- `python tests/heroes_shade_warp_test.py` compiles the actual runtime against
-  instrumented APIs: fresh archive loading, distinct model data, pose transfer,
-  unchanged source materials, bidirectional reveal timing, native particle/sound
-  IDs, repeat draws without simulation, replay reuse and failure/cleanup paths.
-  It also runs the actual draw hook after deliberately clearing `mNoDraw`,
-  covering event request, arrival hold/reveal, departure, afterglow, deletion,
-  resource failure and isolation from doubles/story actors. These stubs verify
-  draw submission and timing; they cannot validate the game's rendered shader.
-  The cinematic test covers the longer shots and cancellation at every shot.
+- `heroes_shade_flame.inc` uses the game's global campfire effects: glow
+  `0x3AD`, fire `0x3AF` and sparks `0x3AE`, as used by native `daFireWood_c`.
+  The effect grows to scale (3.5, 4.5, 3.5) over 30 ticks, holds full strength
+  through tick 60, then shrinks and fades over 60 ticks. Ignition, burning and
+  extinguishing use the corresponding native fire sounds. No damaging actor or
+  collision volume is created; the cinematic fire cannot hurt Link.
+- At tick 45, while the flame is at full size and opacity, the intro reveals
+  Shade's ordinary model and the outro hides it. Visibility is enforced in the
+  main fighter's Draw hook: native `twilight()` can clear `mNoDraw` after our
+  execute hook. The event-request wait, departure afterglow and pending deletion
+  remain hidden. Victory recovery, dialogue, combat, doubles and unrelated Shade
+  actors keep their normal rendering. Shutdown uninstalls the draw hook.
+- The failed CoWarp experiments from `3f4cfc0` and `9ea0632` are removed:
+  no private KN_a archive, extra model heap, warp materials, texture scrolling,
+  Link warp particles/sounds or model-dissolve fallback remain in this effect.
+  The generic cinematic visibility gate remains necessary for the new fire.
+- Three owned emitter keys are refreshed during the shot and explicitly allowed
+  to run during the event. Shot completion, cancellation, fighter/pedestal
+  deletion and mod shutdown invalidate the emitters and clear their particles.
+  Replay starts fresh. Failed particle allocation cannot block the cutscene.
+  No game assets are bundled.
+- `python tests/heroes_shade_flame_test.py` compiles the actual particle runtime
+  and draw hook against instrumented APIs. It checks buildup/fade, the body switch
+  at full strength in both directions, native visibility resets, effect/sound
+  IDs, cancellation, replay, missing emitters and isolation from doubles/story
+  actors. Drawing cannot advance the effect. This validates orchestration, not
+  the rendered flame's size or coverage; those still need an in-game check.
 
 
 Run `python tests/heroes_shade_cinema_test.py` for the real controller's event,
-caption, warp, pause, timeout and cleanup paths against native API stubs. The
+caption, flame, pause, timeout and cleanup paths against native API stubs. The
 existing native-hook fixture also verifies that scene swords cannot register
 hits and scene events cannot consume boss health. On-device checks still needed:
 first arrival (no one-frame pop), caption readability, victory after both fall

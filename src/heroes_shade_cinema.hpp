@@ -3,9 +3,12 @@
 namespace dawnlight::shade {
 // Simulation ticks, independent of rendering. Dialogue waits for the native
 // message to close; bounded waits also release control if a message fails.
-inline constexpr int warp_arrival_hold_ticks = 45; // Link's human CoWarp arrival delay
-inline constexpr int warp_travel_ticks = 100; // six texture units at 0.06 per tick
-inline constexpr int warp_arrival_ticks = warp_arrival_hold_ticks + warp_travel_ticks;
+// Flame builds for one second, covers the body switch at 1.5 seconds,
+// then burns down over the final two seconds (30 simulation ticks/second).
+inline constexpr int flame_build_ticks = 30;
+inline constexpr int flame_switch_ticks = 45;
+inline constexpr int flame_fade_ticks = 60;
+inline constexpr int flame_total_ticks = 120;
 enum class Shot { None, Request, Arrival, Recover, Words1, Words2, Ready, BossName, Depart, Afterglow };
 struct Cinema {
     Shot shot = Shot::None;
@@ -22,7 +25,7 @@ struct Cinema {
             if (event_accepted) enter(victory ? Shot::Recover : Shot::Arrival);
             else if (ticks>=180) enter(Shot::None);
             break;
-        case Shot::Arrival: if (ticks>=warp_arrival_ticks) enter(Shot::Words1); break;
+        case Shot::Arrival: if (ticks>=flame_total_ticks) enter(Shot::Words1); break;
         case Shot::Recover: if ((ticks>=45 && pose_done) || ticks>=120) enter(Shot::Words1); break;
         case Shot::Words1:
         case Shot::Words2:
@@ -32,7 +35,7 @@ struct Cinema {
         // pose_done is the in-animation title cue here, not the return to idle.
         case Shot::Ready: if (pose_done || ticks>=120) enter(Shot::BossName); break;
         case Shot::BossName: if (message_done || ticks>=300) enter(Shot::None); break;
-        case Shot::Depart: if (ticks>=warp_travel_ticks) enter(Shot::Afterglow); break;
+        case Shot::Depart: if (ticks>=flame_total_ticks) enter(Shot::Afterglow); break;
         case Shot::Afterglow: if (ticks>=30) enter(Shot::None); break;
         default: break;
         }

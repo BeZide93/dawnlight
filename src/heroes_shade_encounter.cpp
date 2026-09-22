@@ -16,9 +16,6 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_camera.h"
 #include "Z2AudioLib/Z2AudioMgr.h"
-#include "JSystem/JKernel/JKRDvdRipper.h"
-#include "JSystem/JKernel/JKRMemArchive.h"
-#include "JSystem/J3DGraphAnimator/J3DMtxBuffer.h"
 #include "d/d_particle_name.h"
 #include "d/d_bg_s_lin_chk.h"
 #include "d/d_msg_object.h"
@@ -122,7 +119,7 @@ bool arena() {
         dComIfGp_getStartStageRoomNo() == 51;
 }
 #include "heroes_shade_music.inc"
-#include "heroes_shade_warp.inc"
+#include "heroes_shade_flame.inc"
 
 Fighter* fighter(daNpc_Kn_c* actor) {
     if (!actor) return nullptr;
@@ -238,7 +235,7 @@ void start_cinema_line(MessageId text) {
     }
 }
 void release_cinema() {
-    end_shade_warp();
+    end_shade_flame();
     close_cinema_line();
     if (sCinemaRuntime.ownsEvent) {
         auto* boss=actor_by_id(sFighters[0].id);
@@ -370,8 +367,8 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     }
     if (previous!=sCinema.shot) {
         close_cinema_line();
-        if (sCinema.shot==Shot::Arrival) begin_shade_warp(actor,true);
-        if (previous==Shot::Arrival) { end_shade_warp(); actor->mNoDraw=false; }
+        if (sCinema.shot==Shot::Arrival) begin_shade_flame(actor,true);
+        if (previous==Shot::Arrival) { end_shade_flame(); actor->mNoDraw=false; }
         if (sCinema.shot==Shot::Words1 || sCinema.shot==Shot::Words2) cinema_pose(actor,3); // TALK_A
         if (sCinema.shot==Shot::Ready) cinema_pose(actor,24); // ready the sword
         // Start on the cue tick while the gesture continues, without waiting
@@ -379,12 +376,12 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         if (sCinema.shot==Shot::BossName) start_cinema_line(sBossTitle.id());
         if (sCinema.shot==Shot::Depart) {
             cinema_pose(actor,0);
-            begin_shade_warp(actor,false);
+            begin_shade_flame(actor,false);
         }
     }
     if (sCinema.shot==Shot::Arrival || sCinema.shot==Shot::Depart)
-        tick_shade_warp(actor,sCinema.ticks);
-    else if (sCinema.shot==Shot::Afterglow) { finish_shade_warp(); actor->mNoDraw=true; }
+        tick_shade_flame(actor,sCinema.ticks);
+    else if (sCinema.shot==Shot::Afterglow) { end_shade_flame(); actor->mNoDraw=true; }
     if (sCinemaRuntime.ownsEvent) cinema_camera(actor);
 }
 void add_doubles(daNpc_Kn_c* boss) {
@@ -615,7 +612,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     // requests inherit the play scene as well as the spawner's state exemption.
     return HOOK_CONTINUE;
 }
-HookAction draw_warp(ModContext*,void* args,void* result,void*) {
+HookAction draw_cinema(ModContext*,void* args,void* result,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     const auto* entry=fighter(actor);
     if (!entry || entry->divide) return HOOK_CONTINUE;
@@ -624,7 +621,7 @@ HookAction draw_warp(ModContext*,void* args,void* result,void*) {
     const bool hidden=entry->deleting ||
         (sCinema.shot==shade::Shot::Request && !sCinema.victory) ||
         sCinema.shot==shade::Shot::Afterglow;
-    if (hidden || sShadeWarp.draw(actor)) {
+    if (hidden || sShadeFlame.hides_model()) {
         *static_cast<int*>(result)=1;return HOOK_SKIP_ORIGINAL;
     }
     return HOOK_CONTINUE;
@@ -1217,7 +1214,7 @@ int create_pedestal(void* ptr) {
 }
 int delete_pedestal(void* ptr) {
     sStopping=true;
-    sShadeWarp.destroy();
+    sShadeFlame.stop();
     stop_shade_music();
     release_cinema();
     remove_companions();
@@ -1313,7 +1310,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeExecuteHook,before_execute); POST(ShadeExecuteHook,after_execute);
     PRE(ShadeDeleteHook,before_delete);
     PRE(ShadeEventHook,no_event); PRE(ShadeOrderHook,no_order);
-    PRE(ShadeDrawHook,draw_warp);
+    PRE(ShadeDrawHook,draw_cinema);
     PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
     PRE(ShadeEndingBlowHook,before_ending_blow_wait);
     PRE(ShadeSwordHook,sword_collision);
@@ -1360,7 +1357,7 @@ void update_heroes_shade_arena() {
 }
 void shutdown_heroes_shade_encounter() {
     sStopping=true;
-    sShadeWarp.destroy();
+    sShadeFlame.stop();
     stop_shade_music();
     release_cinema();
     std::unordered_set<ActorId> owned=sProjectiles;

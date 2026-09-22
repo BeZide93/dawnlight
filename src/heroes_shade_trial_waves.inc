@@ -101,11 +101,6 @@ struct ShadeTrialWaves {
                 if (!owned[i] && arc && arc->getStatus()==0 &&
                     arc->getFileSize()>free && storage[i].load(arc)) {
                     owned[i]=true;
-                    char message[160];
-                    std::snprintf(message,sizeof(message),
-                        "Hero's Shade: SE 0x%02x queued in reserved ARAM (%u bytes; audio free %u)",
-                        ids[i],arc->getFileSize(),free);
-                    svc_log->info(mod_ctx,message);
                 }
                 if (!owned[i] && !warned[i]) {
                     warned[i]=true;
@@ -118,8 +113,6 @@ struct ShadeTrialWaves {
                 }
             }
         }
-        if (loaded && !ready)
-            svc_log->info(mod_ctx,"Hero's Shade: native voice sets 0x4a/0x5d and current/next trial waves ready");
         ready=loaded;
         return ready;
     }

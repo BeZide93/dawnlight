@@ -8,7 +8,6 @@ fixture = r'''
 #include <array>
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include "heroes_shade_trials.hpp"
 namespace shade=dawnlight::shade;
 using Trial=shade::Trial;
@@ -104,9 +103,8 @@ struct Z2AudioMgr:Z2SceneMgr {SoundMgr mSoundMgr;} scene;
 Z2SceneMgr* Z2GetSceneMgr(){return nullptr;}
 Z2AudioMgr* Z2GetAudioMgr(){return &scene;}
 struct Log {
-    int warnings=0,ready=0,reserved=0;
+    int warnings=0;
     void warn(void*,const char*){++warnings;}
-    void info(void*,const char* s){if(std::strstr(s,"ready"))++ready;else ++reserved;}
 } testLog;
 auto* svc_log=&testLog;void* mod_ctx=nullptr;
 using ModContext=void;
@@ -141,8 +139,8 @@ int main(){
     assert(bank.arcs[0x08].loads==0 && bank.arcs[0x16].loads==0);
     for(int i=0;i<90;++i)assert(!sTrialWaves.prepare(Trial::Shield));
     assert(bank.arcs[0x22].loads==1);
-    finish_all();assert(sTrialWaves.prepare(Trial::Shield));assert(testLog.ready==1);
-    assert(sTrialWaves.prepare(Trial::Shield));assert(testLog.ready==1);
+    finish_all();assert(sTrialWaves.prepare(Trial::Shield));
+    assert(sTrialWaves.prepare(Trial::Shield));
     bank.arcs[0x15].status=2;bank.arcs[0x15].bound=true;
     sTrialWaves.release();assert(bank.arcs[0x22].erases==1);
     assert(bank.arcs[0x15].status==2 && bank.arcs[0x15].bound);
@@ -152,7 +150,7 @@ int main(){
     // same production request playable without evicting Darknut/music samples.
     reset();audioHeap.available=0;
     assert(!sTrialWaves.prepare(Trial::Shield));
-    assert(testLog.reserved==4 && testLog.warnings==0 && blocks==4);
+    assert(testLog.warnings==0 && blocks==4);
     for(auto id:{0x1d,0x1f,0x21,0x22})assert(bank.arcs[id].status==1);
     sTrialWaves.release();assert(blocks==4); // pending writes must keep storage
     finish_all();assert(sTrialWaves.prepare(Trial::Shield));
@@ -213,7 +211,7 @@ int main(){
     reset(false);audioHeap.available=0;
     assert(!sTrialWaves.prepare(Trial::None));
     assert(bank.arcs[0x4a].status==1 && bank.arcs[0x5d].status==1);
-    assert(blocks==2 && testLog.reserved==2);
+    assert(blocks==2 && testLog.warnings==0);
     assert(sTrialWaves.owns(0x4a) && sTrialWaves.owns(0x5d));
     sTrialWaves.release();assert(blocks==2); // both writes still pending
     finish(0x4a);
@@ -227,10 +225,10 @@ int main(){
     }
     assert(blocks==2);sTrialWaves.release();assert(blocks==0);
     assert(bank.arcs[0x4a].erases==1 && bank.arcs[0x5d].erases==1);
-    // Missing 0x5d can no longer produce a misleading readiness message.
+    // Missing 0x5d must keep the archive pair unavailable.
     reset(false);bank.arcs[0x5d].mEntryNum=-1;
     sTrialWaves.prepare(Trial::None);finish_all();
-    assert(!sTrialWaves.prepare(Trial::None) && testLog.ready==0 && testLog.warnings==1);
+    assert(!sTrialWaves.prepare(Trial::None) && testLog.warnings==1);
     // A borrowed base archive remains untouched; only the added set is freed.
     reset(false);bank.arcs[0x4a].status=2;
     sTrialWaves.prepare(Trial::None);finish_all();assert(sTrialWaves.prepare(Trial::None));

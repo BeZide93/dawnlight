@@ -123,12 +123,11 @@ Implementation and lifecycle details:
   including ordinary combat and every intermission. They are requested first and
   use the same reserved-ARAM fallback and safe cleanup as the trial groups.
   Both native scene slots are required: `0x4a` is shared with Hyrule Field,
-  while the second slot `0x5d` was missing from the first voice fix. Together
+  and `0x5d` supplies the second slot. Together
   these supply the existing actor's breath, guard, pain, attack and skill voice
   calls; loading `KN_a` model/animation resources alone does not supply them.
-  The 23:21:44 log reported readiness for the incomplete set; readiness now
-  includes both groups, requesting `0x5d` first. The regression reproduces the
-  old false-positive state and checks pending/missing second-group behavior.
+  Readiness includes both groups, requesting `0x5d` first. The regression
+  checks that a pending or missing second group prevents readiness.
   It also preloads trial SE groups `0x08`, `0x16`, `0x1d`, `0x1f`,
   `0x21`, and `0x22` from the player's disc in the background, selecting only
   the current or next trial: shield uses the Palace/Castle groups, fire uses
@@ -141,7 +140,7 @@ Implementation and lifecycle details:
   and Hyrule Castle audio sets used below. Readiness requires native wave status
   2 (complete), not 1 (queued). Failed allocations retry at most once per 61 ticks
   and log the archive ID, disc entry, file size, largest free audio block and
-  load status; successful readiness is also logged. Audio readiness
+  load status. Audio readiness
   never gates sword interaction, encounter start, or wind-trial completion.
   `tests/heroes_shade_pedestal_test.py` exercises the actual interaction with
   audio both ready and indefinitely unavailable.
@@ -151,13 +150,9 @@ Implementation and lifecycle details:
   `JAUSectionHeap` is reached through `mSoundMgr.getSeqMgr()->getSeqDataMgr()`,
   which `Z2AudioMgr::init` binds to the section heap. This also avoids importing
   unexported template data, which is rejected by the Windows/Android/Apple SDKs.
-  This distinction explains the missing readiness/failure messages in the
-  2026-09-22 22:02:54 log; the old loader returned before making any request.
   The wave test models a null mod-local scene singleton and a live host manager.
-  The 22:21:24 log now reaches the loader but reports rejected loads for
-  `0x08/0x16/0x1f/0x22`. The old message cannot distinguish missing files from
-  memory exhaustion. In addition to phase-scoped loading, a confirmed lack of
-  audio-heap space now falls back to a separately reserved tail block in JKR's
+  In addition to phase-scoped loading, a confirmed lack of audio-heap space
+  falls back to a separately reserved tail block in JKR's
   graph ARAM heap. Its bounds are checked against the actual audio root, since
   the configured audio size can exceed JKR's nominal audio partition. Ordinary
   RAM pointers must never be passed as ARAM addresses. A native `JASHeap` parent
@@ -167,8 +162,8 @@ Implementation and lifecycle details:
   pending count reaches zero. Adopted or pending storage survives mod shutdown
   until process teardown rather than exposing a dangling parent or reusing a
   pending write's destination. Missing disc entries do not trigger this fallback.
-  Diagnostics and native in-game audibility still need checking with the user's
-  actual disc; fixture tests cannot prove the total space its archives require.
+  Fixture tests cannot prove the total space the user's disc archives require
+  or native in-game audibility.
   Audio maintenance runs every mod frame, including outside the arena, so
   deferred releases continue after an early departure or scene reset.
   Leaving the arena stops the owned loops and releases only added groups after

@@ -21,7 +21,8 @@ struct cXyz {
 };
 enum {Z2SE_OBJ_GANON_BARRIER_APPR=1,Z2SE_OBJ_GANON_BARRIER,
       Z2SE_EN_PZ_BALL_BURST,Z2SE_EN_BM_FIND,Z2SE_EN_BM_HEAT,
-      Z2SE_EN_BM_BEAM2,Z2SE_EN_BM_SPARK};
+      Z2SE_EN_BM_BEAM2,Z2SE_EN_BM_SPARK,Z2SE_EN_FM_ATTACK_TAME,
+      Z2SE_EN_FM_BLAST,Z2SE_EN_FM_BURNING,Z2SE_BOOM_TORNADO};
 struct Cue {u32 id;cXyz pos;};std::vector<Cue> cues;
 int dComIfGp_getReverb(int room){assert(room==51);return 3;}
 void mDoAud_seStart(u32 id,const cXyz* p,int,int r){assert(r==3);cues.push_back({id,*p});}
@@ -71,9 +72,29 @@ int main(){
     assert(audio.beams[1].sound.inits==1 && audio.sparks[1].sound.inits==1);
     audio.update_beam(1,true,end,end,0,listener); // No division by zero at startup.
     assert(audio.beams[1].sound.drawn.x==0 && !audio.sparks[1].sound.playing);
+    auto before=cues.size();
     audio.begin(shade::Trial::Fire,boss,eyes);assert(!audio.beams[1].sound.playing);
+    assert(cues.size()==before+1 && cues.back().id==Z2SE_EN_FM_ATTACK_TAME);
+    for(int i=0;i<150;++i)audio.update_fire(false,boss);
+    assert(cues.size()==before+1 && !audio.fire.sound.playing);
+    for(int i=0;i<90;++i)audio.update_fire(true,boss);
+    assert(cues.size()==before+2 && cues.back().id==Z2SE_EN_FM_BLAST);
+    assert(audio.fire.sound.id==Z2SE_EN_FM_BURNING && audio.fire.sound.playing);
+    audio.stop();assert(!audio.fire.sound.playing);
+    audio.update_fire(true,boss); // Resume: burning continues, blast isn't replayed.
+    assert(cues.size()==before+2 && audio.fire.sound.playing);
+    audio.begin(shade::Trial::Wind,boss,eyes);
+    assert(!audio.fire.sound.playing);
+    audio.update_wind(false,listener);assert(!audio.wind.sound.playing);
+    audio.update_wind(true,listener);assert(audio.wind.sound.id==Z2SE_BOOM_TORNADO);
+    listener.x+=100;audio.update_wind(true,listener);
+    assert(audio.wind.sound.playing && audio.wind.sound.drawn.x==listener.x);
+    audio.stop();assert(!audio.wind.sound.playing);
+    audio.update_wind(true,listener);assert(audio.wind.sound.playing);
+    audio.update_wind(false,listener);assert(!audio.wind.sound.playing);
+    before=cues.size();
     audio.begin(shade::Trial::Shield,boss,eyes);audio.update_shield(true,boss);
-    assert(cues.size()==8 && cues.back().id==Z2SE_EN_PZ_BALL_BURST); // Fresh encounter.
+    assert(cues.size()==before+2 && cues.back().id==Z2SE_EN_PZ_BALL_BURST);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

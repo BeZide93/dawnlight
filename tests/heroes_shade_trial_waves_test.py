@@ -43,7 +43,10 @@ struct Z2SceneMgr {
         return true;
     }
 } scene;
-Z2SceneMgr* Z2GetSceneMgr(){return &scene;}
+// Match mod linkage: the unexported template singleton is a null local copy,
+// while Z2AudioMgr's explicitly imported pointer reaches the host scene.
+Z2SceneMgr* Z2GetSceneMgr(){return nullptr;}
+Z2SceneMgr* Z2GetAudioMgr(){return &scene;}
 struct Log {
     int warnings=0,ready=0;
     void warn(void*,const char*){++warnings;}

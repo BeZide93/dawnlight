@@ -118,17 +118,26 @@ Implementation and lifecycle details:
 - Both actors are ready before camera movement starts. Wolf load failure cancels
   the encounter after a bounded wait, restores the sword interaction and removes
   pending actors. The native wolf is held hidden during combat for the outro.
-- `heroes_shade_trial_waves.inc` preloads SE groups `0x16`, `0x1d`, `0x1f`,
+- `heroes_shade_trial_waves.inc` preloads SE groups `0x08`, `0x16`, `0x1d`, `0x1f`,
   `0x21`, and `0x22` from the player's disc in the background. The arena's
   Darknut audio alias only provides the Temple of Time miniboss groups
   `0x15/0x17`; loading the Beamos model does not load its wave samples.
-  These additional groups cover the normal Temple of Time, Phantom Zant room,
+  These additional groups cover Fyrus, the normal Temple of Time, Phantom Zant,
   and Hyrule Castle audio sets used below. Readiness requires native wave status
   2 (complete), not 1 (queued). Failed allocations retry at most once per 61 ticks
   and log the archive ID; successful readiness is also logged. Audio readiness
   never gates sword interaction, encounter start, or wind-trial completion.
   `tests/heroes_shade_pedestal_test.py` exercises the actual interaction with
   audio both ready and indefinitely unavailable.
+  The scene manager is obtained through the imported `Z2AudioMgr::mAudioMgrPtr`.
+  Do not use `Z2GetSceneMgr()` in mod code: its template singleton storage is
+  unannotated and becomes a separate null variable inside the mod. The host
+  `JAUSectionHeap` singleton is explicitly imported for shared-sample rebinding.
+  This distinction explains the missing readiness/failure messages in the
+  2026-09-22 22:02:54 log; the old loader returned before making any request.
+  The wave test models a null mod-local scene singleton and a live host manager.
+  Audio maintenance runs every mod frame, including outside the arena, so
+  deferred releases continue after an early departure or scene reset.
   Leaving the arena stops the owned loops and releases only added groups after
   their DVD writes finish. A destination scene can adopt an existing preload;
   the load hook reports success so native loaded-slot bookkeeping remains valid.
@@ -142,7 +151,12 @@ Implementation and lifecycle details:
   once with `Z2SE_EN_PZ_BALL_BURST` at Shade's current position. Each Beamos eye
   plays its native detection/charge cues, then owns a `Z2SE_EN_BM_BEAM2` loop
   positioned along the visible beam nearest Link and a `Z2SE_EN_BM_SPARK` loop
-  at its impact point once the beam reaches full length. Separate native sound
+  at its impact point once the beam reaches full length. Fire charges with
+  `Z2SE_EN_FM_ATTACK_TAME`, launches with `Z2SE_EN_FM_BLAST`, and sustains
+  `Z2SE_EN_FM_BURNING` until the phase ends. Wind uses the native looping
+  `Z2SE_BOOM_TORNADO` at Link's position after its warning period, including
+  while Iron Boots suppress the force, and stops on sword interaction.
+  Separate native sound
   objects preserve both spatial sources. Pause, eye destruction, phase changes,
   cancellation and arena teardown stop only the owned loops; resuming restores
   active loops without replaying activation or shield-break cues. No audio

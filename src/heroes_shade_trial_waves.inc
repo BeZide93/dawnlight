@@ -1,8 +1,8 @@
 // The arena aliases the Darknut room (SE 0x15/0x17). Model archives do not
 // load sound samples. Add the native scene sets for normal Temple of Time
-// Beamos, Palace of Twilight's Phantom Zant, and Hyrule Castle's barrier.
+// Beamos, Fyrus, Palace of Twilight's Phantom Zant, and Hyrule Castle's barrier.
 struct ShadeTrialWaves {
-    static constexpr std::array<u32,5> ids{0x16,0x1d,0x1f,0x21,0x22};
+    static constexpr std::array<u32,6> ids{0x08,0x16,0x1d,0x1f,0x21,0x22};
     std::array<bool,ids.size()> owned{},warned{};
     bool ready=false;
     int retry=0;
@@ -12,7 +12,7 @@ struct ShadeTrialWaves {
         return false;
     }
     bool prepare() {
-        auto* scene=Z2GetSceneMgr();
+        auto* scene=static_cast<Z2SceneMgr*>(Z2GetAudioMgr());
         if (!scene || !scene->isSceneExist()) return false;
         const bool request=retry==0;
         retry=request ? 60 : retry-1;
@@ -33,12 +33,12 @@ struct ShadeTrialWaves {
             }
         }
         if (loaded && !ready)
-            svc_log->info(mod_ctx,"Hero's Shade: Beamos/barrier/burst sound waves ready");
+            svc_log->info(mod_ctx,"Hero's Shade: fire/Beamos/barrier/burst sound waves ready");
         ready=loaded;
         return ready;
     }
     void release() {
-        auto* scene=Z2GetSceneMgr();
+        auto* scene=static_cast<Z2SceneMgr*>(Z2GetAudioMgr());
         if (!scene) return;
         bool erased=false;
         for (unsigned i=0;i<ids.size();++i) {

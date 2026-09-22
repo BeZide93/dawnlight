@@ -43,6 +43,10 @@
 #include <cstdio>
 #include <unordered_set>
 
+// JASGlobalInstance's header defines unannotated template storage. Import the
+// host's heap singleton explicitly instead of creating a null copy in the mod.
+template<> DUSK_GAME_DATA JAUSectionHeap* JASGlobalInstance<JAUSectionHeap>::sInstance;
+
 namespace dawnlight {
 namespace {
 constexpr ActorId kNone = fpcM_ERROR_PROCESS_ID_e;
@@ -1385,13 +1389,16 @@ fail:
     shutdown_heroes_shade_encounter();
     return mods::set_error(error,result,"failed to initialize Hero's Shade arena encounter");
 }
-void update_heroes_shade_arena() {
+void update_heroes_shade_audio() {
     if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) {
         suspend_trial();
         sTrialWaves.release();
         return;
     }
     sTrialWaves.prepare();
+}
+void update_heroes_shade_arena() {
+    if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) return;
     if (pending_or_live(sPedestal)) return;
     for (auto& entry:sFighters) if (!pending_or_live(entry.id)) entry={};
     if (pending_or_live(sFighters[0].id)) return;

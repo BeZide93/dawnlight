@@ -4579,6 +4579,7 @@ ModResult register_new_save_modes(ModError* error) {
 }
 
 void update_new_save_modes() {
+    update_heroes_shade_audio(); // Also finish deferred wave cleanup outside the arena.
     retry_pending_actor_deletes();
 }
 

@@ -561,8 +561,8 @@ struct ShadeTrials {
         } else if (clock.kind==shade::Trial::Fire) {
             if (clock.ticks==shade::fire_warning_ticks) {
                 cinema_pose(boss,25);
-                mDoAud_seStart(Z2SE_EN_FM_BLAST,&origin,0,dComIfGp_getReverb(51));
             }
+            audio.update_fire(clock.ticks>=shade::fire_warning_ticks,origin);
             if (clock.ticks>=shade::fire_warning_ticks) {
                 const float progress=shade::fire_progress(clock.ticks);
                 const float fade=std::max(0,clock.ticks-shade::fire_warning_ticks-shade::fire_travel_ticks+1);
@@ -625,9 +625,12 @@ struct ShadeTrials {
                 }
                 audio.update_beam(i,beamVisible,eyePos[i],end,beamModels[i].reach(),player->current.pos);
             }
-        } else if (clock.kind==shade::Trial::Wind && !clock.windReleased && !player->checkEquipHeavyBoots()) {
-            const float power=shade::wind_strength(clock.ticks);
-            if (power>0) player->setOutPower(power,cLib_targetAngleY(&center,&player->current.pos),1);
+        } else if (clock.kind==shade::Trial::Wind) {
+            audio.update_wind(!clock.windReleased && clock.ticks>=shade::wind_warning_ticks,player->current.pos);
+            if (!clock.windReleased && !player->checkEquipHeavyBoots()) {
+                const float power=shade::wind_strength(clock.ticks);
+                if (power>0) player->setOutPower(power,cLib_targetAngleY(&center,&player->current.pos),1);
+            }
         }
         packet.clock=clock; packet.center=center; packet.boss=boss->current.pos;
         packet.radius=radius;

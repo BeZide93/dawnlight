@@ -24,6 +24,7 @@ fixture = r'''
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <initializer_list>
 using u8 = uint8_t;
 using fpc_ProcID = uint32_t;
@@ -37,14 +38,30 @@ enum HookAction { HOOK_CONTINUE };
 struct leafdraw_class { int name = fpcNm_ALINK_e; };
 struct fopAc_ac_c : leafdraw_class { int group = fopAc_ENEMY_e; };
 struct daAlink_c : fopAc_ac_c { fpc_ProcID id = 1; uint16_t setID = 0; };
-struct dCcU_AtInfo { daAlink_c* mpActor; bool sword = true; };
+constexpr unsigned AT_TYPE_NORMAL_SWORD = 2, AT_TYPE_MASTER_SWORD = 0x04000000;
+constexpr unsigned HIT_TYPE_LINK_NORMAL_ATTACK = 1;
+struct Collider {
+    unsigned type = AT_TYPE_NORMAL_SWORD;
+    unsigned ChkAtType(unsigned mask) const { return type & mask; }
+};
+struct dCcU_AtInfo {
+    daAlink_c* mpActor;
+    Collider* mpCollider;
+    unsigned mHitType = HIT_TYPE_LINK_NORMAL_ATTACK;
+};
+struct LogService { void (*info)(ModContext*, const char*); };
+LogService* svc_log = nullptr;
+ModContext* mod_ctx = nullptr;
+struct Diagnostics {};
+Diagnostics s_diagnostics;
+void log_damage_check(fopAc_ac_c*, dCcU_AtInfo*) {}
+bool enabled = true;
 daAlink_c* currentLink = nullptr;
 daAlink_c* daAlink_getAlinkActorClass() { return currentLink; }
 fpc_ProcID fopAcM_GetID(daAlink_c* link) { return link->id; }
 int fpcM_GetName(leafdraw_class* process) { return process->name; }
 int fopAcM_GetGroup(fopAc_ac_c* actor) { return actor->group; }
-bool fierce_deity_enabled() { return true; }
-bool is_sword_attack(const dCcU_AtInfo* attack) { return attack && attack->sword; }
+bool fierce_deity_enabled() { return enabled; }
 namespace mods {
 template <class T> T arg(void* args, int index) {
     return static_cast<T>(static_cast<void**>(args)[index]);
@@ -59,7 +76,7 @@ void dComIfGp_setSelectEquipClothes(u8 value) { equippedClothes = value; ++equip
 state = source[source.index("enum class ModelSwapState"):
                source.index("SaveObserverHandle s_saveObserver")]
 callbacks = "".join(function(name) for name in (
-    "restore_equipment_selection", "reset_for_link", "same_link",
+    "is_sword_attack", "restore_equipment_selection", "reset_for_link", "same_link",
     "on_save_started", "before_player_delete", "after_damage_check",
 ))
 
@@ -68,9 +85,52 @@ int main() {
     daAlink_c link;
     currentLink = &link;
     fopAc_ac_c enemy;
-    dCcU_AtInfo attack{&link};
+    Collider collider;
+    dCcU_AtInfo attack{&link, &collider};
     void* hit[] = {&enemy, &attack};
     void* deletion[] = {static_cast<leafdraw_class*>(&link)};
+
+    // Exercise the actual sword predicate (the old fixture bypassed it). Ordon
+    // and wooden swords use NORMAL only; the Master Sword adds MASTER.
+    for (unsigned sword : {AT_TYPE_NORMAL_SWORD,
+                           AT_TYPE_NORMAL_SWORD | AT_TYPE_MASTER_SWORD}) {
+        reset_for_link(&link);
+        collider.type = sword;
+        for (int hitIndex = 0; hitIndex < 25; ++hitIndex) {
+            after_damage_check(nullptr, hit, nullptr, nullptr);
+            assert(s_state.meter == std::min(100.0f, (hitIndex + 1) * 5.0f));
+        }
+    }
+    reset_for_link(&link);
+    collider.type = 0x20; // non-sword attacks do not charge
+    after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 0);
+    collider.type = AT_TYPE_NORMAL_SWORD;
+    attack.mHitType = 16; // stun classification is deliberately rejected
+    after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 0);
+    attack.mHitType = HIT_TYPE_LINK_NORMAL_ATTACK;
+    attack.mpCollider = nullptr;
+    after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 0);
+    attack.mpCollider = &collider;
+    enabled = false;
+    after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 0);
+    enabled = true;
+    s_state.active = true;
+    after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 0);
+    s_state.active = false;
+    enemy.group = 0;
+    after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 0);
+    enemy.group = fopAc_ENEMY_e;
+    daAlink_c otherLink;
+    attack.mpActor = &otherLink;
+    after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 0);
+    attack.mpActor = &link;
 
     // Both the address and stage placement ID can survive a new player spawn.
     reset_for_link(&link);

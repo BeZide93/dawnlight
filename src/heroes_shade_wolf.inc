@@ -145,6 +145,25 @@ HookAction wolf_execute(ModContext*,void* args,void* result,void*) {
     return HOOK_CONTINUE;
 }
 
+// Configure the extra fade sample after all native material/shape display lists.
+// Untextured materials declare zero texgens. Sampling TEXCOORD0 anyway makes
+// Aurora see GX_MAX_TEXGENSRC (21) and abort shader generation. A position-based
+// generator needs no UV vertex attribute; every texel of our fade mask is equal.
+void configure_shade_wolf_fade_stage(u8 nativeTexGens,GXTevStageID stage,GXTexMapID map) {
+    if (nativeTexGens==0) {
+        GXSetNumTexGens(1);
+        GXSetTexCoordGen2(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_POS,GX_IDENTITY,GX_FALSE,GX_PTIDENTITY);
+    }
+    GXSetNumTevStages(static_cast<u8>(stage)+1);
+    GXSetTevOrder(stage,GX_TEXCOORD0,map,GX_COLOR_NULL);
+    GXSetTevDirect(stage);
+    GXSetTevSwapMode(stage,GX_TEV_SWAP0,GX_TEV_SWAP0);
+    GXSetTevColorIn(stage,GX_CC_ZERO,GX_CC_ZERO,GX_CC_ZERO,GX_CC_CPREV);
+    GXSetTevColorOp(stage,GX_TEV_ADD,GX_TB_ZERO,GX_CS_SCALE_1,GX_TRUE,GX_TEVPREV);
+    GXSetTevAlphaIn(stage,GX_CA_ZERO,GX_CA_APREV,GX_CA_TEXA,GX_CA_ZERO);
+    GXSetTevAlphaOp(stage,GX_TEV_ADD,GX_TB_ZERO,GX_CS_SCALE_1,GX_TRUE,GX_TEVPREV);
+}
+
 // Fade the native textured/skeletal model in the translucent draw list. Append
 // one GPU stage which multiplies the existing alpha by a constant texture;
 // no edits to shared materials, BRK registers, archives or display-list sizes.
@@ -184,15 +203,8 @@ struct ShadeWolfFadePacket : J3DPacket {
             shape->getShape()->loadPreDrawSetting();
             if (shape->getDisplayListObj()) shape->getDisplayListObj()->callDL();
             GXLoadTexObj(&texture,static_cast<GXTexMapID>(freeMap));
-            const auto stage=static_cast<GXTevStageID>(count);
-            GXSetNumTevStages(count+1);
-            GXSetTevOrder(stage,GX_TEXCOORD0,static_cast<GXTexMapID>(freeMap),GX_COLOR_NULL);
-            GXSetTevDirect(stage);
-            GXSetTevSwapMode(stage,GX_TEV_SWAP0,GX_TEV_SWAP0);
-            GXSetTevColorIn(stage,GX_CC_ZERO,GX_CC_ZERO,GX_CC_ZERO,GX_CC_CPREV);
-            GXSetTevColorOp(stage,GX_TEV_ADD,GX_TB_ZERO,GX_CS_SCALE_1,GX_TRUE,GX_TEVPREV);
-            GXSetTevAlphaIn(stage,GX_CA_ZERO,GX_CA_APREV,GX_CA_TEXA,GX_CA_ZERO);
-            GXSetTevAlphaOp(stage,GX_TEV_ADD,GX_TB_ZERO,GX_CS_SCALE_1,GX_TRUE,GX_TEVPREV);
+            configure_shade_wolf_fade_stage(static_cast<u8>(material->getTexGenNum()),
+                static_cast<GXTevStageID>(count),static_cast<GXTexMapID>(freeMap));
             GXSetBlendMode(GX_BM_BLEND,GX_BL_SRCALPHA,GX_BL_INVSRCALPHA,GX_LO_COPY);
             GXSetZMode(GX_TRUE,GX_LEQUAL,GX_FALSE);
             GXSetZCompLoc(GX_FALSE);

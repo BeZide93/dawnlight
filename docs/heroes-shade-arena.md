@@ -125,11 +125,21 @@ Implementation and lifecycle details:
   The shader preserves fur cutouts and native animated colors. It does not edit
   shared model materials, archives or display-list allocations. A free texture
   slot is selected per material; the actor's native model supplies all geometry.
+  Materials with zero texture generators get one position-based identity texgen
+  for the uniform fade mask. Existing texture generators/UV transforms remain
+  unchanged. This fixes the victory-time `unhandled tcg src 21` abort: sampling
+  coordinate zero with no active texgen left Aurora's source at its invalid
+  `GX_MAX_TEXGENSRC` sentinel. Setup runs after native display lists so they
+  cannot overwrite the added generator.
 - Cancellation, actor/pedestal deletion and shutdown remove the wolf and cancel
   pending creation. Cleanup clears only the owned white fade; a replacement
   scene fade is preserved. Pause/UI freezes the cinematic and wolf animation.
   No game assets are bundled. The former flame and CoWarp implementations are
   removed.
+- `tests/heroes_shade_wolf_fade_test.py` reproduces source 21 with the old
+  zero-texgen state, using Aurora's real enum/config and pipeline-copy code.
+  It runs the production fade-stage setup across textured/untextured material
+  switches and checks valid position-based fallback and untouched native UVs.
 - `tests/heroes_shade_cinema_test.py` runs the production wolf and cinematic
   controller against native stubs: asynchronous loading, howl/white-swap order,
   dialogue/title timing, pause, gradual outro opacity, cleanup and replacement

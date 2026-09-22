@@ -124,7 +124,6 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([str(exe)], check=True)
 
 source = (root / 'src/heroes_shade_encounter.cpp').read_text()
-assert '!effectsReady || !sTrialWaves.ready' in source
 assert 'PRE(ShadeWaveLoadHook,before_trial_wave_load)' in source
 assert 'uninstall<ShadeWaveLoadHook>' in source
 print('Shade wave readiness, async cleanup, borrowed banks, scene adoption and retry: passed')

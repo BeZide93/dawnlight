@@ -48,6 +48,8 @@ struct Cinema {
 } sCinema;
 void release_cinema(){sCinema.running=false;}
 shade::Battle sBattle;bool sStopping=false;
+struct TrialWaves {bool ready=false;} sTrialWaves;
+struct ShadeWolf {void clear(){}void prepare(cXyz,s16){}} sShadeWolf;
 s16 cLib_targetAngleY(const cXyz*,const cXyz*){return 0;}
 int prompts=0,spawns=0;
 void dComIfGp_setDoStatusForce(int code,int){assert(code==8);++prompts;}
@@ -62,7 +64,11 @@ Ground& dComIfG_Bgsp(){return ground;}
 int spawn(int,cXyz,s16,int,int& id){id=++spawns;return MOD_OK;}
 '''
 checks = r'''
-int main() {
+void check_interaction(bool audioReady) {
+    sTrialWaves.ready=audioReady;
+    sFighters={};sCinema={};sBattle={};prompts=spawns=0;
+    player={};pad={};sStopping=false;
+    inArena=true;nextStage=event=paused=menu=false;
     Pedestal p;
     // Ordinary start still creates exactly one Shade and begins the intro.
     pad.mPressedButtonFlags=PAD_BUTTON_A|2;
@@ -124,6 +130,11 @@ int main() {
         for(int i=0;i<45;++i) sBattle.tick();
         assert(sBattle.dying==(hp==0));
     }
+}
+int main() {
+    // A pending/failed wave load must not block encounter start or wind.
+    check_interaction(false);
+    check_interaction(true);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

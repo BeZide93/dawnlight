@@ -1270,7 +1270,9 @@ int execute_pedestal(void* ptr) {
     // Do both independently: loading effects must not delay wall-target spawn.
     const bool targetsReady=self->trials.place();
     const bool effectsReady=self->trials.prepare_effects();
-    if (!targetsReady || !effectsReady || !sTrialWaves.ready) return 1;
+    // Extra sound archives load independently. A pending/failed audio load
+    // must never lock the sword, including the interaction that ends wind.
+    if (!targetsReady || !effectsReady) return 1;
     const bool endingWind=sBattle.trial==shade::Trial::Wind &&
         self->trials.clock.kind==shade::Trial::Wind && !self->trials.clock.windReleased &&
         !sCinema.active() && pending_or_live(sFighters[0].id);

@@ -119,13 +119,16 @@ Implementation and lifecycle details:
   the encounter after a bounded wait, restores the sword interaction and removes
   pending actors. The native wolf is held hidden during combat for the outro.
 - `heroes_shade_trial_waves.inc` preloads SE groups `0x16`, `0x1d`, `0x1f`,
-  `0x21`, and `0x22` from the player's disc before sword interaction. The arena's
+  `0x21`, and `0x22` from the player's disc in the background. The arena's
   Darknut audio alias only provides the Temple of Time miniboss groups
   `0x15/0x17`; loading the Beamos model does not load its wave samples.
   These additional groups cover the normal Temple of Time, Phantom Zant room,
   and Hyrule Castle audio sets used below. Readiness requires native wave status
   2 (complete), not 1 (queued). Failed allocations retry at most once per 61 ticks
-  and log the archive ID; successful readiness is also logged.
+  and log the archive ID; successful readiness is also logged. Audio readiness
+  never gates sword interaction, encounter start, or wind-trial completion.
+  `tests/heroes_shade_pedestal_test.py` exercises the actual interaction with
+  audio both ready and indefinitely unavailable.
   Leaving the arena stops the owned loops and releases only added groups after
   their DVD writes finish. A destination scene can adopt an existing preload;
   the load hook reports success so native loaded-slot bookkeeping remains valid.

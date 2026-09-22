@@ -561,14 +561,14 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
             entry->animationStarted=false; entry->blade={}; stop_blade_sweeps(*entry);
             actor->offDownFlg(); actor->offHeadLockFlg();
             actor->mCcStts.ClrCcMove();
-            if (sBattle.trial==shade::Trial::Shield) select_phase(actor,*entry);
+            if (!shade::pauses_combat(sBattle.trial)) select_phase(actor,*entry);
             else cinema_pose(actor,sBattle.trial==shade::Trial::Fire ? 24 : 0);
             actor->mCylCc.ClrTgHit();
             begin_trial(actor);
         } else if (!sBattle.dying && sBattle.phase>=6) add_doubles(actor);
     }
     if (sBattle.trial!=shade::Trial::None) {
-        if (sBattle.trial==shade::Trial::Shield) {
+        if (!shade::pauses_combat(sBattle.trial)) {
             if (entry->reset) select_phase(actor,*entry);
             actor->mType=shade::phases[sBattle.phase].type;
             actor->field_0x15af=1;
@@ -942,11 +942,12 @@ void after_combat_action(ModContext*,void* args,void*,void*) {
         start_attack(actor,*entry); // second block: sword riposte, then Back Slice
     }
 }
-void shield_body_collision(ModContext*,void* args,void*,void*) {
+void trial_body_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
-    if (fighter(actor) && sBattle.trial==shade::Trial::Shield) {
+    if (fighter(actor) && sBattle.trial!=shade::Trial::None) {
         // Keep movement/body separation and offensive sword colliders. Only
-        // the separate ward sphere accepts bomb/ball hits during protection.
+        // trial-specific targets accept hits during protection, so native hit
+        // reactions cannot strand the offensive controller in a lesson state.
         actor->mCylCc.OffTgSetBit(); actor->mCylCc.ClrTgHit();
     }
 }
@@ -1242,13 +1243,25 @@ int execute_pedestal(void* ptr) {
     const bool targetsReady=self->trials.place();
     const bool effectsReady=self->trials.prepare_effects();
     if (!targetsReady || !effectsReady) return 1;
-    for (const auto& entry:sFighters) if (pending_or_live(entry.id)) return 1;
-    if (sCinema.active()) release_cinema(); // asynchronous creation failed
+    const bool endingWind=sBattle.trial==shade::Trial::Wind &&
+        self->trials.clock.kind==shade::Trial::Wind && !self->trials.clock.windReleased &&
+        !sCinema.active() && pending_or_live(sFighters[0].id);
+    if (!endingWind) {
+        for (const auto& entry:sFighters) if (pending_or_live(entry.id)) return 1;
+        if (sCinema.active()) release_cinema(); // asynchronous creation failed
+    }
     const cXyz delta=player->current.pos-self->current.pos;
     const s16 facing=static_cast<s16>(cLib_targetAngleY(&player->current.pos,&self->current.pos)-player->shape_angle.y);
     if (delta.absXZ()>230 || std::abs(delta.y)>100 || std::abs(static_cast<int>(facing))>0x3000) return 1;
     dComIfGp_setDoStatusForce(8,0); // native A: Pull
     if (!mDoCPd_c::getTrigA(PAD_1)) return 1;
+    if (endingWind) {
+        // The Shade execute hook completes the trial; preserve HP, phase and
+        // the existing fighter. Never start a second encounter from this A press.
+        self->trials.clock.release_wind();
+        mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags &= ~PAD_BUTTON_A;
+        return 1;
+    }
     sStopping=false;
     sBattle={};
     sFighters[0]={};
@@ -1319,7 +1332,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
     PRE(ShadeEndingBlowHook,before_ending_blow_wait);
     PRE(ShadeSwordHook,sword_collision);
-    POST(ShadeBodyHook,shield_body_collision);
+    POST(ShadeBodyHook,trial_body_collision);
     PRE(ShadeAccessoryMotionHook,accessory_motion);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);

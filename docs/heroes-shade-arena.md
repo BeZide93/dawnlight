@@ -96,8 +96,8 @@ directions, camera near arena walls, replay, and leaving/unloading during a scen
 ## Intermissions at 8 / 6 / 4 / 2 HP
 
 The fight starts at **10 HP**. After each of the first four pairs of accepted
-hits, one intermission begins. The energy ward preserves normal movement, sword
-attacks and combos; the other three intermissions pause the combat controller. Repeated
+hits, one intermission begins. The energy ward, Beamos eyes and wind preserve normal
+movement, sword attacks and combos; only the fire intermission pauses the combat controller. Repeated
 success events cannot consume health during it. Resolving the intermission
 costs no HP; after the wind, two further successful counters are needed for the
 existing victory scene. Missed-skill timeouts do not trigger intermissions.
@@ -107,7 +107,7 @@ existing victory scene. Missed-skill timeouts do not trigger intermissions.
 | 8 | Blue energy ward (Shade keeps attacking) | Bomb explosion or Ball and Chain; other weapons are ignored. The shell expands and fades for 12 ticks when broken. |
 | 6 | Fyrus fire wave | Five-second warning through a sword gesture and orange charge rings, then six seconds of outward travel. Reach a wall Clawshot target and hang above the fire. |
 | 4 | Two wall-mounted Beamos heads/eyes | Each tracks Link with a laser after a two-second charge. One arrow removes each eye and its beam. |
-| 2 | Outward wind | One second of visible wind without force, then 10 seconds of wind; strength builds smoothly during the first of those seconds. Iron Boots prevent the applied force. |
+| 2 | Outward wind | One second of visible wind without force, then a one-second smooth buildup. Wind continues until Link faces the central Master Sword and presses A within reach. Iron Boots prevent the applied force. |
 
 Four native `Obj_HsTarget` actors use the `L7HsMato` variant and its original
 hookable DZB. Each target's largest hookable face is rotated to face the arena
@@ -130,11 +130,12 @@ cancellation as the encounter and enemy-spawner fixes.
 `heroes_shade_trials.inc` implements the private arena runtime included by
 `heroes_shade_encounter.cpp`. The pedestal owns all models, archives, draw
 packets and collision volumes. Only the main Shade execute hook advances time.
-Doubles/projectiles are removed on entry. During the ward, the normal offensive
-controller and sword colliders remain active, while a post-`setCollision` hook
-disarms only Shade's body damage target. The separate ward sphere accepts the
-breaking weapons and follows Shade's final position after movement. The other
-trials suspend ordinary lesson/body/blade combat until completion. Pause/menu and
+Doubles/projectiles are removed on entry. During the ward, eyes and wind, the normal
+offensive controller and sword colliders remain active. A post-`setCollision` hook
+disarms Shade's body damage target during every trial, preventing native hit
+reactions from stranding the offensive controller in a lesson state. The separate
+ward sphere accepts the breaking weapons and follows Shade's final position after
+movement. Fire suspends ordinary combat until completion. Pause/menu and
 unrelated events disarm volumes without advancing or resetting progress.
 Death, warps, deletion and mod shutdown cancel effects. Intermissions do not
 register or open dialogue: visual cues announce attacks without explaining
@@ -170,8 +171,12 @@ and could make subsequent beams disappear. Eye targets remain vulnerable and
 accept arrows only.
 Wind rings appear immediately, with no external force during the first 30
 simulation ticks (one second). Over the next 30 ticks, a smoothstep curve raises
-the force from weak to the existing maximum of 55. The active gust lasts 300
-ticks including that ramp, making the entire phase 330 ticks (11 seconds).
+the force from weak to the existing maximum of 55. The active gust has no timeout.
+Facing the Master Sword within the existing 230-unit interaction range and pressing
+A requests wind completion; the next Shade execute tick stops applying force and
+finishes the trial. This interaction consumes A and preserves the existing fighter,
+HP, skill progression and lava rim. It cannot spawn another Shade or restart the
+intro, and pause, menus, death, wolf form, events and transitions suppress it.
 Wind uses Link's native external-force API, retaining wall collision. Both the equipment check and the native heavy-aware
 force flag let Iron Boots resist it. Ordinary walking cannot cancel that force.
 
@@ -198,7 +203,12 @@ Validation: `python tests/heroes_shade_trials_test.py` runs the actual runtime
 methods with instrumented collision APIs, checking weapon filters, separate
 eye removal, warning/damage boundaries, shared beam endpoints, pause/resume,
 cleanup, safe beam startup and repeated recovery, persistent rim contact, and
-the wind warning, smooth buildup, restart and Iron Boots throughout the 330-tick phase. The battle test checks
+the wind warning, smooth buildup, restart, Iron Boots, indefinite duration and
+stopping force after sword interaction. `python tests/heroes_shade_pedestal_test.py`
+executes the actual pedestal method, checking normal startup, range/facing and
+state guards, A consumption, no duplicate spawn and the two remaining hits after
+wind resolution. The native-hook test verifies active blades during ward/eyes/wind,
+fire-only suspension and protected boss health/body targets. The battle test checks
 all ten hits, all four thresholds exactly once, ignored hits during trials,
 phase timeouts and replay. `python tests/heroes_shade_wall_targets_test.py`
 checks the actual alignment method for ceiling, reversed and tilted DZB faces
@@ -207,7 +217,8 @@ Existing native-hook and cinematic tests also run.
 
 On-device verification is still required for the four wall attachment points,
 Clawshot reach/hanging clearance, Beamos head alignment and visibility, fire
-appearance across the room, attacking while warded, laser recovery, wind strength, replay, and
+appearance across the room, attacks during ward/eyes/wind, laser recovery, wind
+strength and sword interaction under pressure, replay, and
 leaving/dying/unloading during each phase. These tests cannot render game
 archives or exercise actual Link physics.
 

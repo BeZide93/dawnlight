@@ -228,10 +228,15 @@ int main() {
     for(int i=60;i<150;++i) assert(!tick());
     assert(player.forces==120 && player.power==55);
     player.boots=true;
-    for(int i=150;i<329;++i) assert(!tick());
-    assert(tick() && player.forces==120 && t.clock.ticks==330);
+    for(int i=150;i<900;++i) assert(!tick()); // no automatic timeout, even in Iron Boots
+    assert(player.forces==120 && t.clock.ticks==900);
+    player.boots=false;
+    assert(!tick() && player.forces==121 && player.power==55);
+    t.clock.release_wind();
+    assert(tick() && player.forces==121); // no new force after interacting at the sword
     t.cancel();t.clock.begin(shade::Trial::Wind); // restart does not retain strong wind
     player.boots=false;player.forces=0;
+    assert(!t.clock.windReleased);
     for(int i=0;i<30;++i) assert(!tick() && player.forces==0);
     player.boots=true;
     for(int i=0;i<30;++i) assert(!tick() && player.forces==0); // boots also suppress ramp

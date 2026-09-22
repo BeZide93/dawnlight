@@ -190,7 +190,7 @@ int main() {
     for (const auto& sphere:a.mSphCc) assert(!sphere.enabled && !sphere.hit);
     for (const auto& sweep:a.entry.bladeSweeps) assert(!sweep.enabled && !sweep.hit);
     sCinema={};
-    // Every intermission excludes native success events; the ward keeps offensive blades.
+    // Every intermission excludes native success events; only fire pauses offensive blades.
     a.entry.offense=-1;
     for (auto trial:{shade::Trial::Shield,shade::Trial::Fire,shade::Trial::Eyes,shade::Trial::Wind}) {
         sBattle.trial=trial; a.mEvtNo=shade::phases[0].success;
@@ -198,13 +198,13 @@ int main() {
         assert(sBattle.health==10 && a.mEvtNo==0);
         for (auto& sphere:a.mSphCc) { sphere.enabled=true; sphere.hit=true; }
         a.mCylCc.target=true;a.mCylCc.hit=true;
-        shield_body_collision(nullptr,&a,nullptr,nullptr);
-        assert(a.mCylCc.target==(trial!=shade::Trial::Shield));
-        assert(a.mCylCc.hit==(trial!=shade::Trial::Shield));
+        trial_body_collision(nullptr,&a,nullptr,nullptr);
+        assert(!a.mCylCc.target);
+        assert(!a.mCylCc.hit);
         a.field_0x15af=1;
         const auto action=sword_collision(nullptr,&a,nullptr,nullptr);
-        assert(action==(trial==shade::Trial::Shield ? HOOK_CONTINUE : HOOK_SKIP_ORIGINAL));
-        for (const auto& sphere:a.mSphCc) assert(sphere.enabled==(trial==shade::Trial::Shield));
+        assert(action==(trial!=shade::Trial::Fire ? HOOK_CONTINUE : HOOK_SKIP_ORIGINAL));
+        for (const auto& sphere:a.mSphCc) assert(sphere.enabled==(trial!=shade::Trial::Fire));
     }
     sBattle={};a.entry.offense=shade::helm_splitter;
     // The real crash path: lesson-7 heap has no sheath calculator. The hook
@@ -523,7 +523,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("shield_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
+source = fixture + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

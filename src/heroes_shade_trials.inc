@@ -218,7 +218,7 @@ public:
         } else if (clock.kind==shade::Trial::Fire && clock.ticks<shade::fire_warning_ticks) {
             const float charge=static_cast<float>(clock.ticks)/shade::fire_warning_ticks;
             for (unsigned i=0;i<3;++i) ring(boss+cXyz(0,5+i*7,0),100+charge*180+i*32,12,{255,85,20,180});
-        } else if (clock.kind==shade::Trial::Wind) {
+        } else if (clock.kind==shade::Trial::Wind && !clock.windReleased) {
             // Outward-moving ribbons make the direction and remaining gust visible.
             for (unsigned band=0;band<6;++band) {
                 const float t=std::fmod(clock.ticks/45.0f+band/6.0f,1.0f);
@@ -618,7 +618,7 @@ struct ShadeTrials {
                     mDoAud_seStartLevel(Z2SE_EN_BM_BEAM2,&eyePos[i],0,dComIfGp_getReverb(51));
                 }
             }
-        } else if (clock.kind==shade::Trial::Wind && !player->checkEquipHeavyBoots()) {
+        } else if (clock.kind==shade::Trial::Wind && !clock.windReleased && !player->checkEquipHeavyBoots()) {
             const float power=shade::wind_strength(clock.ticks);
             if (power>0) player->setOutPower(power,cLib_targetAngleY(&center,&player->current.pos),1);
         }

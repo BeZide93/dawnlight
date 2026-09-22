@@ -72,13 +72,25 @@ struct Motion {
     float blend=-1;
     void setNo(int n,float b,int,int) { no=n; blend=b; step=0; }
 };
+constexpr int AT_TYPE_NORMAL_SWORD=1,AT_TYPE_MASTER_SWORD=2;
+struct Hit {int type=AT_TYPE_MASTER_SWORD;bool ChkAtType(int mask){return (type&mask)!=0;}};
 struct Cylinder {
+    Hit object; void* attacker=nullptr;
+    bool ChkTgHit(){return hit;}
+    Hit* GetTgHitObj(){return &object;}
+    void* GetTgHitAc(){return attacker;}
+    bool target=true,hit=true,shield=true;
+    void OffTgShield(){shield=false;}
+    void OffTgSetBit(){target=false;}void ClrTgHit(){hit=false;}
     cXyz center;
     const cXyz& GetC() const { return center; }
     float GetR() const { return 30; }
     float GetH() const { return 150; }
 };
-struct Player { std::array<Cylinder,3> mTgCyls; } player;
+struct daPy_py_c {
+    enum {CUT_TYPE_LARGE_JUMP_INIT=18,CUT_TYPE_LARGE_JUMP=19,CUT_TYPE_LARGE_JUMP_FINISH=20,CUT_TYPE_TURN_RIGHT=8,CUT_TYPE_TURN_LEFT=22,CUT_TYPE_LARGE_TURN_LEFT=23,CUT_TYPE_LARGE_TURN_RIGHT=24};
+};
+struct Player { std::array<Cylinder,3> mTgCyls; int cut=0; int getCutType(){return cut;} } player;
 Player* daAlink_getAlinkActorClass() { return &player; }
 Player* daPy_getPlayerActorClass() { return &player; }
 struct Sphere {
@@ -108,7 +120,8 @@ struct dCcD_Cps : Sphere, cM3dGCps {
 };
 struct Fighter {
     int id=42, divide=0;
-    bool reset=false;
+    shade::AttackChain chain;
+    bool reset=false,swordContact=false;
     int offense=shade::helm_splitter;
     bool animationStarted=true, deleting=false, helmTurnPending=false;
     shade::BladeMotion blade;
@@ -118,14 +131,24 @@ struct Fighter {
 struct daNpc_Kn_c {
     bool owned=true, mNoDraw=false;
     int field_0x15af=1;
-    int mEvtNo=0, health=8;
+    int mEvtNo=0, health=10;
     bool mSpeakEvent=false;
     void* mpPodModel=nullptr;
     unsigned mPodAnmFlags=0x41;
     int field_0x15cd=1;
     Fighter entry;
     Motion mMotionSeqMngr, mFaceMotionSeqMngr;
-    int mActionMode=19, field_0x15bc=0, landings=0;
+    int mActionMode=19, field_0x15bc=0, field_0x15bd=0, landings=0;
+    int falls=0,warps=0,jumpFalls=0,jumpWarps=0;
+    void teach06_warpDelete(void*){++jumpWarps;}
+    void teach06_superJumpedDivide(void*){++jumpFalls;}
+    void teach07_warpDelete(void*){++warps;}
+    void teach07_superTurnAttackedDivide(void*){++falls;}
+    struct Hio {struct {float attack_disappear_speed_h=12,attack_disappear_speed_v=18;} m;} hio;
+    Hio* mpHIO=&hio;
+    struct {void lookNone(int){}} mJntAnm;
+    struct {void startCreatureVoice(int,int){} void startCollisionSE(int,int){}} mSound;
+    struct {s16 y=0;} shape_angle;
     int mMode=2, field_0xdec=0;
     bool down=false;
     bool checkDownFlg() const { return down; }
@@ -142,12 +165,18 @@ struct daNpc_Kn_c {
     cXyz speed;
     float speedF=0;
     int getBackboneJointNo() { return 1; }
+    Cylinder mCylCc;
     std::array<Sphere,2> mSphCc;
 };
 Fighter* fighter(daNpc_Kn_c* a) { return a->owned ? &a->entry : nullptr; }
 shade::Battle sBattle;
 shade::Cinema sCinema;
 constexpr int kNone=-1, cPhs_COMPLEATE_e=4;
+constexpr int Z2SE_KN_V_DAMAGE_L=1,Z2SE_HIT_SWORD=2,kShadeParams=0,fpcNm_NPC_KN_e=1;
+int spawns=0;
+bool pending_or_live(int id){return id>=1000;}
+void spawn(int,const cXyz&,s16,int,int& id){id=1000+ ++spawns;}
+float cM_ssin(s16){return 0;}float cM_scos(s16){return 1;}
 std::array<Fighter,3> sFighters;
 struct daObjKnBullet_c { int parentActorID=42; Sphere mCcSph; };
 constexpr float kApproachSpeed=6;
@@ -164,17 +193,45 @@ Space* dComIfG_Ccsp() { return &space; }
 checks = r'''
 int main() {
     daNpc_Kn_c a;
+    for(unsigned phase : {6u,7u}) {
+        sBattle.phase=phase;
+        for(int divide : {1,2}) {
+            a.entry.divide=divide;
+            assert(waiting_action(a.entry)==(phase==6 ? 15 : 21));
+            a.entry.chain.begin(phase);
+            assert(a.entry.chain.next()==shade::sword);
+            assert(a.entry.chain.next()==shade::sword);
+        }
+    }
+    a.entry={};sBattle={};
     // Cutscenes cannot register a sword hit or consume another lesson counter.
     sCinema.begin(false);
     a.mEvtNo=shade::phases[0].success;
     no_order(nullptr,&a,nullptr,nullptr);
-    assert(sBattle.health==8 && a.mEvtNo==0);
+    assert(sBattle.health==10 && a.mEvtNo==0);
     for (auto& sphere:a.mSphCc) { sphere.enabled=true; sphere.hit=true; }
     for (auto& sweep:a.entry.bladeSweeps) { sweep.enabled=true; sweep.hit=true; }
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
     for (const auto& sphere:a.mSphCc) assert(!sphere.enabled && !sphere.hit);
     for (const auto& sweep:a.entry.bladeSweeps) assert(!sweep.enabled && !sweep.hit);
     sCinema={};
+    // Every intermission excludes native success events; only fire pauses offensive blades.
+    a.entry.offense=-1;
+    for (auto trial:{shade::Trial::Shield,shade::Trial::Fire,shade::Trial::Eyes,shade::Trial::Wind}) {
+        sBattle.trial=trial; a.mEvtNo=shade::phases[0].success;
+        no_order(nullptr,&a,nullptr,nullptr);
+        assert(sBattle.health==10 && a.mEvtNo==0);
+        for (auto& sphere:a.mSphCc) { sphere.enabled=true; sphere.hit=true; }
+        a.mCylCc.target=true;a.mCylCc.hit=true;
+        trial_body_collision(nullptr,&a,nullptr,nullptr);
+        assert(!a.mCylCc.target);
+        assert(!a.mCylCc.hit);
+        a.field_0x15af=1;
+        const auto action=sword_collision(nullptr,&a,nullptr,nullptr);
+        assert(action==(trial!=shade::Trial::Fire ? HOOK_CONTINUE : HOOK_SKIP_ORIGINAL));
+        for (const auto& sphere:a.mSphCc) assert(sphere.enabled==(trial!=shade::Trial::Fire));
+    }
+    sBattle={};a.entry.offense=shade::helm_splitter;
     // The real crash path: lesson-7 heap has no sheath calculator. The hook
     // must bypass native init(modify=true), with a successful body result.
     bool result=false;
@@ -467,22 +524,130 @@ int main() {
     sBattle={}; sBattle.phase=2;
     reflected.mEvtNo=11; reflected.field_0x15bc=1;
     assert(no_order(nullptr,&reflected,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
-    assert(sBattle.health==7 && reflected.health==7 && sBattle.recovery==45);
+    assert(sBattle.health==9 && reflected.health==9 && sBattle.recovery==45);
     assert(reflected.mMotionSeqMngr.no==29 && reflected.field_0x15bc==0);
     assert(reflected.mEvtNo==0);
     reflected.mMotionSeqMngr.no=0; reflected.mEvtNo=11;
     no_order(nullptr,&reflected,nullptr,nullptr);
-    assert(sBattle.health==7 && reflected.mMotionSeqMngr.no==0);
+    assert(sBattle.health==9 && reflected.mMotionSeqMngr.no==0);
     sBattle={}; reflected.mEvtNo=7;
     no_order(nullptr,&reflected,nullptr,nullptr);
-    assert(sBattle.health==7 && reflected.mMotionSeqMngr.no==0); // other counters unchanged
+    assert(sBattle.health==9 && reflected.mMotionSeqMngr.no==0); // other counters unchanged
     sBattle={}; sBattle.phase=2;
     reflected.entry.divide=1; reflected.mEvtNo=11;
     no_order(nullptr,&reflected,nullptr,nullptr);
-    assert(sBattle.health==8 && reflected.mMotionSeqMngr.no==0);
+    assert(sBattle.health==10 && reflected.mMotionSeqMngr.no==0);
     reflected.entry.divide=0; reflected.owned=false; reflected.mEvtNo=11;
     assert(no_order(nullptr,&reflected,nullptr,nullptr)==HOOK_CONTINUE);
-    assert(sBattle.health==8 && reflected.mEvtNo==11);
+    assert(sBattle.health==10 && reflected.mEvtNo==11);
+
+    // Both ordinary spin directions and both Great Spins defeat each clone
+    // independently, without requiring a hit on the boss or draining its HP.
+    for(int cut : {8,22,23,24}) {
+        sBattle={};sBattle.phase=7;player.cut=cut;
+        daNpc_Kn_c boss,one,two;
+        one.entry.divide=1;two.entry.divide=2;
+        one.mCylCc.attacker=two.mCylCc.attacker=&player;
+        one.current.angle.y=0;two.current.angle.y=static_cast<s16>(0x8000);
+        playerYaw=0;
+        assert(skill_counter_action(&one,one.entry));
+        assert(sBattle.health==10 && sBattle.recovery==0 && one.mEvtNo==0);
+        assert(one.mMotionSeqMngr.no==18 && one.speedF<0 && one.speed.y>0);
+        assert(!one.mCylCc.target && one.entry.offense==-1);
+        assert(defeated_double(one.entry) && !defeated_double(two.entry));
+        // First clone disappears only after landing, while the second remains.
+        assert(skill_counter_action(&one,one.entry) && one.falls==1 && one.warps==0);
+        one.mAcch.grounded=true;one.speed.y=-2;
+        after_knockdown_movement(nullptr,&one,nullptr,nullptr);
+        assert(one.mMotionSeqMngr.no==19);
+        skill_counter_action(&one,one.entry);assert(one.warps==0);
+        one.mMotionSeqMngr.step=1;skill_counter_action(&one,one.entry);
+        assert(one.warps==1 && one.mActionMode==23);
+        // Run the production spawn routine after native deletion clears slots.
+        sFighters={};spawns=0;add_doubles(&boss);
+        assert(spawns==1 && sFighters[1].id==42 && sFighters[2].id>=1000);
+        for(int i=0;i<120;++i)add_doubles(&boss);
+        assert(spawns==1);
+        assert(skill_counter_action(&two,two.entry));
+        assert(two.mMotionSeqMngr.no==14 && two.speedF>0);
+        assert(sBattle.health==10 && sBattle.defeated_doubles==6);
+        sFighters={};for(int i=0;i<120;++i)add_doubles(&boss);
+        assert(spawns==1); // neither defeated slot is replenished
+        // Normal spin also produces the boss's usual success event, once.
+        boss.mCylCc.attacker=&player;
+        assert(skill_counter_action(&boss,boss.entry) && boss.mEvtNo==24);
+        no_order(nullptr,&boss,nullptr,nullptr);assert(sBattle.health==9);
+        assert(!skill_counter_action(&boss,boss.entry));
+        // Recovery from a simultaneous boss hit must not freeze clone landing.
+        int falls=two.falls;assert(skill_counter_action(&two,two.entry));assert(two.falls==falls+1);
+        for(int i=0;i<45;++i)sBattle.tick();
+        assert(sBattle.phase==0 && sBattle.defeated_doubles==0);
+    }
+    // Jump Strike doubles must fall/land before departure, even if Link ends
+    // the attack or the boss enters recovery. Neither may notify the teacher
+    // to immediately warp out the group; defeated slots must remain empty.
+    for(int cut : {19,20}) for(int side : {0,0x8000}) {
+        sBattle={};sBattle.phase=6;player.cut=cut;
+        sBattle.recovery=side ? 45 : 0; // boss may have executed first this frame
+        daNpc_Kn_c boss,clone;
+        clone.entry.divide=1;clone.current.angle.y=static_cast<s16>(side);playerYaw=0;
+        clone.mCylCc.attacker=&player;
+        assert(skill_counter_action(&clone,clone.entry));
+        assert(clone.mActionMode==16 && clone.speed.y>0);
+        assert(clone.mMotionSeqMngr.no==(side ? 14 : 18));
+        assert(clone.field_0x15bd==0 && clone.mEvtNo==0 && sBattle.health==10);
+        assert(sBattle.defeated_doubles==2 && !clone.mCylCc.target);
+        player.cut=0; // The native tutorial used this change to remove the group.
+        for(int i=0;i<4;++i)assert(skill_counter_action(&clone,clone.entry));
+        assert(clone.jumpFalls==4 && clone.jumpWarps==0 && clone.warps==0);
+        sBattle.recovery=45;
+        assert(skill_counter_action(&clone,clone.entry) && clone.jumpFalls==5);
+        clone.speed.y=-2;clone.mAcch.grounded=true;
+        after_knockdown_movement(nullptr,&clone,nullptr,nullptr);
+        assert(clone.mMotionSeqMngr.no==(side ? 15 : 19));
+        skill_counter_action(&clone,clone.entry);assert(clone.jumpWarps==0);
+        clone.mMotionSeqMngr.step=1;
+        assert(skill_counter_action(&clone,clone.entry));
+        assert(clone.mActionMode==17 && clone.jumpWarps==1 && clone.warps==0);
+        sFighters={};spawns=0;
+        for(int i=0;i<120;++i)add_doubles(&boss);
+        assert(spawns==1 && sFighters[1].id==42); // only the surviving clone
+        // Matching boss hit keeps the original Jump Strike success event.
+        sBattle.recovery=0;player.cut=cut;boss.mCylCc.attacker=&player;
+        assert(skill_counter_action(&boss,boss.entry) && boss.mEvtNo==21);
+        no_order(nullptr,&boss,nullptr,nullptr);assert(sBattle.health==9);
+    }
+    // Keep native opening-swipe behavior; don't accept a normal jumping slash.
+    sBattle={};sBattle.phase=6;
+    daNpc_Kn_c opening;opening.entry.divide=1;opening.mCylCc.attacker=&player;
+    for(int cut : {18,10,8,22,23,24}) {
+        player.cut=cut;
+        assert(!skill_counter_action(&opening,opening.entry));
+        assert(!sBattle.defeated_doubles && opening.mActionMode==19);
+    }
+
+    // Normal spins open the owned phase's body collider; other attacks and
+    // unowned story actors do not acquire a new vulnerability.
+    sBattle={};sBattle.phase=7;player.cut=8;
+    daNpc_Kn_c spinTarget;
+    trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(!spinTarget.mCylCc.shield);
+    spinTarget.mCylCc.shield=true;player.cut=1;
+    trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(spinTarget.mCylCc.shield);
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
+    player.cut=8;spinTarget.mCylCc.attacker=nullptr;
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
+    spinTarget.mCylCc.attacker=&player;spinTarget.mCylCc.object.type=4;
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
+    spinTarget.mCylCc.object.type=AT_TYPE_NORMAL_SWORD;sBattle.trial=shade::Trial::Wind;
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
+    sBattle.trial=shade::Trial::None;sBattle.phase=6;
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
+    sBattle.phase=7;spinTarget.owned=false;
+    trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(spinTarget.mCylCc.shield);
+    // Defeated clones retain neither body targets nor offensive sword sweeps.
+    spinTarget.owned=true;spinTarget.entry.divide=1;sBattle.defeated_doubles=2;
+    trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(!spinTarget.mCylCc.target);
+    assert(sword_collision(nullptr,&spinTarget,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
 
     a.owned=false;
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);
@@ -491,7 +656,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + function("cinema_landing", "bool") + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
+source = fixture + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"
@@ -499,4 +664,7 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror",
                     "-I", str(root / "src"), str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("Hero's Shade missing-sheath guard and native blade-collider hooks: passed")
+action = function("combat_action")
+assert action.index("if (!entry)") < action.index("skill_counter_action(actor,*entry)")
+assert action.index("skill_counter_action(actor,*entry)") < action.index("if (sBattle.recovery)")
+print("Hero's Shade native hooks, Jump Strike/Spin landing and persistent double defeat: passed")

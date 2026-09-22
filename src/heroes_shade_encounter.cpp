@@ -10,9 +10,20 @@
 #include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_npc_kn.h"
+#include "d/actor/d_a_npc_gwolf.h"
+#include "m_Do/m_Do_graphic.h"
+#include "JSystem/J3DGraphBase/J3DShape.h"
 #include "d/actor/d_a_obj_knBullet.h"
+#include "d/actor/d_a_obj_hsTarget.h"
+#include "d/d_bg_w.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_camera.h"
+#include "Z2AudioLib/Z2AudioMgr.h"
+#include "Z2AudioLib/Z2SoundObject.h"
+#include "JSystem/JAudio2/JAUSectionHeap.h"
+#include "JSystem/JAudio2/JASWaveArcLoader.h"
+#include "JSystem/JKernel/JKRAram.h"
+#include "d/d_particle_name.h"
 #include "d/d_bg_s_lin_chk.h"
 #include "d/d_msg_object.h"
 #include "f_op/f_op_msg_mng.h"
@@ -22,10 +33,15 @@
 #include "mods/svc/flow.hpp"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include "res/Object/MstrSword.h"
+#include "res/Object/E_fm.h"
+#include "res/Object/E_bm6.h"
+#include "JSystem/J3DGraphAnimator/J3DJoint.h"
+#include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <unordered_set>
 
 namespace dawnlight {
@@ -68,12 +84,20 @@ std::unordered_set<ActorId> sProjectiles;
 shade::Cinema sCinema;
 std::array<mods::flow::RegisteredMessage,4> sLines;
 mods::flow::RegisteredMessage sBossTitle;
+void cancel_trial();
+void finish_trial();
+void tick_arena_hazards();
+void suspend_trial();
+void sync_trial_position(daNpc_Kn_c*);
+void begin_trial(daNpc_Kn_c*);
+bool tick_trial(daNpc_Kn_c*);
 struct CinemaRuntime {
     ActorId player = kNone;
     fpc_ProcID camera = kNone;
     int cameraIndex = 0;
     bool ownsEvent = false;
     int trim = 0;
+    int wolfWait = 0;
     cXyz eye{0,0,0}, center{0,0,0};
     float fovy = 55;
     s16 facing = 0;
@@ -103,6 +127,9 @@ bool arena() {
         std::strcmp(dComIfGp_getStartStageName(), "D_DLBR0") == 0 &&
         dComIfGp_getStartStageRoomNo() == 51;
 }
+#include "heroes_shade_music.inc"
+#include "heroes_shade_trial_waves.inc"
+
 Fighter* fighter(daNpc_Kn_c* actor) {
     if (!actor) return nullptr;
     for (auto& entry : sFighters) if (entry.id != kNone && entry.id == fopAcM_GetID(actor)) return &entry;
@@ -139,6 +166,8 @@ void remove_actor(ActorId id) {
     }
     if (actor_by_id(id)) svc_actor->delete_actor(mod_ctx,id);
 }
+#include "heroes_shade_wolf.inc"
+
 void remove_companions() {
     for (unsigned i=1;i<sFighters.size();++i) {
         sFighters[i].deleting = true;
@@ -188,7 +217,8 @@ ModResult register_cinema_lines() {
     for (const auto language:languages) titleVariants.push_back(mods::flow::MessageBuilder{titleStyle}
         .text("Hero's Shade").auto_advance(90).build(language));
     sBossTitle=mods::flow::register_message(0,titleVariants);
-    return sBossTitle.result();
+    if (!sBossTitle) return sBossTitle.result();
+    return MOD_OK;
 }
 void close_cinema_line() {
     auto* message=dMsgObject_getMsgObjectClass();
@@ -215,7 +245,8 @@ void start_cinema_line(MessageId text) {
         sCinemaRuntime.messageOpened=message && message->msg_idx==text && message->getStatusLocal()>1;
     }
 }
-void release_cinema() {
+void release_cinema(bool keepWolf=false) {
+    if (keepWolf) sShadeWolf.end_visual(); else sShadeWolf.clear();
     close_cinema_line();
     if (sCinemaRuntime.ownsEvent) {
         auto* boss=actor_by_id(sFighters[0].id);
@@ -236,9 +267,10 @@ void release_cinema() {
 }
 void finish_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     const bool victory=sCinema.victory;
-    release_cinema();
+    release_cinema(!victory);
     if (victory) { entry.deleting=true; remove_actor(entry.id); }
     else {
+        start_shade_music(false);
         actor->mNoDraw=false;
         actor->field_0x16f4.set(1,1,1);
         entry.reset=true;
@@ -257,8 +289,9 @@ void cinema_camera(daNpc_Kn_c* actor) {
     if (!camera || fpcM_GetID(camera)!=sCinemaRuntime.camera) return;
     const float sn=cM_ssin(sCinemaRuntime.facing), cs=cM_scos(sCinemaRuntime.facing);
     const bool words=sCinema.shot==shade::Shot::Words1 || sCinema.shot==shade::Shot::Words2;
+    const bool wolf=sShadeWolf.visible();
     const float distance=words ? 340.0f : 510.0f;
-    cXyz center=actor->current.pos+cXyz(0,145,0);
+    cXyz center=actor->current.pos+cXyz(0,wolf ? 75.0f : 145.0f,0);
     cXyz eye=actor->current.pos+cXyz(sn*distance+cs*130,185,cs*distance-sn*130);
     // Short, gentle dolly; stage walls constrain every intermediate eye point.
     center=camera->mCamera.Center()+(center-camera->mCamera.Center())*0.08f;
@@ -268,16 +301,34 @@ void cinema_camera(daNpc_Kn_c* actor) {
     if (dComIfG_Bgsp().LineCross(&line)) eye=center+(line.GetCross()-center)*0.9f;
     camera->mCamera.Set(center,eye,50.0f,s16(0));
 }
+void cinema_sword_shot(daNpc_Kn_c* actor) {
+    auto* camera=dComIfGp_getCamera(sCinemaRuntime.cameraIndex);
+    auto* player=daAlink_getAlinkActorClass();
+    if (!camera || !player) return;
+    const float sn=cM_ssin(sCinemaRuntime.facing),cs=cM_scos(sCinemaRuntime.facing);
+    const cXyz eye=actor->current.pos+cXyz(sn*180,150,cs*180);
+    const cXyz center=player->current.pos+cXyz(0,80,0);
+    camera->mCamera.Set(center,eye,50.0f,s16(0));
+}
 // Called once per native main-actor simulation tick, never by Draw. Keeping the
 // main actor alive until Afterglow finishes also keeps event ownership valid.
 void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     using shade::Shot;
     if (dComIfGp_isPauseFlag() || ui_document_visible()) return;
     auto* player=daAlink_getAlinkActorClass();
+    // Prepare the hidden wolf before moving the camera. Failure is bounded and
+    // cancels the intro so the sword can be retried, without starting combat.
+    if (sCinema.shot==Shot::Request && !sShadeWolf.ready()) {
+        if (++sCinemaRuntime.wolfWait>=180 || !pending_or_live(sShadeWolf.id)) {
+            release_cinema(); entry.deleting=true; remove_actor(entry.id);
+        }
+        return;
+    }
     if (sCinema.shot==Shot::Request && actor->eventInfo.checkCommandDemoAccrpt()) {
         sCinemaRuntime.ownsEvent=true;
         auto* camera=dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0));
         if (!camera) { finish_cinema(actor,entry); return; }
+        if (!sCinema.victory) start_shade_music(true);
         sCinemaRuntime.player=fopAcM_GetID(player);
         sCinemaRuntime.camera=fpcM_GetID(camera);
         sCinemaRuntime.cameraIndex=dComIfGp_getPlayerCameraID(0);
@@ -287,6 +338,7 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         sCinemaRuntime.trim=camera->mCamera.mTrimSize;
         sCinemaRuntime.facing=fopAcM_searchPlayerAngleY(actor);
         camera->mCamera.Stop(); camera->mCamera.SetTrimSize(3);
+        if (!sCinema.victory) cinema_sword_shot(actor);
         player->changeOriginalDemo();
         player->changeDemoMode(daPy_demo_c::DEMO_WAIT_TURN_e,0,0,0);
         player->mDemo.setMoveAngle(cLib_targetAngleY(&player->current.pos,&actor->current.pos));
@@ -298,7 +350,7 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         if (!sCinema.victory || shade::knockdown_landing_motion(motion)<0)
             cinema_pose(actor,sCinema.victory ? (motion==15 || motion==16 ? 16 :
                 motion>=19 && motion<=22 ? 22 : 0) : 0);
-        actor->field_0x170c=sCinema.victory ? 0 : 3;
+        actor->field_0x170c=0;
         actor->field_0x170d=0;
     } else if (sCinema.shot==Shot::Request) {
         fopAcM_orderPotentialEvent(actor,2,0xffff,0);
@@ -339,12 +391,16 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     const bool pose_done=previous==Shot::Ready ?
         title_cue :
         actor->mMotionSeqMngr.getNo()==0 || actor->mMotionSeqMngr.getStepNo()>0;
-    if (sCinema.tick(sCinemaRuntime.ownsEvent,message_done,pose_done)) {
+    const bool visual_done=(previous==Shot::Arrival || previous==Shot::Depart) &&
+        sShadeWolf.tick(actor,sCinema.ticks);
+    if (sCinema.tick(sCinemaRuntime.ownsEvent,message_done,pose_done,visual_done)) {
         finish_cinema(actor,entry);
         return;
     }
     if (previous!=sCinema.shot) {
         close_cinema_line();
+        if (sCinema.shot==Shot::Arrival) sShadeWolf.begin(actor,true);
+        if (previous==Shot::Arrival) { sShadeWolf.end_visual(); actor->mNoDraw=false; }
         if (sCinema.shot==Shot::Words1 || sCinema.shot==Shot::Words2) cinema_pose(actor,3); // TALK_A
         if (sCinema.shot==Shot::Ready) cinema_pose(actor,24); // ready the sword
         // Start on the cue tick while the gesture continues, without waiting
@@ -352,24 +408,16 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         if (sCinema.shot==Shot::BossName) start_cinema_line(sBossTitle.id());
         if (sCinema.shot==Shot::Depart) {
             cinema_pose(actor,0);
-            actor->field_0x170c=1;
-            actor->field_0x170d=0;
+            sShadeWolf.begin(actor,false);
         }
     }
-    // Slow the native materialization to 36 ticks and departure to 45 ticks.
-    // Stop at state 2 on departure: native ctrlWarp would otherwise reappear.
-    if (sCinema.shot==Shot::Arrival && sCinema.ticks>=18) {
-        actor->mNoDraw=false;
-        if (actor->field_0x170c==3 && (sCinema.ticks-18)%6==0) actor->ctrlWarp();
-    } else if (sCinema.shot==Shot::Depart && actor->field_0x170c==1 && sCinema.ticks%3==0) {
-        actor->ctrlWarp();
-    } else if (sCinema.shot==Shot::Afterglow) actor->mNoDraw=true;
+    if (sCinema.shot==Shot::Afterglow) { sShadeWolf.end_visual(); actor->mNoDraw=true; }
     if (sCinemaRuntime.ownsEvent) cinema_camera(actor);
 }
 void add_doubles(daNpc_Kn_c* boss) {
     for (unsigned i=1;i<sFighters.size();++i) {
         auto& entry=sFighters[i];
-        if (pending_or_live(entry.id)) continue;
+        if ((sBattle.defeated_doubles & (1u<<i)) || pending_or_live(entry.id)) continue;
         entry = {};
         entry.divide = i;
         cXyz pos=boss->current.pos;
@@ -380,9 +428,16 @@ void add_doubles(daNpc_Kn_c* boss) {
     }
 }
 
+DEFINE_HOOK(&Z2SeqMgr::processBgmFramework, ShadeMusicFrameworkHook);
+HookAction before_music_framework(ModContext*,void*,void*,void*) {
+    advance_shade_music();
+    return HOOK_CONTINUE;
+}
+
 DEFINE_HOOK(&daNpc_Kn_c::isDelete, ShadeAdmissionHook);
 DEFINE_HOOK(&daNpc_Kn_c::reset, ShadeResetHook);
 DEFINE_HOOK(&daNpc_Kn_c::Execute, ShadeExecuteHook);
+DEFINE_HOOK(&daNpc_Kn_c::Draw, ShadeDrawHook);
 DEFINE_HOOK(&daNpc_Kn_c::Delete, ShadeDeleteHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtProc, ShadeEventHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtOrder, ShadeOrderHook);
@@ -395,6 +450,7 @@ DEFINE_HOOK(&daNpc_Kn_c::beforeMove, ShadeMovementHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterMoved, ShadeLandingHook);
 DEFINE_HOOK(&daNpc_Kn_c::setAttnPos, ShadeJumpPoseHook);
 DEFINE_HOOK(&daNpc_Kn_c::setCollisionSword, ShadeSwordHook);
+DEFINE_HOOK(&daNpc_Kn_c::setCollision, ShadeBodyHook);
 DEFINE_HOOK(&daObjKnBullet_c::Create, ShadeBulletHook);
 DEFINE_HOOK(&daObjKnBullet_c::Delete, ShadeBulletDeleteHook);
 DEFINE_HOOK(&fopAcM_createChild, ShadeChildHook);
@@ -420,11 +476,11 @@ void after_reset(ModContext*,void* args,void*,void*) {
         actor->mNoDraw=false;
         if (!entry->divide && sCinema.active() && !sCinema.victory) {
             actor->mNoDraw=true;
-            actor->field_0x16f4.zero();
+            actor->field_0x16f4.set(1,1,1);
             actor->field_0x15af=0;
         }
         actor->parentActorID=entry->divide ? sFighters[0].id : kNone;
-        actor->health=8;
+        actor->health=shade::starting_health;
         for (auto& sphere:actor->mSphCc) sphere.SetAtAtp(shade::normal_attack_power);
         const dCcD_SrcCps source{daNpc_Kn_c::mCcDSph.mObjInf,
             {{{0,0,0},{0,0,0},30}}};
@@ -451,7 +507,7 @@ HookAction no_order(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (!entry->divide && !sCinema.active()) {
+    if (!entry->divide && !sCinema.active() && !shade::pauses_combat(sBattle.trial)) {
         const int previous_health=sBattle.health;
         sBattle.event(actor->mEvtNo);
         actor->health=sBattle.health;
@@ -503,17 +559,30 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     if (sStopping || entry->deleting || !arena() || !daAlink_getAlinkActorClass()) {
-        if (!entry->divide) release_cinema();
+        if (!entry->divide) { stop_shade_music(); release_cinema(); cancel_trial(); }
         stop_blade_sweeps(*entry);
         entry->deleting=true;
         remove_actor(entry->id);
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
     }
-    // Events/warp/death may freeze actor execution without deleting the room yet.
+    // Freeze trial time and disarm volumes during other events/menus. Preserve
+    // progress so an item equip or pause cannot strand a half-finished trial.
     if (dComIfGp_isEnableNextStage() || (dComIfGp_event_runCheck() && !sCinema.active()) ||
         daAlink_getAlinkActorClass()->checkDeadHP()) {
-        if (!entry->divide) release_cinema();
+        if (!entry->divide) {
+            release_cinema();
+            if (dComIfGp_isEnableNextStage() || daAlink_getAlinkActorClass()->checkDeadHP()) {
+                stop_shade_music(); cancel_trial();
+            }
+            else suspend_trial();
+        }
+        stop_blade_sweeps(*entry);
+        *static_cast<int*>(result)=1;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if (dComIfGp_isPauseFlag() || ui_document_visible()) {
+        if (!entry->divide) suspend_trial();
         stop_blade_sweeps(*entry);
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
@@ -525,13 +594,38 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
         if (entry->deleting) { *static_cast<int*>(result)=1; return HOOK_SKIP_ORIGINAL; }
         if (sCinema.active()) return HOOK_CONTINUE;
     }
+    if (!entry->divide && !sCinema.active() && !sBattle.dying) tick_arena_hazards();
     actor->mType=shade::phases[sBattle.phase].type;
     if (!entry->divide && !actor->mCreating && sBattle.tick()) {
         remove_companions();
         entry->reset=true;
-        if (!sBattle.dying && sBattle.phase>=6) add_doubles(actor);
+        if (sBattle.trial!=shade::Trial::None) {
+            entry->offense=-1; entry->chain.cancel(); entry->helmTurnPending=false;
+            entry->animationStarted=false; entry->blade={}; stop_blade_sweeps(*entry);
+            actor->offDownFlg(); actor->offHeadLockFlg();
+            actor->mCcStts.ClrCcMove();
+            if (!shade::pauses_combat(sBattle.trial)) select_phase(actor,*entry);
+            else cinema_pose(actor,sBattle.trial==shade::Trial::Fire ? 24 : 0);
+            actor->mCylCc.ClrTgHit();
+            begin_trial(actor);
+        } else if (!sBattle.dying && sBattle.phase>=6) add_doubles(actor);
+    }
+    if (sBattle.trial!=shade::Trial::None) {
+        if (!shade::pauses_combat(sBattle.trial)) {
+            if (entry->reset) select_phase(actor,*entry);
+            actor->mType=shade::phases[sBattle.phase].type;
+            actor->field_0x15af=1;
+        } else { actor->mType=6; actor->field_0x15af=0; }
+        if (!entry->divide && tick_trial(actor)) {
+            finish_trial(); sBattle.trial=shade::Trial::None;
+            entry->reset=true;
+        }
+        return HOOK_CONTINUE;
     }
     if (!entry->divide && sBattle.dying) {
+        cancel_trial();
+        stop_shade_music();
+        if (!pending_or_live(sShadeWolf.id)) sShadeWolf.prepare(actor->current.pos,actor->shape_angle.y);
         sCinema.begin(true);
         entry->offense=-1;
         entry->helmTurnPending=false;
@@ -555,9 +649,24 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     // requests inherit the play scene as well as the spawner's state exemption.
     return HOOK_CONTINUE;
 }
+HookAction draw_cinema(ModContext*,void* args,void* result,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    const auto* entry=fighter(actor);
+    if (!entry || entry->divide) return HOOK_CONTINUE;
+    // Native twilight() clears mNoDraw during execute. Enforce cinematic
+    // visibility here, after native execution and before either body is queued.
+    const bool hidden=entry->deleting ||
+        (sCinema.shot==shade::Shot::Request && !sCinema.victory) ||
+        sCinema.shot==shade::Shot::Afterglow;
+    if (hidden || sShadeWolf.hides_shade()) {
+        *static_cast<int*>(result)=1;return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
+}
 void after_execute(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (!fighter(actor)) return;
+    sync_trial_position(actor);
     // All combat animations live in KN_a. Keep the original lesson-7 resource
     // pattern outside execution so Delete releases exactly what create loaded.
     actor->mType=6;
@@ -568,7 +677,7 @@ void after_execute(ModContext*,void* args,void*,void*) {
 HookAction before_delete(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (auto* entry=fighter(actor)) {
-        if (!entry->divide) { release_cinema(); remove_companions(); }
+        if (!entry->divide) { stop_shade_music(); release_cinema(); cancel_trial(); remove_companions(); }
         stop_blade_sweeps(*entry);
         actor->mType=6;
         *entry={};
@@ -607,7 +716,8 @@ HookAction delete_bullet(ModContext*,void* args,void*,void*) {
 // combo or leave it waiting for sequence 9 after returning to the ready pose.
 int waiting_action(const Fighter& entry) {
     const auto& phase=shade::phases[sBattle.phase];
-    return entry.divide ? (phase.type==5 ? 14 : 20) : phase.action;
+    // 14/20 are formation movement; native doubles actually wait in 15/21.
+    return entry.divide ? (phase.type==5 ? 15 : 21) : phase.action;
 }
 HookAction before_approach(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
@@ -773,12 +883,14 @@ HookAction before_ending_blow_wait(ModContext*,void* args,void*,void*) {
         actor->field_0xdec>1) actor->field_0xdec=std::max(1,actor->field_0xdec-7);
     return HOOK_CONTINUE;
 }
+#include "heroes_shade_spin.inc"
+
 HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     entry->swordContact=false;
-    if (sCinema.active()) {
+    if (sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
         if (!cinema_landing() || shade::knockdown_landing_motion(actor->mMotionSeqMngr.getNo())<0) {
             actor->speedF=0;
             actor->speed.zero();
@@ -788,6 +900,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         return HOOK_SKIP_ORIGINAL;
     }
     if (sBattle.dying) return HOOK_CONTINUE;
+    if (skill_counter_action(actor,*entry)) return HOOK_SKIP_ORIGINAL;
     if (sBattle.recovery) {
         hold_recovery(actor);
         return HOOK_SKIP_ORIGINAL;
@@ -891,11 +1004,26 @@ void after_combat_action(ModContext*,void* args,void*,void*) {
         start_attack(actor,*entry); // second block: sword riposte, then Back Slice
     }
 }
+void trial_body_collision(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    const auto* entry=fighter(actor);
+    if (!entry) return;
+    if (sBattle.phase==7 && sBattle.trial==shade::Trial::None) {
+        if (auto* player=daPy_getPlayerActorClass(); player && spin_cut(player->getCutType()))
+            actor->mCylCc.OffTgShield();
+    }
+    if (defeated_double(*entry) || sBattle.trial!=shade::Trial::None) {
+        // Keep movement/body separation and offensive sword colliders. Only
+        // trial-specific targets accept hits during protection, so native hit
+        // reactions cannot strand the offensive controller in a lesson state.
+        actor->mCylCc.OffTgSetBit(); actor->mCylCc.ClrTgHit();
+    }
+}
 HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (sCinema.active()) {
+    if (defeated_double(*entry) || sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
         for (auto& sphere:actor->mSphCc) { sphere.OffAtSetBit(); sphere.ClrAtHit(); }
         entry->blade={};
         stop_blade_sweeps(*entry);
@@ -1037,9 +1165,6 @@ class EnergyPacket : public J3DPacket {
 public:
     cXyz position{0,0,0};
     bool reflected=false;
-    bool apparition=false;
-    bool farewell=false;
-    float progress=0;
     void draw() override {
         j3dSys.reinitGX();
         GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);
@@ -1059,33 +1184,6 @@ public:
         GXSetBlendMode(GX_BM_BLEND,GX_BL_SRCALPHA,GX_BL_ONE,GX_LO_CLEAR);
         GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);
         GXSetCullMode(GX_CULL_NONE);
-        if (apparition) {
-            // Original translucent light ribbons; no actor/model/material is
-            // borrowed or modified. Stable packet storage belongs to Pedestal.
-            const float fade=std::sin(std::clamp(progress,0.0f,1.0f)*3.1415926536f);
-            const u8 alpha=static_cast<u8>(fade*150);
-            constexpr float tau=6.2831853072f;
-            GXBegin(GX_QUADS,GX_VTXFMT0,(64+2*48)*4);
-            for (int segment=0;segment<64;++segment) for (int corner=0;corner<4;++corner) {
-                const float angle=tau*(segment+(corner==1 || corner==2))/64;
-                const float radius=40+progress*140+(corner>=2 ? 12 : 0);
-                GXPosition3f32(position.x+std::sin(angle)*radius,position.y+4,position.z+std::cos(angle)*radius);
-                GXColor4u8(farewell ? 255 : 120,220,farewell ? 150 : 255,corner>=2 ? 0 : alpha);
-            }
-            for (int strand=0;strand<2;++strand) for (int segment=0;segment<48;++segment)
-                for (int corner=0;corner<4;++corner) {
-                    const float along=(segment+(corner==1 || corner==2))/48.0f;
-                    const float angle=tau*(along+progress*1.5f+strand*0.5f);
-                    const float radius=70*(1-along*0.65f);
-                    GXPosition3f32(position.x+std::sin(angle)*radius,
-                        position.y+along*260+(corner>=2 ? 10 : 0),position.z+std::cos(angle)*radius);
-                    GXColor4u8(farewell ? 255 : 120,220,farewell ? 150 : 255,
-                        corner>=2 ? 0 : static_cast<u8>(alpha*std::sin(along*3.1415926536f)));
-                }
-            GXEnd();
-            j3dSys.reinitGX();
-            return;
-        }
         for (unsigned shell=0;shell<3;++shell) {
             const float radius=12.0f+10.0f*shell;
             const u8 alpha=shell==0 ? 210 : shell==1 ? 65 : 22;
@@ -1104,6 +1202,8 @@ public:
         j3dSys.reinitGX();
     }
 };
+#include "heroes_shade_trials.inc"
+
 class Pedestal : public fopAc_ac_c {
 public:
     request_of_phase_process_class phase{};
@@ -1112,9 +1212,9 @@ public:
     mDoExt_brkAnm brk;
     PlinthPacket plinth;
     EnergyPacket energy;
-    EnergyPacket apparition;
     dCcD_Stts collisionStatus;
     dCcD_Cyl collision;
+    ShadeTrials trials;
     bool ready=false;
     ~Pedestal() { dComIfG_resDelete(&phase,kSwordArchive); }
     static int heap(fopAc_ac_c* actor) {
@@ -1153,15 +1253,19 @@ int create_pedestal(void* ptr) {
     self->collision.SetC(self->current.pos);
     self->collision.SetR(90);
     self->collision.SetH(62);
+    self->trials.init(self);
+    sTrials=&self->trials;
     self->ready=true;
     return cPhs_COMPLEATE_e;
 }
 int delete_pedestal(void* ptr) {
     sStopping=true;
+    stop_shade_music();
     release_cinema();
     remove_companions();
     remove_actor(sFighters[0].id);
     sPedestal=kNone;
+    sTrials=nullptr;
     static_cast<Pedestal*>(ptr)->~Pedestal();
     return 1;
 }
@@ -1173,13 +1277,31 @@ int execute_pedestal(void* ptr) {
     auto* player=daAlink_getAlinkActorClass();
     if (!arena() || !player || dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
         dComIfGp_isPauseFlag() || ui_document_visible() || player->checkDeadHP() || player->checkWolf()) return 1;
-    for (const auto& entry:sFighters) if (pending_or_live(entry.id)) return 1;
-    if (sCinema.active()) release_cinema(); // asynchronous creation failed
+    // Do both independently: loading effects must not delay wall-target spawn.
+    const bool targetsReady=self->trials.place();
+    const bool effectsReady=self->trials.prepare_effects();
+    // Extra sound archives load independently. A pending/failed audio load
+    // must never lock the sword, including the interaction that ends wind.
+    if (!targetsReady || !effectsReady) return 1;
+    const bool endingWind=sBattle.trial==shade::Trial::Wind &&
+        self->trials.clock.kind==shade::Trial::Wind && !self->trials.clock.windReleased &&
+        !sCinema.active() && pending_or_live(sFighters[0].id);
+    if (!endingWind) {
+        for (const auto& entry:sFighters) if (pending_or_live(entry.id)) return 1;
+        if (sCinema.active()) release_cinema(); // asynchronous creation failed
+    }
     const cXyz delta=player->current.pos-self->current.pos;
     const s16 facing=static_cast<s16>(cLib_targetAngleY(&player->current.pos,&self->current.pos)-player->shape_angle.y);
     if (delta.absXZ()>230 || std::abs(delta.y)>100 || std::abs(static_cast<int>(facing))>0x3000) return 1;
     dComIfGp_setDoStatusForce(8,0); // native A: Pull
     if (!mDoCPd_c::getTrigA(PAD_1)) return 1;
+    if (endingWind) {
+        // The Shade execute hook completes the trial; preserve HP, phase and
+        // the existing fighter. Never start a second encounter from this A press.
+        self->trials.clock.release_wind();
+        mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags &= ~PAD_BUTTON_A;
+        return 1;
+    }
     sStopping=false;
     sBattle={};
     sFighters[0]={};
@@ -1192,6 +1314,8 @@ int execute_pedestal(void* ptr) {
     if (height==-1.0e9f) return 1;
     pos.y=height;
     if (spawn(fpcNm_NPC_KN_e,pos,cLib_targetAngleY(&pos,&player->current.pos),kShadeParams,sFighters[0].id)==MOD_OK) {
+        sShadeWolf.clear();
+        sShadeWolf.prepare(pos,cLib_targetAngleY(&pos,&player->current.pos));
         sCinema.begin(false);
         mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags &= ~PAD_BUTTON_A;
     }
@@ -1207,18 +1331,7 @@ int draw_pedestal(void* ptr) {
     mDoExt_modelUpdateDL(self->sword);
     self->btk.remove(data); self->brk.remove(data);
     dComIfGd_getOpaList()->entryImm(&self->plinth,0);
-    if (sCinema.shot==shade::Shot::Arrival || sCinema.shot==shade::Shot::Depart ||
-        sCinema.shot==shade::Shot::Afterglow) {
-        if (auto* boss=actor_by_id(sFighters[0].id)) {
-            self->apparition.position=boss->current.pos;
-            self->apparition.apparition=true;
-            self->apparition.farewell=sCinema.victory;
-            self->apparition.progress=sCinema.victory ?
-                (sCinema.ticks+(sCinema.shot==shade::Shot::Afterglow ? 45 : 0))/75.0f : sCinema.ticks/54.0f;
-            dComIfGd_setList();
-            j3dSys.getDrawBuffer(1)->entryImm(&self->apparition,0);
-        }
-    }
+    self->trials.draw(self->tevStr);
     for (const auto id:sProjectiles) {
         auto* actor=actor_by_id(id);
         if (!actor || fopAcM_GetName(actor)!=fpcNm_KN_BULLET_e) continue;
@@ -1241,14 +1354,21 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     if ((result=register_cinema_lines())!=MOD_OK) goto fail;
 #define PRE(H,F) if ((result=mods::hook::add_pre<H>(svc_hook,F))!=MOD_OK) goto fail
 #define POST(H,F) if ((result=mods::hook::add_post<H>(svc_hook,F))!=MOD_OK) goto fail
+    PRE(ShadeMusicFrameworkHook,before_music_framework);
+    PRE(ShadeWaveLoadHook,before_trial_wave_load);
     PRE(ShadeAdmissionHook,admit);
     PRE(ShadeResetHook,before_reset); POST(ShadeResetHook,after_reset);
     PRE(ShadeExecuteHook,before_execute); POST(ShadeExecuteHook,after_execute);
     PRE(ShadeDeleteHook,before_delete);
     PRE(ShadeEventHook,no_event); PRE(ShadeOrderHook,no_order);
+    PRE(ShadeDrawHook,draw_cinema);
+    PRE(ShadeWolfMainHook,wolf_main);
+    PRE(ShadeWolfExecuteHook,wolf_execute);
+    PRE(ShadeWolfDrawHook,wolf_draw);
     PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
     PRE(ShadeEndingBlowHook,before_ending_blow_wait);
     PRE(ShadeSwordHook,sword_collision);
+    POST(ShadeBodyHook,trial_body_collision);
     PRE(ShadeAccessoryMotionHook,accessory_motion);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);
@@ -1275,6 +1395,17 @@ fail:
     shutdown_heroes_shade_encounter();
     return mods::set_error(error,result,"failed to initialize Hero's Shade arena encounter");
 }
+void update_heroes_shade_audio() {
+    if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) {
+        suspend_trial();
+        sTrialWaves.release();
+        return;
+    }
+    // Preload the next phase during normal combat, before its opening cue.
+    const auto next=sBattle.trials_started<4 ?
+        static_cast<shade::Trial>(sBattle.trials_started+1) : shade::Trial::None;
+    sTrialWaves.prepare(sBattle.trial!=shade::Trial::None ? sBattle.trial : next);
+}
 void update_heroes_shade_arena() {
     if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) return;
     if (pending_or_live(sPedestal)) return;
@@ -1291,10 +1422,17 @@ void update_heroes_shade_arena() {
 }
 void shutdown_heroes_shade_encounter() {
     sStopping=true;
+    const auto wolfId=sShadeWolf.id;
+    stop_shade_music();
     release_cinema();
     std::unordered_set<ActorId> owned=sProjectiles;
+    owned.insert(wolfId);
     for (const auto& entry:sFighters) if (entry.id!=kNone) owned.insert(entry.id);
     owned.insert(sPedestal);
+    if (sTrials) {
+        cancel_trial();
+        for (const auto id:sTrials->anchors) owned.insert(id);
+    }
     remove_companions();
     for (const auto id:owned) remove_actor(id);
     // Finish only our deletion tags, not the engine's whole deletion queue.
@@ -1318,11 +1456,19 @@ void shutdown_heroes_shade_encounter() {
     sFighters={};
     sProjectiles.clear();
     sPedestal=kNone;
+    sShadeWolf.id=kNone;
     for (auto& line:sLines) line.reset();
     sBossTitle.reset();
+    sTrialWaves.release(); // In-flight native DVD requests retain their memory.
+    mods::hook::uninstall<ShadeWaveLoadHook>(svc_hook);
+    mods::hook::uninstall<ShadeMusicFrameworkHook>(svc_hook);
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);
     mods::hook::uninstall<ShadeExecuteHook>(svc_hook);
+    mods::hook::uninstall<ShadeDrawHook>(svc_hook);
+    mods::hook::uninstall<ShadeWolfMainHook>(svc_hook);
+    mods::hook::uninstall<ShadeWolfExecuteHook>(svc_hook);
+    mods::hook::uninstall<ShadeWolfDrawHook>(svc_hook);
     mods::hook::uninstall<ShadeDeleteHook>(svc_hook);
     mods::hook::uninstall<ShadeEventHook>(svc_hook);
     mods::hook::uninstall<ShadeOrderHook>(svc_hook);
@@ -1335,6 +1481,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeLandingHook>(svc_hook);
     mods::hook::uninstall<ShadeJumpPoseHook>(svc_hook);
     mods::hook::uninstall<ShadeSwordHook>(svc_hook);
+    mods::hook::uninstall<ShadeBodyHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletDeleteHook>(svc_hook);
     mods::hook::uninstall<ShadeChildHook>(svc_hook);

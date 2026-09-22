@@ -11,7 +11,8 @@ using namespace dawnlight::shade;
 int main() {
     Battle battle;
     // Every native success advances once; repeated events cannot drain HP.
-    for (unsigned phase=0; phase<phases.size(); ++phase) {
+    for (unsigned hit=0; hit<10; ++hit) {
+        const unsigned phase=hit%phases.size();
         assert(battle.phase==phase);
         const int hp=battle.health;
         battle.event(1); // teacher timeout / lecture
@@ -23,6 +24,18 @@ int main() {
         assert(battle.health==hp-1);
         for (int i=0;i<44;++i) assert(!battle.tick());
         assert(battle.tick());
+        if (hit%2==1 && hit<8) {
+            assert(static_cast<unsigned>(battle.trial)==(hit+1)/2);
+            const int remaining=battle.remaining;
+            for (int i=0;i<1000;++i) {
+                battle.event(phases[phase].success);
+                assert(!battle.tick() && battle.health==hp-1 && !battle.dying);
+            }
+            assert(battle.remaining==remaining);
+            battle.trial=Trial::None; // shield/fire/eyes/wind controller finished
+            assert(battle.tick());
+        } else assert(battle.trial==Trial::None);
+        if (hit==7) assert(battle.health==2 && !battle.dying);
     }
     assert(battle.dying && battle.health==0);
     for (int i=0;i<100;++i) {
@@ -34,11 +47,15 @@ int main() {
     for (unsigned phase=0;phase<16;++phase) {
         for (int i=0;i<599;++i) assert(!timeout.tick());
         assert(timeout.tick());
-        assert(timeout.health==8 && !timeout.dying && timeout.phase==(phase+1)%8);
+        assert(timeout.health==10 && !timeout.dying && timeout.phase==(phase+1)%8);
     }
+    // Timeout starts a fresh phase; defeat slots never leak into later rounds.
+    timeout.phase=7;timeout.remaining=1;timeout.defeated_doubles=6;
+    assert(timeout.tick() && timeout.phase==0 && timeout.defeated_doubles==0);
+    timeout.defeated_doubles=6;timeout={};assert(timeout.defeated_doubles==0);
     // Replay starts independently; no defeated flags or lesson save bits needed.
     battle={};
-    assert(battle.health==8 && battle.phase==0 && !battle.dying);
+    assert(battle.health==10 && battle.phase==0 && !battle.dying);
     for (unsigned phase=0;phase<phases.size();++phase) {
         const int attack=phases[phase].attack;
         if (attack<0) continue; // native projectile owns its collision

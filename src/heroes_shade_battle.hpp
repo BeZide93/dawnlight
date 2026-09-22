@@ -1,4 +1,5 @@
 #pragma once
+#include "heroes_shade_trials.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -14,7 +15,7 @@ inline constexpr std::array<Phase, 8> phases{{
     {3, 9, 16, 13},  // Helm Splitter
     {4, 12, 19, 12}, // Mortal Draw
     {5, 13, 21, 10}, // Jump Strike and two doubles
-    {6, 19, 24, 26}, // Great Spin and two doubles
+    {6, 19, 24, 26}, // Spin Attack (normal or Great Spin) and two doubles
 }};
 inline constexpr int sword = 25;
 inline constexpr int back_slice = 17;
@@ -172,14 +173,17 @@ inline GroundPoint approach_velocity(float dx, float dz, float max_speed, float 
 }
 struct Battle {
     unsigned phase = 0;
-    int health = 8;
+    unsigned defeated_doubles = 0;
+    int health = starting_health;
+    Trial trial = Trial::None;
+    unsigned trials_started = 0;
     int remaining = 600;
     int recovery = 0;
     bool advance = false;
     bool dying = false;
 
     void event(int event) {
-        if (recovery || dying) return;
+        if (recovery || dying || trial!=Trial::None) return;
         if (event == phases[phase].success) {
             --health;
             recovery = 45;
@@ -187,11 +191,16 @@ struct Battle {
         }
     }
     bool tick() {
-        if (dying) return false;
+        if (dying || trial!=Trial::None) return false;
         if (recovery && --recovery) return false;
         if (health == 0) { dying = true; return true; }
+        if (trials_started<4 && health==starting_health-2*static_cast<int>(trials_started+1)) {
+            trial=static_cast<Trial>(++trials_started);
+            return true;
+        }
         if (advance || --remaining == 0) {
             phase = (phase + 1) % phases.size();
+            defeated_doubles = 0;
             remaining = 600;
             advance = false;
             return true;

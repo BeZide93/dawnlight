@@ -12,6 +12,7 @@
 #include "Z2AudioLib/Z2SeqMgr.h"
 #include "Z2AudioLib/Z2SeMgr.h"
 #include "m_Do/m_Do_ext.h"
+#include "JSystem/JParticle/JPAEmitter.h"
 #include "m_Do/m_Do_Reset.h"
 class JPABaseEmitter;
 #include "d/actor/d_a_alink.h"
@@ -89,6 +90,7 @@ DEFINE_HOOK(&dStage_searchName, BossRushAreaActorNameHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
+DEFINE_HOOK(&JPABaseEmitter::deleteAllParticle, HubParticleDeleteHook);
 DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
 DEFINE_HOOK(&daAlink_c::dungeonReturnWarp, DungeonReturnWarpHook);
 DEFINE_HOOK(&daAlink_c::skipPortalObjWarp, SkipPortalObjWarpHook);
@@ -3886,6 +3888,19 @@ HookAction on_bosswarp_execute_pre(ModContext*, void* args, void* retval, void*)
     return HOOK_SKIP_ORIGINAL;
 }
 
+HookAction on_hub_particle_delete_pre(ModContext*, void* args, void*, void*) {
+    // Native fairy WaitAction dereferences getEmitter() without a null check
+    // when its lifetime expires (and when bottled). The hub may have no matching
+    // particle resource/emitter. There is nothing to delete in that case; let
+    // the rest of the native action retire/capture the fairy normally.
+    if (mods::arg<JPABaseEmitter*>(args, 0) == nullptr &&
+        is_boss_rush() && is_boss_hub_stage_name())
+    {
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
+}
+
 HookAction on_oiltubo_wait_pre(ModContext*, void* args, void* retval, void*) {
     auto* oilTub = mods::arg<daObj_Oiltubo_c*>(args, 0);
     if (!is_bossrush_hub_active() || oilTub == nullptr ||
@@ -4193,6 +4208,11 @@ ModResult install_bossrush_runtime_hooks(ModError* error) {
         return mods::set_error(error, result, "failed to install Dawnlight bossrush portal hook");
     }
 
+    result = mods::hook_add_pre<HubParticleDeleteHook>(svc_hook, on_hub_particle_delete_pre);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight hub particle cleanup guard");
+    }
+
     result = mods::hook_add_pre<OilTuboWaitHook>(svc_hook, on_oiltubo_wait_pre);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight refill prompt hook");
@@ -4293,6 +4313,12 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     }
     if (const ModResult result = uninstall_bossrush_hook<BossWarpExecuteHook>(
             error, "failed to uninstall Dawnlight bossrush portal hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<HubParticleDeleteHook>(
+            error, "failed to uninstall Dawnlight hub particle cleanup guard");
         result != MOD_OK)
     {
         return result;
@@ -4553,6 +4579,7 @@ ModResult register_new_save_modes(ModError* error) {
 }
 
 void update_new_save_modes() {
+    update_heroes_shade_audio(); // Also finish deferred wave cleanup outside the arena.
     retry_pending_actor_deletes();
 }
 

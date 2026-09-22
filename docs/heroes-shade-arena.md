@@ -76,9 +76,12 @@ swap, then clear over 18 ticks (30 simulation ticks/second). Recovery and dialog
 have bounded failure timeouts.
 
 The accepted intro starts Darknut's native cinematic stream (`0x2000037`).
-When the introduction ends (including the boss-name banner), the encounter switches
+When the intro stream ends, or the introduction finishes first, the encounter switches
 to `Z2BGM_TN_MBOSS`, the Temple of Time Darknut battle music, on the native
-sub-sequence channel. It continues through all four intermissions. Starting the
+sub-sequence channel. A pre-hook on the audio framework performs the handoff
+before its automatic room-music unmute, even when captions are still open.
+The native Darknut start stops the stream directly; the battle cue is not
+restarted when the boss-name banner finishes. It continues through all four intermissions. Starting the
 victory scene stops that sub-sequence and immediately hands back to the room music;
 it does not wait for Darknut's usual 510-tick post-battle delay. The underlying
 room sequence is preserved, and a replaced room stream is remembered and restored.

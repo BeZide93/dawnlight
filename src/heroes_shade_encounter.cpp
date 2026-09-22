@@ -422,6 +422,12 @@ void add_doubles(daNpc_Kn_c* boss) {
     }
 }
 
+DEFINE_HOOK(&Z2SeqMgr::processBgmFramework, ShadeMusicFrameworkHook);
+HookAction before_music_framework(ModContext*,void*,void*,void*) {
+    advance_shade_music();
+    return HOOK_CONTINUE;
+}
+
 DEFINE_HOOK(&daNpc_Kn_c::isDelete, ShadeAdmissionHook);
 DEFINE_HOOK(&daNpc_Kn_c::reset, ShadeResetHook);
 DEFINE_HOOK(&daNpc_Kn_c::Execute, ShadeExecuteHook);
@@ -1331,6 +1337,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     if ((result=register_cinema_lines())!=MOD_OK) goto fail;
 #define PRE(H,F) if ((result=mods::hook::add_pre<H>(svc_hook,F))!=MOD_OK) goto fail
 #define POST(H,F) if ((result=mods::hook::add_post<H>(svc_hook,F))!=MOD_OK) goto fail
+    PRE(ShadeMusicFrameworkHook,before_music_framework);
     PRE(ShadeAdmissionHook,admit);
     PRE(ShadeResetHook,before_reset); POST(ShadeResetHook,after_reset);
     PRE(ShadeExecuteHook,before_execute); POST(ShadeExecuteHook,after_execute);
@@ -1424,6 +1431,7 @@ void shutdown_heroes_shade_encounter() {
     sShadeWolfFade.model=nullptr;
     for (auto& line:sLines) line.reset();
     sBossTitle.reset();
+    mods::hook::uninstall<ShadeMusicFrameworkHook>(svc_hook);
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);
     mods::hook::uninstall<ShadeExecuteHook>(svc_hook);

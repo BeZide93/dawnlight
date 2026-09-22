@@ -5,6 +5,8 @@ struct ShadeMusic {
     bool active = false;
     u32 roomMain = kNoMusic;
     u32 roomStream = kNoMusic;
+    bool introPending = false;
+    bool battleStarted = false;
 } sShadeMusic;
 
 void start_shade_music(bool intro) {
@@ -14,13 +16,39 @@ void start_shade_music(bool intro) {
         sShadeMusic={true,audio->getMainBgmID(),audio->getStreamBgmID()};
     }
     if (intro) {
+        sShadeMusic.introPending=true;
+        sShadeMusic.battleStarted=false;
         audio->bgmStreamPrepare(kShadeIntroMusic);
         audio->bgmStreamPlay();
     } else {
-        if (audio->getStreamBgmID()==kShadeIntroMusic) audio->bgmStreamStop(30);
-        // Uses the native sub-sequence channel, preserving the room sequence.
+        sShadeMusic.introPending=false;
+        if (sShadeMusic.battleStarted) return;
+        sShadeMusic.battleStarted=true;
+        // Native TN_MBOSS performs the stream stop and starts its sub-sequence
+        // in one handoff. Do not release the stream with a separate fade first.
         audio->subBgmStart(Z2BGM_TN_MBOSS);
     }
+}
+
+// Called before the audio framework automatically unmutes the room after a
+// stream finishes. Actor/cutscene polling can run too late for that audio frame.
+void advance_shade_music() {
+    if (!sShadeMusic.active || !sShadeMusic.introPending) return;
+    auto* audio=Z2GetAudioMgr();
+    auto* player=daAlink_getAlinkActorClass();
+    if (!audio || !player) return;
+    if (!arena() || dComIfGp_isEnableNextStage() || player->checkDeadHP() ||
+        audio->getMainBgmID()!=sShadeMusic.roomMain) {
+        sShadeMusic.introPending=false;
+        return;
+    }
+    const auto stream=audio->getStreamBgmID();
+    if (stream==kShadeIntroMusic) return; // includes asynchronous preparation
+    if (stream!=kNoMusic || audio->getSubBgmID()!=kNoMusic) {
+        sShadeMusic.introPending=false; // another cue now owns the audio
+        return;
+    }
+    start_shade_music(false);
 }
 
 void stop_shade_music() {

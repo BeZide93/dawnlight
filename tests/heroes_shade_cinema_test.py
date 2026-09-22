@@ -246,6 +246,31 @@ int main() {
     reset();audio.sub=Z2BGM_TN_MBOSS;stop_shade_music();assert(audio.handoffs==0); // not owned
     reset();hasAudio=false;start_shade_music(true);assert(!sShadeMusic.active);
     hasAudio=true;start_shade_music(true);hasAudio=false;stop_shade_music();assert(!sShadeMusic.active);
+    // A short intro stream may end during captions. The audio pre-hook must
+    // install battle BGM before native room-unmute, not wait for caption/title.
+    reset();accept(false);sCinema.enter(shade::Shot::Words1);
+    for(int i=0;i<20;++i) advance_shade_music();
+    assert(audio.battles==0 && audio.stream==kShadeIntroMusic);
+    audio.stream=kNoMusic; // native stream has naturally detached
+    advance_shade_music();
+    assert(audio.battles==1 && !audio.roomAudible && sCinema.shot==shade::Shot::Words1);
+    for(int i=0;i<20;++i) advance_shade_music();
+    start_shade_music(false);assert(audio.battles==1); // no restart at combat entry
+    stop_shade_music();assert(audio.roomAudible && !sShadeMusic.active);
+    // Finishing the intro early uses the single native TN_MBOSS handoff.
+    reset();start_shade_music(true);start_shade_music(false);
+    assert(audio.stops==0 && audio.battles==1);
+    // Cleanup and unrelated replacement cues disable automatic takeover.
+    for(int scenario=0;scenario<6;++scenario) {
+        reset();start_shade_music(true);audio.stream=kNoMusic;
+        if(scenario==0) stop_shade_music();
+        if(scenario==1) nextStage=true;
+        if(scenario==2) player.dead=true;
+        if(scenario==3) audio.main=999;
+        if(scenario==4) audio.stream=777;
+        if(scenario==5) audio.sub=888;
+        advance_shade_music();assert(audio.battles==0);
+    }
     // Accepted != opened: status 1 can persist for several native updates.
     // This reproduced the old bug: the camera was released on the next tick,
     // leaving a queued title to open only after the cinematic had ended.

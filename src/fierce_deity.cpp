@@ -14,10 +14,12 @@
 #include "d/d_meter2_info.h"
 #include "d/d_msg_object.h"
 #include "f_op/f_op_actor_mng.h"
+#include "f_pc/f_pc_leaf.h"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
 #include "mods/svc/log.h"
+#include "mods/svc/save.h"
 
 #include <algorithm>
 #include <chrono>
@@ -31,6 +33,7 @@ DEFINE_HOOK(&daAlink_c::checkMagicArmorWearAbility, FierceMagicArmorAbilityHook)
 DEFINE_HOOK(&at_power_check, FierceAttackPowerHook);
 DEFINE_HOOK(&cc_at_check, FierceDamageCheckHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, FierceMeterDrawHook);
+DEFINE_HOOK(&fpcLf_Delete, FiercePlayerDeleteHook);
 
 constexpr float kMeterGainPerAttack = 5.0f;
 constexpr float kMeterDrainPerSecond = 5.0f;
@@ -46,7 +49,7 @@ enum class ModelSwapState : u8 {
 
 struct RuntimeState {
     daAlink_c* link = nullptr;
-    u16 linkId = 0;
+    fpc_ProcID linkId = fpcM_ERROR_PROCESS_ID_e;
     float meter = 0.0f;
     bool active = false;
     bool spinChargeArmed = false;
@@ -59,6 +62,7 @@ struct RuntimeState {
 };
 
 RuntimeState s_state;
+SaveObserverHandle s_saveObserver = 0;
 
 bool is_sword_attack(const dCcU_AtInfo* attack) {
     return attack != nullptr && attack->mpCollider != nullptr &&
@@ -108,20 +112,36 @@ void deactivate(daAlink_c* link, bool clearMeter) {
 }
 
 void reset_for_link(daAlink_c* link) {
-    restore_equipment_selection();
+    // The previous player may belong to another save. Never restore its clothes
+    // into the current save; equipment restoration belongs to its deletion hook.
+    s_state = {};
     s_state.link = link;
-    s_state.linkId = link != nullptr ? link->setID : 0;
-    s_state.meter = 0.0f;
-    s_state.active = false;
-    s_state.spinChargeArmed = false;
-    s_state.modelSwapped = false;
-    s_state.modelReloadFrame = false;
-    s_state.modelSwapState = ModelSwapState::None;
-    s_state.lastDrainTime = {};
+    s_state.linkId = link != nullptr ? fopAcM_GetID(link) : fpcM_ERROR_PROCESS_ID_e;
 }
 
 bool same_link(daAlink_c* link) {
-    return link != nullptr && s_state.link == link && s_state.linkId == link->setID;
+    return link != nullptr && s_state.link == link && s_state.linkId == fopAcM_GetID(link);
+}
+
+void on_save_started(ModContext*, uint32_t, void*) {
+    // SaveService runs after the new slot has been installed, including reloading
+    // the same slot. Drop every transient flag without touching save equipment.
+    reset_for_link(nullptr);
+}
+
+HookAction before_player_delete(ModContext*, void* args, void*, void*) {
+    auto* process = mods::arg<leafdraw_class*>(args, 0);
+    if (process == nullptr || fpcM_GetName(process) != fpcNm_ALINK_e) {
+        return HOOK_CONTINUE;
+    }
+    auto* link = static_cast<daAlink_c*>(process);
+    if (same_link(link)) {
+        // Restore while the departing player's save is still current. Do not
+        // start a model reload on an actor that is about to be destroyed.
+        restore_equipment_selection();
+        reset_for_link(nullptr);
+    }
+    return HOOK_CONTINUE;
 }
 
 bool can_transform(daAlink_c* link) {
@@ -281,7 +301,8 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
 }
 
 HookAction before_magic_armor_ability(ModContext*, void*, void* retval, void*) {
-    if (!s_state.active && s_state.modelSwapState == ModelSwapState::None) {
+    if (!same_link(daAlink_getAlinkActorClass()) ||
+        (!s_state.active && s_state.modelSwapState == ModelSwapState::None)) {
         return HOOK_CONTINUE;
     }
     *static_cast<BOOL*>(retval) = FALSE;
@@ -316,7 +337,8 @@ void after_damage_check(ModContext*, void* args, void*, void*) {
 }
 
 void draw_fierce_meter(dMeter2Draw_c* meter) {
-    if (!fierce_deity_enabled() || s_state.meter <= 0.0f || menu_or_pause_active())
+    if (!fierce_deity_enabled() || !same_link(daAlink_getAlinkActorClass()) ||
+        s_state.meter <= 0.0f || menu_or_pause_active())
     {
         return;
     }
@@ -338,7 +360,18 @@ ModResult add_post(ModError* error, void (*callback)(ModContext*, void*, void*, 
 }  // namespace
 
 ModResult initialize_fierce_deity(ModError* error) {
-    ModResult result = mods::hook::add_pre<FiercePlayerExecuteHook>(svc_hook, before_player_execute);
+    ModResult result = svc_save->observe_saves(
+        mod_ctx, on_save_started, on_save_started, nullptr, nullptr, &s_saveObserver);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result,
+            "failed to observe Dawnlight Fierce Deity save lifecycle");
+    }
+    result = mods::hook::add_pre<FiercePlayerDeleteHook>(svc_hook, before_player_delete);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result,
+            "failed to install Dawnlight Fierce Deity player deletion hook");
+    }
+    result = mods::hook::add_pre<FiercePlayerExecuteHook>(svc_hook, before_player_execute);
     if (result != MOD_OK) {
         return mods::set_error(error, result,
             "failed to install Dawnlight Fierce Deity player pre-hook");
@@ -367,17 +400,23 @@ ModResult initialize_fierce_deity(ModError* error) {
 }
 
 void shutdown_fierce_deity() {
+    if (s_saveObserver != 0 && svc_save != nullptr) {
+        svc_save->unobserve_saves(mod_ctx, s_saveObserver);
+    }
+    s_saveObserver = 0;
     daAlink_c* link = daAlink_getAlinkActorClass();
-    deactivate(same_link(link) ? link : nullptr, true);
+    if (same_link(link)) {
+        deactivate(link, true);
+    }
     s_state = {};
 }
 
 bool fierce_deity_active() {
-    return s_state.active;
+    return s_state.active && same_link(daAlink_getAlinkActorClass());
 }
 
 bool fierce_deity_model_reload_active() {
-    return s_state.modelReloadFrame;
+    return s_state.modelReloadFrame && same_link(daAlink_getAlinkActorClass());
 }
 
 }  // namespace dawnlight

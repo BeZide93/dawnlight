@@ -94,14 +94,15 @@ struct Camera {
     } mCamera;
 } camera;
 struct Message {
-    int msg_idx=0,status=1,kills=0;
+    int msg_idx=0,status=1,kills=0,deleteRequests=0;
     int getStatusLocal() { return status; }
+    void setStatusLocal(int value) { status=value; if (value==19) ++deleteRequests; }
     void onKillMessageFlagLocal() { ++kills; status=1; }
 } message;
 struct Line { int value; int id() { return value; } };
 std::array<Line,4> sLines{{{101},{102},{103},{104}}};
 Line sBossTitle{105};
-bool paused=false,ui=false,hasCamera=true,blockMessages=false;
+bool paused=false,ui=false,hasCamera=true,blockMessages=false,delayMessageOpen=false;
 int eventResets=0,orders=0,deletes=0,cameraTicks=0,titleStarts=0;
 bool dComIfGp_isPauseFlag() { return paused; }
 bool ui_document_visible() { return ui; }
@@ -120,7 +121,8 @@ Message* dMsgObject_getMsgObjectClass() { return &message; }
 int fopMsgM_messageSetDemo(int id) {
     if (blockMessages || message.status!=1) return 0;
     if (id==105) ++titleStarts;
-    message.msg_idx=id; message.status=14; return 50;
+    // setMessageIndexDemo(false) only queues the request in the real engine.
+    message.msg_idx=id; message.status=delayMessageOpen ? 1 : 14; return 50;
 }
 void cinema_camera(daNpc_Kn_c*) { ++cameraTicks; }
 '''
@@ -132,7 +134,7 @@ checks = r'''
 void reset() {
     boss={}; body={}; player={}; camera={}; message={}; sFighters={};
     sCinema={}; sCinemaRuntime={};
-    paused=ui=blockMessages=false; hasCamera=true;
+    paused=ui=blockMessages=delayMessageOpen=false; hasCamera=true;
     eventResets=orders=deletes=cameraTicks=titleStarts=0;
 }
 void tick() { tick_cinema(&boss,sFighters[0]); }
@@ -144,6 +146,34 @@ void accept(bool victory) {
     assert(sCinemaRuntime.ownsEvent && camera.mCamera.mTrimSize==3);
 }
 int main() {
+    // Accepted != opened: status 1 can persist for several native updates.
+    // This reproduced the old bug: the camera was released on the next tick,
+    // leaving a queued title to open only after the cinematic had ended.
+    for (auto shot : {shade::Shot::Words1,shade::Shot::Words2,shade::Shot::BossName}) {
+        reset(); accept(false); sCinema.enter(shot); delayMessageOpen=true;
+        tick(); assert(sCinemaRuntime.messageStarted && message.status==1);
+        for (int i=0;i<12;++i) tick();
+        assert(sCinema.shot==shot && player.cancels==0 && eventResets==0);
+        message.status=2; tick(); // native fade-in finally starts
+        message.status=16; tick(); // visible hold
+        assert(sCinema.shot==shot);
+        message.status=17; tick(); // native fade-out still owns the camera
+        assert(sCinema.shot==shot);
+        message.status=1; tick(); // now idle really means completion
+        assert(sCinema.shot!=shot);
+    }
+    // Pending titles must also be removed on abort/timeout, not left to open
+    // after control is restored. Never cancel a replacement message.
+    for (int scenario=0;scenario<3;++scenario) {
+        reset(); accept(false); sCinema.enter(shade::Shot::BossName); delayMessageOpen=true;
+        tick(); assert(message.status==1 && !sCinemaRuntime.messageOpened);
+        if (scenario==0) { release_cinema(); release_cinema(); }
+        if (scenario==1) for (int i=0;i<300 && sCinema.active();++i) tick();
+        if (scenario==2) { message.msg_idx=500; release_cinema(); }
+        assert(!sCinema.active() && player.cancels==1);
+        assert(message.deleteRequests==(scenario==2 ? 0 : 1));
+        assert(message.kills==(scenario==2 ? 0 : 1));
+    }
     reset(); accept(false);
     for (int i=0;i<17;++i) { tick(); assert(boss.mNoDraw); }
     for (int i=17;i<54;++i) tick();

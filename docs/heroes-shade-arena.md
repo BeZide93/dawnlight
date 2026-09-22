@@ -46,6 +46,16 @@ trapping the cutscene. A bounded 300-tick wait handles failed/busy message
 creation, and normal cancellation closes only our owned title. Replaying the
 encounter shows it again; the victory scene has no boss-name banner.
 
+Message startup is asynchronous: `fopMsgM_messageSetDemo` accepts a request via
+`setMessageIndexDemo(..., false)` while native status is still 1 (idle). The
+controller must observe that specific message opening before treating a return
+to status 1 as completion. Previously it released the cinematic camera on the
+still-pending title, allowing the banner to appear after the cutscene. The
+regression fixture now covers delayed opening, visible hold and fade-out for
+both dialogue and title. Cancellation of an owned pending request schedules
+native status 19 (`deleteProc`) as well as the kill flag, clearing its queued
+text before gameplay resumes; replacement messages are never touched.
+
 After the last successful counter, doubles and projectiles are removed. Shade
 finishes any airborne fall and uses his native get-up animation when needed.
 He praises Link as a true hero and asks him to carry their legacy into the world.

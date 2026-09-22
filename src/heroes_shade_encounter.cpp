@@ -79,6 +79,7 @@ struct CinemaRuntime {
     s16 facing = 0;
     MessageId message = 0;
     bool messageStarted = false;
+    bool messageOpened = false;
 } sCinemaRuntime;
 
 void stop_blade_sweeps(Fighter& entry) {
@@ -191,9 +192,18 @@ ModResult register_cinema_lines() {
 }
 void close_cinema_line() {
     auto* message=dMsgObject_getMsgObjectClass();
-    if (sCinemaRuntime.messageStarted && message && message->msg_idx==sCinemaRuntime.message &&
-        message->getStatusLocal()!=1) message->onKillMessageFlagLocal();
+    if (sCinemaRuntime.messageStarted && message && message->msg_idx==sCinemaRuntime.message) {
+        const auto status=message->getStatusLocal();
+        if (status==1 && !sCinemaRuntime.messageOpened) {
+            // An accepted demo message can still be queued at idle. The kill
+            // flag alone only clears demo flags in that state; schedule native
+            // deleteProc as well so its pending text cannot open after cancel.
+            message->setStatusLocal(19);
+            message->onKillMessageFlagLocal();
+        } else if (status!=1) message->onKillMessageFlagLocal();
+    }
     sCinemaRuntime.messageStarted=false;
+    sCinemaRuntime.messageOpened=false;
     sCinemaRuntime.message=0;
 }
 void start_cinema_line(MessageId text) {
@@ -201,6 +211,8 @@ void start_cinema_line(MessageId text) {
     if (id!=0 && id!=kNone) {
         sCinemaRuntime.message=text;
         sCinemaRuntime.messageStarted=true;
+        auto* message=dMsgObject_getMsgObjectClass();
+        sCinemaRuntime.messageOpened=message && message->msg_idx==text && message->getStatusLocal()>1;
     }
 }
 void release_cinema() {
@@ -305,7 +317,15 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         auto* message=dMsgObject_getMsgObjectClass();
         if (!sCinemaRuntime.messageStarted) {
             start_cinema_line(text);
-        } else message_done=!message || message->msg_idx!=sCinemaRuntime.message || message->getStatusLocal()==1;
+        } else if (!message || message->msg_idx!=sCinemaRuntime.message) {
+            message_done=true; // another message owns the object now
+        } else {
+            const auto status=message->getStatusLocal();
+            if (status>1) sCinemaRuntime.messageOpened=true;
+            // setMessageIndexDemo(false) does not open synchronously. Idle is
+            // completion only after this particular message was seen opening.
+            message_done=sCinemaRuntime.messageOpened && status==1;
+        }
     }
     // Show the banner during KN_DEMO_KAMAE, not after its transition to idle.
     // Cue the last 30% of the gesture so the native fade-in overlaps the sword

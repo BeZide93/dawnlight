@@ -107,7 +107,7 @@ existing victory scene. Missed-skill timeouts do not trigger intermissions.
 | 8 | Blue energy ward (Shade keeps attacking) | Bomb explosion or Ball and Chain; other weapons are ignored. The shell expands and fades for 12 ticks when broken. |
 | 6 | Fyrus fire wave | Five-second warning through a sword gesture and orange charge rings, then six seconds of outward travel. Reach a wall Clawshot target and hang above the fire. |
 | 4 | Two wall-mounted Beamos heads/eyes | Each tracks Link with a laser after a two-second charge. One arrow removes each eye and its beam. |
-| 2 | Outward wind | One second of visible wind without force, then a one-second smooth buildup. Wind continues until Link faces the central Master Sword and presses A within reach. Iron Boots prevent the applied force. |
+| 2 | Outward wind | One second of visible wind without force, then a five-second smooth buildup. Wind continues until Link faces the central Master Sword and presses A within reach. Iron Boots prevent the applied force. |
 
 Four native `Obj_HsTarget` actors use the `L7HsMato` variant and its original
 hookable DZB. Each target's largest hookable face is rotated to face the arena
@@ -170,7 +170,7 @@ also restores its playback speed: setting only its frame to zero left it stopped
 and could make subsequent beams disappear. Eye targets remain vulnerable and
 accept arrows only.
 Wind rings appear immediately, with no external force during the first 30
-simulation ticks (one second). Over the next 30 ticks, a smoothstep curve raises
+simulation ticks (one second). Over the next 150 ticks (five seconds), a smoothstep curve raises
 the force from weak to the existing maximum of 55. The active gust has no timeout.
 Facing the Master Sword within the existing 230-unit interaction range and pressing
 A requests wind completion; the next Shade execute tick stops applying force and

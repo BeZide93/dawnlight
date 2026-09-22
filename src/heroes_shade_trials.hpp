@@ -14,7 +14,7 @@ inline float fire_progress(int tick) {
     return std::clamp((tick-fire_warning_ticks+1.0f)/fire_travel_ticks,0.0f,1.0f);
 }
 inline constexpr int wind_warning_ticks = 30; // one second of visible wind, no force
-inline constexpr int wind_ramp_ticks = 30; // smooth buildup over the following second
+inline constexpr int wind_ramp_ticks = 150; // smooth buildup over the following five seconds (30 Hz)
 inline float wind_strength(int tick) {
     const float t=std::clamp((tick-wind_warning_ticks+1.0f)/wind_ramp_ticks,0.0f,1.0f);
     return wind_power*t*t*(3.0f-2.0f*t); // smoothstep: no abrupt start or end of ramp

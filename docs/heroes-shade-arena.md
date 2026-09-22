@@ -30,7 +30,31 @@ through asynchronous creation and until the native potential demo event has
 been accepted. The camera eases toward him with letterboxing; blue spectral
 ribbons precede his native materialization. Two original captions refer to his
 unfinished teaching and Link's inherited courage, followed by a sword-ready
-pose before combat begins.
+pose before combat begins. During the final 30% of the pointing/ready gesture
+(`KN_DEMO_KAMAE`, sequence 24 step 0), the native boss-name banner displays
+**Hero's Shade** using `MESSAGE_BOX_BOSS_NAME` and the game's original
+`zelda_boss_name.blo` screen and fades. The registered title is the same in every
+supported language and does not replace any stock boss text. It auto-advances
+after 90 ticks; camera/event ownership and combat suspension remain in place
+until the message has closed. The reveal uses the body's current frame divided
+by the clip's end frame, and starts on the cue tick while the gesture continues.
+It no longer waits for the subsequent idle step. The 70% cue gives the native
+fade-in a head start during the sword's withdrawal; its exact visual alignment
+still needs in-game verification. Stale frames from the preceding clip are
+ignored until the ready animation is installed. A 120-tick fallback prevents a stuck animation from
+trapping the cutscene. A bounded 300-tick wait handles failed/busy message
+creation, and normal cancellation closes only our owned title. Replaying the
+encounter shows it again; the victory scene has no boss-name banner.
+
+Message startup is asynchronous: `fopMsgM_messageSetDemo` accepts a request via
+`setMessageIndexDemo(..., false)` while native status is still 1 (idle). The
+controller must observe that specific message opening before treating a return
+to status 1 as completion. Previously it released the cinematic camera on the
+still-pending title, allowing the banner to appear after the cutscene. The
+regression fixture now covers delayed opening, visible hold and fade-out for
+both dialogue and title. Cancellation of an owned pending request schedules
+native status 19 (`deleteProc`) as well as the kill flag, clearing its queued
+text before gameplay resumes; replacement messages are never touched.
 
 After the last successful counter, doubles and projectiles are removed. Shade
 finishes any airborne fall and uses his native get-up animation when needed.

@@ -67,6 +67,7 @@ bool sStopping = false;
 std::unordered_set<ActorId> sProjectiles;
 shade::Cinema sCinema;
 std::array<mods::flow::RegisteredMessage,4> sLines;
+mods::flow::RegisteredMessage sBossTitle;
 struct CinemaRuntime {
     ActorId player = kNone;
     fpc_ProcID camera = kNone;
@@ -78,6 +79,7 @@ struct CinemaRuntime {
     s16 facing = 0;
     MessageId message = 0;
     bool messageStarted = false;
+    bool messageOpened = false;
 } sCinemaRuntime;
 
 void stop_blade_sweeps(Fighter& entry) {
@@ -178,14 +180,40 @@ ModResult register_cinema_lines() {
         sLines[i]=mods::flow::register_message(0,variants);
         if (!sLines[i]) return sLines[i].result();
     }
-    return MOD_OK;
+    // The same native screen used by the story bosses (zelda_boss_name.blo),
+    // with our own registered text rather than overriding a stock boss name.
+    constexpr auto titleStyle=mods::flow::MessageStyle{}.box_kind(MESSAGE_BOX_BOSS_NAME)
+        .box_position(MESSAGE_POSITION_BOTTOM).draw_type(MESSAGE_DRAW_INSTANT);
+    std::vector<mods::flow::MessageVariant> titleVariants;
+    for (const auto language:languages) titleVariants.push_back(mods::flow::MessageBuilder{titleStyle}
+        .text("Hero's Shade").auto_advance(90).build(language));
+    sBossTitle=mods::flow::register_message(0,titleVariants);
+    return sBossTitle.result();
 }
 void close_cinema_line() {
     auto* message=dMsgObject_getMsgObjectClass();
-    if (sCinemaRuntime.messageStarted && message && message->msg_idx==sCinemaRuntime.message &&
-        message->getStatusLocal()!=1) message->onKillMessageFlagLocal();
+    if (sCinemaRuntime.messageStarted && message && message->msg_idx==sCinemaRuntime.message) {
+        const auto status=message->getStatusLocal();
+        if (status==1 && !sCinemaRuntime.messageOpened) {
+            // An accepted demo message can still be queued at idle. The kill
+            // flag alone only clears demo flags in that state; schedule native
+            // deleteProc as well so its pending text cannot open after cancel.
+            message->setStatusLocal(19);
+            message->onKillMessageFlagLocal();
+        } else if (status!=1) message->onKillMessageFlagLocal();
+    }
     sCinemaRuntime.messageStarted=false;
+    sCinemaRuntime.messageOpened=false;
     sCinemaRuntime.message=0;
+}
+void start_cinema_line(MessageId text) {
+    const auto id=fopMsgM_messageSetDemo(text);
+    if (id!=0 && id!=kNone) {
+        sCinemaRuntime.message=text;
+        sCinemaRuntime.messageStarted=true;
+        auto* message=dMsgObject_getMsgObjectClass();
+        sCinemaRuntime.messageOpened=message && message->msg_idx==text && message->getStatusLocal()>1;
+    }
 }
 void release_cinema() {
     close_cinema_line();
@@ -283,18 +311,34 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     }
     const auto previous=sCinema.shot;
     bool message_done=false;
-    if (previous==Shot::Words1 || previous==Shot::Words2) {
+    if (previous==Shot::Words1 || previous==Shot::Words2 || previous==Shot::BossName) {
         const auto index=(sCinema.victory ? 2 : 0)+(previous==Shot::Words2);
+        const auto text=previous==Shot::BossName ? sBossTitle.id() : sLines[index].id();
         auto* message=dMsgObject_getMsgObjectClass();
         if (!sCinemaRuntime.messageStarted) {
-            const auto id=fopMsgM_messageSetDemo(sLines[index].id());
-            if (id!=0 && id!=kNone) {
-                sCinemaRuntime.message=sLines[index].id();
-                sCinemaRuntime.messageStarted=true;
-            }
-        } else message_done=!message || message->msg_idx!=sCinemaRuntime.message || message->getStatusLocal()==1;
+            start_cinema_line(text);
+        } else if (!message || message->msg_idx!=sCinemaRuntime.message) {
+            message_done=true; // another message owns the object now
+        } else {
+            const auto status=message->getStatusLocal();
+            if (status>1) sCinemaRuntime.messageOpened=true;
+            // setMessageIndexDemo(false) does not open synchronously. Idle is
+            // completion only after this particular message was seen opening.
+            message_done=sCinemaRuntime.messageOpened && status==1;
+        }
     }
-    const bool pose_done=actor->mMotionSeqMngr.getNo()==0 || actor->mMotionSeqMngr.getStepNo()>0;
+    // Show the banner during KN_DEMO_KAMAE, not after its transition to idle.
+    // Cue the last 30% of the gesture so the native fade-in overlaps the sword
+    // being pulled back. Ignore the previous clip until ctrlMotion installs it.
+    auto* readyModel=actor->mpModelMorf[0];
+    const bool title_cue=actor->mMotionSeqMngr.getNo()==24 &&
+        !actor->mMotionSeqMngr.checkEntryNewMotion() &&
+        (actor->mMotionSeqMngr.getStepNo()>0 ||
+            (readyModel && readyModel->getEndFrame()>0 &&
+                readyModel->getFrame()>=readyModel->getEndFrame()*0.70f));
+    const bool pose_done=previous==Shot::Ready ?
+        title_cue :
+        actor->mMotionSeqMngr.getNo()==0 || actor->mMotionSeqMngr.getStepNo()>0;
     if (sCinema.tick(sCinemaRuntime.ownsEvent,message_done,pose_done)) {
         finish_cinema(actor,entry);
         return;
@@ -303,6 +347,9 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         close_cinema_line();
         if (sCinema.shot==Shot::Words1 || sCinema.shot==Shot::Words2) cinema_pose(actor,3); // TALK_A
         if (sCinema.shot==Shot::Ready) cinema_pose(actor,24); // ready the sword
+        // Start on the cue tick while the gesture continues, without waiting
+        // for a subsequent tick or restarting/changing the body animation.
+        if (sCinema.shot==Shot::BossName) start_cinema_line(sBossTitle.id());
         if (sCinema.shot==Shot::Depart) {
             cinema_pose(actor,0);
             actor->field_0x170c=1;
@@ -1272,6 +1319,7 @@ void shutdown_heroes_shade_encounter() {
     sProjectiles.clear();
     sPedestal=kNone;
     for (auto& line:sLines) line.reset();
+    sBossTitle.reset();
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);
     mods::hook::uninstall<ShadeExecuteHook>(svc_hook);

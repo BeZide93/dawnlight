@@ -107,7 +107,7 @@ existing victory scene. Missed-skill timeouts do not trigger intermissions.
 | 8 | Blue energy ward (Shade keeps attacking) | Bomb explosion or Ball and Chain; other weapons are ignored. The shell expands and fades for 12 ticks when broken. |
 | 6 | Fyrus fire wave | Five-second warning through a sword gesture and orange charge rings, then six seconds of outward travel. Reach a wall Clawshot target and hang above the fire. |
 | 4 | Two wall-mounted Beamos heads/eyes | Each tracks Link with a laser after a two-second charge. One arrow removes each eye and its beam. |
-| 2 | Outward wind | Resist for 300 simulation ticks (10 seconds); Iron Boots prevent the applied force. |
+| 2 | Outward wind | One second of visible wind without force, then 10 seconds of wind; strength builds smoothly during the first of those seconds. Iron Boots prevent the applied force. |
 
 Four native `Obj_HsTarget` actors use the `L7HsMato` variant and its original
 hookable DZB. Each target's largest hookable face is rotated to face the arena
@@ -168,8 +168,11 @@ suppresses only collision, never rendering. Rewinding a completed startup BTK
 also restores its playback speed: setting only its frame to zero left it stopped
 and could make subsequent beams disappear. Eye targets remain vulnerable and
 accept arrows only.
-Wind uses Link's native external-force API at strength 55 (previously 18),
-retaining wall collision. Both the equipment check and the native heavy-aware
+Wind rings appear immediately, with no external force during the first 30
+simulation ticks (one second). Over the next 30 ticks, a smoothstep curve raises
+the force from weak to the existing maximum of 55. The active gust lasts 300
+ticks including that ramp, making the entire phase 330 ticks (11 seconds).
+Wind uses Link's native external-force API, retaining wall collision. Both the equipment check and the native heavy-aware
 force flag let Iron Boots resist it. Ordinary walking cannot cancel that force.
 
 At the end of the fire phase, an 80-unit-wide molten strip appears along the
@@ -195,7 +198,7 @@ Validation: `python tests/heroes_shade_trials_test.py` runs the actual runtime
 methods with instrumented collision APIs, checking weapon filters, separate
 eye removal, warning/damage boundaries, shared beam endpoints, pause/resume,
 cleanup, safe beam startup and repeated recovery, persistent rim contact, and
-the 300-tick wind with/without Iron Boots. The battle test checks
+the wind warning, smooth buildup, restart and Iron Boots throughout the 330-tick phase. The battle test checks
 all ten hits, all four thresholds exactly once, ignored hits during trials,
 phase timeouts and replay. `python tests/heroes_shade_wall_targets_test.py`
 checks the actual alignment method for ceiling, reversed and tilted DZB faces

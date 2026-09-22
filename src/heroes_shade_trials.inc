@@ -619,7 +619,8 @@ struct ShadeTrials {
                 }
             }
         } else if (clock.kind==shade::Trial::Wind && !player->checkEquipHeavyBoots()) {
-            player->setOutPower(shade::wind_power,cLib_targetAngleY(&center,&player->current.pos),1);
+            const float power=shade::wind_strength(clock.ticks);
+            if (power>0) player->setOutPower(power,cLib_targetAngleY(&center,&player->current.pos),1);
         }
         packet.clock=clock; packet.center=center; packet.boss=boss->current.pos;
         packet.radius=radius;

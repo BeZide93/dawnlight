@@ -213,11 +213,28 @@ int main() {
     t.eyeTargets[1].hit=&arrow;assert(tick() && t.clock.eyes==0);
     t.cancel();t.clock.begin(shade::Trial::Wind);
     player.current.pos={100,0,0}; player.forces=0;
-    for(int i=0;i<150;++i) assert(!tick());
-    assert(player.forces==150 && player.power==55 && player.yaw==0x4000 && player.heavyAware==1);
+    for(int i=0;i<30;++i) {
+        assert(!tick() && t.visible && t.packet.clock.kind==shade::Trial::Wind);
+        assert(player.forces==0); // animation is already visible for a full second
+    }
+    int windTime=t.clock.ticks;t.suspend();assert(t.clock.ticks==windTime);
+    float previous=0;
+    for(int i=0;i<30;++i) {
+        assert(!tick() && player.power>previous && player.power<=55);
+        assert(player.power-previous<3); // smooth ramp, no full-strength jump
+        previous=player.power;
+    }
+    assert(player.forces==30 && player.power==55 && player.yaw==0x4000 && player.heavyAware==1);
+    for(int i=60;i<150;++i) assert(!tick());
+    assert(player.forces==120 && player.power==55);
     player.boots=true;
-    for(int i=150;i<299;++i) assert(!tick());
-    assert(tick() && player.forces==150 && t.clock.ticks==300);
+    for(int i=150;i<329;++i) assert(!tick());
+    assert(tick() && player.forces==120 && t.clock.ticks==330);
+    t.cancel();t.clock.begin(shade::Trial::Wind); // restart does not retain strong wind
+    player.boots=false;player.forces=0;
+    for(int i=0;i<30;++i) assert(!tick() && player.forces==0);
+    player.boots=true;
+    for(int i=0;i<30;++i) assert(!tick() && player.forces==0); // boots also suppress ramp
     t.cancel();assert(!t.clock.active() && !t.visible);
     assert(!t.shield.tg && !t.flame.at);
     for (int i=0;i<2;++i) assert(!t.eyeTargets[i].tg && !t.beams[i].at);

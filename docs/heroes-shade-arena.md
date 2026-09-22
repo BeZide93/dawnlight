@@ -7,6 +7,16 @@ resolved against the loaded room collision. Face it in human form and press
 plinth: this does not run the story sword-pickup event or replace Link's weapon.
 After victory, interact again to replay. Leaving the room discards the fight.
 
+The plinth borrows a texture from the loaded arena room. Selection favors a
+broad, opaque surface near floor height around the pedestal, rather than a
+region-specific texture number. Its top and ledge use planar UVs; side faces
+use upright UVs with consistent height across the steps. Neutral vertex shading
+keeps the bevels visible without tinting the stone blue. The room's native
+`J3DTexture::loadGX` preserves resolved shared-image pointers, palettes, filtering
+and texture replacements. Only the room model slot and texture index are cached;
+the resource is looked up again for drawing. Until room textures are ready, the
+previous untextured draw remains available. No game texture is bundled in the mod.
+
 ## Intro and victory scenes
 
 The sword now starts a short original boss introduction. Shade stays hidden

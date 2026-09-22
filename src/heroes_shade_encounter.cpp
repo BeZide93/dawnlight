@@ -19,6 +19,8 @@
 #include "mods/svc/hook.hpp"
 #include "mods/svc/flow.hpp"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
+#include "JSystem/J3DGraphBase/J3DMaterial.h"
+#include "JSystem/J3DGraphBase/J3DTexture.h"
 #include "res/Object/MstrSword.h"
 #include <algorithm>
 #include <array>
@@ -916,26 +918,85 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
-// An original beveled stone plinth; only the sword model comes from the user's
-// game archive. No stage mesh, game texture or external mod asset is packaged.
+// Original beveled geometry, textured from the resident arena floor. Bind the
+// room's J3DTexture directly: on PC, shared stage images have resolved pointers
+// in that object and cannot safely be reconstructed from ResTIMG offsets.
 class PlinthPacket : public J3DPacket {
 public:
     cXyz position{0,0,0};
+    int stonePart=-1;
+    u16 stoneIndex=0;
+
+    J3DModelData* room_model(int part) const {
+        constexpr const char* bmd[]={"model.bmd","model1.bmd","model2.bmd",
+            "model3.bmd","model4.bmd","model5.bmd"};
+        constexpr const char* bdl[]={"model.bdl","model1.bdl","model2.bdl",
+            "model3.bdl","model4.bdl","model5.bdl"};
+        const char* archive=dComIfG_getRoomArcName(51);
+        auto* model=static_cast<J3DModelData*>(dComIfG_getStageRes(archive,bmd[part]));
+        return model ? model : static_cast<J3DModelData*>(dComIfG_getStageRes(archive,bdl[part]));
+    }
+    J3DTexture* stone_texture() {
+        if (!arena()) return nullptr;
+        if (stonePart>=0) {
+            auto* model=room_model(stonePart);
+            auto* textures=model ? model->getTexture() : nullptr;
+            if (textures && stoneIndex<textures->getNum() && textures->getImgDataPtr(stoneIndex)) return textures;
+            stonePart=-1;
+        }
+        // Prefer a broad, low, horizontal opaque surface around the pedestal.
+        // This selects the actual floor material without a texture index/name
+        // tied to one region, and avoids ceiling, wall, shadow and effect maps.
+        float best=0;
+        J3DTexture* selected=nullptr;
+        for (int part=0;part<6;++part) {
+            auto* model=room_model(part);
+            auto* textures=model ? model->getTexture() : nullptr;
+            if (!textures) continue;
+            for (u16 i=0;i<model->getMaterialNum();++i) {
+                auto* material=model->getMaterialNodePointer(i);
+                if (!material || !material->getTevBlock() || !(material->getMaterialMode()&1)) continue;
+                auto* shape=material->getShape();
+                const u16 index=material->getTexNo(0);
+                if (!shape || index>=textures->getNum() || !textures->getImgDataPtr(index)) continue;
+                const auto* image=textures->getResTIMG(index);
+                if (image->width<32 || image->height<32) continue;
+                const auto& lo=*shape->getMin();
+                const auto& hi=*shape->getMax();
+                const float width=hi.x-lo.x, depth=hi.z-lo.z, height=hi.y-lo.y;
+                if (width<100 || depth<100 || height<0) continue;
+                const float dx=std::max({lo.x-position.x,position.x-hi.x,0.0f});
+                const float dz=std::max({lo.z-position.z,position.z-hi.z,0.0f});
+                const float score=width*depth/(1+4*height+4*std::abs((lo.y+hi.y)*0.5f-position.y)+dx+dz);
+                if (score<=best) continue;
+                best=score; stonePart=part; stoneIndex=index; selected=textures;
+            }
+        }
+        return selected; // Retry next draw if room textures are not ready yet.
+    }
     void draw() override {
+        auto* stone=stone_texture();
         j3dSys.reinitGX();
         GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);
         GXSetCurrentMtx(GX_PNMTX0);
         GXClearVtxDesc();
         GXSetVtxDesc(GX_VA_POS,GX_DIRECT);
         GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);
+        if (stone) GXSetVtxDesc(GX_VA_TEX0,GX_DIRECT);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_F32,0);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_CLR0,GX_CLR_RGBA,GX_RGBA8,0);
+        if (stone) GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_F32,0);
         GXSetNumChans(1);
         GXSetChanCtrl(GX_COLOR0A0,GX_DISABLE,GX_SRC_REG,GX_SRC_VTX,GX_LIGHT_NULL,GX_DF_NONE,GX_AF_NONE);
-        GXSetNumTexGens(0);
+        GXSetNumTexGens(stone ? 1 : 0);
+        if (stone) {
+            GXSetTexCoordGen(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_TEX0,GX_IDENTITY);
+            stone->loadGX(stoneIndex,GX_TEXMAP0);
+        }
         GXSetNumTevStages(1);
-        GXSetTevOrder(GX_TEVSTAGE0,GX_TEXCOORD_NULL,GX_TEXMAP_NULL,GX_COLOR0A0);
-        GXSetTevOp(GX_TEVSTAGE0,GX_PASSCLR);
+        GXSetTevOrder(GX_TEVSTAGE0,stone ? GX_TEXCOORD0 : GX_TEXCOORD_NULL,
+            stone ? GX_TEXMAP0 : GX_TEXMAP_NULL,GX_COLOR0A0);
+        GXSetTevOp(GX_TEVSTAGE0,stone ? GX_MODULATE : GX_PASSCLR);
         GXSetZMode(GX_TRUE,GX_LEQUAL,GX_TRUE);
         GXSetBlendMode(GX_BM_NONE,GX_BL_ONE,GX_BL_ZERO,GX_LO_CLEAR);
         GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);
@@ -947,9 +1008,19 @@ public:
             for (unsigned corner=0;corner<4;++corner) {
                 const unsigned r=ring+(corner>=2);
                 const float a=(side+(corner==1 || corner==2))*0.7853981634f;
-                const u8 shade=static_cast<u8>(90+ring*5+18*std::cos(a-0.7f));
+                const u8 shade=static_cast<u8>((stone ? 170 : 90)+ring*5+18*std::cos(a-0.7f));
                 GXPosition3f32(position.x+std::sin(a)*radii[r],position.y+heights[r],position.z+std::cos(a)*radii[r]);
-                GXColor4u8(shade,shade,static_cast<u8>(shade+8),255);
+                GXColor4u8(shade,shade,static_cast<u8>(shade+(stone ? 0 : 8)),255);
+                if (stone) {
+                    if (ring==3 || ring==7) {
+                        // Planar caps retain grain instead of pinching at the centre.
+                        GXTexCoord2f32(0.5f+std::sin(a)*radii[r]/200,0.5f+std::cos(a)*radii[r]/200);
+                    } else {
+                        // Continuous height across the steps; a square-scale
+                        // patch on each carved face also works with clamp maps.
+                        GXTexCoord2f32((corner==1 || corner==2) ? 0.75f : 0.0f,(62-heights[r])/100);
+                    }
+                }
             }
         }
         GXEnd();

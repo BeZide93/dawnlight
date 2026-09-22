@@ -15,7 +15,7 @@ inline constexpr std::array<Phase, 8> phases{{
     {3, 9, 16, 13},  // Helm Splitter
     {4, 12, 19, 12}, // Mortal Draw
     {5, 13, 21, 10}, // Jump Strike and two doubles
-    {6, 19, 24, 26}, // Great Spin and two doubles
+    {6, 19, 24, 26}, // Spin Attack (normal or Great Spin) and two doubles
 }};
 inline constexpr int sword = 25;
 inline constexpr int back_slice = 17;
@@ -173,6 +173,7 @@ inline GroundPoint approach_velocity(float dx, float dz, float max_speed, float 
 }
 struct Battle {
     unsigned phase = 0;
+    unsigned defeated_doubles = 0;
     int health = starting_health;
     Trial trial = Trial::None;
     unsigned trials_started = 0;
@@ -199,6 +200,7 @@ struct Battle {
         }
         if (advance || --remaining == 0) {
             phase = (phase + 1) % phases.size();
+            defeated_doubles = 0;
             remaining = 600;
             advance = false;
             return true;

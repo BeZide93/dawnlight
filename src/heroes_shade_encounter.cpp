@@ -417,7 +417,7 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
 void add_doubles(daNpc_Kn_c* boss) {
     for (unsigned i=1;i<sFighters.size();++i) {
         auto& entry=sFighters[i];
-        if (pending_or_live(entry.id)) continue;
+        if ((sBattle.defeated_doubles & (1u<<i)) || pending_or_live(entry.id)) continue;
         entry = {};
         entry.divide = i;
         cXyz pos=boss->current.pos;
@@ -883,6 +883,8 @@ HookAction before_ending_blow_wait(ModContext*,void* args,void*,void*) {
         actor->field_0xdec>1) actor->field_0xdec=std::max(1,actor->field_0xdec-7);
     return HOOK_CONTINUE;
 }
+#include "heroes_shade_spin.inc"
+
 HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
@@ -898,6 +900,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         return HOOK_SKIP_ORIGINAL;
     }
     if (sBattle.dying) return HOOK_CONTINUE;
+    if (spin_action(actor,*entry)) return HOOK_SKIP_ORIGINAL;
     if (sBattle.recovery) {
         hold_recovery(actor);
         return HOOK_SKIP_ORIGINAL;
@@ -1003,7 +1006,13 @@ void after_combat_action(ModContext*,void* args,void*,void*) {
 }
 void trial_body_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
-    if (fighter(actor) && sBattle.trial!=shade::Trial::None) {
+    const auto* entry=fighter(actor);
+    if (!entry) return;
+    if (sBattle.phase==7 && sBattle.trial==shade::Trial::None) {
+        if (auto* player=daPy_getPlayerActorClass(); player && spin_cut(player->getCutType()))
+            actor->mCylCc.OffTgShield();
+    }
+    if (defeated_double(*entry) || sBattle.trial!=shade::Trial::None) {
         // Keep movement/body separation and offensive sword colliders. Only
         // trial-specific targets accept hits during protection, so native hit
         // reactions cannot strand the offensive controller in a lesson state.
@@ -1014,7 +1023,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
+    if (defeated_double(*entry) || sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
         for (auto& sphere:actor->mSphCc) { sphere.OffAtSetBit(); sphere.ClrAtHit(); }
         entry->blade={};
         stop_blade_sweeps(*entry);

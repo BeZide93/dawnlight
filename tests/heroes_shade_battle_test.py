@@ -49,6 +49,10 @@ int main() {
         assert(timeout.tick());
         assert(timeout.health==10 && !timeout.dying && timeout.phase==(phase+1)%8);
     }
+    // Timeout starts a fresh phase; defeat slots never leak into later rounds.
+    timeout.phase=7;timeout.remaining=1;timeout.defeated_doubles=6;
+    assert(timeout.tick() && timeout.phase==0 && timeout.defeated_doubles==0);
+    timeout.defeated_doubles=6;timeout={};assert(timeout.defeated_doubles==0);
     // Replay starts independently; no defeated flags or lesson save bits needed.
     battle={};
     assert(battle.health==10 && battle.phase==0 && !battle.dying);

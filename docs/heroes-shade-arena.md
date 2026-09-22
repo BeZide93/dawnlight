@@ -316,7 +316,7 @@ hits at corners. Intermission completion preserves the rim; full encounter
 cancellation removes it, and pause/menus suspend its drawing and collision.
 
 Doubles retain their native formation and defeat animations. The offensive
-controller now waits for action 15 (Jump Strike double) or 21 (Great Spin double),
+controller now waits for action 15 (Jump Strike double) or 21 (Spin Attack double),
 not formation actions 14/20. Once ready, they use the existing sword/sword/special
 combos and staggered cooldowns, including normal one-heart sword attacks.
 
@@ -400,7 +400,7 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
 | Helm Splitter | Shield Attack, Helm Splitter, follow-up |
 | Mortal Draw | Mortal Draw |
 | Jump Strike | Jump Strike; two doubles participate |
-| Great Spin | Great Spin; two doubles participate |
+| Spin Attack | Normal Spin or Great Spin; two doubles participate |
 
 ### Double reactions and Ending Blow window
 
@@ -608,3 +608,27 @@ Device checklist (still required):
 6. Win and replay; leave/warp during a projectile or double spawn; re-enter and
    reload a save. Confirm Link stays visible and no enemy survives in the hub.
 7. Visit a normal Hidden Skill lesson on a story save; confirm it is unchanged.
+
+
+### Spin-phase double defeat lifecycle
+
+The final skill phase accepts normal left/right Spin Attacks as well as both
+Great Spins, for the boss and each double. `heroes_shade_spin.inc` validates
+Link's sword contact, applies the native forward/backward knockback and invokes
+the existing landing/departure actions. Doubles finish landing before departure;
+they continue falling even if a simultaneous boss hit starts global recovery.
+The arena does not set the tutorial's parent talk flag or invoke its group-wide
+lesson-end callbacks for these hits.
+
+Defeated slots are recorded in `Battle::defeated_doubles`, independently of actor
+storage. Thus native deletion and the per-frame `add_doubles` call cannot recreate
+a defeated double. Hitting only one double leaves the other active; hitting both
+leaves the boss alone without removing boss HP. The mask resets on the next skill
+phase or a fresh encounter. Defeated doubles have no hurt target or sword attack
+colliders. Other lessons and unowned story actors retain their behavior.
+
+Validation: the production native-hook regression covers all four spin types,
+independent clone defeats, forward/backward falls, landing-before-departure,
+repeated spawn maintenance after deletion, boss success/recovery, collision
+scope and protected intermissions. Progression tests cover timeout/replay mask
+reset. Native animation appearance still requires in-game verification.

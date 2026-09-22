@@ -383,6 +383,22 @@ void shorten_attack_interval(EnemySlowStep& step) {
     }
 }
 
+// These actors reuse their combat timers for knockdown, Wolf takedown and
+// death. Accelerating only timer[0] lets get-up beat timer[1]'s death branch
+// (Wolf: 80 accelerated ticks expire before 55 native ticks). Keep the whole
+// damage action synchronized, including while alive before a finishing hit.
+bool preserve_damage_timers(const EnemySlowStep& step) {
+    if (step.actor->health <= 0) return true;
+    switch (step.profile->name) {
+    case fpcNm_E_RD_e:
+    case fpcNm_E_DN_e:
+    case fpcNm_E_MF_e:
+        return step.action == kLizardDamageAction; // all three use ACTION_DAMAGE = 21
+    default:
+        return false;
+    }
+}
+
 }  // namespace
 
 ModResult install_enemy_hard_mode_hooks() {
@@ -475,7 +491,7 @@ float enemy_hard_mode_chase_scale(const EnemySlowStep& step, const float* value)
 
 void prepare_enemy_hard_mode(EnemySlowStep& step) {
     if (step.actor == nullptr || step.profile == nullptr || !step.timerTick ||
-        !enemy_hard_mode_applies(step.profile->name)) {
+        !enemy_hard_mode_applies(step.profile->name) || preserve_damage_timers(step)) {
         return;
     }
 

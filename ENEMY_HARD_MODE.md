@@ -105,6 +105,37 @@ also composes with the enemy slow-motion system: Hard Mode is evaluated from
 real enemy timer ticks, while slow motion retains its fractional integration
 and duplicate-event protections.
 
+### Native death and Wolf knockdown timing
+
+Extra timer decrements stop at zero or negative enemy HP for every profile.
+Bulblin (`E_RD`), Lizalfos (`E_DN`) and Dynalfos (`E_MF`) also keep native timers
+throughout their shared knockdown/death action (`ACTION_DAMAGE = 21`), including
+a living knockdown or Wolf takedown before a final hit. The separate five-point
+recovery adjustment remains limited to surviving grounded enemies.
+
+These actors reuse timer slot 0 for getting up and slot 1 for disappearing.
+After landing while Link is a wolf, native code initializes them to 80 and 55.
+Accelerating only slot 0 made get-up run after about 48 enemy ticks, before the
+55-tick death branch. The actor had already begun its death coloration and
+lost HP, but returned to combat. Human sword knockdowns normally use roughly
+60/35 ticks, which explains why that path was much less prone to the race.
+Dynalfos have the same two-timer structure as the two reported enemy types.
+Bokoblins use a separate native death action instead of this competing get-up
+branch, consistent with them disappearing correctly.
+
+The fix preserves native death, drops, switches, Wolf takedown flags and actor
+cleanup. It does not force deletion, restore health or replace enemy actions.
+Ordinary living combat still uses the five-timer-points-in-three-ticks cadence.
+
+Run `python3 tests/enemy_hard_mode_death_test.py` to reproduce the old race and
+verify the actual pre-execute guard/timer adjustments against terminal
+conditions extracted from the pinned native actor sources. Coverage includes
+all three affected profiles, each cadence offset, normal and fractional slow
+motion, lethal hits during an existing knockdown, human hits, completed Wolf
+takedowns, and Hard Mode off. On-device validation should exercise Wolf bites,
+lethal pounces, takedowns and normal drops for melee and bow Bulblins, Lizalfos,
+Dynalfos and the Bokoblin control case.
+
 ## Enemy profiles
 
 ### Darknut (`B_TN`)

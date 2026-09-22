@@ -156,15 +156,36 @@ joint callbacks that expect a real Beamos actor: the eye-only model suppresses
 those callbacks only around its synchronous matrix calculation and immediately
 restores them. Lasers use the original `EF_BIMOL6` BMD/BCK and scrolling/startup
 BTKs from `E_bm6`, with per-eye animation state. Collision follows the native
-startup reach and room-clipped endpoints. The two beams alternate their capsule
-registration so they cannot hit twice in the same simulation step. Any beam
-contact with Link shuts both beams off for 90 ticks (three seconds), independent
-of the optional player-invincibility setting. Existing damage invincibility
-also suspends firing; the eye targets remain vulnerable throughout the pause.
-Eye targets accept arrows only.
+startup reach and room-clipped endpoints. Before firing, each eye selects a
+floor spot about 600 units away from Link; several wall-clipped candidates are
+compared to keep the initial beam path away from him. The spots stay fixed
+during the two-second charge, then move toward his floor position at at most
+10 units per tick. The two beams alternate their capsule registration so they
+cannot hit twice in the same simulation step. A hit disarms both for 90 ticks
+(three seconds) and resets their aim to safe floor spots, then tracking resumes.
+The beams remain visible during this recovery and Link's invincibility timer
+suppresses only collision, never rendering. Rewinding a completed startup BTK
+also restores its playback speed: setting only its frame to zero left it stopped
+and could make subsequent beams disappear. Eye targets remain vulnerable and
+accept arrows only.
 Wind uses Link's native external-force API at strength 55 (previously 18),
 retaining wall collision. Both the equipment check and the native heavy-aware
 force flag let Iron Boots resist it. Ordinary walking cannot cancel that force.
+
+At the end of the fire phase, an 80-unit-wide molten strip appears along the
+arena walls and remains until victory, death, departure or replay. It follows
+64 room-wall samples, excluding rays into the exit corridor. Original dark-red
+edges and moving orange seams mark its extent. A native fire capsule along the
+nearest strip segment deals one heart on contact, with a 45-tick repeat-hit
+pause; the height is low enough for hanging Link to remain safe. Only one rim
+capsule is registered per tick, avoiding collision-table pressure and duplicate
+hits at corners. Intermission completion preserves the rim; full encounter
+cancellation removes it, and pause/menus suspend its drawing and collision.
+
+Doubles retain their native formation and defeat animations. The offensive
+controller now waits for action 15 (Jump Strike double) or 21 (Great Spin double),
+not formation actions 14/20. Once ready, they use the existing sword/sword/special
+combos and staggered cooldowns, including normal one-heart sword attacks.
 
 No game asset files or code from Twilit Essentials are added to the mod. The
 native resources are loaded from the player's game at runtime; the ward,
@@ -173,7 +194,8 @@ telegraph and wind rings are original procedural effects.
 Validation: `python tests/heroes_shade_trials_test.py` runs the actual runtime
 methods with instrumented collision APIs, checking weapon filters, separate
 eye removal, warning/damage boundaries, shared beam endpoints, pause/resume,
-cleanup and the 300-tick wind with/without Iron Boots. The battle test checks
+cleanup, safe beam startup and repeated recovery, persistent rim contact, and
+the 300-tick wind with/without Iron Boots. The battle test checks
 all ten hits, all four thresholds exactly once, ignored hits during trials,
 phase timeouts and replay. `python tests/heroes_shade_wall_targets_test.py`
 checks the actual alignment method for ceiling, reversed and tilted DZB faces

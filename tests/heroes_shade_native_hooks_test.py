@@ -110,6 +110,7 @@ struct dCcD_Cps : Sphere, cM3dGCps {
 };
 struct Fighter {
     int id=42, divide=0;
+    shade::AttackChain chain;
     bool reset=false;
     int offense=shade::helm_splitter;
     bool animationStarted=true, deleting=false, helmTurnPending=false;
@@ -167,6 +168,17 @@ Space* dComIfG_Ccsp() { return &space; }
 checks = r'''
 int main() {
     daNpc_Kn_c a;
+    for(unsigned phase : {6u,7u}) {
+        sBattle.phase=phase;
+        for(int divide : {1,2}) {
+            a.entry.divide=divide;
+            assert(waiting_action(a.entry)==(phase==6 ? 15 : 21));
+            a.entry.chain.begin(phase);
+            assert(a.entry.chain.next()==shade::sword);
+            assert(a.entry.chain.next()==shade::sword);
+        }
+    }
+    a.entry={};sBattle={};
     // Cutscenes cannot register a sword hit or consume another lesson counter.
     sCinema.begin(false);
     a.mEvtNo=shade::phases[0].success;
@@ -511,7 +523,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + function("cinema_landing", "bool") + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("shield_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
+source = fixture + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("shield_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

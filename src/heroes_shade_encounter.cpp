@@ -75,6 +75,8 @@ shade::Cinema sCinema;
 std::array<mods::flow::RegisteredMessage,4> sLines;
 mods::flow::RegisteredMessage sBossTitle;
 void cancel_trial();
+void finish_trial();
+void tick_arena_hazards();
 void suspend_trial();
 void sync_trial_position(daNpc_Kn_c*);
 void begin_trial(daNpc_Kn_c*);
@@ -549,6 +551,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
         if (entry->deleting) { *static_cast<int*>(result)=1; return HOOK_SKIP_ORIGINAL; }
         if (sCinema.active()) return HOOK_CONTINUE;
     }
+    if (!entry->divide && !sCinema.active() && !sBattle.dying) tick_arena_hazards();
     actor->mType=shade::phases[sBattle.phase].type;
     if (!entry->divide && !actor->mCreating && sBattle.tick()) {
         remove_companions();
@@ -571,12 +574,13 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
             actor->field_0x15af=1;
         } else { actor->mType=6; actor->field_0x15af=0; }
         if (!entry->divide && tick_trial(actor)) {
-            cancel_trial(); sBattle.trial=shade::Trial::None;
+            finish_trial(); sBattle.trial=shade::Trial::None;
             entry->reset=true;
         }
         return HOOK_CONTINUE;
     }
     if (!entry->divide && sBattle.dying) {
+        cancel_trial();
         sCinema.begin(true);
         entry->offense=-1;
         entry->helmTurnPending=false;
@@ -653,7 +657,8 @@ HookAction delete_bullet(ModContext*,void* args,void*,void*) {
 // combo or leave it waiting for sequence 9 after returning to the ready pose.
 int waiting_action(const Fighter& entry) {
     const auto& phase=shade::phases[sBattle.phase];
-    return entry.divide ? (phase.type==5 ? 14 : 20) : phase.action;
+    // 14/20 are formation movement; native doubles actually wait in 15/21.
+    return entry.divide ? (phase.type==5 ? 15 : 21) : phase.action;
 }
 HookAction before_approach(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);

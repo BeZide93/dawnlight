@@ -122,7 +122,12 @@ struct TrialBeamModel {
             scroll.init(data,texture,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1) &&
             on.init(data,start,TRUE,J3DFrameCtrl::EMode_NONE,1,0,-1);
     }
-    void reset() { bck.setFrame(0); scroll.setFrame(0); on.setFrame(0); }
+    void reset() {
+        bck.setFrame(0); scroll.setFrame(0); on.setFrame(0);
+        // EMode_NONE stops playback at the end. Rewinding the frame alone
+        // does not restart the startup BTK after a hit/pause.
+        bck.setPlaySpeed(1); scroll.setPlaySpeed(1); on.setPlaySpeed(1);
+    }
     void play() { bck.play(); scroll.play(); on.play(); }
     float reach() { return std::min(1.0f,static_cast<int>(on.getFrame()+0.5f)*0.3f); }
     void draw(const cXyz& start,const cXyz& end,dKy_tevstr_c& light) {
@@ -146,6 +151,11 @@ public:
     cXyz center{0,0,0}, boss{0,0,0};
     std::array<cXyz,2> ends{};
     float radius=1000;
+    static constexpr unsigned rimSegments=64;
+    std::array<cXyz,rimSegments> rimOuter{},rimInner{};
+    std::array<bool,rimSegments> rimValid{};
+    bool lava=false;
+    int lavaTicks=0;
     void vertex(const cXyz& p,GXColor c) {
         GXPosition3f32(p.x,p.y,p.z); GXColor4u8(c.r,c.g,c.b,c.a);
     }
@@ -159,7 +169,7 @@ public:
         GXEnd();
     }
     void draw() override {
-        if (!clock.active()) return;
+        if (!clock.active() && !lava) return;
         j3dSys.reinitGX();
         GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0); GXSetCurrentMtx(GX_PNMTX0);
         GXClearVtxDesc(); GXSetVtxDesc(GX_VA_POS,GX_DIRECT); GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);
@@ -173,6 +183,25 @@ public:
         GXSetZMode(GX_TRUE,GX_LEQUAL,GX_FALSE);
         GXSetBlendMode(GX_BM_BLEND,GX_BL_SRCALPHA,GX_BL_ONE,GX_LO_CLEAR);
         GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0); GXSetCullMode(GX_CULL_NONE);
+        if (lava) {
+            // Original molten ribbons follow the sampled room edge. The dark
+            // margins and moving bright seams stay inside the same narrow strip.
+            for (unsigned i=0;i<rimSegments;++i) {
+                const unsigned next=(i+1)%rimSegments;
+                if (!rimValid[i] || !rimValid[next]) continue;
+                GXBegin(GX_QUADS,GX_VTXFMT0,4*4);
+                for (unsigned band=0;band<4;++band) for (unsigned k=0;k<4;++k) {
+                    const unsigned edge=(k==1 || k==2) ? next : i;
+                    const float across=(band+(k>=2))/4.0f;
+                    const float pulse=0.5f+0.5f*std::sin(edge*1.7f+lavaTicks*0.08f+band);
+                    const bool crust=across==0 || across==1;
+                    vertex(rimOuter[edge]+(rimInner[edge]-rimOuter[edge])*across,
+                        {static_cast<u8>(crust ? 85 : 255),static_cast<u8>(crust ? 12 : 55+110*pulse),
+                         static_cast<u8>(crust ? 3 : 8),255});
+                }
+                GXEnd();
+            }
+        }
         if (clock.kind==shade::Trial::Shield) {
             // Smooth translucent shell with a moving latitude highlight.
             GXBegin(GX_QUADS,GX_VTXFMT0,24*48*4);
@@ -216,6 +245,9 @@ struct ShadeTrials {
     std::array<dCcD_Sph,2> eyeTargets;
     std::array<dCcD_Cps,2> beams;
     dCcD_Cyl flame;
+    dCcD_Cps lavaContact;
+    bool lavaActive=false;
+    int lavaRecovery=0;
     TrialPacket packet;
     shade::TrialClock clock;
     fopAc_ac_c* owner=nullptr;
@@ -298,6 +330,9 @@ struct ShadeTrials {
         flame.SetAtAtp(shade::special_attack_power); flame.SetAtSPrm(0x1f);
         flame.SetAtSpl(static_cast<dCcG_At_Spl>(0xe)); flame.SetAtMtrl(dCcD_MTRL_FIRE);
         flame.SetH(300);
+        lavaContact.SetStts(&status); lavaContact.SetAtType(AT_TYPE_CSTATUE_SWING);
+        lavaContact.SetAtSPrm(0x1f); lavaContact.SetAtAtp(shade::normal_attack_power);
+        lavaContact.SetAtMtrl(dCcD_MTRL_FIRE); lavaContact.SetAtSpl(static_cast<dCcG_At_Spl>(0xe));
         for (unsigned i=0;i<2;++i) {
             eyeTargets[i].SetStts(&status); eyeTargets[i].SetTgType(AT_TYPE_ARROW);
             eyeTargets[i].SetTgSPrm(0x11); eyeTargets[i].SetR(55);
@@ -393,20 +428,95 @@ struct ShadeTrials {
                 if (wall(static_cast<s16>(i*0x1000),100,0,point)) radius=std::max(radius,(point-center).absXZ());
             }
             for (const auto& point:anchorPos) radius=std::max(radius,(point-center).absXZ());
-            radius+=150; radiusReady=true;
+            radius+=150;
+            float rimLimit=0;
+            for (const auto& p:anchorPos) rimLimit=std::max(rimLimit,(p-center).absXZ());
+            rimLimit=(rimLimit+150)*1.25f;
+            for (unsigned i=0;i<TrialPacket::rimSegments;++i) {
+                cXyz edge;
+                packet.rimValid[i]=wall(static_cast<s16>(i*0x10000/TrialPacket::rimSegments),40,8,edge);
+                packet.rimValid[i]=packet.rimValid[i] && (edge-center).absXZ()<rimLimit;
+                if (!packet.rimValid[i]) continue;
+                edge.y=center.y+4;
+                packet.rimOuter[i]=edge;
+                packet.rimInner[i]=edge+cXyz(cM_ssin(lastWallYaw)*80,0,cM_scos(lastWallYaw)*80);
+            }
+            radiusReady=true;
         }
         return ready;
     }
     void suspend() {
-        visible=false; beamVisible=false;
+        visible=false; beamVisible=false; packet.lava=false;
+        lavaContact.OffAtSetBit(); lavaContact.ClrAtHit();
         shield.OffTgSetBit(); shield.ClrTgHit(); flame.OffAtSetBit(); flame.ClrAtHit();
         for (unsigned i=0;i<2;++i) {
             eyeTargets[i].OffTgSetBit(); eyeTargets[i].ClrTgHit();
             beams[i].OffAtSetBit(); beams[i].ClrAtHit();
         }
     }
-    void cancel() {
+    void cancel(bool keepLava=false) {
         suspend(); clock={}; packet.clock={}; beamRecovery=0;
+        if (!keepLava) { lavaActive=false; lavaRecovery=0; packet.lavaTicks=0; }
+    }
+    void tick_lava() {
+        auto* player=daAlink_getAlinkActorClass();
+        if (!lavaActive || !player) return;
+        packet.lava=true; ++packet.lavaTicks;
+        if (lavaRecovery>0) --lavaRecovery;
+        if (lavaContact.ChkAtHit() && lavaContact.GetAtHitAc()==player) lavaRecovery=45;
+        lavaContact.OffAtSetBit(); lavaContact.ClrAtHit();
+        if (lavaRecovery || player->getDamageWaitTimer()) return;
+        // Register only the nearest edge, avoiding dozens of global collision
+        // entries and overlapping hits. Geometry and collision share the rim.
+        float nearest=1.0e20f;
+        cXyz start,end;
+        for (unsigned i=0;i<TrialPacket::rimSegments;++i) {
+            const unsigned next=(i+1)%TrialPacket::rimSegments;
+            if (!packet.rimValid[i] || !packet.rimValid[next]) continue;
+            const cXyz a=(packet.rimOuter[i]+packet.rimInner[i])*0.5f;
+            const cXyz b=(packet.rimOuter[next]+packet.rimInner[next])*0.5f;
+            const cXyz d=b-a, p=player->current.pos-a;
+            const float length=d.x*d.x+d.z*d.z;
+            const float t=length>0 ? std::clamp((p.x*d.x+p.z*d.z)/length,0.0f,1.0f) : 0;
+            const float distance=(player->current.pos-(a+d*t)).absXZ();
+            if (distance<nearest) { nearest=distance; start=a; end=b; }
+        }
+        if (nearest>120) return;
+        static_cast<cM3dGCps*>(&lavaContact)->Set(start,end,40);
+        cXyz direction=center-player->current.pos; lavaContact.SetAtVec(direction);
+        lavaContact.OnAtSetBit(); dComIfG_Ccsp()->Set(&lavaContact);
+    }
+    void reset_beam_aim() {
+        auto* player=daAlink_getAlinkActorClass();
+        for (unsigned i=0;i<2;++i) {
+            cXyz toward=player->current.pos-eyePos[i];
+            if (toward.absXZ()<1) toward=cXyz(1,0,0);
+            const float length=toward.absXZ();
+            const cXyz forward(toward.x/length,0,toward.z/length);
+            const cXyz side(forward.z,0,-forward.x);
+            float safest=-1;
+            // Try both sides and both depth offsets. Near a wall, clipping a
+            // single candidate could otherwise put the starting spot on Link.
+            for (unsigned candidate=0;candidate<4;++candidate) {
+                const unsigned pick=(candidate+i*2)%4;
+                cXyz target=player->current.pos+(pick<2 ? side : forward)*(pick%2 ? -600 : 600);
+                target.y=center.y+40;
+                cXyz start=center+cXyz(0,40,0);
+                dBgS_LinChk check; check.Set(&start,&target,owner);
+                if (dComIfG_Bgsp().LineCross(&check)) {
+                    target=check.GetCross();
+                    const cXyz inward=start-target;
+                    target+=inward*(80.0f/std::max(80.0f,inward.absXZ()));
+                }
+                target.y=center.y+4;
+                const cXyz ray=target-eyePos[i], toPlayer=player->current.pos-eyePos[i];
+                const float squared=ray.x*ray.x+ray.z*ray.z;
+                const float t=squared>0 ? std::clamp((ray.x*toPlayer.x+ray.z*toPlayer.z)/squared,0.0f,1.0f) : 0;
+                const float clearance=(player->current.pos-(eyePos[i]+ray*t)).absXZ();
+                if (clearance>safest) { safest=clearance; aim[i]=target; }
+            }
+            beamModels[i].reset();
+        }
     }
     ~ShadeTrials() {
         cancel();
@@ -416,7 +526,7 @@ struct ShadeTrials {
         dComIfG_resDelete(&fireArchive,"E_fm");
     }
     void begin(daNpc_Kn_c* boss) {
-        cancel(); clock.begin(sBattle.trial);
+        cancel(true); clock.begin(sBattle.trial);
         origin=boss->current.pos;
         origin.y=center.y;
         // Sample the native motion over six seconds. The outer edge reaches
@@ -424,9 +534,7 @@ struct ShadeTrials {
         const float nativeRadius=31.5f*std::max(1.0f,std::min(47.5f,fire[1].bck.getEndFrame()));
         fireScale=2.5f*(radius+(origin-center).absXZ())/nativeRadius;
         for (auto& effect:fire) effect.reset();
-        auto* player=daAlink_getAlinkActorClass();
-        for (unsigned i=0;i<2;++i) aim[i]=player->current.pos+cXyz(0,70,0);
-        for (auto& beam:beamModels) beam.reset();
+        reset_beam_aim();
     }
     bool tick(daNpc_Kn_c* boss) {
         auto* player=daAlink_getAlinkActorClass();
@@ -465,14 +573,17 @@ struct ShadeTrials {
         } else if (clock.kind==shade::Trial::Eyes) {
             eyeColor.play();
             if (beamRecovery>0) --beamRecovery;
+            bool contacted=false;
             for (auto& beam:beams) {
-                if (beam.ChkAtHit() && beam.GetAtHitAc()==player) beamRecovery=shade::beam_recovery_ticks;
+                contacted|=beam.ChkAtHit() && beam.GetAtHitAc()==player;
                 beam.OffAtSetBit(); beam.ClrAtHit();
             }
-            beamVisible=clock.beam_live() && !beamRecovery && !player->getDamageWaitTimer();
+            if (contacted) { beamRecovery=shade::beam_recovery_ticks; reset_beam_aim(); }
+            beamVisible=clock.beam_live();
+            const bool damaging=beamVisible && !beamRecovery && !player->getDamageWaitTimer();
             // One capsule per simulation step prevents two eyes delivering a
-            // simultaneous hit. Both shut down for three seconds after contact,
-            // including when the player's optional invincibility setting is off.
+            // simultaneous hit. Recovery disarms damage, not rendering; restart
+            // from an offset floor point, then visibly sweep back toward Link.
             const unsigned firingEye=clock.eyes==3 ? (clock.ticks&1u) : clock.eyes==1 ? 0 : 1;
             for (unsigned i=0;i<2;++i) if (clock.eyes&(1u<<i)) {
                 auto& target=eyeTargets[i];
@@ -487,17 +598,17 @@ struct ShadeTrials {
                 }
                 target.ClrTgHit(); target.OnTgSetBit(); target.SetC(eyePos[i]);
                 dComIfG_Ccsp()->Set(&target);
-                const cXyz destination=player->current.pos+cXyz(0,70,0);
+                const cXyz destination(player->current.pos.x,center.y+4,player->current.pos.z);
                 const cXyz delta=destination-aim[i];
                 const float distance=delta.abs();
-                if (distance>0.001f) aim[i]+=delta*(std::min(15.0f,distance)/distance);
+                if (beamVisible && !beamRecovery && distance>0.001f) aim[i]+=delta*(std::min(10.0f,distance)/distance);
                 cXyz end=aim[i];
                 dBgS_LinChk check; check.Set(&eyePos[i],&end,owner);
                 if (dComIfG_Bgsp().LineCross(&check)) end=check.GetCross();
                 packet.ends[i]=end;
                 if (beamVisible) {
                     beamModels[i].play();
-                    if (i==firingEye) {
+                    if (damaging && i==firingEye) {
                         const cXyz hitEnd=eyePos[i]+(end-eyePos[i])*beamModels[i].reach();
                         beams[i].OnAtSetBit();
                         static_cast<cM3dGCps*>(&beams[i])->Set(eyePos[i],hitEnd,20);
@@ -505,16 +616,19 @@ struct ShadeTrials {
                         dComIfG_Ccsp()->Set(&beams[i]);
                     }
                     mDoAud_seStartLevel(Z2SE_EN_BM_BEAM2,&eyePos[i],0,dComIfGp_getReverb(51));
-                } else beamModels[i].reset();
+                }
             }
         } else if (clock.kind==shade::Trial::Wind && !player->checkEquipHeavyBoots()) {
             player->setOutPower(shade::wind_power,cLib_targetAngleY(&center,&player->current.pos),1);
         }
         packet.clock=clock; packet.center=center; packet.boss=boss->current.pos;
         packet.radius=radius;
-        return clock.tick();
+        const bool done=clock.tick();
+        if (done && clock.kind==shade::Trial::Fire) { lavaActive=true; tick_lava(); }
+        return done;
     }
     void draw(dKy_tevstr_c& light) {
+        if (packet.lava) { dComIfGd_setList(); j3dSys.getDrawBuffer(1)->entryImm(&packet,0); }
         if (!clock.active() || !visible) return;
         if (clock.kind==shade::Trial::Fire && clock.ticks>shade::fire_warning_ticks)
             for (auto& effect:fire) effect.draw(origin,fireScale,light);
@@ -532,12 +646,14 @@ struct ShadeTrials {
             eyePose.remove(data); eyeColor.remove(data);
             if (beamVisible) beamModels[i].draw(eyePos[i],packet.ends[i],light);
         }
-        dComIfGd_setList(); j3dSys.getDrawBuffer(1)->entryImm(&packet,0);
+        if (!packet.lava) { dComIfGd_setList(); j3dSys.getDrawBuffer(1)->entryImm(&packet,0); }
     }
 };
 ShadeTrials* sTrials=nullptr;
 void suspend_trial() { if (sTrials) sTrials->suspend(); }
 void cancel_trial() { if (sTrials) sTrials->cancel(); }
+void finish_trial() { if (sTrials) sTrials->cancel(true); }
+void tick_arena_hazards() { if (sTrials) sTrials->tick_lava(); }
 void begin_trial(daNpc_Kn_c* boss) { if (sTrials) sTrials->begin(boss); }
 bool tick_trial(daNpc_Kn_c* boss) { return sTrials && sTrials->tick(boss); }
 

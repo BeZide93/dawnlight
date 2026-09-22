@@ -61,8 +61,16 @@ room = r'''
 };
 struct cXyz {
     float x=0,y=0,z=0;
+    cXyz operator+(cXyz b)const{return {x+b.x,y+b.y,z+b.z};}
     cXyz operator-(cXyz b)const{return {x-b.x,y-b.y,z-b.z};}
     float absXZ()const{return std::sqrt(x*x+z*z);}
+};
+float cM_ssin(s16 a){return std::sin(a*3.14159265f/32768);}
+float cM_scos(s16 a){return std::cos(a*3.14159265f/32768);}
+struct TrialPacket {
+    static constexpr unsigned rimSegments=64;
+    std::array<cXyz,rimSegments> rimOuter{},rimInner{};
+    std::array<bool,rimSegments> rimValid{};
 };
 struct ActorSpawnParams {
     int parameters,argument,room_num;cXyz position;struct{s16 x,y,z;}angle;
@@ -78,6 +86,7 @@ void create_standalone_actor(int,const ActorSpawnParams& p,int& id){
     assert(p.angle.x==0 && p.room_num==51 && p.parameters==1);id=++spawnCount;
 }
 struct Room {
+    TrialPacket packet;
     std::array<bool,4> anchorPlaced{},anchorAligned{};
     std::array<s16,4> anchorYaw{};s16 lastWallYaw=0;
     bool align_anchor(daHsTarget_c*,unsigned){return true;}std::array<bool,2> eyePlaced{};

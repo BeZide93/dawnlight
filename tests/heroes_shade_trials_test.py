@@ -85,12 +85,16 @@ int dComIfGp_getReverb(int){return 0;}void cinema_pose(daNpc_Kn_c*,int){}
 struct Animation {float frame=0;float getFrame(){return frame;}float getEndFrame(){return 70;}void play(){}};
 struct Fire {Animation bck;void sample(float frame){bck.frame=frame;}};
 struct Beam {int frame=0;void play(){++frame;}void reset(){frame=0;}float reach(){return std::min(1.0f,frame*0.3f);}};
-struct Packet {
+struct TrialPacket {
+    static constexpr unsigned rimSegments=64;
+    std::array<cXyz,rimSegments> rimOuter{},rimInner{};
+    std::array<bool,rimSegments> rimValid{};
+    bool lava=false;int lavaTicks=0;
     shade::TrialClock clock;cXyz center,boss;std::array<cXyz,2> eyes,ends;float radius=0;
 };
 struct ShadeTrials {
-    shade::TrialClock clock;Packet packet;dCcD_Stts status;dCcD_Sph shield;
-    dCcD_Cyl flame;std::array<dCcD_Sph,2> eyeTargets;std::array<dCcD_Cps,2> beams;
+    shade::TrialClock clock;TrialPacket packet;dCcD_Stts status;dCcD_Sph shield;
+    dCcD_Cyl flame;dCcD_Cps lavaContact;bool lavaActive=false;int lavaRecovery=0;std::array<dCcD_Sph,2> eyeTargets;std::array<dCcD_Cps,2> beams;
     std::array<cXyz,2> eyePos{},aim{};std::array<Fire,2> fire;Animation eyeColor;
     fopAc_ac_c* owner=nullptr;cXyz center,origin;float radius=2000,fireScale=2.5;
     bool visible=false,beamVisible=false;int beamRecovery=0;std::array<Beam,2> beamModels;
@@ -121,9 +125,21 @@ struct TrialEyeModel:J3DModel {
 };
 int native_callback(J3DJoint*,int){assert(false);return 1;}
 '''
+beam_source = source[source.index('struct TrialBeamModel {'):]
+reset_start = beam_source.index('    void reset() {')
+reset_end = beam_source.index('\n    }', reset_start)+6
+head_fixture += r'''
+struct RestartAnimation {
+    float frame=99,speed=0;
+    void setFrame(float f){frame=f;}void setPlaySpeed(float s){speed=s;}
+};
+struct RestartBeam {RestartAnimation bck,scroll,on;
+''' + beam_source[reset_start:reset_end] + '\n};\n'
 checks = r'''
 };
 int main() {
+    RestartBeam restarted;restarted.reset();
+    assert(restarted.on.frame==0 && restarted.on.speed==1);
     TrialEyeModel head;
     for(auto& joint:head.data.joints) joint.callback=native_callback;
     head.calc();
@@ -153,21 +169,38 @@ int main() {
     }
     assert(std::abs(radius-1496.25f)<0.1f);
     for (int i=330;i<357;++i) {assert(!tick());assert(!t.flame.at);}
-    assert(tick());
-    t.cancel();t.clock.begin(shade::Trial::Eyes);
+    assert(tick() && t.lavaActive); // rim ignites only once the wave has finished
+    t.cancel(true);assert(t.lavaActive); // survives intermission completion
+    t.packet.rimValid[0]=t.packet.rimValid[1]=true;
+    t.packet.rimOuter[0]={1000,4,-500};t.packet.rimInner[0]={920,4,-500};
+    t.packet.rimOuter[1]={1000,4,500};t.packet.rimInner[1]={920,4,500};
+    player.current.pos={960,0,0};world.entries.clear();t.tick_lava();
+    assert(t.packet.lava && world.entries.size()==1 && world.contains(&t.lavaContact));
+    assert(t.lavaContact.material==dCcD_MTRL_FIRE && t.lavaContact.special>=12);
+    t.lavaContact.atHit=&player;t.tick_lava();assert(t.lavaRecovery==45 && !t.lavaContact.at);
+    t.suspend();assert(t.lavaActive && !t.packet.lava && !t.lavaContact.at);
+    for(int i=0;i<45;++i) { t.tick_lava(); }
+    assert(t.lavaContact.at);
+    player.current.pos={0,0,0};world.entries.clear();t.tick_lava();assert(world.entries.empty());
+    t.cancel();assert(!t.lavaActive && !t.packet.lava);
+    t.clock.begin(shade::Trial::Eyes);
     player.current.pos={400,0,200};
+    t.reset_beam_aim();
+    const auto initial=t.aim;
+    for(auto p:initial){assert(p.y==4 && (p-player.current.pos).absXZ()>590);}
     for(int i=0;i<60;++i) {assert(!tick());assert(!world.contains(&t.beams[0]));}
+    assert(t.aim[0].x==initial[0].x && t.aim[0].z==initial[0].z); // no hidden tracking during charge
     assert(!tick() && world.contains(&t.beams[0]) && !world.contains(&t.beams[1]));
     assert(std::abs(t.beams[0].end.x-t.packet.ends[0].x*0.3f)<0.01f); // native startup reach
     assert(!tick() && !world.contains(&t.beams[0]) && world.contains(&t.beams[1]));
     t.beams[1].atHit=&player;
-    assert(!tick() && t.beamRecovery==90 && !t.beamVisible);
+    assert(!tick() && t.beamRecovery==90 && t.beamVisible);
     for(int i=0;i<89;++i) {
-        assert(!tick() && !t.beamVisible);
+        assert(!tick() && t.beamVisible);
         assert(!world.contains(&t.beams[0]) && !world.contains(&t.beams[1]));
     }
     assert(!tick() && t.beamVisible); // recovers even with native damageTimer zero
-    player.damageTimer=10;assert(!tick() && !t.beamVisible);
+    player.damageTimer=10;assert(!tick() && t.beamVisible);
     player.damageTimer=0;
     for (auto* invalid:{&sword,&bomb,&ball}) {
         t.eyeTargets[0].hit=invalid;assert(!tick() && t.clock.eyes==3);
@@ -191,7 +224,7 @@ int main() {
 }
 '''
 code = fixture + '\n'.join(method(sig) for sig in (
-    'void init(', 'void suspend()', 'void cancel()', 'bool tick(')) + checks.replace("};\nint main()", "};\n" + head_fixture + "\nint main()", 1)
+    'void init(', 'void suspend()', 'void cancel(', 'void tick_lava()', 'void reset_beam_aim()', 'bool tick(')) + checks.replace("};\nint main()", "};\n" + head_fixture + "\nint main()", 1)
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'trials.cpp'
     binary = Path(tmp) / 'trials'

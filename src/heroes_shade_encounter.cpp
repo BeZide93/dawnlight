@@ -1,6 +1,7 @@
 #include "heroes_shade_encounter.hpp"
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
+#include "arena_stone_texture.hpp"
 #include "enemy_spawner.hpp"
 #include "f_pc/f_pc_deletor.h"
 #include "f_pc/f_pc_create_req.h"
@@ -926,6 +927,8 @@ public:
     cXyz position{0,0,0};
     int stonePart=-1;
     u16 stoneIndex=0;
+    stone::Patch stonePatch;
+    bool stoneSearched=false;
 
     J3DModelData* room_model(int part) const {
         constexpr const char* bmd[]={"model.bmd","model1.bmd","model2.bmd",
@@ -943,16 +946,22 @@ public:
             auto* textures=model ? model->getTexture() : nullptr;
             if (textures && stoneIndex<textures->getNum() && textures->getImgDataPtr(stoneIndex)) return textures;
             stonePart=-1;
+            stoneSearched=false;
         }
-        // Prefer a broad, low, horizontal opaque surface around the pedestal.
-        // This selects the actual floor material without a texture index/name
-        // tied to one region, and avoids ceiling, wall, shadow and effect maps.
+        if (stoneSearched) return nullptr;
+        // Footprint alone chose the pale tile/decoration atlas. Prefer dark,
+        // opaque, subtly variegated diffuse stone, including an undecorated
+        // subregion when the texture also contains the floor inlay's border.
         float best=0;
         J3DTexture* selected=nullptr;
+        bool resident=false;
         for (int part=0;part<6;++part) {
             auto* model=room_model(part);
+            resident|=model!=nullptr;
             auto* textures=model ? model->getTexture() : nullptr;
             if (!textures) continue;
+            std::vector<stone::Patch> patches(textures->getNum());
+            std::vector<bool> sampled(textures->getNum(),false);
             for (u16 i=0;i<model->getMaterialNum();++i) {
                 auto* material=model->getMaterialNodePointer(i);
                 if (!material || !material->getTevBlock() || !(material->getMaterialMode()&1)) continue;
@@ -964,14 +973,23 @@ public:
                 const auto& lo=*shape->getMin();
                 const auto& hi=*shape->getMax();
                 const float width=hi.x-lo.x, depth=hi.z-lo.z, height=hi.y-lo.y;
-                if (width<100 || depth<100 || height<0) continue;
-                const float dx=std::max({lo.x-position.x,position.x-hi.x,0.0f});
-                const float dz=std::max({lo.z-position.z,position.z-hi.z,0.0f});
-                const float score=width*depth/(1+4*height+4*std::abs((lo.y+hi.y)*0.5f-position.y)+dx+dz);
+                if (width<100 || depth<100 || height<0 || height>std::min(width,depth)*0.3f) continue;
+                if (!sampled[index]) {
+                    patches[index]=stone::dark_marble(textures->getImgDataPtr(index),image->format,image->width,image->height);
+                    sampled[index]=true;
+                }
+                const auto patch=patches[index];
+                if (patch.quality<=0) continue;
+                // Texture character outranks footprint: the smaller dark
+                // circular/triangular inlays must beat the large pale floor.
+                const float score=patch.quality*(1+0.1f*std::log1p(width*depth))/
+                    (1+(height+std::abs((lo.y+hi.y)*0.5f-position.y))/100);
                 if (score<=best) continue;
-                best=score; stonePart=part; stoneIndex=index; selected=textures;
+                best=score; stonePart=part; stoneIndex=index; stonePatch=patch; selected=textures;
             }
         }
+        stoneSearched=resident;
+        if (resident && !selected) svc_log->warn(mod_ctx,"Master Sword plinth: no dark stone patch found in resident floor materials");
         return selected; // Retry next draw if room textures are not ready yet.
     }
     void draw() override {
@@ -1014,11 +1032,13 @@ public:
                 if (stone) {
                     if (ring==3 || ring==7) {
                         // Planar caps retain grain instead of pinching at the centre.
-                        GXTexCoord2f32(0.5f+std::sin(a)*radii[r]/200,0.5f+std::cos(a)*radii[r]/200);
+                        GXTexCoord2f32(stonePatch.u+stonePatch.size*(0.5f+std::sin(a)*radii[r]/200),
+                            stonePatch.v+stonePatch.size*(0.5f+std::cos(a)*radii[r]/200));
                     } else {
                         // Continuous height across the steps; a square-scale
                         // patch on each carved face also works with clamp maps.
-                        GXTexCoord2f32((corner==1 || corner==2) ? 0.75f : 0.0f,(62-heights[r])/100);
+                        GXTexCoord2f32(stonePatch.u+stonePatch.size*((corner==1 || corner==2) ? 0.75f : 0.0f),
+                            stonePatch.v+stonePatch.size*(62-heights[r])/100);
                     }
                 }
             }

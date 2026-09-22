@@ -7,15 +7,26 @@ resolved against the loaded room collision. Face it in human form and press
 plinth: this does not run the story sword-pickup event or replace Link's weapon.
 After victory, interact again to replay. Leaving the room discards the fight.
 
-The plinth borrows a texture from the loaded arena room. Selection favors a
-broad, opaque surface near floor height around the pedestal, rather than a
-region-specific texture number. Its top and ledge use planar UVs; side faces
-use upright UVs with consistent height across the steps. Neutral vertex shading
+The plinth borrows dark marble from the loaded arena room. The first implementation
+ranked only surface bounds and picked the pale tile/decoration atlas. Selection
+now checks the actual diffuse texels of opaque floor materials: it favors dark,
+neutral, subtly variegated stone and rejects pale tiles, uniform black surfaces,
+transparent decals and intensity/alpha shadow maps. A large uninterrupted patch
+outranks a small dark ornament. Atlas UVs are restricted to the chosen patch so
+decorative borders do not repeat around the pedestal. No region-specific texture
+number is assumed. Its top and ledge use planar UVs; side faces use upright UVs
+with consistent height across the steps. Neutral vertex shading
 keeps the bevels visible without tinting the stone blue. The room's native
 `J3DTexture::loadGX` preserves resolved shared-image pointers, palettes, filtering
 and texture replacements. Only the room model slot and texture index are cached;
-the resource is looked up again for drawing. Until room textures are ready, the
-previous untextured draw remains available. No game texture is bundled in the mod.
+the resource is looked up again for drawing. Texel inspection runs once per room
+resource selection and supports GX CMPR, RGB565, RGB5A3, RGBA8 and PC RGBA8/BC1.
+If no matching dark patch is found, the old untextured draw is retained and a
+warning is logged instead of silently selecting the pale tiles again. Until
+room models are ready, selection is retried. No game texture is bundled in the mod.
+`tests/arena_stone_texture_test.py` checks native byte/block layouts, rejection
+and cropping with synthetic textures under address/undefined-behavior sanitizers;
+the selected game texture still needs in-game visual verification.
 
 ## Intro and victory scenes
 

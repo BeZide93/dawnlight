@@ -1,7 +1,8 @@
 #include "heroes_shade_encounter.hpp"
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
-#include "arena_stone_texture.hpp"
+#include "generated/pedestal_stone.hpp"
+#include "pedestal_mesh.hpp"
 #include "enemy_spawner.hpp"
 #include "f_pc/f_pc_deletor.h"
 #include "f_pc/f_pc_create_req.h"
@@ -20,8 +21,6 @@
 #include "mods/svc/hook.hpp"
 #include "mods/svc/flow.hpp"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
-#include "JSystem/J3DGraphBase/J3DMaterial.h"
-#include "JSystem/J3DGraphBase/J3DTexture.h"
 #include "res/Object/MstrSword.h"
 #include <algorithm>
 #include <array>
@@ -919,128 +918,65 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
-// Original beveled geometry, textured from the resident arena floor. Bind the
-// room's J3DTexture directly: on PC, shared stage images have resolved pointers
-// in that object and cannot safely be reconstructed from ResTIMG offsets.
+// Original mesh and original bundled stone. Image storage belongs to the mod,
+// not the room archive; the texture object and draw packet live with Pedestal.
 class PlinthPacket : public J3DPacket {
 public:
     cXyz position{0,0,0};
-    int stonePart=-1;
-    u16 stoneIndex=0;
-    stone::Patch stonePatch;
-    bool stoneSearched=false;
+    GXTexObj texture{};
+    bool textureReady=false;
 
-    J3DModelData* room_model(int part) const {
-        constexpr const char* bmd[]={"model.bmd","model1.bmd","model2.bmd",
-            "model3.bmd","model4.bmd","model5.bmd"};
-        constexpr const char* bdl[]={"model.bdl","model1.bdl","model2.bdl",
-            "model3.bdl","model4.bdl","model5.bdl"};
-        const char* archive=dComIfG_getRoomArcName(51);
-        auto* model=static_cast<J3DModelData*>(dComIfG_getStageRes(archive,bmd[part]));
-        return model ? model : static_cast<J3DModelData*>(dComIfG_getStageRes(archive,bdl[part]));
-    }
-    J3DTexture* stone_texture() {
-        if (!arena()) return nullptr;
-        if (stonePart>=0) {
-            auto* model=room_model(stonePart);
-            auto* textures=model ? model->getTexture() : nullptr;
-            if (textures && stoneIndex<textures->getNum() && textures->getImgDataPtr(stoneIndex)) return textures;
-            stonePart=-1;
-            stoneSearched=false;
-        }
-        if (stoneSearched) return nullptr;
-        // Footprint alone chose the pale tile/decoration atlas. Prefer dark,
-        // opaque, subtly variegated diffuse stone, including an undecorated
-        // subregion when the texture also contains the floor inlay's border.
-        float best=0;
-        J3DTexture* selected=nullptr;
-        bool resident=false;
-        for (int part=0;part<6;++part) {
-            auto* model=room_model(part);
-            resident|=model!=nullptr;
-            auto* textures=model ? model->getTexture() : nullptr;
-            if (!textures) continue;
-            std::vector<stone::Patch> patches(textures->getNum());
-            std::vector<bool> sampled(textures->getNum(),false);
-            for (u16 i=0;i<model->getMaterialNum();++i) {
-                auto* material=model->getMaterialNodePointer(i);
-                if (!material || !material->getTevBlock() || !(material->getMaterialMode()&1)) continue;
-                auto* shape=material->getShape();
-                const u16 index=material->getTexNo(0);
-                if (!shape || index>=textures->getNum() || !textures->getImgDataPtr(index)) continue;
-                const auto* image=textures->getResTIMG(index);
-                if (image->width<32 || image->height<32) continue;
-                const auto& lo=*shape->getMin();
-                const auto& hi=*shape->getMax();
-                const float width=hi.x-lo.x, depth=hi.z-lo.z, height=hi.y-lo.y;
-                if (width<100 || depth<100 || height<0 || height>std::min(width,depth)*0.3f) continue;
-                if (!sampled[index]) {
-                    patches[index]=stone::dark_marble(textures->getImgDataPtr(index),image->format,image->width,image->height);
-                    sampled[index]=true;
-                }
-                const auto patch=patches[index];
-                if (patch.quality<=0) continue;
-                // Texture character outranks footprint: the smaller dark
-                // circular/triangular inlays must beat the large pale floor.
-                const float score=patch.quality*(1+0.1f*std::log1p(width*depth))/
-                    (1+(height+std::abs((lo.y+hi.y)*0.5f-position.y))/100);
-                if (score<=best) continue;
-                best=score; stonePart=part; stoneIndex=index; stonePatch=patch; selected=textures;
-            }
-        }
-        stoneSearched=resident;
-        if (resident && !selected) svc_log->warn(mod_ctx,"Master Sword plinth: no dark stone patch found in resident floor materials");
-        return selected; // Retry next draw if room textures are not ready yet.
-    }
     void draw() override {
-        auto* stone=stone_texture();
+        if (!textureReady) {
+            GXInitTexObj(&texture,pedestal_art::kPixels,pedestal_art::kSize,pedestal_art::kSize,
+                GX_TF_RGB565,GX_REPEAT,GX_REPEAT,GX_TRUE);
+            GXInitTexObjLOD(&texture,GX_LIN_MIP_LIN,GX_LINEAR,0,pedestal_art::kLastMip,
+                0,GX_FALSE,GX_FALSE,GX_ANISO_1);
+            textureReady=true;
+        }
         j3dSys.reinitGX();
         GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);
         GXSetCurrentMtx(GX_PNMTX0);
         GXClearVtxDesc();
         GXSetVtxDesc(GX_VA_POS,GX_DIRECT);
         GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);
-        if (stone) GXSetVtxDesc(GX_VA_TEX0,GX_DIRECT);
+        GXSetVtxDesc(GX_VA_TEX0,GX_DIRECT);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_F32,0);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_CLR0,GX_CLR_RGBA,GX_RGBA8,0);
-        if (stone) GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_F32,0);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_F32,0);
         GXSetNumChans(1);
         GXSetChanCtrl(GX_COLOR0A0,GX_DISABLE,GX_SRC_REG,GX_SRC_VTX,GX_LIGHT_NULL,GX_DF_NONE,GX_AF_NONE);
-        GXSetNumTexGens(stone ? 1 : 0);
-        if (stone) {
-            GXSetTexCoordGen(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_TEX0,GX_IDENTITY);
-            stone->loadGX(stoneIndex,GX_TEXMAP0);
-        }
+        GXSetNumTexGens(1);
+        GXSetTexCoordGen(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_TEX0,GX_IDENTITY);
+        GXLoadTexObj(&texture,GX_TEXMAP0);
         GXSetNumTevStages(1);
-        GXSetTevOrder(GX_TEVSTAGE0,stone ? GX_TEXCOORD0 : GX_TEXCOORD_NULL,
-            stone ? GX_TEXMAP0 : GX_TEXMAP_NULL,GX_COLOR0A0);
-        GXSetTevOp(GX_TEVSTAGE0,stone ? GX_MODULATE : GX_PASSCLR);
+        GXSetTevOrder(GX_TEVSTAGE0,GX_TEXCOORD0,GX_TEXMAP0,GX_COLOR0A0);
+        GXSetTevOp(GX_TEVSTAGE0,GX_MODULATE);
         GXSetZMode(GX_TRUE,GX_LEQUAL,GX_TRUE);
         GXSetBlendMode(GX_BM_NONE,GX_BL_ONE,GX_BL_ZERO,GX_LO_CLEAR);
         GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);
         GXSetCullMode(GX_CULL_NONE);
-        constexpr float radii[]={96,100,100,90,72,68,68,58,0};
-        constexpr float heights[]={0,4,12,19,19,24,54,62,62};
-        GXBegin(GX_QUADS,GX_VTXFMT0,8*8*4);
-        for (unsigned ring=0;ring<8;++ring) for (unsigned side=0;side<8;++side) {
+        using namespace pedestal_mesh;
+        GXBegin(GX_QUADS,GX_VTXFMT0,kBands*8*4);
+        for (unsigned ring=0;ring<kBands;++ring) for (unsigned side=0;side<8;++side) {
+            const bool cap=kRings[ring].height==kRings[ring+1].height;
+            const float light=cap ? 1.0f : 0.82f+0.12f*std::cos((side+0.5f)*0.7853981634f-0.7f);
+            const auto finish=kRings[ring].finish;
+            const float red=finish==trim ? 255 : finish==groove ? 100 : 222;
+            const float green=finish==trim ? 225 : finish==groove ? 104 : 225;
+            const float blue=finish==trim ? 171 : finish==groove ? 104 : 226;
             for (unsigned corner=0;corner<4;++corner) {
-                const unsigned r=ring+(corner>=2);
-                const float a=(side+(corner==1 || corner==2))*0.7853981634f;
-                const u8 shade=static_cast<u8>((stone ? 170 : 90)+ring*5+18*std::cos(a-0.7f));
-                GXPosition3f32(position.x+std::sin(a)*radii[r],position.y+heights[r],position.z+std::cos(a)*radii[r]);
-                GXColor4u8(shade,shade,static_cast<u8>(shade+(stone ? 0 : 8)),255);
-                if (stone) {
-                    if (ring==3 || ring==7) {
-                        // Planar caps retain grain instead of pinching at the centre.
-                        GXTexCoord2f32(stonePatch.u+stonePatch.size*(0.5f+std::sin(a)*radii[r]/200),
-                            stonePatch.v+stonePatch.size*(0.5f+std::cos(a)*radii[r]/200));
-                    } else {
-                        // Continuous height across the steps; a square-scale
-                        // patch on each carved face also works with clamp maps.
-                        GXTexCoord2f32(stonePatch.u+stonePatch.size*((corner==1 || corner==2) ? 0.75f : 0.0f),
-                            stonePatch.v+stonePatch.size*(62-heights[r])/100);
-                    }
-                }
+                const auto& point=kRings[ring+(corner>=2)];
+                const bool right=corner==1 || corner==2;
+                const float a=(side+right)*0.7853981634f;
+                const float x=std::sin(a)*point.radius, z=std::cos(a)*point.radius;
+                GXPosition3f32(position.x+x,position.y+point.height,position.z+z);
+                GXColor4u8(static_cast<u8>(red*light),static_cast<u8>(green*light),static_cast<u8>(blue*light),255);
+                // One world-space grain scale: planar cap/ledge, face-local
+                // tangent on walls/bevels. Adjacent height bands share UVs.
+                if (cap) GXTexCoord2f32(0.5f+x/160,0.5f+z/160);
+                else GXTexCoord2f32(0.5f+(right ? 1 : -1)*point.radius*0.3826834324f/160,
+                    (62-point.height)/160);
             }
         }
         GXEnd();

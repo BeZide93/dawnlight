@@ -7,26 +7,21 @@ resolved against the loaded room collision. Face it in human form and press
 plinth: this does not run the story sword-pickup event or replace Link's weapon.
 After victory, interact again to replay. Leaving the room discards the fight.
 
-The plinth borrows dark marble from the loaded arena room. The first implementation
-ranked only surface bounds and picked the pale tile/decoration atlas. Selection
-now checks the actual diffuse texels of opaque floor materials: it favors dark,
-neutral, subtly variegated stone and rejects pale tiles, uniform black surfaces,
-transparent decals and intensity/alpha shadow maps. A large uninterrupted patch
-outranks a small dark ornament. Atlas UVs are restricted to the chosen patch so
-decorative borders do not repeat around the pedestal. No region-specific texture
-number is assumed. Its top and ledge use planar UVs; side faces use upright UVs
-with consistent height across the steps. Neutral vertex shading
-keeps the bevels visible without tinting the stone blue. The room's native
-`J3DTexture::loadGX` preserves resolved shared-image pointers, palettes, filtering
-and texture replacements. Only the room model slot and texture index are cached;
-the resource is looked up again for drawing. Texel inspection runs once per room
-resource selection and supports GX CMPR, RGB565, RGB5A3, RGBA8 and PC RGBA8/BC1.
-If no matching dark patch is found, the old untextured draw is retained and a
-warning is logged instead of silently selecting the pale tiles again. Until
-room models are ready, selection is retried. No game texture is bundled in the mod.
-`tests/arena_stone_texture_test.py` checks native byte/block layouts, rejection
-and cropping with synthetic textures under address/undefined-behavior sanitizers;
-the selected game texture still needs in-game visual verification.
+The plinth uses Dawnlight's original warm-charcoal stone texture, bundled in
+all builds as an embedded GX RGB565 image with seven mip levels. It no longer
+selects, samples or borrows room textures. See [asset provenance and regeneration](../art/pedestal/README.md).
+The octagonal cap and ledge use planar UVs; side faces and bevels use tangent UVs
+at the same grain scale. Narrow warm-colored inlays and dark recessed-looking
+bands follow the actual octagonal edges, with a matching inset outline around
+the cap. They are mesh bands, not ornaments stretched over unrelated surfaces.
+The central cap remains undecorated around the sword. Pedestal dimensions,
+collision and interaction are unchanged.
+
+The immutable image has mod lifetime and 32-byte alignment; each persistent
+`PlinthPacket` owns its GX texture object. No archive image, shared material or
+actor heap buffer is borrowed or rewritten. The checked-in generated header
+keeps Python/Pillow out of platform builds. Regenerate it only after changing
+the source PNG with `python tools/generate_pedestal_texture.py`.
 
 ## Intro and victory scenes
 

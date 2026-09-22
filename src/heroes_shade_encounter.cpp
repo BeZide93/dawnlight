@@ -15,6 +15,7 @@
 #include "d/d_bg_w.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_camera.h"
+#include "Z2AudioLib/Z2AudioMgr.h"
 #include "d/d_bg_s_lin_chk.h"
 #include "d/d_msg_object.h"
 #include "f_op/f_op_msg_mng.h"
@@ -116,6 +117,8 @@ bool arena() {
         std::strcmp(dComIfGp_getStartStageName(), "D_DLBR0") == 0 &&
         dComIfGp_getStartStageRoomNo() == 51;
 }
+#include "heroes_shade_music.inc"
+
 Fighter* fighter(daNpc_Kn_c* actor) {
     if (!actor) return nullptr;
     for (auto& entry : sFighters) if (entry.id != kNone && entry.id == fopAcM_GetID(actor)) return &entry;
@@ -253,6 +256,7 @@ void finish_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     release_cinema();
     if (victory) { entry.deleting=true; remove_actor(entry.id); }
     else {
+        start_shade_music(false);
         actor->mNoDraw=false;
         actor->field_0x16f4.set(1,1,1);
         entry.reset=true;
@@ -292,6 +296,7 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         sCinemaRuntime.ownsEvent=true;
         auto* camera=dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0));
         if (!camera) { finish_cinema(actor,entry); return; }
+        if (!sCinema.victory) start_shade_music(true);
         sCinemaRuntime.player=fopAcM_GetID(player);
         sCinemaRuntime.camera=fpcM_GetID(camera);
         sCinemaRuntime.cameraIndex=dComIfGp_getPlayerCameraID(0);
@@ -518,7 +523,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     if (sStopping || entry->deleting || !arena() || !daAlink_getAlinkActorClass()) {
-        if (!entry->divide) { release_cinema(); cancel_trial(); }
+        if (!entry->divide) { stop_shade_music(); release_cinema(); cancel_trial(); }
         stop_blade_sweeps(*entry);
         entry->deleting=true;
         remove_actor(entry->id);
@@ -531,7 +536,9 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
         daAlink_getAlinkActorClass()->checkDeadHP()) {
         if (!entry->divide) {
             release_cinema();
-            if (dComIfGp_isEnableNextStage() || daAlink_getAlinkActorClass()->checkDeadHP()) cancel_trial();
+            if (dComIfGp_isEnableNextStage() || daAlink_getAlinkActorClass()->checkDeadHP()) {
+                stop_shade_music(); cancel_trial();
+            }
             else suspend_trial();
         }
         stop_blade_sweeps(*entry);
@@ -581,6 +588,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     }
     if (!entry->divide && sBattle.dying) {
         cancel_trial();
+        stop_shade_music();
         sCinema.begin(true);
         entry->offense=-1;
         entry->helmTurnPending=false;
@@ -618,7 +626,7 @@ void after_execute(ModContext*,void* args,void*,void*) {
 HookAction before_delete(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (auto* entry=fighter(actor)) {
-        if (!entry->divide) { release_cinema(); cancel_trial(); remove_companions(); }
+        if (!entry->divide) { stop_shade_music(); release_cinema(); cancel_trial(); remove_companions(); }
         stop_blade_sweeps(*entry);
         actor->mType=6;
         *entry={};
@@ -1223,6 +1231,7 @@ int create_pedestal(void* ptr) {
 }
 int delete_pedestal(void* ptr) {
     sStopping=true;
+    stop_shade_music();
     release_cinema();
     remove_companions();
     remove_actor(sFighters[0].id);
@@ -1375,6 +1384,7 @@ void update_heroes_shade_arena() {
 }
 void shutdown_heroes_shade_encounter() {
     sStopping=true;
+    stop_shade_music();
     release_cinema();
     std::unordered_set<ActorId> owned=sProjectiles;
     for (const auto& entry:sFighters) if (entry.id!=kNone) owned.insert(entry.id);

@@ -75,6 +75,7 @@ std::array<Fighter,3> sFighters;
 shade::Cinema sCinema;
 struct Player {
     int id=1,starts=0,cancels=0;
+    bool dead=false; bool checkDeadHP() { return dead; }
     struct { void setMoveAngle(int) {} } mDemo;
     struct { cXyz pos; } current;
     void cancelOriginalDemo() { ++cancels; }
@@ -125,6 +126,25 @@ int fopMsgM_messageSetDemo(int id) {
     message.msg_idx=id; message.status=delayMessageOpen ? 1 : 14; return 50;
 }
 void cinema_camera(daNpc_Kn_c*) { ++cameraTicks; }
+using u32=unsigned;
+constexpr u32 Z2BGM_TN_MBOSS=0x100006C;
+struct Audio {
+    u32 main=100,stream=0xffffffff,sub=0xffffffff;
+    int prepares=0,plays=0,stops=0,battles=0,subStops=0,handoffs=0;
+    bool roomAudible=true;
+    u32 getMainBgmID(){return main;}u32 getStreamBgmID(){return stream;}u32 getSubBgmID(){return sub;}
+    void bgmStreamPrepare(u32 id){stream=id;++prepares;roomAudible=false;}
+    void bgmStreamPlay(){++plays;}
+    void bgmStreamStop(int){stream=0xffffffff;++stops;roomAudible=true;}
+    void subBgmStart(u32 id){sub=id;stream=0xffffffff;++battles;roomAudible=false;}
+    void subBgmStop(){++subStops;} // native Darknut stop alone delays room audio
+    void subBgmStopInner(){sub=0xffffffff;++handoffs;roomAudible=true;}
+} audio;
+bool hasAudio=true,inArena=true,nextStage=false;
+auto Z2GetAudioMgr(){return hasAudio ? &audio : nullptr;}
+bool arena(){return inArena;}bool dComIfGp_isEnableNextStage(){return nextStage;}
+#include "heroes_shade_music.inc"
+
 '''
 
 runtime_start = source.index("struct CinemaRuntime {")
@@ -134,6 +154,7 @@ checks = r'''
 void reset() {
     boss={}; body={}; player={}; camera={}; message={}; sFighters={};
     sCinema={}; sCinemaRuntime={};
+    audio={};sShadeMusic={};hasAudio=inArena=true;nextStage=false;
     paused=ui=blockMessages=delayMessageOpen=false; hasCamera=true;
     eventResets=orders=deletes=cameraTicks=titleStarts=0;
 }
@@ -144,8 +165,38 @@ void accept(bool victory) {
     boss.eventInfo.accepted=true; tick();
     assert(player.starts==1 && camera.mCamera.stops==1);
     assert(sCinemaRuntime.ownsEvent && camera.mCamera.mTrimSize==3);
+    assert(audio.prepares==(victory ? 0 : 1) && audio.battles==0);
 }
 int main() {
+    // Stop uses the immediate native handoff, restoring the underlying room
+    // sequence without restarting it or waiting for Darknut's 510-tick delay.
+    reset();start_shade_music(true);start_shade_music(false);stop_shade_music();
+    assert(audio.main==100 && audio.roomAudible && audio.sub==kNoMusic && audio.handoffs==1);
+    stop_shade_music();assert(audio.handoffs==1 && !sShadeMusic.active);
+    // Stream-based room music is saved before the intro and restored on victory.
+    reset();audio.stream=0x2000070;start_shade_music(true);start_shade_music(false);
+    stop_shade_music();assert(audio.stream==0x2000070 && audio.plays==2);
+    // Cancelling the intro also restores its replaced stream exactly once.
+    reset();audio.stream=0x2000070;start_shade_music(true);stop_shade_music();
+    assert(audio.stream==0x2000070 && audio.plays==2);
+    // Without an accepted intro, the event timeout can start combat directly.
+    reset();audio.stream=0x2000070;start_shade_music(false);stop_shade_music();
+    assert(audio.stream==0x2000070 && audio.battles==1 && audio.plays==1);
+    for(int exit=0;exit<5;++exit) {
+        reset();audio.stream=0x2000070;start_shade_music(true);start_shade_music(false);
+        if(exit==0) nextStage=true;
+        if(exit==1) player.dead=true;
+        if(exit==2) inArena=false;
+        if(exit==3) audio.main=999; // game-over or another scene owns main
+        if(exit==4) {audio.stream=777;audio.sub=888;} // replacement music is untouched
+        stop_shade_music();
+        assert(audio.plays==1 && !sShadeMusic.active);
+        if(exit==4) assert(audio.stream==777 && audio.sub==888 && audio.handoffs==0);
+        else assert(audio.sub==kNoMusic && audio.stream==kNoMusic && audio.handoffs==1);
+    }
+    reset();audio.sub=Z2BGM_TN_MBOSS;stop_shade_music();assert(audio.handoffs==0); // not owned
+    reset();hasAudio=false;start_shade_music(true);assert(!sShadeMusic.active);
+    hasAudio=true;start_shade_music(true);hasAudio=false;stop_shade_music();assert(!sShadeMusic.active);
     // Accepted != opened: status 1 can persist for several native updates.
     // This reproduced the old bug: the camera was released on the next tick,
     // leaving a queued title to open only after the cinematic had ended.
@@ -194,10 +245,12 @@ int main() {
     for (int i=0;i<120;++i) tick();
     assert(sCinema.active() && titleStarts==1 && player.cancels==0 && eventResets==0);
     assert(!sFighters[0].reset && !sFighters[0].deleting);
+    assert(audio.stream==kShadeIntroMusic && audio.prepares==1 && audio.plays==1 && audio.battles==0);
     message.status=1; tick();
     assert(!sCinema.active() && sFighters[0].reset && !sFighters[0].deleting);
     assert(player.cancels==1 && eventResets==1 && camera.mCamera.starts==1);
     assert(camera.mCamera.mTrimSize==1 && deletes==0);
+    assert(audio.stream==kNoMusic && audio.sub==Z2BGM_TN_MBOSS && audio.battles==1 && audio.main==100);
     assert(boss.field_0x16f4.x==1 && !boss.mNoDraw);
     // Replay can display a fresh title; cancellation releases only this banner.
     sCinema.begin(false); tick(); boss.eventInfo.accepted=true; tick();
@@ -239,6 +292,7 @@ int main() {
     for (int i=0;i<30;++i) tick();
     assert(deletes==1 && eventResets==1 && player.cancels==1 && !sCinema.active());
     assert(titleStarts==0); // no title during the victory scene
+    assert(audio.prepares==0 && audio.battles==0); // no intro/battle restart in outro
 
     reset(); boss.mMotionSeqMngr.no=18; boss.mAcch.grounded=false; accept(true);
     assert(boss.mMotionSeqMngr.no==18); // final knockback stays airborne
@@ -293,4 +347,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror", "-I", str(root / "src"),
                     str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("Hero's Shade cutscene lifecycle, native warp pacing and control ownership: passed")
+print("Hero's Shade cutscene lifecycle, music handoffs, native warp pacing and control ownership: passed")

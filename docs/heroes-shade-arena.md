@@ -67,6 +67,22 @@ waits for the actual native message to finish instead of cutting it off at an
 assumed time. Appearance takes 54 ticks including anticipation; departure plus
 afterglow takes 75. Recovery and dialogue have bounded failure timeouts.
 
+The accepted intro starts Darknut's native cinematic stream (`0x2000037`).
+When the introduction ends (including the boss-name banner), the encounter switches
+to `Z2BGM_TN_MBOSS`, the Temple of Time Darknut battle music, on the native
+sub-sequence channel. It continues through all four intermissions. Starting the
+victory scene stops that sub-sequence and immediately hands back to the room music;
+it does not wait for Darknut's usual 510-tick post-battle delay. The underlying
+room sequence is preserved, and a replaced room stream is remembered and restored.
+
+`heroes_shade_music.inc` owns only this encounter's music. Death, departure,
+unexpected fighter/pedestal deletion and mod shutdown stop its matching cues.
+Restoration never restarts an old stream over game-over or destination music.
+The cinema fixture exercises intro-to-battle timing, room sequence/stream
+restoration, cancellation, replay and foreign-cue ownership. Listen on device
+for cue transitions, volume and native stream duration during long dialogue.
+All audio comes from the player's game; no music files are bundled.
+
 Implementation and lifecycle details:
 
 - `heroes_shade_cinema.hpp` owns the shot sequence; only the main actor's native

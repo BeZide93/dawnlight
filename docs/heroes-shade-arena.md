@@ -118,6 +118,22 @@ Implementation and lifecycle details:
 - Both actors are ready before camera movement starts. Wolf load failure cancels
   the encounter after a bounded wait, restores the sword interaction and removes
   pending actors. The native wolf is held hidden during combat for the outro.
+- `heroes_shade_trial_waves.inc` preloads SE groups `0x16`, `0x1d`, `0x1f`,
+  `0x21`, and `0x22` from the player's disc before sword interaction. The arena's
+  Darknut audio alias only provides the Temple of Time miniboss groups
+  `0x15/0x17`; loading the Beamos model does not load its wave samples.
+  These additional groups cover the normal Temple of Time, Phantom Zant room,
+  and Hyrule Castle audio sets used below. Readiness requires native wave status
+  2 (complete), not 1 (queued). Failed allocations retry at most once per 61 ticks
+  and log the archive ID; successful readiness is also logged.
+  Leaving the arena stops the owned loops and releases only added groups after
+  their DVD writes finish. A destination scene can adopt an existing preload;
+  the load hook reports success so native loaded-slot bookkeeping remains valid.
+  Erasure restores shared sample bindings from other resident groups. At mod
+  shutdown, any still-pending native DVD request retains its memory, since its
+  callback must finish without writing into freed storage.
+  `tests/heroes_shade_trial_waves_test.py` covers readiness, failed allocation,
+  deferred cleanup, borrowed groups, shared bindings, and destination adoption.
 - Trial audio uses native game cues: the shield activates with
   `Z2SE_OBJ_GANON_BARRIER_APPR`, hums with `Z2SE_OBJ_GANON_BARRIER`, and bursts
   once with `Z2SE_EN_PZ_BALL_BURST` at Shade's current position. Each Beamos eye

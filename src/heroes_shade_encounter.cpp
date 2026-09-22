@@ -20,6 +20,8 @@
 #include "d/d_camera.h"
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "Z2AudioLib/Z2SoundObject.h"
+#include "JSystem/JAudio2/JAUSectionHeap.h"
+#include "JSystem/JAudio2/JASWaveArcLoader.h"
 #include "d/d_particle_name.h"
 #include "d/d_bg_s_lin_chk.h"
 #include "d/d_msg_object.h"
@@ -38,6 +40,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <unordered_set>
 
 namespace dawnlight {
@@ -124,6 +127,7 @@ bool arena() {
         dComIfGp_getStartStageRoomNo() == 51;
 }
 #include "heroes_shade_music.inc"
+#include "heroes_shade_trial_waves.inc"
 
 Fighter* fighter(daNpc_Kn_c* actor) {
     if (!actor) return nullptr;
@@ -1266,7 +1270,7 @@ int execute_pedestal(void* ptr) {
     // Do both independently: loading effects must not delay wall-target spawn.
     const bool targetsReady=self->trials.place();
     const bool effectsReady=self->trials.prepare_effects();
-    if (!targetsReady || !effectsReady) return 1;
+    if (!targetsReady || !effectsReady || !sTrialWaves.ready) return 1;
     const bool endingWind=sBattle.trial==shade::Trial::Wind &&
         self->trials.clock.kind==shade::Trial::Wind && !self->trials.clock.windReleased &&
         !sCinema.active() && pending_or_live(sFighters[0].id);
@@ -1339,6 +1343,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
 #define PRE(H,F) if ((result=mods::hook::add_pre<H>(svc_hook,F))!=MOD_OK) goto fail
 #define POST(H,F) if ((result=mods::hook::add_post<H>(svc_hook,F))!=MOD_OK) goto fail
     PRE(ShadeMusicFrameworkHook,before_music_framework);
+    PRE(ShadeWaveLoadHook,before_trial_wave_load);
     PRE(ShadeAdmissionHook,admit);
     PRE(ShadeResetHook,before_reset); POST(ShadeResetHook,after_reset);
     PRE(ShadeExecuteHook,before_execute); POST(ShadeExecuteHook,after_execute);
@@ -1379,7 +1384,12 @@ fail:
     return mods::set_error(error,result,"failed to initialize Hero's Shade arena encounter");
 }
 void update_heroes_shade_arena() {
-    if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) return;
+    if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) {
+        suspend_trial();
+        sTrialWaves.release();
+        return;
+    }
+    sTrialWaves.prepare();
     if (pending_or_live(sPedestal)) return;
     for (auto& entry:sFighters) if (!pending_or_live(entry.id)) entry={};
     if (pending_or_live(sFighters[0].id)) return;
@@ -1431,6 +1441,8 @@ void shutdown_heroes_shade_encounter() {
     sShadeWolf.id=kNone;
     for (auto& line:sLines) line.reset();
     sBossTitle.reset();
+    sTrialWaves.release(); // In-flight native DVD requests retain their memory.
+    mods::hook::uninstall<ShadeWaveLoadHook>(svc_hook);
     mods::hook::uninstall<ShadeMusicFrameworkHook>(svc_hook);
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);

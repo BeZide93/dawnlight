@@ -196,6 +196,13 @@ void close_cinema_line() {
     sCinemaRuntime.messageStarted=false;
     sCinemaRuntime.message=0;
 }
+void start_cinema_line(MessageId text) {
+    const auto id=fopMsgM_messageSetDemo(text);
+    if (id!=0 && id!=kNone) {
+        sCinemaRuntime.message=text;
+        sCinemaRuntime.messageStarted=true;
+    }
+}
 void release_cinema() {
     close_cinema_line();
     if (sCinemaRuntime.ownsEvent) {
@@ -297,17 +304,20 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         const auto text=previous==Shot::BossName ? sBossTitle.id() : sLines[index].id();
         auto* message=dMsgObject_getMsgObjectClass();
         if (!sCinemaRuntime.messageStarted) {
-            const auto id=fopMsgM_messageSetDemo(text);
-            if (id!=0 && id!=kNone) {
-                sCinemaRuntime.message=text;
-                sCinemaRuntime.messageStarted=true;
-            }
+            start_cinema_line(text);
         } else message_done=!message || message->msg_idx!=sCinemaRuntime.message || message->getStatusLocal()==1;
     }
-    // Sequence 24 transitions from its ready gesture (step 0) into the normal
-    // combat wait (step 1). Use that native transition for the title timing.
+    // Show the banner during KN_DEMO_KAMAE, not after its transition to idle.
+    // Cue the last 30% of the gesture so the native fade-in overlaps the sword
+    // being pulled back. Ignore the previous clip until ctrlMotion installs it.
+    auto* readyModel=actor->mpModelMorf[0];
+    const bool title_cue=actor->mMotionSeqMngr.getNo()==24 &&
+        !actor->mMotionSeqMngr.checkEntryNewMotion() &&
+        (actor->mMotionSeqMngr.getStepNo()>0 ||
+            (readyModel && readyModel->getEndFrame()>0 &&
+                readyModel->getFrame()>=readyModel->getEndFrame()*0.70f));
     const bool pose_done=previous==Shot::Ready ?
-        actor->mMotionSeqMngr.getNo()==24 && actor->mMotionSeqMngr.getStepNo()>0 :
+        title_cue :
         actor->mMotionSeqMngr.getNo()==0 || actor->mMotionSeqMngr.getStepNo()>0;
     if (sCinema.tick(sCinemaRuntime.ownsEvent,message_done,pose_done)) {
         finish_cinema(actor,entry);
@@ -317,6 +327,9 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         close_cinema_line();
         if (sCinema.shot==Shot::Words1 || sCinema.shot==Shot::Words2) cinema_pose(actor,3); // TALK_A
         if (sCinema.shot==Shot::Ready) cinema_pose(actor,24); // ready the sword
+        // Start on the cue tick while the gesture continues, without waiting
+        // for a subsequent tick or restarting/changing the body animation.
+        if (sCinema.shot==Shot::BossName) start_cinema_line(sBossTitle.id());
         if (sCinema.shot==Shot::Depart) {
             cinema_pose(actor,0);
             actor->field_0x170c=1;

@@ -32,16 +32,24 @@ struct cXyz {
 };
 struct Motion {
     int no=0,step=0;
+    bool newMotion=false;
     void setNo(int n,int,int,int) { no=n; step=0; }
     int getNo() { return no; }
     int getStepNo() { return step; }
+    bool checkEntryNewMotion() { return newMotion; }
 };
+struct Model {
+    float frame=0,end=100;
+    float getFrame() { return frame; }
+    float getEndFrame() { return end; }
+} body;
 struct Event {
     bool accepted=false; int condition=0;
     bool checkCommandDemoAccrpt() { return accepted; }
     void onCondition(int n) { condition|=n; }
 };
 struct daNpc_Kn_c {
+    std::array<Model*,2> mpModelMorf{{&body,nullptr}};
     int id=42, field_0x15bc=0, field_0x170c=0, field_0x170d=0;
     int arrivals=0,departures=0,illegalWarps=0;
     bool mNoDraw=true;
@@ -122,7 +130,7 @@ runtime = source[runtime_start:source.index("} sCinemaRuntime;", runtime_start) 
 
 checks = r'''
 void reset() {
-    boss={}; player={}; camera={}; message={}; sFighters={};
+    boss={}; body={}; player={}; camera={}; message={}; sFighters={};
     sCinema={}; sCinemaRuntime={};
     paused=ui=blockMessages=false; hasCamera=true;
     eventResets=orders=deletes=cameraTicks=titleStarts=0;
@@ -148,9 +156,10 @@ int main() {
     message.status=1; tick(); assert(sCinema.shot==shade::Shot::Ready);
     for (int i=0;i<18;++i) tick();
     assert(sCinema.shot==shade::Shot::Ready && titleStarts==0);
-    boss.mMotionSeqMngr.step=1; tick(); // native return to the combat stance
-    assert(sCinema.shot==shade::Shot::BossName && titleStarts==0);
-    tick(); assert(message.msg_idx==105 && titleStarts==1);
+    body.frame=69; tick(); assert(titleStarts==0);
+    body.frame=70; tick(); // cue while the pointing gesture is still running
+    assert(sCinema.shot==shade::Shot::BossName && titleStarts==1);
+    assert(message.msg_idx==105 && boss.mMotionSeqMngr.no==24 && boss.mMotionSeqMngr.step==0);
     // The banner owns the final shot until native fade-out actually finishes.
     for (int i=0;i<120;++i) tick();
     assert(sCinema.active() && titleStarts==1 && player.cancels==0 && eventResets==0);
@@ -167,13 +176,24 @@ int main() {
     assert(titleStarts==2 && message.msg_idx==105);
     release_cinema(); assert(message.kills==1 && player.cancels==2);
 
-    // Slower ready animations must not be cut off by the old 45-tick timer.
+    // The cue scales with clip length, without waiting for the idle step.
     reset(); accept(false); sCinema.enter(shade::Shot::Ready); cinema_pose(&boss,24);
+    body.end=160; body.frame=111;
     for (int i=0;i<60;++i) tick();
     assert(sCinema.shot==shade::Shot::Ready && titleStarts==0);
-    boss.mMotionSeqMngr.step=1; tick(); tick();
+    body.frame=112; tick();
     assert(sCinema.shot==shade::Shot::BossName && titleStarts==1);
     assert(camera.mCamera.mTrimSize==3 && player.cancels==0);
+
+    // Stale frames from TALK_A must not trigger the title before the ready
+    // clip is installed; absent/invalid model data is handled by the timeout.
+    reset(); accept(false); sCinema.enter(shade::Shot::Ready); cinema_pose(&boss,24);
+    boss.mMotionSeqMngr.newMotion=true; body.frame=90; tick();
+    assert(titleStarts==0);
+    boss.mMotionSeqMngr.newMotion=false; body.end=0; tick(); assert(titleStarts==0);
+    boss.mpModelMorf[0]=nullptr; tick(); assert(titleStarts==0);
+    boss.mpModelMorf[0]=&body; body.end=100; body.frame=70; tick();
+    assert(titleStarts==1 && boss.mMotionSeqMngr.step==0);
 
     reset(); boss.mMotionSeqMngr.no=19; accept(true);
     assert(boss.mMotionSeqMngr.no==22); // native rise, not a snap to standing
@@ -239,7 +259,7 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "cinema.cpp"
     exe = Path(tmp) / "cinema"
     cpp.write_text(fixture + runtime + "\n" + "\n".join(function(name) for name in (
-        "close_cinema_line", "release_cinema", "finish_cinema", "cinema_pose", "tick_cinema")) + checks)
+        "close_cinema_line", "start_cinema_line", "release_cinema", "finish_cinema", "cinema_pose", "tick_cinema")) + checks)
     subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror", "-I", str(root / "src"),
                     str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)

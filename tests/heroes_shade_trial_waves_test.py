@@ -123,12 +123,15 @@ namespace mods {
 #include "heroes_shade_trial_waves.inc"
 void finish(unsigned id){auto& a=bank.arcs.at(id);assert(a.status==1);--a._5a;a.status=2;a.onLoadDone();}
 void finish_all(){for(auto id:ShadeTrialWaves::ids)if(bank.arcs[id].status==1)finish(id);}
-void reset(){
+void reset(bool borrowedVoice=true){
     finish_all();scene.loadedSeWave_1=scene.loadedSeWave_2=scene.loadedDemoWave=0;
     scene.requestSeWave_1=scene.requestSeWave_2=scene.requestDemoWave=0;
     for(auto& a:bank.arcs)if(a.parent)a.erase();
     sTrialWaves.release();assert(blocks==0);
     sTrialWaves={};bank={};scene={};testLog={};audioHeap={};graphHeap={};
+    // Existing trial-specific cases isolate their own allocations; voice
+    // ownership, pressure and retirement are exercised separately below.
+    if(borrowedVoice)bank.arcs[0x4a].status=2;
 }
 int main(){
     scene.exists=false;
@@ -203,6 +206,26 @@ int main(){
     graphHeap.next=0xe00000;
     for(int i=0;i<62;++i)sTrialWaves.prepare(Trial::Eyes);
     finish_all();assert(sTrialWaves.prepare(Trial::Eyes));assert(blocks==1);
+
+    // Native Shade voice archive is needed without an intermission, receives
+    // reserved storage when audio is full, and survives all phase transitions.
+    reset(false);audioHeap.available=0;
+    assert(!sTrialWaves.prepare(Trial::None));
+    assert(bank.arcs[0x4a].status==1 && blocks==1 && testLog.reserved==1);
+    assert(sTrialWaves.owns(0x4a));
+    sTrialWaves.release();assert(blocks==1); // still writing
+    finish_all();assert(sTrialWaves.prepare(Trial::None));
+    for(auto trial:{Trial::Shield,Trial::Fire,Trial::Eyes,Trial::Wind,Trial::None}) {
+        sTrialWaves.prepare(trial);finish_all();
+        for(int i=0;i<120;++i)sTrialWaves.prepare(trial);
+        assert(bank.arcs[0x4a].status==2 && bank.arcs[0x4a].erases==0);
+    }
+    assert(blocks==1);sTrialWaves.release();assert(blocks==0);
+    assert(bank.arcs[0x4a].erases==1);
+    // A pending voice archive must not report the whole encounter audio ready.
+    reset(false);sTrialWaves.prepare(Trial::None);
+    assert(!sTrialWaves.prepare(Trial::None));finish_all();
+    assert(sTrialWaves.prepare(Trial::None));
 
     // Missing disc entries and queue failures must not be hidden by fallback.
     reset();audioHeap.available=0;bank.arcs[0x16].mEntryNum=-1;

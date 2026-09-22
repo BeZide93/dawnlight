@@ -49,14 +49,16 @@ struct TrialWaveStorage {
 // The arena aliases the Darknut room (SE 0x15/0x17). Model archives do not
 // load sound samples. Add the native scene sets for normal Temple of Time
 // Beamos, Fyrus, Palace of Twilight's Phantom Zant, and Hyrule Castle's barrier.
+// Shade's Realm (F_SP200) uses SE 0x4a for the actor's native voice cues.
 struct ShadeTrialWaves {
-    static constexpr std::array<u32,6> ids{0x08,0x16,0x1d,0x1f,0x21,0x22};
+    static constexpr std::array<u32,7> ids{0x4a,0x08,0x16,0x1d,0x1f,0x21,0x22};
     std::array<bool,ids.size()> owned{},warned{};
     std::array<TrialWaveStorage,ids.size()> storage{};
     std::array<int,ids.size()> idle{};
     shade::Trial selected=shade::Trial::None;
 
     static bool needed(u32 id,shade::Trial trial) {
+        if (id==0x4a) return true; // voices survive every trial/ordinary combat
         switch (trial) {
         case shade::Trial::Shield: return id==0x1d || id==0x1f || id==0x21 || id==0x22;
         case shade::Trial::Fire: return id==0x08;
@@ -116,7 +118,7 @@ struct ShadeTrialWaves {
             }
         }
         if (loaded && !ready)
-            svc_log->info(mod_ctx,"Hero's Shade: current/next trial sound waves ready");
+            svc_log->info(mod_ctx,"Hero's Shade: voice and current/next trial sound waves ready");
         ready=loaded;
         return ready;
     }

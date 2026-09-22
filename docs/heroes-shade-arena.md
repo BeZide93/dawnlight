@@ -118,7 +118,13 @@ Implementation and lifecycle details:
 - Both actors are ready before camera movement starts. Wolf load failure cancels
   the encounter after a bounded wait, restores the sword interaction and removes
   pending actors. The native wolf is held hidden during combat for the outro.
-- `heroes_shade_trial_waves.inc` preloads SE groups `0x08`, `0x16`, `0x1d`, `0x1f`,
+- `heroes_shade_trial_waves.inc` keeps Shade's native voice group `0x4a`
+  (`F_SP200` / `Z2SCENE_SHADES_REALM`) loaded throughout arena residence,
+  including ordinary combat and every intermission. It is requested first and
+  uses the same reserved-ARAM fallback and safe cleanup as the trial groups.
+  This supplies the existing actor's breath, guard, pain, attack and skill voice
+  calls; loading `KN_a` model/animation resources alone does not supply them.
+  It also preloads trial SE groups `0x08`, `0x16`, `0x1d`, `0x1f`,
   `0x21`, and `0x22` from the player's disc in the background, selecting only
   the current or next trial: shield uses the Palace/Castle groups, fire uses
   `0x08`, eyes use `0x16`, and wind uses resident Boomerang samples. Prefetch
@@ -167,7 +173,8 @@ Implementation and lifecycle details:
   shutdown, any still-pending native DVD request retains its memory, since its
   callback must finish without writing into freed storage.
   `tests/heroes_shade_trial_waves_test.py` covers readiness, failed allocation,
-  phase selection, exhausted audio memory with successful reserved allocation,
+  phase selection, persistent voice residency across all trials and ordinary
+  combat, exhausted audio memory with successful reserved allocation,
   overlapping/full reserves, deferred writes, borrowed groups, shared bindings,
   destination adoption, and collection after native erasure.
 - Trial audio uses native game cues: the shield activates with

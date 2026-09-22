@@ -67,6 +67,7 @@ bool sStopping = false;
 std::unordered_set<ActorId> sProjectiles;
 shade::Cinema sCinema;
 std::array<mods::flow::RegisteredMessage,4> sLines;
+mods::flow::RegisteredMessage sBossTitle;
 struct CinemaRuntime {
     ActorId player = kNone;
     fpc_ProcID camera = kNone;
@@ -178,7 +179,15 @@ ModResult register_cinema_lines() {
         sLines[i]=mods::flow::register_message(0,variants);
         if (!sLines[i]) return sLines[i].result();
     }
-    return MOD_OK;
+    // The same native screen used by the story bosses (zelda_boss_name.blo),
+    // with our own registered text rather than overriding a stock boss name.
+    constexpr auto titleStyle=mods::flow::MessageStyle{}.box_kind(MESSAGE_BOX_BOSS_NAME)
+        .box_position(MESSAGE_POSITION_BOTTOM).draw_type(MESSAGE_DRAW_INSTANT);
+    std::vector<mods::flow::MessageVariant> titleVariants;
+    for (const auto language:languages) titleVariants.push_back(mods::flow::MessageBuilder{titleStyle}
+        .text("Hero's Shade").auto_advance(90).build(language));
+    sBossTitle=mods::flow::register_message(0,titleVariants);
+    return sBossTitle.result();
 }
 void close_cinema_line() {
     auto* message=dMsgObject_getMsgObjectClass();
@@ -283,13 +292,14 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     }
     const auto previous=sCinema.shot;
     bool message_done=false;
-    if (previous==Shot::Words1 || previous==Shot::Words2) {
+    if (previous==Shot::Words1 || previous==Shot::Words2 || previous==Shot::BossName) {
         const auto index=(sCinema.victory ? 2 : 0)+(previous==Shot::Words2);
+        const auto text=previous==Shot::BossName ? sBossTitle.id() : sLines[index].id();
         auto* message=dMsgObject_getMsgObjectClass();
         if (!sCinemaRuntime.messageStarted) {
-            const auto id=fopMsgM_messageSetDemo(sLines[index].id());
+            const auto id=fopMsgM_messageSetDemo(text);
             if (id!=0 && id!=kNone) {
-                sCinemaRuntime.message=sLines[index].id();
+                sCinemaRuntime.message=text;
                 sCinemaRuntime.messageStarted=true;
             }
         } else message_done=!message || message->msg_idx!=sCinemaRuntime.message || message->getStatusLocal()==1;
@@ -1272,6 +1282,7 @@ void shutdown_heroes_shade_encounter() {
     sProjectiles.clear();
     sPedestal=kNone;
     for (auto& line:sLines) line.reset();
+    sBossTitle.reset();
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);
     mods::hook::uninstall<ShadeExecuteHook>(svc_hook);

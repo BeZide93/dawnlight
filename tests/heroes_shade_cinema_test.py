@@ -92,8 +92,9 @@ struct Message {
 } message;
 struct Line { int value; int id() { return value; } };
 std::array<Line,4> sLines{{{101},{102},{103},{104}}};
+Line sBossTitle{105};
 bool paused=false,ui=false,hasCamera=true,blockMessages=false;
-int eventResets=0,orders=0,deletes=0,cameraTicks=0;
+int eventResets=0,orders=0,deletes=0,cameraTicks=0,titleStarts=0;
 bool dComIfGp_isPauseFlag() { return paused; }
 bool ui_document_visible() { return ui; }
 Player* daAlink_getAlinkActorClass() { return &player; }
@@ -110,6 +111,7 @@ void remove_actor(int id) { assert(id==42); ++deletes; }
 Message* dMsgObject_getMsgObjectClass() { return &message; }
 int fopMsgM_messageSetDemo(int id) {
     if (blockMessages || message.status!=1) return 0;
+    if (id==105) ++titleStarts;
     message.msg_idx=id; message.status=14; return 50;
 }
 void cinema_camera(daNpc_Kn_c*) { ++cameraTicks; }
@@ -123,7 +125,7 @@ void reset() {
     boss={}; player={}; camera={}; message={}; sFighters={};
     sCinema={}; sCinemaRuntime={};
     paused=ui=blockMessages=false; hasCamera=true;
-    eventResets=orders=deletes=cameraTicks=0;
+    eventResets=orders=deletes=cameraTicks=titleStarts=0;
 }
 void tick() { tick_cinema(&boss,sFighters[0]); }
 void accept(bool victory) {
@@ -145,10 +147,23 @@ int main() {
     message.status=1; tick(); tick(); assert(message.msg_idx==102);
     message.status=1; tick(); assert(sCinema.shot==shade::Shot::Ready);
     for (int i=0;i<45;++i) tick();
+    assert(sCinema.shot==shade::Shot::BossName && titleStarts==0);
+    tick(); assert(message.msg_idx==105 && titleStarts==1);
+    // The banner owns the final shot until native fade-out actually finishes.
+    for (int i=0;i<120;++i) tick();
+    assert(sCinema.active() && titleStarts==1 && player.cancels==0 && eventResets==0);
+    assert(!sFighters[0].reset && !sFighters[0].deleting);
+    message.status=1; tick();
     assert(!sCinema.active() && sFighters[0].reset && !sFighters[0].deleting);
     assert(player.cancels==1 && eventResets==1 && camera.mCamera.starts==1);
     assert(camera.mCamera.mTrimSize==1 && deletes==0);
     assert(boss.field_0x16f4.x==1 && !boss.mNoDraw);
+    // Replay can display a fresh title; cancellation releases only this banner.
+    sCinema.begin(false); tick(); boss.eventInfo.accepted=true; tick();
+    assert(player.starts==2 && sCinemaRuntime.ownsEvent);
+    sCinema.enter(shade::Shot::BossName); tick();
+    assert(titleStarts==2 && message.msg_idx==105);
+    release_cinema(); assert(message.kills==1 && player.cancels==2);
 
     reset(); boss.mMotionSeqMngr.no=19; accept(true);
     assert(boss.mMotionSeqMngr.no==22); // native rise, not a snap to standing
@@ -163,6 +178,7 @@ int main() {
     assert(boss.departures==15 && boss.illegalWarps==0);
     for (int i=0;i<30;++i) tick();
     assert(deletes==1 && eventResets==1 && player.cancels==1 && !sCinema.active());
+    assert(titleStarts==0); // no title during the victory scene
 
     reset(); boss.mMotionSeqMngr.no=18; boss.mAcch.grounded=false; accept(true);
     assert(boss.mMotionSeqMngr.no==18); // final knockback stays airborne
@@ -176,7 +192,7 @@ int main() {
     // the camera or permanently prevent replay.
     for (bool victory : {false,true}) {
         reset(); accept(victory); blockMessages=true;
-        for (int i=0;i<900 && sCinema.active();++i) tick();
+        for (int i=0;i<1100 && sCinema.active();++i) tick();
         assert(!sCinema.active() && eventResets==1 && player.cancels==1);
         assert(deletes==(victory ? 1 : 0));
         reset(); sCinema.begin(victory);
@@ -191,7 +207,8 @@ int main() {
     assert(sCinema.ticks==ticks);
     // Explicit cancellation at every shot returns only the acquired controls.
     for (auto shot : {shade::Shot::Arrival,shade::Shot::Recover,shade::Shot::Words1,
-                      shade::Shot::Words2,shade::Shot::Ready,shade::Shot::Depart,shade::Shot::Afterglow}) {
+                      shade::Shot::Words2,shade::Shot::Ready,shade::Shot::BossName,
+                      shade::Shot::Depart,shade::Shot::Afterglow}) {
         reset(); accept(false); sCinema.enter(shot); release_cinema(); release_cinema();
         assert(eventResets==1 && player.cancels==1 && camera.mCamera.starts==1);
     }

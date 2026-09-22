@@ -3,7 +3,7 @@
 namespace dawnlight::shade {
 // Simulation ticks, independent of rendering. Dialogue waits for the native
 // message to close; bounded waits also release control if a message fails.
-enum class Shot { None, Request, Arrival, Recover, Words1, Words2, Ready, Depart, Afterglow };
+enum class Shot { None, Request, Arrival, Recover, Words1, Words2, Ready, BossName, Depart, Afterglow };
 struct Cinema {
     Shot shot = Shot::None;
     int ticks = 0;
@@ -26,7 +26,8 @@ struct Cinema {
             if (message_done || ticks>=300)
                 enter(shot==Shot::Words1 ? Shot::Words2 : victory ? Shot::Depart : Shot::Ready);
             break;
-        case Shot::Ready: if (ticks>=45) enter(Shot::None); break;
+        case Shot::Ready: if (ticks>=45) enter(Shot::BossName); break;
+        case Shot::BossName: if (message_done || ticks>=300) enter(Shot::None); break;
         case Shot::Depart: if (ticks>=45) enter(Shot::Afterglow); break;
         case Shot::Afterglow: if (ticks>=30) enter(Shot::None); break;
         default: break;

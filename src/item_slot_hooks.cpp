@@ -289,6 +289,14 @@ std::array<std::array<HudTextBoxFlagState, 5>, static_cast<std::size_t>(HudPaneS
 std::array<dMeter2Draw_c::item_params, 2> s_xyAmmoOriginalParams = {};
 std::array<bool, 2> s_xyAmmoOriginalValid = {};
 
+struct ExternalZAmmoDrawState {
+    dMeter2Draw_c* meter = nullptr;
+    J2DPane* pane = nullptr;
+    JGeometry::TBox2<f32> bounds;
+    f32 numScale = 1.0f;
+};
+ExternalZAmmoDrawState s_externalZAmmoDraw;
+
 struct HudPaneVisibilityState {
     J2DPane* pane = nullptr;
     bool wasVisible = false;
@@ -563,6 +571,7 @@ bool z_item_menu_or_pause_context();
 bool midna_unlocked();
 u8 resolved_select_item(int index);
 bool is_z_lantern_item(u8 itemNo);
+bool z_item_has_ammo(u8 itemNo);
 bool z_item_ammo_values(u8 itemNo, u8& itemNum, u8& itemMax);
 
 struct PaneRenderState {
@@ -1246,6 +1255,7 @@ void clear_shared_hud_layout_cache() {
     s_dpadShadowVisibility = {};
     s_xyAmmoOriginalParams = {};
     s_xyAmmoOriginalValid = {};
+    s_externalZAmmoDraw = {};
     s_gaugeDraw = {};
     s_roundPictureStates = {};
     s_roundHudMeter = nullptr;
@@ -1631,6 +1641,40 @@ void restore_xy_ammo_layout(dMeter2Draw_c* meter) {
         }
     }
     s_xyAmmoOriginalValid.fill(false);
+}
+
+// Twilight HD HUD draws its Z count in the meter post-hook, using the
+// item's global bounds and Z number scale. Scope editor adjustments to that
+// draw only: the item itself has already been rendered at its final position.
+void apply_external_z_ammo_layout(dMeter2Draw_c* meter) {
+    if (s_externalZAmmoDraw.meter != nullptr || !hardcoded_hud_layout_enabled() ||
+        z_item_slot_active() || meter == nullptr || meter->mpItemR == nullptr ||
+        !z_item_has_ammo(dComIfGp_getSelectItem(kZItemSlot)))
+    {
+        return;
+    }
+
+    J2DPane* pane = meter->mpItemR->getPanePtr();
+    if (pane == nullptr) {
+        return;
+    }
+    const DuskModHudTransform transform = hud_layout_z_transform();
+    const DuskModHudButtonLayout layout = hud_layout_z_button_layout();
+    auto& params = meter->mItemParams[dMeter2Draw_c::SELECT_Z_e];
+    s_externalZAmmoDraw = {meter, pane, pane->getGlbBounds(), params.num_scale};
+    params.num_scale *= hud_ammo_scale(transform, layout);
+    pane->mGlobalBounds.addPos(
+        JGeometry::TVec2<f32>(layout.ammo_offset_x, layout.ammo_offset_y));
+}
+
+void restore_external_z_ammo_layout() {
+    if (s_externalZAmmoDraw.meter == nullptr) {
+        return;
+    }
+    s_externalZAmmoDraw.meter->mItemParams[dMeter2Draw_c::SELECT_Z_e].num_scale =
+        s_externalZAmmoDraw.numScale;
+    s_externalZAmmoDraw.pane->mGlobalBounds = s_externalZAmmoDraw.bounds;
+    s_externalZAmmoDraw = {};
 }
 
 void apply_hud_backing_visibility(dMeter2Draw_c* meter) {
@@ -2888,12 +2932,18 @@ HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
         update_z_hud_item(meter);
     }
     apply_round_xy_buttons(meter);
-    apply_xy_ammo_layout(meter);
     return HOOK_CONTINUE;
 }
 
 void after_meter_draw_restore_xy_ammo(ModContext*, void* args, void*, void*) {
-    restore_xy_ammo_layout(mods::arg<dMeter2Draw_c*>(args, 0));
+    auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
+    // Unwind X/Y before normal-priority HUD mods restore their own snapshots.
+    restore_xy_ammo_layout(meter);
+    apply_external_z_ammo_layout(meter);
+}
+
+void after_meter_draw_restore_external_z_ammo(ModContext*, void*, void*, void*) {
+    restore_external_z_ammo_layout();
 }
 
 void after_meter_draw(ModContext*, void* args, void*, void*) {
@@ -2909,6 +2959,7 @@ HookAction before_meter_screen_draw_restore_hud(ModContext*, void* args, void*, 
         // Presentation and other HUD mods can update the same panes between
         // dMeter2Draw_c::draw and the final screen draw. Give them the native
         // base instead of a transform that already contains Dawnlight's layout.
+        restore_xy_ammo_layout(s_hudLayoutMeter);
         restore_hud_layout_base();
     }
     return HOOK_CONTINUE;
@@ -2920,6 +2971,9 @@ HookAction before_meter_screen_draw_apply_hud(ModContext*, void* args, void*, vo
         // Apply after Dusklight's presentation pass and normal-priority HUD
         // mods, immediately before the gameplay HUD is drawn.
         apply_wii_u_hud_layout(s_hudLayoutMeter);
+        // Other HUD mods must snapshot the unedited ammo values first. Applying
+        // at MeterDraw entry makes their post-hook retain our offset every frame.
+        apply_xy_ammo_layout(s_hudLayoutMeter);
         apply_hud_backing_visibility(s_hudLayoutMeter);
     }
     return HOOK_CONTINUE;
@@ -3620,6 +3674,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawHook>(svc_hook, after_meter_draw);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<MeterDrawHook>(
+            svc_hook, after_meter_draw_restore_external_z_ammo, &sharedHudApplyOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterDrawKanteraHook>(svc_hook, after_meter_draw_kantera);

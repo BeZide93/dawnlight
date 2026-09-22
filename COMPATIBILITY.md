@@ -77,6 +77,11 @@ for the supported elements. Twilight HD HUD owns its artwork and base layout;
 Dawnlight applies the saved Custom HUD positions and scales afterward. Use the
 HUD Editor's copy action to initialize a Custom layout before editing it.
 
+Ammo offsets and scales also compose with Twilight HD HUD: X/Y counts receive
+the editor transform after the HD layout, and its third-slot count uses the
+Z ammo settings. These adjustments are restored after each draw so repeated
+presentation frames and live edits do not accumulate offsets or scaling.
+
 ## Arrow Modes and ZR input
 
 Dawnlight 3.1.0 adds `Arrow Modes` under `Gameplay -> Combat`. While enabled,

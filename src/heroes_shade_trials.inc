@@ -330,11 +330,11 @@ struct ShadeTrials {
         shield.SetTgSPrm(0x11); shield.SetR(165); shield.SetTgSe(dCcD_SE_HARD_BODY);
         // Native Fyrus fire: special 0xE passes ChkAtNoGuard, including shields.
         flame.SetStts(&status); flame.SetAtType(AT_TYPE_CSTATUE_SWING);
-        flame.SetAtAtp(shade::special_attack_power); flame.SetAtSPrm(0x1f);
+        flame.SetAtAtp(shade::fire_hazard_attack_power); flame.SetAtSPrm(0x1f);
         flame.SetAtSpl(static_cast<dCcG_At_Spl>(0xe)); flame.SetAtMtrl(dCcD_MTRL_FIRE);
         flame.SetH(300);
         lavaContact.SetStts(&status); lavaContact.SetAtType(AT_TYPE_CSTATUE_SWING);
-        lavaContact.SetAtSPrm(0x1f); lavaContact.SetAtAtp(shade::normal_attack_power);
+        lavaContact.SetAtSPrm(0x1f); lavaContact.SetAtAtp(shade::fire_hazard_attack_power);
         lavaContact.SetAtMtrl(dCcD_MTRL_FIRE); lavaContact.SetAtSpl(static_cast<dCcG_At_Spl>(0xe));
         for (unsigned i=0;i<2;++i) {
             eyeTargets[i].SetStts(&status); eyeTargets[i].SetTgType(AT_TYPE_ARROW);

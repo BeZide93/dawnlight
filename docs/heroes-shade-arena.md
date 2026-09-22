@@ -272,7 +272,7 @@ Horizontal scale covers the farthest wall, including an off-center caster.
 Both native motion clips are sampled across 180 ticks of travel, followed by
 28 ticks of visual fade. The collider radius follows the sampled frame; its
 height is limited to 300, below a hanging Link. Native fire material and attack
-special `0xE` use the engine's `ChkAtNoGuard` path. The warning has no damage.
+special `0xE` use the engine's `ChkAtNoGuard` path. The warning has no damage. A fire-wave hit deals four hearts (attack power 16).
 
 Beamos eyes use `E_bm6`'s named `bm6_eye` material, fully raised pose and active
 eye color, without drawing the tower or installing native Beamos gameplay logic.
@@ -309,7 +309,7 @@ At the end of the fire phase, an 80-unit-wide molten strip appears along the
 arena walls and remains until victory, death, departure or replay. It follows
 64 room-wall samples, excluding rays into the exit corridor. Original dark-red
 edges and moving orange seams mark its extent. A native fire capsule along the
-nearest strip segment deals one heart on contact, with a 45-tick repeat-hit
+nearest strip segment deals four hearts on contact (attack power 16), with a 45-tick repeat-hit
 pause; the height is low enough for hanging Link to remain safe. Only one rim
 capsule is registered per tick, avoiding collision-table pressure and duplicate
 hits at corners. Intermission completion preserves the rim; full encounter

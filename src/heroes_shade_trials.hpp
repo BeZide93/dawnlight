@@ -4,6 +4,7 @@
 namespace dawnlight::shade {
 enum class Trial { None, Shield, Fire, Eyes, Wind };
 inline constexpr int starting_health = 10;
+inline constexpr int fire_hazard_attack_power = 16; // four hearts, in quarter-heart units
 inline constexpr int fire_warning_ticks = 150; // five seconds to reach a wall target
 inline constexpr int fire_travel_ticks = 180; // six seconds from center to farthest wall
 inline constexpr int fire_wave_ticks = fire_travel_ticks + 28;

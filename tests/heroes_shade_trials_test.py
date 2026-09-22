@@ -159,7 +159,7 @@ int main() {
     assert(t.shield.tgType==(AT_TYPE_BOMB|AT_TYPE_IRON_BALL));
     assert(t.eyeTargets[0].tgType==AT_TYPE_ARROW && t.eyeTargets[1].tgType==AT_TYPE_ARROW);
     assert(t.flame.special>=12 && t.flame.material==dCcD_MTRL_FIRE);
-    assert(t.flame.height==300 && t.flame.power==8);
+    assert(t.flame.height==300 && t.flame.power==16);
     auto tick=[&]{world.entries.clear();return t.tick(&boss);};
     Attack sword{1},arrow{AT_TYPE_ARROW},bomb{AT_TYPE_BOMB},ball{AT_TYPE_IRON_BALL};
     for (auto* breaker:{&bomb,&ball}) {
@@ -188,6 +188,7 @@ int main() {
     player.current.pos={960,0,0};world.entries.clear();t.tick_lava();
     assert(t.packet.lava && world.entries.size()==1 && world.contains(&t.lavaContact));
     assert(t.lavaContact.material==dCcD_MTRL_FIRE && t.lavaContact.special>=12);
+    assert(t.lavaContact.power==16); // four hearts per accepted contact
     t.lavaContact.atHit=&player;t.tick_lava();assert(t.lavaRecovery==45 && !t.lavaContact.at);
     t.suspend();assert(t.lavaActive && !t.packet.lava && !t.lavaContact.at);
     for(int i=0;i<45;++i) { t.tick_lava(); }

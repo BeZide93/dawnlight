@@ -22,6 +22,9 @@
 #include "mods/svc/flow.hpp"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include "res/Object/MstrSword.h"
+#include "res/Object/E_fm.h"
+#include "res/Object/E_bm6.h"
+#include "JSystem/J3DGraphAnimator/J3DJoint.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -68,6 +71,11 @@ std::unordered_set<ActorId> sProjectiles;
 shade::Cinema sCinema;
 std::array<mods::flow::RegisteredMessage,4> sLines;
 mods::flow::RegisteredMessage sBossTitle;
+std::array<mods::flow::RegisteredMessage,4> sTrialLines;
+void cancel_trial();
+void suspend_trial();
+void begin_trial(daNpc_Kn_c*);
+bool tick_trial(daNpc_Kn_c*);
 struct CinemaRuntime {
     ActorId player = kNone;
     fpc_ProcID camera = kNone;
@@ -188,7 +196,28 @@ ModResult register_cinema_lines() {
     for (const auto language:languages) titleVariants.push_back(mods::flow::MessageBuilder{titleStyle}
         .text("Hero's Shade").auto_advance(90).build(language));
     sBossTitle=mods::flow::register_message(0,titleVariants);
-    return sBossTitle.result();
+    if (!sBossTitle) return sBossTitle.result();
+    constexpr const char* trialEnglish[]={
+        "Break my ward with a bomb\nor the Ball and Chain!",
+        "The floor shall burn!\nClawshot to the wall. Hold fast!",
+        "Two watchful eyes.\nLet your arrows silence them!",
+        "Stand firm against the gale!\nTrust the weight of your Iron Boots."
+    };
+    constexpr const char* trialGerman[]={
+        "Brich meinen Schild mit einer Bombe\noder dem Morgenstern!",
+        "Der Boden wird brennen!\nZieh dich mit dem Greifhaken zur Wand!",
+        "Zwei wachsame Augen.\nBring sie mit deinen Pfeilen zum Schweigen!",
+        "Trotze dem Sturm!\nVertraue auf das Gewicht deiner Eisenstiefel."
+    };
+    for (unsigned i=0;i<sTrialLines.size();++i) {
+        std::vector<mods::flow::MessageVariant> variants;
+        for (auto language:languages) variants.push_back(mods::flow::MessageBuilder{style}
+            .text(language==MESSAGE_LANGUAGE_GERMAN ? trialGerman[i] : trialEnglish[i])
+            .auto_advance(100).build(language));
+        sTrialLines[i]=mods::flow::register_message(0,variants);
+        if (!sTrialLines[i]) return sTrialLines[i].result();
+    }
+    return MOD_OK;
 }
 void close_cinema_line() {
     auto* message=dMsgObject_getMsgObjectClass();
@@ -424,7 +453,7 @@ void after_reset(ModContext*,void* args,void*,void*) {
             actor->field_0x15af=0;
         }
         actor->parentActorID=entry->divide ? sFighters[0].id : kNone;
-        actor->health=8;
+        actor->health=shade::starting_health;
         for (auto& sphere:actor->mSphCc) sphere.SetAtAtp(shade::normal_attack_power);
         const dCcD_SrcCps source{daNpc_Kn_c::mCcDSph.mObjInf,
             {{{0,0,0},{0,0,0},30}}};
@@ -451,7 +480,7 @@ HookAction no_order(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (!entry->divide && !sCinema.active()) {
+    if (!entry->divide && !sCinema.active() && sBattle.trial==shade::Trial::None) {
         const int previous_health=sBattle.health;
         sBattle.event(actor->mEvtNo);
         actor->health=sBattle.health;
@@ -503,17 +532,28 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     if (sStopping || entry->deleting || !arena() || !daAlink_getAlinkActorClass()) {
-        if (!entry->divide) release_cinema();
+        if (!entry->divide) { release_cinema(); cancel_trial(); }
         stop_blade_sweeps(*entry);
         entry->deleting=true;
         remove_actor(entry->id);
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
     }
-    // Events/warp/death may freeze actor execution without deleting the room yet.
+    // Freeze trial time and disarm volumes during other events/menus. Preserve
+    // progress so an item equip or pause cannot strand a half-finished trial.
     if (dComIfGp_isEnableNextStage() || (dComIfGp_event_runCheck() && !sCinema.active()) ||
         daAlink_getAlinkActorClass()->checkDeadHP()) {
-        if (!entry->divide) release_cinema();
+        if (!entry->divide) {
+            release_cinema();
+            if (dComIfGp_isEnableNextStage() || daAlink_getAlinkActorClass()->checkDeadHP()) cancel_trial();
+            else suspend_trial();
+        }
+        stop_blade_sweeps(*entry);
+        *static_cast<int*>(result)=1;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if (dComIfGp_isPauseFlag() || ui_document_visible()) {
+        if (!entry->divide) suspend_trial();
         stop_blade_sweeps(*entry);
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
@@ -529,7 +569,22 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     if (!entry->divide && !actor->mCreating && sBattle.tick()) {
         remove_companions();
         entry->reset=true;
-        if (!sBattle.dying && sBattle.phase>=6) add_doubles(actor);
+        if (sBattle.trial!=shade::Trial::None) {
+            entry->offense=-1; entry->chain.cancel(); entry->helmTurnPending=false;
+            entry->animationStarted=false; entry->blade={}; stop_blade_sweeps(*entry);
+            actor->offDownFlg(); actor->offHeadLockFlg();
+            actor->mCcStts.ClrCcMove();
+            cinema_pose(actor,sBattle.trial==shade::Trial::Fire ? 24 : 0);
+            begin_trial(actor);
+        } else if (!sBattle.dying && sBattle.phase>=6) add_doubles(actor);
+    }
+    if (sBattle.trial!=shade::Trial::None) {
+        actor->mType=6; actor->field_0x15af=0;
+        if (!entry->divide && tick_trial(actor)) {
+            cancel_trial(); sBattle.trial=shade::Trial::None;
+            entry->reset=true;
+        }
+        return HOOK_CONTINUE;
     }
     if (!entry->divide && sBattle.dying) {
         sCinema.begin(true);
@@ -568,7 +623,7 @@ void after_execute(ModContext*,void* args,void*,void*) {
 HookAction before_delete(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (auto* entry=fighter(actor)) {
-        if (!entry->divide) { release_cinema(); remove_companions(); }
+        if (!entry->divide) { release_cinema(); cancel_trial(); remove_companions(); }
         stop_blade_sweeps(*entry);
         actor->mType=6;
         *entry={};
@@ -778,7 +833,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     entry->swordContact=false;
-    if (sCinema.active()) {
+    if (sCinema.active() || sBattle.trial!=shade::Trial::None || !actor->field_0x15af) {
         if (!cinema_landing() || shade::knockdown_landing_motion(actor->mMotionSeqMngr.getNo())<0) {
             actor->speedF=0;
             actor->speed.zero();
@@ -895,7 +950,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (sCinema.active()) {
+    if (sCinema.active() || sBattle.trial!=shade::Trial::None || !actor->field_0x15af) {
         for (auto& sphere:actor->mSphCc) { sphere.OffAtSetBit(); sphere.ClrAtHit(); }
         entry->blade={};
         stop_blade_sweeps(*entry);
@@ -1104,6 +1159,8 @@ public:
         j3dSys.reinitGX();
     }
 };
+#include "heroes_shade_trials.inc"
+
 class Pedestal : public fopAc_ac_c {
 public:
     request_of_phase_process_class phase{};
@@ -1115,6 +1172,7 @@ public:
     EnergyPacket apparition;
     dCcD_Stts collisionStatus;
     dCcD_Cyl collision;
+    ShadeTrials trials;
     bool ready=false;
     ~Pedestal() { dComIfG_resDelete(&phase,kSwordArchive); }
     static int heap(fopAc_ac_c* actor) {
@@ -1124,7 +1182,7 @@ public:
         self->sword=mDoExt_J3DModel__create(data,0x80000,0x11000284);
         auto* btk=static_cast<J3DAnmTextureSRTKey*>(dComIfG_getObjectRes(kSwordArchive,dRes_INDEX_MSTRSWORD_BTK_O_AL_SWM_e));
         auto* brk=static_cast<J3DAnmTevRegKey*>(dComIfG_getObjectRes(kSwordArchive,dRes_INDEX_MSTRSWORD_BRK_O_AL_SWM_e));
-        return self->sword && btk && brk &&
+        return self->sword && btk && brk && self->trials.heap() &&
             self->btk.init(data,btk,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1) &&
             self->brk.init(data,brk,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1);
     }
@@ -1135,7 +1193,9 @@ int create_pedestal(void* ptr) {
     if (self->ready) return cPhs_COMPLEATE_e;
     const auto phase=dComIfG_resLoad(&self->phase,kSwordArchive);
     if (phase!=cPhs_COMPLEATE_e) return phase;
-    if (!fopAcM_entrySolidHeap(self,Pedestal::heap,0x4000)) return cPhs_ERROR_e;
+    const auto trialPhase=self->trials.load();
+    if (trialPhase!=cPhs_COMPLEATE_e) return trialPhase;
+    if (!fopAcM_entrySolidHeap(self,Pedestal::heap,0x40000)) return cPhs_ERROR_e;
     float minY=0;
     auto* data=self->sword->getModelData();
     if (data->getShapeNum()) {
@@ -1153,6 +1213,8 @@ int create_pedestal(void* ptr) {
     self->collision.SetC(self->current.pos);
     self->collision.SetR(90);
     self->collision.SetH(62);
+    self->trials.init(self);
+    sTrials=&self->trials;
     self->ready=true;
     return cPhs_COMPLEATE_e;
 }
@@ -1162,6 +1224,7 @@ int delete_pedestal(void* ptr) {
     remove_companions();
     remove_actor(sFighters[0].id);
     sPedestal=kNone;
+    sTrials=nullptr;
     static_cast<Pedestal*>(ptr)->~Pedestal();
     return 1;
 }
@@ -1173,6 +1236,7 @@ int execute_pedestal(void* ptr) {
     auto* player=daAlink_getAlinkActorClass();
     if (!arena() || !player || dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
         dComIfGp_isPauseFlag() || ui_document_visible() || player->checkDeadHP() || player->checkWolf()) return 1;
+    if (!self->trials.place()) return 1;
     for (const auto& entry:sFighters) if (pending_or_live(entry.id)) return 1;
     if (sCinema.active()) release_cinema(); // asynchronous creation failed
     const cXyz delta=player->current.pos-self->current.pos;
@@ -1207,6 +1271,7 @@ int draw_pedestal(void* ptr) {
     mDoExt_modelUpdateDL(self->sword);
     self->btk.remove(data); self->brk.remove(data);
     dComIfGd_getOpaList()->entryImm(&self->plinth,0);
+    self->trials.draw(self->tevStr);
     if (sCinema.shot==shade::Shot::Arrival || sCinema.shot==shade::Shot::Depart ||
         sCinema.shot==shade::Shot::Afterglow) {
         if (auto* boss=actor_by_id(sFighters[0].id)) {
@@ -1295,6 +1360,10 @@ void shutdown_heroes_shade_encounter() {
     std::unordered_set<ActorId> owned=sProjectiles;
     for (const auto& entry:sFighters) if (entry.id!=kNone) owned.insert(entry.id);
     owned.insert(sPedestal);
+    if (sTrials) {
+        cancel_trial();
+        for (const auto id:sTrials->anchors) owned.insert(id);
+    }
     remove_companions();
     for (const auto id:owned) remove_actor(id);
     // Finish only our deletion tags, not the engine's whole deletion queue.
@@ -1320,6 +1389,7 @@ void shutdown_heroes_shade_encounter() {
     sPedestal=kNone;
     for (auto& line:sLines) line.reset();
     sBossTitle.reset();
+    for (auto& line:sTrialLines) line.reset();
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);
     mods::hook::uninstall<ShadeExecuteHook>(svc_hook);

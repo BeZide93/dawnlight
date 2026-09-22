@@ -118,7 +118,7 @@ struct Fighter {
 struct daNpc_Kn_c {
     bool owned=true, mNoDraw=false;
     int field_0x15af=1;
-    int mEvtNo=0, health=8;
+    int mEvtNo=0, health=10;
     bool mSpeakEvent=false;
     void* mpPodModel=nullptr;
     unsigned mPodAnmFlags=0x41;
@@ -168,13 +168,23 @@ int main() {
     sCinema.begin(false);
     a.mEvtNo=shade::phases[0].success;
     no_order(nullptr,&a,nullptr,nullptr);
-    assert(sBattle.health==8 && a.mEvtNo==0);
+    assert(sBattle.health==10 && a.mEvtNo==0);
     for (auto& sphere:a.mSphCc) { sphere.enabled=true; sphere.hit=true; }
     for (auto& sweep:a.entry.bladeSweeps) { sweep.enabled=true; sweep.hit=true; }
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
     for (const auto& sphere:a.mSphCc) assert(!sphere.enabled && !sphere.hit);
     for (const auto& sweep:a.entry.bladeSweeps) assert(!sweep.enabled && !sweep.hit);
     sCinema={};
+    // Every intermission excludes normal blade hits and native success events.
+    for (auto trial:{shade::Trial::Shield,shade::Trial::Fire,shade::Trial::Eyes,shade::Trial::Wind}) {
+        sBattle.trial=trial; a.mEvtNo=shade::phases[0].success;
+        no_order(nullptr,&a,nullptr,nullptr);
+        assert(sBattle.health==10 && a.mEvtNo==0);
+        for (auto& sphere:a.mSphCc) { sphere.enabled=true; sphere.hit=true; }
+        assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+        for (const auto& sphere:a.mSphCc) assert(!sphere.enabled && !sphere.hit);
+    }
+    sBattle={};
     // The real crash path: lesson-7 heap has no sheath calculator. The hook
     // must bypass native init(modify=true), with a successful body result.
     bool result=false;
@@ -467,22 +477,22 @@ int main() {
     sBattle={}; sBattle.phase=2;
     reflected.mEvtNo=11; reflected.field_0x15bc=1;
     assert(no_order(nullptr,&reflected,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
-    assert(sBattle.health==7 && reflected.health==7 && sBattle.recovery==45);
+    assert(sBattle.health==9 && reflected.health==9 && sBattle.recovery==45);
     assert(reflected.mMotionSeqMngr.no==29 && reflected.field_0x15bc==0);
     assert(reflected.mEvtNo==0);
     reflected.mMotionSeqMngr.no=0; reflected.mEvtNo=11;
     no_order(nullptr,&reflected,nullptr,nullptr);
-    assert(sBattle.health==7 && reflected.mMotionSeqMngr.no==0);
+    assert(sBattle.health==9 && reflected.mMotionSeqMngr.no==0);
     sBattle={}; reflected.mEvtNo=7;
     no_order(nullptr,&reflected,nullptr,nullptr);
-    assert(sBattle.health==7 && reflected.mMotionSeqMngr.no==0); // other counters unchanged
+    assert(sBattle.health==9 && reflected.mMotionSeqMngr.no==0); // other counters unchanged
     sBattle={}; sBattle.phase=2;
     reflected.entry.divide=1; reflected.mEvtNo=11;
     no_order(nullptr,&reflected,nullptr,nullptr);
-    assert(sBattle.health==8 && reflected.mMotionSeqMngr.no==0);
+    assert(sBattle.health==10 && reflected.mMotionSeqMngr.no==0);
     reflected.entry.divide=0; reflected.owned=false; reflected.mEvtNo=11;
     assert(no_order(nullptr,&reflected,nullptr,nullptr)==HOOK_CONTINUE);
-    assert(sBattle.health==8 && reflected.mEvtNo==11);
+    assert(sBattle.health==10 && reflected.mEvtNo==11);
 
     a.owned=false;
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);

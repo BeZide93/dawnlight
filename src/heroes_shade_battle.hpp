@@ -1,4 +1,5 @@
 #pragma once
+#include "heroes_shade_trials.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -172,14 +173,16 @@ inline GroundPoint approach_velocity(float dx, float dz, float max_speed, float 
 }
 struct Battle {
     unsigned phase = 0;
-    int health = 8;
+    int health = starting_health;
+    Trial trial = Trial::None;
+    unsigned trials_started = 0;
     int remaining = 600;
     int recovery = 0;
     bool advance = false;
     bool dying = false;
 
     void event(int event) {
-        if (recovery || dying) return;
+        if (recovery || dying || trial!=Trial::None) return;
         if (event == phases[phase].success) {
             --health;
             recovery = 45;
@@ -187,9 +190,13 @@ struct Battle {
         }
     }
     bool tick() {
-        if (dying) return false;
+        if (dying || trial!=Trial::None) return false;
         if (recovery && --recovery) return false;
         if (health == 0) { dying = true; return true; }
+        if (trials_started<4 && health==starting_health-2*static_cast<int>(trials_started+1)) {
+            trial=static_cast<Trial>(++trials_started);
+            return true;
+        }
         if (advance || --remaining == 0) {
             phase = (phase + 1) % phases.size();
             remaining = 600;

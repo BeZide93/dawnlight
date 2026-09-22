@@ -35,7 +35,7 @@ struct ShadeFlame {
         const float strength=(0.2f+0.8f*grow*grow*(3-2*grow))*(1-fade*fade*(3-2*fade));
         // A broad, tall campfire hides the body swap at peak intensity. Taper
         // particle size and opacity together so the fire visibly burns down.
-        const cXyz scale{3.5f*strength,4.5f*strength,3.5f*strength};
+        const cXyz scale{35.0f*strength,45.0f*strength,35.0f*strength};
         constexpr std::array<u16,3> effects{
             ID_ZF_J_FIRE00_GLOW,ID_ZF_J_FIRE02_FIRE,ID_ZF_J_FIRE01_SPARK};
         for (unsigned i=0;i<emitters.size();++i) {

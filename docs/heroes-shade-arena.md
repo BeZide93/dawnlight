@@ -101,7 +101,7 @@ Implementation and lifecycle details:
   matching owned message; it never deletes the shared `dMsgObject` actor.
 - `heroes_shade_flame.inc` uses the game's global campfire effects: glow
   `0x3AD`, fire `0x3AF` and sparks `0x3AE`, as used by native `daFireWood_c`.
-  The effect grows to scale (3.5, 4.5, 3.5) over 30 ticks, holds full strength
+  The effect grows to scale (35, 45, 35) over 30 ticks, holds full strength
   through tick 60, then shrinks and fades over 60 ticks. Ignition, burning and
   extinguishing use the corresponding native fire sounds. No damaging actor or
   collision volume is created; the cinematic fire cannot hurt Link.

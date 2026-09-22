@@ -82,7 +82,8 @@ int main(){
                 assert(p.alive && p.eventMove && p.pos.y==actor.current.pos.y);
                 if(tick<=30) assert(p.scale.y>=previous);
                 if(tick>=60) assert(p.scale.y<=previous);
-                if(tick>=30 && tick<=60) assert(p.scale.y==4.5f && p.alpha==255);
+                if(tick>=30 && tick<=60)
+                    assert(p.scale.x==35.0f && p.scale.y==45.0f && p.scale.z==35.0f && p.alpha==255);
             }
             previous=particles[0].scale.y;
         }

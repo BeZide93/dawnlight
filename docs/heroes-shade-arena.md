@@ -27,8 +27,8 @@ the source PNG with `python tools/generate_pedestal_texture.py`.
 
 The sword now starts a short original boss introduction. Shade stays hidden
 through asynchronous creation and until the native potential demo event has
-been accepted. The camera eases toward him with letterboxing; blue spectral
-ribbons precede his native materialization. Two original captions refer to his
+been accepted. The camera eases toward him with letterboxing; Link's native CoWarp material
+and arrival particles materialize Shade from the ground upward. Two original captions refer to his
 unfinished teaching and Link's inherited courage, followed by a sword-ready
 pose before combat begins. During the final 30% of the pointing/ready gesture
 (`KN_DEMO_KAMAE`, sequence 24 step 0), the native boss-name banner displays
@@ -59,13 +59,14 @@ text before gameplay resumes; replacement messages are never touched.
 After the last successful counter, doubles and projectiles are removed. Shade
 finishes any airborne fall and uses his native get-up animation when needed.
 He praises Link as a true hero and asks him to carry their legacy into the world.
-His native warp-out is accompanied by gold light ribbons and a brief afterglow;
+Link's CoWarp dissolve removes him from the top downward, with the native
+departure particles and a brief afterglow;
 only then is the actor deleted and gameplay restored. The captions have German
 and English variants (English fallback for the other supported languages).
 Each page automatically advances after 120 simulation ticks, and the controller
 waits for the actual native message to finish instead of cutting it off at an
-assumed time. Appearance takes 54 ticks including anticipation; departure plus
-afterglow takes 75. Recovery and dialogue have bounded failure timeouts.
+assumed time. Appearance takes 145 ticks (45-tick CoWarp arrival hold plus
+100-tick material reveal); departure takes 100 ticks plus a 30-tick afterglow. Recovery and dialogue have bounded failure timeouts.
 
 The accepted intro starts Darknut's native cinematic stream (`0x2000037`).
 When the introduction ends (including the boss-name banner), the encounter switches
@@ -97,10 +98,31 @@ Implementation and lifecycle details:
   release acquired control. A failed async spawn can be retried at the sword.
 - Captions are registered with MessageService. Cancellation only closes the
   matching owned message; it never deletes the shared `dMsgObject` actor.
-- Native `ctrlWarp` state 3 materializes and state 1 disappears. The controller
-  never advances departure into state 2, which would teleport/reappear again.
-  The original translucent ribbons use their own stable packet in the pedestal
-  actor. No shared model material, external mod code or game asset is packaged.
+- `heroes_shade_warp.inc` reuses the game's `Always/warp_tex` material setup
+  (`loaderBasicBmd(BMWE)` and `setWarpSRT`), CoWarp particles `0x9F3`/`0x9F4`
+  and `Z2SE_AL_WARP_OUT`/`Z2SE_AL_WARP_IN_TATE`. Texture scroll is 0.15 per
+  simulation tick; the 100-tick dissolve edge is scaled to Shade's height.
+  Native skeleton poses and the ghost/opaque body passes are preserved. The old
+  squash animation and procedural appearance ribbons are removed.
+- Warp models have separate materials, texture matrices, display lists and raw
+  archive bytes. A fresh `/res/Object/KN_a.arc` is read into a dedicated heap:
+  re-parsing the already loaded archive would endian-swap live vertex data again.
+  The BMWE material-capacity and joint-count checks precede use. Link's player
+  procedure, model and teleport destination are never changed. No game asset is
+  bundled, and shared KN_a material data is never edited.
+- Models are prepared once on first appearance and reused for replay. The heap
+  reserves up to 8 MiB during initialization, then shrinks to actual usage.
+  Particles use event movement so they remain visible during the cinematic;
+  cutscene cancellation clears them. Fighter deletion stops the effect, while
+  pedestal deletion and mod shutdown unlink the private archive and free its heap.
+  Missing/incompatible resources fall back to the native particles and a bounded
+  visibility change, log a warning once, and cannot strand the encounter.
+- `python tests/heroes_shade_warp_test.py` compiles the actual runtime against
+  instrumented APIs: fresh archive loading, distinct model data, pose transfer,
+  unchanged source materials, bidirectional reveal timing, native particle/sound
+  IDs, repeat draws without simulation, replay reuse and failure/cleanup paths.
+  The cinematic test covers the longer shots and cancellation at every shot.
+
 
 Run `python tests/heroes_shade_cinema_test.py` for the real controller's event,
 caption, warp, pause, timeout and cleanup paths against native API stubs. The

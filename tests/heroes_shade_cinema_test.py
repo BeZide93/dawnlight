@@ -51,7 +51,7 @@ struct Event {
 struct daNpc_Kn_c {
     std::array<Model*,2> mpModelMorf{{&body,nullptr}};
     int id=42, field_0x15bc=0, field_0x170c=0, field_0x170d=0;
-    int arrivals=0,departures=0,illegalWarps=0;
+
     bool mNoDraw=true;
     cXyz field_0x16f4{0,0,0};
     Event eventInfo;
@@ -60,15 +60,7 @@ struct daNpc_Kn_c {
     struct { cXyz pos; } current;
     void setAngle(int) {}
     void offDownFlg() {} void offHeadLockFlg() {}
-    void ctrlWarp() {
-        if (field_0x170c==3) {
-            ++arrivals;
-            if (++field_0x170d==6) { field_0x170c=0; field_0x170d=0; }
-        } else if (field_0x170c==1) {
-            ++departures;
-            if (++field_0x170d==15) { field_0x170c=2; field_0x170d=0; }
-        } else ++illegalWarps;
-    }
+
 } boss;
 struct Fighter { int id=42; bool deleting=false,reset=false; };
 std::array<Fighter,3> sFighters;
@@ -126,6 +118,14 @@ int fopMsgM_messageSetDemo(int id) {
     message.msg_idx=id; message.status=delayMessageOpen ? 1 : 14; return 50;
 }
 void cinema_camera(daNpc_Kn_c*) { ++cameraTicks; }
+bool warpActive=false;int warpBegins=0,warpTicks=0;
+void begin_shade_warp(daNpc_Kn_c* actor,bool arrival) {
+    ++warpBegins;warpActive=true;actor->mNoDraw=arrival;
+}
+void tick_shade_warp(daNpc_Kn_c*,int) { assert(warpActive);++warpTicks; }
+void finish_shade_warp() { warpActive=false; }
+void end_shade_warp() { warpActive=false; }
+
 using u32=unsigned;
 constexpr u32 Z2BGM_TN_MBOSS=0x100006C;
 struct Audio {
@@ -154,6 +154,7 @@ checks = r'''
 void reset() {
     boss={}; body={}; player={}; camera={}; message={}; sFighters={};
     sCinema={}; sCinemaRuntime={};
+    warpActive=false;warpBegins=warpTicks=0;
     audio={};sShadeMusic={};hasAudio=inArena=true;nextStage=false;
     paused=ui=blockMessages=delayMessageOpen=false; hasCamera=true;
     eventResets=orders=deletes=cameraTicks=titleStarts=0;
@@ -227,8 +228,8 @@ int main() {
     }
     reset(); accept(false);
     for (int i=0;i<17;++i) { tick(); assert(boss.mNoDraw); }
-    for (int i=17;i<54;++i) tick();
-    assert(boss.arrivals==6 && boss.illegalWarps==0 && !boss.mNoDraw);
+    for (int i=17;i<shade::warp_arrival_ticks;++i) tick();
+    assert(warpBegins==1 && warpTicks==shade::warp_arrival_ticks && !warpActive && !boss.mNoDraw);
     assert(sCinema.shot==shade::Shot::Words1);
     tick(); assert(message.msg_idx==101 && sCinemaRuntime.messageStarted);
     for (int i=0;i<30;++i) tick();
@@ -286,9 +287,9 @@ int main() {
     message.status=1; tick(); tick(); assert(message.msg_idx==104);
     message.status=1; tick();
     assert(sCinema.shot==shade::Shot::Depart && deletes==0);
-    for (int i=0;i<45;++i) tick();
+    for (int i=0;i<shade::warp_travel_ticks;++i) tick();
     assert(sCinema.shot==shade::Shot::Afterglow && deletes==0 && boss.mNoDraw);
-    assert(boss.departures==15 && boss.illegalWarps==0);
+    assert(warpBegins==1 && warpTicks==shade::warp_travel_ticks && !warpActive);
     for (int i=0;i<30;++i) tick();
     assert(deletes==1 && eventResets==1 && player.cancels==1 && !sCinema.active());
     assert(titleStarts==0); // no title during the victory scene
@@ -306,7 +307,7 @@ int main() {
     // the camera or permanently prevent replay.
     for (bool victory : {false,true}) {
         reset(); accept(victory); blockMessages=true;
-        for (int i=0;i<1100 && sCinema.active();++i) tick();
+        for (int i=0;i<1300 && sCinema.active();++i) tick();
         assert(!sCinema.active() && eventResets==1 && player.cancels==1);
         assert(deletes==(victory ? 1 : 0));
         reset(); sCinema.begin(victory);
@@ -316,15 +317,15 @@ int main() {
     reset(); sCinema.begin(false); boss.eventInfo.accepted=true; hasCamera=false;
     tick(); assert(!sCinema.active() && eventResets==1 && !boss.mNoDraw);
 
-    reset(); accept(false); const int ticks=sCinema.ticks;
+    reset(); accept(false); const int ticks=sCinema.ticks; const int effectTicks=warpTicks;
     paused=true; tick(); paused=false; ui=true; tick(); ui=false;
-    assert(sCinema.ticks==ticks);
+    assert(sCinema.ticks==ticks && warpTicks==effectTicks);
     // Explicit cancellation at every shot returns only the acquired controls.
     for (auto shot : {shade::Shot::Arrival,shade::Shot::Recover,shade::Shot::Words1,
                       shade::Shot::Words2,shade::Shot::Ready,shade::Shot::BossName,
                       shade::Shot::Depart,shade::Shot::Afterglow}) {
         reset(); accept(false); sCinema.enter(shot); release_cinema(); release_cinema();
-        assert(eventResets==1 && player.cancels==1 && camera.mCamera.starts==1);
+        assert(eventResets==1 && player.cancels==1 && camera.mCamera.starts==1 && !warpActive);
     }
     // Room teardown must not modify a replacement player, camera or message.
     reset(); accept(false);

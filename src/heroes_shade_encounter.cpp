@@ -16,6 +16,10 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_camera.h"
 #include "Z2AudioLib/Z2AudioMgr.h"
+#include "JSystem/JKernel/JKRDvdRipper.h"
+#include "JSystem/JKernel/JKRMemArchive.h"
+#include "JSystem/J3DGraphAnimator/J3DMtxBuffer.h"
+#include "d/d_particle_name.h"
 #include "d/d_bg_s_lin_chk.h"
 #include "d/d_msg_object.h"
 #include "f_op/f_op_msg_mng.h"
@@ -118,6 +122,7 @@ bool arena() {
         dComIfGp_getStartStageRoomNo() == 51;
 }
 #include "heroes_shade_music.inc"
+#include "heroes_shade_warp.inc"
 
 Fighter* fighter(daNpc_Kn_c* actor) {
     if (!actor) return nullptr;
@@ -233,6 +238,7 @@ void start_cinema_line(MessageId text) {
     }
 }
 void release_cinema() {
+    end_shade_warp();
     close_cinema_line();
     if (sCinemaRuntime.ownsEvent) {
         auto* boss=actor_by_id(sFighters[0].id);
@@ -317,7 +323,7 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         if (!sCinema.victory || shade::knockdown_landing_motion(motion)<0)
             cinema_pose(actor,sCinema.victory ? (motion==15 || motion==16 ? 16 :
                 motion>=19 && motion<=22 ? 22 : 0) : 0);
-        actor->field_0x170c=sCinema.victory ? 0 : 3;
+        actor->field_0x170c=0;
         actor->field_0x170d=0;
     } else if (sCinema.shot==Shot::Request) {
         fopAcM_orderPotentialEvent(actor,2,0xffff,0);
@@ -364,6 +370,8 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     }
     if (previous!=sCinema.shot) {
         close_cinema_line();
+        if (sCinema.shot==Shot::Arrival) begin_shade_warp(actor,true);
+        if (previous==Shot::Arrival) { end_shade_warp(); actor->mNoDraw=false; }
         if (sCinema.shot==Shot::Words1 || sCinema.shot==Shot::Words2) cinema_pose(actor,3); // TALK_A
         if (sCinema.shot==Shot::Ready) cinema_pose(actor,24); // ready the sword
         // Start on the cue tick while the gesture continues, without waiting
@@ -371,18 +379,12 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         if (sCinema.shot==Shot::BossName) start_cinema_line(sBossTitle.id());
         if (sCinema.shot==Shot::Depart) {
             cinema_pose(actor,0);
-            actor->field_0x170c=1;
-            actor->field_0x170d=0;
+            begin_shade_warp(actor,false);
         }
     }
-    // Slow the native materialization to 36 ticks and departure to 45 ticks.
-    // Stop at state 2 on departure: native ctrlWarp would otherwise reappear.
-    if (sCinema.shot==Shot::Arrival && sCinema.ticks>=18) {
-        actor->mNoDraw=false;
-        if (actor->field_0x170c==3 && (sCinema.ticks-18)%6==0) actor->ctrlWarp();
-    } else if (sCinema.shot==Shot::Depart && actor->field_0x170c==1 && sCinema.ticks%3==0) {
-        actor->ctrlWarp();
-    } else if (sCinema.shot==Shot::Afterglow) actor->mNoDraw=true;
+    if (sCinema.shot==Shot::Arrival || sCinema.shot==Shot::Depart)
+        tick_shade_warp(actor,sCinema.ticks);
+    else if (sCinema.shot==Shot::Afterglow) { finish_shade_warp(); actor->mNoDraw=true; }
     if (sCinemaRuntime.ownsEvent) cinema_camera(actor);
 }
 void add_doubles(daNpc_Kn_c* boss) {
@@ -402,6 +404,7 @@ void add_doubles(daNpc_Kn_c* boss) {
 DEFINE_HOOK(&daNpc_Kn_c::isDelete, ShadeAdmissionHook);
 DEFINE_HOOK(&daNpc_Kn_c::reset, ShadeResetHook);
 DEFINE_HOOK(&daNpc_Kn_c::Execute, ShadeExecuteHook);
+DEFINE_HOOK(&daNpc_Kn_c::Draw, ShadeDrawHook);
 DEFINE_HOOK(&daNpc_Kn_c::Delete, ShadeDeleteHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtProc, ShadeEventHook);
 DEFINE_HOOK(&daNpc_Kn_c::evtOrder, ShadeOrderHook);
@@ -610,6 +613,14 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     if (!entry->divide && sBattle.phase>=6 && !sBattle.dying && !sBattle.recovery) add_doubles(actor);
     // fpcBs_Execute enters this actor's owner layer, so its native KN_BULLET
     // requests inherit the play scene as well as the spawner's state exemption.
+    return HOOK_CONTINUE;
+}
+HookAction draw_warp(ModContext*,void* args,void* result,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    const auto* entry=fighter(actor);
+    if (entry && !entry->divide && sShadeWarp.draw(actor)) {
+        *static_cast<int*>(result)=1;return HOOK_SKIP_ORIGINAL;
+    }
     return HOOK_CONTINUE;
 }
 void after_execute(ModContext*,void* args,void*,void*) {
@@ -1105,9 +1116,6 @@ class EnergyPacket : public J3DPacket {
 public:
     cXyz position{0,0,0};
     bool reflected=false;
-    bool apparition=false;
-    bool farewell=false;
-    float progress=0;
     void draw() override {
         j3dSys.reinitGX();
         GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);
@@ -1127,33 +1135,6 @@ public:
         GXSetBlendMode(GX_BM_BLEND,GX_BL_SRCALPHA,GX_BL_ONE,GX_LO_CLEAR);
         GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);
         GXSetCullMode(GX_CULL_NONE);
-        if (apparition) {
-            // Original translucent light ribbons; no actor/model/material is
-            // borrowed or modified. Stable packet storage belongs to Pedestal.
-            const float fade=std::sin(std::clamp(progress,0.0f,1.0f)*3.1415926536f);
-            const u8 alpha=static_cast<u8>(fade*150);
-            constexpr float tau=6.2831853072f;
-            GXBegin(GX_QUADS,GX_VTXFMT0,(64+2*48)*4);
-            for (int segment=0;segment<64;++segment) for (int corner=0;corner<4;++corner) {
-                const float angle=tau*(segment+(corner==1 || corner==2))/64;
-                const float radius=40+progress*140+(corner>=2 ? 12 : 0);
-                GXPosition3f32(position.x+std::sin(angle)*radius,position.y+4,position.z+std::cos(angle)*radius);
-                GXColor4u8(farewell ? 255 : 120,220,farewell ? 150 : 255,corner>=2 ? 0 : alpha);
-            }
-            for (int strand=0;strand<2;++strand) for (int segment=0;segment<48;++segment)
-                for (int corner=0;corner<4;++corner) {
-                    const float along=(segment+(corner==1 || corner==2))/48.0f;
-                    const float angle=tau*(along+progress*1.5f+strand*0.5f);
-                    const float radius=70*(1-along*0.65f);
-                    GXPosition3f32(position.x+std::sin(angle)*radius,
-                        position.y+along*260+(corner>=2 ? 10 : 0),position.z+std::cos(angle)*radius);
-                    GXColor4u8(farewell ? 255 : 120,220,farewell ? 150 : 255,
-                        corner>=2 ? 0 : static_cast<u8>(alpha*std::sin(along*3.1415926536f)));
-                }
-            GXEnd();
-            j3dSys.reinitGX();
-            return;
-        }
         for (unsigned shell=0;shell<3;++shell) {
             const float radius=12.0f+10.0f*shell;
             const u8 alpha=shell==0 ? 210 : shell==1 ? 65 : 22;
@@ -1182,7 +1163,6 @@ public:
     mDoExt_brkAnm brk;
     PlinthPacket plinth;
     EnergyPacket energy;
-    EnergyPacket apparition;
     dCcD_Stts collisionStatus;
     dCcD_Cyl collision;
     ShadeTrials trials;
@@ -1231,6 +1211,7 @@ int create_pedestal(void* ptr) {
 }
 int delete_pedestal(void* ptr) {
     sStopping=true;
+    sShadeWarp.destroy();
     stop_shade_music();
     release_cinema();
     remove_companions();
@@ -1299,18 +1280,6 @@ int draw_pedestal(void* ptr) {
     self->btk.remove(data); self->brk.remove(data);
     dComIfGd_getOpaList()->entryImm(&self->plinth,0);
     self->trials.draw(self->tevStr);
-    if (sCinema.shot==shade::Shot::Arrival || sCinema.shot==shade::Shot::Depart ||
-        sCinema.shot==shade::Shot::Afterglow) {
-        if (auto* boss=actor_by_id(sFighters[0].id)) {
-            self->apparition.position=boss->current.pos;
-            self->apparition.apparition=true;
-            self->apparition.farewell=sCinema.victory;
-            self->apparition.progress=sCinema.victory ?
-                (sCinema.ticks+(sCinema.shot==shade::Shot::Afterglow ? 45 : 0))/75.0f : sCinema.ticks/54.0f;
-            dComIfGd_setList();
-            j3dSys.getDrawBuffer(1)->entryImm(&self->apparition,0);
-        }
-    }
     for (const auto id:sProjectiles) {
         auto* actor=actor_by_id(id);
         if (!actor || fopAcM_GetName(actor)!=fpcNm_KN_BULLET_e) continue;
@@ -1338,6 +1307,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeExecuteHook,before_execute); POST(ShadeExecuteHook,after_execute);
     PRE(ShadeDeleteHook,before_delete);
     PRE(ShadeEventHook,no_event); PRE(ShadeOrderHook,no_order);
+    PRE(ShadeDrawHook,draw_warp);
     PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
     PRE(ShadeEndingBlowHook,before_ending_blow_wait);
     PRE(ShadeSwordHook,sword_collision);
@@ -1384,6 +1354,7 @@ void update_heroes_shade_arena() {
 }
 void shutdown_heroes_shade_encounter() {
     sStopping=true;
+    sShadeWarp.destroy();
     stop_shade_music();
     release_cinema();
     std::unordered_set<ActorId> owned=sProjectiles;

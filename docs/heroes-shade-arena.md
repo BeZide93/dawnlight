@@ -30,12 +30,15 @@ through asynchronous creation and until the native potential demo event has
 been accepted. The camera eases toward him with letterboxing; blue spectral
 ribbons precede his native materialization. Two original captions refer to his
 unfinished teaching and Link's inherited courage, followed by a sword-ready
-pose before combat begins. After that pose, the native boss-name banner displays
+pose before combat begins. As soon as native ready sequence 24 enters its combat
+idle step, the native boss-name banner displays
 **Hero's Shade** using `MESSAGE_BOX_BOSS_NAME` and the game's original
 `zelda_boss_name.blo` screen and fades. The registered title is the same in every
 supported language and does not replace any stock boss text. It auto-advances
 after 90 ticks; camera/event ownership and combat suspension remain in place
-until the message has closed. A bounded 300-tick wait handles failed/busy message
+until the message has closed. The reveal follows the actual stance transition,
+with no fixed 45-tick delay; a 120-tick fallback prevents a stuck animation from
+trapping the cutscene. A bounded 300-tick wait handles failed/busy message
 creation, and normal cancellation closes only our owned title. Replaying the
 encounter shows it again; the victory scene has no boss-name banner.
 

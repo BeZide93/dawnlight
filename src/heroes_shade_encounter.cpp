@@ -304,7 +304,11 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
             }
         } else message_done=!message || message->msg_idx!=sCinemaRuntime.message || message->getStatusLocal()==1;
     }
-    const bool pose_done=actor->mMotionSeqMngr.getNo()==0 || actor->mMotionSeqMngr.getStepNo()>0;
+    // Sequence 24 transitions from its ready gesture (step 0) into the normal
+    // combat wait (step 1). Use that native transition for the title timing.
+    const bool pose_done=previous==Shot::Ready ?
+        actor->mMotionSeqMngr.getNo()==24 && actor->mMotionSeqMngr.getStepNo()>0 :
+        actor->mMotionSeqMngr.getNo()==0 || actor->mMotionSeqMngr.getStepNo()>0;
     if (sCinema.tick(sCinemaRuntime.ownsEvent,message_done,pose_done)) {
         finish_cinema(actor,entry);
         return;

@@ -146,7 +146,9 @@ int main() {
     assert(sCinema.shot==shade::Shot::Words1); // wait for the actual caption
     message.status=1; tick(); tick(); assert(message.msg_idx==102);
     message.status=1; tick(); assert(sCinema.shot==shade::Shot::Ready);
-    for (int i=0;i<45;++i) tick();
+    for (int i=0;i<18;++i) tick();
+    assert(sCinema.shot==shade::Shot::Ready && titleStarts==0);
+    boss.mMotionSeqMngr.step=1; tick(); // native return to the combat stance
     assert(sCinema.shot==shade::Shot::BossName && titleStarts==0);
     tick(); assert(message.msg_idx==105 && titleStarts==1);
     // The banner owns the final shot until native fade-out actually finishes.
@@ -164,6 +166,14 @@ int main() {
     sCinema.enter(shade::Shot::BossName); tick();
     assert(titleStarts==2 && message.msg_idx==105);
     release_cinema(); assert(message.kills==1 && player.cancels==2);
+
+    // Slower ready animations must not be cut off by the old 45-tick timer.
+    reset(); accept(false); sCinema.enter(shade::Shot::Ready); cinema_pose(&boss,24);
+    for (int i=0;i<60;++i) tick();
+    assert(sCinema.shot==shade::Shot::Ready && titleStarts==0);
+    boss.mMotionSeqMngr.step=1; tick(); tick();
+    assert(sCinema.shot==shade::Shot::BossName && titleStarts==1);
+    assert(camera.mCamera.mTrimSize==3 && player.cancels==0);
 
     reset(); boss.mMotionSeqMngr.no=19; accept(true);
     assert(boss.mMotionSeqMngr.no==22); // native rise, not a snap to standing

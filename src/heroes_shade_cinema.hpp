@@ -26,7 +26,9 @@ struct Cinema {
             if (message_done || ticks>=300)
                 enter(shot==Shot::Words1 ? Shot::Words2 : victory ? Shot::Depart : Shot::Ready);
             break;
-        case Shot::Ready: if (ticks>=45) enter(Shot::BossName); break;
+        // Reveal the name as soon as the ready animation returns to its combat
+        // idle, rather than adding a fixed pause after the stance is visible.
+        case Shot::Ready: if (pose_done || ticks>=120) enter(Shot::BossName); break;
         case Shot::BossName: if (message_done || ticks>=300) enter(Shot::None); break;
         case Shot::Depart: if (ticks>=45) enter(Shot::Afterglow); break;
         case Shot::Afterglow: if (ticks>=30) enter(Shot::None); break;

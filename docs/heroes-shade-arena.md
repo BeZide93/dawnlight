@@ -27,8 +27,12 @@ the source PNG with `python tools/generate_pedestal_texture.py`.
 
 The sword now starts a short original boss introduction. Shade stays hidden
 through asynchronous creation and until the native potential demo event has
-been accepted. The camera eases toward him with letterboxing; a large flame rises
-at his position and reveals him as it burns down. Two original captions refer to his
+been accepted and the Golden Wolf actor has finished loading. On sword interaction,
+the native Golden Wolf is created hidden at the encounter position. The accepted
+cinematic starts on Link/the sword with the seated wolf behind the camera, then
+pans to him with letterboxing. After a two-second pan he plays the vanilla
+`WL_HOWLB` transformation howl, including its native frame-synchronized voice.
+A full-screen white flash covers the swap to Hero's Shade. Two original captions refer to his
 unfinished teaching and Link's inherited courage, followed by a sword-ready
 pose before combat begins. During the final 30% of the pointing/ready gesture
 (`KN_DEMO_KAMAE`, sequence 24 step 0), the native boss-name banner displays
@@ -59,14 +63,16 @@ text before gameplay resumes; replacement messages are never touched.
 After the last successful counter, doubles and projectiles are removed. Shade
 finishes any airborne fall and uses his native get-up animation when needed.
 He praises Link as a true hero and asks him to carry their legacy into the world.
-A second large flame envelops him; the body disappears inside it, then the flame
-burns down and the camera holds briefly on the empty spot;
+A second full-screen white flash transforms him back into the seated Golden
+Wolf. The wolf stays fully visible for one second after the flash clears, fades
+smoothly to invisible over three seconds, and leaves a one-second empty-space hold;
 only then is the actor deleted and gameplay restored. The captions have German
 and English variants (English fallback for the other supported languages).
 Each page automatically advances after 120 simulation ticks, and the controller
 waits for the actual native message to finish instead of cutting it off at an
-assumed time. Appearance and departure each take 120 simulation ticks (four seconds), with
-an additional 30-tick empty-space hold after departure. Recovery and dialogue
+assumed time. The intro follows the actual howl clip, with a bounded timeout.
+Both white flashes rise over 12 ticks, hold opaque for six ticks before the model
+swap, then clear over 18 ticks (30 simulation ticks/second). Recovery and dialogue
 have bounded failure timeouts.
 
 The accepted intro starts Darknut's native cinematic stream (`0x2000037`).
@@ -99,37 +105,39 @@ Implementation and lifecycle details:
   release acquired control. A failed async spawn can be retried at the sword.
 - Captions are registered with MessageService. Cancellation only closes the
   matching owned message; it never deletes the shared `dMsgObject` actor.
-- `heroes_shade_flame.inc` uses the game's global campfire effects: glow
-  `0x3AD`, fire `0x3AF` and sparks `0x3AE`, as used by native `daFireWood_c`.
-  The effect grows to scale (35, 45, 35) over 30 ticks, holds full strength
-  through tick 60, then shrinks and fades over 60 ticks. Ignition, burning and
-  extinguishing use the corresponding native fire sounds. No damaging actor or
-  collision volume is created; the cinematic fire cannot hurt Link.
-- At tick 45, while the flame is at full size and opacity, the intro reveals
-  Shade's ordinary model and the outro hides it. Visibility is enforced in the
-  main fighter's Draw hook: native `twilight()` can clear `mNoDraw` after our
-  execute hook. The event-request wait, departure afterglow and pending deletion
-  remain hidden. Victory recovery, dialogue, combat, doubles and unrelated Shade
-  actors keep their normal rendering. Shutdown uninstalls the draw hook.
-- The failed CoWarp experiments from `3f4cfc0` and `9ea0632` are removed:
-  no private KN_a archive, extra model heap, warp materials, texture scrolling,
-  Link warp particles/sounds or model-dissolve fallback remain in this effect.
-  The generic cinematic visibility gate remains necessary for the new fire.
-- Three owned emitter keys are refreshed during the shot and explicitly allowed
-  to run during the event. Shot completion, cancellation, fighter/pedestal
-  deletion and mod shutdown invalidate the emitters and clear their particles.
-  Replay starts fresh. Failed particle allocation cannot block the cutscene.
-  No game assets are bundled.
-- `python tests/heroes_shade_flame_test.py` compiles the actual particle runtime
-  and draw hook against instrumented APIs. It checks buildup/fade, the body switch
-  at full strength in both directions, native visibility resets, effect/sound
-  IDs, cancellation, replay, missing emitters and isolation from doubles/story
-  actors. Drawing cannot advance the effect. This validates orchestration, not
-  the rendered flame's size or coverage; those still need an in-game check.
+- `heroes_shade_wolf.inc` owns one native type-2 `NPC_GWOLF` actor, using the
+  same parameters and motion 4 as KN's vanilla second-encounter cutscene. Its
+  normal skeletal/BTK/BRK animation and howl audio are preserved. Hooks scoped
+  to the owned actor bypass its story AI, event requests and proximity behavior.
+  Type 2 does not register the type-0 damage cylinder or touch story save flags.
+- Both actors are ready before camera movement starts. Wolf load failure cancels
+  the encounter after a bounded wait, restores the sword interaction and removes
+  pending actors. The native wolf is held hidden during combat for the outro.
+- The white overlay is advanced on simulation ticks and held fully opaque before
+  swapping visibility. Camera framing follows the wolf's lower seated height.
+  The Shade Draw hook enforces visibility even if native execution resets its
+  own flag. Dialogue and combat begin only after the intro flash has cleared.
+- The wolf fade renders the existing native skeletal model in the translucent
+  list, multiplying its original texture alpha with one extra GPU texture stage.
+  The shader preserves fur cutouts and native animated colors. It does not edit
+  shared model materials, archives or display-list allocations. A free texture
+  slot is selected per material; the actor's native model supplies all geometry.
+- Cancellation, actor/pedestal deletion and shutdown remove the wolf and cancel
+  pending creation. Cleanup clears only the owned white fade; a replacement
+  scene fade is preserved. Pause/UI freezes the cinematic and wolf animation.
+  No game assets are bundled. The former flame and CoWarp implementations are
+  removed.
+- `tests/heroes_shade_cinema_test.py` runs the production wolf and cinematic
+  controller against native stubs: asynchronous loading, howl/white-swap order,
+  dialogue/title timing, pause, gradual outro opacity, cleanup and replacement
+  fades. The native-hook suite checks combat isolation. Rendered appearance,
+  camera composition and final audio/animation synchronization require in-game
+  validation.
+
 
 
 Run `python tests/heroes_shade_cinema_test.py` for the real controller's event,
-caption, flame, pause, timeout and cleanup paths against native API stubs. The
+caption, wolf transformation, pause, timeout and cleanup paths against native API stubs. The
 existing native-hook fixture also verifies that scene swords cannot register
 hits and scene events cannot consume boss health. On-device checks still needed:
 first arrival (no one-frame pop), caption readability, victory after both fall

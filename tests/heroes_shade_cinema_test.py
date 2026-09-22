@@ -21,6 +21,7 @@ fixture = r'''
 #include "heroes_shade_battle.hpp"
 #include <array>
 #include <cassert>
+#include <algorithm>
 namespace shade = dawnlight::shade;
 using ActorId = int; using fpc_ProcID = int; using MessageId = int; using s16 = short;
 constexpr int kNone=-1;
@@ -39,7 +40,8 @@ struct Motion {
     bool checkEntryNewMotion() { return newMotion; }
 };
 struct Model {
-    float frame=0,end=100;
+    float frame=0,end=100,speed=1;
+    void setPlaySpeed(float value) { speed=value; }
     float getFrame() { return frame; }
     float getEndFrame() { return end; }
 } body;
@@ -54,22 +56,27 @@ struct daNpc_Kn_c {
 
     bool mNoDraw=true;
     cXyz field_0x16f4{0,0,0};
+    cXyz shape_angle;
     Event eventInfo;
     struct { bool grounded=true; bool ChkGroundHit() { return grounded; } } mAcch;
     Motion mMotionSeqMngr,mFaceMotionSeqMngr;
-    struct { cXyz pos; } current;
+    struct { cXyz pos,angle; } current;
     void setAngle(int) {}
     void offDownFlg() {} void offHeadLockFlg() {}
 
 } boss;
-struct Fighter { int id=42; bool deleting=false,reset=false; };
+struct Fighter { int id=42,divide=0; bool deleting=false,reset=false; };
 std::array<Fighter,3> sFighters;
 shade::Cinema sCinema;
+struct ModContext {};
+enum HookAction {HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
+namespace mods {template<class T>T arg(void* args,int){return *static_cast<T*>(args);}}
+Fighter* fighter(daNpc_Kn_c* actor){return actor==&boss ? &sFighters[0] : nullptr;}
 struct Player {
     int id=1,starts=0,cancels=0;
     bool dead=false; bool checkDeadHP() { return dead; }
     struct { void setMoveAngle(int) {} } mDemo;
-    struct { cXyz pos; } current;
+    struct { cXyz pos,angle; } current;
     void cancelOriginalDemo() { ++cancels; }
     void changeOriginalDemo() { ++starts; }
     void changeDemoMode(int,int,int,int) {}
@@ -96,7 +103,7 @@ struct Line { int value; int id() { return value; } };
 std::array<Line,4> sLines{{{101},{102},{103},{104}}};
 Line sBossTitle{105};
 bool paused=false,ui=false,hasCamera=true,blockMessages=false,delayMessageOpen=false;
-int eventResets=0,orders=0,deletes=0,cameraTicks=0,titleStarts=0;
+int eventResets=0,orders=0,deletes=0,wolfDeletes=0,cameraTicks=0,titleStarts=0;
 bool dComIfGp_isPauseFlag() { return paused; }
 bool ui_document_visible() { return ui; }
 Player* daAlink_getAlinkActorClass() { return &player; }
@@ -108,8 +115,43 @@ int fopAcM_searchPlayerAngleY(daNpc_Kn_c*) { return 0; }
 int cLib_targetAngleY(cXyz*,cXyz*) { return 0; }
 void fopAcM_orderPotentialEvent(daNpc_Kn_c*,int,int,int) { ++orders; }
 void dComIfGp_event_reset() { ++eventResets; boss.eventInfo.accepted=false; }
-daNpc_Kn_c* actor_by_id(int id) { return id==42 ? &boss : nullptr; }
-void remove_actor(int id) { assert(id==42); ++deletes; }
+struct daNpc_GWolf_c : daNpc_Kn_c {
+    Model animation;
+    Model* mAnm_p=&animation;
+    bool mHide=true,mTwilight=false;
+    cXyz mCurAngle;
+    int mOrderEvtNo=0,mAnm=2,howls=0;
+    int mCcStts=0,mBtkAnm=0,mBrkAnm=0; // unused by the cinematic state machine
+    struct {cXyz pos,angle;} old,home;
+    void setMotion(int motion,int,int) {
+        mAnm=motion==4 ? 7 : 2; animation.frame=0;animation.speed=1;
+        if (motion==4) ++howls;
+    }
+} wolf;
+bool wolfReady=true,wolfPending=true;
+daNpc_Kn_c* actor_by_id(int id) { return id==42 ? &boss : id==43 && wolfReady ? &wolf : nullptr; }
+bool pending_or_live(int id) { return id==43 && wolfPending; }
+void remove_actor(int id) { if(id==42) ++deletes; else if(id==43) ++wolfDeletes; }
+constexpr int fpcNm_NPC_GWOLF_e=99,MOD_OK=0;
+int spawn(int,const cXyz&,s16,unsigned,int& id) { id=43;return 0; }
+using u8=unsigned char;
+struct GXColor {u8 r,g,b,a;};
+struct mDoGph_gInf_c {
+    static inline GXColor color{};
+    static inline float rate=0,speed=0;
+    static inline bool enabled=false;
+    static GXColor& getFadeColor(){return color;}
+    static bool isFade(){return enabled;}
+    static float getFadeSpeed(){return speed;}
+    static float getFadeRate(){return rate;}
+    static void setFadeRate(float value){rate=value;}
+    static void fadeOut(float value,GXColor& c){speed=value;color=c;rate=0;enabled=true;}
+    static void offFade(){enabled=false;}
+};
+constexpr int fopAcStts_NOPAUSE_e=1;
+void fopAcM_OnStatus(daNpc_GWolf_c*,int) {}
+void fopAcM_OffStatus(daNpc_GWolf_c*,int) {}
+// WOLF_RUNTIME
 Message* dMsgObject_getMsgObjectClass() { return &message; }
 int fopMsgM_messageSetDemo(int id) {
     if (blockMessages || message.status!=1) return 0;
@@ -118,12 +160,7 @@ int fopMsgM_messageSetDemo(int id) {
     message.msg_idx=id; message.status=delayMessageOpen ? 1 : 14; return 50;
 }
 void cinema_camera(daNpc_Kn_c*) { ++cameraTicks; }
-bool flameActive=false;int flameBegins=0,flameTicks=0;
-void begin_shade_flame(daNpc_Kn_c* actor,bool arrival) {
-    ++flameBegins;flameActive=true;actor->mNoDraw=arrival;
-}
-void tick_shade_flame(daNpc_Kn_c*,int) { assert(flameActive);++flameTicks; }
-void end_shade_flame() { flameActive=false; }
+void cinema_sword_shot(daNpc_Kn_c*) {}
 
 using u32=unsigned;
 constexpr u32 Z2BGM_TN_MBOSS=0x100006C;
@@ -153,12 +190,24 @@ checks = r'''
 void reset() {
     boss={}; body={}; player={}; camera={}; message={}; sFighters={};
     sCinema={}; sCinemaRuntime={};
-    flameActive=false;flameBegins=flameTicks=0;
+    wolf={};wolf.mAnm_p=&wolf.animation;wolfReady=wolfPending=true;
+    sShadeWolf={};sShadeWolf.id=43;wolfDeletes=0;
+    mDoGph_gInf_c::enabled=false;mDoGph_gInf_c::rate=0;mDoGph_gInf_c::speed=0;
     audio={};sShadeMusic={};hasAudio=inArena=true;nextStage=false;
     paused=ui=blockMessages=delayMessageOpen=false; hasCamera=true;
     eventResets=orders=deletes=cameraTicks=titleStarts=0;
 }
-void tick() { tick_cinema(&boss,sFighters[0]); }
+void tick() {
+    tick_cinema(&boss,sFighters[0]);
+    // Native twilight() may undo mNoDraw; the production Draw hook still wins.
+    const bool noDraw=boss.mNoDraw;boss.mNoDraw=false;
+    auto* actor=&boss;int result=0;
+    const bool hidden=sFighters[0].deleting || sShadeWolf.hides_shade() ||
+        (sCinema.shot==shade::Shot::Request && !sCinema.victory) || sCinema.shot==shade::Shot::Afterglow;
+    assert((draw_cinema(nullptr,&actor,&result,nullptr)==HOOK_SKIP_ORIGINAL)==hidden);
+    boss.mNoDraw=noDraw;
+    if (!paused && !ui && wolf.mAnm_p) wolf.animation.frame+=wolf.animation.speed;
+}
 void accept(bool victory) {
     sCinema.begin(victory);
     tick(); assert(orders==1 && player.starts==0 && camera.mCamera.stops==0);
@@ -227,8 +276,12 @@ int main() {
     }
     reset(); accept(false);
     for (int i=0;i<17;++i) { tick(); assert(boss.mNoDraw); }
-    for (int i=17;i<shade::flame_total_ticks;++i) tick();
-    assert(flameBegins==1 && flameTicks==shade::flame_total_ticks && !flameActive && !boss.mNoDraw);
+    for (int i=0;i<400 && sCinema.shot==shade::Shot::Arrival;++i) {
+        const bool before=sShadeWolf.swapped;
+        tick();
+        if (!before && sShadeWolf.swapped) assert(mDoGph_gInf_c::rate==1);
+    }
+    assert(wolf.howls==1 && !sShadeWolf.active && !boss.mNoDraw && wolfDeletes==0);
     assert(sCinema.shot==shade::Shot::Words1);
     tick(); assert(message.msg_idx==101 && sCinemaRuntime.messageStarted);
     for (int i=0;i<30;++i) tick();
@@ -286,9 +339,15 @@ int main() {
     message.status=1; tick(); tick(); assert(message.msg_idx==104);
     message.status=1; tick();
     assert(sCinema.shot==shade::Shot::Depart && deletes==0);
-    for (int i=0;i<shade::flame_total_ticks;++i) tick();
+    float alpha=1;
+    for (int i=0;i<400 && sCinema.shot==shade::Shot::Depart;++i) {
+        const bool before=sShadeWolf.swapped;
+        tick();
+        if (!before && sShadeWolf.swapped) assert(mDoGph_gInf_c::rate==1 && wolf.mAnm==2);
+        if (sShadeWolf.swapped) { assert(sShadeWolf.opacity<=alpha);alpha=sShadeWolf.opacity; }
+    }
     assert(sCinema.shot==shade::Shot::Afterglow && deletes==0 && boss.mNoDraw);
-    assert(flameBegins==1 && flameTicks==shade::flame_total_ticks && !flameActive);
+    assert(!sShadeWolf.active && sShadeWolf.opacity==0 && !mDoGph_gInf_c::enabled);
     for (int i=0;i<30;++i) tick();
     assert(deletes==1 && eventResets==1 && player.cancels==1 && !sCinema.active());
     assert(titleStarts==0); // no title during the victory scene
@@ -306,7 +365,7 @@ int main() {
     // the camera or permanently prevent replay.
     for (bool victory : {false,true}) {
         reset(); accept(victory); blockMessages=true;
-        for (int i=0;i<1300 && sCinema.active();++i) tick();
+        for (int i=0;i<1700 && sCinema.active();++i) tick();
         assert(!sCinema.active() && eventResets==1 && player.cancels==1);
         assert(deletes==(victory ? 1 : 0));
         reset(); sCinema.begin(victory);
@@ -316,16 +375,28 @@ int main() {
     reset(); sCinema.begin(false); boss.eventInfo.accepted=true; hasCamera=false;
     tick(); assert(!sCinema.active() && eventResets==1 && !boss.mNoDraw);
 
-    reset(); accept(false); const int ticks=sCinema.ticks; const int effectTicks=flameTicks;
+    reset(); accept(false); const int ticks=sCinema.ticks; const float frame=wolf.animation.frame;
     paused=true; tick(); paused=false; ui=true; tick(); ui=false;
-    assert(sCinema.ticks==ticks && flameTicks==effectTicks);
+    assert(sCinema.ticks==ticks && wolf.animation.frame==frame);
     // Explicit cancellation at every shot returns only the acquired controls.
     for (auto shot : {shade::Shot::Arrival,shade::Shot::Recover,shade::Shot::Words1,
                       shade::Shot::Words2,shade::Shot::Ready,shade::Shot::BossName,
                       shade::Shot::Depart,shade::Shot::Afterglow}) {
         reset(); accept(false); sCinema.enter(shot); release_cinema(); release_cinema();
-        assert(eventResets==1 && player.cancels==1 && camera.mCamera.starts==1 && !flameActive);
+        assert(eventResets==1 && player.cancels==1 && camera.mCamera.starts==1 && !sShadeWolf.active);
     }
+    // Async wolf loading must finish before camera ownership or the pan starts.
+    reset();wolfReady=false;sCinema.begin(false);boss.eventInfo.accepted=true;
+    for(int i=0;i<20;++i) tick();
+    assert(player.starts==0 && sCinema.shot==shade::Shot::Request);
+    wolfReady=true;tick();assert(player.starts==1 && sShadeWolf.visible());
+    reset();wolfReady=false;sCinema.begin(false);
+    for(int i=0;i<180;++i) tick();
+    assert(deletes==1 && wolfDeletes==1 && !sCinema.active() && player.starts==0);
+    // A replacement stage fade must survive cleanup; our white overlay must not.
+    reset();sShadeWolf.flash(1);release_cinema();assert(!mDoGph_gInf_c::enabled);
+    reset();sShadeWolf.flash(1);mDoGph_gInf_c::color={0,0,0,255};
+    release_cinema();assert(mDoGph_gInf_c::enabled);
     // Room teardown must not modify a replacement player, camera or message.
     reset(); accept(false);
     sCinemaRuntime.messageStarted=true; sCinemaRuntime.message=101;
@@ -342,9 +413,12 @@ int main() {
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "cinema.cpp"
     exe = Path(tmp) / "cinema"
-    cpp.write_text(fixture + runtime + "\n" + "\n".join(function(name) for name in (
-        "close_cinema_line", "start_cinema_line", "release_cinema", "finish_cinema", "cinema_pose", "tick_cinema")) + checks)
+    wolf_source=(root / 'src/heroes_shade_wolf.inc').read_text()
+    wolf_runtime=wolf_source[:wolf_source.index('DEFINE_HOOK(')]
+    cpp.write_text(fixture.replace('// WOLF_RUNTIME', wolf_runtime) + runtime + "\n" + "\n".join(function(name) for name in (
+        "close_cinema_line", "start_cinema_line", "release_cinema", "finish_cinema", "cinema_pose", "tick_cinema")) +
+        source[source.index('HookAction draw_cinema('):source.index('void after_execute(')] + checks)
     subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror", "-I", str(root / "src"),
                     str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("Hero's Shade cutscene lifecycle, music handoffs, flame pacing and control ownership: passed")
+print("Hero's Shade cutscene lifecycle, music handoffs, wolf transformation pacing and control ownership: passed")

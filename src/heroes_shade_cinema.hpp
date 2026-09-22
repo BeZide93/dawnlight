@@ -1,14 +1,14 @@
 #pragma once
 
 namespace dawnlight::shade {
-// Simulation ticks, independent of rendering. Dialogue waits for the native
-// message to close; bounded waits also release control if a message fails.
-// Flame builds for one second, covers the body switch at 1.5 seconds,
-// then burns down over the final two seconds (30 simulation ticks/second).
-inline constexpr int flame_build_ticks = 30;
-inline constexpr int flame_switch_ticks = 45;
-inline constexpr int flame_fade_ticks = 60;
-inline constexpr int flame_total_ticks = 120;
+// All pacing uses simulation ticks (30 Hz), never render calls.
+inline constexpr int wolf_pan_ticks = 60;
+inline constexpr int flash_rise_ticks = 12;
+inline constexpr int flash_hold_ticks = 6;
+inline constexpr int flash_fall_ticks = 18;
+inline constexpr int flash_total_ticks = flash_rise_ticks + flash_hold_ticks + flash_fall_ticks;
+inline constexpr int wolf_hold_ticks = 30;
+inline constexpr int wolf_fade_ticks = 90;
 enum class Shot { None, Request, Arrival, Recover, Words1, Words2, Ready, BossName, Depart, Afterglow };
 struct Cinema {
     Shot shot = Shot::None;
@@ -17,7 +17,7 @@ struct Cinema {
     bool active() const { return shot != Shot::None; }
     void enter(Shot next) { shot=next; ticks=0; }
     void begin(bool won) { victory=won; enter(Shot::Request); }
-    bool tick(bool event_accepted, bool message_done, bool pose_done) {
+    bool tick(bool event_accepted, bool message_done, bool pose_done, bool visual_done=false) {
         if (!active()) return false;
         ++ticks;
         switch (shot) {
@@ -25,17 +25,16 @@ struct Cinema {
             if (event_accepted) enter(victory ? Shot::Recover : Shot::Arrival);
             else if (ticks>=180) enter(Shot::None);
             break;
-        case Shot::Arrival: if (ticks>=flame_total_ticks) enter(Shot::Words1); break;
+        case Shot::Arrival: if (visual_done || ticks>=600) enter(Shot::Words1); break;
         case Shot::Recover: if ((ticks>=45 && pose_done) || ticks>=120) enter(Shot::Words1); break;
         case Shot::Words1:
         case Shot::Words2:
             if (message_done || ticks>=300)
                 enter(shot==Shot::Words1 ? Shot::Words2 : victory ? Shot::Depart : Shot::Ready);
             break;
-        // pose_done is the in-animation title cue here, not the return to idle.
         case Shot::Ready: if (pose_done || ticks>=120) enter(Shot::BossName); break;
         case Shot::BossName: if (message_done || ticks>=300) enter(Shot::None); break;
-        case Shot::Depart: if (ticks>=flame_total_ticks) enter(Shot::Afterglow); break;
+        case Shot::Depart: if (visual_done || ticks>=600) enter(Shot::Afterglow); break;
         case Shot::Afterglow: if (ticks>=30) enter(Shot::None); break;
         default: break;
         }

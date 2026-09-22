@@ -10,6 +10,9 @@
 #include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_npc_kn.h"
+#include "d/actor/d_a_npc_gwolf.h"
+#include "m_Do/m_Do_graphic.h"
+#include "JSystem/J3DGraphBase/J3DShape.h"
 #include "d/actor/d_a_obj_knBullet.h"
 #include "d/actor/d_a_obj_hsTarget.h"
 #include "d/d_bg_w.h"
@@ -89,6 +92,7 @@ struct CinemaRuntime {
     int cameraIndex = 0;
     bool ownsEvent = false;
     int trim = 0;
+    int wolfWait = 0;
     cXyz eye{0,0,0}, center{0,0,0};
     float fovy = 55;
     s16 facing = 0;
@@ -119,7 +123,6 @@ bool arena() {
         dComIfGp_getStartStageRoomNo() == 51;
 }
 #include "heroes_shade_music.inc"
-#include "heroes_shade_flame.inc"
 
 Fighter* fighter(daNpc_Kn_c* actor) {
     if (!actor) return nullptr;
@@ -157,6 +160,8 @@ void remove_actor(ActorId id) {
     }
     if (actor_by_id(id)) svc_actor->delete_actor(mod_ctx,id);
 }
+#include "heroes_shade_wolf.inc"
+
 void remove_companions() {
     for (unsigned i=1;i<sFighters.size();++i) {
         sFighters[i].deleting = true;
@@ -234,8 +239,8 @@ void start_cinema_line(MessageId text) {
         sCinemaRuntime.messageOpened=message && message->msg_idx==text && message->getStatusLocal()>1;
     }
 }
-void release_cinema() {
-    end_shade_flame();
+void release_cinema(bool keepWolf=false) {
+    if (keepWolf) sShadeWolf.end_visual(); else sShadeWolf.clear();
     close_cinema_line();
     if (sCinemaRuntime.ownsEvent) {
         auto* boss=actor_by_id(sFighters[0].id);
@@ -256,7 +261,7 @@ void release_cinema() {
 }
 void finish_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     const bool victory=sCinema.victory;
-    release_cinema();
+    release_cinema(!victory);
     if (victory) { entry.deleting=true; remove_actor(entry.id); }
     else {
         start_shade_music(false);
@@ -278,8 +283,9 @@ void cinema_camera(daNpc_Kn_c* actor) {
     if (!camera || fpcM_GetID(camera)!=sCinemaRuntime.camera) return;
     const float sn=cM_ssin(sCinemaRuntime.facing), cs=cM_scos(sCinemaRuntime.facing);
     const bool words=sCinema.shot==shade::Shot::Words1 || sCinema.shot==shade::Shot::Words2;
+    const bool wolf=sShadeWolf.visible();
     const float distance=words ? 340.0f : 510.0f;
-    cXyz center=actor->current.pos+cXyz(0,145,0);
+    cXyz center=actor->current.pos+cXyz(0,wolf ? 75.0f : 145.0f,0);
     cXyz eye=actor->current.pos+cXyz(sn*distance+cs*130,185,cs*distance-sn*130);
     // Short, gentle dolly; stage walls constrain every intermediate eye point.
     center=camera->mCamera.Center()+(center-camera->mCamera.Center())*0.08f;
@@ -289,12 +295,29 @@ void cinema_camera(daNpc_Kn_c* actor) {
     if (dComIfG_Bgsp().LineCross(&line)) eye=center+(line.GetCross()-center)*0.9f;
     camera->mCamera.Set(center,eye,50.0f,s16(0));
 }
+void cinema_sword_shot(daNpc_Kn_c* actor) {
+    auto* camera=dComIfGp_getCamera(sCinemaRuntime.cameraIndex);
+    auto* player=daAlink_getAlinkActorClass();
+    if (!camera || !player) return;
+    const float sn=cM_ssin(sCinemaRuntime.facing),cs=cM_scos(sCinemaRuntime.facing);
+    const cXyz eye=actor->current.pos+cXyz(sn*180,150,cs*180);
+    const cXyz center=player->current.pos+cXyz(0,80,0);
+    camera->mCamera.Set(center,eye,50.0f,s16(0));
+}
 // Called once per native main-actor simulation tick, never by Draw. Keeping the
 // main actor alive until Afterglow finishes also keeps event ownership valid.
 void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     using shade::Shot;
     if (dComIfGp_isPauseFlag() || ui_document_visible()) return;
     auto* player=daAlink_getAlinkActorClass();
+    // Prepare the hidden wolf before moving the camera. Failure is bounded and
+    // cancels the intro so the sword can be retried, without starting combat.
+    if (sCinema.shot==Shot::Request && !sShadeWolf.ready()) {
+        if (++sCinemaRuntime.wolfWait>=180 || !pending_or_live(sShadeWolf.id)) {
+            release_cinema(); entry.deleting=true; remove_actor(entry.id);
+        }
+        return;
+    }
     if (sCinema.shot==Shot::Request && actor->eventInfo.checkCommandDemoAccrpt()) {
         sCinemaRuntime.ownsEvent=true;
         auto* camera=dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0));
@@ -309,6 +332,7 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         sCinemaRuntime.trim=camera->mCamera.mTrimSize;
         sCinemaRuntime.facing=fopAcM_searchPlayerAngleY(actor);
         camera->mCamera.Stop(); camera->mCamera.SetTrimSize(3);
+        if (!sCinema.victory) cinema_sword_shot(actor);
         player->changeOriginalDemo();
         player->changeDemoMode(daPy_demo_c::DEMO_WAIT_TURN_e,0,0,0);
         player->mDemo.setMoveAngle(cLib_targetAngleY(&player->current.pos,&actor->current.pos));
@@ -361,14 +385,16 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     const bool pose_done=previous==Shot::Ready ?
         title_cue :
         actor->mMotionSeqMngr.getNo()==0 || actor->mMotionSeqMngr.getStepNo()>0;
-    if (sCinema.tick(sCinemaRuntime.ownsEvent,message_done,pose_done)) {
+    const bool visual_done=(previous==Shot::Arrival || previous==Shot::Depart) &&
+        sShadeWolf.tick(actor,sCinema.ticks);
+    if (sCinema.tick(sCinemaRuntime.ownsEvent,message_done,pose_done,visual_done)) {
         finish_cinema(actor,entry);
         return;
     }
     if (previous!=sCinema.shot) {
         close_cinema_line();
-        if (sCinema.shot==Shot::Arrival) begin_shade_flame(actor,true);
-        if (previous==Shot::Arrival) { end_shade_flame(); actor->mNoDraw=false; }
+        if (sCinema.shot==Shot::Arrival) sShadeWolf.begin(actor,true);
+        if (previous==Shot::Arrival) { sShadeWolf.end_visual(); actor->mNoDraw=false; }
         if (sCinema.shot==Shot::Words1 || sCinema.shot==Shot::Words2) cinema_pose(actor,3); // TALK_A
         if (sCinema.shot==Shot::Ready) cinema_pose(actor,24); // ready the sword
         // Start on the cue tick while the gesture continues, without waiting
@@ -376,12 +402,10 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
         if (sCinema.shot==Shot::BossName) start_cinema_line(sBossTitle.id());
         if (sCinema.shot==Shot::Depart) {
             cinema_pose(actor,0);
-            begin_shade_flame(actor,false);
+            sShadeWolf.begin(actor,false);
         }
     }
-    if (sCinema.shot==Shot::Arrival || sCinema.shot==Shot::Depart)
-        tick_shade_flame(actor,sCinema.ticks);
-    else if (sCinema.shot==Shot::Afterglow) { end_shade_flame(); actor->mNoDraw=true; }
+    if (sCinema.shot==Shot::Afterglow) { sShadeWolf.end_visual(); actor->mNoDraw=true; }
     if (sCinemaRuntime.ownsEvent) cinema_camera(actor);
 }
 void add_doubles(daNpc_Kn_c* boss) {
@@ -440,7 +464,7 @@ void after_reset(ModContext*,void* args,void*,void*) {
         actor->mNoDraw=false;
         if (!entry->divide && sCinema.active() && !sCinema.victory) {
             actor->mNoDraw=true;
-            actor->field_0x16f4.zero();
+            actor->field_0x16f4.set(1,1,1);
             actor->field_0x15af=0;
         }
         actor->parentActorID=entry->divide ? sFighters[0].id : kNone;
@@ -589,6 +613,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     if (!entry->divide && sBattle.dying) {
         cancel_trial();
         stop_shade_music();
+        if (!pending_or_live(sShadeWolf.id)) sShadeWolf.prepare(actor->current.pos,actor->shape_angle.y);
         sCinema.begin(true);
         entry->offense=-1;
         entry->helmTurnPending=false;
@@ -621,7 +646,7 @@ HookAction draw_cinema(ModContext*,void* args,void* result,void*) {
     const bool hidden=entry->deleting ||
         (sCinema.shot==shade::Shot::Request && !sCinema.victory) ||
         sCinema.shot==shade::Shot::Afterglow;
-    if (hidden || sShadeFlame.hides_model()) {
+    if (hidden || sShadeWolf.hides_shade()) {
         *static_cast<int*>(result)=1;return HOOK_SKIP_ORIGINAL;
     }
     return HOOK_CONTINUE;
@@ -1214,7 +1239,6 @@ int create_pedestal(void* ptr) {
 }
 int delete_pedestal(void* ptr) {
     sStopping=true;
-    sShadeFlame.stop();
     stop_shade_music();
     release_cinema();
     remove_companions();
@@ -1267,6 +1291,8 @@ int execute_pedestal(void* ptr) {
     if (height==-1.0e9f) return 1;
     pos.y=height;
     if (spawn(fpcNm_NPC_KN_e,pos,cLib_targetAngleY(&pos,&player->current.pos),kShadeParams,sFighters[0].id)==MOD_OK) {
+        sShadeWolf.clear();
+        sShadeWolf.prepare(pos,cLib_targetAngleY(&pos,&player->current.pos));
         sCinema.begin(false);
         mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags &= ~PAD_BUTTON_A;
     }
@@ -1311,6 +1337,9 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeDeleteHook,before_delete);
     PRE(ShadeEventHook,no_event); PRE(ShadeOrderHook,no_order);
     PRE(ShadeDrawHook,draw_cinema);
+    PRE(ShadeWolfMainHook,wolf_main);
+    PRE(ShadeWolfExecuteHook,wolf_execute);
+    PRE(ShadeWolfDrawHook,wolf_draw);
     PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
     PRE(ShadeEndingBlowHook,before_ending_blow_wait);
     PRE(ShadeSwordHook,sword_collision);
@@ -1357,10 +1386,11 @@ void update_heroes_shade_arena() {
 }
 void shutdown_heroes_shade_encounter() {
     sStopping=true;
-    sShadeFlame.stop();
+    const auto wolfId=sShadeWolf.id;
     stop_shade_music();
     release_cinema();
     std::unordered_set<ActorId> owned=sProjectiles;
+    owned.insert(wolfId);
     for (const auto& entry:sFighters) if (entry.id!=kNone) owned.insert(entry.id);
     owned.insert(sPedestal);
     if (sTrials) {
@@ -1390,12 +1420,17 @@ void shutdown_heroes_shade_encounter() {
     sFighters={};
     sProjectiles.clear();
     sPedestal=kNone;
+    sShadeWolf.id=kNone;
+    sShadeWolfFade.model=nullptr;
     for (auto& line:sLines) line.reset();
     sBossTitle.reset();
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);
     mods::hook::uninstall<ShadeExecuteHook>(svc_hook);
     mods::hook::uninstall<ShadeDrawHook>(svc_hook);
+    mods::hook::uninstall<ShadeWolfMainHook>(svc_hook);
+    mods::hook::uninstall<ShadeWolfExecuteHook>(svc_hook);
+    mods::hook::uninstall<ShadeWolfDrawHook>(svc_hook);
     mods::hook::uninstall<ShadeDeleteHook>(svc_hook);
     mods::hook::uninstall<ShadeEventHook>(svc_hook);
     mods::hook::uninstall<ShadeOrderHook>(svc_hook);

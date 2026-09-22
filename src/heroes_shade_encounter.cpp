@@ -618,7 +618,13 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
 HookAction draw_warp(ModContext*,void* args,void* result,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     const auto* entry=fighter(actor);
-    if (entry && !entry->divide && sShadeWarp.draw(actor)) {
+    if (!entry || entry->divide) return HOOK_CONTINUE;
+    // Native twilight() clears mNoDraw during execute. Enforce cinematic
+    // visibility here, after native execution and before either body is queued.
+    const bool hidden=entry->deleting ||
+        (sCinema.shot==shade::Shot::Request && !sCinema.victory) ||
+        sCinema.shot==shade::Shot::Afterglow;
+    if (hidden || sShadeWarp.draw(actor)) {
         *static_cast<int*>(result)=1;return HOOK_SKIP_ORIGINAL;
     }
     return HOOK_CONTINUE;
@@ -1392,6 +1398,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);
     mods::hook::uninstall<ShadeExecuteHook>(svc_hook);
+    mods::hook::uninstall<ShadeDrawHook>(svc_hook);
     mods::hook::uninstall<ShadeDeleteHook>(svc_hook);
     mods::hook::uninstall<ShadeEventHook>(svc_hook);
     mods::hook::uninstall<ShadeOrderHook>(svc_hook);

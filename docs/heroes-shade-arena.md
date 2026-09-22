@@ -104,6 +104,15 @@ Implementation and lifecycle details:
   simulation tick; the 100-tick dissolve edge is scaled to Shade's height.
   Native skeleton poses and the ghost/opaque body passes are preserved. The old
   squash animation and procedural appearance ribbons are removed.
+- Visibility is enforced in the main fighter's `Draw` hook, not just through
+  `mNoDraw`: native `daNpc_Kn_c::twilight()` can clear that flag later in execute.
+  The intro event-request period submits neither body, so the complete actor
+  cannot appear before the warp sound/particles start. The 45-tick arrival hold
+  also submits no geometry; the moving warp material then reveals both private
+  bodies. Departure's final frame, afterglow and pending deletion stay hidden
+  even if the native flag is cleared. Victory recovery, dialogue, combat,
+  doubles and unrelated Shade actors keep their normal draw path. The draw hook
+  is removed with the other encounter hooks on shutdown.
 - Warp models have separate materials, texture matrices, display lists and raw
   archive bytes. A fresh `/res/Object/KN_a.arc` is read into a dedicated heap:
   re-parsing the already loaded archive would endian-swap live vertex data again.
@@ -115,12 +124,18 @@ Implementation and lifecycle details:
   Particles use event movement so they remain visible during the cinematic;
   cutscene cancellation clears them. Fighter deletion stops the effect, while
   pedestal deletion and mod shutdown unlink the private archive and free its heap.
-  Missing/incompatible resources fall back to the native particles and a bounded
-  visibility change, log a warning once, and cannot strand the encounter.
+  Missing/incompatible resources log a warning once and cannot strand the
+  encounter. This fallback only shows particles during arrival and reveals the
+  original body when the arrival shot ends; it does **not** provide a progressive
+  dissolve. Departure hides the fallback body halfway through the effect.
 - `python tests/heroes_shade_warp_test.py` compiles the actual runtime against
   instrumented APIs: fresh archive loading, distinct model data, pose transfer,
   unchanged source materials, bidirectional reveal timing, native particle/sound
   IDs, repeat draws without simulation, replay reuse and failure/cleanup paths.
+  It also runs the actual draw hook after deliberately clearing `mNoDraw`,
+  covering event request, arrival hold/reveal, departure, afterglow, deletion,
+  resource failure and isolation from doubles/story actors. These stubs verify
+  draw submission and timing; they cannot validate the game's rendered shader.
   The cinematic test covers the longer shots and cancellation at every shot.
 
 

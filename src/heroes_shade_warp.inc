@@ -94,7 +94,7 @@ struct ShadeWarp {
             static_cast<float>(shade::warp_travel_ticks),0.0f,1.0f);
         const float visible=arrival ? progress : 1-progress;
         cutoff=-0.5f+visible*height/30.0f;
-        actor->mNoDraw=ready || visible<=0 || (!arrival && progress>=0.5f);
+        actor->mNoDraw=ready || arrival || progress>=0.5f;
         cXyz pos=actor->current.pos;
         if (!arrival) pos.y+=visible*height; // Link's descending dissolve edge
         emitter=dComIfGp_particle_set(emitter,arrival ? ID_ZI_J_LK_WARP_APP_A : ID_ZI_J_LK_WARP_DISAPP_A,
@@ -102,7 +102,12 @@ struct ShadeWarp {
         dComIfGp_particle_levelEmitterOnEventMove(emitter);
     }
     bool draw(daNpc_Kn_c* actor) {
-        if (!active || !ready) return false;
+        if (!active) return false;
+        // A handled draw may intentionally submit no geometry. Do not depend
+        // on mNoDraw: native NPC execution can clear it after tick(). In the
+        // resource fallback, reveal the original only after the arrival shot.
+        if (!ready) return arrival || cutoff<=height/60.0f-0.5f;
+        if (cutoff<=-0.5f) return true;
         for (unsigned i=0;i<2;++i) {
             auto* model=models[i];auto* source=actor->mpModelMorf[i]->getModel();
             model->setBaseTRMtx(source->getBaseTRMtx());model->setBaseScale(*source->getBaseScale());

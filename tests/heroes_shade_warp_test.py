@@ -3,6 +3,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 root=Path(__file__).resolve().parents[1]
+source=(root/'src/heroes_shade_encounter.cpp').read_text()
+start=source.index('HookAction draw_warp(')
+draw_hook=source[start:source.index('\n}\n',start)+3]
+assert 'uninstall<ShadeDrawHook>' in source
 fixture=r'''
 #include "heroes_shade_cinema.hpp"
 #include <algorithm>
@@ -102,9 +106,31 @@ void mDoAud_seStart(int id,cXyz*,int,int){++sounds;lastSound=id;}
 int warnings=0;struct Log {void warn(void*,const char*){++warnings;}} logService;
 auto* svc_log=&logService;void* mod_ctx=nullptr;
 #include "heroes_shade_warp.inc"
+struct ModContext {};
+enum HookAction {HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
+namespace mods {template<class T>T arg(void* args,int){return *static_cast<T*>(args);}}
+struct Fighter {bool divide=false,deleting=false;} entry;
+bool registered=true;
+Fighter* fighter(daNpc_Kn_c*){return registered ? &entry : nullptr;}
+shade::Cinema sCinema;
+// DRAW_HOOK
+HookAction draw_after_native_execute(daNpc_Kn_c* actor){
+    actor->mNoDraw=false; // twilight() runs after our pre-execute tick
+    int result=0;
+    auto action=draw_warp(nullptr,&actor,&result,nullptr);
+    if(action==HOOK_SKIP_ORIGINAL) assert(result==1);
+    return action;
+}
 int main(){
     Data original[2];Morf morph[2]{{{&original[0]}},{{&original[1]}}};
     daNpc_Kn_c actor{};actor.mpModelMorf={&morph[0],&morph[1]};
+    sCinema.begin(false);
+    assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL); // before sound/particles
+    assert(sounds==0 && emissions==0);
+    registered=false;assert(draw_after_native_execute(&actor)==HOOK_CONTINUE);registered=true;
+    entry.divide=true;assert(draw_after_native_execute(&actor)==HOOK_CONTINUE);entry.divide=false;
+    sCinema.begin(true);assert(draw_after_native_execute(&actor)==HOOK_CONTINUE); // victory recovery stays visible
+    sCinema.begin(false);sCinema.enter(shade::Shot::Arrival);
     actor.field_0x16f4={0,0,0};begin_shade_warp(&actor,true);
     assert(sShadeWarp.ready && sShadeWarp.active && actor.mNoDraw);
     assert(allocations==1 && adjusts==1 && reads==1 && decoded==2 && current==&parent && volumes==1);
@@ -117,29 +143,45 @@ int main(){
         else assert(sShadeWarp.cutoff>previous);
         previous=sShadeWarp.cutoff;
         const int count=emissions;
-        assert(sShadeWarp.draw(&actor) && sShadeWarp.draw(&actor)); // draw cannot advance time/effects
+        const int draws=sShadeWarp.models[0]->draws;
+        assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL);
+        assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL); // draw cannot advance time/effects
+        assert(sShadeWarp.models[0]->draws==draws+(tick<=45 ? 0 : 2));
         assert(emissions==count && sShadeWarp.cutoff==previous);
         for(int i=0;i<2;++i){
             assert(!original[i].warp && original[i].scroll==0 && original[i].cutoff==0);
             auto* model=sShadeWarp.models[i];assert(model->data!=&original[i]);
-            assert(model->matrices==morph[i].model.matrices && model->base==100);
-            assert(model->data->cutoff==sShadeWarp.cutoff);
+            if(tick>45){
+                assert(model->matrices==morph[i].model.matrices && model->base==100);
+                assert(model->data->cutoff==sShadeWarp.cutoff);
+            }
         }
     }
     assert(std::abs(sShadeWarp.cutoff-(sShadeWarp.height/30-0.5f))<0.001f);
     end_shade_warp();assert(!sShadeWarp.active && !sShadeWarp.draw(&actor) && !sShadeWarp.emitter);
+    sCinema.enter(shade::Shot::Words1);
+    assert(draw_after_native_execute(&actor)==HOOK_CONTINUE);
     int stops=effect.killed;end_shade_warp();assert(effect.killed==stops);
     begin_shade_warp(&actor,false);
     assert(reads==1 && decoded==2 && lastSound==Z2SE_AL_WARP_IN_TATE && !actor.mNoDraw);
+    sCinema.enter(shade::Shot::Depart);
     previous=sShadeWarp.height;
     for(int tick=0;tick<=100;++tick){
         tick_shade_warp(&actor,tick);
         assert(lastEffect==0x9f4 && lastPos.y<=previous+actor.current.pos.y);
         previous=lastPos.y-actor.current.pos.y;
+        const int draws=sShadeWarp.models[0]->draws;
+        assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL);
+        assert(sShadeWarp.models[0]->draws==draws+(tick==100 ? 0 : 1));
     }
-    assert(actor.mNoDraw && sShadeWarp.cutoff==-0.5f && lastPos.y==actor.current.pos.y);
+    assert(sShadeWarp.cutoff==-0.5f && lastPos.y==actor.current.pos.y);
     stops=effect.killed;finish_shade_warp();
     assert(!sShadeWarp.active && sShadeWarp.emitter==7 && effect.finished==1 && effect.killed==stops);
+    sCinema.enter(shade::Shot::Afterglow);
+    assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL);
+    sCinema={};entry.deleting=true;
+    assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL);
+    entry.deleting=false;assert(draw_after_native_execute(&actor)==HOOK_CONTINUE);
     sShadeWarp.destroy();assert(!sShadeWarp.ready && !sShadeWarp.heap && volumes==0 && destroys==1);
     sShadeWarp.destroy();assert(destroys==1);
     // Failure never blocks the cinematic, re-parses native data or retries every frame.
@@ -147,8 +189,16 @@ int main(){
         failHeap=failure==0;failRead=failure==1;mismatch=failure==2;
         original[0].material.tev.stages=failure==3 ? 4 : 1;
         begin_shade_warp(&actor,true);assert(sShadeWarp.failed && !sShadeWarp.ready && sShadeWarp.active);
-        int loads=reads;end_shade_warp();begin_shade_warp(&actor,false);assert(reads==loads);
-        tick_shade_warp(&actor,100);assert(actor.mNoDraw && !sShadeWarp.draw(&actor));
+        for(int tick=0;tick<=145;++tick){
+            tick_shade_warp(&actor,tick);
+            assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL);
+        }
+        int loads=reads;end_shade_warp();
+        assert(draw_after_native_execute(&actor)==HOOK_CONTINUE);
+        begin_shade_warp(&actor,false);assert(reads==loads);
+        tick_shade_warp(&actor,0);assert(draw_after_native_execute(&actor)==HOOK_CONTINUE);
+        tick_shade_warp(&actor,50);assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL);
+        tick_shade_warp(&actor,100);assert(draw_after_native_execute(&actor)==HOOK_SKIP_ORIGINAL);
         sShadeWarp.destroy();assert(current==&parent && volumes==0);
     }
     assert(warnings==4 && eventMoves==emissions);
@@ -156,7 +206,7 @@ int main(){
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'warp.cpp';exe=Path(tmp)/'warp'
-    cpp.write_text(fixture)
+    cpp.write_text(fixture.replace('// DRAW_HOOK',draw_hook))
     subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print("Hero's Shade private warp models, native particles, pacing, replay and cleanup: passed")
+print("Hero's Shade draw gating, private warp models, native particles, pacing, replay and cleanup: passed")

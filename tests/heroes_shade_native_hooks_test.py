@@ -88,7 +88,7 @@ struct Cylinder {
     float GetH() const { return 150; }
 };
 struct daPy_py_c {
-    enum {CUT_TYPE_TURN_RIGHT=8,CUT_TYPE_TURN_LEFT=22,CUT_TYPE_LARGE_TURN_LEFT=23,CUT_TYPE_LARGE_TURN_RIGHT=24};
+    enum {CUT_TYPE_LARGE_JUMP_INIT=18,CUT_TYPE_LARGE_JUMP=19,CUT_TYPE_LARGE_JUMP_FINISH=20,CUT_TYPE_TURN_RIGHT=8,CUT_TYPE_TURN_LEFT=22,CUT_TYPE_LARGE_TURN_LEFT=23,CUT_TYPE_LARGE_TURN_RIGHT=24};
 };
 struct Player { std::array<Cylinder,3> mTgCyls; int cut=0; int getCutType(){return cut;} } player;
 Player* daAlink_getAlinkActorClass() { return &player; }
@@ -139,7 +139,9 @@ struct daNpc_Kn_c {
     Fighter entry;
     Motion mMotionSeqMngr, mFaceMotionSeqMngr;
     int mActionMode=19, field_0x15bc=0, field_0x15bd=0, landings=0;
-    int falls=0,warps=0;
+    int falls=0,warps=0,jumpFalls=0,jumpWarps=0;
+    void teach06_warpDelete(void*){++jumpWarps;}
+    void teach06_superJumpedDivide(void*){++jumpFalls;}
     void teach07_warpDelete(void*){++warps;}
     void teach07_superTurnAttackedDivide(void*){++falls;}
     struct Hio {struct {float attack_disappear_speed_h=12,attack_disappear_speed_v=18;} m;} hio;
@@ -548,39 +550,82 @@ int main() {
         one.mCylCc.attacker=two.mCylCc.attacker=&player;
         one.current.angle.y=0;two.current.angle.y=static_cast<s16>(0x8000);
         playerYaw=0;
-        assert(spin_action(&one,one.entry));
+        assert(skill_counter_action(&one,one.entry));
         assert(sBattle.health==10 && sBattle.recovery==0 && one.mEvtNo==0);
         assert(one.mMotionSeqMngr.no==18 && one.speedF<0 && one.speed.y>0);
         assert(!one.mCylCc.target && one.entry.offense==-1);
         assert(defeated_double(one.entry) && !defeated_double(two.entry));
         // First clone disappears only after landing, while the second remains.
-        assert(spin_action(&one,one.entry) && one.falls==1 && one.warps==0);
+        assert(skill_counter_action(&one,one.entry) && one.falls==1 && one.warps==0);
         one.mAcch.grounded=true;one.speed.y=-2;
         after_knockdown_movement(nullptr,&one,nullptr,nullptr);
         assert(one.mMotionSeqMngr.no==19);
-        spin_action(&one,one.entry);assert(one.warps==0);
-        one.mMotionSeqMngr.step=1;spin_action(&one,one.entry);
+        skill_counter_action(&one,one.entry);assert(one.warps==0);
+        one.mMotionSeqMngr.step=1;skill_counter_action(&one,one.entry);
         assert(one.warps==1 && one.mActionMode==23);
         // Run the production spawn routine after native deletion clears slots.
         sFighters={};spawns=0;add_doubles(&boss);
         assert(spawns==1 && sFighters[1].id==42 && sFighters[2].id>=1000);
         for(int i=0;i<120;++i)add_doubles(&boss);
         assert(spawns==1);
-        assert(spin_action(&two,two.entry));
+        assert(skill_counter_action(&two,two.entry));
         assert(two.mMotionSeqMngr.no==14 && two.speedF>0);
         assert(sBattle.health==10 && sBattle.defeated_doubles==6);
         sFighters={};for(int i=0;i<120;++i)add_doubles(&boss);
         assert(spawns==1); // neither defeated slot is replenished
         // Normal spin also produces the boss's usual success event, once.
         boss.mCylCc.attacker=&player;
-        assert(spin_action(&boss,boss.entry) && boss.mEvtNo==24);
+        assert(skill_counter_action(&boss,boss.entry) && boss.mEvtNo==24);
         no_order(nullptr,&boss,nullptr,nullptr);assert(sBattle.health==9);
-        assert(!spin_action(&boss,boss.entry));
+        assert(!skill_counter_action(&boss,boss.entry));
         // Recovery from a simultaneous boss hit must not freeze clone landing.
-        int falls=two.falls;assert(spin_action(&two,two.entry));assert(two.falls==falls+1);
+        int falls=two.falls;assert(skill_counter_action(&two,two.entry));assert(two.falls==falls+1);
         for(int i=0;i<45;++i)sBattle.tick();
         assert(sBattle.phase==0 && sBattle.defeated_doubles==0);
     }
+    // Jump Strike doubles must fall/land before departure, even if Link ends
+    // the attack or the boss enters recovery. Neither may notify the teacher
+    // to immediately warp out the group; defeated slots must remain empty.
+    for(int cut : {19,20}) for(int side : {0,0x8000}) {
+        sBattle={};sBattle.phase=6;player.cut=cut;
+        sBattle.recovery=side ? 45 : 0; // boss may have executed first this frame
+        daNpc_Kn_c boss,clone;
+        clone.entry.divide=1;clone.current.angle.y=static_cast<s16>(side);playerYaw=0;
+        clone.mCylCc.attacker=&player;
+        assert(skill_counter_action(&clone,clone.entry));
+        assert(clone.mActionMode==16 && clone.speed.y>0);
+        assert(clone.mMotionSeqMngr.no==(side ? 14 : 18));
+        assert(clone.field_0x15bd==0 && clone.mEvtNo==0 && sBattle.health==10);
+        assert(sBattle.defeated_doubles==2 && !clone.mCylCc.target);
+        player.cut=0; // The native tutorial used this change to remove the group.
+        for(int i=0;i<4;++i)assert(skill_counter_action(&clone,clone.entry));
+        assert(clone.jumpFalls==4 && clone.jumpWarps==0 && clone.warps==0);
+        sBattle.recovery=45;
+        assert(skill_counter_action(&clone,clone.entry) && clone.jumpFalls==5);
+        clone.speed.y=-2;clone.mAcch.grounded=true;
+        after_knockdown_movement(nullptr,&clone,nullptr,nullptr);
+        assert(clone.mMotionSeqMngr.no==(side ? 15 : 19));
+        skill_counter_action(&clone,clone.entry);assert(clone.jumpWarps==0);
+        clone.mMotionSeqMngr.step=1;
+        assert(skill_counter_action(&clone,clone.entry));
+        assert(clone.mActionMode==17 && clone.jumpWarps==1 && clone.warps==0);
+        sFighters={};spawns=0;
+        for(int i=0;i<120;++i)add_doubles(&boss);
+        assert(spawns==1 && sFighters[1].id==42); // only the surviving clone
+        // Matching boss hit keeps the original Jump Strike success event.
+        sBattle.recovery=0;player.cut=cut;boss.mCylCc.attacker=&player;
+        assert(skill_counter_action(&boss,boss.entry) && boss.mEvtNo==21);
+        no_order(nullptr,&boss,nullptr,nullptr);assert(sBattle.health==9);
+    }
+    // Keep native opening-swipe behavior; don't accept a normal jumping slash.
+    sBattle={};sBattle.phase=6;
+    daNpc_Kn_c opening;opening.entry.divide=1;opening.mCylCc.attacker=&player;
+    for(int cut : {18,10,8,22,23,24}) {
+        player.cut=cut;
+        assert(!skill_counter_action(&opening,opening.entry));
+        assert(!sBattle.defeated_doubles && opening.mActionMode==19);
+    }
+
     // Normal spins open the owned phase's body collider; other attacks and
     // unowned story actors do not acquire a new vulnerability.
     sBattle={};sBattle.phase=7;player.cut=8;
@@ -588,15 +633,15 @@ int main() {
     trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(!spinTarget.mCylCc.shield);
     spinTarget.mCylCc.shield=true;player.cut=1;
     trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(spinTarget.mCylCc.shield);
-    assert(!spin_action(&spinTarget,spinTarget.entry));
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
     player.cut=8;spinTarget.mCylCc.attacker=nullptr;
-    assert(!spin_action(&spinTarget,spinTarget.entry));
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
     spinTarget.mCylCc.attacker=&player;spinTarget.mCylCc.object.type=4;
-    assert(!spin_action(&spinTarget,spinTarget.entry));
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
     spinTarget.mCylCc.object.type=AT_TYPE_NORMAL_SWORD;sBattle.trial=shade::Trial::Wind;
-    assert(!spin_action(&spinTarget,spinTarget.entry));
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
     sBattle.trial=shade::Trial::None;sBattle.phase=6;
-    assert(!spin_action(&spinTarget,spinTarget.entry));
+    assert(!skill_counter_action(&spinTarget,spinTarget.entry));
     sBattle.phase=7;spinTarget.owned=false;
     trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(spinTarget.mCylCc.shield);
     // Defeated clones retain neither body targets nor offensive sword sweeps.
@@ -620,6 +665,6 @@ with tempfile.TemporaryDirectory() as tmp:
                     "-I", str(root / "src"), str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 action = function("combat_action")
-assert action.index("if (!entry)") < action.index("spin_action(actor,*entry)")
-assert action.index("spin_action(actor,*entry)") < action.index("if (sBattle.recovery)")
-print("Hero's Shade native hooks, normal/Great Spin and persistent double defeat: passed")
+assert action.index("if (!entry)") < action.index("skill_counter_action(actor,*entry)")
+assert action.index("skill_counter_action(actor,*entry)") < action.index("if (sBattle.recovery)")
+print("Hero's Shade native hooks, Jump Strike/Spin landing and persistent double defeat: passed")

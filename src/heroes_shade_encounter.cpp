@@ -900,7 +900,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         return HOOK_SKIP_ORIGINAL;
     }
     if (sBattle.dying) return HOOK_CONTINUE;
-    if (spin_action(actor,*entry)) return HOOK_SKIP_ORIGINAL;
+    if (skill_counter_action(actor,*entry)) return HOOK_SKIP_ORIGINAL;
     if (sBattle.recovery) {
         hold_recovery(actor);
         return HOOK_SKIP_ORIGINAL;

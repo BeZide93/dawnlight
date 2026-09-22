@@ -632,3 +632,20 @@ independent clone defeats, forward/backward falls, landing-before-departure,
 repeated spawn maintenance after deletion, boss success/recovery, collision
 scope and protected intermissions. Progression tests cover timeout/replay mask
 reset. Native animation appearance still requires in-game verification.
+
+
+### Jump Strike double landing follow-up
+
+The same arena-owned counter lifecycle now covers Jump Strike (skill phase 6).
+The native teacher's parent talk flag previously allowed the group end callback
+to start departure as soon as Link stopped the attack, before clone landing.
+Successful `LARGE_JUMP`/`LARGE_JUMP_FINISH` contacts now enter native action 16,
+finish the forward/backward knockback and landing animation, then enter native
+warp/delete action 17. Defeated slots stay empty for the remainder of the phase.
+The opening `LARGE_JUMP_INIT` swipe retains its native small stagger; an ordinary
+jumping slash or Spin Attack does not fulfill the Jump Strike counter.
+
+The production-hook regression covers both Jump Strike hit stages, both facing
+directions, attack completion during flight, boss recovery during landing,
+landing-animation completion before departure, no replacement of the defeated
+slot, and unchanged boss success event 21. Spin-phase regressions remain active.

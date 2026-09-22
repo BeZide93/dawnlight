@@ -1,4 +1,4 @@
-// Arena spin counters use the native knockback/landing and departure actions,
+// Arena Jump Strike and spin counters use native knockback/landing/departure,
 // but never the tutorial's parent talk flags or its group-wide end callbacks.
 bool spin_cut(int cut) {
     return cut==daPy_py_c::CUT_TYPE_TURN_LEFT || cut==daPy_py_c::CUT_TYPE_TURN_RIGHT ||
@@ -7,24 +7,37 @@ bool spin_cut(int cut) {
 bool defeated_double(const Fighter& entry) {
     return entry.divide>0 && (sBattle.defeated_doubles & (1u<<entry.divide));
 }
-bool spin_action(daNpc_Kn_c* actor,Fighter& entry) {
-    if (sBattle.phase!=7 || sBattle.trial!=shade::Trial::None) return false;
+bool skill_counter_action(daNpc_Kn_c* actor,Fighter& entry) {
+    if ((sBattle.phase!=6 && sBattle.phase!=7) || sBattle.trial!=shade::Trial::None) return false;
+    const bool jump=sBattle.phase==6;
+    const int departure=jump ? 17 : 23;
     if (defeated_double(entry)) {
         // Keep the native fall running even when a simultaneous boss hit starts
         // global recovery. Only depart after the landing animation finishes.
-        if (actor->mActionMode!=23 && actor->mAcch.ChkGroundHit() &&
+        if (actor->mActionMode!=departure && actor->mAcch.ChkGroundHit() &&
             (actor->mMotionSeqMngr.getNo()==15 || actor->mMotionSeqMngr.getNo()==19) &&
             actor->mMotionSeqMngr.getStepNo()>0) {
-            actor->mActionMode=23; actor->mMode=1;
+            actor->mActionMode=departure; actor->mMode=1;
         }
-        if (actor->mActionMode==23) actor->teach07_warpDelete(nullptr);
-        else actor->teach07_superTurnAttackedDivide(nullptr);
+        if (actor->mActionMode==departure) {
+            if (jump) actor->teach06_warpDelete(nullptr);
+            else actor->teach07_warpDelete(nullptr);
+        } else {
+            if (jump) actor->teach06_superJumpedDivide(nullptr);
+            else actor->teach07_superTurnAttackedDivide(nullptr);
+        }
         return true;
     }
     if (!entry.divide && sBattle.recovery) return false;
     auto* player=daPy_getPlayerActorClass();
     auto* hit=actor->mCylCc.GetTgHitObj();
-    if (!player || !spin_cut(player->getCutType()) || !actor->mCylCc.ChkTgHit() ||
+    if (!player) return false;
+    const int cut=player->getCutType();
+    // The opening swipe remains the native small stagger. Only Jump Strike's
+    // airborne strike/final blow knocks doubles down (not an ordinary jump).
+    const bool counter=jump ? cut==daPy_py_c::CUT_TYPE_LARGE_JUMP ||
+        cut==daPy_py_c::CUT_TYPE_LARGE_JUMP_FINISH : spin_cut(cut);
+    if (!counter || !actor->mCylCc.ChkTgHit() ||
         actor->mCylCc.GetTgHitAc()!=player || !hit ||
         !hit->ChkAtType(AT_TYPE_NORMAL_SWORD|AT_TYPE_MASTER_SWORD)) return false;
 
@@ -48,9 +61,9 @@ bool spin_action(daNpc_Kn_c* actor,Fighter& entry) {
     if (entry.divide) {
         sBattle.defeated_doubles|=1u<<entry.divide;
         actor->mCylCc.OffTgSetBit();
-        actor->mActionMode=22; actor->mMode=1;
+        actor->mActionMode=jump ? 16 : 22; actor->mMode=1;
     } else {
-        actor->mEvtNo=shade::phases[7].success;
+        actor->mEvtNo=shade::phases[sBattle.phase].success;
     }
     return true;
 }

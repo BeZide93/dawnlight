@@ -88,8 +88,9 @@ struct TrialFireModel {
         return color && brk.init(data,color,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1);
     }
     void reset() { bck.setFrame(0); btk.setFrame(0); if (colored) brk.setFrame(0); }
-    void play(float rate) {
-        bck.setPlaySpeed(rate); bck.play(); btk.play(); if (colored) brk.play();
+    void sample(float frame) {
+        bck.setFrame(std::min(frame,bck.getEndFrame()));
+        btk.play(); if (colored) brk.play();
     }
     void draw(const cXyz& origin,float scale,dKy_tevstr_c& light) {
         mDoMtx_stack_c::transS(origin.x,origin.y+3,origin.z);
@@ -104,11 +105,46 @@ struct TrialFireModel {
     }
 };
 
+// Native Beamos beam geometry and both texture animations, loaded from E_bm6.
+// Each eye owns animation state; no procedural substitute or shared actor callbacks.
+struct TrialBeamModel {
+    J3DModel* model=nullptr;
+    mDoExt_bckAnm bck;
+    mDoExt_btkAnm scroll,on;
+    bool create() {
+        auto* data=static_cast<J3DModelData*>(dComIfG_getObjectRes("E_bm6",dRes_INDEX_E_BM6_BMD_EF_BIMOL6_e));
+        auto* motion=static_cast<J3DAnmTransform*>(dComIfG_getObjectRes("E_bm6",dRes_INDEX_E_BM6_BCK_EF_BIMOL6_e));
+        auto* texture=static_cast<J3DAnmTextureSRTKey*>(dComIfG_getObjectRes("E_bm6",dRes_INDEX_E_BM6_BTK_EF_BIMOL6_e));
+        auto* start=static_cast<J3DAnmTextureSRTKey*>(dComIfG_getObjectRes("E_bm6",dRes_INDEX_E_BM6_BTK_EF_BIMOL6_ON_e));
+        if (!data || !motion || !texture || !start) return false;
+        model=mDoExt_J3DModel__create(data,0x80000,0x11000284);
+        return model && bck.init(motion,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1,false) &&
+            scroll.init(data,texture,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1) &&
+            on.init(data,start,TRUE,J3DFrameCtrl::EMode_NONE,1,0,-1);
+    }
+    void reset() { bck.setFrame(0); scroll.setFrame(0); on.setFrame(0); }
+    void play() { bck.play(); scroll.play(); on.play(); }
+    float reach() { return std::min(1.0f,static_cast<int>(on.getFrame()+0.5f)*0.3f); }
+    void draw(const cXyz& start,const cXyz& end,dKy_tevstr_c& light) {
+        const cXyz delta=end-start;
+        mDoMtx_stack_c::transS(start);
+        mDoMtx_stack_c::YrotM(cM_atan2s(delta.x,delta.z));
+        mDoMtx_stack_c::XrotM(cM_atan2s(-delta.y,delta.absXZ()));
+        mDoMtx_stack_c::scaleM(0.5f,0.5f,delta.abs()/1200.0f);
+        model->setBaseTRMtx(mDoMtx_stack_c::get());
+        g_env_light.setLightTevColorType_MAJI(model,&light);
+        auto* data=model->getModelData();
+        bck.entry(data); scroll.entry(data); on.entry(data);
+        mDoExt_modelUpdateDL(model);
+        bck.remove(data); scroll.remove(data); on.remove(data);
+    }
+};
+
 class TrialPacket : public J3DPacket {
 public:
     shade::TrialClock clock;
     cXyz center{0,0,0}, boss{0,0,0};
-    std::array<cXyz,2> eyes{}, ends{};
+    std::array<cXyz,2> ends{};
     float radius=1000;
     void vertex(const cXyz& p,GXColor c) {
         GXPosition3f32(p.x,p.y,p.z); GXColor4u8(c.r,c.g,c.b,c.a);
@@ -159,24 +195,7 @@ public:
                 const float t=std::fmod(clock.ticks/45.0f+band/6.0f,1.0f);
                 ring(center+cXyz(0,30+band*24,0),t*radius,8,{180,220,230,static_cast<u8>((1-t)*95)});
             }
-        } else if (clock.kind==shade::Trial::Eyes) {
-            for (unsigned i=0;i<2;++i) if (clock.eyes&(1u<<i)) {
-                // Persistent beam geometry and capsule use the same endpoints.
-                if (!clock.beam_live()) continue;
-                const cXyz delta=ends[i]-eyes[i];
-                const float xz=std::max(1.0f,delta.absXZ());
-                const cXyz right(delta.z/xz,0,-delta.x/xz);
-                for (unsigned shell=0;shell<2;++shell) {
-                    const float r=shell ? 15 : 4;
-                    GXBegin(GX_QUADS,GX_VTXFMT0,8*4);
-                    for (unsigned side=0;side<8;++side) for (unsigned k=0;k<4;++k) {
-                        const float a=(side+(k==1 || k==2))*6.2831853072f/8;
-                        vertex((k>=2 ? ends[i] : eyes[i])+right*(r*std::cos(a))+cXyz(0,r*std::sin(a),0),
-                            {100,220,255,static_cast<u8>(shell ? 65 : 240)});
-                    }
-                    GXEnd();
-                }
-            }
+
         }
         j3dSys.reinitGX();
     }
@@ -185,6 +204,7 @@ public:
 struct ShadeTrials {
     request_of_phase_process_class fireArchive{},eyeArchive{};
     std::array<TrialFireModel,2> fire;
+    std::array<TrialBeamModel,2> beamModels;
     std::array<TrialEyeModel*,2> eyes{};
     mDoExt_bckAnm eyePose;
     mDoExt_brkAnm eyeColor;
@@ -201,7 +221,9 @@ struct ShadeTrials {
     fopAc_ac_c* owner=nullptr;
     cXyz center{0,0,0}, origin{0,0,0};
     float radius=0, fireScale=2.5f;
-    std::array<bool,4> anchorPlaced{};
+    std::array<bool,4> anchorPlaced{},anchorAligned{};
+    std::array<s16,4> anchorYaw{};
+    s16 lastWallYaw=0;
     std::array<bool,2> eyePlaced{};
     bool radiusReady=false;
     JKRSolidHeap* effectHeap=nullptr;
@@ -209,8 +231,8 @@ struct ShadeTrials {
     bool effectsFailed=false;
     const char* failure="unknown effect initialization step";
     bool visible=false;
-    MessageId hint=0;
-    bool hintOpened=false;
+    int beamRecovery=0;
+    bool beamVisible=false;
 
     int load() {
         int result=dComIfG_resLoad(&fireArchive,"E_fm");
@@ -234,6 +256,8 @@ struct ShadeTrials {
             eye=JKR_NEW TrialEyeModel;
             if (!eye || !eye->create(data)) return false;
         }
+        failure="Beamos beam models/animations";
+        for (auto& beam:beamModels) if (!beam.create()) return false;
         return true;
     }
     bool prepare_effects() {
@@ -289,7 +313,12 @@ struct ShadeTrials {
         cXyz end=start+direction*10000;
         dBgS_LinChk check; check.Set(&start,&end,owner);
         if (!dComIfG_Bgsp().LineCross(&check)) return false;
-        pos=check.GetCross()-direction*inset;
+        cM3dGPla plane;
+        if (!dComIfG_Bgsp().GetTriPla(check,&plane)) return false;
+        cXyz normal=plane.mNormal;
+        if (normal.x*direction.x+normal.z*direction.z>0) normal*=-1;
+        lastWallYaw=cM_atan2s(normal.x,normal.z);
+        pos=check.GetCross()+cXyz(cM_ssin(lastWallYaw),0,cM_scos(lastWallYaw))*inset;
         return (pos-start).absXZ()>300;
     }
     bool find_wall(s16 angle,float height,float inset,cXyz& pos) {
@@ -299,22 +328,58 @@ struct ShadeTrials {
             if (wall(static_cast<s16>(angle+offset),height,inset,pos)) return true;
         return false;
     }
+    bool align_anchor(daHsTarget_c* target,unsigned index) {
+        auto* bg=target->mpBgW;
+        if (!bg || !bg->GetBgd() || !bg->GetVtxTbl() || !target->mpModel) return false;
+        // Determine the actual hookable face from DZB, not a guessed model pitch.
+        // Rotate its normal to horizontal/inward so Link enters wall wait instead
+        // of roof wait. Model and MoveBG receive exactly the same transform.
+        cXyz normal(0,0,0);
+        float largest=0;
+        auto* data=bg->GetBgd();
+        const auto* vertices=bg->GetVtxTbl();
+        for (int i=0;i<data->m_t_num;++i) if (bg->GetPolyHSStick(i)) {
+            const auto& tri=data->m_t_tbl[i];
+            const cXyz a=cXyz(vertices[tri.m_vtx_idx1])-cXyz(vertices[tri.m_vtx_idx0]);
+            const cXyz b=cXyz(vertices[tri.m_vtx_idx2])-cXyz(vertices[tri.m_vtx_idx0]);
+            const cXyz cross(a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x);
+            const float area=cross.abs();
+            if (area>largest) { largest=area; normal=bg->pm_tri[i].m_plane.mNormal; }
+        }
+        if (largest<=0) return false;
+        mDoMtx_stack_c::YrotS(static_cast<s16>(-target->shape_angle.y));
+        mDoMtx_stack_c::multVec(&normal,&normal);
+        const auto yaw=cM_atan2s(normal.x,normal.z);
+        const auto pitch=cM_atan2s(normal.y,normal.absXZ());
+        mDoMtx_stack_c::transS(anchorPos[index]);
+        mDoMtx_stack_c::YrotM(anchorYaw[index]);
+        mDoMtx_stack_c::XrotM(pitch);
+        mDoMtx_stack_c::YrotM(static_cast<s16>(-yaw));
+        target->mpModel->setBaseTRMtx(mDoMtx_stack_c::get());
+        MTXCopy(mDoMtx_stack_c::get(),target->mBgMtx);
+        bg->Move();
+        return true;
+    }
     bool place() {
         bool ready=true;
         for (unsigned i=0;i<4;++i) {
             if (!anchorPlaced[i]) {
                 const auto angle=static_cast<s16>(0x2000+i*0x4000);
-                anchorPlaced[i]=find_wall(angle,650,25,anchorPos[i]) || find_wall(angle,550,25,anchorPos[i]);
+                anchorPlaced[i]=find_wall(angle,650,90,anchorPos[i]) || find_wall(angle,550,90,anchorPos[i]);
+                if (anchorPlaced[i]) anchorYaw[i]=lastWallYaw;
             }
             if (!anchorPlaced[i]) { ready=false; continue; }
             if (!pending_or_live(anchors[i])) {
                 const auto& p=anchorPos[i];
-                const ActorSpawnParams params{.parameters=0,.argument=-1,.room_num=51,
-                    .position={p.x,p.y,p.z},.angle={0,cLib_targetAngleY(&p,&center),0},
+                const ActorSpawnParams params{.parameters=1,.argument=-1,.room_num=51,
+                    .position={p.x,p.y,p.z},.angle={0,anchorYaw[i],0},
                     .scale={1,1,1},.create_function=nullptr};
+                anchorAligned[i]=false;
                 create_standalone_actor(fpcNm_Obj_HsTarget_e,params,anchors[i]);
             }
-            ready=actor_by_id(anchors[i]) && ready;
+            auto* target=static_cast<daHsTarget_c*>(actor_by_id(anchors[i]));
+            if (target && !anchorAligned[i]) anchorAligned[i]=align_anchor(target,i);
+            ready=target && anchorAligned[i] && ready;
         }
         // Eye placement is independent; missing eye geometry cannot hide all
         // four targets. Recheck only missing positions while the room loads.
@@ -332,16 +397,8 @@ struct ShadeTrials {
         }
         return ready;
     }
-    void close_hint() {
-        auto* msg=dMsgObject_getMsgObjectClass();
-        if (hint && msg && msg->msg_idx==hint) {
-            if (msg->getStatusLocal()==1 && !hintOpened) msg->setStatusLocal(19);
-            if (!hintOpened || msg->getStatusLocal()!=1) msg->onKillMessageFlagLocal();
-        }
-        hint=0; hintOpened=false;
-    }
     void suspend() {
-        visible=false;
+        visible=false; beamVisible=false;
         shield.OffTgSetBit(); shield.ClrTgHit(); flame.OffAtSetBit(); flame.ClrAtHit();
         for (unsigned i=0;i<2;++i) {
             eyeTargets[i].OffTgSetBit(); eyeTargets[i].ClrTgHit();
@@ -349,7 +406,7 @@ struct ShadeTrials {
         }
     }
     void cancel() {
-        suspend(); clock={}; packet.clock={}; close_hint();
+        suspend(); clock={}; packet.clock={}; beamRecovery=0;
     }
     ~ShadeTrials() {
         cancel();
@@ -362,22 +419,18 @@ struct ShadeTrials {
         cancel(); clock.begin(sBattle.trial);
         origin=boss->current.pos;
         origin.y=center.y;
-        // The native deceleration (2.5 -> 0.5, step 0.08) reaches frame 47.5
-        // on the last damaging tick. Scale to cover the farthest wall even
-        // when Shade stood off-center, and respect a shorter archive clip.
+        // Sample the native motion over six seconds. The outer edge reaches
+        // even the farthest wall when Shade casts from an off-center position.
         const float nativeRadius=31.5f*std::max(1.0f,std::min(47.5f,fire[1].bck.getEndFrame()));
-        fireScale=2.5f*std::max(1.0f,(radius+(origin-center).absXZ())/nativeRadius);
+        fireScale=2.5f*(radius+(origin-center).absXZ())/nativeRadius;
         for (auto& effect:fire) effect.reset();
         auto* player=daAlink_getAlinkActorClass();
         for (unsigned i=0;i<2;++i) aim[i]=player->current.pos+cXyz(0,70,0);
-        const auto message=sTrialLines[static_cast<unsigned>(clock.kind)-1].id();
-        const auto id=fopMsgM_messageSetDemo(message);
-        if (id && id!=kNone) hint=message;
+        for (auto& beam:beamModels) beam.reset();
     }
     bool tick(daNpc_Kn_c* boss) {
         auto* player=daAlink_getAlinkActorClass();
         if (!clock.active() || !player) return false;
-        if (auto* msg=dMsgObject_getMsgObjectClass(); hint && msg && msg->msg_idx==hint && msg->getStatusLocal()>1) hintOpened=true;
         visible=true;
         status.Move();
         if (clock.kind==shade::Trial::Shield) {
@@ -398,8 +451,10 @@ struct ShadeTrials {
                 mDoAud_seStart(Z2SE_EN_FM_BLAST,&origin,0,dComIfGp_getReverb(51));
             }
             if (clock.ticks>=shade::fire_warning_ticks) {
-                const int frame=clock.ticks-shade::fire_warning_ticks;
-                fire[0].play(1); fire[1].play(std::max(0.5f,2.5f-0.08f*frame));
+                const float progress=shade::fire_progress(clock.ticks);
+                const float fade=std::max(0,clock.ticks-shade::fire_warning_ticks-shade::fire_travel_ticks+1);
+                fire[0].sample(42*progress+fade);
+                fire[1].sample(std::min(47.5f,fire[1].bck.getEndFrame())*progress+fade*0.5f);
                 flame.ClrAtHit();
                 if (clock.fire_live()) {
                     flame.OnAtSetBit(); flame.SetC(origin);
@@ -409,6 +464,16 @@ struct ShadeTrials {
             }
         } else if (clock.kind==shade::Trial::Eyes) {
             eyeColor.play();
+            if (beamRecovery>0) --beamRecovery;
+            for (auto& beam:beams) {
+                if (beam.ChkAtHit() && beam.GetAtHitAc()==player) beamRecovery=shade::beam_recovery_ticks;
+                beam.OffAtSetBit(); beam.ClrAtHit();
+            }
+            beamVisible=clock.beam_live() && !beamRecovery && !player->getDamageWaitTimer();
+            // One capsule per simulation step prevents two eyes delivering a
+            // simultaneous hit. Both shut down for three seconds after contact,
+            // including when the player's optional invincibility setting is off.
+            const unsigned firingEye=clock.eyes==3 ? (clock.ticks&1u) : clock.eyes==1 ? 0 : 1;
             for (unsigned i=0;i<2;++i) if (clock.eyes&(1u<<i)) {
                 auto& target=eyeTargets[i];
                 if (target.ChkTgHit()) {
@@ -430,19 +495,23 @@ struct ShadeTrials {
                 dBgS_LinChk check; check.Set(&eyePos[i],&end,owner);
                 if (dComIfG_Bgsp().LineCross(&check)) end=check.GetCross();
                 packet.ends[i]=end;
-                if (clock.beam_live()) {
-                    beams[i].ClrAtHit(); beams[i].OnAtSetBit();
-                    static_cast<cM3dGCps*>(&beams[i])->Set(eyePos[i],end,18);
-                    cXyz direction=end-eyePos[i]; beams[i].SetAtVec(direction);
-                    dComIfG_Ccsp()->Set(&beams[i]);
+                if (beamVisible) {
+                    beamModels[i].play();
+                    if (i==firingEye) {
+                        const cXyz hitEnd=eyePos[i]+(end-eyePos[i])*beamModels[i].reach();
+                        beams[i].OnAtSetBit();
+                        static_cast<cM3dGCps*>(&beams[i])->Set(eyePos[i],hitEnd,20);
+                        cXyz direction=hitEnd-eyePos[i]; beams[i].SetAtVec(direction);
+                        dComIfG_Ccsp()->Set(&beams[i]);
+                    }
                     mDoAud_seStartLevel(Z2SE_EN_BM_BEAM2,&eyePos[i],0,dComIfGp_getReverb(51));
-                }
+                } else beamModels[i].reset();
             }
         } else if (clock.kind==shade::Trial::Wind && !player->checkEquipHeavyBoots()) {
-            player->setOutPower(18.0f,cLib_targetAngleY(&center,&player->current.pos),0);
+            player->setOutPower(shade::wind_power,cLib_targetAngleY(&center,&player->current.pos),1);
         }
         packet.clock=clock; packet.center=center; packet.boss=boss->current.pos;
-        packet.eyes=eyePos; packet.radius=radius;
+        packet.radius=radius;
         return clock.tick();
     }
     void draw(dKy_tevstr_c& light) {
@@ -461,6 +530,7 @@ struct ShadeTrials {
             eyePose.entry(data); eyeColor.entry(data);
             mDoExt_modelUpdateDL(eyes[i]);
             eyePose.remove(data); eyeColor.remove(data);
+            if (beamVisible) beamModels[i].draw(eyePos[i],packet.ends[i],light);
         }
         dComIfGd_setList(); j3dSys.getDrawBuffer(1)->entryImm(&packet,0);
     }
@@ -470,3 +540,10 @@ void suspend_trial() { if (sTrials) sTrials->suspend(); }
 void cancel_trial() { if (sTrials) sTrials->cancel(); }
 void begin_trial(daNpc_Kn_c* boss) { if (sTrials) sTrials->begin(boss); }
 bool tick_trial(daNpc_Kn_c* boss) { return sTrials && sTrials->tick(boss); }
+
+void sync_trial_position(daNpc_Kn_c* boss) {
+    if (sTrials && sTrials->visible && sTrials->clock.kind==shade::Trial::Shield) {
+        sTrials->shield.SetC(boss->current.pos+cXyz(0,110,0));
+        sTrials->packet.boss=boss->current.pos;
+    }
+}

@@ -11,6 +11,8 @@
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_npc_kn.h"
 #include "d/actor/d_a_obj_knBullet.h"
+#include "d/actor/d_a_obj_hsTarget.h"
+#include "d/d_bg_w.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_camera.h"
 #include "d/d_bg_s_lin_chk.h"
@@ -72,9 +74,9 @@ std::unordered_set<ActorId> sProjectiles;
 shade::Cinema sCinema;
 std::array<mods::flow::RegisteredMessage,4> sLines;
 mods::flow::RegisteredMessage sBossTitle;
-std::array<mods::flow::RegisteredMessage,4> sTrialLines;
 void cancel_trial();
 void suspend_trial();
+void sync_trial_position(daNpc_Kn_c*);
 void begin_trial(daNpc_Kn_c*);
 bool tick_trial(daNpc_Kn_c*);
 struct CinemaRuntime {
@@ -198,26 +200,6 @@ ModResult register_cinema_lines() {
         .text("Hero's Shade").auto_advance(90).build(language));
     sBossTitle=mods::flow::register_message(0,titleVariants);
     if (!sBossTitle) return sBossTitle.result();
-    constexpr const char* trialEnglish[]={
-        "Break my ward with a bomb\nor the Ball and Chain!",
-        "The floor shall burn!\nClawshot to the wall. Hold fast!",
-        "Two watchful eyes.\nLet your arrows silence them!",
-        "Stand firm against the gale!\nTrust the weight of your Iron Boots."
-    };
-    constexpr const char* trialGerman[]={
-        "Brich meinen Schild mit einer Bombe\noder dem Morgenstern!",
-        "Der Boden wird brennen!\nZieh dich mit dem Greifhaken zur Wand!",
-        "Zwei wachsame Augen.\nBring sie mit deinen Pfeilen zum Schweigen!",
-        "Trotze dem Sturm!\nVertraue auf das Gewicht deiner Eisenstiefel."
-    };
-    for (unsigned i=0;i<sTrialLines.size();++i) {
-        std::vector<mods::flow::MessageVariant> variants;
-        for (auto language:languages) variants.push_back(mods::flow::MessageBuilder{style}
-            .text(language==MESSAGE_LANGUAGE_GERMAN ? trialGerman[i] : trialEnglish[i])
-            .auto_advance(100).build(language));
-        sTrialLines[i]=mods::flow::register_message(0,variants);
-        if (!sTrialLines[i]) return sTrialLines[i].result();
-    }
     return MOD_OK;
 }
 void close_cinema_line() {
@@ -425,6 +407,7 @@ DEFINE_HOOK(&daNpc_Kn_c::beforeMove, ShadeMovementHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterMoved, ShadeLandingHook);
 DEFINE_HOOK(&daNpc_Kn_c::setAttnPos, ShadeJumpPoseHook);
 DEFINE_HOOK(&daNpc_Kn_c::setCollisionSword, ShadeSwordHook);
+DEFINE_HOOK(&daNpc_Kn_c::setCollision, ShadeBodyHook);
 DEFINE_HOOK(&daObjKnBullet_c::Create, ShadeBulletHook);
 DEFINE_HOOK(&daObjKnBullet_c::Delete, ShadeBulletDeleteHook);
 DEFINE_HOOK(&fopAcM_createChild, ShadeChildHook);
@@ -481,7 +464,7 @@ HookAction no_order(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (!entry->divide && !sCinema.active() && sBattle.trial==shade::Trial::None) {
+    if (!entry->divide && !sCinema.active() && !shade::pauses_combat(sBattle.trial)) {
         const int previous_health=sBattle.health;
         sBattle.event(actor->mEvtNo);
         actor->health=sBattle.health;
@@ -575,12 +558,18 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
             entry->animationStarted=false; entry->blade={}; stop_blade_sweeps(*entry);
             actor->offDownFlg(); actor->offHeadLockFlg();
             actor->mCcStts.ClrCcMove();
-            cinema_pose(actor,sBattle.trial==shade::Trial::Fire ? 24 : 0);
+            if (sBattle.trial==shade::Trial::Shield) select_phase(actor,*entry);
+            else cinema_pose(actor,sBattle.trial==shade::Trial::Fire ? 24 : 0);
+            actor->mCylCc.ClrTgHit();
             begin_trial(actor);
         } else if (!sBattle.dying && sBattle.phase>=6) add_doubles(actor);
     }
     if (sBattle.trial!=shade::Trial::None) {
-        actor->mType=6; actor->field_0x15af=0;
+        if (sBattle.trial==shade::Trial::Shield) {
+            if (entry->reset) select_phase(actor,*entry);
+            actor->mType=shade::phases[sBattle.phase].type;
+            actor->field_0x15af=1;
+        } else { actor->mType=6; actor->field_0x15af=0; }
         if (!entry->divide && tick_trial(actor)) {
             cancel_trial(); sBattle.trial=shade::Trial::None;
             entry->reset=true;
@@ -614,6 +603,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
 void after_execute(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (!fighter(actor)) return;
+    sync_trial_position(actor);
     // All combat animations live in KN_a. Keep the original lesson-7 resource
     // pattern outside execution so Delete releases exactly what create loaded.
     actor->mType=6;
@@ -834,7 +824,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     entry->swordContact=false;
-    if (sCinema.active() || sBattle.trial!=shade::Trial::None || !actor->field_0x15af) {
+    if (sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
         if (!cinema_landing() || shade::knockdown_landing_motion(actor->mMotionSeqMngr.getNo())<0) {
             actor->speedF=0;
             actor->speed.zero();
@@ -947,11 +937,19 @@ void after_combat_action(ModContext*,void* args,void*,void*) {
         start_attack(actor,*entry); // second block: sword riposte, then Back Slice
     }
 }
+void shield_body_collision(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    if (fighter(actor) && sBattle.trial==shade::Trial::Shield) {
+        // Keep movement/body separation and offensive sword colliders. Only
+        // the separate ward sphere accepts bomb/ball hits during protection.
+        actor->mCylCc.OffTgSetBit(); actor->mCylCc.ClrTgHit();
+    }
+}
 HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (sCinema.active() || sBattle.trial!=shade::Trial::None || !actor->field_0x15af) {
+    if (sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
         for (auto& sphere:actor->mSphCc) { sphere.OffAtSetBit(); sphere.ClrAtHit(); }
         entry->blade={};
         stop_blade_sweeps(*entry);
@@ -1316,6 +1314,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeActionHook,combat_action); POST(ShadeActionHook,after_combat_action);
     PRE(ShadeEndingBlowHook,before_ending_blow_wait);
     PRE(ShadeSwordHook,sword_collision);
+    POST(ShadeBodyHook,shield_body_collision);
     PRE(ShadeAccessoryMotionHook,accessory_motion);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);
@@ -1391,7 +1390,6 @@ void shutdown_heroes_shade_encounter() {
     sPedestal=kNone;
     for (auto& line:sLines) line.reset();
     sBossTitle.reset();
-    for (auto& line:sTrialLines) line.reset();
     mods::hook::uninstall<ShadeAdmissionHook>(svc_hook);
     mods::hook::uninstall<ShadeResetHook>(svc_hook);
     mods::hook::uninstall<ShadeExecuteHook>(svc_hook);
@@ -1407,6 +1405,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeLandingHook>(svc_hook);
     mods::hook::uninstall<ShadeJumpPoseHook>(svc_hook);
     mods::hook::uninstall<ShadeSwordHook>(svc_hook);
+    mods::hook::uninstall<ShadeBodyHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletHook>(svc_hook);
     mods::hook::uninstall<ShadeBulletDeleteHook>(svc_hook);
     mods::hook::uninstall<ShadeChildHook>(svc_hook);

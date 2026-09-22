@@ -5,7 +5,14 @@ namespace dawnlight::shade {
 enum class Trial { None, Shield, Fire, Eyes, Wind };
 inline constexpr int starting_health = 10;
 inline constexpr int fire_warning_ticks = 150; // five seconds to reach a wall target
-inline constexpr int fire_wave_ticks = 70;
+inline constexpr int fire_travel_ticks = 180; // six seconds from center to farthest wall
+inline constexpr int fire_wave_ticks = fire_travel_ticks + 28;
+inline constexpr int beam_recovery_ticks = 90;
+inline constexpr float wind_power = 55.0f;
+inline bool pauses_combat(Trial trial) { return trial!=Trial::None && trial!=Trial::Shield; }
+inline float fire_progress(int tick) {
+    return std::clamp((tick-fire_warning_ticks+1.0f)/fire_travel_ticks,0.0f,1.0f);
+}
 inline constexpr int wind_ticks = 300; // simulation runs at 30 Hz
 
 // Simulation time only: drawing, pause menus and unrelated events never tick it.
@@ -19,7 +26,7 @@ struct TrialClock {
     bool active() const { return kind!=Trial::None; }
     bool fire_live() const {
         return kind==Trial::Fire && ticks>=fire_warning_ticks &&
-            ticks<fire_warning_ticks+43;
+            ticks<fire_warning_ticks+fire_travel_ticks;
     }
     bool beam_live() const { return kind==Trial::Eyes && ticks>=60; }
     bool tick() {

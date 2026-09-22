@@ -72,12 +72,15 @@ int spawnCount=0;bool actorsReady=false;
 constexpr int fpcNm_Obj_HsTarget_e=1;
 s16 cLib_targetAngleY(const cXyz*,const cXyz*){return 0;}
 bool pending_or_live(int id){return id!=kNone;}
+struct daHsTarget_c {};
 void* actor_by_id(int id){return actorsReady && id!=kNone ? &spawnCount : nullptr;}
 void create_standalone_actor(int,const ActorSpawnParams& p,int& id){
-    assert(p.angle.x==0 && p.room_num==51);id=++spawnCount;
+    assert(p.angle.x==0 && p.room_num==51 && p.parameters==1);id=++spawnCount;
 }
 struct Room {
-    std::array<bool,4> anchorPlaced{};std::array<bool,2> eyePlaced{};
+    std::array<bool,4> anchorPlaced{},anchorAligned{};
+    std::array<s16,4> anchorYaw{};s16 lastWallYaw=0;
+    bool align_anchor(daHsTarget_c*,unsigned){return true;}std::array<bool,2> eyePlaced{};
     std::array<cXyz,4> anchorPos{};std::array<cXyz,2> eyePos{};
     std::array<int,4> anchors{kNone,kNone,kNone,kNone};
     bool radiusReady=false,missingEye=true,missingWall=true;float radius=0;cXyz center;

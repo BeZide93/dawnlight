@@ -73,6 +73,8 @@ struct Motion {
     void setNo(int n,float b,int,int) { no=n; blend=b; step=0; }
 };
 struct Cylinder {
+    bool target=true,hit=true;
+    void OffTgSetBit(){target=false;}void ClrTgHit(){hit=false;}
     cXyz center;
     const cXyz& GetC() const { return center; }
     float GetR() const { return 30; }
@@ -142,6 +144,7 @@ struct daNpc_Kn_c {
     cXyz speed;
     float speedF=0;
     int getBackboneJointNo() { return 1; }
+    Cylinder mCylCc;
     std::array<Sphere,2> mSphCc;
 };
 Fighter* fighter(daNpc_Kn_c* a) { return a->owned ? &a->entry : nullptr; }
@@ -175,16 +178,23 @@ int main() {
     for (const auto& sphere:a.mSphCc) assert(!sphere.enabled && !sphere.hit);
     for (const auto& sweep:a.entry.bladeSweeps) assert(!sweep.enabled && !sweep.hit);
     sCinema={};
-    // Every intermission excludes normal blade hits and native success events.
+    // Every intermission excludes native success events; the ward keeps offensive blades.
+    a.entry.offense=-1;
     for (auto trial:{shade::Trial::Shield,shade::Trial::Fire,shade::Trial::Eyes,shade::Trial::Wind}) {
         sBattle.trial=trial; a.mEvtNo=shade::phases[0].success;
         no_order(nullptr,&a,nullptr,nullptr);
         assert(sBattle.health==10 && a.mEvtNo==0);
         for (auto& sphere:a.mSphCc) { sphere.enabled=true; sphere.hit=true; }
-        assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
-        for (const auto& sphere:a.mSphCc) assert(!sphere.enabled && !sphere.hit);
+        a.mCylCc.target=true;a.mCylCc.hit=true;
+        shield_body_collision(nullptr,&a,nullptr,nullptr);
+        assert(a.mCylCc.target==(trial!=shade::Trial::Shield));
+        assert(a.mCylCc.hit==(trial!=shade::Trial::Shield));
+        a.field_0x15af=1;
+        const auto action=sword_collision(nullptr,&a,nullptr,nullptr);
+        assert(action==(trial==shade::Trial::Shield ? HOOK_CONTINUE : HOOK_SKIP_ORIGINAL));
+        for (const auto& sphere:a.mSphCc) assert(sphere.enabled==(trial==shade::Trial::Shield));
     }
-    sBattle={};
+    sBattle={};a.entry.offense=shade::helm_splitter;
     // The real crash path: lesson-7 heap has no sheath calculator. The hook
     // must bypass native init(modify=true), with a successful body result.
     bool result=false;
@@ -501,7 +511,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + function("cinema_landing", "bool") + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
+source = fixture + function("cinema_landing", "bool") + encounter[start:end] + function("accessory_motion") + function("sword_collision") + function("shield_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

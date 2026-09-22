@@ -34,9 +34,10 @@ struct cXyz {
 struct fopAc_ac_c { struct {cXyz pos;} current; };
 struct daNpc_Kn_c : fopAc_ac_c {};
 struct Player : fopAc_ac_c {
-    bool boots=false; int forces=0; float power=0; int yaw=0;
+    bool boots=false; int forces=0,damageTimer=0,heavyAware=0; float power=0; int yaw=0;
+    int getDamageWaitTimer(){return damageTimer;}
     bool checkEquipHeavyBoots() {return boots;}
-    void setOutPower(float p,int y,int) {++forces;power=p;yaw=y;}
+    void setOutPower(float p,int y,int h) {++forces;power=p;yaw=y;heavyAware=h;}
 } player;
 auto daAlink_getAlinkActorClass() {return &player;}
 int cLib_targetAngleY(const cXyz* from,const cXyz* to) {
@@ -50,7 +51,7 @@ struct Attack {unsigned type;bool ChkAtType(unsigned mask) {return type&mask;}};
 struct dCcD_Stts {void Init(int,int,fopAc_ac_c*) {} void Move() {}};
 struct Collider {
     bool at=false,tg=false;unsigned atType=0,tgType=0;int power=0,special=0,material=0;
-    float radius=0,height=0;cXyz center;Attack* hit=nullptr;
+    float radius=0,height=0;cXyz center;Attack* hit=nullptr;fopAc_ac_c* atHit=nullptr;
     void SetStts(dCcD_Stts*) {} void SetTgType(unsigned t){tgType=t;}
     void SetAtType(unsigned t){atType=t;}void SetAtAtp(int p){power=p;}
     void SetTgSPrm(unsigned p){tg=p&1;}void SetAtSPrm(unsigned p){at=p&1;}
@@ -59,7 +60,8 @@ struct Collider {
     void SetTgSe(int){}void SetAtSe(int){}void SetAtVec(cXyz&){}
     void OffTgSetBit(){tg=false;}void OnTgSetBit(){tg=true;}
     void OffAtSetBit(){at=false;}void OnAtSetBit(){at=true;}
-    void ClrAtHit(){}void ClrTgHit(){hit=nullptr;}
+    bool ChkAtHit(){return atHit;}fopAc_ac_c* GetAtHitAc(){return atHit;}
+    void ClrAtHit(){atHit=nullptr;}void ClrTgHit(){hit=nullptr;}
     bool ChkTgHit(){return hit;}Attack* GetTgHitObj(){return hit;}
 };
 struct dCcD_Sph:Collider{};
@@ -80,8 +82,9 @@ Message* dMsgObject_getMsgObjectClass(){return nullptr;}
 constexpr int Z2SE_EN_BM_EYE_BREAK=1,Z2SE_EN_FM_BLAST=2,Z2SE_EN_BM_BEAM2=3;
 void mDoAud_seStart(int,cXyz*,int,int){}void mDoAud_seStartLevel(int,cXyz*,int,int){}
 int dComIfGp_getReverb(int){return 0;}void cinema_pose(daNpc_Kn_c*,int){}
-struct Animation {float frame=0;float getFrame(){return frame;}void play(){}};
-struct Fire {Animation bck;void play(float rate){bck.frame+=rate;}};
+struct Animation {float frame=0;float getFrame(){return frame;}float getEndFrame(){return 70;}void play(){}};
+struct Fire {Animation bck;void sample(float frame){bck.frame=frame;}};
+struct Beam {int frame=0;void play(){++frame;}void reset(){frame=0;}float reach(){return std::min(1.0f,frame*0.3f);}};
 struct Packet {
     shade::TrialClock clock;cXyz center,boss;std::array<cXyz,2> eyes,ends;float radius=0;
 };
@@ -90,8 +93,7 @@ struct ShadeTrials {
     dCcD_Cyl flame;std::array<dCcD_Sph,2> eyeTargets;std::array<dCcD_Cps,2> beams;
     std::array<cXyz,2> eyePos{},aim{};std::array<Fire,2> fire;Animation eyeColor;
     fopAc_ac_c* owner=nullptr;cXyz center,origin;float radius=2000,fireScale=2.5;
-    bool visible=false,hintOpened=false;int hint=0;
-    void close_hint(){hint=0;hintOpened=false;}
+    bool visible=false,beamVisible=false;int beamRecovery=0;std::array<Beam,2> beamModels;
 '''
 # The shared archive may also be used by a real Beamos with actor callbacks.
 head_start = source.index("    void calc() override {")
@@ -145,18 +147,28 @@ int main() {
     t.cancel();t.clock.begin(shade::Trial::Fire);
     for (int i=0;i<150;++i) {assert(!tick());assert(!world.contains(&t.flame));}
     float radius=0;
-    for (int i=0;i<43;++i) {
+    for (int i=0;i<shade::fire_travel_ticks;++i) {
         assert(!tick() && world.contains(&t.flame) && t.flame.at);
         assert(t.flame.radius>radius);radius=t.flame.radius;
     }
     assert(std::abs(radius-1496.25f)<0.1f);
-    for (int i=193;i<219;++i) {assert(!tick());assert(!t.flame.at);}
+    for (int i=330;i<357;++i) {assert(!tick());assert(!t.flame.at);}
     assert(tick());
     t.cancel();t.clock.begin(shade::Trial::Eyes);
     player.current.pos={400,0,200};
     for(int i=0;i<60;++i) {assert(!tick());assert(!world.contains(&t.beams[0]));}
-    assert(!tick() && world.contains(&t.beams[0]) && world.contains(&t.beams[1]));
-    assert(t.beams[0].end.x==t.packet.ends[0].x); // drawing/collision agree
+    assert(!tick() && world.contains(&t.beams[0]) && !world.contains(&t.beams[1]));
+    assert(std::abs(t.beams[0].end.x-t.packet.ends[0].x*0.3f)<0.01f); // native startup reach
+    assert(!tick() && !world.contains(&t.beams[0]) && world.contains(&t.beams[1]));
+    t.beams[1].atHit=&player;
+    assert(!tick() && t.beamRecovery==90 && !t.beamVisible);
+    for(int i=0;i<89;++i) {
+        assert(!tick() && !t.beamVisible);
+        assert(!world.contains(&t.beams[0]) && !world.contains(&t.beams[1]));
+    }
+    assert(!tick() && t.beamVisible); // recovers even with native damageTimer zero
+    player.damageTimer=10;assert(!tick() && !t.beamVisible);
+    player.damageTimer=0;
     for (auto* invalid:{&sword,&bomb,&ball}) {
         t.eyeTargets[0].hit=invalid;assert(!tick() && t.clock.eyes==3);
     }
@@ -169,7 +181,7 @@ int main() {
     t.cancel();t.clock.begin(shade::Trial::Wind);
     player.current.pos={100,0,0}; player.forces=0;
     for(int i=0;i<150;++i) assert(!tick());
-    assert(player.forces==150 && player.power==18 && player.yaw==0x4000);
+    assert(player.forces==150 && player.power==55 && player.yaw==0x4000 && player.heavyAware==1);
     player.boots=true;
     for(int i=150;i<299;++i) assert(!tick());
     assert(tick() && player.forces==150 && t.clock.ticks==300);

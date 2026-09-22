@@ -96,19 +96,26 @@ directions, camera near arena walls, replay, and leaving/unloading during a scen
 ## Intermissions at 8 / 6 / 4 / 2 HP
 
 The fight starts at **10 HP**. After each of the first four pairs of accepted
-hits, the normal lesson/combo controller pauses for one intermission. Repeated
+hits, one intermission begins. The energy ward preserves normal movement, sword
+attacks and combos; the other three intermissions pause the combat controller. Repeated
 success events cannot consume health during it. Resolving the intermission
 costs no HP; after the wind, two further successful counters are needed for the
 existing victory scene. Missed-skill timeouts do not trigger intermissions.
 
 | HP remaining | Intermission | Resolution |
 | --- | --- | --- |
-| 8 | Blue energy ward | Bomb explosion or Ball and Chain; other weapons are ignored. The shell expands and fades for 12 ticks when broken. |
-| 6 | Fyrus fire wave | Five-second warning caption, sword gesture and orange charge rings. Reach a wall Clawshot target and hang above the fire. |
+| 8 | Blue energy ward (Shade keeps attacking) | Bomb explosion or Ball and Chain; other weapons are ignored. The shell expands and fades for 12 ticks when broken. |
+| 6 | Fyrus fire wave | Five-second warning through a sword gesture and orange charge rings, then six seconds of outward travel. Reach a wall Clawshot target and hang above the fire. |
 | 4 | Two wall-mounted Beamos heads/eyes | Each tracks Link with a laser after a two-second charge. One arrow removes each eye and its beam. |
 | 2 | Outward wind | Resist for 300 simulation ticks (10 seconds); Iron Boots prevent the applied force. |
 
-Four native `Obj_HsTarget` actors use `hsMato` and its original hookable DZB.
+Four native `Obj_HsTarget` actors use the `L7HsMato` variant and its original
+hookable DZB. Each target's largest hookable face is rotated to face the arena
+with a horizontal normal, using the actual wall normal rather than a guessed
+model pitch. The same matrix is applied to the model and MoveBG collision.
+This selects Link's native wall-wait path instead of the ceiling-hang path that
+immediately detached near the wall. Targets sit 90 units in front of the wall
+for hanging clearance; native release and subsequent Clawshot use remain available.
 Wall rays position them on diagonal walls, normally 650 units above the arena
 floor. Rays may shift within their wall sector or use height 550 to avoid a
 corner/opening. Each target is placed independently and pending actor IDs are
@@ -123,17 +130,21 @@ cancellation as the encounter and enemy-spawner fixes.
 `heroes_shade_trials.inc` implements the private arena runtime included by
 `heroes_shade_encounter.cpp`. The pedestal owns all models, archives, draw
 packets and collision volumes. Only the main Shade execute hook advances time.
-Doubles/projectiles are removed on entry and ordinary lesson, body-target and
-blade collision stay suspended until the intermission ends. Pause/menu and
+Doubles/projectiles are removed on entry. During the ward, the normal offensive
+controller and sword colliders remain active, while a post-`setCollision` hook
+disarms only Shade's body damage target. The separate ward sphere accepts the
+breaking weapons and follows Shade's final position after movement. The other
+trials suspend ordinary lesson/body/blade combat until completion. Pause/menu and
 unrelated events disarm volumes without advancing or resetting progress.
-Death, warps, deletion and mod shutdown cancel effects and owned captions.
-All four hint captions are original English/German text, with English fallback.
-They do not acquire a camera event or take control away from Link.
+Death, warps, deletion and mod shutdown cancel effects. Intermissions do not
+register or open dialogue: visual cues announce attacks without explaining
+their solutions. Intro and victory captions remain unchanged.
 
 The fire uses only `E_fm`'s two original attack-effect BMD/BCK/BTK resources and
 the second effect's BRK; it does not create Fyrus or run his boss/room scripts.
 Horizontal scale covers the farthest wall, including an off-center caster.
-The collider radius follows the native animation frame and deceleration; its
+Both native motion clips are sampled across 180 ticks of travel, followed by
+28 ticks of visual fade. The collider radius follows the sampled frame; its
 height is limited to 300, below a hanging Link. Native fire material and attack
 special `0xE` use the engine's `ChkAtNoGuard` path. The warning has no damage.
 
@@ -143,25 +154,35 @@ Each model has its own draw packets. Eye submission does not change shared
 shape visibility and does not assume that the head joint itself owns a mesh. A native Beamos spawned alongside the fight can install archive
 joint callbacks that expect a real Beamos actor: the eye-only model suppresses
 those callbacks only around its synchronous matrix calculation and immediately
-restores them. Laser visuals and collision capsules share endpoints; native
-wall checks stop beams at room geometry. Eye targets accept arrows only.
-Wind uses Link's native external-force API, retaining wall collision, and
-checks the native Iron Boots equipment flag every tick.
+restores them. Lasers use the original `EF_BIMOL6` BMD/BCK and scrolling/startup
+BTKs from `E_bm6`, with per-eye animation state. Collision follows the native
+startup reach and room-clipped endpoints. The two beams alternate their capsule
+registration so they cannot hit twice in the same simulation step. Any beam
+contact with Link shuts both beams off for 90 ticks (three seconds), independent
+of the optional player-invincibility setting. Existing damage invincibility
+also suspends firing; the eye targets remain vulnerable throughout the pause.
+Eye targets accept arrows only.
+Wind uses Link's native external-force API at strength 55 (previously 18),
+retaining wall collision. Both the equipment check and the native heavy-aware
+force flag let Iron Boots resist it. Ordinary walking cannot cancel that force.
 
 No game asset files or code from Twilit Essentials are added to the mod. The
 native resources are loaded from the player's game at runtime; the ward,
-telegraph, wind rings and laser geometry are original procedural effects.
+telegraph and wind rings are original procedural effects.
 
 Validation: `python tests/heroes_shade_trials_test.py` runs the actual runtime
 methods with instrumented collision APIs, checking weapon filters, separate
 eye removal, warning/damage boundaries, shared beam endpoints, pause/resume,
 cleanup and the 300-tick wind with/without Iron Boots. The battle test checks
 all ten hits, all four thresholds exactly once, ignored hits during trials,
-phase timeouts and replay. Existing native-hook and cinematic tests also run.
+phase timeouts and replay. `python tests/heroes_shade_wall_targets_test.py`
+checks the actual alignment method for ceiling, reversed and tilted DZB faces
+on all four wall orientations, including matching model/collision transforms.
+Existing native-hook and cinematic tests also run.
 
 On-device verification is still required for the four wall attachment points,
 Clawshot reach/hanging clearance, Beamos head alignment and visibility, fire
-appearance across the room, caption readability while moving, replay, and
+appearance across the room, attacking while warded, laser recovery, wind strength, replay, and
 leaving/dying/unloading during each phase. These tests cannot render game
 archives or exercise actual Link physics.
 

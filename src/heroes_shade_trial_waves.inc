@@ -8,12 +8,62 @@ JASWaveBank* trial_wave_bank() {
     return heap ? heap->getWaveBankTable().getWaveBank(0) : nullptr;
 }
 
+// Each overflow archive gets a native heap backed by a reserved ARAM block.
+// Keep these objects in the host system heap: pending DVD callbacks and scene
+// adoption may outlive mod shutdown. Never leave a parent heap in mod storage.
+struct TrialWaveStorage {
+    JKRAramBlock* block=nullptr;
+    JASHeap* heap=nullptr;
+    JASWaveArc* wave=nullptr;
+
+    void collect() {
+        if (!heap || (wave && wave->_5a!=0) || heap->getFirstChild()!=heap->getEndChild()) return;
+        heap->free();
+        JKR_DELETE(heap); heap=nullptr;
+        JKR_DELETE(block); block=nullptr; wave=nullptr;
+    }
+    bool load(JASWaveArc* arc) {
+        collect();
+        if (heap || !arc || arc->mEntryNum<0 || !arc->getFileSize() ||
+            !JKRAram::getManager() || !JKRAram::getAramHeap()) return false;
+        auto* root=JASKernel::getAramHeap();
+        block=JKRAram::getAramHeap()->alloc(arc->getFileSize(),JKRAramHeap::TAIL);
+        if (!block) return false;
+        // Some host configurations reserve more audio ARAM than JKR's nominal
+        // audio partition. Do not use any graph allocation overlapping it.
+        const auto begin=static_cast<uintptr_t>(block->getAddress());
+        const auto end=begin+block->getSize();
+        const auto audioBegin=reinterpret_cast<uintptr_t>(root->getBase());
+        if (begin<audioBegin+root->getSize() && end>audioBegin) {
+            JKR_DELETE(block); block=nullptr; return false;
+        }
+        heap=JKR_NEW_ARGS(JKRGetSystemHeap(),0) JASHeap;
+        if (!heap) { JKR_DELETE(block); block=nullptr; return false; }
+        heap->initRootHeap(reinterpret_cast<void*>(begin),block->getSize());
+        if (arc->load(heap)) { wave=arc; return true; }
+        collect();
+        return false;
+    }
+};
+
 // The arena aliases the Darknut room (SE 0x15/0x17). Model archives do not
 // load sound samples. Add the native scene sets for normal Temple of Time
 // Beamos, Fyrus, Palace of Twilight's Phantom Zant, and Hyrule Castle's barrier.
 struct ShadeTrialWaves {
     static constexpr std::array<u32,6> ids{0x08,0x16,0x1d,0x1f,0x21,0x22};
     std::array<bool,ids.size()> owned{},warned{};
+    std::array<TrialWaveStorage,ids.size()> storage{};
+    std::array<int,ids.size()> idle{};
+    shade::Trial selected=shade::Trial::None;
+
+    static bool needed(u32 id,shade::Trial trial) {
+        switch (trial) {
+        case shade::Trial::Shield: return id==0x1d || id==0x1f || id==0x21 || id==0x22;
+        case shade::Trial::Fire: return id==0x08;
+        case shade::Trial::Eyes: return id==0x16;
+        default: return false; // Gale Boomerang samples are in the resident set.
+        }
+    }
     bool ready=false;
     int retry=0;
 
@@ -21,38 +71,62 @@ struct ShadeTrialWaves {
         for (unsigned i=0;i<ids.size();++i) if (ids[i]==id) return owned[i];
         return false;
     }
-    bool prepare() {
+    bool prepare(shade::Trial trial) {
         auto* scene=static_cast<Z2SceneMgr*>(Z2GetAudioMgr());
         if (!scene || !scene->isSceneExist()) return false;
+        if (selected!=trial) { selected=trial; ready=false; retry=0; warned.fill(false); }
+        // Retire the previous phase after its one-shot tails have ended.
+        for (unsigned i=0;i<ids.size();++i)
+            idle[i]=needed(ids[i],trial) ? 0 : std::min(idle[i]+1,60);
+        release(false);
         const bool request=retry==0;
         retry=request ? 60 : retry-1;
         bool loaded=true;
         for (unsigned i=0;i<ids.size();++i) {
+            if (!needed(ids[i],trial)) continue;
             const int status=scene->getSeLoadStatus(ids[i]);
             if (status==2) continue; // 1 means queued, not playable yet.
             loaded=false;
             if (status==0 && request) {
                 owned[i]=scene->loadSeWave(ids[i]);
+                auto* bank=trial_wave_bank();
+                auto* arc=bank ? bank->getWaveArc(ids[i]) : nullptr;
+                auto* root=JASWaveArcLoader::getRootHeap();
+                const auto free=root ? root->getFreeSize() : 0;
+                // Only use overflow for a confirmed capacity failure. Missing
+                // disc entries and DVD queue failures require separate diagnosis.
+                if (!owned[i] && arc && arc->getStatus()==0 &&
+                    arc->getFileSize()>free && storage[i].load(arc)) {
+                    owned[i]=true;
+                    char message[160];
+                    std::snprintf(message,sizeof(message),
+                        "Hero's Shade: SE 0x%02x queued in reserved ARAM (%u bytes; audio free %u)",
+                        ids[i],arc->getFileSize(),free);
+                    svc_log->info(mod_ctx,message);
+                }
                 if (!owned[i] && !warned[i]) {
                     warned[i]=true;
-                    char message[128];
+                    char message[224];
                     std::snprintf(message,sizeof(message),
-                        "Hero's Shade: cannot load trial SE wave 0x%02x; retrying",ids[i]);
+                        "Hero's Shade: SE 0x%02x load failed (disc entry %d, bytes %u, audio free %u, status %d); retrying",
+                        ids[i],arc ? arc->mEntryNum : -1,arc ? arc->getFileSize() : 0,
+                        free,arc ? arc->getStatus() : -1);
                     svc_log->warn(mod_ctx,message);
                 }
             }
         }
         if (loaded && !ready)
-            svc_log->info(mod_ctx,"Hero's Shade: fire/Beamos/barrier/burst sound waves ready");
+            svc_log->info(mod_ctx,"Hero's Shade: current/next trial sound waves ready");
         ready=loaded;
         return ready;
     }
-    void release() {
+    void release(bool all=true) {
         auto* scene=static_cast<Z2SceneMgr*>(Z2GetAudioMgr());
         if (!scene) return;
         bool erased=false;
         for (unsigned i=0;i<ids.size();++i) {
-            if (!owned[i]) continue;
+            storage[i].collect();
+            if (!owned[i] || (!all && idle[i]<60)) continue;
             const auto id=ids[i];
             // The destination scene can adopt a preloaded archive. In that
             // case its normal audio teardown owns it from now on.
@@ -65,6 +139,7 @@ struct ShadeTrialWaves {
             if (status==0 || scene->eraseSeWave(id)) {
                 erased=erased || status==2;
                 owned[i]=false;
+                storage[i].collect();
             }
         }
         if (erased) {
@@ -77,7 +152,7 @@ struct ShadeTrialWaves {
                 if (arc && arc->getStatus()==2) arc->onLoadDone();
             }
         }
-        ready=false;retry=0;warned.fill(false);
+        if (all) { ready=false;retry=0;warned.fill(false);selected=shade::Trial::None;idle.fill(0); }
     }
 } sTrialWaves;
 

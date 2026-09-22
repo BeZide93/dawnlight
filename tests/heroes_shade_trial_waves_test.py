@@ -6,16 +6,71 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 fixture = r'''
 #include <array>
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include "heroes_shade_trials.hpp"
+namespace shade=dawnlight::shade;
+using Trial=shade::Trial;
 #include <cassert>
 #include <cstdio>
 #include <type_traits>
 using u32=unsigned;
+struct JASHeap {
+    uintptr_t base=0x4000;
+    unsigned size=0xa00000,available=0xa00000,children=0;
+    void* getBase(){return reinterpret_cast<void*>(base);}
+    unsigned getSize(){return size;}
+    unsigned getFreeSize(){return available;}
+    void initRootHeap(void* p,unsigned n){base=reinterpret_cast<uintptr_t>(p);size=available=n;}
+    void* getFirstChild(){return children ? this : nullptr;}
+    void* getEndChild(){return nullptr;}
+    void free(){assert(!children);}
+} audioHeap;
+namespace JASKernel {JASHeap* getAramHeap(){return &audioHeap;}}
+struct JASWaveArcLoader {static JASHeap* getRootHeap(){return &audioHeap;}};
+unsigned blocks=0;
+struct JKRAramBlock {
+    unsigned address,size;
+    unsigned getAddress(){return address;}
+    unsigned getSize(){return size;}
+    ~JKRAramBlock(){--blocks;}
+};
+struct JKRAramHeap {
+    enum {TAIL};
+    bool fail=false;
+    unsigned next=0xe00000;
+    JKRAramBlock* alloc(unsigned size,int){
+        if(fail)return nullptr;
+        ++blocks;next-=size;return new JKRAramBlock{next,size};
+    }
+} graphHeap;
+struct JKRAram {
+    static JKRAram* getManager(){static JKRAram a;return &a;}
+    static JKRAramHeap* getAramHeap(){return &graphHeap;}
+};
+#define JKR_NEW_ARGS(...) new
+#define JKR_DELETE(p) delete (p)
 struct Arc {
-    int status=0,loads=0,erases=0,binds=0;
+    int status=0,loads=0,erases=0,binds=0,mEntryNum=42,_5a=0;
+    unsigned bytes=0x10000;
+    JASHeap* parent=nullptr;
     bool fail=false,bound=false;
     int getStatus(){return status;}
+    unsigned getFileSize(){return bytes;}
     void onLoadDone(){++binds;bound=true;}
+    bool load(JASHeap* heap){
+        ++loads;
+        if(status || fail || mEntryNum<0 || bytes>heap->available)return false;
+        heap->available-=bytes;++heap->children;parent=heap;
+        status=1;++_5a;return true;
+    }
+    void erase(){
+        if(parent){parent->available+=bytes;--parent->children;parent=nullptr;}
+        status=0;++erases;
+    }
 };
+using JASWaveArc=Arc;
 struct Bank {
     std::array<Arc,256> arcs;
     Bank& getWaveBankTable(){return *this;}
@@ -32,12 +87,10 @@ struct Z2SceneMgr {
     bool isSceneExist(){return exists;}
     int getSeLoadStatus(unsigned id){return bank.arcs.at(id).status;}
     bool loadSeWave(unsigned id){
-        auto& a=bank.arcs.at(id);++a.loads;
-        if(a.status || a.fail)return false;
-        a.status=1;return true;
+        return bank.arcs.at(id).load(&audioHeap);
     }
     bool eraseSeWave(unsigned id){
-        auto& a=bank.arcs.at(id);assert(a.status==2);++a.erases;a.status=0;
+        auto& a=bank.arcs.at(id);assert(a.status==2);a.erase();
         // Model the native WSYS duplicate-ID hole on erase.
         for(auto& group:bank.arcs)group.bound=false;
         return true;
@@ -51,9 +104,9 @@ struct Z2AudioMgr:Z2SceneMgr {SoundMgr mSoundMgr;} scene;
 Z2SceneMgr* Z2GetSceneMgr(){return nullptr;}
 Z2AudioMgr* Z2GetAudioMgr(){return &scene;}
 struct Log {
-    int warnings=0,ready=0;
+    int warnings=0,ready=0,reserved=0;
     void warn(void*,const char*){++warnings;}
-    void info(void*,const char*){++ready;}
+    void info(void*,const char* s){if(std::strstr(s,"ready"))++ready;else ++reserved;}
 } testLog;
 auto* svc_log=&testLog;void* mod_ctx=nullptr;
 using ModContext=void;
@@ -68,58 +121,99 @@ namespace mods {
     }
 }
 #include "heroes_shade_trial_waves.inc"
-void finish(unsigned id){auto& a=bank.arcs.at(id);assert(a.status==1);a.status=2;a.onLoadDone();}
+void finish(unsigned id){auto& a=bank.arcs.at(id);assert(a.status==1);--a._5a;a.status=2;a.onLoadDone();}
 void finish_all(){for(auto id:ShadeTrialWaves::ids)if(bank.arcs[id].status==1)finish(id);}
-void reset(){sTrialWaves={};bank={};scene={};testLog={};}
+void reset(){
+    finish_all();scene.loadedSeWave_1=scene.loadedSeWave_2=scene.loadedDemoWave=0;
+    scene.requestSeWave_1=scene.requestSeWave_2=scene.requestDemoWave=0;
+    for(auto& a:bank.arcs)if(a.parent)a.erase();
+    sTrialWaves.release();assert(blocks==0);
+    sTrialWaves={};bank={};scene={};testLog={};audioHeap={};graphHeap={};
+}
 int main(){
     scene.exists=false;
-    assert(!sTrialWaves.prepare());assert(bank.arcs[0x16].loads==0);
+    assert(!sTrialWaves.prepare(Trial::Shield));assert(bank.arcs[0x22].loads==0);
     scene.exists=true;
-    // Model/game archive readiness does not imply audio wave readiness.
-    assert(!sTrialWaves.prepare());
-    for(auto id:ShadeTrialWaves::ids)assert(bank.arcs[id].status==1);
-    for(int i=0;i<90;++i)assert(!sTrialWaves.prepare());
-    for(auto id:ShadeTrialWaves::ids)assert(bank.arcs[id].loads==1);
-    finish_all();assert(sTrialWaves.prepare());assert(testLog.ready==1);
-    assert(sTrialWaves.prepare());assert(testLog.ready==1);
+    assert(!sTrialWaves.prepare(Trial::Shield));
+    assert(bank.arcs[0x08].loads==0 && bank.arcs[0x16].loads==0);
+    for(int i=0;i<90;++i)assert(!sTrialWaves.prepare(Trial::Shield));
+    assert(bank.arcs[0x22].loads==1);
+    finish_all();assert(sTrialWaves.prepare(Trial::Shield));assert(testLog.ready==1);
+    assert(sTrialWaves.prepare(Trial::Shield));assert(testLog.ready==1);
     bank.arcs[0x15].status=2;bank.arcs[0x15].bound=true;
-    sTrialWaves.release();
-    for(auto id:ShadeTrialWaves::ids)assert(bank.arcs[id].erases==1);
+    sTrialWaves.release();assert(bank.arcs[0x22].erases==1);
     assert(bank.arcs[0x15].status==2 && bank.arcs[0x15].bound);
-    sTrialWaves.release();assert(bank.arcs[0x16].erases==1);
-    assert(!sTrialWaves.prepare());finish_all();assert(sTrialWaves.prepare());
+    sTrialWaves.release();assert(bank.arcs[0x22].erases==1);
 
-    // Borrowed groups and the scene's music/base SE must not be erased.
+    // Full normal audio heap: native load fails; reserved storage makes the
+    // same production request playable without evicting Darknut/music samples.
+    reset();audioHeap.available=0;
+    assert(!sTrialWaves.prepare(Trial::Shield));
+    assert(testLog.reserved==4 && testLog.warnings==0 && blocks==4);
+    for(auto id:{0x1d,0x1f,0x21,0x22})assert(bank.arcs[id].status==1);
+    sTrialWaves.release();assert(blocks==4); // pending writes must keep storage
+    finish_all();assert(sTrialWaves.prepare(Trial::Shield));
+    sTrialWaves.release();assert(blocks==0);
+
+    // Phase prefetch only needs its own groups and gives old one-shots a tail.
+    reset();audioHeap.available=0;
+    sTrialWaves.prepare(Trial::Shield);finish_all();
+    sTrialWaves.prepare(Trial::Fire);finish_all();
+    assert(bank.arcs[0x08].status==2 && bank.arcs[0x22].status==2);
+    for(int i=0;i<60;++i)sTrialWaves.prepare(Trial::Fire);
+    assert(bank.arcs[0x22].status==0 && bank.arcs[0x08].status==2 && blocks==1);
+    sTrialWaves.prepare(Trial::Eyes);finish_all();
+    for(int i=0;i<60;++i)sTrialWaves.prepare(Trial::Eyes);
+    assert(bank.arcs[0x08].status==0 && bank.arcs[0x16].status==2 && blocks==1);
+    for(int i=0;i<60;++i)sTrialWaves.prepare(Trial::Wind);
+    assert(blocks==0);
+
+    // Borrowed archives are never erased.
     reset();bank.arcs[0x1d].status=2;
-    sTrialWaves.prepare();finish_all();assert(sTrialWaves.prepare());
+    sTrialWaves.prepare(Trial::Shield);finish_all();assert(sTrialWaves.prepare(Trial::Shield));
     assert(!sTrialWaves.owns(0x1d));sTrialWaves.release();
     assert(bank.arcs[0x1d].status==2 && bank.arcs[0x1d].erases==0);
 
-    // Leave during asynchronous I/O: defer free, then clean up on a later tick.
-    reset();sTrialWaves.prepare();sTrialWaves.release();
-    assert(sTrialWaves.owns(0x16));assert(bank.arcs[0x16].erases==0);
-    finish_all();sTrialWaves.release();assert(bank.arcs[0x16].erases==1);
-
-    // Native destination load must succeed even for our existing preload.
-    reset();sTrialWaves.prepare();scene.requestSeWave_2=0x16;
-    sTrialWaves.release();Args args{&scene,0x16};bool result=false;
+    // Native destination adopts an overflow preload, including its storage.
+    reset();audioHeap.available=0;sTrialWaves.prepare(Trial::Eyes);
+    scene.requestSeWave_2=0x16;sTrialWaves.release();
+    Args args{&scene,0x16};bool result=false;
     assert(before_trial_wave_load(nullptr,&args,&result,nullptr)==HOOK_SKIP_ORIGINAL && result);
-    finish_all();bank.arcs[0x16].bound=false; // old scene erased a duplicate
+    finish_all();bank.arcs[0x16].bound=false;
     assert(before_trial_wave_load(nullptr,&args,&result,nullptr)==HOOK_SKIP_ORIGINAL);
     assert(bank.arcs[0x16].bound);
     scene.loadedSeWave_2=0x16;sTrialWaves.release();
-    assert(!sTrialWaves.owns(0x16) && bank.arcs[0x16].erases==0);
+    assert(!sTrialWaves.owns(0x16) && bank.arcs[0x16].erases==0 && blocks==1);
+    scene.eraseSeWave(0x16);sTrialWaves.release();assert(blocks==0);
     args.id=0x58;assert(before_trial_wave_load(nullptr,&args,&result,nullptr)==HOOK_CONTINUE);
 
-    // A rejected allocation isn't marked ready or spammed every frame.
-    reset();bank.arcs[0x22].fail=true;
-    assert(!sTrialWaves.prepare());finish_all();
-    for(int i=0;i<200;++i)assert(!sTrialWaves.prepare());
-    assert(testLog.warnings==1 && bank.arcs[0x22].loads<5);
-    bank.arcs[0x22].fail=false;
-    for(int i=0;i<62;++i)sTrialWaves.prepare();
-    finish_all();assert(sTrialWaves.prepare());
+    // Native erase can detach an adopted heap while a DVD write is pending.
+    reset();audioHeap.available=0;sTrialWaves.prepare(Trial::Eyes);
+    scene.loadedSeWave_2=0x16;sTrialWaves.release();
+    bank.arcs[0x16].erase();sTrialWaves.release();assert(blocks==1);
+    --bank.arcs[0x16]._5a;sTrialWaves.release();assert(blocks==0);
+
+    // Exhaustion and an overlapping ARAM partition fail safely and retry.
+    reset();audioHeap.available=0;graphHeap.fail=true;
+    for(int i=0;i<200;++i)assert(!sTrialWaves.prepare(Trial::Eyes));
+    assert(testLog.warnings==1 && bank.arcs[0x16].loads<5 && blocks==0);
+    graphHeap.fail=false;graphHeap.next=0x900000; // overlaps live audio root
+    for(int i=0;i<62;++i)sTrialWaves.prepare(Trial::Eyes);
+    assert(blocks==0 && bank.arcs[0x16].status==0);
+    graphHeap.next=0xe00000;
+    for(int i=0;i<62;++i)sTrialWaves.prepare(Trial::Eyes);
+    finish_all();assert(sTrialWaves.prepare(Trial::Eyes));assert(blocks==1);
+
+    // Missing disc entries and queue failures must not be hidden by fallback.
+    reset();audioHeap.available=0;bank.arcs[0x16].mEntryNum=-1;
+    sTrialWaves.prepare(Trial::Eyes);assert(blocks==0 && testLog.warnings==1);
+    reset();bank.arcs[0x16].fail=true;
+    sTrialWaves.prepare(Trial::Eyes);assert(blocks==0 && testLog.warnings==1);
+    reset();audioHeap.available=0;bank.arcs[0x16].fail=true;
+    sTrialWaves.prepare(Trial::Eyes);assert(blocks==0 && testLog.warnings==1);
+    reset();
 }
+
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'waves.cpp'
@@ -132,4 +226,4 @@ with tempfile.TemporaryDirectory() as tmp:
 source = (root / 'src/heroes_shade_encounter.cpp').read_text()
 assert 'PRE(ShadeWaveLoadHook,before_trial_wave_load)' in source
 assert 'uninstall<ShadeWaveLoadHook>' in source
-print('Shade wave readiness, async cleanup, borrowed banks, scene adoption and retry: passed')
+print('Shade phase waves, bounded audio memory, reserved ARAM, async cleanup, adoption and retry: passed')

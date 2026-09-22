@@ -22,6 +22,7 @@
 #include "Z2AudioLib/Z2SoundObject.h"
 #include "JSystem/JAudio2/JAUSectionHeap.h"
 #include "JSystem/JAudio2/JASWaveArcLoader.h"
+#include "JSystem/JKernel/JKRAram.h"
 #include "d/d_particle_name.h"
 #include "d/d_bg_s_lin_chk.h"
 #include "d/d_msg_object.h"
@@ -1391,7 +1392,10 @@ void update_heroes_shade_audio() {
         sTrialWaves.release();
         return;
     }
-    sTrialWaves.prepare();
+    // Preload the next phase during normal combat, before its opening cue.
+    const auto next=sBattle.trials_started<4 ?
+        static_cast<shade::Trial>(sBattle.trials_started+1) : shade::Trial::None;
+    sTrialWaves.prepare(sBattle.trial!=shade::Trial::None ? sBattle.trial : next);
 }
 void update_heroes_shade_arena() {
     if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) return;

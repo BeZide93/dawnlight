@@ -119,13 +119,18 @@ Implementation and lifecycle details:
   the encounter after a bounded wait, restores the sword interaction and removes
   pending actors. The native wolf is held hidden during combat for the outro.
 - `heroes_shade_trial_waves.inc` preloads SE groups `0x08`, `0x16`, `0x1d`, `0x1f`,
-  `0x21`, and `0x22` from the player's disc in the background. The arena's
+  `0x21`, and `0x22` from the player's disc in the background, selecting only
+  the current or next trial: shield uses the Palace/Castle groups, fire uses
+  `0x08`, eyes use `0x16`, and wind uses resident Boomerang samples. Prefetch
+  starts during preceding combat (shield during the intro); previous trial
+  groups get 60 mod frames for their one-shot tails before retirement. The arena's
   Darknut audio alias only provides the Temple of Time miniboss groups
   `0x15/0x17`; loading the Beamos model does not load its wave samples.
   These additional groups cover Fyrus, the normal Temple of Time, Phantom Zant,
   and Hyrule Castle audio sets used below. Readiness requires native wave status
   2 (complete), not 1 (queued). Failed allocations retry at most once per 61 ticks
-  and log the archive ID; successful readiness is also logged. Audio readiness
+  and log the archive ID, disc entry, file size, largest free audio block and
+  load status; successful readiness is also logged. Audio readiness
   never gates sword interaction, encounter start, or wind-trial completion.
   `tests/heroes_shade_pedestal_test.py` exercises the actual interaction with
   audio both ready and indefinitely unavailable.
@@ -138,6 +143,21 @@ Implementation and lifecycle details:
   This distinction explains the missing readiness/failure messages in the
   2026-09-22 22:02:54 log; the old loader returned before making any request.
   The wave test models a null mod-local scene singleton and a live host manager.
+  The 22:21:24 log now reaches the loader but reports rejected loads for
+  `0x08/0x16/0x1f/0x22`. The old message cannot distinguish missing files from
+  memory exhaustion. In addition to phase-scoped loading, a confirmed lack of
+  audio-heap space now falls back to a separately reserved tail block in JKR's
+  graph ARAM heap. Its bounds are checked against the actual audio root, since
+  the configured audio size can exceed JKR's nominal audio partition. Ordinary
+  RAM pointers must never be passed as ARAM addresses. A native `JASHeap` parent
+  allocated in the host system heap lets the ordinary DVD loader and wave bank
+  keep their native behavior; no mod vtable or callback is stored in the host.
+  Reclaim that parent/block only after the archive detaches and its native DVD
+  pending count reaches zero. Adopted or pending storage survives mod shutdown
+  until process teardown rather than exposing a dangling parent or reusing a
+  pending write's destination. Missing disc entries do not trigger this fallback.
+  Diagnostics and native in-game audibility still need checking with the user's
+  actual disc; fixture tests cannot prove the total space its archives require.
   Audio maintenance runs every mod frame, including outside the arena, so
   deferred releases continue after an early departure or scene reset.
   Leaving the arena stops the owned loops and releases only added groups after
@@ -147,7 +167,9 @@ Implementation and lifecycle details:
   shutdown, any still-pending native DVD request retains its memory, since its
   callback must finish without writing into freed storage.
   `tests/heroes_shade_trial_waves_test.py` covers readiness, failed allocation,
-  deferred cleanup, borrowed groups, shared bindings, and destination adoption.
+  phase selection, exhausted audio memory with successful reserved allocation,
+  overlapping/full reserves, deferred writes, borrowed groups, shared bindings,
+  destination adoption, and collection after native erasure.
 - Trial audio uses native game cues: the shield activates with
   `Z2SE_OBJ_GANON_BARRIER_APPR`, hums with `Z2SE_OBJ_GANON_BARRIER`, and bursts
   once with `Z2SE_EN_PZ_BALL_BURST` at Shade's current position. Each Beamos eye

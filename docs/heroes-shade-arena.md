@@ -118,12 +118,17 @@ Implementation and lifecycle details:
 - Both actors are ready before camera movement starts. Wolf load failure cancels
   the encounter after a bounded wait, restores the sword interaction and removes
   pending actors. The native wolf is held hidden during combat for the outro.
-- `heroes_shade_trial_waves.inc` keeps Shade's native voice group `0x4a`
+- `heroes_shade_trial_waves.inc` keeps Shade's native scene groups `0x4a` and `0x5d`
   (`F_SP200` / `Z2SCENE_SHADES_REALM`) loaded throughout arena residence,
-  including ordinary combat and every intermission. It is requested first and
-  uses the same reserved-ARAM fallback and safe cleanup as the trial groups.
-  This supplies the existing actor's breath, guard, pain, attack and skill voice
+  including ordinary combat and every intermission. They are requested first and
+  use the same reserved-ARAM fallback and safe cleanup as the trial groups.
+  Both native scene slots are required: `0x4a` is shared with Hyrule Field,
+  while the second slot `0x5d` was missing from the first voice fix. Together
+  these supply the existing actor's breath, guard, pain, attack and skill voice
   calls; loading `KN_a` model/animation resources alone does not supply them.
+  The 23:21:44 log reported readiness for the incomplete set; readiness now
+  includes both groups, requesting `0x5d` first. The regression reproduces the
+  old false-positive state and checks pending/missing second-group behavior.
   It also preloads trial SE groups `0x08`, `0x16`, `0x1d`, `0x1f`,
   `0x21`, and `0x22` from the player's disc in the background, selecting only
   the current or next trial: shield uses the Palace/Castle groups, fire uses

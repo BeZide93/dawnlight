@@ -131,7 +131,7 @@ void reset(bool borrowedVoice=true){
     sTrialWaves={};bank={};scene={};testLog={};audioHeap={};graphHeap={};
     // Existing trial-specific cases isolate their own allocations; voice
     // ownership, pressure and retirement are exercised separately below.
-    if(borrowedVoice)bank.arcs[0x4a].status=2;
+    if(borrowedVoice)bank.arcs[0x4a].status=bank.arcs[0x5d].status=2;
 }
 int main(){
     scene.exists=false;
@@ -207,25 +207,36 @@ int main(){
     for(int i=0;i<62;++i)sTrialWaves.prepare(Trial::Eyes);
     finish_all();assert(sTrialWaves.prepare(Trial::Eyes));assert(blocks==1);
 
-    // Native Shade voice archive is needed without an intermission, receives
-    // reserved storage when audio is full, and survives all phase transitions.
+    // The full native Z2SCENE_SHADES_REALM branch loads BOTH se_wave1=0x4a
+    // (also used by Hyrule Field) and se_wave2=0x5d. Loading only 0x4a used to
+    // report "voice ready" while KN's voice set was never requested.
     reset(false);audioHeap.available=0;
     assert(!sTrialWaves.prepare(Trial::None));
-    assert(bank.arcs[0x4a].status==1 && blocks==1 && testLog.reserved==1);
-    assert(sTrialWaves.owns(0x4a));
-    sTrialWaves.release();assert(blocks==1); // still writing
-    finish_all();assert(sTrialWaves.prepare(Trial::None));
+    assert(bank.arcs[0x4a].status==1 && bank.arcs[0x5d].status==1);
+    assert(blocks==2 && testLog.reserved==2);
+    assert(sTrialWaves.owns(0x4a) && sTrialWaves.owns(0x5d));
+    sTrialWaves.release();assert(blocks==2); // both writes still pending
+    finish(0x4a);
+    assert(!sTrialWaves.prepare(Trial::None)); // the missing second set matters
+    finish(0x5d);assert(sTrialWaves.prepare(Trial::None));
     for(auto trial:{Trial::Shield,Trial::Fire,Trial::Eyes,Trial::Wind,Trial::None}) {
         sTrialWaves.prepare(trial);finish_all();
         for(int i=0;i<120;++i)sTrialWaves.prepare(trial);
-        assert(bank.arcs[0x4a].status==2 && bank.arcs[0x4a].erases==0);
+        for(auto id:{0x4a,0x5d})
+            assert(bank.arcs[id].status==2 && bank.arcs[id].erases==0);
     }
-    assert(blocks==1);sTrialWaves.release();assert(blocks==0);
-    assert(bank.arcs[0x4a].erases==1);
-    // A pending voice archive must not report the whole encounter audio ready.
-    reset(false);sTrialWaves.prepare(Trial::None);
-    assert(!sTrialWaves.prepare(Trial::None));finish_all();
-    assert(sTrialWaves.prepare(Trial::None));
+    assert(blocks==2);sTrialWaves.release();assert(blocks==0);
+    assert(bank.arcs[0x4a].erases==1 && bank.arcs[0x5d].erases==1);
+    // Missing 0x5d can no longer produce a misleading readiness message.
+    reset(false);bank.arcs[0x5d].mEntryNum=-1;
+    sTrialWaves.prepare(Trial::None);finish_all();
+    assert(!sTrialWaves.prepare(Trial::None) && testLog.ready==0 && testLog.warnings==1);
+    // A borrowed base archive remains untouched; only the added set is freed.
+    reset(false);bank.arcs[0x4a].status=2;
+    sTrialWaves.prepare(Trial::None);finish_all();assert(sTrialWaves.prepare(Trial::None));
+    sTrialWaves.release();
+    assert(bank.arcs[0x4a].status==2 && bank.arcs[0x4a].erases==0);
+    assert(bank.arcs[0x5d].status==0 && bank.arcs[0x5d].erases==1);
 
     // Missing disc entries and queue failures must not be hidden by fallback.
     reset();audioHeap.available=0;bank.arcs[0x16].mEntryNum=-1;

@@ -7,6 +7,22 @@ resolved against the loaded room collision. Face it in human form and press
 plinth: this does not run the story sword-pickup event or replace Link's weapon.
 After victory, interact again to replay. Leaving the room discards the fight.
 
+The plinth uses Dawnlight's original warm-charcoal stone texture, bundled in
+all builds as an embedded GX RGB565 image with seven mip levels. It no longer
+selects, samples or borrows room textures. See [asset provenance and regeneration](../art/pedestal/README.md).
+The octagonal cap and ledge use planar UVs; side faces and bevels use tangent UVs
+at the same grain scale. Narrow warm-colored inlays and dark recessed-looking
+bands follow the actual octagonal edges, with a matching inset outline around
+the cap. They are mesh bands, not ornaments stretched over unrelated surfaces.
+The central cap remains undecorated around the sword. Pedestal dimensions,
+collision and interaction are unchanged.
+
+The immutable image has mod lifetime and 32-byte alignment; each persistent
+`PlinthPacket` owns its GX texture object. No archive image, shared material or
+actor heap buffer is borrowed or rewritten. The checked-in generated header
+keeps Python/Pillow out of platform builds. Regenerate it only after changing
+the source PNG with `python tools/generate_pedestal_texture.py`.
+
 ## Intro and victory scenes
 
 The sword now starts a short original boss introduction. Shade stays hidden

@@ -34,10 +34,24 @@ constexpr int fpcNm_ALINK_e = 1, fopAc_ENEMY_e = 2;
 constexpr float kMeterGainPerAttack = 5.0f;
 using Clock = std::chrono::steady_clock;
 struct ModContext {};
-enum HookAction { HOOK_CONTINUE };
+enum HookAction { HOOK_CONTINUE, HOOK_SKIP_ORIGINAL };
+using process_method_func = int(*)(void*);
+struct process_method_class { process_method_func execute_method; };
+int vanillaExecute(void*) { return 1; }
+int outerExecute(void*) { return 1; }
+process_method_class playerMethods{vanillaExecute};
+process_method_class outerMethods{outerExecute};
 struct leafdraw_class { int name = fpcNm_ALINK_e; };
 struct fopAc_ac_c : leafdraw_class { int group = fopAc_ENEMY_e; };
-struct daAlink_c : fopAc_ac_c { fpc_ProcID id = 1; uint16_t setID = 0; };
+struct daAlink_c : fopAc_ac_c {
+    fpc_ProcID id = 1;
+    uint16_t setID = 0;
+    const process_method_class* sub_method = &playerMethods;
+    int mClothesChangeWaitTimer = 0;
+    int reloadCalls = 0;
+    void loadModelDVD() { ++reloadCalls; --mClothesChangeWaitTimer; }
+    void setClothesChange(int) { mClothesChangeWaitTimer = 3; }
+};
 constexpr unsigned AT_TYPE_NORMAL_SWORD = 2, AT_TYPE_MASTER_SWORD = 0x04000000;
 constexpr unsigned HIT_TYPE_LINK_NORMAL_ATTACK = 1;
 struct Collider {
@@ -52,7 +66,12 @@ struct dCcU_AtInfo {
 struct LogService { void (*info)(ModContext*, const char*); };
 LogService* svc_log = nullptr;
 ModContext* mod_ctx = nullptr;
-struct Diagnostics {};
+struct Diagnostics { bool playerLogged = false; };
+void log_runtime(const char*) {}
+int spinUpdates = 0, drainUpdates = 0;
+void update_spin_activation(daAlink_c*) { ++spinUpdates; }
+void update_drain(daAlink_c*) { ++drainUpdates; }
+void deactivate(daAlink_c*, bool);
 Diagnostics s_diagnostics;
 void log_damage_check(fopAc_ac_c*, dCcU_AtInfo*) {}
 bool enabled = true;
@@ -64,7 +83,7 @@ int fopAcM_GetGroup(fopAc_ac_c* actor) { return actor->group; }
 bool fierce_deity_enabled() { return enabled; }
 namespace mods {
 template <class T> T arg(void* args, int index) {
-    return static_cast<T>(static_cast<void**>(args)[index]);
+    return reinterpret_cast<T>(static_cast<void**>(args)[index]);
 }
 }
 u8 savedClothes = 7, equippedClothes = 7;
@@ -78,9 +97,27 @@ state = source[source.index("enum class ModelSwapState"):
 callbacks = "".join(function(name) for name in (
     "is_sword_attack", "restore_equipment_selection", "reset_for_link", "same_link",
     "on_save_started", "before_player_delete", "after_damage_check",
+    "service_model_swap", "dispatched_player", "before_player_execute", "after_player_execute",
 ))
 
 checks = r'''
+void deactivate(daAlink_c*, bool) { s_state.meter = 0; s_state.active = false; }
+void* dispatch_target(const process_method_class& methods) {
+#ifdef __APPLE__
+    return reinterpret_cast<void*>(methods.execute_method);
+#else
+    return const_cast<process_method_class*>(&methods);
+#endif
+}
+int run_dispatch(void* target, void* actor) {
+    void* args[] = {target, actor};
+    int result = 0;
+    bool skipped = before_player_execute(nullptr, args, &result, nullptr) == HOOK_SKIP_ORIGINAL;
+    after_player_execute(nullptr, args, &result, nullptr);
+    if (skipped) assert(result == 1);
+    return skipped;
+}
+
 int main() {
     daAlink_c link;
     currentLink = &link;
@@ -89,6 +126,50 @@ int main() {
     dCcU_AtInfo attack{&link, &collider};
     void* hit[] = {&enemy, &attack};
     void* deletion[] = {static_cast<leafdraw_class*>(&link)};
+
+    // Reproduce the log: save loaded, owner absent, then actual actor dispatch
+    // without ever calling daAlink_c::execute's entry hook. Only the innermost
+    // Link execute dispatch may bind the owner or advance the state machine.
+    on_save_started(nullptr, 0, nullptr);
+    assert(s_state.link == nullptr);
+    void* target = dispatch_target(playerMethods);
+    void* outer = dispatch_target(outerMethods);
+    assert(run_dispatch(target, &enemy) == 0);
+    assert(run_dispatch(outer, &link) == 0);
+    assert(s_state.link == nullptr && spinUpdates == 0 && drainUpdates == 0);
+    link.sub_method = nullptr;
+    assert(run_dispatch(target, &link) == 0 && s_state.link == nullptr);
+    link.sub_method = &playerMethods;
+    currentLink = nullptr;
+    assert(run_dispatch(target, &link) == 0 && s_state.link == nullptr);
+    currentLink = &link;
+    assert(run_dispatch(target, &link) == 0);
+    assert(same_link(&link) && spinUpdates == 1 && drainUpdates == 1);
+    for (int i = 0; i < 6; ++i) after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 30.0f); // all six valid hits in the attached log
+    assert(run_dispatch(outer, &link) == 0);
+    assert(spinUpdates == 1 && drainUpdates == 1); // no duplicate post tick
+
+    // Critical model frames must still skip the actual player callback, even
+    // if its member-function hook is bypassed. Exercise the real swap service.
+    s_state.modelSwapState = ModelSwapState::Activating;
+    link.mClothesChangeWaitTimer = 3;
+    for (int remaining = 2; remaining >= 0; --remaining) {
+        assert(run_dispatch(outer, &link) == 0);
+        assert(run_dispatch(target, &enemy) == 0);
+        assert(run_dispatch(target, &link) == 1);
+        assert(link.mClothesChangeWaitTimer == remaining);
+        assert(spinUpdates == 1);
+    }
+    assert(link.reloadCalls == 3 && s_state.modelSwapped);
+    assert(s_state.modelSwapState == ModelSwapState::None);
+    assert(run_dispatch(target, &link) == 0);
+    assert(!s_state.modelReloadFrame && spinUpdates == 2);
+    on_save_started(nullptr, 0, nullptr);
+    assert(run_dispatch(target, &link) == 0);
+    assert(same_link(&link) && s_state.meter == 0);
+    after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 5.0f);
 
     // Exercise the actual sword predicate (the old fixture bypassed it). Ordon
     // and wooden swords use NORMAL only; the Master Sword adds MASTER.
@@ -173,7 +254,7 @@ int main() {
             // A late delete of the old actor must not restore its old outfit.
             before_player_delete(nullptr, deletion, nullptr, nullptr);
             assert(equipmentWrites == 0);
-            reset_for_link(&link);
+            assert(run_dispatch(target, &link) == 0);
             after_damage_check(nullptr, hit, nullptr, nullptr);
             assert(s_state.meter == 5.0f); // new session can charge immediately
         }
@@ -199,7 +280,8 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "fierce_lifecycle.cpp"
     exe = Path(tmp) / "fierce_lifecycle"
     cpp.write_text(fixture + state + callbacks + checks)
-    subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror",
-                    str(cpp), "-o", str(exe)], check=True)
-    subprocess.run([str(exe)], check=True)
-print("Fierce Deity save reload, actor reuse, charging and equipment isolation: passed")
+    for defines in ([], ["-D__APPLE__"]):
+        subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror",
+                        *defines, str(cpp), "-o", str(exe)], check=True)
+        subprocess.run([str(exe)], check=True)
+print("Fierce Deity dispatch (Execute + Apple Method), model reload, save lifecycle and charging: passed")

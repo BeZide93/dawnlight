@@ -16,6 +16,7 @@
 #include "d/d_msg_object.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_leaf.h"
+#include "f_pc/f_pc_method.h"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
@@ -30,7 +31,15 @@
 namespace dawnlight {
 namespace {
 
-DEFINE_HOOK(&daAlink_c::execute, FiercePlayerExecuteHook);
+// Use the actor dispatcher: the member execute entry is not reached by every
+// gameplay path/build. Match Link's innermost method table so nested dispatch
+// does not tick the meter or advance a model reload more than once per frame.
+// Apple builds inline fpcMtd_Execute; use the same fallback as bullet_time.cpp.
+#if defined(__APPLE__)
+DEFINE_HOOK(&fpcMtd_Method, FiercePlayerExecuteHook);
+#else
+DEFINE_HOOK(&fpcMtd_Execute, FiercePlayerExecuteHook);
+#endif
 DEFINE_HOOK(&daAlink_c::checkMagicArmorWearAbility, FierceMagicArmorAbilityHook);
 DEFINE_HOOK(&at_power_check, FierceAttackPowerHook);
 DEFINE_HOOK(&cc_at_check, FierceDamageCheckHook);
@@ -313,13 +322,30 @@ void update_drain(daAlink_c* link) {
     }
 }
 
-HookAction before_player_execute(ModContext*, void* args, void* retval, void*) {
-    auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (!same_link(link)) {
-        reset_for_link(link);
+daAlink_c* dispatched_player(void* args) {
+    auto* link = daAlink_getAlinkActorClass();
+    if (link == nullptr || mods::arg<void*>(args, 1) != link || link->sub_method == nullptr) {
+        return nullptr;
     }
+    const auto* methods = reinterpret_cast<const process_method_class*>(link->sub_method);
+#if defined(__APPLE__)
+    const bool executingPlayer = mods::arg<process_method_func>(args, 0) == methods->execute_method;
+#else
+    const bool executingPlayer = mods::arg<const process_method_class*>(args, 0) == methods;
+#endif
+    if (!executingPlayer) {
+        return nullptr;
+    }
+    return link;
+}
+
+HookAction before_player_execute(ModContext*, void* args, void* retval, void*) {
+    auto* link = dispatched_player(args);
     if (link == nullptr) {
         return HOOK_CONTINUE;
+    }
+    if (!same_link(link)) {
+        reset_for_link(link);
     }
 
     if (!fierce_deity_enabled()) {
@@ -336,7 +362,10 @@ HookAction before_player_execute(ModContext*, void* args, void* retval, void*) {
 }
 
 void after_player_execute(ModContext*, void* args, void*, void*) {
-    auto* link = mods::arg<daAlink_c*>(args, 0);
+    auto* link = dispatched_player(args);
+    if (link == nullptr) {
+        return;
+    }
     if (!s_diagnostics.playerLogged) {
         log_runtime("player ready");
         s_diagnostics.playerLogged = true;

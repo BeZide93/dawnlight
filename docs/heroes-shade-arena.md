@@ -109,9 +109,12 @@ existing victory scene. Missed-skill timeouts do not trigger intermissions.
 | 2 | Outward wind | Resist for 300 simulation ticks (10 seconds); Iron Boots prevent the applied force. |
 
 Four native `Obj_HsTarget` actors use `hsMato` and its original hookable DZB.
-Wall rays position them on diagonal walls, 650 units above the arena floor;
-the eyes use the two side walls at height 400. The sword prompt waits until all
-four targets have completed asynchronous creation. Targets remain until arena
+Wall rays position them on diagonal walls, normally 650 units above the arena
+floor. Rays may shift within their wall sector or use height 550 to avoid a
+corner/opening. Each target is placed independently and pending actor IDs are
+retained: a missing wall or eye location cannot suppress the other targets or
+create duplicate requests. The eyes use side walls at height 400. The sword
+prompt waits until target creation, eye placement and effect loading complete. Targets remain until arena
 teardown, so finishing the fire phase cannot delete the surface Link hangs on.
 Creation/deletion uses the same player-layer ownership and pending-request
 cancellation as the encounter and enemy-spawner fixes.
@@ -134,11 +137,11 @@ The collider radius follows the native animation frame and deceleration; its
 height is limited to 300, below a hanging Link. Native fire material and attack
 special `0xE` use the engine's `ChkAtNoGuard` path. The warning has no damage.
 
-Beamos eyes use `E_bm6`'s head joint, fully raised pose and active eye color,
-without drawing the tower or installing native Beamos gameplay logic. Each
-model has its own draw packets. Head submission does not change shared shape
-visibility. A native Beamos spawned alongside the fight can install archive
-joint callbacks that expect a real Beamos actor: the head-only model suppresses
+Beamos eyes use `E_bm6`'s named `bm6_eye` material, fully raised pose and active
+eye color, without drawing the tower or installing native Beamos gameplay logic.
+Each model has its own draw packets. Eye submission does not change shared
+shape visibility and does not assume that the head joint itself owns a mesh. A native Beamos spawned alongside the fight can install archive
+joint callbacks that expect a real Beamos actor: the eye-only model suppresses
 those callbacks only around its synchronous matrix calculation and immediately
 restores them. Laser visuals and collision capsules share endpoints; native
 wall checks stop beams at room geometry. Eye targets accept arrows only.
@@ -161,6 +164,35 @@ Clawshot reach/hanging clearance, Beamos head alignment and visibility, fire
 appearance across the room, caption readability while moving, replay, and
 leaving/dying/unloading during each phase. These tests cannot render game
 archives or exercise actual Link physics.
+
+### Missing sword / targets regression
+
+The initial intermission patch put both effect archives and the Beamos model
+checks inside the pedestal's creation transaction. A failed effect initialization
+therefore deleted the entire pedestal before its execute method could create
+any wall targets. The Beamos path also incorrectly required exactly six joints
+and a mesh attached directly to `BM6_JNT_HEAD`, and requested a differed display
+list even when the BMDE resource had no shared list. These assumptions are not
+requirements of the native Beamos renderer.
+
+The pedestal now uses its original sword-only heap and becomes visible as soon
+as `MstrSword` loads. Effects load later in an independent solid heap owned by
+the pedestal, restoring the previous current heap before returning. Success
+shrinks the allocation; failure frees it once and logs the failing step instead
+of destroying/recreating the sword every frame. Teardown frees the effect heap
+before releasing its archives. Target placement runs independently of effect
+loading. Combat still waits for the complete arena to prevent invisible hazards.
+
+The eye model follows the native BMDE allocation convention: flags 0 without
+a shared display list, shared mode for locked shared data, differed mode only
+for unlocked shared data. It looks up `bm6_eye` by name and submits that material's
+own joint/shape packet. Callback backup storage follows the actual joint count.
+
+`python tests/heroes_shade_initialization_test.py` exercises these real methods
+with no head-mesh API, a seven-joint model, all shared/locked list combinations,
+asynchronous resource loading, allocation failure/current-heap restoration,
+and partial wall/eye availability without duplicate target actors. The existing
+trial, battle, native-hook and cinematic regression tests remain applicable.
 
 ## Combat
 

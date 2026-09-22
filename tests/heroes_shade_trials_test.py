@@ -104,7 +104,7 @@ struct J3DJoint {
     auto getCallBack(){return callback;}void setCallBack(J3DJointCallBack cb){callback=cb;}
 };
 struct ModelData {
-    std::array<J3DJoint,6> joints;
+    std::array<J3DJoint,7> joints;
     J3DJoint* getJointNodePointer(unsigned i){return &joints.at(i);}
 };
 struct J3DModel {
@@ -113,6 +113,8 @@ struct J3DModel {
     virtual void calc(){for(auto& joint:data.joints) assert(!joint.callback);}
 };
 struct TrialEyeModel:J3DModel {
+    unsigned jointCount=7;
+    std::array<J3DJointCallBack,7> callbacks{};
 ''' + source[head_start:head_end] + r'''
 };
 int native_callback(J3DJoint*,int){assert(false);return 1;}

@@ -3,29 +3,66 @@
 // Game models are resolved from the player's archives; none are bundled here.
 class TrialEyeModel final : public J3DModel {
 public:
+    J3DJointCallBack* callbacks=nullptr;
+    unsigned jointCount=0;
+    J3DMaterial* eyeMaterial=nullptr;
+    bool create(J3DModelData* data) {
+        if (!data || !data->getJointNum() || !data->getMaterialNum()) return false;
+        auto* names=data->getMaterialName();
+        if (names) for (unsigned i=0;i<data->getMaterialNum();++i)
+            if (std::strcmp(names->getName(i),"bm6_eye")==0) eyeMaterial=data->getMaterialNodePointer(i);
+        if (!eyeMaterial || !eyeMaterial->getShape() || !eyeMaterial->getJoint()) return false;
+        // Native Beamos starts with flags=0. DifferedDLBuffer is legal only
+        // when the archive supplied a shared display list for this model.
+        const bool shared=data->getMaterialNodePointer(0)->getSharedDisplayListObj()!=nullptr;
+        const u32 flags=!shared ? 0 : data->isLocked() ? J3DMdlFlag_UseSharedDL : J3DMdlFlag_DifferedDLBuffer;
+        if (entryModelData(data,flags,1)!=kJ3DError_Success ||
+            (flags==J3DMdlFlag_DifferedDLBuffer && newDifferedDisplayList(0x11000284)!=kJ3DError_Success)) return false;
+        jointCount=data->getJointNum();
+        callbacks=JKR_NEW_ARRAY(J3DJointCallBack,jointCount);
+        if (!callbacks) return false;
+        lock();
+        return true;
+    }
     void calc() override {
         // A separately spawned native Beamos may have installed callbacks on
         // this archive's joints. They dereference a daObjLv6Bm_c user pointer,
         // which our head-only model does not have. Suppress only during this
         // synchronous calculation and restore before another model can run.
-        std::array<J3DJointCallBack,6> callbacks{};
-        for (unsigned i=0;i<callbacks.size();++i) {
+        for (unsigned i=0;i<jointCount;++i) {
             auto* joint=getModelData()->getJointNodePointer(i);
             callbacks[i]=joint->getCallBack(); joint->setCallBack(nullptr);
         }
         J3DModel::calc();
-        for (unsigned i=0;i<callbacks.size();++i)
+        for (unsigned i=0;i<jointCount;++i)
             getModelData()->getJointNodePointer(i)->setCallBack(callbacks[i]);
     }
-    // Submit only the native Beamos head. Never toggle shared shape flags: that
-    // would also affect other Beamos and models already queued for this frame.
+    // Select the named eye material, as the native Beamos does. A skeletal
+    // head joint need not own a mesh: rigid/skinned shapes can be attached to
+    // another joint. Submit our model's eye packet without hiding shared shapes.
     void entry() override {
         j3dSys.setModel(this);
         j3dSys.offFlag(J3DSysFlag_SkinPosCpu);
         j3dSys.offFlag(J3DSysFlag_SkinNrmCpu);
         getModelData()->syncJ3DSysFlags();
         j3dSys.setTexture(getModelData()->getTexture());
-        getModelData()->getJointNodePointer(BM6_JNT_HEAD_e)->entryIn();
+        auto* mesh=eyeMaterial;
+        if (!mesh) return;
+        auto* matrix=getAnmMtx(mesh->getJoint()->getJntNo());
+        for (unsigned i=0;i<2;++i) j3dSys.getDrawBuffer(i)->setZMtx(matrix);
+        auto* materialPacket=getMatPacket(mesh->getIndex());
+        if (!materialPacket->isLocked()) {
+            if (auto* animation=mesh->getMaterialAnm()) animation->calc(mesh);
+            mesh->calc(matrix);
+        }
+        mesh->setCurrentMtx();
+        materialPacket->setMaterialAnmID(mesh->getMaterialAnm());
+        materialPacket->setShapePacket(getShapePacket(mesh->getShape()->getIndex()));
+        if (materialPacket->entry(j3dSys.getDrawBuffer(!mesh->isDrawModeOpaTexEdge()))) {
+            j3dSys.setMatPacket(materialPacket);
+            ++J3DDrawBuffer::entryNum;
+            mesh->makeDisplayList();
+        }
     }
 };
 struct TrialFireModel {
@@ -164,7 +201,13 @@ struct ShadeTrials {
     fopAc_ac_c* owner=nullptr;
     cXyz center{0,0,0}, origin{0,0,0};
     float radius=0, fireScale=2.5f;
-    bool placed=false;
+    std::array<bool,4> anchorPlaced{};
+    std::array<bool,2> eyePlaced{};
+    bool radiusReady=false;
+    JKRSolidHeap* effectHeap=nullptr;
+    bool effectsReady=false;
+    bool effectsFailed=false;
+    const char* failure="unknown effect initialization step";
     bool visible=false;
     MessageId hint=0;
     bool hintOpened=false;
@@ -175,23 +218,51 @@ struct ShadeTrials {
         return dComIfG_resLoad(&eyeArchive,"E_bm6");
     }
     bool heap() {
+        failure="Fyrus fire models/animations";
         for (unsigned i=0;i<2;++i) if (!fire[i].create(i)) return false;
+        failure="Beamos model resource";
         auto* data=static_cast<J3DModelData*>(dComIfG_getObjectRes("E_bm6",dRes_INDEX_E_BM6_BMD_BM6_e));
-        if (!data || data->getJointNum()!=6 || !data->getJointNodePointer(BM6_JNT_HEAD_e)->getMesh()) return false;
+        if (!data) return false;
+        failure="Beamos pose/color animations";
         auto* pose=static_cast<J3DAnmTransform*>(dComIfG_getObjectRes("E_bm6",dRes_INDEX_E_BM6_BCK_BM6_UP_e));
         auto* color=static_cast<J3DAnmTevRegKey*>(dComIfG_getObjectRes("E_bm6",dRes_INDEX_E_BM6_BRK_BM6_TURN_e));
         if (!pose || !color || !eyePose.init(pose,TRUE,J3DFrameCtrl::EMode_NONE,0,0,-1,false) ||
             !eyeColor.init(data,color,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1)) return false;
         eyePose.setFrame(eyePose.getEndFrame());
-        const u32 flags=data->getMaterialNodePointer(0)->getSharedDisplayListObj() && data->isLocked() ?
-            J3DMdlFlag_UseSharedDL : J3DMdlFlag_DifferedDLBuffer;
+        failure="Beamos bm6_eye material/model packets";
         for (auto*& eye:eyes) {
             eye=JKR_NEW TrialEyeModel;
-            if (!eye || eye->entryModelData(data,flags,1)!=kJ3DError_Success ||
-                (flags==J3DMdlFlag_DifferedDLBuffer && eye->newDifferedDisplayList(0x11000284)!=kJ3DError_Success)) return false;
-            eye->lock();
+            if (!eye || !eye->create(data)) return false;
         }
         return true;
+    }
+    bool prepare_effects() {
+        if (effectsReady || effectsFailed) return effectsReady;
+        const int phase=load();
+        if (phase!=cPhs_COMPLEATE_e) {
+            if (phase==cPhs_ERROR_e) {
+                effectsFailed=true;
+                svc_log->warn(mod_ctx,"Hero's Shade: failed to load E_fm/E_bm6; pedestal and wall targets remain available");
+            }
+            return false;
+        }
+        // Keep effect allocation out of the sword's create/heap transaction.
+        // The original pedestal can draw while the two archives load.
+        effectHeap=mDoExt_createSolidHeapFromGame(0x80000,0x20);
+        failure="effect heap allocation";
+        if (effectHeap) {
+            auto* previous=mDoExt_setCurrentHeap(effectHeap);
+            effectsReady=heap();
+            mDoExt_setCurrentHeap(previous);
+            if (effectsReady) mDoExt_adjustSolidHeap(effectHeap);
+            else { mDoExt_destroySolidHeap(effectHeap); effectHeap=nullptr; }
+        }
+        if (!effectsReady) {
+            effectsFailed=true;
+            svc_log->warn(mod_ctx,"Hero's Shade: effect initialization failed");
+            svc_log->warn(mod_ctx,failure);
+        }
+        return effectsReady;
     }
     void init(fopAc_ac_c* actor) {
         owner=actor; center=actor->current.pos;
@@ -221,22 +292,21 @@ struct ShadeTrials {
         pos=check.GetCross()-direction*inset;
         return (pos-start).absXZ()>300;
     }
+    bool find_wall(s16 angle,float height,float inset,cXyz& pos) {
+        // A ray through a doorway or a corner must not block every target.
+        constexpr int offsets[]={0,-0x800,0x800,-0x1000,0x1000};
+        for (const int offset:offsets)
+            if (wall(static_cast<s16>(angle+offset),height,inset,pos)) return true;
+        return false;
+    }
     bool place() {
-        if (!placed) {
-            // Avoid the doors: four diagonal wall targets, two side-wall eyes.
-            for (unsigned i=0;i<4;++i)
-                if (!wall(static_cast<s16>(0x2000+i*0x4000),650,25,anchorPos[i])) return false;
-            for (unsigned i=0;i<2;++i)
-                if (!wall(static_cast<s16>(0x4000+i*0x8000),400,100,eyePos[i])) return false;
-            for (unsigned i=0;i<16;++i) {
-                cXyz point;
-                if (wall(static_cast<s16>(i*0x1000),100,0,point)) radius=std::max(radius,(point-center).absXZ());
-            }
-            radius+=150;
-            placed=true;
-        }
         bool ready=true;
         for (unsigned i=0;i<4;++i) {
+            if (!anchorPlaced[i]) {
+                const auto angle=static_cast<s16>(0x2000+i*0x4000);
+                anchorPlaced[i]=find_wall(angle,650,25,anchorPos[i]) || find_wall(angle,550,25,anchorPos[i]);
+            }
+            if (!anchorPlaced[i]) { ready=false; continue; }
             if (!pending_or_live(anchors[i])) {
                 const auto& p=anchorPos[i];
                 const ActorSpawnParams params{.parameters=0,.argument=-1,.room_num=51,
@@ -245,6 +315,20 @@ struct ShadeTrials {
                 create_standalone_actor(fpcNm_Obj_HsTarget_e,params,anchors[i]);
             }
             ready=actor_by_id(anchors[i]) && ready;
+        }
+        // Eye placement is independent; missing eye geometry cannot hide all
+        // four targets. Recheck only missing positions while the room loads.
+        for (unsigned i=0;i<2;++i) {
+            if (!eyePlaced[i]) eyePlaced[i]=find_wall(static_cast<s16>(0x4000+i*0x8000),400,100,eyePos[i]);
+            ready=eyePlaced[i] && ready;
+        }
+        if (ready && !radiusReady) {
+            for (unsigned i=0;i<16;++i) {
+                cXyz point;
+                if (wall(static_cast<s16>(i*0x1000),100,0,point)) radius=std::max(radius,(point-center).absXZ());
+            }
+            for (const auto& point:anchorPos) radius=std::max(radius,(point-center).absXZ());
+            radius+=150; radiusReady=true;
         }
         return ready;
     }
@@ -270,6 +354,7 @@ struct ShadeTrials {
     ~ShadeTrials() {
         cancel();
         for (const auto id:anchors) remove_actor(id);
+        if (effectHeap) mDoExt_destroySolidHeap(effectHeap);
         dComIfG_resDelete(&eyeArchive,"E_bm6");
         dComIfG_resDelete(&fireArchive,"E_fm");
     }
@@ -366,8 +451,8 @@ struct ShadeTrials {
             for (auto& effect:fire) effect.draw(origin,fireScale,light);
         if (clock.kind==shade::Trial::Eyes) for (unsigned i=0;i<2;++i) if (clock.eyes&(1u<<i)) {
             const auto yaw=cLib_targetAngleY(&eyePos[i],&aim[i]);
-            // The native eye is at (0,430,80). Anchor that point to the wall;
-            // only the head joint is submitted, not the tower underneath it.
+            // The raised native eye is at (0,430,80). Anchor it to the wall;
+            // submit its named material regardless of mesh-to-joint layout.
             mDoMtx_stack_c::transS(eyePos[i]); mDoMtx_stack_c::YrotM(yaw);
             mDoMtx_stack_c::transM(0,-430,-80);
             eyes[i]->setBaseTRMtx(mDoMtx_stack_c::get());

@@ -25,6 +25,7 @@
 #include "res/Object/E_fm.h"
 #include "res/Object/E_bm6.h"
 #include "JSystem/J3DGraphAnimator/J3DJoint.h"
+#include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -1182,7 +1183,7 @@ public:
         self->sword=mDoExt_J3DModel__create(data,0x80000,0x11000284);
         auto* btk=static_cast<J3DAnmTextureSRTKey*>(dComIfG_getObjectRes(kSwordArchive,dRes_INDEX_MSTRSWORD_BTK_O_AL_SWM_e));
         auto* brk=static_cast<J3DAnmTevRegKey*>(dComIfG_getObjectRes(kSwordArchive,dRes_INDEX_MSTRSWORD_BRK_O_AL_SWM_e));
-        return self->sword && btk && brk && self->trials.heap() &&
+        return self->sword && btk && brk &&
             self->btk.init(data,btk,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1) &&
             self->brk.init(data,brk,TRUE,J3DFrameCtrl::EMode_LOOP,1,0,-1);
     }
@@ -1193,9 +1194,7 @@ int create_pedestal(void* ptr) {
     if (self->ready) return cPhs_COMPLEATE_e;
     const auto phase=dComIfG_resLoad(&self->phase,kSwordArchive);
     if (phase!=cPhs_COMPLEATE_e) return phase;
-    const auto trialPhase=self->trials.load();
-    if (trialPhase!=cPhs_COMPLEATE_e) return trialPhase;
-    if (!fopAcM_entrySolidHeap(self,Pedestal::heap,0x40000)) return cPhs_ERROR_e;
+    if (!fopAcM_entrySolidHeap(self,Pedestal::heap,0x4000)) return cPhs_ERROR_e;
     float minY=0;
     auto* data=self->sword->getModelData();
     if (data->getShapeNum()) {
@@ -1236,7 +1235,10 @@ int execute_pedestal(void* ptr) {
     auto* player=daAlink_getAlinkActorClass();
     if (!arena() || !player || dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
         dComIfGp_isPauseFlag() || ui_document_visible() || player->checkDeadHP() || player->checkWolf()) return 1;
-    if (!self->trials.place()) return 1;
+    // Do both independently: loading effects must not delay wall-target spawn.
+    const bool targetsReady=self->trials.place();
+    const bool effectsReady=self->trials.prepare_effects();
+    if (!targetsReady || !effectsReady) return 1;
     for (const auto& entry:sFighters) if (pending_or_live(entry.id)) return 1;
     if (sCinema.active()) release_cinema(); // asynchronous creation failed
     const cXyz delta=player->current.pos-self->current.pos;

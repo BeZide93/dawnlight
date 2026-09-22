@@ -118,6 +118,17 @@ Implementation and lifecycle details:
 - Both actors are ready before camera movement starts. Wolf load failure cancels
   the encounter after a bounded wait, restores the sword interaction and removes
   pending actors. The native wolf is held hidden during combat for the outro.
+- Trial audio uses native game cues: the shield activates with
+  `Z2SE_OBJ_GANON_BARRIER_APPR`, hums with `Z2SE_OBJ_GANON_BARRIER`, and bursts
+  once with `Z2SE_EN_PZ_BALL_BURST` at Shade's current position. Each Beamos eye
+  plays its native detection/charge cues, then owns a `Z2SE_EN_BM_BEAM2` loop
+  positioned along the visible beam nearest Link and a `Z2SE_EN_BM_SPARK` loop
+  at its impact point once the beam reaches full length. Separate native sound
+  objects preserve both spatial sources. Pause, eye destruction, phase changes,
+  cancellation and arena teardown stop only the owned loops; resuming restores
+  active loops without replaying activation or shield-break cues. No audio
+  assets are bundled. `tests/heroes_shade_trial_audio_test.py` checks timing,
+  positions, independent handles, pause/resume, destruction and replay.
 - The white overlay is advanced on simulation ticks and held fully opaque before
   swapping visibility. Camera framing follows the wolf's lower seated height.
   The Shade Draw hook enforces visibility even if native execution resets its

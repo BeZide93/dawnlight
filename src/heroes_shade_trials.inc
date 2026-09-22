@@ -230,7 +230,10 @@ public:
     }
 };
 
+#include "heroes_shade_trial_audio.inc"
+
 struct ShadeTrials {
+    ShadeTrialAudio audio;
     request_of_phase_process_class fireArchive{},eyeArchive{};
     std::array<TrialFireModel,2> fire;
     std::array<TrialBeamModel,2> beamModels;
@@ -446,6 +449,7 @@ struct ShadeTrials {
         return ready;
     }
     void suspend() {
+        audio.stop();
         visible=false; beamVisible=false; packet.lava=false;
         lavaContact.OffAtSetBit(); lavaContact.ClrAtHit();
         shield.OffTgSetBit(); shield.ClrTgHit(); flame.OffAtSetBit(); flame.ClrAtHit();
@@ -529,6 +533,7 @@ struct ShadeTrials {
         cancel(true); clock.begin(sBattle.trial);
         origin=boss->current.pos;
         origin.y=center.y;
+        audio.begin(clock.kind,boss->current.pos+cXyz(0,110,0),eyePos);
         // Sample the native motion over six seconds. The outer edge reaches
         // even the farthest wall when Shade casts from an off-center position.
         const float nativeRadius=31.5f*std::max(1.0f,std::min(47.5f,fire[1].bck.getEndFrame()));
@@ -545,8 +550,8 @@ struct ShadeTrials {
             if (!clock.broken && shield.ChkTgHit()) {
                 auto* hit=shield.GetTgHitObj();
                 clock.broken=hit && hit->ChkAtType(AT_TYPE_BOMB|AT_TYPE_IRON_BALL);
-                if (clock.broken) mDoAud_seStart(Z2SE_EN_BM_EYE_BREAK,&origin,0,dComIfGp_getReverb(51));
             }
+            audio.update_shield(clock.broken,boss->current.pos+cXyz(0,110,0));
             shield.ClrTgHit();
             if (clock.broken) shield.OffTgSetBit();
             else {
@@ -590,7 +595,9 @@ struct ShadeTrials {
                 if (target.ChkTgHit()) {
                     auto* hit=target.GetTgHitObj();
                     if (hit && hit->ChkAtType(AT_TYPE_ARROW)) {
-                        clock.hit_eye(i); target.OffTgSetBit(); target.ClrTgHit();
+                        clock.hit_eye(i);
+                        audio.update_beam(i,false,eyePos[i],packet.ends[i],0,player->current.pos);
+                        target.OffTgSetBit(); target.ClrTgHit();
                         beams[i].OffAtSetBit(); beams[i].ClrAtHit();
                         mDoAud_seStart(Z2SE_EN_BM_EYE_BREAK,&eyePos[i],0,dComIfGp_getReverb(51));
                         continue;
@@ -615,8 +622,8 @@ struct ShadeTrials {
                         cXyz direction=hitEnd-eyePos[i]; beams[i].SetAtVec(direction);
                         dComIfG_Ccsp()->Set(&beams[i]);
                     }
-                    mDoAud_seStartLevel(Z2SE_EN_BM_BEAM2,&eyePos[i],0,dComIfGp_getReverb(51));
                 }
+                audio.update_beam(i,beamVisible,eyePos[i],end,beamModels[i].reach(),player->current.pos);
             }
         } else if (clock.kind==shade::Trial::Wind && !clock.windReleased && !player->checkEquipHeavyBoots()) {
             const float power=shade::wind_strength(clock.ticks);

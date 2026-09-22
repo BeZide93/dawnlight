@@ -19,6 +19,7 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_camera.h"
 #include "Z2AudioLib/Z2AudioMgr.h"
+#include "Z2AudioLib/Z2SoundObject.h"
 #include "d/d_particle_name.h"
 #include "d/d_bg_s_lin_chk.h"
 #include "d/d_msg_object.h"

@@ -109,6 +109,8 @@ DEFINE_HOOK(&dMeterButton_c::setString, MeterButtonSetStringHook);
 DEFINE_HOOK(&dMeterButton_c::_execute, MeterButtonExecuteHook);
 DEFINE_HOOK(&dMeterButton_c::draw, MeterButtonDrawHook);
 DEFINE_HOOK(&dMeterMap_c::draw, MeterMapDrawHook);
+DEFINE_HOOK(static_cast<void (J2DPicture::*)(f32, f32, f32, f32, bool, bool, bool)>(
+    &J2DPicture::draw), MinimapPictureDrawHook);
 DEFINE_HOOK(&daAlink_c::midnaTalkTrigger, MidnaTalkTriggerHook);
 DEFINE_HOOK(&mDoCPd_c::read, PadReadHook);
 DEFINE_HOOK(&daAlink_c::checkItemButtonChange, CheckItemButtonChangeHook);
@@ -257,18 +259,22 @@ enum class HudPaneSlot : std::size_t {
     TextB,
     ButtonX,
     ItemX,
+    ItemXSecondary,
     LightX,
     TextX,
     ButtonY,
     ItemY,
+    ItemYSecondary,
     LightY,
     TextY,
     ButtonZ,
     ItemZ,
+    ItemZSecondary,
     LightZ,
     TextZ,
     Backing,
     DPad,
+    Midna,
     DPadItemsText,
     DPadMapText,
     Hearts,
@@ -318,7 +324,6 @@ GaugeDrawState s_gaugeDraw;
 
 struct MinimapTransformState {
     dMeterMap_c* map = nullptr;
-    f32 drawPosX = 0.0f;
     f32 drawPosY = 0.0f;
     f32 sizeW = 0.0f;
     f32 sizeH = 0.0f;
@@ -1383,6 +1388,18 @@ void apply_hud_pane_transform(const HudPaneSlot slot, CPaneMgrAlpha* pane, const
         scale);
 }
 
+// HD HUD reparents the secondary item picture (bottle glass / bow) beside
+// the primary picture. Native children already inherit the editor transform.
+void apply_hud_item_secondary_transform(const HudPaneSlot slot, J2DPane* primary,
+    J2DPane* secondary, const bool enabled, const f32 offsetX, const f32 offsetY,
+    const f32 scale) {
+    const bool sibling = primary != nullptr && secondary != nullptr &&
+        primary->getParentPane() != nullptr &&
+        secondary->getParentPane() == primary->getParentPane();
+    apply_hud_pane_transform(hud_pane_state(slot), secondary,
+        enabled && sibling, offsetX, offsetY, scale);
+}
+
 void apply_hud_text_pane_transform(const HudPaneSlot slot, CPaneMgr* pane, const bool enabled,
     const f32 offsetX, const f32 offsetY, const f32 scale, const int) {
     HudPaneTransformState& state = hud_pane_state(slot);
@@ -1480,6 +1497,18 @@ void apply_health_bar_layout(dMeter2Draw_c* meter) {
         enabled && currentHeart >= 10, offsetX, offsetY, 1.0f);
 }
 
+void apply_midna_hud_layout(dMeter2Draw_c* meter) {
+    if (meter == nullptr) {
+        return;
+    }
+    // Apply to the final native/HD/Dawnlight Midna anchor independently of who
+    // owns the third item slot. The regular restore pass prevents accumulation.
+    const DuskModHudTransform midnaTransform = hud_layout_midna_transform();
+    apply_hud_pane_transform(HudPaneSlot::Midna, meter->mpButtonMidona,
+        hardcoded_hud_layout_enabled(), midnaTransform.offset_x, midnaTransform.offset_y,
+        midnaTransform.scale);
+}
+
 void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     if (meter == nullptr) {
         return;
@@ -1567,13 +1596,25 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
         zTransform.offset_x + zLayout.text_offset_x,
         zTransform.offset_y + zLayout.text_offset_y, hud_text_scale(zTransform, zLayout));
 
-    const bool externalZItem = enabled && !z_item_slot_active();
-    apply_hud_pane_transform(HudPaneSlot::ItemZ, meter->mpItemR, externalZItem,
+    apply_hud_pane_transform(HudPaneSlot::ItemZ, meter->mpItemR, enabled,
         zTransform.offset_x + zLayout.item_offset_x,
         zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
-    apply_hud_pane_transform(HudPaneSlot::LightZ, meter->mpLightXY[2], externalZItem,
+    apply_hud_pane_transform(HudPaneSlot::LightZ, meter->mpLightXY[2], enabled,
         zTransform.offset_x + zLayout.item_offset_x,
         zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
+
+    apply_hud_item_secondary_transform(HudPaneSlot::ItemXSecondary,
+        pane_ptr(meter->mpItemXY[0]), meter->mpItemXYPane[0], enabled,
+        xItemOffsetX, xItemOffsetY, hud_item_scale(xTransform, xLayout));
+    apply_hud_item_secondary_transform(HudPaneSlot::ItemYSecondary,
+        pane_ptr(meter->mpItemXY[1]), meter->mpItemXYPane[1], enabled,
+        yItemOffsetX, yItemOffsetY, hud_item_scale(yTransform, yLayout));
+    apply_hud_item_secondary_transform(HudPaneSlot::ItemZSecondary,
+        pane_ptr(meter->mpItemR), meter->mpItemXYPane[2], enabled,
+        zTransform.offset_x + zLayout.item_offset_x,
+        zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
+
+    apply_midna_hud_layout(meter);
 
     const DuskModHudTransform backingTransform = hud_layout_backing_transform();
     apply_hud_pane_transform(HudPaneSlot::Backing, meter->mpUzu, enabled,
@@ -1698,7 +1739,6 @@ void apply_wii_u_minimap_layout(dMeterMap_c* map) {
 
     s_wiiUMinimapTransform = {
         .map = map,
-        .drawPosX = map->mDrawPosX,
         .drawPosY = map->mDrawPosY,
         .sizeW = map->mSizeW,
         .sizeH = map->mSizeH,
@@ -1706,12 +1746,6 @@ void apply_wii_u_minimap_layout(dMeterMap_c* map) {
     };
 
     const DuskModHudTransform transform = hud_layout_minimap_transform();
-    if (transform.slide_direction == kHudSlideRightToLeft) {
-        const f32 insidePosX =
-            map->mDrawPosX - (static_cast<f32>(map->mSlidePositionOffset) * 2.0f);
-        map->mDrawPosX = insidePosX - (map->mDrawPosX - insidePosX);
-    }
-    map->mDrawPosX += transform.offset_x;
     map->mDrawPosY += transform.offset_y;
     map->mSizeW *= transform.scale;
     map->mSizeH *= transform.scale;
@@ -1723,11 +1757,31 @@ void restore_wii_u_minimap_layout(dMeterMap_c* map) {
         return;
     }
 
-    map->mDrawPosX = s_wiiUMinimapTransform.drawPosX;
     map->mDrawPosY = s_wiiUMinimapTransform.drawPosY;
     map->mSizeW = s_wiiUMinimapTransform.sizeW;
     map->mSizeH = s_wiiUMinimapTransform.sizeH;
     s_wiiUMinimapTransform = {};
+}
+
+HookAction before_minimap_picture_draw(ModContext*, void* args, void*, void*) {
+    const auto& state = s_wiiUMinimapTransform;
+    if (!state.active || state.map == nullptr ||
+        mods::arg<J2DPicture*>(args, 0) != state.map->mMapJ2DPicture)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    // draw() advances presentation interpolation and then recomputes X. Edit
+    // only the final picture argument, leaving native slide state/targets intact.
+    const DuskModHudTransform transform = hud_layout_minimap_transform();
+    f32& x = mods::arg_ref<f32>(args, 1);
+    x += transform.offset_x;
+    if (transform.slide_direction == kHudSlideRightToLeft) {
+        // Native X includes the slide twice (directly and via the edge getter).
+        // Reflect that displacement about the fully open position.
+        x -= 4.0f * state.map->mSlidePositionOffset;
+    }
+    return HOOK_CONTINUE;
 }
 
 J2DPane* item_wheel_z_anchor(J2DScreen* screen) {
@@ -1970,25 +2024,15 @@ void layout_z_hud_item(dMeter2Draw_c* meter, const u8 itemNo) {
         meter->mpItemR->getSizeY() * 0.5f, ROTATE_Z,
         meter->mItemParams[dMeter2Draw_c::SELECT_Z_e].rotation);
 
-    const DuskModHudTransform hudTransform = hud_layout_z_transform();
-    const DuskModHudButtonLayout buttonLayout = hud_layout_z_button_layout();
-    const f32 hudScale = hudTransform.scale;
-    const f32 itemScale = buttonLayout.item_scale > 0.0f ? buttonLayout.item_scale : 1.0f;
-    const f32 itemOffsetX = buttonLayout.item_offset_x;
-    const f32 itemOffsetY = buttonLayout.item_offset_y;
-
-    meter->mpItemR->scale(g_drawHIO.mButtonZItemScale * hudScale * itemScale,
-        g_drawHIO.mButtonZItemScale * hudScale * itemScale);
-    meter->mpItemR->paneTrans(g_drawHIO.mButtonZItemPosX + meter->field_0x6ac[2] +
-            itemOffsetX + hudTransform.offset_x,
-        g_drawHIO.mButtonZItemPosY + meter->field_0x6b8[2] + itemOffsetY +
-            hudTransform.offset_y);
-
-    meter->mpLightXY[2]->scale(g_drawHIO.mButtonZItemBaseScale * hudScale * itemScale,
-        g_drawHIO.mButtonZItemBaseScale * hudScale * itemScale);
-    meter->mpLightXY[2]->paneTrans(g_drawHIO.mButtonZItemBasePosX + itemOffsetX +
-            hudTransform.offset_x,
-        g_drawHIO.mButtonZItemBasePosY + itemOffsetY + hudTransform.offset_y);
+    // Editor transforms belong to the final screen draw, after presentation
+    // and other HUD mods have laid out all item layers.
+    meter->mpItemR->scale(g_drawHIO.mButtonZItemScale, g_drawHIO.mButtonZItemScale);
+    meter->mpItemR->paneTrans(g_drawHIO.mButtonZItemPosX + meter->field_0x6ac[2],
+        g_drawHIO.mButtonZItemPosY + meter->field_0x6b8[2]);
+    meter->mpLightXY[2]->scale(g_drawHIO.mButtonZItemBaseScale,
+        g_drawHIO.mButtonZItemBaseScale);
+    meter->mpLightXY[2]->paneTrans(g_drawHIO.mButtonZItemBasePosX,
+        g_drawHIO.mButtonZItemBasePosY);
 }
 
 bool is_z_lantern_item(const u8 itemNo) {
@@ -2268,7 +2312,6 @@ void move_midna_hud_to_dpad(dMeter2Draw_c* meter) {
         return;
     }
 
-    const DuskModHudTransform midnaTransform = hud_layout_midna_transform();
     J2DPane* midnaPane = meter->mpScreen->search(MULTI_CHAR('midona_n'));
     if (midnaPane == nullptr) {
         return;
@@ -2289,9 +2332,9 @@ void move_midna_hud_to_dpad(dMeter2Draw_c* meter) {
         set_pane_influenced_alpha_tree(midnaPane, true);
     }
 
-    const f32 scale = g_drawHIO.mMidnaIconScale * midnaTransform.scale;
+    const f32 scale = g_drawHIO.mMidnaIconScale;
     midnaPane->scale(scale, scale);
-    midnaPane->move(-18.0f + midnaTransform.offset_x, midnaTransform.offset_y);
+    midnaPane->move(-18.0f, 0.0f);
 
     if (boss_rush_save_active() && meter->isEmphasisZ() &&
         dComIfGp_getZStatus() == BUTTON_STATUS_CHECK && dComIfGp_isZSetFlag(BUTTON_STATUS_FLAG_EMPHASIS))
@@ -3724,6 +3767,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterMapDrawHook>(
             svc_hook, after_meter_map_draw, &minimapPostOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<MinimapPictureDrawHook>(
+            svc_hook, before_minimap_picture_draw, &minimapPreOptions);
     }
     if (result == MOD_OK && (s_zItemSlotSessionEnabled || s_dawnlightTouchUiSessionEnabled)) {
         result = mods::hook_add_pre<RingSetActiveCursorHook>(svc_hook, before_ring_set_active_cursor);

@@ -132,7 +132,7 @@ Implementation and lifecycle details:
   `0x21`, and `0x22` from the player's disc in the background, selecting only
   the current or next trial: shield uses the Palace/Castle groups, fire uses
   `0x08`, eyes use `0x16`, and wind uses resident Boomerang samples. Prefetch
-  starts during preceding combat (shield during the intro); previous trial
+  starts during preceding combat (the first shuffled trial during the intro); previous trial
   groups get 60 mod frames for their one-shot tails before retirement. The arena's
   Darknut audio alias only provides the Temple of Time miniboss groups
   `0x15/0x17`; loading the Beamos model does not load its wave samples.
@@ -231,15 +231,22 @@ The fight starts at **10 HP**. After each of the first four pairs of accepted
 hits, one intermission begins. The energy ward, Beamos eyes and wind preserve normal
 movement, sword attacks and combos; only the fire intermission pauses the combat controller. Repeated
 success events cannot consume health during it. Resolving the intermission
-costs no HP; after the wind, two further successful counters are needed for the
+costs no HP; after the fourth intermission, two further successful counters are needed for the
 existing victory scene. Missed-skill timeouts do not trigger intermissions.
 
-| HP remaining | Intermission | Resolution |
-| --- | --- | --- |
-| 8 | Blue energy ward (Shade keeps attacking) | Bomb explosion or Ball and Chain; other weapons are ignored. The shell expands and fades for 12 ticks when broken. |
-| 6 | Fyrus fire wave | Five-second warning through a sword gesture and orange charge rings, then six seconds of outward travel. Reach a wall Clawshot target and hang above the fire. |
-| 4 | Two wall-mounted Beamos heads/eyes | Each tracks Link with a laser after a two-second charge. One arrow removes each eye and its beam. |
-| 2 | Outward wind | One second of visible wind without force, then a three-second smooth buildup. Wind continues until Link faces the central Master Sword and presses A within reach. Iron Boots prevent the applied force. |
+The four intermissions are shuffled independently at each sword interaction that
+starts a new fight. Each occurs exactly once, at 8 / 6 / 4 / 2 HP in the drawn
+order, with fire always preceding wind so the persistent lava rim is already
+present for the wind trial. All 12 valid orders remain possible; the two trials
+do not have to be adjacent. Audio preloading follows that order and retains the current trial's
+archives until it ends. Ending wind at the sword does not reshuffle the fight.
+
+| Intermission | Resolution |
+| --- | --- |
+| Blue energy ward (Shade keeps attacking) | Bomb explosion or Ball and Chain; other weapons are ignored. The shell expands and fades for 12 ticks when broken. |
+| Fyrus fire wave | Five-second warning through a sword gesture and orange charge rings, then six seconds of outward travel. Reach a wall Clawshot target and hang above the fire. |
+| Two wall-mounted Beamos heads/eyes | Each tracks Link with a laser after a two-second charge. One arrow removes each eye and its beam. |
+| Outward wind | One second of visible wind without force, then a three-second smooth buildup. Wind continues until Link faces the central Master Sword and presses A within reach. Iron Boots prevent the applied force. |
 
 Four native `Obj_HsTarget` actors use the `L7HsMato` variant and its original
 hookable DZB. Each target's largest hookable face is rotated to face the arena
@@ -322,8 +329,21 @@ capsule is registered per tick, avoiding collision-table pressure and duplicate
 hits at corners. Intermission completion preserves the rim; full encounter
 cancellation removes it, and pause/menus suspend its drawing and collision.
 
-Doubles retain their native formation and defeat animations. The offensive
-controller now waits for action 15 (Jump Strike double) or 21 (Spin Attack double),
+Doubles spawn at the boss's exact position and yaw, then walk outward using the
+native Jump Strike formation in both double phases: motion 9 and six units per
+tick toward mirrored 180-unit offsets. Their first execution aligns with the
+live boss to account for asynchronous creation. The arena keeps formation active
+until arrival (or a 120-tick obstruction timeout), bypassing the tutorial's
+immediate no-event transition and the spin lesson's circle-position teleport.
+Body pushing and offensive blades are disabled while emerging; a valid skill hit
+still interrupts formation with native knockback, landing and departure.
+Unbeaten doubles return to Shade on a phase change at 24 units per tick (four
+times their outward speed), following his current position and disappearing
+only on overlap. They cannot push, receive hits or attack during the return.
+Retirement continues during intermissions, with pause/event guards preserved;
+defeated doubles instead retain their original fall/landing/departure sequence
+across phase changes. Encounter teardown still removes actors immediately.
+The offensive controller waits for action 15 (Jump Strike double) or 21 (Spin Attack double),
 not formation actions 14/20. Once ready, they use the existing sword/sword/special
 combos and staggered cooldowns, including normal one-heart sword attacks.
 
@@ -387,9 +407,27 @@ trial, battle, native-hook and cinematic regression tests remain applicable.
 
 Hero's Shade has ten health points. Each successful native lesson counter
 removes one point; a missed opportunity changes the phase after 600 simulation
-ticks without damaging him. Success gives 45 ticks of recovery, followed by the
-next phase. The fight cycles until his health reaches zero, then starts the
-victory scene above. This is a new boss controller, not the original lesson event.
+ticks without damaging him. Nonfinal successes give 45 ticks of recovery,
+followed by the next phase. At zero health the next unpaused actor update
+latches victory before recovery or phase progression. It retires the doubles,
+clears native group-warp state and restores Shade's full model scale/visibility,
+while preserving the knockback pose and velocity for the cinematic landing and
+get-up. The main actor stays alive through the victory scene above. This also
+applies to final Jump Strike and Spin counters; they cannot restart a group warp
+or another phase. This is a new boss controller, not the original lesson event.
+
+All eight normal phases are shuffled with the game's `cM_rndF` generator at
+encounter start and after each complete cycle. Every phase appears once per
+cycle, with no immediate repeat across cycle boundaries. The starting phase is
+also random. Phase identities remain unchanged for native counters, attacks and
+double management; the separate cursor only selects their order. Random draws
+occur when shuffling, never from frame counts or audio polling. The shared game
+generator is not reseeded.
+
+At 1 HP, Jump Strike and Spin Attack are skipped when selecting the next phase,
+including after timeouts and reshuffles. Only the other six phases can provide
+the final hit. Boundary-repeat prevention uses the first eligible phase; above
+1 HP all eight phases remain available. The fire-before-wind rule is unchanged.
 
 The lesson phase determines which counter damages Shade; it no longer restricts
 his offensive move selection. Outside the reflection phase, he uses three-hit
@@ -605,7 +643,7 @@ Device checklist (still required):
    Check ordinary counter knockdowns and Spin Attack knockdowns of both doubles:
    the fall must finish in a flat ground pose rather than a tilted flight pose.
    The Ending Blow waiting pose and its prompt must still work.
-   Check attack collisions and both doubles in the final phases. Jump Strike
+   Check attack collisions and both doubles in the Jump Strike and Spin phases. Jump Strike
    must play their native hit/fall/landing response before disappearance.
    Verify the main Shade's Ending Blow opportunity lasts one quarter of the previously halved
    waiting time, while an already-started Ending Blow still completes. During special
@@ -619,7 +657,7 @@ Device checklist (still required):
 
 ### Spin-phase double defeat lifecycle
 
-The final skill phase accepts normal left/right Spin Attacks as well as both
+The Spin skill phase accepts normal left/right Spin Attacks as well as both
 Great Spins, for the boss and each double. `heroes_shade_spin.inc` validates
 Link's sword contact, applies the native forward/backward knockback and invokes
 the existing landing/departure actions. Doubles finish landing before departure;

@@ -172,6 +172,10 @@ inline GroundPoint approach_velocity(float dx, float dz, float max_speed, float 
     return {dx/distance*speed, dz/distance*speed};
 }
 struct Battle {
+    using Random = float (*)(float);
+    std::array<unsigned,phases.size()> phase_order{0,1,2,3,4,5,6,7};
+    std::array<Trial,4> trial_order{Trial::Shield,Trial::Fire,Trial::Eyes,Trial::Wind};
+    unsigned phase_cursor = 0;
     unsigned phase = 0;
     unsigned defeated_doubles = 0;
     int health = starting_health;
@@ -182,6 +186,36 @@ struct Battle {
     bool advance = false;
     bool dying = false;
 
+    // Native cM_rndF supplies [0, count); clamp a rounded upper endpoint.
+    static unsigned draw(Random random, unsigned count) {
+        return std::min(static_cast<unsigned>(random(static_cast<float>(count))),count-1);
+    }
+    template<class T, std::size_t N>
+    static void shuffle(std::array<T,N>& order, Random random) {
+        for (unsigned count=static_cast<unsigned>(N); count>1; --count)
+            std::swap(order[count-1],order[draw(random,count)]);
+    }
+    void begin(Random random) {
+        *this={};
+        shuffle(phase_order,random);
+        shuffle(trial_order,random);
+        // Wind relies on the persistent lava rim created by the fire trial.
+        // Swapping an inverted pair preserves all 12 valid shuffled orders.
+        const auto fire=std::find(trial_order.begin(),trial_order.end(),Trial::Fire);
+        const auto wind=std::find(trial_order.begin(),trial_order.end(),Trial::Wind);
+        if (wind<fire) std::iter_swap(fire,wind);
+        phase=phase_order.front();
+    }
+    Trial next_trial() const {
+        return trials_started<trial_order.size() ? trial_order[trials_started] : Trial::None;
+    }
+    Trial audio_trial() const {
+        return trial!=Trial::None ? trial : next_trial();
+    }
+    bool phase_allowed(unsigned candidate) const {
+        // The last hit must not use the two clone/group-warp lessons.
+        return health!=1 || candidate<6;
+    }
     void event(int event) {
         if (recovery || dying || trial!=Trial::None) return;
         if (event == phases[phase].success) {
@@ -190,16 +224,36 @@ struct Battle {
             advance = true;
         }
     }
-    bool tick() {
+    bool tick(Random random) {
         if (dying || trial!=Trial::None) return false;
         if (recovery && --recovery) return false;
         if (health == 0) { dying = true; return true; }
-        if (trials_started<4 && health==starting_health-2*static_cast<int>(trials_started+1)) {
-            trial=static_cast<Trial>(++trials_started);
+        if (next_trial()!=Trial::None && health==starting_health-2*static_cast<int>(trials_started+1)) {
+            trial=next_trial();
+            ++trials_started;
             return true;
         }
         if (advance || --remaining == 0) {
-            phase = (phase + 1) % phases.size();
+            const auto previous=phase;
+            do {
+                if (++phase_cursor==phase_order.size()) {
+                    shuffle(phase_order,random);
+                    // Compare the first playable phase, including at 1 HP
+                    // when the shuffled bag can begin with excluded lessons.
+                    auto first=std::find_if(phase_order.begin(),phase_order.end(),
+                        [this](unsigned candidate){return phase_allowed(candidate);});
+                    if (*first==previous) {
+                        std::array<unsigned,phases.size()> alternatives{};
+                        unsigned count=0;
+                        for(unsigned i=0;i<phase_order.size();++i)
+                            if(phase_allowed(phase_order[i]) && phase_order[i]!=previous)
+                                alternatives[count++]=i;
+                        std::iter_swap(first,phase_order.begin()+alternatives[draw(random,count)]);
+                    }
+                    phase_cursor=0;
+                }
+                phase=phase_order[phase_cursor];
+            } while (!phase_allowed(phase));
             defeated_doubles = 0;
             remaining = 600;
             advance = false;

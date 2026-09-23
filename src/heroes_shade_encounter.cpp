@@ -1,6 +1,7 @@
 #include "heroes_shade_encounter.hpp"
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
+#include "SSystem/SComponent/c_math.h"
 #include "generated/pedestal_stone.hpp"
 #include "pedestal_mesh.hpp"
 #include "enemy_spawner.hpp"
@@ -59,6 +60,10 @@ ActorId sPedestal = kNone;
 struct Fighter {
     ActorId id = kNone;
     int divide = 0;
+    bool forming = false;
+    bool returning = false;
+    int defeatPhase = -1;
+    int formationTicks = 0;
     int offense = -1;
     int attackTicks = 0;
     int cooldown = kAttackCooldown;
@@ -168,11 +173,22 @@ void remove_actor(ActorId id) {
 }
 #include "heroes_shade_wolf.inc"
 
-void remove_companions() {
-    for (unsigned i=1;i<sFighters.size();++i) {
-        sFighters[i].deleting = true;
-        remove_actor(sFighters[i].id);
+void retire_double(Fighter& entry,bool recall) {
+    if (recall && !entry.deleting && pending_or_live(entry.id)) {
+        // Defeated doubles finish their fall/departure even after the phase
+        // changes. Everyone else merges back into the live boss.
+        if (entry.defeatPhase<0 && !entry.returning) {
+            entry.returning=true;
+            entry.forming=false;
+            entry.formationTicks=0;
+        }
+        return;
     }
+    entry.deleting=true;
+    remove_actor(entry.id);
+}
+void remove_companions(bool recall=false) {
+    for (unsigned i=1;i<sFighters.size();++i) retire_double(sFighters[i],recall);
     const auto projectiles=sProjectiles;
     for (const auto id:projectiles) remove_actor(id);
     auto* boss = static_cast<daNpc_Kn_c*>(actor_by_id(sFighters[0].id));
@@ -414,17 +430,40 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     if (sCinema.shot==Shot::Afterglow) { sShadeWolf.end_visual(); actor->mNoDraw=true; }
     if (sCinemaRuntime.ownsEvent) cinema_camera(actor);
 }
+void begin_victory(daNpc_Kn_c* actor,Fighter& entry) {
+    // Latch the final hit before recovery/phase logic can resume a lesson's
+    // group warp. The cinematic owns landing/get-up from this point onward.
+    sBattle.dying=true;
+    sBattle.recovery=0;
+    sBattle.advance=false;
+    remove_companions(true);
+    cancel_trial();
+    stop_shade_music();
+    if (!pending_or_live(sShadeWolf.id)) sShadeWolf.prepare(actor->current.pos,actor->shape_angle.y);
+    entry.reset=false;
+    entry.offense=-1;
+    entry.helmTurnPending=false;
+    entry.animationStarted=false;
+    entry.chain.cancel();
+    stop_blade_sweeps(entry);
+    actor->mActionMode=-1;
+    actor->mMode=1;
+    actor->field_0x15bd=0;
+    actor->field_0x170c=0;
+    actor->field_0x170d=0;
+    actor->field_0x16f4.set(1,1,1);
+    actor->mNoDraw=false;
+    actor->field_0x15af=0;
+    sCinema.begin(true);
+}
 void add_doubles(daNpc_Kn_c* boss) {
     for (unsigned i=1;i<sFighters.size();++i) {
         auto& entry=sFighters[i];
         if ((sBattle.defeated_doubles & (1u<<i)) || pending_or_live(entry.id)) continue;
         entry = {};
         entry.divide = i;
-        cXyz pos=boss->current.pos;
-        const s16 angle=static_cast<s16>(boss->shape_angle.y+(i==1 ? -0x4000 : 0x4000));
-        pos.x+=cM_ssin(angle)*180;
-        pos.z+=cM_scos(angle)*180;
-        spawn(fpcNm_NPC_KN_e,pos,boss->shape_angle.y,kShadeParams,entry.id);
+        entry.forming=true;
+        spawn(fpcNm_NPC_KN_e,boss->current.pos,boss->shape_angle.y,kShadeParams,entry.id);
     }
 }
 
@@ -587,6 +626,13 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
     }
+    // Retiring doubles keep their own animation/type across phase changes,
+    // including fire and victory. Pause/event guards above still apply.
+    if (entry->divide && (entry->returning || entry->defeatPhase>=0)) {
+        actor->mType=entry->defeatPhase==6 ? 5 : 6;
+        return HOOK_CONTINUE;
+    }
+    if (!entry->divide && sBattle.health==0 && !sCinema.active()) begin_victory(actor,*entry);
     if (!entry->divide && sCinema.active()) {
         actor->mType=6;
         actor->field_0x15af=0;
@@ -596,8 +642,8 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     }
     if (!entry->divide && !sCinema.active() && !sBattle.dying) tick_arena_hazards();
     actor->mType=shade::phases[sBattle.phase].type;
-    if (!entry->divide && !actor->mCreating && sBattle.tick()) {
-        remove_companions();
+    if (!entry->divide && !actor->mCreating && sBattle.tick(cM_rndF)) {
+        remove_companions(true);
         entry->reset=true;
         if (sBattle.trial!=shade::Trial::None) {
             entry->offense=-1; entry->chain.cancel(); entry->helmTurnPending=false;
@@ -620,18 +666,6 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
             finish_trial(); sBattle.trial=shade::Trial::None;
             entry->reset=true;
         }
-        return HOOK_CONTINUE;
-    }
-    if (!entry->divide && sBattle.dying) {
-        cancel_trial();
-        stop_shade_music();
-        if (!pending_or_live(sShadeWolf.id)) sShadeWolf.prepare(actor->current.pos,actor->shape_angle.y);
-        sCinema.begin(true);
-        entry->offense=-1;
-        entry->helmTurnPending=false;
-        entry->chain.cancel();
-        stop_blade_sweeps(*entry);
-        actor->field_0x15af=0;
         return HOOK_CONTINUE;
     }
     if (entry->reset) select_phase(actor,*entry);
@@ -890,6 +924,9 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
     entry->swordContact=false;
+    if (return_double(actor,*entry)) return HOOK_SKIP_ORIGINAL;
+    if (entry->divide && entry->defeatPhase>=0 && skill_counter_action(actor,*entry))
+        return HOOK_SKIP_ORIGINAL;
     if (sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
         if (!cinema_landing() || shade::knockdown_landing_motion(actor->mMotionSeqMngr.getNo())<0) {
             actor->speedF=0;
@@ -905,6 +942,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         hold_recovery(actor);
         return HOOK_SKIP_ORIGINAL;
     }
+    if (form_double(actor,*entry)) return HOOK_SKIP_ORIGINAL;
     const auto& phase=shade::phases[sBattle.phase];
     auto* player=daPy_getPlayerActorClass();
     if (actor->mCylCc.ChkTgHit() || actor->mCylCc.ChkTgShieldHit()) {
@@ -1008,11 +1046,13 @@ void trial_body_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     const auto* entry=fighter(actor);
     if (!entry) return;
+    // Emerging/returning doubles must overlap the boss without CO pushing.
+    if (entry->forming || entry->returning) actor->mCylCc.OffCoSetBit();
     if (sBattle.phase==7 && sBattle.trial==shade::Trial::None) {
         if (auto* player=daPy_getPlayerActorClass(); player && spin_cut(player->getCutType()))
             actor->mCylCc.OffTgShield();
     }
-    if (defeated_double(*entry) || sBattle.trial!=shade::Trial::None) {
+    if (entry->returning || defeated_double(*entry) || sBattle.trial!=shade::Trial::None) {
         // Keep movement/body separation and offensive sword colliders. Only
         // trial-specific targets accept hits during protection, so native hit
         // reactions cannot strand the offensive controller in a lesson state.
@@ -1023,7 +1063,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (defeated_double(*entry) || sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
+    if (entry->forming || entry->returning || defeated_double(*entry) || sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
         for (auto& sphere:actor->mSphCc) { sphere.OffAtSetBit(); sphere.ClrAtHit(); }
         entry->blade={};
         stop_blade_sweeps(*entry);
@@ -1303,7 +1343,7 @@ int execute_pedestal(void* ptr) {
         return 1;
     }
     sStopping=false;
-    sBattle={};
+    sBattle.begin(cM_rndF);
     sFighters[0]={};
     cXyz pos=self->current.pos;
     pos.z-=450;
@@ -1402,9 +1442,7 @@ void update_heroes_shade_audio() {
         return;
     }
     // Preload the next phase during normal combat, before its opening cue.
-    const auto next=sBattle.trials_started<4 ?
-        static_cast<shade::Trial>(sBattle.trials_started+1) : shade::Trial::None;
-    sTrialWaves.prepare(sBattle.trial!=shade::Trial::None ? sBattle.trial : next);
+    sTrialWaves.prepare(sBattle.audio_trial());
 }
 void update_heroes_shade_arena() {
     if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) return;

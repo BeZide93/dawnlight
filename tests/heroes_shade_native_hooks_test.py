@@ -24,6 +24,7 @@ fixture = r'''
 #include <cassert>
 #include <cstring>
 #include <cstdint>
+#include <cmath>
 using s16 = std::int16_t;
 namespace shade = dawnlight::shade;
 struct ModContext {};
@@ -36,9 +37,20 @@ struct cXyz {
     cXyz() = default;
     cXyz(float a,float b,float c):x(a),y(b),z(c) {}
     cXyz& operator+=(const cXyz& b) { x+=b.x; y+=b.y; z+=b.z; return *this; }
+    float absXZ() const { return std::sqrt(x*x+z*z); }
     void zero() { x=y=z=0; }
+    void set(float a,float b,float c) { x=a;y=b;z=c; }
     cXyz operator-(const cXyz& b) const { return {x-b.x,y-b.y,z-b.z}; }
 };
+s16 cLib_targetAngleY(const cXyz* from,const cXyz* to) {
+    return static_cast<s16>(static_cast<int>(std::atan2(to->x-from->x,to->z-from->z)*32768.0f/3.14159265f));
+}
+void cLib_chasePos(cXyz* pos,const cXyz& target,float step) {
+    const auto delta=target-*pos;
+    const float distance=std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
+    if(distance<=step) {*pos=target;return;}
+    pos->x+=delta.x*step/distance;pos->y+=delta.y*step/distance;pos->z+=delta.z*step/distance;
+}
 using Mtx = float[3][4];
 void MTXCopy(const Mtx in,Mtx out) { std::memcpy(out,in,sizeof(Mtx)); }
 void MTXMultVec(const Mtx m,const cXyz* in,cXyz* out) {
@@ -79,7 +91,8 @@ struct Cylinder {
     bool ChkTgHit(){return hit;}
     Hit* GetTgHitObj(){return &object;}
     void* GetTgHitAc(){return attacker;}
-    bool target=true,hit=true,shield=true;
+    bool target=true,hit=true,shield=true,co=true;
+    void OffCoSetBit(){co=false;}
     void OffTgShield(){shield=false;}
     void OffTgSetBit(){target=false;}void ClrTgHit(){hit=false;}
     cXyz center;
@@ -90,7 +103,7 @@ struct Cylinder {
 struct daPy_py_c {
     enum {CUT_TYPE_LARGE_JUMP_INIT=18,CUT_TYPE_LARGE_JUMP=19,CUT_TYPE_LARGE_JUMP_FINISH=20,CUT_TYPE_TURN_RIGHT=8,CUT_TYPE_TURN_LEFT=22,CUT_TYPE_LARGE_TURN_LEFT=23,CUT_TYPE_LARGE_TURN_RIGHT=24};
 };
-struct Player { std::array<Cylinder,3> mTgCyls; int cut=0; int getCutType(){return cut;} } player;
+struct Player { std::array<Cylinder,3> mTgCyls; int cut=0; int getCutType(){return cut;} bool checkDeadHP(){return false;} } player;
 Player* daAlink_getAlinkActorClass() { return &player; }
 Player* daPy_getPlayerActorClass() { return &player; }
 struct Sphere {
@@ -120,6 +133,9 @@ struct dCcD_Cps : Sphere, cM3dGCps {
 };
 struct Fighter {
     int id=42, divide=0;
+    bool forming=false,returning=false;
+    int defeatPhase=-1;
+    int formationTicks=0;
     shade::AttackChain chain;
     bool reset=false,swordContact=false;
     int offense=shade::helm_splitter;
@@ -131,6 +147,11 @@ struct Fighter {
 struct daNpc_Kn_c {
     bool owned=true, mNoDraw=false;
     int field_0x15af=1;
+    int mType=6,field_0x170c=0,field_0x170d=0;
+    bool mCreating=false;
+    cXyz field_0x16f4{1,1,1};
+    struct {void ClrCcMove(){}} mCcStts;
+    void offDownFlg(){down=false;}void offHeadLockFlg(){}
     int mEvtNo=0, health=10;
     bool mSpeakEvent=false;
     void* mpPodModel=nullptr;
@@ -159,6 +180,25 @@ struct daNpc_Kn_c {
     Morf morf, ghost;
     std::array<Morf*,2> mpModelMorf{&morf,&ghost};
     struct { cXyz pos{100,0,300}; struct { s16 y=1234; } angle; } current;
+    struct { cXyz pos; struct { s16 y=0; } angle; } home;
+    bool formationBlocked=false;
+    void setPos(const cXyz& pos) { current.pos=pos; }
+    // Native formation contract: initialize a mirrored target, take a 6-unit
+    // step, then request wait immediately when no teaching event is running.
+    void teach06_divideMove(void*) {
+        if(mMode==1) {
+            const float yaw=(home.angle.y+(entry.divide==1 ? -0x1555 : 0x1555))*3.14159265f/32768;
+            mTargetPos={home.pos.x+180*std::sin(yaw),home.pos.y,home.pos.z+180*std::cos(yaw)};
+            mMotionSeqMngr.no=9;mMode=2;
+        }
+        const auto delta=mTargetPos-current.pos;
+        const float distance=delta.absXZ();
+        if(!formationBlocked && distance>0) {
+            const float step=std::min(6.0f,distance)/distance;
+            current.pos.x+=delta.x*step;current.pos.z+=delta.z*step;
+        }
+        mActionMode=15;
+    }
     void setAngle(s16 y) { current.angle.y=y; }
     struct { cXyz position; } attention_info;
     cXyz eyePos;
@@ -175,9 +215,14 @@ constexpr int kNone=-1, cPhs_COMPLEATE_e=4;
 constexpr int Z2SE_KN_V_DAMAGE_L=1,Z2SE_HIT_SWORD=2,kShadeParams=0,fpcNm_NPC_KN_e=1;
 int spawns=0;
 bool pending_or_live(int id){return id>=1000;}
-void spawn(int,const cXyz&,s16,int,int& id){id=1000+ ++spawns;}
-float cM_ssin(s16){return 0;}float cM_scos(s16){return 1;}
+std::array<cXyz,2> spawnPositions;
+std::array<s16,2> spawnAngles;
+void spawn(int,const cXyz& pos,s16 yaw,int,int& id){
+    spawnPositions[spawns%2]=pos;spawnAngles[spawns%2]=yaw;id=1000+ ++spawns;
+}
 std::array<Fighter,3> sFighters;
+daNpc_Kn_c* formationBoss=nullptr;
+daNpc_Kn_c* actor_by_id(int id){return id==sFighters[0].id ? formationBoss : nullptr;}
 struct daObjKnBullet_c { int parentActorID=42; Sphere mCcSph; };
 constexpr float kApproachSpeed=6;
 float fopAcM_GetMaxFallSpeed(daNpc_Kn_c*) { return -40; }
@@ -188,10 +233,146 @@ struct Space {
     void Set(Sphere* sphere) { assert(sphere->enabled && sphere->damage==expectedDamage); ++registered; }
 } space;
 Space* dComIfG_Ccsp() { return &space; }
+bool sStopping=false,paused=false,accepted=false;
+int companionRemovals=0,musicStops=0,cinemaTicks=0;
+bool arena(){return true;}
+bool dComIfGp_isEnableNextStage(){return false;}
+bool dComIfGp_event_runCheck(){return accepted;}
+bool dComIfGp_isPauseFlag(){return paused;}
+bool ui_document_visible(){return false;}
+float cM_rndF(float count){return count-1;}
+void stop_shade_music(){++musicStops;}
+void release_cinema(){sCinema={};}
+void cancel_trial(){}void suspend_trial(){}void finish_trial(){}
+int removals=0,lastRemoved=-1;
+void remove_actor(int id){++removals;lastRemoved=id;}
+void retire_double(Fighter&,bool);
+void remove_companions(bool recall=false){++companionRemovals;for(unsigned i=1;i<3;++i)retire_double(sFighters[i],recall);}
+void tick_arena_hazards(){}
+void select_phase(daNpc_Kn_c*,Fighter& entry){entry.reset=false;}
+void cinema_pose(daNpc_Kn_c*,int){}
+void begin_trial(daNpc_Kn_c*){}bool tick_trial(daNpc_Kn_c*){return false;}
+void tick_cinema(daNpc_Kn_c*,Fighter&){++cinemaTicks;sCinema.tick(accepted,false,false);}
+struct Wolf {int id=1001;void prepare(const cXyz&,s16){id=1001;}} sShadeWolf;
 '''
 
 checks = r'''
 int main() {
+    // Spawn requests overlap the boss, including yaw; pending actors are not
+    // requested again. Async creation then follows the boss's current pose.
+    for(unsigned phase : {6u,7u}) {
+        sBattle={};sBattle.phase=phase;sFighters={};spawns=0;
+        daNpc_Kn_c boss;boss.current.pos={450,20,-270};boss.shape_angle.y=7000;
+        formationBoss=&boss;
+        add_doubles(&boss);add_doubles(&boss);
+        assert(spawns==2);
+        for(int i=0;i<2;++i) {
+            assert((spawnPositions[i]-boss.current.pos).absXZ()==0);
+            assert(spawnPositions[i].y==boss.current.pos.y && spawnAngles[i]==boss.shape_angle.y);
+            assert(sFighters[i+1].forming);
+        }
+        boss.current.pos={470,20,-250};
+        for(int divide : {1,2}) {
+            daNpc_Kn_c clone;clone.entry=sFighters[divide];
+            assert(form_double(&clone,clone.entry));
+            assert((clone.home.pos-boss.current.pos).absXZ()==0);
+            assert(clone.home.angle.y==boss.shape_angle.y);
+            assert((clone.current.pos-boss.current.pos).absXZ()<=6.001f);
+            assert(clone.entry.forming && clone.mMode==2 && clone.mMotionSeqMngr.no==9);
+            assert(clone.mActionMode==(phase==6 ? 14 : 20));
+            trial_body_collision(nullptr,&clone,nullptr,nullptr);
+            assert(!clone.mCylCc.co && clone.mCylCc.target);
+            for(auto& sphere:clone.mSphCc)sphere.enabled=true;
+            assert(sword_collision(nullptr,&clone,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+            for(const auto& sphere:clone.mSphCc)assert(!sphere.enabled);
+            int ticks=1;
+            while(clone.entry.forming && ticks<120) {
+                const auto previous=clone.current.pos;
+                assert(form_double(&clone,clone.entry));
+                assert((clone.current.pos-previous).absXZ()<=6.001f);
+                ++ticks;
+            }
+            assert(ticks==30 && !clone.entry.forming);
+            assert((clone.current.pos-clone.mTargetPos).absXZ()<=1);
+            assert(clone.mActionMode==(phase==6 ? 15 : 21) && clone.mMode==1);
+            assert(!form_double(&clone,clone.entry));
+        }
+        assert(boss.current.pos.x==470 && boss.current.pos.z==-250);
+        assert(!form_double(&boss,boss.entry));
+        daNpc_Kn_c blocked;blocked.entry=sFighters[1];blocked.formationBlocked=true;
+        for(int tick=0;tick<120;++tick)assert(form_double(&blocked,blocked.entry));
+        assert(!blocked.entry.forming && blocked.mActionMode==(phase==6 ? 15 : 21));
+        assert((blocked.current.pos-boss.current.pos).absXZ()==0); // no timeout teleport
+    }
+    // Phase retirement follows a moving boss at four times formation speed,
+    // and never hides/removes a live double before it overlaps him.
+    for(unsigned phase : {6u,7u}) {
+        sBattle={};sBattle.phase=phase;sFighters={};
+        daNpc_Kn_c boss,clone;formationBoss=&boss;
+        boss.current.pos={600,0,300};clone.current.pos={0,0,300};
+        clone.entry.id=1001;clone.entry.divide=1;clone.entry.forming=true;
+        removals=0;retire_double(clone.entry,true);
+        assert(clone.entry.returning && !clone.entry.forming && !clone.entry.deleting && !removals);
+        assert(!skill_counter_action(&clone,clone.entry));
+        sBattle.phase=0;sBattle.trial=shade::Trial::Fire;sBattle.recovery=45;
+        int result=0;paused=true;
+        assert(before_execute(nullptr,&clone,&result,nullptr)==HOOK_SKIP_ORIGINAL);
+        assert(clone.entry.formationTicks==0);
+        paused=false;
+        assert(before_execute(nullptr,&clone,&result,nullptr)==HOOK_CONTINUE);
+        assert(return_double(&clone,clone.entry));
+        assert(clone.current.pos.x==24 && clone.mMotionSeqMngr.no==9 && clone.entry.offense==-1);
+        assert(!clone.mCylCc.target && !removals && !clone.mNoDraw);
+        const auto ticks=clone.entry.formationTicks;
+        retire_double(clone.entry,true);assert(clone.entry.formationTicks==ticks);
+        trial_body_collision(nullptr,&clone,nullptr,nullptr);assert(!clone.mCylCc.co);
+        for(auto& sphere:clone.mSphCc)sphere.enabled=true;
+        assert(sword_collision(nullptr,&clone,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+        for(const auto& sphere:clone.mSphCc)assert(!sphere.enabled);
+        boss.current.pos={672,0,396}; // target must follow the boss, not his old position
+        int count=0;
+        while(!clone.entry.deleting && ++count<100) {
+            const auto previous=clone.current.pos;
+            assert(return_double(&clone,clone.entry));
+            assert((clone.current.pos-previous).absXZ()<=24.001f);
+            if(!clone.entry.deleting)assert(!removals && !clone.mNoDraw);
+        }
+        assert(count<100 && removals==1 && lastRemoved==clone.entry.id && clone.mNoDraw);
+        assert((clone.current.pos-boss.current.pos).absXZ()<=1);
+        assert(!return_double(&boss,boss.entry));
+
+        // A defeated double carries its original counter across phase/trial
+        // changes rather than walking back or switching to the new lesson.
+        daNpc_Kn_c fallen;fallen.entry.id=1002;fallen.entry.divide=2;
+        fallen.entry.defeatPhase=phase;fallen.mMotionSeqMngr.no=18;
+        fallen.mActionMode=phase==6 ? 16 : 22;
+        retire_double(fallen.entry,true);
+        assert(!fallen.entry.returning && !fallen.entry.deleting);
+        sBattle.defeated_doubles=0;
+        before_execute(nullptr,&fallen,&result,nullptr);
+        assert(fallen.mType==(phase==6 ? 5 : 6));
+        assert(skill_counter_action(&fallen,fallen.entry));
+        assert(fallen.jumpFalls==(phase==6) && fallen.falls==(phase==7));
+        fallen.mAcch.grounded=true;fallen.mMotionSeqMngr.no=19;fallen.mMotionSeqMngr.step=1;
+        assert(skill_counter_action(&fallen,fallen.entry));
+        assert(fallen.jumpWarps==(phase==6) && fallen.warps==(phase==7));
+        assert(!sBattle.defeated_doubles); // cannot poison the next phase's mask
+        retire_double(fallen.entry,false);
+        assert(fallen.entry.deleting && lastRemoved==fallen.entry.id); // hard cleanup still immediate
+    }
+    // The production timeout transition recalls the surviving clone while
+    // keeping a defeated clone's fall. Pending retirement blocks replacement.
+    sBattle={};sFighters={};spawns=0;
+    sBattle.phase=sBattle.phase_cursor=6;sBattle.remaining=1;sBattle.trials_started=4;
+    daNpc_Kn_c transitionBoss;formationBoss=&transitionBoss;
+    sFighters[1].id=1001;sFighters[1].divide=1;
+    sFighters[2].id=1002;sFighters[2].divide=2;sFighters[2].defeatPhase=6;
+    int transitionResult=0;
+    before_execute(nullptr,&transitionBoss,&transitionResult,nullptr);
+    assert(sBattle.phase==7 && sFighters[1].returning && !sFighters[1].deleting);
+    assert(!sFighters[2].returning && !sFighters[2].deleting && sFighters[2].defeatPhase==6);
+    assert(!spawns);
+    formationBoss=nullptr;sFighters={};sBattle={};
     daNpc_Kn_c a;
     for(unsigned phase : {6u,7u}) {
         sBattle.phase=phase;
@@ -547,13 +728,14 @@ int main() {
         sBattle={};sBattle.phase=7;player.cut=cut;
         daNpc_Kn_c boss,one,two;
         one.entry.divide=1;two.entry.divide=2;
+        one.entry.forming=true;
         one.mCylCc.attacker=two.mCylCc.attacker=&player;
         one.current.angle.y=0;two.current.angle.y=static_cast<s16>(0x8000);
         playerYaw=0;
         assert(skill_counter_action(&one,one.entry));
         assert(sBattle.health==10 && sBattle.recovery==0 && one.mEvtNo==0);
         assert(one.mMotionSeqMngr.no==18 && one.speedF<0 && one.speed.y>0);
-        assert(!one.mCylCc.target && one.entry.offense==-1);
+        assert(!one.mCylCc.target && one.entry.offense==-1 && !one.entry.forming);
         assert(defeated_double(one.entry) && !defeated_double(two.entry));
         // First clone disappears only after landing, while the second remains.
         assert(skill_counter_action(&one,one.entry) && one.falls==1 && one.warps==0);
@@ -580,8 +762,8 @@ int main() {
         assert(!skill_counter_action(&boss,boss.entry));
         // Recovery from a simultaneous boss hit must not freeze clone landing.
         int falls=two.falls;assert(skill_counter_action(&two,two.entry));assert(two.falls==falls+1);
-        for(int i=0;i<45;++i)sBattle.tick();
-        assert(sBattle.phase==0 && sBattle.defeated_doubles==0);
+        for(int i=0;i<45;++i)sBattle.tick([](float count){return count-1;});
+        assert(sBattle.phase!=7 && sBattle.defeated_doubles==0);
     }
     // Jump Strike doubles must fall/land before departure, even if Link ends
     // the attack or the boss enters recovery. Neither may notify the teacher
@@ -591,9 +773,9 @@ int main() {
         sBattle.recovery=side ? 45 : 0; // boss may have executed first this frame
         daNpc_Kn_c boss,clone;
         clone.entry.divide=1;clone.current.angle.y=static_cast<s16>(side);playerYaw=0;
-        clone.mCylCc.attacker=&player;
+        clone.mCylCc.attacker=&player;clone.entry.forming=true;
         assert(skill_counter_action(&clone,clone.entry));
-        assert(clone.mActionMode==16 && clone.speed.y>0);
+        assert(clone.mActionMode==16 && clone.speed.y>0 && !clone.entry.forming);
         assert(clone.mMotionSeqMngr.no==(side ? 14 : 18));
         assert(clone.field_0x15bd==0 && clone.mEvtNo==0 && sBattle.health==10);
         assert(sBattle.defeated_doubles==2 && !clone.mCylCc.target);
@@ -649,6 +831,46 @@ int main() {
     trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(!spinTarget.mCylCc.target);
     assert(sword_collision(nullptr,&spinTarget,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
 
+    // Final skill counters go straight to the cinematic, even while the old
+    // lesson group warp is hidden/shrunk and the 45-tick recovery is pending.
+    for(unsigned phase : {6u,7u}) for(int cut : {8,22,23,24,19,20}) for(int side : {0,0x8000}) {
+        if((phase==6)!=(cut==19 || cut==20)) continue;
+        sBattle={};sCinema={};sFighters={};accepted=paused=false;
+        sBattle.phase=phase;sBattle.health=1;sBattle.trials_started=4;
+        daNpc_Kn_c boss;playerYaw=side;player.cut=cut;
+        boss.current.angle.y=0;boss.mCylCc.attacker=&player;
+        assert(skill_counter_action(&boss,boss.entry));
+        no_order(nullptr,&boss,nullptr,nullptr);
+        assert(sBattle.health==0 && sBattle.recovery==45);
+        const auto motion=boss.mMotionSeqMngr.no;
+        const auto verticalSpeed=boss.speed.y;
+        boss.mNoDraw=true;boss.field_0x16f4.set(0,0,0);
+        boss.field_0x170c=1;boss.field_0x170d=14;boss.field_0x15bd=2;
+        boss.mActionMode=phase==6 ? 17 : 23;
+        companionRemovals=musicStops=cinemaTicks=0;
+        int result=0;
+        paused=true;before_execute(nullptr,&boss,&result,nullptr);
+        assert(!sCinema.active() && sBattle.recovery==45);
+        paused=false;before_execute(nullptr,&boss,&result,nullptr);
+        assert(sBattle.dying && !sBattle.recovery && !sBattle.advance);
+        assert(sCinema.victory && sCinema.shot==shade::Shot::Request && cinemaTicks==1);
+        assert(companionRemovals==1 && musicStops==1);
+        assert(sFighters[1].deleting && sFighters[2].deleting && !boss.entry.deleting);
+        assert(!boss.mNoDraw && boss.field_0x16f4.x==1 && boss.field_0x16f4.y==1 && boss.field_0x16f4.z==1);
+        assert(!boss.field_0x170c && !boss.field_0x170d && !boss.field_0x15bd);
+        assert(boss.mActionMode==-1 && !boss.field_0x15af);
+        assert(boss.mMotionSeqMngr.no==motion && boss.speed.y==verticalSpeed);
+        accepted=true;before_execute(nullptr,&boss,&result,nullptr);
+        assert(sCinema.shot==shade::Shot::Recover);
+        for(int i=0;i<10;++i) before_execute(nullptr,&boss,&result,nullptr);
+        assert(companionRemovals==1 && musicStops==1 && cinemaTicks==12);
+        assert(!boss.entry.deleting && !boss.warps && !boss.jumpWarps);
+    }
+    sBattle={};sCinema={};accepted=paused=false;
+    // Nonfatal hits retain normal recovery; story actors remain untouched.
+    daNpc_Kn_c survivor;sBattle.health=1;sBattle.recovery=45;
+    int executeResult=0;before_execute(nullptr,&survivor,&executeResult,nullptr);
+    assert(!sCinema.active() && !sBattle.dying && sBattle.recovery==44);
     a.owned=false;
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);
 }
@@ -656,7 +878,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
+source = fixture + function("retire_double", "void") + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + function("begin_victory", "void") + function("before_execute") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"
@@ -667,4 +889,5 @@ with tempfile.TemporaryDirectory() as tmp:
 action = function("combat_action")
 assert action.index("if (!entry)") < action.index("skill_counter_action(actor,*entry)")
 assert action.index("skill_counter_action(actor,*entry)") < action.index("if (sBattle.recovery)")
-print("Hero's Shade native hooks, Jump Strike/Spin landing and persistent double defeat: passed")
+assert action.index("return_double(actor,*entry)") < action.index("if (sCinema.active()")
+print("Hero's Shade native hooks, Jump Strike/Spin landing and walking formation and persistent double defeat: passed")

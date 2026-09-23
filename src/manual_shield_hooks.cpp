@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "jump_hooks.hpp"
 #include "service_imports.hpp"
 
 #include <array>
@@ -173,7 +174,7 @@ bool switch_target_active(daAlink_c* link) {
 
 bool manual_shield_button(daAlink_c* link) {
     if (!manual_shielding_enabled() || link == nullptr || link->checkWolf() ||
-        !mDoCPd_c::getHoldLockR(PAD_1)) {
+        !mDoCPd_c::getHoldLockR(PAD_1) || air_combo_jump_active(link)) {
         return false;
     }
 

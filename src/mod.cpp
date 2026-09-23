@@ -1,5 +1,6 @@
 #include "bow_modes.hpp"
 #include "bullet_time.hpp"
+#include "jump_hooks.hpp"
 #include "boss_hard_mode.hpp"
 #include "config.hpp"
 #include "fierce_deity.hpp"
@@ -150,6 +151,7 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_bow_modes();
     dawnlight::shutdown_great_spin_projectile();
     dawnlight::shutdown_fierce_deity();
+    dawnlight::shutdown_jump_hooks();
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_stamina();
     dawnlight::shutdown_new_save_modes();

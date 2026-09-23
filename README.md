@@ -28,6 +28,7 @@ aiming, boss, and HUD features for Twilight Princess.
 - Fierce Deity mode with a charge meter, temporary Magic Armor model swap, and
   doubled sword damage.
 - Manual Shielding, R Jump, and a stamina-powered Sprint option.
+- Optional [Air Combos](#air-combos) for native sword strings during manual ZR jumps.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
 - Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
   faster tracking, and selected profile-specific mechanics.
@@ -65,6 +66,37 @@ Dusklight. If you changed it with `Change Data Folder`, create or use the
 See [COMPATIBILITY.md](COMPATIBILITY.md) for tested Twilit Essentials and
 Twilight HD HUD versions, compatible Z-item settings, and details about the
 Android-only `Dawnlight Touch UI` option.
+
+## Air Combos
+
+Enable `Air Combos` under
+`Mod Manager -> Dawnlight -> Open Dawnlight Settings -> Gameplay -> Combat`.
+It is **off by default** and requires `R Jump` under Controls.
+
+Jump with ZR, then tap B to start and continue the normal sword string in the air,
+including its finisher. ZR can be released after takeoff. Each manual jump allows
+one string of up to four attacks within at most three seconds. While locked on,
+Link moves toward the target in three dimensions, including upward toward enemies
+above normal jump height or downward toward lower enemies. He slows to a stop
+within sword reach instead of passing through the target. Losing lock-on ends
+the pursuit. Without a target, the original ascent and brief fall slowdown apply.
+Follow-up attacks never reset the airtime allowance; landing can end it earlier.
+
+With Air Combos enabled, ZR also jumps while locked on, taking priority over
+raising the manual shield on that press. Holding ZR in the air does not consume
+sword inputs as shield commands. Grounded shield holds still work when a new
+jump is not requested, and world interactions retain priority. ZR+B at takeoff
+starts the regular jump instead of the old immediate Jump Attack.
+
+The feature uses the game's sword animations, hit windows, damage, sounds and
+collision. Damage interrupts it normally; sword recoil cancels follow-ups and
+restores normal falling. Combo completion returns to falling, and ground contact
+uses the native landing logic, including fall damage. Starting the string ends
+Bow Bullet Time. Disabling Air Combos restores normal physics and the previous
+jump controls without restarting. Wolf form, swimming and heavy equipment do
+not enter air combos.
+
+Implementation and regression coverage: [Air Combos](docs/air-combos.md).
 
 ## Arrow Modes
 

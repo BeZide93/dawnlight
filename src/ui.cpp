@@ -378,7 +378,7 @@ ModResult build_controls_tab(
     }
     if (add_toggle(ctx, left, "R Jump", r_jump_config_var(),
             "Uses R as a fallback jump button when no R interaction or targeting action is active. "
-            "Press R+B during the jump to start a jump attack.")
+            "Press R+B during the jump to start a jump attack, or enable Air Combos under Gameplay.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -599,6 +599,15 @@ ModResult build_gameplay_tab(
     }
 
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Air Combos", air_combos_config_var(),
+            "Requires R Jump. Jump with ZR, then press B repeatedly for one airborne sword "
+            "combo. Link moves toward locked targets, including higher or lower enemies. Without "
+            "a target, falling slows briefly. ZR also jumps while locked on, taking priority "
+            "over raising the manual shield on that press. Disabled by default.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Arrow Modes", arrow_modes_config_var(),
             "Press ZR while aiming the Bow to cycle Normal, Fire (2 arrows, +50% damage), "
             "and Triple Shot (3 arrows). Fire arrows ignite lantern-compatible objects. "

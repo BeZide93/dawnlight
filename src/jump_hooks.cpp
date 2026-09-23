@@ -1,7 +1,11 @@
 #include "bullet_time.hpp"
+#include "jump_hooks.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+
+#include <algorithm>
+#include <cmath>
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"
@@ -141,7 +145,8 @@ bool r_action_context_active(daAlink_c* link) {
     {
         return true;
     }
-    return target_or_shield_context_active(link) || chain_context_active(link);
+    return (!air_combos_enabled() && target_or_shield_context_active(link)) ||
+           chain_context_active(link);
 }
 
 bool jump_state_ready(daAlink_c* link) {
@@ -198,6 +203,8 @@ void apply_manual_jump_movement(daAlink_c* link) {
     link->setJumpMode();
 }
 
+#include "air_combos.inc"
+
 bool start_ground_jump(daAlink_c* link) {
     if (!jump_state_ready(link)) {
         return false;
@@ -205,7 +212,7 @@ bool start_ground_jump(daAlink_c* link) {
 
     set_manual_jump_direction(link);
 
-    if (link->mEquipItem == kSwordItem &&
+    if (!air_combos_enabled() && link->mEquipItem == kSwordItem &&
         (mDoCPd_c::getHoldB(PAD_1) || mDoCPd_c::getTrigB(PAD_1)))
     {
         if (link->procCutJumpInit(FALSE)) {
@@ -220,6 +227,7 @@ bool start_ground_jump(daAlink_c* link) {
     if (link->procAutoJumpInit(1)) {
         apply_manual_jump_movement(link);
         s_manualJumpOwner = link;
+        s_airCombo = {};
         mark_manual_jump_started(link);
         return true;
     }
@@ -227,6 +235,9 @@ bool start_ground_jump(daAlink_c* link) {
 }
 
 bool start_air_jump_attack(daAlink_c* link) {
+    if (air_combos_enabled() && s_manualJumpOwner == link) {
+        return mDoCPd_c::getTrigB(PAD_1) && start_air_combo(link);
+    }
     if (!r_jump_enabled() || s_manualJumpOwner != link ||
         !jump_held(active_jump_binding()) ||
         !mDoCPd_c::getTrigB(PAD_1) ||
@@ -305,7 +316,10 @@ HookAction before_get_main_bck_data_sprint(ModContext*, void* args, void*, void*
 HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const auto nextProc = mods::arg<daAlink_c::daAlink_PROC>(args, 1);
-    if (s_manualJumpOwner == link && nextProc != daAlink_c::PROC_AUTO_JUMP) {
+    if (s_manualJumpOwner == link &&
+        !(nextProc == daAlink_c::PROC_AUTO_JUMP && !s_airCombo.active && !s_airCombo.used) &&
+        !retain_air_combo(link, nextProc)) {
+        stop_air_combo(link);
         s_manualJumpOwner = nullptr;
         clear_manual_jump(link);
     }
@@ -318,6 +332,18 @@ HookAction before_set_body_angle_x_ready_anime(ModContext*, void* args, void*, v
 }
 
 }  // namespace
+
+bool air_combo_jump_active(const daAlink_c* link) {
+    return link != nullptr && s_manualJumpOwner == link && air_combos_enabled() &&
+           r_jump_enabled() && !link->mLinkAcch.ChkGroundHit();
+}
+
+void shutdown_jump_hooks() {
+    auto* link = daAlink_getAlinkActorClass();
+    if (link && s_manualJumpOwner == link) stop_air_combo(link);
+    s_manualJumpOwner = nullptr;
+    s_airCombo = {};
+}
 
 ModResult install_jump_hooks(ModError* error) {
     ModResult result =
@@ -342,6 +368,7 @@ ModResult install_jump_hooks(ModError* error) {
         result = mods::hook_add_pre<SetBodyAngleXReadyAnime>(
             svc_hook, before_set_body_angle_x_ready_anime);
     }
+    if (result == MOD_OK) result = install_air_combo_hooks();
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight R jump hooks");
     }

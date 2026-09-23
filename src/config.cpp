@@ -41,6 +41,7 @@ ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_arrowModes = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
+ConfigVarHandle s_airCombos = 0;
 ConfigVarHandle s_stamina = 0;
 ConfigVarHandle s_sprint = 0;
 ConfigVarHandle s_enemySpawnerProfile = 0;
@@ -871,6 +872,7 @@ ModResult register_config(ModError* error) {
         register_bool("arrow-modes", true, s_arrowModes) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
+        register_bool("air-combos", false, s_airCombos) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
         register_int("enemy-spawner-profile", 0, s_enemySpawnerProfile) != MOD_OK ||
@@ -1079,6 +1081,10 @@ bool manual_shielding_enabled() {
 
 bool r_jump_enabled() {
     return get_bool(s_rJump, true);
+}
+
+bool air_combos_enabled() {
+    return get_bool(s_airCombos, false);
 }
 
 bool stamina_enabled() {
@@ -1324,6 +1330,10 @@ ConfigVarHandle manual_shielding_config_var() {
 
 ConfigVarHandle r_jump_config_var() {
     return s_rJump;
+}
+
+ConfigVarHandle air_combos_config_var() {
+    return s_airCombos;
 }
 
 ConfigVarHandle stamina_config_var() {

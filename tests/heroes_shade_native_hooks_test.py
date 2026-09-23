@@ -42,6 +42,15 @@ struct cXyz {
     void set(float a,float b,float c) { x=a;y=b;z=c; }
     cXyz operator-(const cXyz& b) const { return {x-b.x,y-b.y,z-b.z}; }
 };
+s16 cLib_targetAngleY(const cXyz* from,const cXyz* to) {
+    return static_cast<s16>(static_cast<int>(std::atan2(to->x-from->x,to->z-from->z)*32768.0f/3.14159265f));
+}
+void cLib_chasePos(cXyz* pos,const cXyz& target,float step) {
+    const auto delta=target-*pos;
+    const float distance=std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
+    if(distance<=step) {*pos=target;return;}
+    pos->x+=delta.x*step/distance;pos->y+=delta.y*step/distance;pos->z+=delta.z*step/distance;
+}
 using Mtx = float[3][4];
 void MTXCopy(const Mtx in,Mtx out) { std::memcpy(out,in,sizeof(Mtx)); }
 void MTXMultVec(const Mtx m,const cXyz* in,cXyz* out) {
@@ -124,7 +133,8 @@ struct dCcD_Cps : Sphere, cM3dGCps {
 };
 struct Fighter {
     int id=42, divide=0;
-    bool forming=false;
+    bool forming=false,returning=false;
+    int defeatPhase=-1;
     int formationTicks=0;
     shade::AttackChain chain;
     bool reset=false,swordContact=false;
@@ -235,8 +245,10 @@ float cM_rndF(float count){return count-1;}
 void stop_shade_music(){++musicStops;}
 void release_cinema(){sCinema={};}
 void cancel_trial(){}void suspend_trial(){}void finish_trial(){}
-void remove_actor(int){}
-void remove_companions(){++companionRemovals;for(unsigned i=1;i<3;++i)sFighters[i].deleting=true;}
+int removals=0,lastRemoved=-1;
+void remove_actor(int id){++removals;lastRemoved=id;}
+void retire_double(Fighter&,bool);
+void remove_companions(bool recall=false){++companionRemovals;for(unsigned i=1;i<3;++i)retire_double(sFighters[i],recall);}
 void tick_arena_hazards(){}
 void select_phase(daNpc_Kn_c*,Fighter& entry){entry.reset=false;}
 void cinema_pose(daNpc_Kn_c*,int){}
@@ -293,6 +305,74 @@ int main() {
         assert(!blocked.entry.forming && blocked.mActionMode==(phase==6 ? 15 : 21));
         assert((blocked.current.pos-boss.current.pos).absXZ()==0); // no timeout teleport
     }
+    // Phase retirement follows a moving boss at four times formation speed,
+    // and never hides/removes a live double before it overlaps him.
+    for(unsigned phase : {6u,7u}) {
+        sBattle={};sBattle.phase=phase;sFighters={};
+        daNpc_Kn_c boss,clone;formationBoss=&boss;
+        boss.current.pos={600,0,300};clone.current.pos={0,0,300};
+        clone.entry.id=1001;clone.entry.divide=1;clone.entry.forming=true;
+        removals=0;retire_double(clone.entry,true);
+        assert(clone.entry.returning && !clone.entry.forming && !clone.entry.deleting && !removals);
+        assert(!skill_counter_action(&clone,clone.entry));
+        sBattle.phase=0;sBattle.trial=shade::Trial::Fire;sBattle.recovery=45;
+        int result=0;paused=true;
+        assert(before_execute(nullptr,&clone,&result,nullptr)==HOOK_SKIP_ORIGINAL);
+        assert(clone.entry.formationTicks==0);
+        paused=false;
+        assert(before_execute(nullptr,&clone,&result,nullptr)==HOOK_CONTINUE);
+        assert(return_double(&clone,clone.entry));
+        assert(clone.current.pos.x==24 && clone.mMotionSeqMngr.no==9 && clone.entry.offense==-1);
+        assert(!clone.mCylCc.target && !removals && !clone.mNoDraw);
+        const auto ticks=clone.entry.formationTicks;
+        retire_double(clone.entry,true);assert(clone.entry.formationTicks==ticks);
+        trial_body_collision(nullptr,&clone,nullptr,nullptr);assert(!clone.mCylCc.co);
+        for(auto& sphere:clone.mSphCc)sphere.enabled=true;
+        assert(sword_collision(nullptr,&clone,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+        for(const auto& sphere:clone.mSphCc)assert(!sphere.enabled);
+        boss.current.pos={672,0,396}; // target must follow the boss, not his old position
+        int count=0;
+        while(!clone.entry.deleting && ++count<100) {
+            const auto previous=clone.current.pos;
+            assert(return_double(&clone,clone.entry));
+            assert((clone.current.pos-previous).absXZ()<=24.001f);
+            if(!clone.entry.deleting)assert(!removals && !clone.mNoDraw);
+        }
+        assert(count<100 && removals==1 && lastRemoved==clone.entry.id && clone.mNoDraw);
+        assert((clone.current.pos-boss.current.pos).absXZ()<=1);
+        assert(!return_double(&boss,boss.entry));
+
+        // A defeated double carries its original counter across phase/trial
+        // changes rather than walking back or switching to the new lesson.
+        daNpc_Kn_c fallen;fallen.entry.id=1002;fallen.entry.divide=2;
+        fallen.entry.defeatPhase=phase;fallen.mMotionSeqMngr.no=18;
+        fallen.mActionMode=phase==6 ? 16 : 22;
+        retire_double(fallen.entry,true);
+        assert(!fallen.entry.returning && !fallen.entry.deleting);
+        sBattle.defeated_doubles=0;
+        before_execute(nullptr,&fallen,&result,nullptr);
+        assert(fallen.mType==(phase==6 ? 5 : 6));
+        assert(skill_counter_action(&fallen,fallen.entry));
+        assert(fallen.jumpFalls==(phase==6) && fallen.falls==(phase==7));
+        fallen.mAcch.grounded=true;fallen.mMotionSeqMngr.no=19;fallen.mMotionSeqMngr.step=1;
+        assert(skill_counter_action(&fallen,fallen.entry));
+        assert(fallen.jumpWarps==(phase==6) && fallen.warps==(phase==7));
+        assert(!sBattle.defeated_doubles); // cannot poison the next phase's mask
+        retire_double(fallen.entry,false);
+        assert(fallen.entry.deleting && lastRemoved==fallen.entry.id); // hard cleanup still immediate
+    }
+    // The production timeout transition recalls the surviving clone while
+    // keeping a defeated clone's fall. Pending retirement blocks replacement.
+    sBattle={};sFighters={};spawns=0;
+    sBattle.phase=sBattle.phase_cursor=6;sBattle.remaining=1;sBattle.trials_started=4;
+    daNpc_Kn_c transitionBoss;formationBoss=&transitionBoss;
+    sFighters[1].id=1001;sFighters[1].divide=1;
+    sFighters[2].id=1002;sFighters[2].divide=2;sFighters[2].defeatPhase=6;
+    int transitionResult=0;
+    before_execute(nullptr,&transitionBoss,&transitionResult,nullptr);
+    assert(sBattle.phase==7 && sFighters[1].returning && !sFighters[1].deleting);
+    assert(!sFighters[2].returning && !sFighters[2].deleting && sFighters[2].defeatPhase==6);
+    assert(!spawns);
     formationBoss=nullptr;sFighters={};sBattle={};
     daNpc_Kn_c a;
     for(unsigned phase : {6u,7u}) {
@@ -799,7 +879,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + function("begin_victory", "void") + function("before_execute") + checks
+source = fixture + function("retire_double", "void") + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + function("begin_victory", "void") + function("before_execute") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"
@@ -810,4 +890,5 @@ with tempfile.TemporaryDirectory() as tmp:
 action = function("combat_action")
 assert action.index("if (!entry)") < action.index("skill_counter_action(actor,*entry)")
 assert action.index("skill_counter_action(actor,*entry)") < action.index("if (sBattle.recovery)")
+assert action.index("return_double(actor,*entry)") < action.index("if (sCinema.active()")
 print("Hero's Shade native hooks, Jump Strike/Spin landing and walking formation and persistent double defeat: passed")

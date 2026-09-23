@@ -337,6 +337,12 @@ until arrival (or a 120-tick obstruction timeout), bypassing the tutorial's
 immediate no-event transition and the spin lesson's circle-position teleport.
 Body pushing and offensive blades are disabled while emerging; a valid skill hit
 still interrupts formation with native knockback, landing and departure.
+Unbeaten doubles return to Shade on a phase change at 24 units per tick (four
+times their outward speed), following his current position and disappearing
+only on overlap. They cannot push, receive hits or attack during the return.
+Retirement continues during intermissions, with pause/event guards preserved;
+defeated doubles instead retain their original fall/landing/departure sequence
+across phase changes. Encounter teardown still removes actors immediately.
 The offensive controller waits for action 15 (Jump Strike double) or 21 (Spin Attack double),
 not formation actions 14/20. Once ready, they use the existing sword/sword/special
 combos and staggered cooldowns, including normal one-heart sword attacks.

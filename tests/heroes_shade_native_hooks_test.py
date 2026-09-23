@@ -220,7 +220,6 @@ std::array<s16,2> spawnAngles;
 void spawn(int,const cXyz& pos,s16 yaw,int,int& id){
     spawnPositions[spawns%2]=pos;spawnAngles[spawns%2]=yaw;id=1000+ ++spawns;
 }
-float cM_ssin(s16){return 0;}float cM_scos(s16){return 1;}
 std::array<Fighter,3> sFighters;
 daNpc_Kn_c* formationBoss=nullptr;
 daNpc_Kn_c* actor_by_id(int id){return id==sFighters[0].id ? formationBoss : nullptr;}

@@ -25,6 +25,7 @@ fixture = r'''
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cmath>
 using BOOL=int;
 constexpr int TRUE=1,FALSE=0,PAD_1=0;
 constexpr unsigned kSwordItem=0x103;
@@ -68,7 +69,19 @@ bool jump_state_ready(daAlink_c*){return jumpReady;}
 int bulletClears=0,bulletStarts=0;
 void clear_manual_jump(daAlink_c*){++bulletClears;}
 void mark_manual_jump_started(daAlink_c*){++bulletStarts;}
-struct daAlink_c {
+struct cXyz {
+    float x=0,y=0,z=0;
+    cXyz operator-(const cXyz& other)const{return {x-other.x,y-other.y,z-other.z};}
+    float absXZ()const{return std::sqrt(x*x+z*z);}
+};
+std::int16_t cLib_targetAngleY(const cXyz* from,const cXyz* to) {
+    return static_cast<std::int16_t>(static_cast<int>(std::atan2(to->x-from->x,to->z-from->z)*32768/3.14159265f));
+}
+struct fopAc_ac_c {
+    cXyz eyePos;
+    struct {cXyz pos;struct {std::int16_t y=0;} angle;} current;
+};
+struct daAlink_c : fopAc_ac_c {
     enum daAlink_PROC {PROC_AUTO_JUMP,PROC_CUT_NORMAL,PROC_CUT_FINISH,PROC_CUT_REVERSE,
         PROC_FALL,PROC_LAND,PROC_DAMAGE,PROC_DEMO,PROC_WOLF,PROC_WAIT,PROC_CUT_JUMP};
     enum {MODE_JUMP=2};
@@ -79,6 +92,9 @@ struct daAlink_c {
     float gravity=-3,maxFallSpeed=-40,mNormalSpeed=20,mFallHeight=250;
     bool specialGravity=false,wolf=false,heavy=false,water=false,comboBuffer=false,collision=true;
     bool localEvent=false;
+    bool attentionLock=false;
+    fopAc_ac_c* mTargetedActor=nullptr;
+    bool checkAttentionLock()const{return attentionLock;}
     unsigned flags=MODE_JUMP,mEquipItem=kSwordItem,mComboCutCount=0,resetFlags=0;
     int cutCalls=0,jumpCalls=0,landCalls=0,fallCalls=0;
     bool checkWolf()const{return wolf;}
@@ -157,6 +173,64 @@ int main() {
     assert(before_air_cut_in_fly(nullptr,&args,&result,nullptr)==HOOK_SKIP_ORIGINAL && !result);
     assert(link.cutCalls==4 && link.jumpCalls==0); // B spam cannot buy another hover
     link.commonProcInit(daAlink_c::PROC_LAND);assert(!s_manualJumpOwner);
+    // A locked enemy beyond ordinary jump height draws Link diagonally upward.
+    // Calling physics repeatedly in one frame must not accumulate lift or move
+    // position directly; native posMove consumes the requested velocity once.
+    reset(link);fopAc_ac_c high;high.eyePos={300,480,400};
+    link.mTargetedActor=&high;link.attentionLock=true;
+    assert(start_air_combo(&link));
+    assert(s_airCombo.tracking && link.speed.y>0 && link.mNormalSpeed>0 && link.gravity==0);
+    const float firstY=link.speed.y,firstH=link.mNormalSpeed;
+    const auto firstYaw=link.current.angle.y;
+    for(int i=0;i<5;++i)apply_air_combo_physics(&link);
+    assert(link.speed.y==firstY && link.mNormalSpeed==firstH && link.current.angle.y==firstYaw);
+    assert(link.current.pos.x==0 && link.current.pos.y==0 && link.current.pos.z==0);
+    for(int tick=0;tick<80;++tick) {
+        assert(before_air_cut(nullptr,&args,&result,nullptr)==HOOK_CONTINUE);
+        assert(std::hypot(link.speed.y,link.mNormalSpeed)<=12.001f);
+        const float yaw=link.current.angle.y*3.14159265f/32768;
+        link.current.pos.x+=link.mNormalSpeed*std::sin(yaw);
+        link.current.pos.z+=link.mNormalSpeed*std::cos(yaw);
+        link.current.pos.y+=link.speed.y+link.gravity;
+    }
+    assert(link.current.pos.y>380 && link.current.pos.y<400);
+    assert((high.eyePos-link.current.pos).absXZ()>=84.9f);
+    assert((high.eyePos-link.current.pos).absXZ()<87);
+    assert(s_airCombo.ticks==80); // Pursuit never extends the shared budget.
+    // A follow-up and moving target retain the remaining budget and chase its
+    // latest position. A lower target draws Link down rather than up.
+    high.eyePos={-300,200,-100};link.comboBuffer=true;args.next=1;bTrigger=false;
+    before_air_next_action(nullptr,&args,&result,nullptr);
+    assert(s_airCombo.ticks==80 && link.speed.y<0 && link.mNormalSpeed>0);
+    assert(link.current.angle.y<0);
+    // Directly overhead needs no horizontal divide; in melee reach neither
+    // axis overshoots, oscillates or pushes Link through the target.
+    high.eyePos={link.current.pos.x,link.current.pos.y+400,link.current.pos.z};
+    apply_air_combo_physics(&link);assert(link.speed.y>0 && link.mNormalSpeed==0);
+    high.eyePos={link.current.pos.x,link.current.pos.y+80,link.current.pos.z};
+    apply_air_combo_physics(&link);assert(link.speed.y==0 && link.mNormalSpeed==0);
+    // Loss of lock or removal of the target cancels upward/forward drive.
+    for(int reason=0;reason<2;++reason) {
+        reset(link);link.attentionLock=true;link.mTargetedActor=&high;
+        high.eyePos={0,800,500};assert(start_air_combo(&link));assert(link.speed.y>0);
+        if(reason==0)link.attentionLock=false;else link.mTargetedActor=nullptr;
+        apply_air_combo_physics(&link);
+        assert(!s_airCombo.tracking && link.speed.y<=0 && link.mNormalSpeed==0 && link.gravity<0);
+    }
+    // An available actor without active lock-on is never pulled toward.
+    reset(link);link.mTargetedActor=&high;assert(start_air_combo(&link));
+    assert(!s_airCombo.tracking && link.speed.y<0);
+    // Pursuit cancels on interruption and expiry, restoring native falling.
+    for(int reason=0;reason<4;++reason) {
+        reset(link);link.attentionLock=true;link.mTargetedActor=&high;
+        assert(start_air_combo(&link));assert(link.speed.y>0);
+        if(reason==0)link.commonProcInit(daAlink_c::PROC_DAMAGE);
+        if(reason==1)link.commonProcInit(daAlink_c::PROC_CUT_REVERSE);
+        if(reason==2){enabled=false;before_air_cut(nullptr,&args,&result,nullptr);}
+        if(reason==3){s_airCombo.ticks=kAirComboTicks;before_air_cut(nullptr,&args,&result,nullptr);}
+        assert(!s_airCombo.tracking && !link.specialGravity && link.speed.y<=0);
+        assert(link.mNormalSpeed==0);
+    }
     // Native fallback is only intercepted for our manual jump.
     reset(link);s_manualJumpOwner=nullptr;
     assert(before_air_cut_in_fly(nullptr,&args,&result,nullptr)==HOOK_CONTINUE);
@@ -251,4 +325,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(source)
     subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Air Combos: input routes, native chain, finite airtime, landing, recoil, cleanup and shield guards passed')
+print('Air Combos: input routes, native chain, 3D target pursuit, finite airtime, landing, recoil, cleanup and shield guards passed')

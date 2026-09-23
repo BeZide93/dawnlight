@@ -5,6 +5,7 @@
 #include "stamina.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"

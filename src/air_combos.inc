@@ -11,11 +11,16 @@ struct AirCombo {
     bool recoil = false;
     int ticks = 0;
     unsigned strikes = 0;
+    bool tracking = false;
 } s_airCombo;
 
 constexpr int kAirComboTicks = 90; // Three seconds at the game's 30 Hz tick rate.
 constexpr float kAirComboFallSpeed = -0.8f;
 constexpr float kAirComboMoveSpeed = 6.0f;
+constexpr float kAirComboTrackSpeed = 12.0f;
+constexpr float kAirComboReach = 85.0f;
+constexpr float kAirComboSwordHeight = 80.0f;
+constexpr float kAirComboHeightTolerance = 8.0f;
 
 bool air_cut_proc(daAlink_c::daAlink_PROC proc) {
     return proc == daAlink_c::PROC_CUT_NORMAL || proc == daAlink_c::PROC_CUT_FINISH;
@@ -25,8 +30,18 @@ bool owns_air_combo(const daAlink_c* link) {
     return link && s_manualJumpOwner == link && s_airCombo.active;
 }
 
+void stop_air_combo_tracking(daAlink_c* link) {
+    if (!s_airCombo.tracking) return;
+    s_airCombo.tracking = false;
+    // Do not carry target-directed ascent or forward drive into free fall,
+    // recoil or damage. Native reaction initializers set their own velocity.
+    link->speed.y = std::min(link->speed.y, 0.0f);
+    link->mNormalSpeed = 0.0f;
+}
+
 void stop_air_combo(daAlink_c* link) {
     if (!owns_air_combo(link)) return;
+    stop_air_combo_tracking(link);
     s_airCombo.active = false;
     s_airCombo.recoil = false;
     link->initGravity();
@@ -43,6 +58,7 @@ bool retain_air_combo(daAlink_c* link, daAlink_c::daAlink_PROC next) {
     if (!air_combos_enabled() || !r_jump_enabled()) return false;
     if (s_airCombo.active && air_cut_proc(next)) return true;
     if (s_airCombo.active && next == daAlink_c::PROC_CUT_REVERSE) {
+        stop_air_combo_tracking(link);
         s_airCombo.recoil = true;
         link->initGravity();
         return true;
@@ -54,11 +70,37 @@ bool retain_air_combo(daAlink_c* link, daAlink_c::daAlink_PROC next) {
     return false;
 }
 
+bool track_air_combo_target(daAlink_c* link) {
+    // Read the engine's current lock each time; do not retain an actor pointer
+    // across deletion, target changes or released lock-on.
+    const auto* target = link->checkAttentionLock() ? link->mTargetedActor : nullptr;
+    if (!target || target == link) return false;
+    const auto delta = target->eyePos - link->current.pos;
+    const float horizontal = delta.absXZ();
+    const float forward = std::max(0.0f, horizontal - kAirComboReach);
+    const float height = delta.y - kAirComboSwordHeight;
+    const float vertical = height > kAirComboHeightTolerance ? height - kAirComboHeightTolerance :
+        height < -kAirComboHeightTolerance ? height + kAirComboHeightTolerance : 0.0f;
+    const float distance = std::sqrt(forward * forward + vertical * vertical);
+    const float rate = distance > 0.001f ? std::min(0.2f, kAirComboTrackSpeed / distance) : 0.0f;
+    if (horizontal > 0.1f)
+        link->current.angle.y = cLib_targetAngleY(&link->current.pos, &target->eyePos);
+    link->mNormalSpeed = forward * rate;
+    link->speed.y = vertical * rate;
+    link->setSpecialGravity(0.0f, -kAirComboTrackSpeed, FALSE);
+    s_airCombo.tracking = true;
+    // posMove and CrrPos still own displacement, wall/floor/roof collision and
+    // peak fall height. Repeated pre/post calls set the same velocity, not lift.
+    return true;
+}
+
 void apply_air_combo_physics(daAlink_c* link) {
     if (!owns_air_combo(link)) return;
     // Do not call setJumpMode(): it would reset fall height at every swing.
     link->onModeFlg(daAlink_c::MODE_JUMP);
     if (s_airCombo.recoil) return;
+    if (track_air_combo_target(link)) return;
+    stop_air_combo_tracking(link);
     if (link->speed.y > 0.0f) {
         link->initGravity(); // Finish the original ascent; never add lift.
     } else {

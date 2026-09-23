@@ -75,9 +75,12 @@ It is **off by default** and requires `R Jump` under Controls.
 
 Jump with ZR, then tap B to start and continue the normal sword string in the air,
 including its finisher. ZR can be released after takeoff. Each manual jump allows
-one string of up to four attacks. The original ascent is preserved, then falling
-is slowed during the string for at most three seconds; attacks never add upward
-velocity or restart the airtime allowance. Landing can end the string earlier.
+one string of up to four attacks within at most three seconds. While locked on,
+Link moves toward the target in three dimensions, including upward toward enemies
+above normal jump height or downward toward lower enemies. He slows to a stop
+within sword reach instead of passing through the target. Losing lock-on ends
+the pursuit. Without a target, the original ascent and brief fall slowdown apply.
+Follow-up attacks never reset the airtime allowance; landing can end it earlier.
 
 With Air Combos enabled, ZR also jumps while locked on, taking priority over
 raising the manual shield on that press. Holding ZR in the air does not consume

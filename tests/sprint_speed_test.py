@@ -120,7 +120,7 @@ int main(){
             begin_sprint(&link);close(link.mMaxSpeed,23*factor);
             link.mNormalSpeed=std::min(link.mNormalSpeed+1.9f,link.mMaxSpeed);
             link.mMaxSpeed=23;
-            const float cadence=std::max(1.0f,link.mNormalSpeed/23);
+            const float cadence=1.0f+0.5f*std::max(0.0f,link.mNormalSpeed/23-1.0f);
             auto rates=animate(&link,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN);
             close(rates[0],0.75f*cadence);close(rates[1],1.5f*cadence);
             rates=animate(&link,daAlink_c::ANM_WALK,daAlink_c::ANM_RUN_B);
@@ -134,12 +134,21 @@ int main(){
             assert(!s_sprintOwner);close(animate(&link,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN)[1],1.5f);
         }
     }
+    // Explicit playback targets: only half the movement bonus affects cadence.
+    for(const auto sample : {std::array{1.0f,1.0f}, std::array{1.5f,1.25f},
+                             std::array{2.0f,1.5f}, std::array{3.0f,2.0f}}){
+        daAlink_c runner;configPercent=300;begin_sprint(&runner);
+        runner.mMaxSpeed=23;runner.mNormalSpeed=23*sample[0];
+        const auto rates=animate(&runner,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN);
+        close(rates[0],0.75f*sample[1]);close(rates[1],1.5f*sample[1]);
+        after_proc_move_sprint(nullptr,nullptr,nullptr,nullptr);
+    }
     configPercent=300;
     // Indoor/terrain speed is used instead of the configured 3x ceiling.
     daAlink_c link;begin_sprint(&link);link.mMaxSpeed=23;link.mNormalSpeed=34.5f;
-    close(animate(&link,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN)[1],2.25f);
+    close(animate(&link,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN)[1],1.875f);
     link.groundProjection=0.8f;
-    close(animate(&link,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN)[1],1.8f);
+    close(animate(&link,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN)[1],1.65f);
     link.mNormalSpeed=0;close(animate(&link,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN)[1],1.5f);
     daAlink_c other;close(animate(&other,daAlink_c::ANM_RUN,daAlink_c::ANM_RUN)[1],1.5f);
     transition(&link,daAlink_c::PROC_DAMAGE);assert(!s_sprintOwner);

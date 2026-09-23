@@ -340,7 +340,11 @@ HookAction before_set_double_anime_sprint(ModContext*, void* args, void*, void*)
     // mMaxSpeed to the native movement limit before building the walk/run blend.
     // Use its ground-adjusted speed ratio so acceleration, analog input, slopes
     // and indoor limits affect cadence instead of immediately playing at the cap.
-    const f32 cadence = std::max(1.0f, link->getMoveGroundAngleSpeedRate());
+    // Add half the earned speed bonus to playback: 150% movement -> 125%
+    // cadence. Indoor slowdown is already in the measured ratio, so do not
+    // apply a second room multiplier.
+    const f32 speedBonus = std::max(0.0f, link->getMoveGroundAngleSpeedRate() - 1.0f);
+    const f32 cadence = 1.0f + 0.5f * speedBonus;
     for (int layer = 0; layer < 2; ++layer) {
         const auto animation = mods::arg<daAlink_c::daAlink_ANM>(args, 4 + layer);
         if (animation == daAlink_c::ANM_RUN || animation == daAlink_c::ANM_RUN_B) {

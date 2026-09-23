@@ -28,7 +28,8 @@ aiming, boss, and HUD features for Twilight Princess.
 - Fierce Deity mode with a charge meter, temporary Magic Armor model swap, and
   doubled sword damage.
 - Manual Shielding, R Jump, and a stamina-powered Sprint option with adjustable
-  speed (100–300%, default 150%) and animation cadence matched to movement.
+  speed (100–300%, default 150%). Sprint animation uses half the actual movement
+  speed bonus: 150% movement gives 125% playback, including native indoor slowdown.
   Manual jumps during sprinting carry the earned speed bonus into horizontal
   speed and distance, with the normal jump height. Set **Sprint Speed** beside
   **Sprint** in the Controls settings.

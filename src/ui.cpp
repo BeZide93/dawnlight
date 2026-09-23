@@ -403,7 +403,8 @@ ModResult build_controls_tab(
     }
     if (add_number(ctx, left, "Sprint Speed", sprint_speed_config_var(), 100, 300, 5, "%",
             "Sprint speed relative to normal running. 150% keeps the original sprint speed. "
-            "Animation speed and manual jump distance follow your sprint momentum.",
+            "Animation uses half the actual speed bonus (150% movement = 125% playback). "
+            "Manual jump distance follows your sprint momentum.",
             sprint_speed_disabled)
         != MOD_OK)
     {

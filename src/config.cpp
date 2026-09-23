@@ -43,6 +43,7 @@ ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
 ConfigVarHandle s_stamina = 0;
 ConfigVarHandle s_sprint = 0;
+ConfigVarHandle s_sprintSpeedPercent = 0;
 ConfigVarHandle s_enemySpawnerProfile = 0;
 ConfigVarHandle s_zItemSlot = 0;
 ConfigVarHandle s_dawnlightTouchUi = 0;
@@ -873,6 +874,7 @@ ModResult register_config(ModError* error) {
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
+        register_int("sprint-speed-percent", 150, s_sprintSpeedPercent) != MOD_OK ||
         register_int("enemy-spawner-profile", 0, s_enemySpawnerProfile) != MOD_OK ||
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
         register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
@@ -1087,6 +1089,10 @@ bool stamina_enabled() {
 
 bool sprint_enabled() {
     return get_bool(s_sprint, false);
+}
+
+float sprint_speed_multiplier() {
+    return static_cast<float>(get_int(s_sprintSpeedPercent, 150, 100, 300)) / 100.0f;
 }
 
 bool z_item_slot_enabled() {
@@ -1332,6 +1338,10 @@ ConfigVarHandle stamina_config_var() {
 
 ConfigVarHandle sprint_config_var() {
     return s_sprint;
+}
+
+ConfigVarHandle sprint_speed_config_var() {
+    return s_sprintSpeedPercent;
 }
 
 int enemy_spawner_profile() {

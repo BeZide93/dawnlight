@@ -387,6 +387,23 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (add_number(ctx, left, "Jump Height", jump_height_config_var(), 100, 500, 10, "%",
+            "Height of a manual jump. 100% is the original height; maximum 500%.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Glide", glide_config_var(),
+            "Press ZR again in midair to hold a Cucco and glide, including during ordinary falls. "
+            "The Cucco disappears when you land.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Revali's Gale", revalis_gale_config_var(),
+            "Stand still and hold ZR for 2 seconds to crouch, then release for a wind-assisted "
+            "jump at four times your configured jump height. A short tap in place jumps on release.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Stamina Bar", stamina_config_var(),
             "Enables shared stamina costs and the stamina meter. When disabled, Dawnlight moves "
             "do not consume stamina.")

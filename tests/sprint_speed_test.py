@@ -77,6 +77,8 @@ struct daAlink_c {
 };
 const daAlink_c* s_manualJumpOwner=nullptr;
 daAlink_c* s_sprintOwner=nullptr;
+float jump_height_multiplier(){return 1;}
+void jump_abilities_proc_change(daAlink_c*,daAlink_c::daAlink_PROC){}
 bool jump_state_ready(daAlink_c* link){return link&&jumpReady;}
 void mark_manual_jump_started(daAlink_c*){++manualMarks;}
 void clear_manual_jump(daAlink_c*){++manualClears;}
@@ -212,7 +214,7 @@ int main(){
 '''
 names = ['bool sprint_requested', 'float sprint_jump_speed_multiplier',
          'void apply_sprint_jump_speed', 'void set_manual_jump_direction',
-         'void apply_manual_jump_movement', 'bool start_ground_jump',
+         'void apply_manual_jump_movement', 'void apply_manual_jump_height', 'bool start_ground_jump',
          'HookAction before_proc_move_sprint', 'void after_proc_move_sprint',
          'bool sprint_animation_active', 'HookAction before_set_double_anime_sprint',
          'HookAction before_get_main_bck_data_sprint', 'HookAction before_common_proc_init']

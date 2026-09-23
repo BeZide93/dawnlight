@@ -31,8 +31,17 @@ aiming, boss, and HUD features for Twilight Princess.
   speed (100–300%, default 150%). Sprint animation uses half the actual movement
   speed bonus: 150% movement gives 125% playback, including native indoor slowdown.
   Manual jumps during sprinting carry the earned speed bonus into horizontal
-  speed and distance, with the normal jump height. Set **Sprint Speed** beside
+  speed and distance, independently of the selected jump height. Set **Sprint Speed** beside
   **Sprint** in the Controls settings.
+- **Jump Height**, directly below **R Jump** in Controls, sets manual jump height
+  from 100% (the original height and default) to 500%.
+- Optional **Glide**: press ZR in the air to deploy a Cucco using native gliding,
+  during manual jumps or ordinary falls. Landing removes the summoned Cucco.
+- Optional **Revali's Gale**: stand still and hold ZR for two seconds until Link
+  crouches, then release to jump four times the configured Jump Height with the
+  native Gale Boomerang tornado. With Gale enabled, a short stationary ZR tap
+  performs R Jump on release; moving jumps remain immediate. Glide and Gale work
+  independently of the R Jump toggle. Both new abilities default to disabled.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
 - Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
   faster tracking, and selected profile-specific mechanics.

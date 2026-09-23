@@ -12,6 +12,15 @@
 #include "mods/svc/hook.h"
 
 #include <algorithm>
+#include <cmath>
+#include "enemy_spawner.hpp"
+#include "f_pc/f_pc_create_req.h"
+#include "f_pc/f_pc_leaf.h"
+#include "f_pc/f_pc_name.h"
+#include "JSystem/J3DGraphAnimator/J3DJoint.h"
+#include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
+#include "Z2AudioLib/Z2AudioMgr.h"
+#include "res/Object/AlAnm.h"
 
 namespace dawnlight {
 namespace {
@@ -21,6 +30,9 @@ DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
 DEFINE_HOOK(&daAlink_c::procMove, ProcMoveSprint);
 DEFINE_HOOK(&daAlink_c::getMainBckData, GetMainBckDataSprint);
 DEFINE_HOOK(&daAlink_c::setDoubleAnime, SetDoubleAnimeSprint);
+DEFINE_HOOK(&daAlink_c::execute, JumpAbilitiesExecute);
+DEFINE_HOOK(&daAlink_c::draw, JumpAbilitiesDraw);
+DEFINE_HOOK(&fpcLf_Delete, JumpAbilitiesDelete);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
 DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
@@ -34,6 +46,7 @@ const daAlink_c* s_manualJumpOwner = nullptr;
 daAlink_c* s_slowSpeedOwner = nullptr;
 float s_previousNormalSpeed = 0.0f;
 daAlink_c* s_sprintOwner = nullptr;
+bool s_deferredJumpTrigger = false;
 
 JumpBinding active_jump_binding() {
     return JumpBinding::LockR;
@@ -42,7 +55,7 @@ JumpBinding active_jump_binding() {
 bool jump_pressed(JumpBinding binding) {
     switch (binding) {
     case JumpBinding::LockR:
-        return mDoCPd_c::getTrigLockR(PAD_1) != 0;
+        return s_deferredJumpTrigger || mDoCPd_c::getTrigLockR(PAD_1) != 0;
     }
     return false;
 }
@@ -146,8 +159,8 @@ bool r_action_context_active(daAlink_c* link) {
     return target_or_shield_context_active(link) || chain_context_active(link);
 }
 
-bool jump_state_ready(daAlink_c* link) {
-    if (link == nullptr || !r_jump_enabled() || !jump_pressed(active_jump_binding())) {
+bool ground_jump_context_ready(daAlink_c* link) {
+    if (link == nullptr) {
         return false;
     }
 
@@ -181,6 +194,15 @@ bool jump_state_ready(daAlink_c* link) {
         && link->mGrabItemAcKeep.getActor() == nullptr
         && link->mLinkAcch.ChkGroundHit()
         && !r_action_context_active(link);
+}
+
+bool jump_state_ready(daAlink_c* link) {
+    return r_jump_enabled() && jump_pressed(active_jump_binding()) && ground_jump_context_ready(link);
+}
+
+void apply_manual_jump_height(daAlink_c* link, float heightMultiplier) {
+    // Height is proportional to launch velocity squared, not velocity itself.
+    link->speed.y *= std::sqrt(heightMultiplier);
 }
 
 void set_manual_jump_direction(daAlink_c* link) {
@@ -246,6 +268,7 @@ bool start_ground_jump(daAlink_c* link) {
     if (link->procAutoJumpInit(1)) {
         apply_manual_jump_movement(link);
         apply_sprint_jump_speed(link, sprintJumpMultiplier);
+        apply_manual_jump_height(link, jump_height_multiplier());
         s_manualJumpOwner = link;
         mark_manual_jump_started(link);
         return true;
@@ -272,8 +295,14 @@ bool start_air_jump_attack(daAlink_c* link) {
     return true;
 }
 
+#include "jump_abilities.inc"
+
 HookAction before_check_auto_jump(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (handle_jump_abilities(link)) {
+        *static_cast<BOOL*>(retval) = TRUE;
+        return HOOK_SKIP_ORIGINAL;
+    }
     if (!start_ground_jump(link)) {
         return HOOK_CONTINUE;
     }
@@ -368,6 +397,7 @@ HookAction before_get_main_bck_data_sprint(ModContext*, void* args, void*, void*
 HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const auto nextProc = mods::arg<daAlink_c::daAlink_PROC>(args, 1);
+    jump_abilities_proc_change(link, nextProc);
     if (s_sprintOwner == link && nextProc != daAlink_c::PROC_MOVE) {
         s_sprintOwner = nullptr;
     }
@@ -415,10 +445,18 @@ ModResult install_jump_hooks(ModError* error) {
         result = mods::hook_add_pre<SetBodyAngleXReadyAnime>(
             svc_hook, before_set_body_angle_x_ready_anime);
     }
+    if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesExecute>(svc_hook, before_jump_abilities_execute);
+    if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesExecute>(svc_hook, after_jump_abilities_execute);
+    if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesDraw>(svc_hook, after_jump_abilities_draw);
+    if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesDelete>(svc_hook, before_jump_abilities_delete);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight R jump hooks");
     }
     return MOD_OK;
+}
+
+void shutdown_jump_hooks() {
+    reset_jump_abilities(daAlink_getAlinkActorClass());
 }
 
 }  // namespace dawnlight

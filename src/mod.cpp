@@ -54,6 +54,7 @@ ModResult register_new_save_modes(ModError* error);
 ModResult register_ui(ModError* error);
 void update_new_save_modes();
 void shutdown_item_slot_hooks();
+void shutdown_jump_hooks();
 void shutdown_new_save_modes();
 }
 
@@ -146,6 +147,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    dawnlight::shutdown_jump_hooks();
     dawnlight::shutdown_model_overlays();
     dawnlight::shutdown_bow_modes();
     dawnlight::shutdown_great_spin_projectile();

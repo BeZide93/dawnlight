@@ -41,6 +41,9 @@ ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_arrowModes = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
+ConfigVarHandle s_jumpHeight = 0;
+ConfigVarHandle s_glide = 0;
+ConfigVarHandle s_revalisGale = 0;
 ConfigVarHandle s_stamina = 0;
 ConfigVarHandle s_sprint = 0;
 ConfigVarHandle s_sprintSpeedPercent = 0;
@@ -872,6 +875,9 @@ ModResult register_config(ModError* error) {
         register_bool("arrow-modes", true, s_arrowModes) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
+        register_int("jump-height-percent", 100, s_jumpHeight) != MOD_OK ||
+        register_bool("glide", false, s_glide) != MOD_OK ||
+        register_bool("revalis-gale", false, s_revalisGale) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
         register_int("sprint-speed-percent", 150, s_sprintSpeedPercent) != MOD_OK ||
@@ -1082,6 +1088,13 @@ bool manual_shielding_enabled() {
 bool r_jump_enabled() {
     return get_bool(s_rJump, true);
 }
+
+float jump_height_multiplier() {
+    return static_cast<float>(get_int(s_jumpHeight, 100, 100, 500)) / 100.0f;
+}
+
+bool glide_enabled() { return get_bool(s_glide, false); }
+bool revalis_gale_enabled() { return get_bool(s_revalisGale, false); }
 
 bool stamina_enabled() {
     return get_bool(s_stamina, true);
@@ -1331,6 +1344,10 @@ ConfigVarHandle manual_shielding_config_var() {
 ConfigVarHandle r_jump_config_var() {
     return s_rJump;
 }
+
+ConfigVarHandle jump_height_config_var() { return s_jumpHeight; }
+ConfigVarHandle glide_config_var() { return s_glide; }
+ConfigVarHandle revalis_gale_config_var() { return s_revalisGale; }
 
 ConfigVarHandle stamina_config_var() {
     return s_stamina;

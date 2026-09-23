@@ -28,6 +28,8 @@ void check_random_orders() {
         for(auto trial:b.trial_order) code=code*5+static_cast<unsigned>(trial);
         trial_orders.insert(code);
         const auto trials=b.trial_order;
+        assert(std::find(trials.begin(),trials.end(),Trial::Fire)<
+               std::find(trials.begin(),trials.end(),Trial::Wind));
         const auto first_cycle=b.phase_order;
         unsigned seen_trials=0;
         // Full fights keep counter identities and HP triggers under every order.
@@ -41,6 +43,7 @@ void check_random_orders() {
             assert(b.health==9-static_cast<int>(hit));
             if(hit%2==1 && hit<8) {
                 const auto expected=trials[hit/2];
+                if(expected==Trial::Wind) assert(seen_trials&(1u<<static_cast<unsigned>(Trial::Fire)));
                 assert(b.trial==expected && b.audio_trial()==expected);
                 const unsigned bit=1u<<static_cast<unsigned>(expected);
                 assert(!(seen_trials&bit));seen_trials|=bit;
@@ -61,6 +64,8 @@ void check_random_orders() {
         assert(seen_trials==30 && b.dying && b.next_trial()==Trial::None);
         assert(b.audio_trial()==Trial::None);
         b.defeated_doubles=6;b.begin(random_value); // replay clears all progress
+        assert(std::find(b.trial_order.begin(),b.trial_order.end(),Trial::Fire)<
+               std::find(b.trial_order.begin(),b.trial_order.end(),Trial::Wind));
         assert(b.health==10 && !b.dying && !b.advance && !b.recovery);
         assert(b.phase_cursor==0 && b.phase==b.phase_order[0]);
         assert(!b.defeated_doubles && !b.trials_started && b.remaining==600);
@@ -78,7 +83,7 @@ void check_random_orders() {
             assert(seen==255);
         }
     }
-    assert(openings.size()==8 && trial_orders.size()==24);
+    assert(openings.size()==8 && trial_orders.size()==12);
     // Force a shuffle that would repeat the last phase across a bag boundary.
     Battle boundary;boundary.phase_order={7,0,1,2,3,4,5,6};
     boundary.phase_cursor=7;boundary.phase=7;boundary.remaining=1;

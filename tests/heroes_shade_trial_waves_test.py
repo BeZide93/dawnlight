@@ -253,9 +253,13 @@ int main(){
     reset();audioHeap.available=0;bank.arcs[0x16].fail=true;
     sTrialWaves.prepare(Trial::Eyes);assert(blocks==0 && testLog.warnings==1);
     reset();
-    // Exercise the production prefetch function for every intermission order.
+    // Exercise production prefetch for every valid fire-before-wind order.
     std::array<Trial,4> order{Trial::Shield,Trial::Fire,Trial::Eyes,Trial::Wind};
+    unsigned validOrders=0;
     do {
+        if(std::find(order.begin(),order.end(),Trial::Wind)<
+           std::find(order.begin(),order.end(),Trial::Fire)) continue;
+        ++validOrders;
         reset();sBattle={};sBattle.trial_order=order;
         for(unsigned i=0;i<order.size();++i) {
             sBattle.trial=Trial::None;sBattle.trials_started=i;
@@ -269,6 +273,7 @@ int main(){
         sBattle.trial=Trial::None;
         update_heroes_shade_audio();assert(sTrialWaves.selected==Trial::None);
     } while(std::next_permutation(order.begin(),order.end()));
+    assert(validOrders==12);
     reset();
 }
 

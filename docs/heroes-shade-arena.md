@@ -236,7 +236,9 @@ existing victory scene. Missed-skill timeouts do not trigger intermissions.
 
 The four intermissions are shuffled independently at each sword interaction that
 starts a new fight. Each occurs exactly once, at 8 / 6 / 4 / 2 HP in the drawn
-order. Audio preloading follows that order and retains the current trial's
+order, with fire always preceding wind so the persistent lava rim is already
+present for the wind trial. All 12 valid orders remain possible; the two trials
+do not have to be adjacent. Audio preloading follows that order and retains the current trial's
 archives until it ends. Ending wind at the sword does not reshuffle the fight.
 
 | Intermission | Resolution |

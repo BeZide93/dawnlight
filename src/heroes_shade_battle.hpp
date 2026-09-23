@@ -199,6 +199,11 @@ struct Battle {
         *this={};
         shuffle(phase_order,random);
         shuffle(trial_order,random);
+        // Wind relies on the persistent lava rim created by the fire trial.
+        // Swapping an inverted pair preserves all 12 valid shuffled orders.
+        const auto fire=std::find(trial_order.begin(),trial_order.end(),Trial::Fire);
+        const auto wind=std::find(trial_order.begin(),trial_order.end(),Trial::Wind);
+        if (wind<fire) std::iter_swap(fire,wind);
         phase=phase_order.front();
     }
     Trial next_trial() const {

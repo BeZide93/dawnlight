@@ -580,8 +580,8 @@ int main() {
         assert(!skill_counter_action(&boss,boss.entry));
         // Recovery from a simultaneous boss hit must not freeze clone landing.
         int falls=two.falls;assert(skill_counter_action(&two,two.entry));assert(two.falls==falls+1);
-        for(int i=0;i<45;++i)sBattle.tick();
-        assert(sBattle.phase==0 && sBattle.defeated_doubles==0);
+        for(int i=0;i<45;++i)sBattle.tick([](float count){return count-1;});
+        assert(sBattle.phase!=7 && sBattle.defeated_doubles==0);
     }
     // Jump Strike doubles must fall/land before departure, even if Link ends
     // the attack or the boss enters recovery. Neither may notify the teacher

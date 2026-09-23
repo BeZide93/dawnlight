@@ -1,6 +1,7 @@
 #include "heroes_shade_encounter.hpp"
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
+#include "SSystem/SComponent/c_math.h"
 #include "generated/pedestal_stone.hpp"
 #include "pedestal_mesh.hpp"
 #include "enemy_spawner.hpp"
@@ -596,7 +597,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
     }
     if (!entry->divide && !sCinema.active() && !sBattle.dying) tick_arena_hazards();
     actor->mType=shade::phases[sBattle.phase].type;
-    if (!entry->divide && !actor->mCreating && sBattle.tick()) {
+    if (!entry->divide && !actor->mCreating && sBattle.tick(cM_rndF)) {
         remove_companions();
         entry->reset=true;
         if (sBattle.trial!=shade::Trial::None) {
@@ -1303,7 +1304,7 @@ int execute_pedestal(void* ptr) {
         return 1;
     }
     sStopping=false;
-    sBattle={};
+    sBattle.begin(cM_rndF);
     sFighters[0]={};
     cXyz pos=self->current.pos;
     pos.z-=450;
@@ -1402,9 +1403,7 @@ void update_heroes_shade_audio() {
         return;
     }
     // Preload the next phase during normal combat, before its opening cue.
-    const auto next=sBattle.trials_started<4 ?
-        static_cast<shade::Trial>(sBattle.trials_started+1) : shade::Trial::None;
-    sTrialWaves.prepare(sBattle.trial!=shade::Trial::None ? sBattle.trial : next);
+    sTrialWaves.prepare(sBattle.audio_trial());
 }
 void update_heroes_shade_arena() {
     if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) return;

@@ -13,6 +13,8 @@ fixture = r'''
 #include <cmath>
 #include <cstdint>
 namespace shade=dawnlight::shade;
+int randomCalls=0;
+float cM_rndF(float){++randomCalls;return 0;}
 using s16=std::int16_t;
 constexpr int PAD_1=0,PAD_BUTTON_A=1,MOD_OK=0,fpcNm_NPC_KN_e=1,kShadeParams=7;
 struct cXyz {
@@ -68,12 +70,16 @@ void check_interaction(bool audioReady) {
     sTrialWaves.ready=audioReady;
     sFighters={};sCinema={};sBattle={};prompts=spawns=0;
     player={};pad={};sStopping=false;
+    randomCalls=0;
     inArena=true;nextStage=event=paused=menu=false;
     Pedestal p;
     // Ordinary start still creates exactly one Shade and begins the intro.
     pad.mPressedButtonFlags=PAD_BUTTON_A|2;
     execute_pedestal(&p);
     assert(spawns==1 && sCinema.starts==1 && sBattle.health==10);
+    assert(randomCalls==10 && sBattle.phase==sBattle.phase_order[0] && sBattle.phase!=0);
+    const auto phaseOrder=sBattle.phase_order;
+    const auto trialOrder=sBattle.trial_order;
     assert(pad.mPressedButtonFlags==2);
     sCinema.running=false;
     sBattle.health=2;sBattle.phase=7;sBattle.trials_started=4;sBattle.advance=true;
@@ -116,6 +122,7 @@ void check_interaction(bool audioReady) {
     assert(p.trials.clock.windReleased && pad.mPressedButtonFlags==2);
     assert(spawns==1 && sFighters[0].id==id && sCinema.starts==1 && !sCinema.active());
     assert(sBattle.health==2 && sBattle.phase==7 && sBattle.trials_started==4 && sBattle.advance);
+    assert(randomCalls==10 && sBattle.phase_order==phaseOrder && sBattle.trial_order==trialOrder);
     assert(sBattle.trial==shade::Trial::Wind && p.trials.clock.tick());
     // A second press before Shade processes completion cannot restart the fight.
     prompts=0;pad.mPressedButtonFlags=PAD_BUTTON_A;
@@ -123,11 +130,11 @@ void check_interaction(bool audioReady) {
     sBattle.trial=shade::Trial::None;
     execute_pedestal(&p);assert(prompts==0 && spawns==1);
     // Native progression still requires the two remaining successful counters.
-    sBattle.tick();
+    sBattle.tick(cM_rndF);
     for(int hp=1;hp>=0;--hp) {
         sBattle.event(shade::phases[sBattle.phase].success);
         assert(sBattle.health==hp);
-        for(int i=0;i<45;++i) sBattle.tick();
+        for(int i=0;i<45;++i) sBattle.tick(cM_rndF);
         assert(sBattle.dying==(hp==0));
     }
 }

@@ -4,11 +4,14 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
+source = (root / 'src/heroes_shade_encounter.cpp').read_text()
+start = source.index('void update_heroes_shade_audio()')
+audio_update = source[start:source.index('\n}', start)+2]
 fixture = r'''
 #include <array>
 #include <algorithm>
 #include <cstdint>
-#include "heroes_shade_trials.hpp"
+#include "heroes_shade_battle.hpp"
 namespace shade=dawnlight::shade;
 using Trial=shade::Trial;
 #include <cassert>
@@ -119,6 +122,12 @@ namespace mods {
     }
 }
 #include "heroes_shade_trial_waves.inc"
+shade::Battle sBattle;
+int sRegistration=1;
+bool arena(){return true;}
+bool dComIfGp_isEnableNextStage(){return false;}
+void suspend_trial(){}
+// ACTUAL_AUDIO_UPDATE
 void finish(unsigned id){auto& a=bank.arcs.at(id);assert(a.status==1);--a._5a;a.status=2;a.onLoadDone();}
 void finish_all(){for(auto id:ShadeTrialWaves::ids)if(bank.arcs[id].status==1)finish(id);}
 void reset(bool borrowedVoice=true){
@@ -244,9 +253,27 @@ int main(){
     reset();audioHeap.available=0;bank.arcs[0x16].fail=true;
     sTrialWaves.prepare(Trial::Eyes);assert(blocks==0 && testLog.warnings==1);
     reset();
+    // Exercise the production prefetch function for every intermission order.
+    std::array<Trial,4> order{Trial::Shield,Trial::Fire,Trial::Eyes,Trial::Wind};
+    do {
+        reset();sBattle={};sBattle.trial_order=order;
+        for(unsigned i=0;i<order.size();++i) {
+            sBattle.trial=Trial::None;sBattle.trials_started=i;
+            update_heroes_shade_audio();
+            assert(sTrialWaves.selected==order[i]);
+            finish_all();update_heroes_shade_audio();assert(sTrialWaves.ready);
+            // Once started, preload must keep the active set, not jump ahead.
+            sBattle.trial=order[i];sBattle.trials_started=i+1;
+            update_heroes_shade_audio();assert(sTrialWaves.selected==order[i]);
+        }
+        sBattle.trial=Trial::None;
+        update_heroes_shade_audio();assert(sTrialWaves.selected==Trial::None);
+    } while(std::next_permutation(order.begin(),order.end()));
+    reset();
 }
 
 '''
+fixture = fixture.replace('// ACTUAL_AUDIO_UPDATE', audio_update)
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'waves.cpp'
     exe = Path(tmp) / 'waves'
@@ -255,7 +282,6 @@ with tempfile.TemporaryDirectory() as tmp:
                     '-I', str(root / 'src'), str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 
-source = (root / 'src/heroes_shade_encounter.cpp').read_text()
 assert 'PRE(ShadeWaveLoadHook,before_trial_wave_load)' in source
 assert 'uninstall<ShadeWaveLoadHook>' in source
 print('Shade phase waves, bounded audio memory, reserved ARAM, async cleanup, adoption and retry: passed')

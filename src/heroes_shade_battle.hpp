@@ -212,6 +212,10 @@ struct Battle {
     Trial audio_trial() const {
         return trial!=Trial::None ? trial : next_trial();
     }
+    bool phase_allowed(unsigned candidate) const {
+        // The last hit must not use the two clone/group-warp lessons.
+        return health!=1 || candidate<6;
+    }
     void event(int event) {
         if (recovery || dying || trial!=Trial::None) return;
         if (event == phases[phase].success) {
@@ -230,14 +234,26 @@ struct Battle {
             return true;
         }
         if (advance || --remaining == 0) {
-            if (++phase_cursor==phase_order.size()) {
-                shuffle(phase_order,random);
-                // Keep the bag complete, but never repeat across its boundary.
-                if (phase_order.front()==phase)
-                    std::swap(phase_order.front(),phase_order[1+draw(random,static_cast<unsigned>(phase_order.size()-1))]);
-                phase_cursor=0;
-            }
-            phase=phase_order[phase_cursor];
+            const auto previous=phase;
+            do {
+                if (++phase_cursor==phase_order.size()) {
+                    shuffle(phase_order,random);
+                    // Compare the first playable phase, including at 1 HP
+                    // when the shuffled bag can begin with excluded lessons.
+                    auto first=std::find_if(phase_order.begin(),phase_order.end(),
+                        [this](unsigned candidate){return phase_allowed(candidate);});
+                    if (*first==previous) {
+                        std::array<unsigned,phases.size()> alternatives{};
+                        unsigned count=0;
+                        for(unsigned i=0;i<phase_order.size();++i)
+                            if(phase_allowed(phase_order[i]) && phase_order[i]!=previous)
+                                alternatives[count++]=i;
+                        std::iter_swap(first,phase_order.begin()+alternatives[draw(random,count)]);
+                    }
+                    phase_cursor=0;
+                }
+                phase=phase_order[phase_cursor];
+            } while (!phase_allowed(phase));
             defeated_doubles = 0;
             remaining = 600;
             advance = false;

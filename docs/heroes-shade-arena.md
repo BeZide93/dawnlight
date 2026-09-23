@@ -411,6 +411,11 @@ double management; the separate cursor only selects their order. Random draws
 occur when shuffling, never from frame counts or audio polling. The shared game
 generator is not reseeded.
 
+At 1 HP, Jump Strike and Spin Attack are skipped when selecting the next phase,
+including after timeouts and reshuffles. Only the other six phases can provide
+the final hit. Boundary-repeat prevention uses the first eligible phase; above
+1 HP all eight phases remain available. The fire-before-wind rule is unchanged.
+
 The lesson phase determines which counter damages Shade; it no longer restricts
 his offensive move selection. Outside the reflection phase, he uses three-hit
 combos: two ordinary sword attacks followed by a rotating finisher. The rotation

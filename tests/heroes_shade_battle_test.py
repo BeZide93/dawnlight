@@ -35,6 +35,7 @@ void check_random_orders() {
         // Full fights keep counter identities and HP triggers under every order.
         for(unsigned hit=0;hit<10;++hit) {
             const auto phase=b.phase;
+            if(b.health==1) assert(phase<6);
             if(hit<8) assert(phase==first_cycle[hit]);
             assert(b.audio_trial()==b.next_trial());
             b.event(phases[phase].success);
@@ -84,6 +85,34 @@ void check_random_orders() {
         }
     }
     assert(openings.size()==8 && trial_orders.size()==12);
+    // Every route from 2 HP selects a legal final phase. Timeouts and later
+    // reshuffles must keep excluding both clone lessons without repeating.
+    for(unsigned run=1;run<=256;++run) for(unsigned ending=0;ending<8;++ending) {
+        seed=run*0x9e3779b9u;
+        Battle last;last.begin(random_value);
+        last.phase=ending;
+        last.phase_cursor=static_cast<unsigned>(std::find(last.phase_order.begin(),last.phase_order.end(),ending)-last.phase_order.begin());
+        last.health=2;last.trials_started=4;
+        last.event(phases[ending].success);
+        for(int i=0;i<44;++i) assert(!last.tick(random_value));
+        assert(last.tick(random_value) && last.health==1 && last.phase<6);
+        unsigned seen=0;
+        for(int i=0;i<120;++i) {
+            const auto previous=last.phase;seen|=1u<<previous;
+            last.remaining=1;assert(last.tick(random_value));
+            assert(last.phase<6 && last.phase!=previous && last.health==1);
+            assert(last.trial==Trial::None && !last.dying);
+        }
+        assert(seen==63);
+        last.event(phases[last.phase].success);
+        for(int i=0;i<45;++i) last.tick(random_value);
+        assert(last.dying && last.health==0);
+    }
+    // Excluded leading entries must not hide a boundary repeat.
+    Battle finalBoundary;finalBoundary.health=1;finalBoundary.trials_started=4;
+    finalBoundary.phase_order={6,7,5,0,1,2,3,4};
+    finalBoundary.phase=5;finalBoundary.phase_cursor=7;finalBoundary.remaining=1;
+    assert(finalBoundary.tick(keep_order) && finalBoundary.phase<6 && finalBoundary.phase!=5);
     // Force a shuffle that would repeat the last phase across a bag boundary.
     Battle boundary;boundary.phase_order={7,0,1,2,3,4,5,6};
     boundary.phase_cursor=7;boundary.phase=7;boundary.remaining=1;

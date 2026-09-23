@@ -24,6 +24,7 @@ fixture = r'''
 #include <cassert>
 #include <cstring>
 #include <cstdint>
+#include <cmath>
 using s16 = std::int16_t;
 namespace shade = dawnlight::shade;
 struct ModContext {};
@@ -36,6 +37,7 @@ struct cXyz {
     cXyz() = default;
     cXyz(float a,float b,float c):x(a),y(b),z(c) {}
     cXyz& operator+=(const cXyz& b) { x+=b.x; y+=b.y; z+=b.z; return *this; }
+    float absXZ() const { return std::sqrt(x*x+z*z); }
     void zero() { x=y=z=0; }
     void set(float a,float b,float c) { x=a;y=b;z=c; }
     cXyz operator-(const cXyz& b) const { return {x-b.x,y-b.y,z-b.z}; }
@@ -80,7 +82,8 @@ struct Cylinder {
     bool ChkTgHit(){return hit;}
     Hit* GetTgHitObj(){return &object;}
     void* GetTgHitAc(){return attacker;}
-    bool target=true,hit=true,shield=true;
+    bool target=true,hit=true,shield=true,co=true;
+    void OffCoSetBit(){co=false;}
     void OffTgShield(){shield=false;}
     void OffTgSetBit(){target=false;}void ClrTgHit(){hit=false;}
     cXyz center;
@@ -121,6 +124,8 @@ struct dCcD_Cps : Sphere, cM3dGCps {
 };
 struct Fighter {
     int id=42, divide=0;
+    bool forming=false;
+    int formationTicks=0;
     shade::AttackChain chain;
     bool reset=false,swordContact=false;
     int offense=shade::helm_splitter;
@@ -165,6 +170,25 @@ struct daNpc_Kn_c {
     Morf morf, ghost;
     std::array<Morf*,2> mpModelMorf{&morf,&ghost};
     struct { cXyz pos{100,0,300}; struct { s16 y=1234; } angle; } current;
+    struct { cXyz pos; struct { s16 y=0; } angle; } home;
+    bool formationBlocked=false;
+    void setPos(const cXyz& pos) { current.pos=pos; }
+    // Native formation contract: initialize a mirrored target, take a 6-unit
+    // step, then request wait immediately when no teaching event is running.
+    void teach06_divideMove(void*) {
+        if(mMode==1) {
+            const float yaw=(home.angle.y+(entry.divide==1 ? -0x1555 : 0x1555))*3.14159265f/32768;
+            mTargetPos={home.pos.x+180*std::sin(yaw),home.pos.y,home.pos.z+180*std::cos(yaw)};
+            mMotionSeqMngr.no=9;mMode=2;
+        }
+        const auto delta=mTargetPos-current.pos;
+        const float distance=delta.absXZ();
+        if(!formationBlocked && distance>0) {
+            const float step=std::min(6.0f,distance)/distance;
+            current.pos.x+=delta.x*step;current.pos.z+=delta.z*step;
+        }
+        mActionMode=15;
+    }
     void setAngle(s16 y) { current.angle.y=y; }
     struct { cXyz position; } attention_info;
     cXyz eyePos;
@@ -181,9 +205,15 @@ constexpr int kNone=-1, cPhs_COMPLEATE_e=4;
 constexpr int Z2SE_KN_V_DAMAGE_L=1,Z2SE_HIT_SWORD=2,kShadeParams=0,fpcNm_NPC_KN_e=1;
 int spawns=0;
 bool pending_or_live(int id){return id>=1000;}
-void spawn(int,const cXyz&,s16,int,int& id){id=1000+ ++spawns;}
+std::array<cXyz,2> spawnPositions;
+std::array<s16,2> spawnAngles;
+void spawn(int,const cXyz& pos,s16 yaw,int,int& id){
+    spawnPositions[spawns%2]=pos;spawnAngles[spawns%2]=yaw;id=1000+ ++spawns;
+}
 float cM_ssin(s16){return 0;}float cM_scos(s16){return 1;}
 std::array<Fighter,3> sFighters;
+daNpc_Kn_c* formationBoss=nullptr;
+daNpc_Kn_c* actor_by_id(int id){return id==sFighters[0].id ? formationBoss : nullptr;}
 struct daObjKnBullet_c { int parentActorID=42; Sphere mCcSph; };
 constexpr float kApproachSpeed=6;
 float fopAcM_GetMaxFallSpeed(daNpc_Kn_c*) { return -40; }
@@ -217,6 +247,53 @@ struct Wolf {int id=1001;void prepare(const cXyz&,s16){id=1001;}} sShadeWolf;
 
 checks = r'''
 int main() {
+    // Spawn requests overlap the boss, including yaw; pending actors are not
+    // requested again. Async creation then follows the boss's current pose.
+    for(unsigned phase : {6u,7u}) {
+        sBattle={};sBattle.phase=phase;sFighters={};spawns=0;
+        daNpc_Kn_c boss;boss.current.pos={450,20,-270};boss.shape_angle.y=7000;
+        formationBoss=&boss;
+        add_doubles(&boss);add_doubles(&boss);
+        assert(spawns==2);
+        for(int i=0;i<2;++i) {
+            assert((spawnPositions[i]-boss.current.pos).absXZ()==0);
+            assert(spawnPositions[i].y==boss.current.pos.y && spawnAngles[i]==boss.shape_angle.y);
+            assert(sFighters[i+1].forming);
+        }
+        boss.current.pos={470,20,-250};
+        for(int divide : {1,2}) {
+            daNpc_Kn_c clone;clone.entry=sFighters[divide];
+            assert(form_double(&clone,clone.entry));
+            assert((clone.home.pos-boss.current.pos).absXZ()==0);
+            assert(clone.home.angle.y==boss.shape_angle.y);
+            assert((clone.current.pos-boss.current.pos).absXZ()<=6.001f);
+            assert(clone.entry.forming && clone.mMode==2 && clone.mMotionSeqMngr.no==9);
+            assert(clone.mActionMode==(phase==6 ? 14 : 20));
+            trial_body_collision(nullptr,&clone,nullptr,nullptr);
+            assert(!clone.mCylCc.co && clone.mCylCc.target);
+            for(auto& sphere:clone.mSphCc)sphere.enabled=true;
+            assert(sword_collision(nullptr,&clone,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+            for(const auto& sphere:clone.mSphCc)assert(!sphere.enabled);
+            int ticks=1;
+            while(clone.entry.forming && ticks<120) {
+                const auto previous=clone.current.pos;
+                assert(form_double(&clone,clone.entry));
+                assert((clone.current.pos-previous).absXZ()<=6.001f);
+                ++ticks;
+            }
+            assert(ticks==30 && !clone.entry.forming);
+            assert((clone.current.pos-clone.mTargetPos).absXZ()<=1);
+            assert(clone.mActionMode==(phase==6 ? 15 : 21) && clone.mMode==1);
+            assert(!form_double(&clone,clone.entry));
+        }
+        assert(boss.current.pos.x==470 && boss.current.pos.z==-250);
+        assert(!form_double(&boss,boss.entry));
+        daNpc_Kn_c blocked;blocked.entry=sFighters[1];blocked.formationBlocked=true;
+        for(int tick=0;tick<120;++tick)assert(form_double(&blocked,blocked.entry));
+        assert(!blocked.entry.forming && blocked.mActionMode==(phase==6 ? 15 : 21));
+        assert((blocked.current.pos-boss.current.pos).absXZ()==0); // no timeout teleport
+    }
+    formationBoss=nullptr;sFighters={};sBattle={};
     daNpc_Kn_c a;
     for(unsigned phase : {6u,7u}) {
         sBattle.phase=phase;
@@ -572,13 +649,14 @@ int main() {
         sBattle={};sBattle.phase=7;player.cut=cut;
         daNpc_Kn_c boss,one,two;
         one.entry.divide=1;two.entry.divide=2;
+        one.entry.forming=true;
         one.mCylCc.attacker=two.mCylCc.attacker=&player;
         one.current.angle.y=0;two.current.angle.y=static_cast<s16>(0x8000);
         playerYaw=0;
         assert(skill_counter_action(&one,one.entry));
         assert(sBattle.health==10 && sBattle.recovery==0 && one.mEvtNo==0);
         assert(one.mMotionSeqMngr.no==18 && one.speedF<0 && one.speed.y>0);
-        assert(!one.mCylCc.target && one.entry.offense==-1);
+        assert(!one.mCylCc.target && one.entry.offense==-1 && !one.entry.forming);
         assert(defeated_double(one.entry) && !defeated_double(two.entry));
         // First clone disappears only after landing, while the second remains.
         assert(skill_counter_action(&one,one.entry) && one.falls==1 && one.warps==0);
@@ -616,9 +694,9 @@ int main() {
         sBattle.recovery=side ? 45 : 0; // boss may have executed first this frame
         daNpc_Kn_c boss,clone;
         clone.entry.divide=1;clone.current.angle.y=static_cast<s16>(side);playerYaw=0;
-        clone.mCylCc.attacker=&player;
+        clone.mCylCc.attacker=&player;clone.entry.forming=true;
         assert(skill_counter_action(&clone,clone.entry));
-        assert(clone.mActionMode==16 && clone.speed.y>0);
+        assert(clone.mActionMode==16 && clone.speed.y>0 && !clone.entry.forming);
         assert(clone.mMotionSeqMngr.no==(side ? 14 : 18));
         assert(clone.field_0x15bd==0 && clone.mEvtNo==0 && sBattle.health==10);
         assert(sBattle.defeated_doubles==2 && !clone.mCylCc.target);
@@ -732,4 +810,4 @@ with tempfile.TemporaryDirectory() as tmp:
 action = function("combat_action")
 assert action.index("if (!entry)") < action.index("skill_counter_action(actor,*entry)")
 assert action.index("skill_counter_action(actor,*entry)") < action.index("if (sBattle.recovery)")
-print("Hero's Shade native hooks, Jump Strike/Spin landing and persistent double defeat: passed")
+print("Hero's Shade native hooks, Jump Strike/Spin landing and walking formation and persistent double defeat: passed")

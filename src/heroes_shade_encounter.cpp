@@ -60,6 +60,8 @@ ActorId sPedestal = kNone;
 struct Fighter {
     ActorId id = kNone;
     int divide = 0;
+    bool forming = false;
+    int formationTicks = 0;
     int offense = -1;
     int attackTicks = 0;
     int cooldown = kAttackCooldown;
@@ -447,11 +449,8 @@ void add_doubles(daNpc_Kn_c* boss) {
         if ((sBattle.defeated_doubles & (1u<<i)) || pending_or_live(entry.id)) continue;
         entry = {};
         entry.divide = i;
-        cXyz pos=boss->current.pos;
-        const s16 angle=static_cast<s16>(boss->shape_angle.y+(i==1 ? -0x4000 : 0x4000));
-        pos.x+=cM_ssin(angle)*180;
-        pos.z+=cM_scos(angle)*180;
-        spawn(fpcNm_NPC_KN_e,pos,boss->shape_angle.y,kShadeParams,entry.id);
+        entry.forming=true;
+        spawn(fpcNm_NPC_KN_e,boss->current.pos,boss->shape_angle.y,kShadeParams,entry.id);
     }
 }
 
@@ -921,6 +920,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         hold_recovery(actor);
         return HOOK_SKIP_ORIGINAL;
     }
+    if (form_double(actor,*entry)) return HOOK_SKIP_ORIGINAL;
     const auto& phase=shade::phases[sBattle.phase];
     auto* player=daPy_getPlayerActorClass();
     if (actor->mCylCc.ChkTgHit() || actor->mCylCc.ChkTgShieldHit()) {
@@ -1024,6 +1024,8 @@ void trial_body_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     const auto* entry=fighter(actor);
     if (!entry) return;
+    // Overlapping newborn doubles must walk apart, not be pushed apart by CO.
+    if (entry->forming) actor->mCylCc.OffCoSetBit();
     if (sBattle.phase==7 && sBattle.trial==shade::Trial::None) {
         if (auto* player=daPy_getPlayerActorClass(); player && spin_cut(player->getCutType()))
             actor->mCylCc.OffTgShield();
@@ -1039,7 +1041,7 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
     if (!entry) return HOOK_CONTINUE;
-    if (defeated_double(*entry) || sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
+    if (entry->forming || defeated_double(*entry) || sCinema.active() || shade::pauses_combat(sBattle.trial) || !actor->field_0x15af) {
         for (auto& sphere:actor->mSphCc) { sphere.OffAtSetBit(); sphere.ClrAtHit(); }
         entry->blade={};
         stop_blade_sweeps(*entry);

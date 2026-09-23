@@ -329,8 +329,15 @@ capsule is registered per tick, avoiding collision-table pressure and duplicate
 hits at corners. Intermission completion preserves the rim; full encounter
 cancellation removes it, and pause/menus suspend its drawing and collision.
 
-Doubles retain their native formation and defeat animations. The offensive
-controller now waits for action 15 (Jump Strike double) or 21 (Spin Attack double),
+Doubles spawn at the boss's exact position and yaw, then walk outward using the
+native Jump Strike formation in both double phases: motion 9 and six units per
+tick toward mirrored 180-unit offsets. Their first execution aligns with the
+live boss to account for asynchronous creation. The arena keeps formation active
+until arrival (or a 120-tick obstruction timeout), bypassing the tutorial's
+immediate no-event transition and the spin lesson's circle-position teleport.
+Body pushing and offensive blades are disabled while emerging; a valid skill hit
+still interrupts formation with native knockback, landing and departure.
+The offensive controller waits for action 15 (Jump Strike double) or 21 (Spin Attack double),
 not formation actions 14/20. Once ready, they use the existing sword/sword/special
 combos and staggered cooldowns, including normal one-heart sword attacks.
 

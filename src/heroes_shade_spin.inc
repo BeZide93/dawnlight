@@ -1,5 +1,32 @@
 // Arena Jump Strike and spin counters use native knockback/landing/departure,
 // but never the tutorial's parent talk flags or its group-wide end callbacks.
+bool form_double(daNpc_Kn_c* actor,Fighter& entry) {
+    if (!entry.divide || !entry.forming) return false;
+    if (!entry.formationTicks) {
+        // Actor creation is asynchronous: align with the live boss on the
+        // first execution, not where he stood when the request was queued.
+        if (auto* boss=static_cast<daNpc_Kn_c*>(actor_by_id(sFighters[0].id))) {
+            actor->setPos(boss->current.pos);
+            actor->home.pos=boss->current.pos;
+            actor->home.angle.y=boss->shape_angle.y;
+        }
+        actor->mMode=1;
+    }
+    // This native formation walks 6 units/tick to mirrored 180-unit offsets.
+    // Use it for both skills; the spin lesson's own setup positions actors on
+    // a circle around Link, which would jump from the overlapped spawn point.
+    actor->teach06_divideMove(nullptr);
+    const bool arrived=(actor->mTargetPos-actor->current.pos).absXZ()<=1.0f;
+    if (arrived || ++entry.formationTicks>=120) {
+        entry.forming=false;
+        actor->mActionMode=waiting_action(entry);
+        actor->mMode=1;
+    } else {
+        // Vanilla leaves formation immediately when no teaching event runs.
+        actor->mActionMode=sBattle.phase==6 ? 14 : 20;
+    }
+    return true;
+}
 bool spin_cut(int cut) {
     return cut==daPy_py_c::CUT_TYPE_TURN_LEFT || cut==daPy_py_c::CUT_TYPE_TURN_RIGHT ||
         cut==daPy_py_c::CUT_TYPE_LARGE_TURN_LEFT || cut==daPy_py_c::CUT_TYPE_LARGE_TURN_RIGHT;
@@ -42,6 +69,7 @@ bool skill_counter_action(daNpc_Kn_c* actor,Fighter& entry) {
         !hit->ChkAtType(AT_TYPE_NORMAL_SWORD|AT_TYPE_MASTER_SWORD)) return false;
 
     entry.offense=-1; entry.chain.cancel(); entry.helmTurnPending=false;
+    entry.forming=false;
     entry.swordContact=false; entry.animationStarted=false; entry.blade={};
     stop_blade_sweeps(entry);
     actor->field_0x15bc=0; actor->field_0x15bd=0;

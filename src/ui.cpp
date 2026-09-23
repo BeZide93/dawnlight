@@ -125,6 +125,10 @@ ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
     return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
 }
 
+bool sprint_speed_disabled(ModContext*, void*) {
+    return !sprint_enabled();
+}
+
 bool custom_hud_controls_disabled(ModContext*, void*) {
     return !custom_hud_layout_enabled();
 }
@@ -391,8 +395,16 @@ ModResult build_controls_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Sprint", sprint_config_var(),
-            "Hold the Roll button while running to move 50% faster using the run animation. "
+            "Hold the Roll button while running to sprint at the configured speed. "
             "Uses 5% stamina per second.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_number(ctx, left, "Sprint Speed", sprint_speed_config_var(), 100, 300, 5, "%",
+            "Sprint speed relative to normal running. 150% keeps the original sprint speed. "
+            "Animation speed and manual jump distance follow your sprint momentum.",
+            sprint_speed_disabled)
         != MOD_OK)
     {
         return MOD_ERROR;

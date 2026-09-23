@@ -11,6 +11,8 @@
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
 
+#include <algorithm>
+
 namespace dawnlight {
 namespace {
 
@@ -18,6 +20,7 @@ DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, CheckAutoJumpAction);
 DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
 DEFINE_HOOK(&daAlink_c::procMove, ProcMoveSprint);
 DEFINE_HOOK(&daAlink_c::getMainBckData, GetMainBckDataSprint);
+DEFINE_HOOK(&daAlink_c::setDoubleAnime, SetDoubleAnimeSprint);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
 DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
@@ -26,7 +29,6 @@ enum class JumpBinding {
 };
 
 constexpr u16 kSwordItem = 0x103;
-constexpr float kSprintSpeedMultiplier = 1.5f;
 
 const daAlink_c* s_manualJumpOwner = nullptr;
 daAlink_c* s_slowSpeedOwner = nullptr;
@@ -188,6 +190,29 @@ void set_manual_jump_direction(daAlink_c* link) {
     link->current.angle.y = link->shape_angle.y;
 }
 
+float sprint_jump_speed_multiplier(daAlink_c* link) {
+    if (!sprint_requested(link) || link->mpHIO == nullptr) {
+        return 1.0f;
+    }
+    const f32 runSpeed = link->mpHIO->mMove.m.mMaxSpeed;
+    if (runSpeed <= 0.0f) {
+        return 1.0f;
+    }
+    // Carry only the sprint bonus already reached on the ground. Holding Roll
+    // at a standstill must not grant a full-speed launch; native indoor limits
+    // and acceleration still matter. Snapshot before jump init replaces speed.
+    return std::clamp(link->mNormalSpeed / runSpeed, 1.0f, sprint_speed_multiplier());
+}
+
+void apply_sprint_jump_speed(daAlink_c* link, const float multiplier) {
+    // The native initializer has already calculated vertical speed/gravity.
+    // Scale horizontal motion once, then leave airborne steering and collision
+    // to the existing jump procedure (including Bullet Time).
+    link->mNormalSpeed *= multiplier;
+    link->speedF *= multiplier;
+    link->mMaxSpeed *= multiplier;
+}
+
 void apply_manual_jump_movement(daAlink_c* link) {
     if (!link->checkInputOnR()) {
         link->speedF = 0.0f;
@@ -203,6 +228,7 @@ bool start_ground_jump(daAlink_c* link) {
         return false;
     }
 
+    const float sprintJumpMultiplier = sprint_jump_speed_multiplier(link);
     set_manual_jump_direction(link);
 
     if (link->mEquipItem == kSwordItem &&
@@ -219,6 +245,7 @@ bool start_ground_jump(daAlink_c* link) {
 
     if (link->procAutoJumpInit(1)) {
         apply_manual_jump_movement(link);
+        apply_sprint_jump_speed(link, sprintJumpMultiplier);
         s_manualJumpOwner = link;
         mark_manual_jump_started(link);
         return true;
@@ -287,16 +314,48 @@ HookAction before_proc_move_sprint(ModContext*, void* args, void*, void*) {
         return HOOK_CONTINUE;
     }
 
-    link->mMaxSpeed *= kSprintSpeedMultiplier;
+    link->mMaxSpeed *= sprint_speed_multiplier();
     s_sprintOwner = link;
     mark_sprint_stamina_active();
+    return HOOK_CONTINUE;
+}
+
+void after_proc_move_sprint(ModContext*, void*, void*, void*) {
+    // Animation substitutions belong only to this movement update. Do not
+    // leave the owner active for later actions or the next actor/frame.
+    s_sprintOwner = nullptr;
+}
+
+bool sprint_animation_active(const daAlink_c* link) {
+    return link != nullptr && s_sprintOwner == link && link->mProcID == daAlink_c::PROC_MOVE;
+}
+
+HookAction before_set_double_anime_sprint(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!sprint_animation_active(link) || link->mMaxSpeed <= 0.0f) {
+        return HOOK_CONTINUE;
+    }
+
+    // checkNextAction consumes the boosted limit for acceleration, then resets
+    // mMaxSpeed to the native movement limit before building the walk/run blend.
+    // Use its ground-adjusted speed ratio so acceleration, analog input, slopes
+    // and indoor limits affect cadence instead of immediately playing at the cap.
+    const f32 cadence = std::max(1.0f, link->getMoveGroundAngleSpeedRate());
+    for (int layer = 0; layer < 2; ++layer) {
+        const auto animation = mods::arg<daAlink_c::daAlink_ANM>(args, 4 + layer);
+        if (animation == daAlink_c::ANM_RUN || animation == daAlink_c::ANM_RUN_B) {
+            mods::arg_ref<f32>(args, 2 + layer) *= cadence;
+        }
+    }
+    // Let the native blend synchronize upper/lower animation and footstep
+    // timing. Adjust fresh arguments, never multiply persistent frame rates.
     return HOOK_CONTINUE;
 }
 
 HookAction before_get_main_bck_data_sprint(ModContext*, void* args, void*, void*) {
     const auto* link = mods::arg<const daAlink_c*>(args, 0);
     auto& animation = mods::arg_ref<daAlink_c::daAlink_ANM>(args, 1);
-    if (s_sprintOwner == link && animation == daAlink_c::ANM_RUN) {
+    if (sprint_animation_active(link) && animation == daAlink_c::ANM_RUN) {
         animation = daAlink_c::ANM_RUN_B;
     }
     return HOOK_CONTINUE;
@@ -305,6 +364,9 @@ HookAction before_get_main_bck_data_sprint(ModContext*, void* args, void*, void*
 HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const auto nextProc = mods::arg<daAlink_c::daAlink_PROC>(args, 1);
+    if (s_sprintOwner == link && nextProc != daAlink_c::PROC_MOVE) {
+        s_sprintOwner = nullptr;
+    }
     if (s_manualJumpOwner == link && nextProc != daAlink_c::PROC_AUTO_JUMP) {
         s_manualJumpOwner = nullptr;
         clear_manual_jump(link);
@@ -333,6 +395,13 @@ ModResult install_jump_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ProcMoveSprint>(svc_hook, before_proc_move_sprint);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ProcMoveSprint>(svc_hook, after_proc_move_sprint);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<SetDoubleAnimeSprint>(
+            svc_hook, before_set_double_anime_sprint);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<GetMainBckDataSprint>(

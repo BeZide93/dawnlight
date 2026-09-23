@@ -27,7 +27,11 @@ aiming, boss, and HUD features for Twilight Princess.
   can disable both the meter and all Dawnlight stamina costs.
 - Fierce Deity mode with a charge meter, temporary Magic Armor model swap, and
   doubled sword damage.
-- Manual Shielding, R Jump, and a stamina-powered Sprint option.
+- Manual Shielding, R Jump, and a stamina-powered Sprint option with adjustable
+  speed (100–300%, default 150%) and animation cadence matched to movement.
+  Manual jumps during sprinting carry the earned speed bonus into horizontal
+  speed and distance, with the normal jump height. Set **Sprint Speed** beside
+  **Sprint** in the Controls settings.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
 - Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
   faster tracking, and selected profile-specific mechanics.

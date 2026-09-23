@@ -342,6 +342,7 @@ std::array<RoundPictureState, 32> s_roundPictureStates;
 dMeter2Draw_c* s_roundHudMeter = nullptr;
 dMeter2Draw_c* s_hudLayoutMeter = nullptr;
 J2DScreen* s_hudLayoutScreen = nullptr;
+bool s_interactionPromptLayout = false;
 
 bool consume_touch_midna_trigger() {
     const bool triggered = s_touchMidnaTrig;
@@ -1261,6 +1262,7 @@ void clear_shared_hud_layout_cache() {
     s_roundHudMeter = nullptr;
     s_hudLayoutMeter = nullptr;
     s_hudLayoutScreen = nullptr;
+    s_interactionPromptLayout = false;
 }
 
 J2DPane* pane_ptr(CPaneMgrAlpha* pane) {
@@ -1480,13 +1482,45 @@ void apply_health_bar_layout(dMeter2Draw_c* meter) {
         enabled && currentHeart >= 10, offsetX, offsetY, 1.0f);
 }
 
-void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
-    if (meter == nullptr) {
-        return;
+bool hud_interaction_prompts_active(dMeter2Draw_c* meter) {
+    auto* hud = dMeter2Info_getMeterClass();
+    if (hud == nullptr || hud->getMeterDrawPtr() != meter) {
+        s_interactionPromptLayout = false;
+        return false;
     }
 
-    const bool enabled = hardcoded_hud_layout_enabled();
+    // These are the native A-only/A+B conversation layouts selected by
+    // alphaAnimeButton. Grass/hawk prompts can also use special scales without
+    // setting both show flags; shop/item explanation windows share these panes.
+    auto* link = daAlink_getAlinkActorClass();
+    if (hud->isShowFlag(0) || hud->isShowFlag(1) ||
+        dMeter2Info_isShopTalkFlag() || dMeter2Info_getItemExplainWindowStatus() ||
+        (link != nullptr && (link->checkGrassWhistle() || link->checkHawkWait())))
+    {
+        s_interactionPromptLayout = true;
+    } else if (s_interactionPromptLayout) {
+        // Wait for the native presentation animation to finish returning both
+        // icons and labels before applying gameplay offsets again. Use the
+        // engine targets, including its wolf/light-vessel variants, not pixels
+        // already transformed by another HUD mod.
+        const auto& target = hud->mPresentationTargets;
+        if (target.ready) {
+            for (int i = 0; i < 2; ++i) {
+                if (!nearly_equal(hud->mButtonATalkPosX[i], target.buttonAX[i]) ||
+                    !nearly_equal(hud->mButtonATalkPosY[i], target.buttonAY[i]) ||
+                    !nearly_equal(hud->field_0x148[i], target.buttonBX[i]) ||
+                    !nearly_equal(hud->field_0x150[i], target.buttonBY[i]))
+                {
+                    return true;
+                }
+            }
+        }
+        s_interactionPromptLayout = false;
+    }
+    return s_interactionPromptLayout;
+}
 
+void apply_hud_action_button_layout(dMeter2Draw_c* meter, const bool enabled) {
     const DuskModHudTransform aTransform = hud_layout_a_transform();
     const DuskModHudButtonLayout aLayout = hud_layout_a_button_layout();
     apply_hud_pane_transform(HudPaneSlot::ButtonA, meter->mpButtonA, enabled,
@@ -1518,6 +1552,15 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
         bLayout.text_anchor);
     apply_hud_text_box_group_binding(
         HudPaneSlot::TextB, meter->mpBText, 5, enabled, bLayout.text_anchor);
+}
+
+void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
+    if (meter == nullptr) {
+        return;
+    }
+
+    const bool enabled = hardcoded_hud_layout_enabled();
+    apply_hud_action_button_layout(meter, enabled && !hud_interaction_prompts_active(meter));
 
     const DuskModHudTransform xTransform = hud_layout_x_transform();
     const DuskModHudButtonLayout xLayout = hud_layout_x_button_layout();

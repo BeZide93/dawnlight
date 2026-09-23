@@ -37,6 +37,7 @@ struct cXyz {
     cXyz(float a,float b,float c):x(a),y(b),z(c) {}
     cXyz& operator+=(const cXyz& b) { x+=b.x; y+=b.y; z+=b.z; return *this; }
     void zero() { x=y=z=0; }
+    void set(float a,float b,float c) { x=a;y=b;z=c; }
     cXyz operator-(const cXyz& b) const { return {x-b.x,y-b.y,z-b.z}; }
 };
 using Mtx = float[3][4];
@@ -90,7 +91,7 @@ struct Cylinder {
 struct daPy_py_c {
     enum {CUT_TYPE_LARGE_JUMP_INIT=18,CUT_TYPE_LARGE_JUMP=19,CUT_TYPE_LARGE_JUMP_FINISH=20,CUT_TYPE_TURN_RIGHT=8,CUT_TYPE_TURN_LEFT=22,CUT_TYPE_LARGE_TURN_LEFT=23,CUT_TYPE_LARGE_TURN_RIGHT=24};
 };
-struct Player { std::array<Cylinder,3> mTgCyls; int cut=0; int getCutType(){return cut;} } player;
+struct Player { std::array<Cylinder,3> mTgCyls; int cut=0; int getCutType(){return cut;} bool checkDeadHP(){return false;} } player;
 Player* daAlink_getAlinkActorClass() { return &player; }
 Player* daPy_getPlayerActorClass() { return &player; }
 struct Sphere {
@@ -131,6 +132,11 @@ struct Fighter {
 struct daNpc_Kn_c {
     bool owned=true, mNoDraw=false;
     int field_0x15af=1;
+    int mType=6,field_0x170c=0,field_0x170d=0;
+    bool mCreating=false;
+    cXyz field_0x16f4{1,1,1};
+    struct {void ClrCcMove(){}} mCcStts;
+    void offDownFlg(){down=false;}void offHeadLockFlg(){}
     int mEvtNo=0, health=10;
     bool mSpeakEvent=false;
     void* mpPodModel=nullptr;
@@ -188,6 +194,25 @@ struct Space {
     void Set(Sphere* sphere) { assert(sphere->enabled && sphere->damage==expectedDamage); ++registered; }
 } space;
 Space* dComIfG_Ccsp() { return &space; }
+bool sStopping=false,paused=false,accepted=false;
+int companionRemovals=0,musicStops=0,cinemaTicks=0;
+bool arena(){return true;}
+bool dComIfGp_isEnableNextStage(){return false;}
+bool dComIfGp_event_runCheck(){return accepted;}
+bool dComIfGp_isPauseFlag(){return paused;}
+bool ui_document_visible(){return false;}
+float cM_rndF(float count){return count-1;}
+void stop_shade_music(){++musicStops;}
+void release_cinema(){sCinema={};}
+void cancel_trial(){}void suspend_trial(){}void finish_trial(){}
+void remove_actor(int){}
+void remove_companions(){++companionRemovals;for(unsigned i=1;i<3;++i)sFighters[i].deleting=true;}
+void tick_arena_hazards(){}
+void select_phase(daNpc_Kn_c*,Fighter& entry){entry.reset=false;}
+void cinema_pose(daNpc_Kn_c*,int){}
+void begin_trial(daNpc_Kn_c*){}bool tick_trial(daNpc_Kn_c*){return false;}
+void tick_cinema(daNpc_Kn_c*,Fighter&){++cinemaTicks;sCinema.tick(accepted,false,false);}
+struct Wolf {int id=1001;void prepare(const cXyz&,s16){id=1001;}} sShadeWolf;
 '''
 
 checks = r'''
@@ -649,6 +674,46 @@ int main() {
     trial_body_collision(nullptr,&spinTarget,nullptr,nullptr);assert(!spinTarget.mCylCc.target);
     assert(sword_collision(nullptr,&spinTarget,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
 
+    // Final skill counters go straight to the cinematic, even while the old
+    // lesson group warp is hidden/shrunk and the 45-tick recovery is pending.
+    for(unsigned phase : {6u,7u}) for(int cut : {8,22,23,24,19,20}) for(int side : {0,0x8000}) {
+        if((phase==6)!=(cut==19 || cut==20)) continue;
+        sBattle={};sCinema={};sFighters={};accepted=paused=false;
+        sBattle.phase=phase;sBattle.health=1;sBattle.trials_started=4;
+        daNpc_Kn_c boss;playerYaw=side;player.cut=cut;
+        boss.current.angle.y=0;boss.mCylCc.attacker=&player;
+        assert(skill_counter_action(&boss,boss.entry));
+        no_order(nullptr,&boss,nullptr,nullptr);
+        assert(sBattle.health==0 && sBattle.recovery==45);
+        const auto motion=boss.mMotionSeqMngr.no;
+        const auto verticalSpeed=boss.speed.y;
+        boss.mNoDraw=true;boss.field_0x16f4.set(0,0,0);
+        boss.field_0x170c=1;boss.field_0x170d=14;boss.field_0x15bd=2;
+        boss.mActionMode=phase==6 ? 17 : 23;
+        companionRemovals=musicStops=cinemaTicks=0;
+        int result=0;
+        paused=true;before_execute(nullptr,&boss,&result,nullptr);
+        assert(!sCinema.active() && sBattle.recovery==45);
+        paused=false;before_execute(nullptr,&boss,&result,nullptr);
+        assert(sBattle.dying && !sBattle.recovery && !sBattle.advance);
+        assert(sCinema.victory && sCinema.shot==shade::Shot::Request && cinemaTicks==1);
+        assert(companionRemovals==1 && musicStops==1);
+        assert(sFighters[1].deleting && sFighters[2].deleting && !boss.entry.deleting);
+        assert(!boss.mNoDraw && boss.field_0x16f4.x==1 && boss.field_0x16f4.y==1 && boss.field_0x16f4.z==1);
+        assert(!boss.field_0x170c && !boss.field_0x170d && !boss.field_0x15bd);
+        assert(boss.mActionMode==-1 && !boss.field_0x15af);
+        assert(boss.mMotionSeqMngr.no==motion && boss.speed.y==verticalSpeed);
+        accepted=true;before_execute(nullptr,&boss,&result,nullptr);
+        assert(sCinema.shot==shade::Shot::Recover);
+        for(int i=0;i<10;++i) before_execute(nullptr,&boss,&result,nullptr);
+        assert(companionRemovals==1 && musicStops==1 && cinemaTicks==12);
+        assert(!boss.entry.deleting && !boss.warps && !boss.jumpWarps);
+    }
+    sBattle={};sCinema={};accepted=paused=false;
+    // Nonfatal hits retain normal recovery; story actors remain untouched.
+    daNpc_Kn_c survivor;sBattle.health=1;sBattle.recovery=45;
+    int executeResult=0;before_execute(nullptr,&survivor,&executeResult,nullptr);
+    assert(!sCinema.active() && !sBattle.dying && sBattle.recovery==44);
     a.owned=false;
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);
 }
@@ -656,7 +721,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + checks
+source = fixture + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + function("begin_victory", "void") + function("before_execute") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

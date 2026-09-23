@@ -415,6 +415,32 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     if (sCinema.shot==Shot::Afterglow) { sShadeWolf.end_visual(); actor->mNoDraw=true; }
     if (sCinemaRuntime.ownsEvent) cinema_camera(actor);
 }
+void begin_victory(daNpc_Kn_c* actor,Fighter& entry) {
+    // Latch the final hit before recovery/phase logic can resume a lesson's
+    // group warp. The cinematic owns landing/get-up from this point onward.
+    sBattle.dying=true;
+    sBattle.recovery=0;
+    sBattle.advance=false;
+    remove_companions();
+    cancel_trial();
+    stop_shade_music();
+    if (!pending_or_live(sShadeWolf.id)) sShadeWolf.prepare(actor->current.pos,actor->shape_angle.y);
+    entry.reset=false;
+    entry.offense=-1;
+    entry.helmTurnPending=false;
+    entry.animationStarted=false;
+    entry.chain.cancel();
+    stop_blade_sweeps(entry);
+    actor->mActionMode=-1;
+    actor->mMode=1;
+    actor->field_0x15bd=0;
+    actor->field_0x170c=0;
+    actor->field_0x170d=0;
+    actor->field_0x16f4.set(1,1,1);
+    actor->mNoDraw=false;
+    actor->field_0x15af=0;
+    sCinema.begin(true);
+}
 void add_doubles(daNpc_Kn_c* boss) {
     for (unsigned i=1;i<sFighters.size();++i) {
         auto& entry=sFighters[i];
@@ -588,6 +614,7 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
         *static_cast<int*>(result)=1;
         return HOOK_SKIP_ORIGINAL;
     }
+    if (!entry->divide && sBattle.health==0 && !sCinema.active()) begin_victory(actor,*entry);
     if (!entry->divide && sCinema.active()) {
         actor->mType=6;
         actor->field_0x15af=0;
@@ -621,18 +648,6 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
             finish_trial(); sBattle.trial=shade::Trial::None;
             entry->reset=true;
         }
-        return HOOK_CONTINUE;
-    }
-    if (!entry->divide && sBattle.dying) {
-        cancel_trial();
-        stop_shade_music();
-        if (!pending_or_live(sShadeWolf.id)) sShadeWolf.prepare(actor->current.pos,actor->shape_angle.y);
-        sCinema.begin(true);
-        entry->offense=-1;
-        entry->helmTurnPending=false;
-        entry->chain.cancel();
-        stop_blade_sweeps(*entry);
-        actor->field_0x15af=0;
         return HOOK_CONTINUE;
     }
     if (entry->reset) select_phase(actor,*entry);

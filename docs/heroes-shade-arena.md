@@ -394,9 +394,14 @@ trial, battle, native-hook and cinematic regression tests remain applicable.
 
 Hero's Shade has ten health points. Each successful native lesson counter
 removes one point; a missed opportunity changes the phase after 600 simulation
-ticks without damaging him. Success gives 45 ticks of recovery, followed by the
-next phase. The fight cycles until his health reaches zero, then starts the
-victory scene above. This is a new boss controller, not the original lesson event.
+ticks without damaging him. Nonfinal successes give 45 ticks of recovery,
+followed by the next phase. At zero health the next unpaused actor update
+latches victory before recovery or phase progression. It retires the doubles,
+clears native group-warp state and restores Shade's full model scale/visibility,
+while preserving the knockback pose and velocity for the cinematic landing and
+get-up. The main actor stays alive through the victory scene above. This also
+applies to final Jump Strike and Spin counters; they cannot restart a group warp
+or another phase. This is a new boss controller, not the original lesson event.
 
 All eight normal phases are shuffled with the game's `cM_rndF` generator at
 encounter start and after each complete cycle. Every phase appears once per

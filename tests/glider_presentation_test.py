@@ -38,6 +38,7 @@ struct Model {
 };
 struct Actor {} owned,ordinary;
 struct daAlink_c: Actor {
+    enum {PROC_GET_ITEM=5}; int mProcID=0;
     Model body,hands;Model* mpLinkModel=&body;Model* mpLinkHandModel=&hands;
     int mLeftHandJntNo=1,mRightHandJntNo=2;
     int mLeftItemJntNo=3,mRightItemJntNo=4;
@@ -56,11 +57,18 @@ struct daAlink_c: Actor {
         field_0x06d0->show();field_0x06d4->show();
     }
 };
-constexpr int fpcNm_ALINK_e=1,fpcM_ERROR_PROCESS_ID_e=-1;
+using ActorId=int;
+constexpr int fpcNm_ALINK_e=1,fpcNm_Demo_Item_e=2,fpcM_ERROR_PROCESS_ID_e=-1;
+struct daDitem_c:Actor {
+    bool visible=true,dead=false;Vec scale{1,1,1};
+    bool chkDraw(){return visible;}bool chkDead(){return dead;}
+} rewardItem;
+bool rewardAlive=true;
 daAlink_c* liveLink=nullptr;
 int fopAcM_GetID(daAlink_c*){return 42;}
-Actor* fopAcM_SearchByID(int id){return id==42?liveLink:nullptr;}
-int fopAcM_GetName(Actor* actor){return actor==liveLink?fpcNm_ALINK_e:0;}
+Actor* fopAcM_SearchByID(int id){if(id==43&&rewardAlive)return &rewardItem;return id==42?liveLink:nullptr;}
+daAlink_c* daAlink_getAlinkActorClass(){return liveLink;}
+int fopAcM_GetName(Actor* actor){return actor==liveLink?fpcNm_ALINK_e:actor==&rewardItem?fpcNm_Demo_Item_e:0;}
 struct ModContext {};
 namespace mods {template<class T>T arg(void* p,int){return static_cast<T>(p);}}
 struct {bool attached=true,retiring=false;} s_jumpAbilities;
@@ -74,15 +82,35 @@ bool aerial_glide_context(daAlink_c* l){return l->airborne;}
 Actor* glide_actor(){return live?&owned:nullptr;}
 // HANDS
 
-struct Packet {int ownerId=-1;Vec origin;float sine=0,cosine=1;struct {u8 r,g,b,a;} color;bool active=false;} s_glider;
-struct List {int entries=0;void entryImm(Packet*,int){++entries;}} list;
+struct J3DPacket {
+    J3DPacket* next=nullptr;
+    J3DPacket* getNextPacket(){return next;}
+    void setNextPacket(J3DPacket* p){next=p;}
+};
+struct GliderPacket:J3DPacket {int ownerId=-1;Vec origin;float sine=0,cosine=1;struct {u8 r,g,b,a;} color;bool active=false,reward=false;int rewardItem=-1;float modelScale=1;} s_glider,s_rewardGlider;
+struct List {
+    int entries=0;J3DPacket* heads[1]{};J3DPacket** mpBuffer=heads;
+    unsigned getEntryTableSize(){return 1;}
+    // Match native J3DDrawBuffer: inserting the same packet twice makes a cycle.
+    void entryImm(J3DPacket* packet,int i){
+        ++entries;packet->setNextPacket(mpBuffer[i]);mpBuffer[i]=packet;
+    }
+    void frameInit(){mpBuffer[0]=nullptr;}
+    int drawCount(){
+        int count=0;
+        for(auto* p=mpBuffer[0];p;p=p->getNextPacket())assert(++count<=4);
+        return count;
+    }
+} list;
 List* dComIfGd_getOpaList(){return &list;}
 using LookupPresentationMatrix=bool (*)(const void*,Mtx);
 LookupPresentationMatrix s_lookupPresentationMatrix=nullptr;
+// QUEUE_ONCE
 // PRESENTED_MATRIX
 // PREPARE
 // CLEAR
 // QUEUE
+// REWARD
 
 Model* sampledModel=nullptr;
 Mtx replacements[5]{};
@@ -142,6 +170,39 @@ int main(){
     liveLink=nullptr;assert(!prepare_glider_draw());liveLink=&link;
     clear_glider_visual();assert(!prepare_glider_draw());assert(s_glider.ownerId==-1);
 
+    // Reward uses a separate retained packet; clearing ordinary Glide must
+    // not clear it. Re-evaluate visibility/actor lifetime on every render.
+    link.mProcID=daAlink_c::PROC_GET_ITEM;
+    queue_glider_reward_visual(&link,43);
+    assert(s_rewardGlider.active&&s_rewardGlider.reward);
+    clear_glider_visual();assert(prepare_glider_reward_draw());
+    assert(near(s_rewardGlider.modelScale,.45f)&&near(s_rewardGlider.origin.y,89));
+    rewardItem.scale.x=.5f;assert(prepare_glider_reward_draw());assert(near(s_rewardGlider.modelScale,.225f));
+    rewardItem.visible=false;assert(!prepare_glider_reward_draw());rewardItem.visible=true;
+    rewardItem.dead=true;assert(!prepare_glider_reward_draw());rewardItem.dead=false;
+    rewardAlive=false;assert(!prepare_glider_reward_draw());rewardAlive=true;
+    link.mProcID=0;assert(!prepare_glider_reward_draw());link.mProcID=daAlink_c::PROC_GET_ITEM;
+    clear_glider_reward_visual();assert(!prepare_glider_reward_draw());
+    assert(s_rewardGlider.ownerId==-1&&s_rewardGlider.rewardItem==-1);
+
+    // Repeated native actor callbacks must not turn the intrusive packet
+    // chain into an endless draw loop, even with another packet in between.
+    list.frameInit();int before=list.entries;
+    queue_glider_reward_visual(&link,43);
+    queue_glider_reward_visual(&link,43);
+    assert(list.entries==before+1&&list.drawCount()==1);
+    J3DPacket other;list.entryImm(&other,0);
+    queue_glider_reward_visual(&link,43);
+    assert(list.entries==before+2&&list.drawCount()==2);
+    clear_glider_reward_visual();queue_glider_reward_visual(&link,43);
+    assert(list.entries==before+2&&list.drawCount()==2);
+    queue_glider_visual(&link);queue_glider_visual(&link);
+    assert(list.entries==before+3&&list.drawCount()==3);
+    // Presentation-only draws keep the list; a new simulation frame resets it.
+    assert(list.drawCount()==3&&list.drawCount()==3);
+    list.frameInit();queue_glider_reward_visual(&link,43);
+    queue_glider_visual(&link);assert(list.entries==before+5&&list.drawCount()==2);
+
     link.nativeOpenHands();after_glider_draw_hand(nullptr,&link,nullptr,nullptr);
     assert(link.field_0x06d0==&link.hands.data.materials[0].shape);
     assert(link.field_0x06d4==&link.hands.data.materials[6].shape);
@@ -168,13 +229,15 @@ int main(){
 }
 '''
 fixture = fixture.replace('// HANDS', presentation[:presentation.index('HookAction before_glide_carrier_draw')])
+fixture = fixture.replace('// QUEUE_ONCE', function(visual, 'void queue_glider_packet'))
 fixture = fixture.replace('// PRESENTED_MATRIX', function(visual, 'void presented_matrix'))
-fixture = fixture.replace('// PREPARE', function(visual, 'bool prepare_glider_draw'))
+fixture = fixture.replace('// PREPARE', function(visual, 'bool prepare_glider_pose') + '\n' + function(visual, 'bool prepare_glider_draw'))
 fixture = fixture.replace('// CLEAR', function(visual, 'void clear_glider_visual'))
 fixture = fixture.replace('// QUEUE', function(visual, 'void queue_glider_visual'))
+fixture = fixture.replace('// REWARD', '\n'.join(function(visual, name) for name in ['bool prepare_glider_reward_draw', 'void clear_glider_reward_visual', 'void queue_glider_reward_visual']))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp)/'test.cpp', Path(tmp)/'test'
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Glider presentation passed: retained packet across renders, grip anchors, turning, fallback and cleanup')
+print('Glider presentation passed: duplicate-safe queue, frame reset/replay, grip anchors, turning, fallback and cleanup')

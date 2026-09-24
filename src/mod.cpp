@@ -9,6 +9,7 @@
 #include "player_hard_mode.hpp"
 #include "save_compat.hpp"
 #include "save_state.hpp"
+#include "progression.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
 #include "update_service.hpp"
@@ -75,6 +76,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         return result;
     }
     if (const ModResult result = dawnlight::install_eye_movement_hooks(error); result != MOD_OK) {
+        return result;
+    }
+    if (const auto result = dawnlight::initialize_progression(error); result != MOD_OK) {
         return result;
     }
     dawnlight::initialize_model_overlays();
@@ -145,6 +149,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
 
 MOD_EXPORT ModResult mod_update(ModError*) {
     dawnlight::update_new_save_modes();
+    dawnlight::update_progression();
     dawnlight::bullet_time_tick();
     dawnlight::update_update_service(svc_log, mod_ctx, svc_ui);
     return MOD_OK;
@@ -160,6 +165,7 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_stamina();
     dawnlight::shutdown_new_save_modes();
+    dawnlight::shutdown_progression();
     dawnlight::shutdown_save_state();
     dawnlight::shutdown_update_service();
     dawnlight::shutdown_item_slot_hooks();

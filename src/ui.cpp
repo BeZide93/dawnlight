@@ -6,6 +6,7 @@
 #include "mods/service.hpp"
 #include "mods/svc/ui.h"
 
+#include <map>
 #include <array>
 #include <string>
 
@@ -84,6 +85,56 @@ void push_toast(const char* title, const char* body, const char* type = nullptr)
     svc_ui->push_toast(mod_ctx, &toast);
 }
 
+// Stable callback data survives tab rebuilds. Managed controls display the
+// effective value, while writes in Off mode still use ConfigService persistence.
+struct ModeControlBinding {
+    ConfigVarHandle var;
+    UiControlKind kind;
+    UiPredicateFn disabled;
+};
+std::map<ConfigVarHandle, ModeControlBinding> s_modeControls;
+
+bool mode_control_disabled(ModContext* ctx, void* data) {
+    const auto& binding = *static_cast<ModeControlBinding*>(data);
+    int64_t value = 0;
+    return mode_config_override(binding.var, value) ||
+        (binding.disabled && binding.disabled(ctx, nullptr));
+}
+
+void mode_control_get(ModContext* ctx, void* data, UiControlValue* out) {
+    const auto& binding = *static_cast<ModeControlBinding*>(data);
+    int64_t value = 0;
+    if (mode_config_override(binding.var, value)) {
+        out->bool_value = value != 0;
+        out->int_value = value;
+    } else if (binding.kind == UI_CONTROL_TOGGLE) {
+        svc_config->get_bool(ctx, binding.var, &out->bool_value);
+    } else {
+        svc_config->get_int(ctx, binding.var, &out->int_value);
+    }
+}
+
+void mode_control_set(ModContext* ctx, void* data, const UiControlValue* value) {
+    if (mode_control_disabled(ctx, data)) return;
+    const auto& binding = *static_cast<ModeControlBinding*>(data);
+    if (binding.kind == UI_CONTROL_TOGGLE) {
+        svc_config->set_bool(ctx, binding.var, value->bool_value);
+    } else {
+        svc_config->set_int(ctx, binding.var, value->int_value);
+    }
+}
+
+void bind_mode_control(UiControlDesc& desc) {
+    if (mode_setting_for_config(desc.config_var) == ModeSetting::None) return;
+    auto& binding = s_modeControls[desc.config_var];
+    binding = {desc.config_var, desc.kind, desc.is_disabled};
+    desc.binding = UI_BINDING_CALLBACKS;
+    desc.user_data = &binding;
+    desc.get = mode_control_get;
+    desc.set = mode_control_set;
+    desc.is_disabled = mode_control_disabled;
+}
+
 ModResult add_toggle(ModContext* ctx, UiElementHandle pane, const char* label,
     ConfigVarHandle var, const char* help = nullptr, UiPredicateFn isDisabled = nullptr) {
     UiControlDesc desc = UI_CONTROL_DESC_INIT;
@@ -93,6 +144,7 @@ ModResult add_toggle(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.binding = UI_BINDING_CONFIG_VAR;
     desc.config_var = var;
     desc.is_disabled = isDisabled;
+    bind_mode_control(desc);
     return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
 }
 
@@ -110,6 +162,7 @@ ModResult add_number(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.step = step;
     desc.suffix = suffix;
     desc.is_disabled = isDisabled;
+    bind_mode_control(desc);
     return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
 }
 
@@ -125,6 +178,7 @@ ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.options = options;
     desc.option_count = optionCount;
     desc.is_disabled = isDisabled;
+    bind_mode_control(desc);
     return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
 }
 
@@ -326,6 +380,35 @@ ModResult add_custom_button_controls(ModContext* ctx, UiElementHandle pane, cons
         {
             return MOD_ERROR;
         }
+    }
+
+    return MOD_OK;
+}
+
+ModResult build_general_tab(
+    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
+    if (add_section(ctx, left, "General") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Dawnlight Mode", dawnlight_mode_config_var(),
+            "Enables the intended Dawnlight settings and story progression. Controlled settings "
+            "are locked while On. Off restores your saved personal settings, including after a restart.")
+        != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Progression System", progression_system_config_var(),
+            "Sprint is available from the start. Give Talo the Wooden Sword to unlock the Glider, "
+            "free Ordona for Revali's Gale, and free Faron for Fierce Deity. Gale gains one charge "
+            "per three full heart containers. Controlled settings are locked while On.")
+        != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Notifications", notifications_config_var(),
+            "Show Progression System unlock and Gale capacity notifications. Off by default. "
+            "Does not affect ability unlocks, item-acquisition scenes or other Dawnlight messages.")
+        != MOD_OK) return MOD_ERROR;
+    if (add_section(ctx, left, "New Saves") != MOD_OK) return MOD_ERROR;
+    if (add_select(ctx, left, "New Save Mode", new_save_mode_config_var(),
+            kNewSaveModeOptions, std::size(kNewSaveModeOptions),
+            "Changes how newly created empty save slots are initialized. Vanilla keeps upstream "
+            "behavior, and Intro Skip starts after the Faron intro setup.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
     }
 
     return MOD_OK;
@@ -649,16 +732,6 @@ ModResult build_hud_tab(
 
 ModResult build_gameplay_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
-    if (add_section(ctx, left, "New Saves") != MOD_OK) return MOD_ERROR;
-    if (add_select(ctx, left, "New Save Mode", new_save_mode_config_var(),
-            kNewSaveModeOptions, std::size(kNewSaveModeOptions),
-            "Changes how newly created empty save slots are initialized. Vanilla keeps upstream "
-            "behavior, and Intro Skip starts after the Faron intro setup.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Arrow Modes", arrow_modes_config_var(),
             "Press ZR while aiming the Bow to cycle Normal, Fire (2 arrows, +50% damage), "
@@ -702,19 +775,6 @@ ModResult build_gameplay_tab(
     }
     if (add_button(ctx, left, "SPAWN", spawn_selected_enemy) != MOD_OK) return MOD_ERROR;
 
-    if (add_section(ctx, left, "Compatibility") != MOD_OK) return MOD_ERROR;
-    if (add_toggle(ctx, left, "Save Compatibility Repairs", save_compatibility_config_var(),
-            "Repairs known Dawnlight save-state issues while loading or progressing saves.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    if (add_toggle(ctx, left, "Item Integrity Fixes", item_integrity_config_var(),
-            "Keeps bottle contents and item combinations from turning into invalid items.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
     return MOD_OK;
 }
 
@@ -746,19 +806,11 @@ ModResult build_hard_mode_tab(
 
     if (add_section(ctx, left, "Enemy Scaling") != MOD_OK) return MOD_ERROR;
     if (add_number(ctx, left, "HP Scaling", health_scale_config_var(), 1, 9999, 10, "%",
-            "Scales enemy health when enemies spawn. New Game Plus can raise the effective value "
-            "above this setting when automatic scaling is enabled.")
+            "Scales enemy health when enemies spawn.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "NG+ Auto HP Scaling", automatic_health_scale_config_var(),
-            "Applies Dawnlight's NG+ health floor based on the NG+ counter.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-
     return MOD_OK;
 }
 
@@ -871,19 +923,6 @@ ModResult build_models_tab(
     return MOD_OK;
 }
 
-ModResult build_deferred_tab(
-    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
-    if (add_section(ctx, left, "Waiting For Services") != MOD_OK) return MOD_ERROR;
-    if (add_text(ctx, left,
-            "New Game+ is not enabled in this upstream-main package yet because it needs a "
-            "source-save selection flow.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    return MOD_OK;
-}
-
 void settings_closed(ModContext*, UiWindowHandle, void*) {
     s_settingsWindow = 0;
 }
@@ -897,20 +936,20 @@ void open_settings(ModContext* ctx, void*) {
     for (auto& tab : tabs) {
         tab = UI_TAB_DESC_INIT;
     }
-    tabs[0].title = "Aiming";
-    tabs[0].build = build_aiming_tab;
-    tabs[1].title = "Controls";
-    tabs[1].build = build_controls_tab;
-    tabs[2].title = "HUD";
-    tabs[2].build = build_hud_tab;
-    tabs[3].title = "Gameplay";
-    tabs[3].build = build_gameplay_tab;
-    tabs[4].title = "Hard Mode";
-    tabs[4].build = build_hard_mode_tab;
-    tabs[5].title = "Models";
-    tabs[5].build = build_models_tab;
-    tabs[6].title = "Deferred";
-    tabs[6].build = build_deferred_tab;
+    tabs[0].title = "General";
+    tabs[0].build = build_general_tab;
+    tabs[1].title = "Aiming";
+    tabs[1].build = build_aiming_tab;
+    tabs[2].title = "Controls";
+    tabs[2].build = build_controls_tab;
+    tabs[3].title = "HUD";
+    tabs[3].build = build_hud_tab;
+    tabs[4].title = "Gameplay";
+    tabs[4].build = build_gameplay_tab;
+    tabs[5].title = "Hard Mode";
+    tabs[5].build = build_hard_mode_tab;
+    tabs[6].title = "Models";
+    tabs[6].build = build_models_tab;
 
     UiWindowDesc desc = UI_WINDOW_DESC_INIT;
     desc.tabs = tabs.data();

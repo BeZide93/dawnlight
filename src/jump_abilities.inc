@@ -3,12 +3,15 @@
 #include "jump_gale_visual.inc"
 
 constexpr ActorId kNoGlideActor = fpcM_ERROR_PROCESS_ID_e;
+// Link executes at 30 simulation ticks per second, regardless of render FPS.
+constexpr int kGaleCrouchTicks = 30;
 enum class GaleCharge { Idle, Airborne, Ready };
 struct JumpAbilities {
     daAlink_c* owner = nullptr;
     ActorId ownerId = kNoGlideActor;
     ActorId cucco = kNoGlideActor;
     GaleCharge charge = GaleCharge::Idle;
+    int crouchTicks = 0;
     float launchSpeed = 0.0f;
     s16 launchAngle = 0;
     int loadTicks = 0;
@@ -30,6 +33,8 @@ fopAc_ac_c* glide_actor() {
 }
 
 void retire_glide_actor(daAlink_c* link) {
+    set_glide_stamina_active(false);
+    clear_glider_visual();
     if (s_jumpAbilities.cucco == kNoGlideActor) return;
     s_jumpAbilities.retiring = true;
     auto* actor = glide_actor();
@@ -74,7 +79,8 @@ bool aerial_glide_context(daAlink_c* link) {
 }
 
 void request_glide(daAlink_c* link) {
-    if (s_jumpAbilities.cucco != kNoGlideActor || link->mGrabItemAcKeep.getActor()) return;
+    if (s_jumpAbilities.cucco != kNoGlideActor || link->mGrabItemAcKeep.getActor() ||
+        !stamina_available_for_glide()) return;
     // White, ordinary Cucco; no dialogue flow. The standalone helper assigns
     // Link's scene layer and isolates room-state side effects during creation.
     const ActorSpawnParams params{
@@ -118,12 +124,14 @@ void attach_glide_actor(daAlink_c* link, fopAc_ac_c* actor) {
     actor->old.pos = actor->current.pos;
     link->setGrabItemPos();
     s_jumpAbilities.attached = true;
+    set_glide_stamina_active(true);
 }
 
 void update_glide(daAlink_c* link) {
     if (s_jumpAbilities.cucco == kNoGlideActor) return;
     auto* actor = glide_actor();
     if (s_jumpAbilities.retiring || !glide_enabled() || !aerial_glide_context(link) ||
+        !stamina_available_for_glide() ||
         (s_jumpAbilities.attached && (!actor || link->mGrabItemAcKeep.getActor() != actor)) ||
         (!s_jumpAbilities.attached && link->mGrabItemAcKeep.getActor()))
     {
@@ -138,8 +146,10 @@ void update_glide(daAlink_c* link) {
 }
 
 void cancel_gale_charge(daAlink_c* link, bool restorePose) {
+    s_galeVisual.stop_ready();
     const bool wasReady = s_jumpAbilities.charge == GaleCharge::Ready;
     s_jumpAbilities.charge = GaleCharge::Idle;
+    s_jumpAbilities.crouchTicks = 0;
     s_jumpAbilities.launchSpeed = 0.0f;
     s_jumpAbilities.launchAngle = 0;
     if (restorePose && wasReady && owns_jump_abilities(link) && link->mProcID == daAlink_c::PROC_CROUCH)
@@ -218,8 +228,18 @@ bool handle_jump_abilities(daAlink_c* link) {
                 cancel_gale_charge(link, true);
                 return false;
             }
-            if (!jump_held(active_jump_binding())) return launch_gale(link);
+            // Each call follows a full tick spent crouching, including the
+            // release tick. The landing tick and prior airtime do not count.
+            if (s_jumpAbilities.crouchTicks < kGaleCrouchTicks)
+                ++s_jumpAbilities.crouchTicks;
+            if (!jump_held(active_jump_binding())) {
+                if (s_jumpAbilities.crouchTicks >= kGaleCrouchTicks) return launch_gale(link);
+                cancel_gale_charge(link, true);
+                return false;
+            }
             stop_for_gale(link);
+            if (s_jumpAbilities.crouchTicks >= kGaleCrouchTicks)
+                s_galeVisual.hold_ready(link->current.pos);
             return true;
         }
         if (!jump_held(active_jump_binding()) || !gale_landing_proc(link->mProcID)) {
@@ -230,6 +250,7 @@ bool handle_jump_abilities(daAlink_c* link) {
         }
         if (!link->mLinkAcch.ChkGroundHit()) return false;
         s_jumpAbilities.charge = GaleCharge::Ready;
+        s_jumpAbilities.crouchTicks = 0;
         if (!link->procCrouchInit()) {
             cancel_gale_charge(link, false);
             return false;
@@ -268,6 +289,8 @@ void jump_abilities_proc_change(daAlink_c* link, daAlink_c::daAlink_PROC nextPro
         retire_glide_actor(link);
 }
 
+#include "glide_presentation.inc"
+
 HookAction before_jump_abilities_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!owns_jump_abilities(link)) {
@@ -294,13 +317,21 @@ HookAction before_jump_abilities_execute(ModContext*, void* args, void*, void*) 
 void after_jump_abilities_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!owns_jump_abilities(link) || dComIfGp_isPauseFlag()) return;
+    if (glide_item() == GlideItem::Glider) {
+        if (auto* actor = glide_actor()) static_cast<ni_class*>(actor)->mSound.stopAllSounds(0);
+    }
     // Link's ground collision is resolved at the end of execute, before draw.
     if (s_jumpAbilities.attached && !aerial_glide_context(link)) retire_glide_actor(link);
 }
 
 void after_jump_abilities_draw(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (owns_jump_abilities(link)) s_galeVisual.draw(link);
+    clear_glider_visual();
+    if (owns_jump_abilities(link)) {
+        s_galeVisual.draw(link);
+        if (custom_glider_active(link))
+            queue_glider_visual(link);
+    }
 }
 
 HookAction before_jump_abilities_delete(ModContext*, void* args, void*, void*) {

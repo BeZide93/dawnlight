@@ -27,7 +27,7 @@ aiming, boss, and HUD features for Twilight Princess.
   reaches the threshold near its apex. Once activated, duration, stamina and
   cancellation work as before. Existing On/Off configurations migrate to Always/Off.
 - Optional Flurry Rush after a perfectly timed evade and a ranged Great Spin projectile.
-- Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, and the Great Spin
+- Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, Glide, and the Great Spin
   projectile, including compatibility with Lazy Tweaks stamina actions. Emptying
   the meter causes exhaustion until it recovers to 50%. The Stamina Bar setting
   can disable both the meter and all Dawnlight stamina costs.
@@ -41,15 +41,34 @@ aiming, boss, and HUD features for Twilight Princess.
   **Sprint** in the Controls settings.
 - **Jump Height**, directly below **R Jump** in Controls, sets manual jump height
   from 100% (the original height and default) to 500%.
-- Optional **Glide**: press ZR in the air to deploy a Cucco using native gliding,
-  during manual jumps or ordinary falls. Landing removes the summoned Cucco.
+- Optional **Glide**: press ZR in the air to glide during manual jumps or ordinary
+  falls. **Glide Item**, directly below the toggle, selects **Cucco** (default) or
+  an original textured **Glider** with a wooden frame and leather grips. Both use
+  native Cucco glide movement; landing puts the selected item away. The Glider
+  hides and silences only its internally summoned Cucco, leaving world Cuccos alone.
+  With **Stamina Bar** enabled, either Glide Item consumes 5 stamina per second
+  while gliding. Empty stamina ends the glide; exhaustion blocks redeployment
+  until stamina recovers to 50%. Disabling Stamina Bar removes the cost.
+- **Custom glider texture:** edit a copy of
+  [dawnlight-glider.png](art/glider/dawnlight-glider.png), then save it as
+  `texture_replacements/tex1_256x256_500b43cdfd40fa52_4.png` inside Dusklight's
+  user data folder. Enable **Texture Replacements** in Dusklight and restart
+  the game (or toggle that setting off/on to rescan). Preserve the atlas layout:
+  the upper 208 rows contain the canopy, the bottom 48 the wood/leather.
+  This replaces the texture without rebuilding Dawnlight; it does not change
+  the model. The filename matches this build's texture and can change when the
+  bundled artwork changes. See [glider texture details](art/glider/README.md).
 - Optional **Revali's Gale**: ZR immediately performs a normal jump, including
   while running or sprinting. Keep ZR held through landing to stop and crouch;
-  release to launch with the saved pre-jump speed/direction and the native Gale
+  stay crouched for at least one second, then release to launch with the saved
+  pre-jump speed/direction and the native Gale
   Boomerang tornado. **Gale Height**, below the toggle, adds 100–1000% of the
   original jump height (default 500%) to **Jump Height**. For example, 200% Jump
   Height plus 500% Gale Height gives 700% total height.
-  There is no timed charge. Releasing before landing leaves the normal jump.
+  Releasing before landing or before the full second in crouch cancels Gale
+  without spending a charge. Time spent in the initial jump does not count.
+  After one second, a flattened Gale tornado loops at Link's feet with wind
+  audio until release. Cancelling the charge also stops this readiness cue.
   Gale also enables the initial ZR jump when R Jump is off; Glide is independent.
   Both new abilities default to disabled.
 - Gale uses three charges by default. **Gale Charges** adjusts capacity (1–12),
@@ -58,7 +77,8 @@ aiming, boss, and HUD features for Twilight Princess.
   pending recharge. Recovery uses elapsed real time, including menus, cutscenes
   and scene transitions. The state lasts for the session, without save-file data.
 - **Gale Counter** toggles only the display: native Epona sprint icons beneath
-  the Fierce Deity bar, with full and spent charges. **Custom Gale Counter** in
+  the Fierce Deity bar, with full and spent charges aligned at the bars' left
+  anchor. **Custom Gale Counter** in
   the HUD Editor adjusts X/Y offsets and scale relative to that default anchor.
   Empty charges block Gale, while the initial normal ZR jump remains available.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.

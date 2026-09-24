@@ -95,6 +95,7 @@ add_mod(dawnlight_mod
         src/item_integrity.cpp
         src/item_slot_hooks.cpp
         src/jump_hooks.cpp
+        src/glider_visual.cpp
         src/manual_shield_hooks.cpp
         src/mod.cpp
         src/model_overlays.cpp

@@ -7,6 +7,8 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_meter_HIO.h"
 #include "d/d_meter2_draw.h"
+#include "d/d_meter2_info.h"
+#include "d/d_msg_object.h"
 #include "d/d_pane_class.h"
 
 #include <algorithm>
@@ -206,6 +208,30 @@ ScreenBounds position_combat_meter(dMeter2Draw_c* meter, int row, const DuskModH
 }
 
 }  // namespace
+
+bool combat_meter_hud_visible() {
+    return dMeter2Info_getWindowStatus() == 0 && dMeter2Info_getPauseStatus() == 0 &&
+           !dComIfGp_isPauseFlag() && !dComIfGp_event_runCheck() &&
+           !dMeter2Info_isShopTalkFlag() && !dMsgObject_isTalkNowCheck();
+}
+
+float combat_meter_screen_alpha(dMeter2Draw_c* meter) {
+    if (!meter || !meter->mpKanteraScreen || !meter->mpMagicParent ||
+        !meter->mpMagicParent->getPanePtr()) return 0.0f;
+    // draw_combat_meter shows magic_n at full alpha. Its containing panes
+    // remain under the native HUD's control; the separate counter must follow.
+    auto* pane = meter->mpMagicParent->getPanePtr();
+    bool inheritAlpha = pane->isInfluencedAlpha();
+    unsigned alpha = 255;
+    for (pane = pane->getParentPane(); pane; pane = pane->getParentPane()) {
+        if (!pane->isVisible()) return 0.0f;
+        if (inheritAlpha) {
+            alpha = alpha * pane->getAlpha() / 255;
+            inheritAlpha = pane->isInfluencedAlpha();
+        }
+    }
+    return alpha / 255.0f;
+}
 
 void draw_combat_meter(
     dMeter2Draw_c* meter, float percentage, CombatMeterStyle style, int row)

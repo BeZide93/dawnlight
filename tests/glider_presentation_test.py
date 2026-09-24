@@ -229,7 +229,7 @@ int main(){
     assert(!custom_glider_active(nullptr));
 }
 '''
-fixture = fixture.replace('// HANDS', presentation[:presentation.index('HookAction before_glide_carrier_draw')])
+fixture = fixture.replace('// HANDS', '\n'.join(function(presentation, signature) for signature in ('bool custom_glider_active', 'void after_glider_draw_hand')))
 fixture = fixture.replace('// QUEUE_ONCE', function(visual, 'void queue_glider_packet'))
 fixture = fixture.replace('// PRESENTED_MATRIX', function(visual, 'void presented_matrix'))
 fixture = fixture.replace('// PREPARE', function(visual, 'bool prepare_glider_pose') + '\n' + function(visual, 'bool prepare_glider_draw'))

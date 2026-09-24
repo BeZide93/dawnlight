@@ -69,7 +69,9 @@ While the custom glider is attached, a post-hook on `setDrawHand` selects Link's
 native sword/shield grip shapes (materials 0/6). The next native hand draw restores
 the normal shapes after landing or switching items. The overhead arm animation
 and native glide physics still drive movement. The GLIDE-owned Cucco exists internally and is
-hidden/muted only for the Glider selection. No world Cucco is replaced.
+hidden/muted only for the Glider selection. Its feather emitter is cleared after
+native execution and before retirement, including in Ordon Village; ordinary
+Cuccos and the Cucco selection keep their feather effects. No world Cucco is replaced.
 
 In-game QA: check deployment during a manual jump and an ordinary fall; camera
 above/below; both turn directions; switching Glide Item while airborne; landing,

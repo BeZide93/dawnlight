@@ -5,45 +5,27 @@ Coordinates: Y up, Z forward; origin is the midpoint of Link's hands.
 """
 from pathlib import Path
 import math
-from PIL import Image, ImageDraw
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 ART = ROOT / 'art/glider'
-SIZE, LAST_MIP = 128, 5
+SIZE, LAST_MIP = 256, 6
+CANVAS_ROWS = 208
 
 
 def texture():
+    # Pack the user's Dawnlight artwork (only the title removed) in the canvas
+    # region. Keep the full picture, background and frame; no new motif/overlay.
+    with Image.open(ART / 'dawnlight-canopy-source.png') as source:
+        canvas = source.convert('RGB').resize((SIZE, CANVAS_ROWS), Image.Resampling.LANCZOS)
     im = Image.new('RGB', (SIZE, SIZE))
-    for y in range(SIZE):
+    im.paste(canvas, (0, 0))
+    # Separate wood/leather atlas strips must not paint over the supplied art.
+    for y in range(CANVAS_ROWS, SIZE):
         for x in range(SIZE):
             grain = ((x * 17 + y * 31 + x * y * 3) % 9) - 4
-            # Burgundy center, olive side panels and warm wood, inspired by the
-            # reference's palette while retaining our own woven atlas/motif.
-            cloth = (132, 49, 39) if 26 <= x <= 101 else (64, 73, 42)
-            base = cloth if y < 104 else (118, 79, 42) if y < 116 else (67, 43, 27)
-            weave = (2 if x % 2 else -2) + (2 if y % 2 else -2)
-            im.putpixel((x, y), tuple(max(0, min(255, c + grain + weave)) for c in base))
-    d = ImageDraw.Draw(im)
-    d.rectangle((0, 0, 127, 103), outline=(192, 151, 79), width=4)
-    d.rectangle((5, 5, 122, 98), outline=(45, 49, 29), width=2)
-    for x in (25, 102):
-        d.line((x, 7, x, 96), fill=(181, 134, 65), width=2)
-    # Original wing/sun motif; no borrowed game or other mod textures.
-    d.polygon([(64, 22), (74, 42), (111, 28), (96, 55), (76, 62), (64, 84),
-               (52, 62), (32, 55), (17, 28), (54, 42)], fill=(226, 185, 102))
-    d.polygon([(64, 32), (70, 49), (91, 43), (76, 56), (64, 71),
-               (52, 56), (37, 43), (58, 49)], fill=(132, 49, 39))
-    d.ellipse((58, 45, 70, 57), fill=(240, 222, 170))
-    for side in (-1, 1):
-        for i in range(3):
-            x = 64 + side * (24 + i * 9)
-            d.polygon([(x, 64-i*4), (x+side*7, 58-i*4),
-                       (x+side*4, 71-i*4)], fill=(226, 185, 102))
-    for x in range(8, 121, 5):
-        d.line((x, 7, x+1, 7), fill=(243, 225, 185))
-        d.line((x, 96, x+1, 96), fill=(243, 225, 185))
-    for y in range(108, 116, 3):
-        d.line((0, y, 127, y), fill=(126, 83, 47))
+            base = (118, 79, 42) if y < 232 else (67, 43, 27)
+            im.putpixel((x, y), tuple(c + grain for c in base))
     return im
 
 
@@ -64,7 +46,7 @@ def mesh():
             q = []
             for di,dj in ((0,0),(1,0),(1,1),(0,1)):
                 u,t=(i+di)/16,(j+dj)/6
-                q.append(vertex(canopy(u*2-1,t), (u, t*103/128)))
+                q.append(vertex(canopy(u*2-1,t), ((.5+u*(SIZE-1))/SIZE, (.5+t*(CANVAS_ROWS-1))/SIZE)))
             triangle(q[0],q[2],q[1]); triangle(q[0],q[3],q[2])
     def beam(a,b,r,leather=False):
         v=[b[k]-a[k] for k in range(3)]; length=math.sqrt(sum(x*x for x in v)); v=[x/length for x in v]
@@ -77,7 +59,7 @@ def mesh():
             for k in range(6):
                 angle=k*math.tau/6
                 point=tuple(p[h]+r*(n[h]*math.cos(angle)+m[h]*math.sin(angle)) for h in range(3))
-                ring.append(vertex(point, (.1+.8*end, (120 if leather else 107+k)/128)))
+                ring.append(vertex(point, (.1+.8*end, (240 if leather else 214+2*k)/SIZE)))
         for k in range(6):
             a0,a1,b0,b1=ring[k],ring[(k+1)%6],ring[6+k],ring[6+(k+1)%6]
             triangle(a0,b0,b1);triangle(a0,b1,a1)
@@ -91,18 +73,18 @@ def mesh():
     for t in (0,1):
         for i in range(16):
             beam(canopy(i/8-1,t),canopy((i+1)/8-1,t),1.8)
-    # Two independent bowed handles, one at each hand. No transverse bar.
-    # Each U-shaped frame joins the canopy twice and curves down to its own
-    # leather grip. The center below the sail remains completely open.
+    # Longitudinal bows: each joins the REAR and FRONT of the sail, with
+    # its own fore/aft leather grip. Keep the midpoint at the existing hand.
+    # Z is forward; a 4-unit rise over 22 units gives a gentle ~10 degree rake.
     for side in (-1,1):
-        inner = [canopy(side*.24,.68), (side*12,20,10),
-                 (side*11,9,4), (side*14,0,0)]
-        outer = [(side*30,0,0), (side*39,5,-3), (side*50,17,-10),
-                 canopy(side*.70,.22)]
-        for path in (inner, outer):
+        rear = [canopy(side*.36,0), (side*28,19,-25),
+                (side*23,5,-16), (side*22,-2,-11)]
+        front = [(side*22,2,11), (side*23,8,19), (side*28,23,31),
+                 canopy(side*.36,1)]
+        for path in (rear, front):
             for a,b in zip(path,path[1:]):
                 beam(a,b,2.0)
-        beam((side*14,0,0),(side*30,0,0),2.7,True)
+        beam((side*22,-2,-11),(side*22,2,11),2.7,True)
     return vertices,faces
 
 

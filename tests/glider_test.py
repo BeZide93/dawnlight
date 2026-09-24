@@ -22,6 +22,13 @@ for triangle in f:
     u=[b[k]-a[k] for k in range(3)];w=[c[k]-a[k] for k in range(3)]
     cross=[u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]]
     assert sum(x*x for x in cross)>1e-10
+# Grip axes must run fore/aft (Z), with a slight rise, not across Link (X).
+for side in (-1, 1):
+    grip=[p for p in v if abs(p[4]-240/g.SIZE)<1e-7 and p[0]*side>0]
+    assert grip and max(p[0] for p in grip)-min(p[0] for p in grip)<6
+    assert max(p[2] for p in grip)-min(p[2] for p in grip)>20
+    rear=[p for p in grip if p[2]<0];front=[p for p in grip if p[2]>0]
+    assert sum(p[1] for p in front)/len(front)>sum(p[1] for p in rear)/len(rear)
 pixels=g.encode_texture(g.texture())
 assert len(pixels)==sum((g.SIZE>>i)**2*2 for i in range(g.LAST_MIP+1))
 # Decode GX level 0 to ensure tiling/channel byte order matches the authored atlas.

@@ -1,22 +1,29 @@
 # Dawnlight glider
 
-Original mesh and texture authored for Dawnlight; no model, texture or symbols
-were extracted from Zelda, another game, or another mod. Covered by this
-repository's license.
+Original Dawnlight mesh. The canopy artwork comes from the project logo supplied
+by the user (`1001012593.png`), with only the large Dawnlight title removed using
+the built-in image editor. The sun crest, dark background and ornament remain.
+No model or texture was extracted from another game or mod.
 
 - `dawnlight-glider.obj`: 1,712 triangles, Y up, Z forward, origin at the midpoint
-  of the carrying hands. Canvas wingspan 200 game units (previously 250); peak
-  height above the hands 56 units (previously 83). Two separate curved handles
-  have leather grips at X = -30 to -14 and +14 to +30, with an open center.
-- `dawnlight-glider.mtl`: material referencing the original PNG atlas.
-- `dawnlight-glider.png`: 128x128 woven canvas, original wing/sun motif, timber
-  and leather atlas. Burgundy center, olive side panels and gold trim follow the
-  requested BotW-inspired palette. Canvas is two-sided at runtime.
+  of the carrying hands. Canvas wingspan 200 units; peak height 56 units.
+  Two separate bows connect the sail's front and rear. Leather grips run along
+  Z = -11 to +11 at X = +/-22, rising from Y = -2 to +2 (~10 degrees).
+- `dawnlight-glider.mtl`: material referencing the PNG atlas.
+- `dawnlight-canopy-source.png`: supplied logo/background with the title removed;
+  the complete edited image is retained as the editable texture source.
+- `dawnlight-glider.png`: 256x256 runtime atlas: full artwork in the canvas region,
+  separate wood/leather strips below it. No colored panel or substitute symbol
+  is drawn over the supplied artwork. Canvas is two-sided at runtime.
+
+Image-edit prompt: remove only the large gold word “Dawnlight”; reconstruct the
+stone/ornament behind the letters; preserve the crest, its position/size, colors,
+background, runes and frame. Keep an opaque square image without new elements.
 
 `python3 tools/generate_glider.py` regenerates the editable assets and
 `src/generated/glider_art.hpp`. This developer tool needs Pillow. Normal builds
 need neither Pillow nor a model converter. The checked-in header embeds the
-same mesh and texture (GX RGB565, six mip levels) directly in the mod binary;
+same mesh and texture (GX RGB565, seven mip levels) directly in the mod binary;
 no room archive or external installation is required.
 
 The runtime uses a native J3D draw packet/GX textured mesh, as the custom Shade

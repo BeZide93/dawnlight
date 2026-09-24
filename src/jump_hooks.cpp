@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "gale_counter.hpp"
 #include "glider_visual.hpp"
+#include "glider_bmd.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
 
@@ -473,6 +474,7 @@ ModResult install_jump_hooks(ModError* error) {
 
 void shutdown_jump_hooks() {
     reset_jump_abilities(daAlink_getAlinkActorClass());
+    shutdown_glider_bmd();
 }
 
 }  // namespace dawnlight

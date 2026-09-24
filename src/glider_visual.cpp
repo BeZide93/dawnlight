@@ -1,4 +1,5 @@
 #include "glider_visual.hpp"
+#include "glider_bmd.hpp"
 #include "generated/glider_art.hpp"
 #include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
@@ -41,6 +42,16 @@ public:
 
     void draw() override {
         if (reward ? !prepare_glider_reward_draw() : !prepare_glider_draw()) return;
+        // Both presentations share the same optional model and attachment pose.
+        Mtx transform = {
+            {modelScale*cosine, 0, modelScale*sine, origin.x},
+            {0, modelScale, 0, origin.y},
+            {-modelScale*sine, 0, modelScale*cosine, origin.z}
+        };
+        auto* link = static_cast<daAlink_c*>(fopAcM_SearchByID(ownerId));
+        // A zero appear scale would make BMD normal matrices singular.
+        if (modelScale <= 0.0001f) return;
+        if (draw_glider_bmd(transform, &link->tevStr)) return;
         if (!ready) {
             GXInitTexObj(&texture,glider_art::kPixels,glider_art::kSize,glider_art::kSize,
                 GX_TF_RGB565,GX_CLAMP,GX_CLAMP,GX_TRUE);
@@ -177,6 +188,7 @@ void clear_glider_visual() {
 
 void queue_glider_visual(daAlink_c* link) {
     if (!link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
+    prepare_glider_bmd();
     s_glider.ownerId=fopAcM_GetID(link);
     s_glider.active=true;
     queue_glider_packet(&s_glider);
@@ -190,6 +202,7 @@ void clear_glider_reward_visual() {
 
 void queue_glider_reward_visual(daAlink_c* link, ActorId item) {
     if (!link || !link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
+    prepare_glider_bmd();
     s_rewardGlider.ownerId = fopAcM_GetID(link);
     s_rewardGlider.rewardItem = item;
     s_rewardGlider.reward = true;

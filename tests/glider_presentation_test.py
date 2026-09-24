@@ -69,6 +69,7 @@ int fopAcM_GetID(daAlink_c*){return 42;}
 Actor* fopAcM_SearchByID(int id){if(id==43&&rewardAlive)return &rewardItem;return id==42?liveLink:nullptr;}
 daAlink_c* daAlink_getAlinkActorClass(){return liveLink;}
 int fopAcM_GetName(Actor* actor){return actor==liveLink?fpcNm_ALINK_e:actor==&rewardItem?fpcNm_Demo_Item_e:0;}
+void prepare_glider_bmd() {}
 struct ModContext {};
 namespace mods {template<class T>T arg(void* p,int){return static_cast<T>(p);}}
 struct {bool attached=true,retiring=false;} s_jumpAbilities;

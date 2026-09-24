@@ -93,12 +93,13 @@ void clear_glider_visual() { s_glider.active=false; }
 
 void queue_glider_visual(daAlink_c* link) {
     if (!link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
-    // mLeft/RightHandPos only advance on simulation ticks. Sample the same
-    // presented joints as Link's renderer on EVERY draw, including intermediate
-    // frames, so a smoothly moving camera cannot slide past a frozen glider.
+    // Hand joints are the wrists. Use the item attachment joints instead: these
+    // are the native sword/shield grip points inside the closed hands. Sample
+    // their presented matrices on EVERY draw, including intermediate frames,
+    // so the grip points keep the same interpolation as Link's renderer.
     Mtx left, right, root;
-    presented_matrix(link->mpLinkModel->getAnmMtx(link->mLeftHandJntNo), left);
-    presented_matrix(link->mpLinkModel->getAnmMtx(link->mRightHandJntNo), right);
+    presented_matrix(link->mpLinkModel->getAnmMtx(link->mLeftItemJntNo), left);
+    presented_matrix(link->mpLinkModel->getAnmMtx(link->mRightItemJntNo), right);
     s_glider.origin.set((left[0][3]+right[0][3])*0.5f,
         (left[1][3]+right[1][3])*0.5f, (left[2][3]+right[2][3])*0.5f);
     // Apply the presented root's yaw delta as well. Using shape_angle alone

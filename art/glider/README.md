@@ -30,8 +30,9 @@ no room archive or external installation is required.
 
 The runtime uses a native J3D draw packet/GX textured mesh, as the custom Shade
 pedestal does, rather than requiring a BMD exporter. Each draw samples Link's
-presented hand matrices and root rotation so the canopy follows the same
-interpolation as the player and camera. The host matrix lookup is resolved
+presented sword/shield attachment matrices and root rotation so the canopy follows
+the same interpolation as the player and camera. The grip midpoint uses the item
+joints inside the palms, not the wrist joints. The host matrix lookup is resolved
 through the symbol manifest, with a logged simulation-pose fallback if absent.
 While the custom glider is attached, a post-hook on `setDrawHand` selects Link's
 native sword/shield grip shapes (materials 0/6). The next native hand draw restores

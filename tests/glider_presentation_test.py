@@ -31,7 +31,7 @@ struct Data {
     Material* getMaterialNodePointer(int i){assert(i<count);return &materials[i];}
 };
 struct Model {
-    Mtx joints[3]{};Data data;
+    Mtx joints[5]{};Data data;
     MtxP getAnmMtx(int i){return joints[i];}
     Data* getModelData(){return &data;}
 };
@@ -39,6 +39,7 @@ struct Actor {} owned,ordinary;
 struct daAlink_c {
     Model body,hands;Model* mpLinkModel=&body;Model* mpLinkHandModel=&hands;
     int mLeftHandJntNo=1,mRightHandJntNo=2;
+    int mLeftItemJntNo=3,mRightItemJntNo=4;
     Shape* field_0x06d0=&hands.data.materials[4].shape;
     Shape* field_0x06d4=&hands.data.materials[10].shape;
     bool owner=true,airborne=true,hidden=false,status=false;
@@ -76,11 +77,11 @@ LookupPresentationMatrix s_lookupPresentationMatrix=nullptr;
 // QUEUE
 
 Model* sampledModel=nullptr;
-Mtx replacements[3]{};
+Mtx replacements[5]{};
 bool interpolation=true;
 bool lookup(const void* key,Mtx out){
     if(!interpolation)return false;
-    for(int i=0;i<3;++i)if(key==sampledModel->joints[i]){MTXCopy(replacements[i],out);return true;}
+    for(int i=0;i<5;++i)if(key==sampledModel->joints[i]){MTXCopy(replacements[i],out);return true;}
     assert(false);return false;
 }
 void yawMatrix(Mtx m,float angle){
@@ -92,15 +93,17 @@ int main(){
     daAlink_c link;sampledModel=&link.body;s_lookupPresentationMatrix=lookup;
     yawMatrix(link.body.joints[0],0);
     for(int i=1;i<3;++i){yawMatrix(link.body.joints[i],0);link.body.joints[i][0][3]=100+(i==1?-22:22);link.body.joints[i][1][3]=80;}
+    // Distinct wrist and grip points: the canopy must follow the latter.
+    for(int i=3;i<5;++i){MTXCopy(link.body.joints[i-2],link.body.joints[i]);link.body.joints[i][1][3]=89;link.body.joints[i][2][3]=-3;}
     for(float t:{0.f,.25f,.5f,.75f,1.f}){
-        for(int i=0;i<3;++i)MTXCopy(link.body.joints[i],replacements[i]);
-        for(int i=1;i<3;++i)replacements[i][0][3]-=20*(1-t);
+        for(int i=0;i<5;++i)MTXCopy(link.body.joints[i],replacements[i]);
+        for(int i=1;i<5;++i)replacements[i][0][3]-=20*(1-t);
         queue_glider_visual(&link);
-        assert(near(s_glider.origin.x,80+20*t)&&near(s_glider.origin.y,80));
+        assert(near(s_glider.origin.x,80+20*t)&&near(s_glider.origin.y,89)&&near(s_glider.origin.z,-3));
     }
     // No interpolation/history (including first frame): use current joints.
-    interpolation=false;queue_glider_visual(&link);assert(near(s_glider.origin.x,100));
-    s_lookupPresentationMatrix=nullptr;queue_glider_visual(&link);assert(near(s_glider.origin.x,100));
+    interpolation=false;queue_glider_visual(&link);assert(near(s_glider.origin.x,100)&&near(s_glider.origin.y,89));
+    s_lookupPresentationMatrix=nullptr;queue_glider_visual(&link);assert(near(s_glider.origin.x,100)&&near(s_glider.origin.y,89));
     s_lookupPresentationMatrix=lookup;interpolation=true;
     // Turn through the signed-angle boundary: presented facing is still -Z,
     // not an unrelated half-turn or the latest simulation yaw.

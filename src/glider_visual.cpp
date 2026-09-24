@@ -2,6 +2,7 @@
 #include "generated/glider_art.hpp"
 #include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
+#include "d/actor/d_a_demo_item.h"
 #include "d/d_com_inf_game.h"
 #include "f_pc/f_pc_name.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
@@ -22,6 +23,7 @@ void presented_matrix(MtxP source, Mtx out) {
 }
 
 bool prepare_glider_draw();
+bool prepare_glider_reward_draw();
 
 // Keep only an actor ID across frames; resolve the live pose at packet draw time.
 // Queued through the same native opaque list as the custom Shade pedestal.
@@ -30,12 +32,15 @@ public:
     ActorId ownerId = fpcM_ERROR_PROCESS_ID_e;
     cXyz origin{0,0,0};
     float sine=0, cosine=1;
+    float modelScale=1.0f;
+    ActorId rewardItem=fpcM_ERROR_PROCESS_ID_e;
+    bool reward=false;
     GXColor color{255,255,255,255};
     GXTexObj texture{};
     bool ready=false, active=false;
 
     void draw() override {
-        if (!prepare_glider_draw()) return;
+        if (reward ? !prepare_glider_reward_draw() : !prepare_glider_draw()) return;
         if (!ready) {
             GXInitTexObj(&texture,glider_art::kPixels,glider_art::kSize,glider_art::kSize,
                 GX_TF_RGB565,GX_CLAMP,GX_CLAMP,GX_TRUE);
@@ -70,8 +75,8 @@ public:
         for (const auto& triangle : glider_art::kTriangles) {
             for (const auto index : triangle) {
                 const auto& v=glider_art::kVertices[index];
-                GXPosition3f32(origin.x+cosine*v.x+sine*v.z,origin.y+v.y,
-                    origin.z-sine*v.x+cosine*v.z);
+                GXPosition3f32(origin.x+modelScale*(cosine*v.x+sine*v.z),origin.y+modelScale*v.y,
+                    origin.z+modelScale*(-sine*v.x+cosine*v.z));
                 GXColor4u8(color.r,color.g,color.b,255);
                 GXTexCoord2f32(v.u,v.v);
             }
@@ -81,10 +86,11 @@ public:
     }
 };
 GliderPacket s_glider;
+GliderPacket s_rewardGlider;
 
-bool prepare_glider_draw() {
-    if (!s_glider.active) return false;
-    auto* actor = fopAcM_SearchByID(s_glider.ownerId);
+bool prepare_glider_pose(GliderPacket& packet) {
+    if (!packet.active) return false;
+    auto* actor = fopAcM_SearchByID(packet.ownerId);
     if (!actor || fopAcM_GetName(actor) != fpcNm_ALINK_e) return false;
     auto* link = static_cast<daAlink_c*>(actor);
     if (!link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return false;
@@ -98,7 +104,7 @@ bool prepare_glider_draw() {
     Mtx left, right, root;
     presented_matrix(link->mpLinkModel->getAnmMtx(link->mLeftItemJntNo), left);
     presented_matrix(link->mpLinkModel->getAnmMtx(link->mRightItemJntNo), right);
-    s_glider.origin.set((left[0][3]+right[0][3])*0.5f,
+    packet.origin.set((left[0][3]+right[0][3])*0.5f,
         (left[1][3]+right[1][3])*0.5f, (left[2][3]+right[2][3])*0.5f);
     // Apply the presented root's yaw delta as well. Using shape_angle alone
     // would still snap the canopy on turns; a matrix delta also crosses +/-pi.
@@ -111,15 +117,34 @@ bool prepare_glider_draw() {
     }
     const float yaw=link->shape_angle.y*(3.14159265358979323846f/32768.0f) +
         std::atan2(turnSine, turnCosine);
-    s_glider.sine=std::sin(yaw);
-    s_glider.cosine=std::cos(yaw);
+    packet.sine=std::sin(yaw);
+    packet.cosine=std::cos(yaw);
     const auto& ambient=link->tevStr.AmbCol;
     // Follow the player's room lighting; retain a little fill for the woodwork.
     // Keep the canvas/runes readable in shadow while retaining ambient tint.
     auto channel=[](int value) { return static_cast<u8>(std::clamp(160+value*95/255,160,255)); };
-    s_glider.color={channel(ambient.r),channel(ambient.g),channel(ambient.b),255};
+    packet.color={channel(ambient.r),channel(ambient.g),channel(ambient.b),255};
     return true;
 }
+
+bool prepare_glider_draw() {
+    return prepare_glider_pose(s_glider);
+}
+
+bool prepare_glider_reward_draw() {
+    auto* actor = fopAcM_SearchByID(s_rewardGlider.rewardItem);
+    if (!s_rewardGlider.active || !actor || fopAcM_GetName(actor) != fpcNm_Demo_Item_e) return false;
+    auto* item = static_cast<daDitem_c*>(actor);
+    auto* link = daAlink_getAlinkActorClass();
+    if (!item->chkDraw() || item->chkDead() || !link ||
+        fopAcM_GetID(link) != s_rewardGlider.ownerId || link->mProcID != daAlink_c::PROC_GET_ITEM)
+        return false;
+    // A compact presentation copy fits the native reward camera. Keep the
+    // model origin at Link's two item-grip joints and the native appear scale.
+    s_rewardGlider.modelScale = 0.45f * std::clamp(item->scale.x, 0.0f, 1.0f);
+    return prepare_glider_pose(s_rewardGlider);
+}
+
 }
 
 void init_glider_visual() {
@@ -143,4 +168,20 @@ void queue_glider_visual(daAlink_c* link) {
     s_glider.active=true;
     dComIfGd_getOpaList()->entryImm(&s_glider,0);
 }
+
+void clear_glider_reward_visual() {
+    s_rewardGlider.active = false;
+    s_rewardGlider.ownerId = fpcM_ERROR_PROCESS_ID_e;
+    s_rewardGlider.rewardItem = fpcM_ERROR_PROCESS_ID_e;
+}
+
+void queue_glider_reward_visual(daAlink_c* link, ActorId item) {
+    if (!link || !link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
+    s_rewardGlider.ownerId = fopAcM_GetID(link);
+    s_rewardGlider.rewardItem = item;
+    s_rewardGlider.reward = true;
+    s_rewardGlider.active = true;
+    dComIfGd_getOpaList()->entryImm(&s_rewardGlider, 0);
+}
+
 }

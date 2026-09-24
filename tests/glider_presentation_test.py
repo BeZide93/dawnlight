@@ -38,6 +38,7 @@ struct Model {
 };
 struct Actor {} owned,ordinary;
 struct daAlink_c: Actor {
+    enum {PROC_GET_ITEM=5}; int mProcID=0;
     Model body,hands;Model* mpLinkModel=&body;Model* mpLinkHandModel=&hands;
     int mLeftHandJntNo=1,mRightHandJntNo=2;
     int mLeftItemJntNo=3,mRightItemJntNo=4;
@@ -56,11 +57,18 @@ struct daAlink_c: Actor {
         field_0x06d0->show();field_0x06d4->show();
     }
 };
-constexpr int fpcNm_ALINK_e=1,fpcM_ERROR_PROCESS_ID_e=-1;
+using ActorId=int;
+constexpr int fpcNm_ALINK_e=1,fpcNm_Demo_Item_e=2,fpcM_ERROR_PROCESS_ID_e=-1;
+struct daDitem_c:Actor {
+    bool visible=true,dead=false;Vec scale{1,1,1};
+    bool chkDraw(){return visible;}bool chkDead(){return dead;}
+} rewardItem;
+bool rewardAlive=true;
 daAlink_c* liveLink=nullptr;
 int fopAcM_GetID(daAlink_c*){return 42;}
-Actor* fopAcM_SearchByID(int id){return id==42?liveLink:nullptr;}
-int fopAcM_GetName(Actor* actor){return actor==liveLink?fpcNm_ALINK_e:0;}
+Actor* fopAcM_SearchByID(int id){if(id==43&&rewardAlive)return &rewardItem;return id==42?liveLink:nullptr;}
+daAlink_c* daAlink_getAlinkActorClass(){return liveLink;}
+int fopAcM_GetName(Actor* actor){return actor==liveLink?fpcNm_ALINK_e:actor==&rewardItem?fpcNm_Demo_Item_e:0;}
 struct ModContext {};
 namespace mods {template<class T>T arg(void* p,int){return static_cast<T>(p);}}
 struct {bool attached=true,retiring=false;} s_jumpAbilities;
@@ -74,8 +82,8 @@ bool aerial_glide_context(daAlink_c* l){return l->airborne;}
 Actor* glide_actor(){return live?&owned:nullptr;}
 // HANDS
 
-struct Packet {int ownerId=-1;Vec origin;float sine=0,cosine=1;struct {u8 r,g,b,a;} color;bool active=false;} s_glider;
-struct List {int entries=0;void entryImm(Packet*,int){++entries;}} list;
+struct GliderPacket {int ownerId=-1;Vec origin;float sine=0,cosine=1;struct {u8 r,g,b,a;} color;bool active=false,reward=false;int rewardItem=-1;float modelScale=1;} s_glider,s_rewardGlider;
+struct List {int entries=0;void entryImm(GliderPacket*,int){++entries;}} list;
 List* dComIfGd_getOpaList(){return &list;}
 using LookupPresentationMatrix=bool (*)(const void*,Mtx);
 LookupPresentationMatrix s_lookupPresentationMatrix=nullptr;
@@ -83,6 +91,7 @@ LookupPresentationMatrix s_lookupPresentationMatrix=nullptr;
 // PREPARE
 // CLEAR
 // QUEUE
+// REWARD
 
 Model* sampledModel=nullptr;
 Mtx replacements[5]{};
@@ -142,6 +151,21 @@ int main(){
     liveLink=nullptr;assert(!prepare_glider_draw());liveLink=&link;
     clear_glider_visual();assert(!prepare_glider_draw());assert(s_glider.ownerId==-1);
 
+    // Reward uses a separate retained packet; clearing ordinary Glide must
+    // not clear it. Re-evaluate visibility/actor lifetime on every render.
+    link.mProcID=daAlink_c::PROC_GET_ITEM;
+    queue_glider_reward_visual(&link,43);
+    assert(s_rewardGlider.active&&s_rewardGlider.reward);
+    clear_glider_visual();assert(prepare_glider_reward_draw());
+    assert(near(s_rewardGlider.modelScale,.45f)&&near(s_rewardGlider.origin.y,89));
+    rewardItem.scale.x=.5f;assert(prepare_glider_reward_draw());assert(near(s_rewardGlider.modelScale,.225f));
+    rewardItem.visible=false;assert(!prepare_glider_reward_draw());rewardItem.visible=true;
+    rewardItem.dead=true;assert(!prepare_glider_reward_draw());rewardItem.dead=false;
+    rewardAlive=false;assert(!prepare_glider_reward_draw());rewardAlive=true;
+    link.mProcID=0;assert(!prepare_glider_reward_draw());link.mProcID=daAlink_c::PROC_GET_ITEM;
+    clear_glider_reward_visual();assert(!prepare_glider_reward_draw());
+    assert(s_rewardGlider.ownerId==-1&&s_rewardGlider.rewardItem==-1);
+
     link.nativeOpenHands();after_glider_draw_hand(nullptr,&link,nullptr,nullptr);
     assert(link.field_0x06d0==&link.hands.data.materials[0].shape);
     assert(link.field_0x06d4==&link.hands.data.materials[6].shape);
@@ -169,9 +193,10 @@ int main(){
 '''
 fixture = fixture.replace('// HANDS', presentation[:presentation.index('HookAction before_glide_carrier_draw')])
 fixture = fixture.replace('// PRESENTED_MATRIX', function(visual, 'void presented_matrix'))
-fixture = fixture.replace('// PREPARE', function(visual, 'bool prepare_glider_draw'))
+fixture = fixture.replace('// PREPARE', function(visual, 'bool prepare_glider_pose') + '\n' + function(visual, 'bool prepare_glider_draw'))
 fixture = fixture.replace('// CLEAR', function(visual, 'void clear_glider_visual'))
 fixture = fixture.replace('// QUEUE', function(visual, 'void queue_glider_visual'))
+fixture = fixture.replace('// REWARD', '\n'.join(function(visual, name) for name in ['bool prepare_glider_reward_draw', 'void clear_glider_reward_visual', 'void queue_glider_reward_visual']))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp)/'test.cpp', Path(tmp)/'test'
     cpp.write_text(fixture)

@@ -1,6 +1,7 @@
 #include "progression.hpp"
 
 #include "config.hpp"
+#include "glider_reward.hpp"
 #include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
@@ -17,6 +18,7 @@ ConfigSubscriptionHandle s_progressionSubscription = 0;
 ProgressionNotifications s_notifications;
 
 void on_save_started(ModContext*, uint32_t, void*) {
+    cancel_glider_reward();
     s_notifications = {};
 }
 
@@ -53,11 +55,13 @@ ModResult initialize_progression(ModError* error) {
         on_mode_changed, nullptr, &s_modeSubscription);
     if (result == MOD_OK) result = svc_config->subscribe(mod_ctx, progression_system_config_var(),
         on_mode_changed, nullptr, &s_progressionSubscription);
+    if (result == MOD_OK) result = initialize_glider_reward(error);
     return result == MOD_OK ? MOD_OK : mods::set_error(error, result,
         "failed to observe Dawnlight progression saves");
 }
 
 void update_progression() {
+    update_glider_reward();
     if (!progression_system_enabled()) {
         s_notifications = {};
         return;
@@ -67,7 +71,10 @@ void update_progression() {
     if (!daAlink_getAlinkActorClass()) return;
     const auto state = progression_state();
     const unsigned unlocked = s_notifications.update(true, state);
-    if (unlocked & 1) notify("Glide unlocked! Dawnlight's Glider is ready.");
+    if (unlocked & 1) {
+        notify("Glide unlocked! Dawnlight's Glider is ready.");
+        queue_glider_reward();
+    }
     if (unlocked & 2) notify("Revali's Gale unlocked! The Gale counter is now available.");
     if (unlocked & 4) notify("Fierce Deity unlocked!");
     if (unlocked & 8) {
@@ -78,6 +85,7 @@ void update_progression() {
 }
 
 void shutdown_progression() {
+    shutdown_glider_reward();
     if (s_observer && svc_save) svc_save->unobserve_saves(mod_ctx, s_observer);
     s_observer = 0;
     if (s_modeSubscription) svc_config->unsubscribe(mod_ctx, s_modeSubscription);

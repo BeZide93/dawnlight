@@ -1,7 +1,29 @@
 # Compatibility
 
-This document describes tested Dawnlight configurations for other Dusklight
-mods that modify the third item slot, touch controls, or the gameplay HUD.
+This document describes Dawnlight compatibility fixes for Dusklight forks and
+tested configurations for mods that modify the third item slot, touch controls,
+or the gameplay HUD.
+
+## Lazy Tweaks startup compatibility
+
+Lazy Tweaks adds fields to Dusklight's internal `UserSettings` structure.
+Dawnlight 3.5.3 read the gyro setting through the upstream structure layout,
+which could abort the app during its regular update, including immediately
+after installation through the mod browser. This was confirmed in a Windows
+crash dump from Lazy Tweaks `v3.1.0-309` (`9bf52f4ca8ba`).
+
+Dawnlight now looks up `game.enableGyroAim` by name through
+`dusk::config::GetConfigVar`, without depending on its position in
+`UserSettings`. Runtime setting changes remain effective. If the lookup or
+setting is unavailable, Dawnlight skips its Bullet Time gyro integration.
+This uses the shared `ConfigVar<bool>` ABI of the inspected upstream and fork;
+it does not guarantee compatibility with arbitrary changes to that type or
+other private host interfaces.
+
+Run `python3 tests/bullet_time_gyro_compat_test.py` for the focused regression
+test. In-game verification should cover both app startup with Dawnlight
+installed and installation through the mod browser on Lazy Tweaks, followed
+by gyro aiming during Bullet Time on upstream Dusklight and Lazy Tweaks.
 
 ## Tested versions
 

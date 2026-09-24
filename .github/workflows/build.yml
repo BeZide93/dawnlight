@@ -46,6 +46,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Test Bullet Time gyro compatibility
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/bullet_time_gyro_compat_test.py
+
       - name: Read pinned Dusklight version
         id: dusklight
         shell: bash

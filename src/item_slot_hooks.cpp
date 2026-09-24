@@ -327,6 +327,14 @@ struct HudPaneVisibilityState {
 std::array<HudPaneVisibilityState, 4> s_dpadArrowVisibility;
 std::array<HudPaneVisibilityState, 4> s_dpadShadowVisibility;
 
+struct RoundButtonOverlayState {
+    J2DPicture* picture = nullptr;
+    std::array<JUtility::TColor, 4> corners;
+};
+std::array<RoundButtonOverlayState, 32> s_roundXYOverlays;
+std::size_t s_roundXYOverlayCount = 0;
+J2DScreen* s_roundXYOverlayScreen = nullptr;
+
 struct GaugeDrawState {
     dMeter2Draw_c* meter = nullptr;
     J2DPane* pane = nullptr;
@@ -1277,6 +1285,8 @@ void clear_shared_hud_layout_cache() {
     s_xyAmmoOriginalValid = {};
     s_externalZAmmoDraw = {};
     s_gaugeDraw = {};
+    s_roundXYOverlayCount = 0;
+    s_roundXYOverlayScreen = nullptr;
     s_roundPictureStates = {};
     s_roundHudMeter = nullptr;
     s_hudLayoutMeter = nullptr;
@@ -2984,6 +2994,66 @@ HookAction before_meter_draw_restore_hud(ModContext*, void* args, void*, void*) 
     return HOOK_CONTINUE;
 }
 
+void suppress_round_button_overlays(J2DPane* pane, J2DPicture* base, J2DPane* glyph) {
+    if (pane == nullptr || pane == glyph) return;
+
+    if (auto* picture = as_picture(pane);
+        picture != nullptr && picture != base && s_roundXYOverlayCount < s_roundXYOverlays.size())
+    {
+        auto& state = s_roundXYOverlays[s_roundXYOverlayCount++];
+        state.picture = picture;
+        std::array<JUtility::TColor, 4> transparent;
+        for (std::size_t i = 0; i < state.corners.size(); ++i) {
+            state.corners[i] = picture->corner(i);
+            transparent[i] = state.corners[i];
+            transparent[i].a = 0;
+        }
+        // Vertex alpha suppresses this artwork without hiding a letter or
+        // replacement button nested beneath the picture in the pane tree.
+        picture->setCornerColor(transparent[0], transparent[1], transparent[2], transparent[3]);
+    }
+    for (auto* child = pane->getFirstChildPane(); child != nullptr;
+         child = child->getNextChildPane())
+    {
+        suppress_round_button_overlays(child, base, glyph);
+    }
+}
+
+HookAction before_round_xy_screen_draw(ModContext*, void* args, void*, void*) {
+    auto* screen = mods::arg<J2DScreen*>(args, 0);
+    if (!round_xy_buttons_enabled() || s_hudLayoutMeter == nullptr || screen == nullptr ||
+        screen != s_hudLayoutScreen)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    s_roundXYOverlayCount = 0;
+    s_roundXYOverlayScreen = screen;
+    for (std::size_t i = 0; i < 2; ++i) {
+        auto* button = s_hudLayoutMeter->mpButtonXY[i];
+        auto* label = s_hudLayoutMeter->mpBTextXY[i];
+        auto* root = button != nullptr ? button->getPanePtr() : nullptr;
+        auto* base = first_picture_pane(root);
+        auto* glyph = label != nullptr ? label->getPanePtr() : nullptr;
+        // Do not alter an incomplete group if its base or letter is absent.
+        if (base != nullptr && glyph != nullptr) {
+            suppress_round_button_overlays(root, base, glyph);
+        }
+    }
+    return HOOK_CONTINUE;
+}
+
+void after_round_xy_screen_draw(ModContext*, void* args, void*, void*) {
+    if (mods::arg<J2DScreen*>(args, 0) != s_roundXYOverlayScreen) return;
+    for (std::size_t i = 0; i < s_roundXYOverlayCount; ++i) {
+        const auto& state = s_roundXYOverlays[i];
+        state.picture->setCornerColor(
+            state.corners[0], state.corners[1], state.corners[2], state.corners[3]);
+    }
+    s_roundXYOverlayCount = 0;
+    s_roundXYOverlayScreen = nullptr;
+}
+
 HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
     if (z_item_slot_active()) {
@@ -3839,6 +3909,14 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ScreenDrawHook>(
             svc_hook, before_meter_screen_draw_apply_hud, &sharedHudApplyOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ScreenDrawHook>(
+            svc_hook, before_round_xy_screen_draw, &sharedHudApplyOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ScreenDrawHook>(
+            svc_hook, after_round_xy_screen_draw, &sharedHudRestoreOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ScreenDrawHook>(

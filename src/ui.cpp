@@ -569,7 +569,7 @@ ModResult build_hud_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Round X/Y Buttons", round_xy_buttons_config_var(),
-            "Draws X and Y with Dawnlight's round HUD button style.")
+            "Draws X and Y with Dawnlight's round HUD button style without the extra X/Y shine texture layers.")
         != MOD_OK)
     {
         return MOD_ERROR;

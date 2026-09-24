@@ -19,6 +19,7 @@ def function(name):
 fixture = r'''
 #include <array>
 #include <cassert>
+using u32 = unsigned int;
 namespace dusk::ui {
 enum class Control { L, R, Z };
 enum class ControlOverride { Default, Action };

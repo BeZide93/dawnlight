@@ -45,6 +45,8 @@ or own a third item slot. It:
 - displays the active third-slot item on the touch Z button;
 - displays supported ammo counts and lantern oil on that button;
 - allows the touch Z button to assign the selected item from the item wheel;
+- keeps touch L available on field and dungeon maps, and routes it to the
+  field map's portal action after Twilight HD HUD's physical-L mapping;
 - moves the Midna touch action and Midna's head to the Skip button outside
   cutscenes; and
 - leaves the normal Skip button behavior intact during cutscenes.
@@ -52,6 +54,15 @@ or own a third item slot. It:
 This toggle works independently from Dawnlight's `Z Item Slot` setting so that
 another mod can own the third item slot while Dawnlight supplies the compatible
 touch controls. Restart Dusklight after changing it.
+
+The portal shortcut uses a touch press edge, so holding L does not repeatedly
+toggle portals. It is scoped to field-map input processing and also works
+with Twilight HD HUD's Fixed controller bindings, which rebuild logical L/R
+from physical triggers. Physical controller shortcuts remain independent.
+Run `python3 tests/touch_map_l_test.py` and
+`python3 tests/touch_map_portal_test.py` for the focused regression checks.
+Device validation should cover opening the field map, toggling portals with
+touch L, releasing/repeating the press, and returning to normal gameplay.
 
 ## Twilit Essentials
 

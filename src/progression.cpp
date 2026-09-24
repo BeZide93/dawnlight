@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 #include "glider_reward.hpp"
+#include "save_state.hpp"
 #include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
@@ -40,9 +41,10 @@ ProgressionState progression_state() {
     // Read the installed save, never copy unlocks into the global config.
     // The game maintains these flags across scenes and save/load cycles.
     ProgressionState state;
-    state.glide = dComIfGs_isEventBit(dSv_event_flag_c::F_0026);
-    state.gale = dComIfGs_isEventBit(dSv_event_flag_c::M_016);
-    state.fierceDeity = dComIfGs_isEventBit(dSv_event_flag_c::M_019);
+    const bool bossRush = save_state_boss_rush_active();
+    state.glide = bossRush || dComIfGs_isEventBit(dSv_event_flag_c::F_0026);
+    state.gale = bossRush || dComIfGs_isEventBit(dSv_event_flag_c::M_016);
+    state.fierceDeity = bossRush || dComIfGs_isEventBit(dSv_event_flag_c::M_019);
     state.charges = progression_charges(dComIfGs_getMaxLife());
     return state;
 }

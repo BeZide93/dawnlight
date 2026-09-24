@@ -32,6 +32,10 @@ currently loaded save's story flags:
 | Free Faron | Fierce Deity |
 | Each three full heart containers | One Gale charge: 3 hearts = 1, 6 = 2, 9 = 3, etc. |
 
+In Boss Rush, all progression-controlled abilities are available immediately,
+including Glide/Glider, Revali's Gale and Fierce Deity. Gale charge capacity still
+follows the current maximum heart containers. Story flags remain unchanged.
+
 Charge capacity uses maximum heart containers, not current health; damage and
 partial heart containers do not lower or prematurely increase it. Progression
 controls Sprint, Glide, Glide Item, Revali's Gale, Gale Counter, Gale Charges,

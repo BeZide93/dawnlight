@@ -98,6 +98,9 @@ DEFINE_HOOK(&dMenu_Ring_c::isMixItemOn, RingIsMixItemOnHook);
 DEFINE_HOOK(&dMenu_Ring_c::isMixItemOff, RingIsMixItemOffHook);
 DEFINE_HOOK(&dMeter2_c::_delete, MeterDeleteHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, MeterDrawHook);
+DEFINE_HOOK(static_cast<void (dMeter2Draw_c::*)(CPaneMgr*, f32*, f32,
+    JUtility::TColor, JUtility::TColor, JUtility::TColor, JUtility::TColor, f32, u8)>(
+    &dMeter2Draw_c::drawPikari), MeterDrawPikariHook);
 DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawKantera",
     void(dMeter2Draw_c*, s32, f32, f32, f32), MeterDrawKanteraHook);
 DEFINE_HOOK_SYMBOL("dMeter2Draw_c::drawOxygen",
@@ -326,6 +329,9 @@ struct HudPaneVisibilityState {
 
 std::array<HudPaneVisibilityState, 4> s_dpadArrowVisibility;
 std::array<HudPaneVisibilityState, 4> s_dpadShadowVisibility;
+std::array<HudPaneVisibilityState, 2> s_roundXYLightVisibility;
+J2DScreen* s_roundXYLightScreen = nullptr;
+J2DScreen* s_roundXYPikariScreen = nullptr;
 
 struct GaugeDrawState {
     dMeter2Draw_c* meter = nullptr;
@@ -1101,20 +1107,6 @@ void apply_round_hud_button_base(CPaneMgr* button, ResTIMG const* texture) {
     apply_round_hud_picture(first_picture_pane(button->getPanePtr()), texture);
 }
 
-void apply_round_hud_button_layers(J2DPane* pane, ResTIMG const* texture) {
-    if (pane == nullptr || texture == nullptr) {
-        return;
-    }
-
-    apply_round_hud_picture(as_picture(pane), texture);
-
-    for (J2DPane* child = pane->getFirstChildPane(); child != nullptr;
-         child = child->getNextChildPane())
-    {
-        apply_round_hud_button_layers(child, texture);
-    }
-}
-
 void apply_round_xy_buttons(dMeter2Draw_c* meter) {
     if (meter == nullptr) {
         restore_round_button_pictures();
@@ -1139,12 +1131,6 @@ void apply_round_xy_buttons(dMeter2Draw_c* meter) {
 
     apply_round_hud_button_base(meter->mpButtonXY[0], texture);
     apply_round_hud_button_base(meter->mpButtonXY[1], texture);
-    if (meter->mpLightXY[0] != nullptr) {
-        apply_round_hud_button_layers(meter->mpLightXY[0]->getPanePtr(), texture);
-    }
-    if (meter->mpLightXY[1] != nullptr) {
-        apply_round_hud_button_layers(meter->mpLightXY[1]->getPanePtr(), texture);
-    }
 }
 
 bool nearly_equal(const f32 lhs, const f32 rhs) {
@@ -1277,6 +1263,9 @@ void clear_shared_hud_layout_cache() {
     s_xyAmmoOriginalValid = {};
     s_externalZAmmoDraw = {};
     s_gaugeDraw = {};
+    s_roundXYLightVisibility = {};
+    s_roundXYLightScreen = nullptr;
+    s_roundXYPikariScreen = nullptr;
     s_roundPictureStates = {};
     s_roundHudMeter = nullptr;
     s_hudLayoutMeter = nullptr;
@@ -2984,6 +2973,55 @@ HookAction before_meter_draw_restore_hud(ModContext*, void* args, void*, void*) 
     return HOOK_CONTINUE;
 }
 
+HookAction before_round_xy_screen_draw(ModContext*, void* args, void*, void*) {
+    auto* screen = mods::arg<J2DScreen*>(args, 0);
+    if (screen != nullptr && screen == s_roundXYPikariScreen) {
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if (!round_xy_buttons_enabled() || s_hudLayoutMeter == nullptr ||
+        screen != s_hudLayoutScreen)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    // Hide only while drawing, after presentation/other HUD mods update the
+    // panes. Restore their exact visibility so toggling off needs no rebuild.
+    s_roundXYLightScreen = screen;
+    for (std::size_t i = 0; i < s_roundXYLightVisibility.size(); ++i) {
+        auto* light = s_hudLayoutMeter->mpLightXY[i];
+        J2DPane* pane = light != nullptr ? light->getPanePtr() : nullptr;
+        apply_hud_pane_hidden_state(s_roundXYLightVisibility[i], pane, true);
+    }
+    return HOOK_CONTINUE;
+}
+
+void after_round_xy_screen_draw(ModContext*, void* args, void*, void*) {
+    if (mods::arg<J2DScreen*>(args, 0) != s_roundXYLightScreen) return;
+    for (auto& state : s_roundXYLightVisibility) {
+        apply_hud_pane_hidden_state(state, state.pane, false);
+    }
+    s_roundXYLightScreen = nullptr;
+}
+
+HookAction before_meter_draw_pikari(ModContext*, void* args, void*, void*) {
+    auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
+    auto* frame = mods::arg<f32*>(args, 2);
+    s_roundXYPikariScreen = nullptr;
+    if (round_xy_buttons_enabled() && meter != nullptr &&
+        (frame == &meter->field_0x620[0] || frame == &meter->field_0x620[1]))
+    {
+        // Suppress only the screen draw, keeping the native animation clock
+        // and sound handling running. The shared effect still draws for A/B/Z
+        // and other HUD elements outside this X/Y call.
+        s_roundXYPikariScreen = meter->mpPikariScreen;
+    }
+    return HOOK_CONTINUE;
+}
+
+void after_meter_draw_pikari(ModContext*, void*, void*, void*) {
+    s_roundXYPikariScreen = nullptr;
+}
+
 HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
     if (z_item_slot_active()) {
@@ -3839,6 +3877,20 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ScreenDrawHook>(
             svc_hook, before_meter_screen_draw_apply_hud, &sharedHudApplyOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ScreenDrawHook>(
+            svc_hook, before_round_xy_screen_draw, &sharedHudApplyOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ScreenDrawHook>(
+            svc_hook, after_round_xy_screen_draw, &sharedHudRestoreOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<MeterDrawPikariHook>(svc_hook, before_meter_draw_pikari);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<MeterDrawPikariHook>(svc_hook, after_meter_draw_pikari);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ScreenDrawHook>(

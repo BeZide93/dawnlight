@@ -37,8 +37,12 @@ DEFINE_HOOK(&daAlink_c::execute, JumpAbilitiesExecute);
 DEFINE_HOOK(&daAlink_c::draw, JumpAbilitiesDraw);
 DEFINE_HOOK(&fpcLf_Delete, JumpAbilitiesDelete);
 DEFINE_HOOK(&fpcLf_Draw, GlideCarrierDraw);
-DEFINE_HOOK(&Z2SoundObjSimple::startSound, GlideCarrierSound);
-DEFINE_HOOK(&Z2SoundObjSimple::startLevelSound, GlideCarrierLevelSound);
+// MSVC cannot const-initialize metadata from these virtual member pointers.
+// Resolve the concrete implementations by name (receiver first in the ABI).
+DEFINE_HOOK_SYMBOL("Z2SoundObjSimple::startSound",
+    Z2SoundHandlePool*(Z2SoundObjSimple*, JAISoundID, u32, s8), GlideCarrierSound);
+DEFINE_HOOK_SYMBOL("Z2SoundObjSimple::startLevelSound",
+    Z2SoundHandlePool*(Z2SoundObjSimple*, JAISoundID, u32, s8), GlideCarrierLevelSound);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
 DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 

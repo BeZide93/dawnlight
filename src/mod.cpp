@@ -3,6 +3,7 @@
 #include "boss_hard_mode.hpp"
 #include "config.hpp"
 #include "fierce_deity.hpp"
+#include "gale_counter.hpp"
 #include "great_spin_projectile.hpp"
 #include "model_overlays.hpp"
 #include "player_hard_mode.hpp"
@@ -54,6 +55,7 @@ ModResult register_new_save_modes(ModError* error);
 ModResult register_ui(ModError* error);
 void update_new_save_modes();
 void shutdown_item_slot_hooks();
+void shutdown_jump_hooks();
 void shutdown_new_save_modes();
 }
 
@@ -111,6 +113,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::register_new_save_modes(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::initialize_gale_counter(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::install_jump_hooks(error); result != MOD_OK) {
         return result;
     }
@@ -146,6 +151,8 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    dawnlight::shutdown_jump_hooks();
+    dawnlight::shutdown_gale_counter();
     dawnlight::shutdown_model_overlays();
     dawnlight::shutdown_bow_modes();
     dawnlight::shutdown_great_spin_projectile();

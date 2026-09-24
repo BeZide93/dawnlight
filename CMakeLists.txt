@@ -85,6 +85,7 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/deku_baba.cpp
         src/enemy_slow_motion/stalfos.cpp
         src/combat_meter.cpp
+        src/gale_counter.cpp
         src/config.cpp
         src/deferred_features.cpp
         src/enemy_scaling.cpp

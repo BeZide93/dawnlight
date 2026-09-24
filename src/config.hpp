@@ -7,6 +7,8 @@
 
 namespace dawnlight {
 
+enum class BulletTimeMode : int { Off = 0, Always = 1, Botw = 2 };
+
 enum class AimMode : int {
     Vanilla = 0,
     ThirdPerson = 1,
@@ -61,6 +63,7 @@ enum class HudElement : int {
     DPadMapText,
     StaminaBar,
     FierceDeityBar,
+    GaleCounter,
     Count,
 };
 
@@ -93,6 +96,7 @@ AimMode aim_mode();
 bool aim_movement_enabled();
 int cinema_zoom_percent();
 int third_person_reticle_offset_y();
+BulletTimeMode bullet_time_mode();
 bool bullet_time_enabled();
 bool flurry_rush_enabled();
 bool fierce_deity_enabled();
@@ -100,6 +104,13 @@ bool great_spin_projectile_enabled();
 bool arrow_modes_enabled();
 bool manual_shielding_enabled();
 bool r_jump_enabled();
+float jump_height_multiplier();
+float gale_height_bonus();
+bool gale_counter_visible();
+int gale_counter_capacity();
+int gale_recovery_seconds();
+bool glide_enabled();
+bool revalis_gale_enabled();
 bool stamina_enabled();
 bool sprint_enabled();
 float sprint_speed_multiplier();
@@ -154,6 +165,13 @@ ConfigVarHandle great_spin_projectile_config_var();
 ConfigVarHandle arrow_modes_config_var();
 ConfigVarHandle manual_shielding_config_var();
 ConfigVarHandle r_jump_config_var();
+ConfigVarHandle jump_height_config_var();
+ConfigVarHandle gale_height_config_var();
+ConfigVarHandle gale_counter_visible_config_var();
+ConfigVarHandle gale_counter_capacity_config_var();
+ConfigVarHandle gale_recovery_config_var();
+ConfigVarHandle glide_config_var();
+ConfigVarHandle revalis_gale_config_var();
 ConfigVarHandle stamina_config_var();
 ConfigVarHandle sprint_config_var();
 ConfigVarHandle sprint_speed_config_var();

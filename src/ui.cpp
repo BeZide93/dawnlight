@@ -21,6 +21,8 @@ constexpr const char* kAimModeOptions[] = {
     "Cinema",
 };
 
+constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
+
 constexpr const char* kNewSaveModeOptions[] = {
     "Vanilla",
     "Intro Skip",
@@ -360,9 +362,11 @@ ModResult build_aiming_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "Bullet Time", bullet_time_config_var(),
-            "Slows gameplay while aiming the Bow during a manual R jump. Uses 20% stamina per "
-            "second and ends when stamina is empty. Press A to cancel it.")
+    if (add_select(ctx, left, "Bullet Time", bullet_time_config_var(), kBulletTimeOptions,
+            std::size(kBulletTimeOptions),
+            "Off disables Bullet Time. Always keeps the original airborne Bow aiming behavior. "
+            "BOTW requires twice the original jump height above the ground to activate, independent "
+            "of Jump Height and Gale Height. Uses 20% stamina per second. Press A to cancel.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -384,6 +388,39 @@ ModResult build_controls_tab(
             "Uses R as a fallback jump button when no R interaction or targeting action is active. "
             "Press R+B during the jump to start a jump attack.")
         != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_number(ctx, left, "Jump Height", jump_height_config_var(), 100, 500, 10, "%",
+            "Height of a manual jump. 100% is the original height; maximum 500%.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Glide", glide_config_var(),
+            "Press ZR again in midair to hold a Cucco and glide, including during ordinary falls. "
+            "The Cucco disappears when you land.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Revali's Gale", revalis_gale_config_var(),
+            "Press ZR to jump immediately. Keep holding through landing to stop and crouch, then release for a "
+            "wind jump with Gale Height added to Jump Height, preserving your previous running speed and direction.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_number(ctx, left, "Gale Height", gale_height_config_var(), 100, 1000, 10, "%",
+            "Additional height for Revali's Gale, relative to the original jump height. "
+            "Default 500%; Jump Height 200% plus Gale Height 500% gives 700% total height.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Gale Counter", gale_counter_visible_config_var(),
+            "Shows remaining Gale charges. Hiding the counter does not remove the resource cost.") != MOD_OK ||
+        add_number(ctx, left, "Gale Charges", gale_counter_capacity_config_var(), 1, 12, 1, "",
+            "Maximum Gale charges. Default 3. A successful Gale launch consumes one charge.") != MOD_OK ||
+        add_number(ctx, left, "Gale Recovery Time", gale_recovery_config_var(), 1, 3600, 1, " sec",
+            "Seconds to restore one charge, one at a time. Default 120. Recovery continues through "
+            "cutscenes and scene changes; another use does not restart the timer.") != MOD_OK)
     {
         return MOD_ERROR;
     }
@@ -593,6 +630,10 @@ ModResult build_hud_tab(
     }
     if (add_custom_transform_controls(
             ctx, left, "Custom Fierce Deity Bar", HudElement::FierceDeityBar) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_custom_transform_controls(ctx, left, "Custom Gale Counter", HudElement::GaleCounter) != MOD_OK)
     {
         return MOD_ERROR;
     }

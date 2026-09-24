@@ -19,8 +19,14 @@ aiming, boss, and HUD features for Twilight Princess.
 - Optional [Arrow Modes](#arrow-modes): press ZR while aiming the Bow to cycle
   normal arrows, fire arrows, and a three-arrow spread, with a visual mode indicator.
 - Touch and gyro aiming support for the modded aiming modes.
-- Optional Bullet Time while aiming the Bow during a manual R jump, Flurry Rush
-  after a perfectly timed evade, and a ranged Great Spin projectile.
+- Bullet Time while aiming the Bow during a manual jump or Gale: **Off** disables
+  it, **Always** preserves the previous On behavior, and **BOTW** requires a ground
+  clearance of twice the original 100% jump height when activating. The threshold
+  is independent of Jump Height/Gale Height. A 100% jump from level ground cannot
+  trigger BOTW Bullet Time; jumping off a ledge or using Gale can. A 200% jump
+  reaches the threshold near its apex. Once activated, duration, stamina and
+  cancellation work as before. Existing On/Off configurations migrate to Always/Off.
+- Optional Flurry Rush after a perfectly timed evade and a ranged Great Spin projectile.
 - Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, and the Great Spin
   projectile, including compatibility with Lazy Tweaks stamina actions. Emptying
   the meter causes exhaustion until it recovers to 50%. The Stamina Bar setting
@@ -31,8 +37,30 @@ aiming, boss, and HUD features for Twilight Princess.
   speed (100–300%, default 150%). Sprint animation uses half the actual movement
   speed bonus: 150% movement gives 125% playback, including native indoor slowdown.
   Manual jumps during sprinting carry the earned speed bonus into horizontal
-  speed and distance, with the normal jump height. Set **Sprint Speed** beside
+  speed and distance, independently of the selected jump height. Set **Sprint Speed** beside
   **Sprint** in the Controls settings.
+- **Jump Height**, directly below **R Jump** in Controls, sets manual jump height
+  from 100% (the original height and default) to 500%.
+- Optional **Glide**: press ZR in the air to deploy a Cucco using native gliding,
+  during manual jumps or ordinary falls. Landing removes the summoned Cucco.
+- Optional **Revali's Gale**: ZR immediately performs a normal jump, including
+  while running or sprinting. Keep ZR held through landing to stop and crouch;
+  release to launch with the saved pre-jump speed/direction and the native Gale
+  Boomerang tornado. **Gale Height**, below the toggle, adds 100–1000% of the
+  original jump height (default 500%) to **Jump Height**. For example, 200% Jump
+  Height plus 500% Gale Height gives 700% total height.
+  There is no timed charge. Releasing before landing leaves the normal jump.
+  Gale also enables the initial ZR jump when R Jump is off; Glide is independent.
+  Both new abilities default to disabled.
+- Gale uses three charges by default. **Gale Charges** adjusts capacity (1–12),
+  and **Gale Recovery Time** adjusts seconds per recovered charge (1–3600,
+  default 120). Charges recover one at a time; another use never restarts a
+  pending recharge. Recovery uses elapsed real time, including menus, cutscenes
+  and scene transitions. The state lasts for the session, without save-file data.
+- **Gale Counter** toggles only the display: native Epona sprint icons beneath
+  the Fierce Deity bar, with full and spent charges. **Custom Gale Counter** in
+  the HUD Editor adjusts X/Y offsets and scale relative to that default anchor.
+  Empty charges block Gale, while the initial normal ZR jump remains available.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
 - Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
   faster tracking, and selected profile-specific mechanics.

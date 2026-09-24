@@ -34,13 +34,21 @@ ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
 ConfigVarHandle s_thirdPersonReticleOffsetY = 0;
-ConfigVarHandle s_bulletTime = 0;
+ConfigVarHandle s_bulletTime = 0; // Legacy boolean, read only for migration.
+ConfigVarHandle s_bulletTimeMode = 0;
 ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_arrowModes = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
+ConfigVarHandle s_jumpHeight = 0;
+ConfigVarHandle s_glide = 0;
+ConfigVarHandle s_revalisGale = 0;
+ConfigVarHandle s_galeHeight = 0;
+ConfigVarHandle s_galeCounterVisible = 0;
+ConfigVarHandle s_galeCounterCapacity = 0;
+ConfigVarHandle s_galeRecovery = 0;
 ConfigVarHandle s_stamina = 0;
 ConfigVarHandle s_sprint = 0;
 ConfigVarHandle s_sprintSpeedPercent = 0;
@@ -178,6 +186,7 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
@@ -207,6 +216,7 @@ constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults =
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 0, 0, 100},
 }};
 
 constexpr std::array<HudButtonDefaults, kHudButtonCount> kHudButtonDefaults = {{
@@ -236,6 +246,7 @@ constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kWiiUHudButtonDefaults = {{
@@ -265,6 +276,7 @@ constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 100, 0, 100},
     {"fierce-deity-bar", 100, 0, 100},
+    {"gale-counter", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kDawnlightHudButtonDefaults = {{
@@ -294,6 +306,7 @@ constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
     "D-Pad Map Text",
     "Stamina Bar",
     "Fierce Deity Bar",
+    "Gale Counter",
 }};
 
 constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{
@@ -866,12 +879,20 @@ ModResult register_config(ModError* error) {
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
         register_int("third-person-reticle-offset-y", 0, s_thirdPersonReticleOffsetY) != MOD_OK ||
         register_bool("bullet-time", true, s_bulletTime) != MOD_OK ||
+        register_int("bullet-time-mode", -1, s_bulletTimeMode) != MOD_OK ||
         register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
         register_bool("arrow-modes", true, s_arrowModes) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
+        register_int("jump-height-percent", 100, s_jumpHeight) != MOD_OK ||
+        register_bool("glide", false, s_glide) != MOD_OK ||
+        register_bool("revalis-gale", false, s_revalisGale) != MOD_OK ||
+        register_int("gale-height-percent", 500, s_galeHeight) != MOD_OK ||
+        register_bool("gale-counter-visible", true, s_galeCounterVisible) != MOD_OK ||
+        register_int("gale-counter-capacity", 3, s_galeCounterCapacity) != MOD_OK ||
+        register_int("gale-recovery-seconds", 120, s_galeRecovery) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
         register_int("sprint-speed-percent", 150, s_sprintSpeedPercent) != MOD_OK ||
@@ -909,6 +930,14 @@ ModResult register_config(ModError* error) {
     if (register_custom_hud_config() != MOD_OK) {
         return mods::set_error(
             error, MOD_ERROR, "failed to register Dawnlight custom HUD variables");
+    }
+
+    // A sentinel distinguishes old configs from an explicitly chosen mode.
+    // Keep the legacy boolean's type so saved Off/On values remain readable.
+    if (get_int(s_bulletTimeMode, -1, -1, 2) == -1 &&
+        !set_int(s_bulletTimeMode, get_bool(s_bulletTime, true) ? 1 : 0))
+    {
+        return mods::set_error(error, MOD_ERROR, "failed to migrate Bullet Time mode");
     }
 
     if (!get_bool(s_aimDefaultsMigrated, false)) {
@@ -1055,8 +1084,12 @@ int third_person_reticle_offset_y() {
     return get_int(s_thirdPersonReticleOffsetY, 0, -40, 40);
 }
 
+BulletTimeMode bullet_time_mode() {
+    return static_cast<BulletTimeMode>(get_int(s_bulletTimeMode, 1, 0, 2));
+}
+
 bool bullet_time_enabled() {
-    return get_bool(s_bulletTime, true);
+    return bullet_time_mode() != BulletTimeMode::Off;
 }
 
 bool flurry_rush_enabled() {
@@ -1082,6 +1115,21 @@ bool manual_shielding_enabled() {
 bool r_jump_enabled() {
     return get_bool(s_rJump, true);
 }
+
+float jump_height_multiplier() {
+    return static_cast<float>(get_int(s_jumpHeight, 100, 100, 500)) / 100.0f;
+}
+
+float gale_height_bonus() {
+    return static_cast<float>(get_int(s_galeHeight, 500, 100, 1000)) / 100.0f;
+}
+
+bool gale_counter_visible() { return get_bool(s_galeCounterVisible, true); }
+int gale_counter_capacity() { return get_int(s_galeCounterCapacity, 3, 1, 12); }
+int gale_recovery_seconds() { return get_int(s_galeRecovery, 120, 1, 3600); }
+
+bool glide_enabled() { return get_bool(s_glide, false); }
+bool revalis_gale_enabled() { return get_bool(s_revalisGale, false); }
 
 bool stamina_enabled() {
     return get_bool(s_stamina, true);
@@ -1305,7 +1353,7 @@ ConfigVarHandle third_person_reticle_offset_y_config_var() {
 }
 
 ConfigVarHandle bullet_time_config_var() {
-    return s_bulletTime;
+    return s_bulletTimeMode;
 }
 
 ConfigVarHandle flurry_rush_config_var() {
@@ -1331,6 +1379,14 @@ ConfigVarHandle manual_shielding_config_var() {
 ConfigVarHandle r_jump_config_var() {
     return s_rJump;
 }
+
+ConfigVarHandle jump_height_config_var() { return s_jumpHeight; }
+ConfigVarHandle glide_config_var() { return s_glide; }
+ConfigVarHandle revalis_gale_config_var() { return s_revalisGale; }
+ConfigVarHandle gale_height_config_var() { return s_galeHeight; }
+ConfigVarHandle gale_counter_visible_config_var() { return s_galeCounterVisible; }
+ConfigVarHandle gale_counter_capacity_config_var() { return s_galeCounterCapacity; }
+ConfigVarHandle gale_recovery_config_var() { return s_galeRecovery; }
 
 ConfigVarHandle stamina_config_var() {
     return s_stamina;

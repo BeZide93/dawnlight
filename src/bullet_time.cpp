@@ -26,6 +26,7 @@
 #include "d/d_cc_s.h"
 #include "d/d_cc_uty.h"
 #include "d/d_com_inf_game.h"
+#include "d/d_bg_s_gnd_chk.h"
 #include "d/d_meter2_draw.h"
 #include "f_op/f_op_actor.h"
 #include "f_op/f_op_actor_mng.h"
@@ -639,9 +640,38 @@ void stop_flurry_rush(bool releaseDamage = true) {
     }
 }
 
+float botw_minimum_ground_clearance() {
+    // Immutable native defaults, never the current jump's boosted velocity or
+    // gravity (which Bullet Time itself changes). Native posMove applies gravity
+    // BEFORE displacement: sum the rising ticks to get the actual 100% apex.
+    static const float minimum = [] {
+        const auto& jump = daAlinkHIO_autoJump_c0::m;
+        float velocity = jump.mMaxJumpSpeed * jump.mJumpSpeedRate * cM_ssin(jump.mJumpAngle);
+        float height = 0.0f;
+        for (velocity += jump.mGravity; velocity > 0.0f; velocity += jump.mGravity)
+            height += velocity;
+        return 2.0f * height;
+    }();
+    return minimum;
+}
+
+bool bullet_time_height_allowed(daAlink_c* link) {
+    const auto mode = bullet_time_mode();
+    if (mode == BulletTimeMode::Off || !link) return false;
+    if (mode == BulletTimeMode::Always) return true;
+    // Fresh Link-filtered ground query: takeoff height and the previous frame's
+    // collision cache can still refer to the ledge we just jumped away from.
+    dBgS_LinkGndChk ground;
+    ground.SetPos(&link->current.pos);
+    const float floor = dComIfG_Bgsp().GroundCross(&ground);
+    if (!std::isfinite(floor) || floor == -G_CM3D_F_INF) return false;
+    const float clearance = link->current.pos.y - floor;
+    return std::isfinite(clearance) && clearance >= botw_minimum_ground_clearance();
+}
+
 void start_bullet_time(daAlink_c* link) {
     if (s_bulletTimeActive || s_bulletTimeUsedForJump || link == nullptr ||
-        !stamina_available_for_bullet_time())
+        !stamina_available_for_bullet_time() || !bullet_time_height_allowed(link))
     {
         return;
     }
@@ -2184,7 +2214,7 @@ void update_bullet_time_before_jump(daAlink_c* link) {
         return;
     }
 
-    if (!bullet_time_enabled() || !r_jump_enabled() || !manual_jump_is_airborne(link) ||
+    if (!bullet_time_enabled() || (!r_jump_enabled() && !revalis_gale_enabled()) || !manual_jump_is_airborne(link) ||
         Clock::now() - s_manualJumpStarted >= kManualJumpTimeout)
     {
         clear_manual_jump(link);
@@ -2271,7 +2301,8 @@ void bullet_time_tick() {
     }
 
     if (s_manualJumpOwner != nullptr) {
-        if (currentLink != s_manualJumpOwner || !bullet_time_enabled() || !r_jump_enabled()) {
+        if (currentLink != s_manualJumpOwner || !bullet_time_enabled() ||
+            (!r_jump_enabled() && !revalis_gale_enabled())) {
             clear_manual_jump(nullptr);
         } else {
             const auto now = Clock::now();

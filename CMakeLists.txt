@@ -87,6 +87,7 @@ add_mod(dawnlight_mod
         src/combat_meter.cpp
         src/gale_counter.cpp
         src/config.cpp
+        src/progression.cpp
         src/deferred_features.cpp
         src/enemy_scaling.cpp
         src/eye_movement.cpp

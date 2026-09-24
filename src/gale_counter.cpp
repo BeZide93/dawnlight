@@ -28,6 +28,12 @@ namespace {
 DEFINE_HOOK(&dMeter2Draw_c::draw, GaleCounterDraw);
 DEFINE_HOOK(&dMeter2_c::_delete, GaleCounterMeterDelete);
 GaleCharges s_charges;
+SaveObserverHandle s_saveObserver = 0;
+
+void on_save_started(ModContext*, uint32_t, void*) {
+    // Scene changes keep recovery; a different/reloaded save starts its own pool.
+    s_charges = {};
+}
 
 void update_charges() {
     const double now = std::chrono::duration<double>(
@@ -157,12 +163,16 @@ void consume_gale_charge() {
 }
 
 ModResult initialize_gale_counter(ModError* error) {
-    auto result = mods::hook::add_post<GaleCounterDraw>(svc_hook, after_draw);
+    auto result = svc_save->observe_saves(
+        mod_ctx, on_save_started, on_save_started, nullptr, nullptr, &s_saveObserver);
+    if (result == MOD_OK) result = mods::hook::add_post<GaleCounterDraw>(svc_hook, after_draw);
     if (result == MOD_OK) result = mods::hook::add_pre<GaleCounterMeterDelete>(svc_hook, before_meter_delete);
     return result == MOD_OK ? MOD_OK : mods::set_error(error, result, "failed to install Gale Counter HUD hooks");
 }
 
 void shutdown_gale_counter() {
+    if (s_saveObserver && svc_save) svc_save->unobserve_saves(mod_ctx, s_saveObserver);
+    s_saveObserver = 0;
     s_visual.release();
     s_charges = {};
 }

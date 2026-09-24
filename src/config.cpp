@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "progression.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
 #include "update_service.hpp"
@@ -25,6 +26,8 @@
 namespace dawnlight {
 namespace {
 
+ConfigVarHandle s_dawnlightMode = 0;
+ConfigVarHandle s_progressionSystem = 0;
 ConfigVarHandle s_healthScale = 0;
 ConfigVarHandle s_automaticHealthScale = 0;
 ConfigVarHandle s_saveCompatibility = 0;
@@ -360,6 +363,8 @@ ModResult register_custom_int(
 }
 
 bool get_bool(ConfigVarHandle handle, bool fallback) {
+    int64_t overrideValue = 0;
+    if (mode_config_override(handle, overrideValue)) return overrideValue != 0;
     bool value = fallback;
     if (handle != 0) {
         svc_config->get_bool(mod_ctx, handle, &value);
@@ -368,6 +373,8 @@ bool get_bool(ConfigVarHandle handle, bool fallback) {
 }
 
 int get_int(ConfigVarHandle handle, int fallback, int min, int max) {
+    int64_t overrideValue = 0;
+    if (mode_config_override(handle, overrideValue)) return static_cast<int>(overrideValue);
     int64_t value = fallback;
     if (handle != 0) {
         svc_config->get_int(mod_ctx, handle, &value);
@@ -870,7 +877,9 @@ ModResult register_custom_hud_config() {
 }  // namespace
 
 ModResult register_config(ModError* error) {
-    if (register_int("hp-scale-percent", 100, s_healthScale) != MOD_OK ||
+    if (register_bool("dawnlight-mode", false, s_dawnlightMode) != MOD_OK ||
+        register_bool("progression-system", false, s_progressionSystem) != MOD_OK ||
+        register_int("hp-scale-percent", 100, s_healthScale) != MOD_OK ||
         register_bool("ngplus-auto-hp-scaling", true, s_automaticHealthScale) != MOD_OK ||
         register_bool("save-compatibility", true, s_saveCompatibility) != MOD_OK ||
         register_bool("item-integrity-fixes", true, s_itemIntegrity) != MOD_OK ||
@@ -1038,12 +1047,58 @@ ModResult register_config(ModError* error) {
     return MOD_OK;
 }
 
+bool dawnlight_mode_enabled() {
+    bool enabled = false;
+    if (s_dawnlightMode) svc_config->get_bool(mod_ctx, s_dawnlightMode, &enabled);
+    return enabled;
+}
+
+bool progression_system_enabled() {
+    bool enabled = false;
+    if (s_progressionSystem) svc_config->get_bool(mod_ctx, s_progressionSystem, &enabled);
+    return dawnlight_mode_enabled() || enabled;
+}
+
+ModeSetting mode_setting_for_config(ConfigVarHandle var) {
+    if (!var) return ModeSetting::None;
+    if (var == s_progressionSystem) return ModeSetting::Progression;
+    if (var == s_sprint) return ModeSetting::Sprint;
+    if (var == s_sprintSpeedPercent) return ModeSetting::SprintSpeed;
+    if (var == s_rJump) return ModeSetting::Jump;
+    if (var == s_jumpHeight) return ModeSetting::JumpHeight;
+    if (var == s_flurryRush) return ModeSetting::FlurryRush;
+    if (var == s_bulletTimeMode) return ModeSetting::BulletTime;
+    if (var == s_enemyHardMode) return ModeSetting::EnemyHardMode;
+    if (var == s_bossrushHardmodeHazards) return ModeSetting::BossHardMode;
+    if (var == s_healthScale) return ModeSetting::HealthScale;
+    if (var == s_manualShielding) return ModeSetting::ManualShielding;
+    if (var == s_galeRecovery) return ModeSetting::GaleRecovery;
+    if (var == s_arrowModes) return ModeSetting::ArrowModes;
+    if (var == s_greatSpinProjectile) return ModeSetting::GreatSpin;
+    if (var == s_removeNormalHitInvulnerability) return ModeSetting::NoNormalHitInvulnerability;
+    if (var == s_glide) return ModeSetting::Glide;
+    if (var == s_glideItem) return ModeSetting::GlideItem;
+    if (var == s_revalisGale) return ModeSetting::Gale;
+    if (var == s_galeCounterVisible) return ModeSetting::GaleCounter;
+    if (var == s_galeCounterCapacity) return ModeSetting::GaleCharges;
+    if (var == s_fierceDeity) return ModeSetting::FierceDeity;
+    return ModeSetting::None;
+}
+
+bool mode_config_override(ConfigVarHandle var, int64_t& value) {
+    const auto setting = mode_setting_for_config(var);
+    if (setting == ModeSetting::None) return false;
+    const bool dawnlight = dawnlight_mode_enabled();
+    const bool progression = progression_system_enabled();
+    if (!dawnlight && !progression) return false;
+    return mode_override(setting, dawnlight, progression, progression_state(), value);
+}
+
+ConfigVarHandle dawnlight_mode_config_var() { return s_dawnlightMode; }
+ConfigVarHandle progression_system_config_var() { return s_progressionSystem; }
+
 int health_scale_percent() {
-    int64_t value = 100;
-    if (s_healthScale != 0) {
-        svc_config->get_int(mod_ctx, s_healthScale, &value);
-    }
-    return static_cast<int>(std::clamp<int64_t>(value, 1, 9999));
+    return get_int(s_healthScale, 100, 1, 9999);
 }
 
 bool automatic_ngplus_health_scaling() {

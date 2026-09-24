@@ -7,6 +7,40 @@ aiming, boss, and HUD features for Twilight Princess.
 > Dawnlight does not include or provide copyrighted game assets. You need a
 > legal Dusklight installation and your own dumped copy of Twilight Princess.
 
+## General settings
+
+The first tab in `Mod Manager -> Dawnlight -> Open Dawnlight Settings` is **General**.
+Both new options default to **Off**, preserving existing configurations.
+
+**Dawnlight Mode** applies the intended preset: Sprint at 150%, R Jump at 110%,
+Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode, 300% HP Scaling,
+Manual Shielding, 60-second Gale recovery, Arrow Modes, Great Spin Projectile,
+No Normal-Hit Invulnerability, and the Progression System.
+Controlled settings display their effective values and are grayed out.
+Your personal Off-mode settings remain saved separately: switching Dawnlight Mode
+Off restores them, including your previous Progression System choice. This also
+works after restarting Dusklight. Settings outside the preset remain editable.
+
+**Progression System** can also be enabled independently. Unlocks follow the
+currently loaded save's story flags:
+
+| Milestone | Unlock |
+| --- | --- |
+| Start of the game | Sprint |
+| Give Talo the Wooden Sword in Ordon | Glide, with Glider selected |
+| Free Ordona | Revali's Gale and its counter |
+| Free Faron | Fierce Deity |
+| Each three full heart containers | One Gale charge: 3 hearts = 1, 6 = 2, 9 = 3, etc. |
+
+Charge capacity uses maximum heart containers, not current health; damage and
+partial heart containers do not lower or prematurely increase it. Progression
+controls Sprint, Glide, Glide Item, Revali's Gale, Gale Counter, Gale Charges,
+and Fierce Deity, locking these settings until progression is disabled. A short
+Dusklight toast announces newly reached unlocks and charge-capacity increases.
+Loading a save or enabling progression applies existing progress silently;
+changing saves does not carry unlocks or spent Gale charges into the next save.
+Disabling progression restores the corresponding personal settings.
+
 ## Features
 
 - Z item slot: bind a third item to Z, move Midna to the D-Pad prompt, and use

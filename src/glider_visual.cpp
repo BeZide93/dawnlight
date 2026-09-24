@@ -115,7 +115,8 @@ bool prepare_glider_draw() {
     s_glider.cosine=std::cos(yaw);
     const auto& ambient=link->tevStr.AmbCol;
     // Follow the player's room lighting; retain a little fill for the woodwork.
-    auto channel=[](int value) { return static_cast<u8>(std::clamp(value+48,48,255)); };
+    // Keep the canvas/runes readable in shadow while retaining ambient tint.
+    auto channel=[](int value) { return static_cast<u8>(std::clamp(160+value*95/255,160,255)); };
     s_glider.color={channel(ambient.r),channel(ambient.g),channel(ambient.b),255};
     return true;
 }

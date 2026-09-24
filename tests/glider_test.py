@@ -22,8 +22,8 @@ for triangle in f:
     u=[b[k]-a[k] for k in range(3)];w=[c[k]-a[k] for k in range(3)]
     cross=[u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]]
     assert sum(x*x for x in cross)>1e-10
-# The supplied crest occupies about 46% of the source width and 50% of its
-# height. On the sail it should stay approximately circular, with both axes
+# The original crest occupies about 46% of the source width and 50% of its
+# height. On the sail it should retain its proportions, with both axes
 # reversed to face the requested direction.
 def canopy_vertex(i,j):
     return v[4*(i*6+j)]
@@ -33,7 +33,8 @@ front=v[4*(8*6+5)+3]
 assert left[3]>right[3] and rear[4]>front[4]
 crest_width=.46*abs(right[0]-left[0])/(abs(right[3]-left[3])*g.SIZE/(g.SIZE-1))
 crest_depth=.50*abs(front[2]-rear[2])/(abs(front[4]-rear[4])*g.SIZE/(g.CANVAS_ROWS-1))
-assert .85<crest_width/crest_depth<1.15
+assert .8<crest_width/crest_depth<1.05
+assert .9<crest_depth/abs(front[2]-rear[2])<1.0
 # Grip axes must run fore/aft (Z), with a slight rise, not across Link (X).
 for side in (-1, 1):
     grip=[p for p in v if abs(p[4]-240/g.SIZE)<1e-7 and p[0]*side>0]

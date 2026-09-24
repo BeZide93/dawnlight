@@ -14,8 +14,8 @@ CANVAS_ROWS = 208
 
 
 def texture():
-    # Pack the user's Dawnlight artwork (only the title removed) in the canvas
-    # region. Keep the full picture, background and frame; no new motif/overlay.
+    # Pack the original Dawnlight artwork in the canvas region.
+    # Keep the full editable image in the atlas; mesh UVs frame the crest.
     with Image.open(ART / 'dawnlight-canopy-source.png') as source:
         canvas = source.convert('RGB').resize((SIZE, CANVAS_ROWS), Image.Resampling.LANCZOS)
     im = Image.new('RGB', (SIZE, SIZE))
@@ -45,15 +45,17 @@ def mesh():
         # The sail is roughly 200 units wide but only 80 deep. Give the central
         # crest more texture space in X so its circular outline stays round on
         # the mesh; distribute the surrounding frame over the outer panels.
-        if u < .375:
-            artwork_u = .6*u
-        elif u > .625:
-            artwork_u = .775 + .6*(u-.625)
+        if u < .3:
+            artwork_u = .26*u/.3
+        elif u > .7:
+            artwork_u = .74 + .26*(u-.7)/.3
         else:
-            artwork_u = .225 + 2.2*(u-.375)
+            artwork_u = .26 + 1.2*(u-.3)
         # Turn the artwork half a revolution on the sail. The atlas strips for
         # the wooden frame and leather grips are sampled separately below.
-        artwork_u, artwork_t = 1-artwork_u, 1-t
+        # The crest spans approximately source Y=.12.. .62. Frame it with
+        # small margins so it covers about 95% of the 80-unit sail depth.
+        artwork_u, artwork_t = 1-artwork_u, .108 + (1-t)*.527
         return ((.5+artwork_u*(SIZE-1))/SIZE,
                 (.5+artwork_t*(CANVAS_ROWS-1))/SIZE)
     for i in range(16):

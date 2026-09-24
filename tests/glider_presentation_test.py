@@ -116,6 +116,12 @@ int main(){
     }
     // No interpolation/history (including first frame): use current joints.
     interpolation=false;assert(prepare_glider_draw());assert(near(s_glider.origin.x,100)&&near(s_glider.origin.y,89));
+    // Ambient tint must preserve readable texture midtones, even in shadow.
+    for(int ambient:{0,64,128,255}){
+        link.tevStr.AmbCol={ambient,ambient,ambient};assert(prepare_glider_draw());
+        assert(s_glider.color.r>=160&&s_glider.color.g>=160&&s_glider.color.b>=160);
+    }
+    assert(s_glider.color.r==255);
     s_lookupPresentationMatrix=nullptr;assert(prepare_glider_draw());assert(near(s_glider.origin.x,100)&&near(s_glider.origin.y,89));
     s_lookupPresentationMatrix=lookup;interpolation=true;
     // Turn through the signed-angle boundary: presented facing is still -Z,

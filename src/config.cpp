@@ -1,3 +1,4 @@
+#include "notifications.hpp"
 #include "config.hpp"
 #include "progression.hpp"
 #include "enemy_spawner.hpp"
@@ -28,6 +29,7 @@ namespace {
 
 ConfigVarHandle s_dawnlightMode = 0;
 ConfigVarHandle s_progressionSystem = 0;
+ConfigVarHandle s_notifications = 0;
 ConfigVarHandle s_healthScale = 0;
 ConfigVarHandle s_automaticHealthScale = 0;
 ConfigVarHandle s_saveCompatibility = 0;
@@ -119,7 +121,7 @@ void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarVal
     UiToastDesc toast = UI_TOAST_DESC_INIT;
     toast.title_rml = "Z-Items";
     toast.body_rml = "Restart game after toggling Z-items";
-    svc_ui->push_toast(ctx, &toast);
+    push_dawnlight_toast(ctx, svc_ui, toast);
 }
 
 void on_dawnlight_touch_ui_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
@@ -127,7 +129,7 @@ void on_dawnlight_touch_ui_changed(ModContext* ctx, ConfigVarHandle, const Confi
     UiToastDesc toast = UI_TOAST_DESC_INIT;
     toast.title_rml = "Dawnlight Touch UI";
     toast.body_rml = "Restart game after toggling Dawnlight Touch UI";
-    svc_ui->push_toast(ctx, &toast);
+    push_dawnlight_toast(ctx, svc_ui, toast);
 }
 
 void on_custom_model_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
@@ -135,7 +137,7 @@ void on_custom_model_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarVa
     UiToastDesc toast = UI_TOAST_DESC_INIT;
     toast.title_rml = "Models";
     toast.body_rml = "Restart game to apply model changes";
-    svc_ui->push_toast(ctx, &toast);
+    push_dawnlight_toast(ctx, svc_ui, toast);
 }
 
 void on_check_for_updates_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
@@ -879,6 +881,7 @@ ModResult register_custom_hud_config() {
 ModResult register_config(ModError* error) {
     if (register_bool("dawnlight-mode", false, s_dawnlightMode) != MOD_OK ||
         register_bool("progression-system", false, s_progressionSystem) != MOD_OK ||
+        register_bool("notifications", false, s_notifications) != MOD_OK ||
         register_int("hp-scale-percent", 100, s_healthScale) != MOD_OK ||
         register_bool("ngplus-auto-hp-scaling", true, s_automaticHealthScale) != MOD_OK ||
         register_bool("save-compatibility", true, s_saveCompatibility) != MOD_OK ||
@@ -1053,6 +1056,12 @@ bool dawnlight_mode_enabled() {
     return enabled;
 }
 
+bool notifications_enabled() {
+    bool enabled = false;
+    if (s_notifications && svc_config) svc_config->get_bool(mod_ctx, s_notifications, &enabled);
+    return enabled;
+}
+
 bool progression_system_enabled() {
     bool enabled = false;
     if (s_progressionSystem) svc_config->get_bool(mod_ctx, s_progressionSystem, &enabled);
@@ -1098,6 +1107,7 @@ bool mode_config_override(ConfigVarHandle var, int64_t& value) {
 
 ConfigVarHandle dawnlight_mode_config_var() { return s_dawnlightMode; }
 ConfigVarHandle progression_system_config_var() { return s_progressionSystem; }
+ConfigVarHandle notifications_config_var() { return s_notifications; }
 
 int health_scale_percent() {
     return get_int(s_healthScale, 100, 1, 9999);

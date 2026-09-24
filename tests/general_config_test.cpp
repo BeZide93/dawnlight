@@ -20,6 +20,9 @@ struct Saved { ConfigVarType type; int64_t value; };
 std::map<std::string, Saved> disk;
 std::map<ConfigVarHandle, std::string> handles;
 ConfigVarHandle nextHandle = 1;
+std::map<ConfigVarHandle, ConfigChangedFn> subscriptions;
+int toasts = 0;
+ModResult record_toast(ModContext*, const UiToastDesc*) { ++toasts; return MOD_OK; }
 ModResult register_var(ModContext*, const ConfigVarDesc* desc, ConfigVarHandle* out) {
     disk.try_emplace(desc->name, Saved{desc->type,
         desc->type == CONFIG_VAR_BOOL ? desc->default_bool : desc->default_int});
@@ -45,7 +48,8 @@ ModResult set_int(ModContext*, ConfigVarHandle var, int64_t value) {
     disk.at(handles.at(var)).value = value;
     return MOD_OK;
 }
-ModResult subscribe(ModContext*, ConfigVarHandle, ConfigChangedFn, void*, ConfigSubscriptionHandle*) {
+ModResult subscribe(ModContext*, ConfigVarHandle var, ConfigChangedFn fn, void*, ConfigSubscriptionHandle*) {
+    subscriptions[var] = fn;
     return MOD_OK;
 }
 UiControlDesc control(ConfigVarHandle var, UiControlKind kind) {
@@ -73,8 +77,27 @@ int main() {
     config.set_int = set_int;
     config.subscribe = subscribe;
     svc_config = &config;
+    UiService ui{};
+    ui.push_toast = record_toast;
+    svc_ui = &ui;
     assert(register_config(nullptr) == MOD_OK);
     assert(!dawnlight_mode_enabled() && !progression_system_enabled());
+    assert(!notifications_enabled());
+    assert(mode_setting_for_config(notifications_config_var()) == ModeSetting::None);
+    auto send_notifications = [&] {
+        dawnlight::push_toast("HUD/Spawner result", "Result");
+        for(auto var : {z_item_slot_config_var(), dawnlight_touch_ui_config_var(),
+                custom_model_config_var(CustomModel::OrdonLink)})
+            subscriptions.at(var)(mod_ctx, var, nullptr, nullptr, nullptr);
+        UiToastDesc desc = UI_TOAST_DESC_INIT;
+        desc.title_rml = "Progression/update";
+        push_dawnlight_toast(mod_ctx, svc_ui, desc);
+    };
+    send_notifications();assert(toasts == 0);
+    set_bool(nullptr, notifications_config_var(), true);
+    send_notifications();assert(toasts == 5);
+    set_bool(nullptr, notifications_config_var(), false);
+    send_notifications();assert(toasts == 5);
     set_int(nullptr, sprint_speed_config_var(), 185);
     set_int(nullptr, jump_height_config_var(), 240);
     set_int(nullptr, health_scale_config_var(), 175);
@@ -95,6 +118,11 @@ int main() {
     assert(!disabled(speed) && shown(speed).int_value == 185);
     set_bool(nullptr, dawnlight_mode_config_var(), true);
     assert(progression_system_enabled() && sprint_enabled() && r_jump_enabled());
+    assert(!notifications_enabled());send_notifications();assert(toasts == 5);
+    int64_t notificationValue = 0;
+    assert(!mode_config_override(notifications_config_var(), notificationValue));
+    set_bool(nullptr, notifications_config_var(), true);
+    send_notifications();assert(toasts == 10);
     assert(std::abs(sprint_speed_multiplier() - 1.5f) < 0.001f);
     assert(std::abs(jump_height_multiplier() - 1.1f) < 0.001f);
     assert(health_scale_percent() == 300 && gale_recovery_seconds() == 60);
@@ -129,6 +157,9 @@ int main() {
     // Restart: register from the same disk values with fresh handles.
     assert(register_config(nullptr) == MOD_OK);
     assert(dawnlight_mode_enabled() && progression_system_enabled() && health_scale_percent() == 300);
+    assert(notifications_enabled());
+    set_bool(nullptr, notifications_config_var(), false);
+    send_notifications();assert(toasts == 10);
     assert(gale_height_bonus() == 5.0f && stamina_enabled());
     set_bool(nullptr, dawnlight_mode_config_var(), false);
     assert(!progression_system_enabled());

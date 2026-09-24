@@ -43,7 +43,8 @@ Charge capacity uses maximum heart containers, not current health; damage and
 partial heart containers do not lower or prematurely increase it. Progression
 controls Sprint, Glide, Glide Item, Revali's Gale, Gale Counter, Gale Charges,
 and Fierce Deity, locking these settings until progression is disabled. A short
-Dusklight toast announces newly reached unlocks and charge-capacity increases.
+Dusklight toast announces newly reached unlocks and charge-capacity increases
+when Notifications is On.
 After handing over the Wooden Sword, the end of Talo's dialogue is followed by
 Link's native chest-item lifting/holding animation, showing a compact copy of
 Dawnlight's Glider in his hands and a Glider acquisition message with its own
@@ -54,6 +55,13 @@ saves and toggling progression on do not replay this scene.
 Loading a save or enabling progression applies existing progress silently;
 changing saves does not carry unlocks or spent Gale charges into the next save.
 Disabling progression restores the corresponding personal settings.
+
+**Notifications**, directly below Progression System, defaults to **Off** and
+controls all Dawnlight toasts and update notifications: progression unlocks,
+Gale capacity, restart reminders, HUD import/export/copy results, and enemy
+spawner feedback. It remains editable independently of Dawnlight Mode. Muting
+notifications does not pause progression or the Glider acquisition sequence;
+missed progression toasts are not replayed when notifications are enabled.
 
 ## Features
 

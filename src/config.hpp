@@ -90,8 +90,10 @@ enum class HudSettingsIoResult {
 ModResult register_config(ModError* error);
 bool dawnlight_mode_enabled();
 bool progression_system_enabled();
+bool notifications_enabled();
 ConfigVarHandle dawnlight_mode_config_var();
 ConfigVarHandle progression_system_config_var();
+ConfigVarHandle notifications_config_var();
 ModeSetting mode_setting_for_config(ConfigVarHandle var);
 bool mode_config_override(ConfigVarHandle var, int64_t& value);
 int health_scale_percent();

@@ -1,3 +1,4 @@
+#include "notifications.hpp"
 #include "progression.hpp"
 
 #include "config.hpp"
@@ -33,7 +34,7 @@ void notify(const char* message) {
     toast.title_rml = "Dawnlight Progression";
     toast.body_rml = message;
     toast.duration_ms = 4000;
-    svc_ui->push_toast(mod_ctx, &toast);
+    push_dawnlight_toast(mod_ctx, svc_ui, toast);
 }
 } // namespace
 

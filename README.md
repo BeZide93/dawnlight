@@ -39,7 +39,7 @@ aiming, boss, and HUD features for Twilight Princess.
   during manual jumps or ordinary falls. Landing removes the summoned Cucco.
 - Optional **Revali's Gale**: ZR immediately performs a normal jump, including
   while running or sprinting. Keep ZR held through landing to stop and crouch;
-  release to launch with the saved pre-jump speed/direction and four times the
+  release to launch with the saved pre-jump speed/direction and five times the
   configured Jump Height, accompanied by the native Gale Boomerang tornado.
   There is no timed charge. Releasing before landing leaves the normal jump.
   Gale also enables the initial ZR jump when R Jump is off; Glide is independent.

@@ -123,8 +123,8 @@ int main(){
  assert(!tick(l,false,false));assert(s_jumpAbilities.charge==GaleCharge::Idle&&l.launches==1);
  l.mLinkAcch.ground=true;assert(!tick(l,false,true)); // Re-press/hold after cancelling must not reuse the old jump.
  setup(l);charge(l);assert(!handle_jump_abilities(&l)); // No double processing in one execute.
- assert(tick(l,false,false));assert(l.launches==2);close(l.speed.y,50);assert(!l.mLinkAcch.ground);assert(s_manualJumpOwner==&l);
- setup(l);heightPercent=500;charge(l);assert(tick(l,false,false));close(l.speed.y,25*std::sqrt(20.0f));
+ assert(tick(l,false,false));assert(l.launches==2);close(l.speed.y,25*std::sqrt(5.0f));assert(!l.mLinkAcch.ground);assert(s_manualJumpOwner==&l);
+ setup(l);heightPercent=500;charge(l);assert(tick(l,false,false));close(l.speed.y,25*std::sqrt(25.0f));
  setup(l);rjump=false;charge(l);assert(tick(l,false,false));assert(l.launches==2); // Gale includes the first jump.
  // Landing drives readiness, regardless of flight length; no elapsed-time charge.
  for(int airtime:{1,10,60,180}){
@@ -139,7 +139,7 @@ int main(){
   l.mMoveAngle=16384;
   for(int i=0;i<90;++i){assert(tick(l,false,true));close(l.mNormalSpeed,0);close(l.speedF,0);}
   l.input=false;assert(tick(l,false,false));close(l.mNormalSpeed,speed);close(l.speedF,speed);
-  assert(l.mMaxSpeed>=speed&&l.current.angle.y==-8192&&l.shape_angle.y==-8192);close(l.speed.y,50);
+  assert(l.mMaxSpeed>=speed&&l.current.angle.y==-8192&&l.shape_angle.y==-8192);close(l.speed.y,25*std::sqrt(5.0f));
   assert(s_jumpAbilities.charge==GaleCharge::Idle); // The Gale launch must not arm itself again.
  }
  for(int scenario=0;scenario<7;++scenario){

@@ -400,7 +400,7 @@ ModResult build_controls_tab(
     }
     if (add_toggle(ctx, left, "Revali's Gale", revalis_gale_config_var(),
             "Press ZR to jump immediately. Keep holding through landing to stop and crouch, then release for a "
-            "wind jump at four times your configured jump height, preserving your previous running speed and direction.") != MOD_OK)
+            "wind jump at five times your configured jump height, preserving your previous running speed and direction.") != MOD_OK)
     {
         return MOD_ERROR;
     }

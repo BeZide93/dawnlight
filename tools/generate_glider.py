@@ -41,12 +41,27 @@ def mesh():
         # 83 to 56 units. Keep the grip positions fixed to Link's carrying pose.
         return (x * (82 + 18*t), 34 + 18 * (1-x*x) + 4*math.sin(t*math.pi),
                 (t-.5) * (80 - 12*abs(x)) + 8*abs(x))
+    def canopy_uv(u, t):
+        # The sail is roughly 200 units wide but only 80 deep. Give the central
+        # crest more texture space in X so its circular outline stays round on
+        # the mesh; distribute the surrounding frame over the outer panels.
+        if u < .375:
+            artwork_u = .6*u
+        elif u > .625:
+            artwork_u = .775 + .6*(u-.625)
+        else:
+            artwork_u = .225 + 2.2*(u-.375)
+        # Turn the artwork half a revolution on the sail. The atlas strips for
+        # the wooden frame and leather grips are sampled separately below.
+        artwork_u, artwork_t = 1-artwork_u, 1-t
+        return ((.5+artwork_u*(SIZE-1))/SIZE,
+                (.5+artwork_t*(CANVAS_ROWS-1))/SIZE)
     for i in range(16):
         for j in range(6):
             q = []
             for di,dj in ((0,0),(1,0),(1,1),(0,1)):
                 u,t=(i+di)/16,(j+dj)/6
-                q.append(vertex(canopy(u*2-1,t), ((.5+u*(SIZE-1))/SIZE, (.5+t*(CANVAS_ROWS-1))/SIZE)))
+                q.append(vertex(canopy(u*2-1,t), canopy_uv(u,t)))
             triangle(q[0],q[2],q[1]); triangle(q[0],q[3],q[2])
     def beam(a,b,r,leather=False):
         v=[b[k]-a[k] for k in range(3)]; length=math.sqrt(sum(x*x for x in v)); v=[x/length for x in v]

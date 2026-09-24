@@ -14,7 +14,9 @@ No model or texture was extracted from another game or mod.
   the complete edited image is retained as the editable texture source.
 - `dawnlight-glider.png`: 256x256 runtime atlas: full artwork in the canvas region,
   separate wood/leather strips below it. No colored panel or substitute symbol
-  is drawn over the supplied artwork. Canvas is two-sided at runtime.
+  is drawn over the supplied artwork. The canvas UVs turn the artwork 180 degrees
+  and compensate for the wide sail so the central crest retains its proportions.
+  Canvas is two-sided at runtime.
 
 Image-edit prompt: remove only the large gold word “Dawnlight”; reconstruct the
 stone/ornament behind the letters; preserve the crest, its position/size, colors,

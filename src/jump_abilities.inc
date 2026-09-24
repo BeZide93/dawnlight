@@ -3,12 +3,15 @@
 #include "jump_gale_visual.inc"
 
 constexpr ActorId kNoGlideActor = fpcM_ERROR_PROCESS_ID_e;
+// Link executes at 30 simulation ticks per second, regardless of render FPS.
+constexpr int kGaleCrouchTicks = 30;
 enum class GaleCharge { Idle, Airborne, Ready };
 struct JumpAbilities {
     daAlink_c* owner = nullptr;
     ActorId ownerId = kNoGlideActor;
     ActorId cucco = kNoGlideActor;
     GaleCharge charge = GaleCharge::Idle;
+    int crouchTicks = 0;
     float launchSpeed = 0.0f;
     s16 launchAngle = 0;
     int loadTicks = 0;
@@ -141,6 +144,7 @@ void update_glide(daAlink_c* link) {
 void cancel_gale_charge(daAlink_c* link, bool restorePose) {
     const bool wasReady = s_jumpAbilities.charge == GaleCharge::Ready;
     s_jumpAbilities.charge = GaleCharge::Idle;
+    s_jumpAbilities.crouchTicks = 0;
     s_jumpAbilities.launchSpeed = 0.0f;
     s_jumpAbilities.launchAngle = 0;
     if (restorePose && wasReady && owns_jump_abilities(link) && link->mProcID == daAlink_c::PROC_CROUCH)
@@ -219,7 +223,15 @@ bool handle_jump_abilities(daAlink_c* link) {
                 cancel_gale_charge(link, true);
                 return false;
             }
-            if (!jump_held(active_jump_binding())) return launch_gale(link);
+            // Each call follows a full tick spent crouching, including the
+            // release tick. The landing tick and prior airtime do not count.
+            if (s_jumpAbilities.crouchTicks < kGaleCrouchTicks)
+                ++s_jumpAbilities.crouchTicks;
+            if (!jump_held(active_jump_binding())) {
+                if (s_jumpAbilities.crouchTicks >= kGaleCrouchTicks) return launch_gale(link);
+                cancel_gale_charge(link, true);
+                return false;
+            }
             stop_for_gale(link);
             return true;
         }
@@ -231,6 +243,7 @@ bool handle_jump_abilities(daAlink_c* link) {
         }
         if (!link->mLinkAcch.ChkGroundHit()) return false;
         s_jumpAbilities.charge = GaleCharge::Ready;
+        s_jumpAbilities.crouchTicks = 0;
         if (!link->procCrouchInit()) {
             cancel_gale_charge(link, false);
             return false;

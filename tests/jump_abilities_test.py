@@ -113,7 +113,8 @@ void setup(daAlink_c& l){
 }
 bool tick(daAlink_c& l,bool trigger,bool hold){s_jumpAbilities.handled=false;pressed=trigger;held=hold;return handle_jump_abilities(&l);}
 void land(daAlink_c& l){l.mLinkAcch.ground=true;assert(tick(l,false,true));assert(s_jumpAbilities.charge==GaleCharge::Ready);assert(l.mProcID==daAlink_c::PROC_CROUCH);close(l.mNormalSpeed,0);close(l.speedF,0);}
-void charge(daAlink_c& l){gale=true;assert(tick(l,true,true));assert(l.launches==1);assert(s_jumpAbilities.charge==GaleCharge::Airborne);assert(!tick(l,false,true));land(l);}
+void hold_crouch(daAlink_c& l,int ticks=29){const int launches=l.launches;for(int i=0;i<ticks;++i){assert(tick(l,false,true));assert(l.launches==launches);const int elapsed=s_jumpAbilities.crouchTicks;assert(!handle_jump_abilities(&l));assert(s_jumpAbilities.crouchTicks==elapsed);}}
+void charge(daAlink_c& l){gale=true;assert(tick(l,true,true));assert(l.launches==1);assert(s_jumpAbilities.charge==GaleCharge::Airborne);assert(!tick(l,false,true));land(l);hold_crouch(l);}
 int main(){
  daAlink_c l;
  hasConfig=false;heightPercent=500;close(jump_height_multiplier(),1);hasConfig=true;
@@ -130,7 +131,7 @@ int main(){
   close(gale_height_bonus(),additional);
   gale=true;assert(tick(l,true,true));
   close(l.speed.y,25*std::sqrt(jump/100.0f)); // First jump gets no Gale bonus.
-  land(l);assert(tick(l,false,false));close(l.speed.y,25*std::sqrt(jump/100.0f+additional));
+  land(l);hold_crouch(l);assert(tick(l,false,false));close(l.speed.y,25*std::sqrt(jump/100.0f+additional));
  }
  setup(l);heightPercent=200;charge(l);assert(tick(l,false,false));close(l.speed.y,25*std::sqrt(7.0f));
  setup(l);assert(!tick(l,true,true));assert(l.launches==0); // Disabled leaves native/manual jump path alone.
@@ -146,12 +147,23 @@ int main(){
  setup(l);charge(l);l.initSucceeds=false;assert(!tick(l,false,false));assert(charges==3);
  setup(l);charges=0;gale=true;assert(tick(l,true,true));assert(l.launches==1&&s_jumpAbilities.charge==GaleCharge::Idle);
  setup(l);charge(l);charges=0;assert(!tick(l,false,false));assert(l.launches==1&&l.mProcID==daAlink_c::PROC_WAIT);
- // Landing drives readiness, regardless of flight length; no elapsed-time charge.
- for(int airtime:{1,10,60,180}){
+ // Airtime never contributes to the one-second crouch requirement.
+ // Boundary cases: release before 1 second, exactly at 1 second, and later.
+ for(int airtime:{1,10,60,180})for(int releaseTick:{1,15,29,30,31,90}){
   setup(l);gale=true;assert(tick(l,true,true));
   for(int i=0;i<airtime;++i){assert(!tick(l,false,true));assert(s_jumpAbilities.charge==GaleCharge::Airborne);}
-  land(l);assert(tick(l,false,false));assert(l.launches==2);
+  land(l);assert(s_jumpAbilities.crouchTicks==0);
+  hold_crouch(l,releaseTick-1);
+  const bool ready=releaseTick>=30;
+  assert(tick(l,false,false)==ready);
+  assert(l.launches==(ready?2:1));assert(charges==(ready?2:3));
+  assert(s_jumpAbilities.charge==GaleCharge::Idle&&s_jumpAbilities.crouchTicks==0);
+  if(!ready){assert(l.mProcID==daAlink_c::PROC_WAIT);assert(!tick(l,false,true));}
  }
+ // A cancelled attempt cannot bank time for the next jump/crouch.
+ setup(l);gale=true;assert(tick(l,true,true));land(l);hold_crouch(l,20);
+ assert(!tick(l,false,false));assert(tick(l,true,true));land(l);hold_crouch(l,10);
+ assert(!tick(l,false,false));assert(l.launches==2&&charges==3);
  // Save exact pre-jump ground speed, not the native initializer's reset or the later stick direction.
  for(float speed:{0.0f,11.5f,23.0f,34.5f,69.0f}){
   setup(l);l.input=true;l.mProcID=daAlink_c::PROC_MOVE;l.mNormalSpeed=speed;l.mMoveAngle=-8192;

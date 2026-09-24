@@ -15,10 +15,10 @@
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "Z2AudioLib/Z2LinkMgr.h"
 #include "d/actor/d_a_alink.h"
-#if __has_include("dusk/gyro.h") && __has_include("dusk/settings.h")
+#if __has_include("dusk/gyro.h") && __has_include("dusk/config_var.hpp")
 #define DAWNLIGHT_HAS_GYRO_API 1
+#include "dusk/config_var.hpp"
 #include "dusk/gyro.h"
-#include "dusk/settings.h"
 #else
 #define DAWNLIGHT_HAS_GYRO_API 0
 #endif
@@ -46,6 +46,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "../integration/dusklight_edges.inc"
@@ -244,11 +245,11 @@ bool s_bulletTimeOwnsGyroKeepAlive = false;
 using GetGyroKeepAliveFn = bool (*)();
 using SetGyroKeepAliveFn = void (*)(bool);
 using GetGyroAimDeltasFn = void (*)(float&, float&);
-using GetSettingsFn = dusk::UserSettings& (*)();
+using GetConfigVarFn = dusk::config::ConfigVarBase* (*)(std::string_view);
 GetGyroKeepAliveFn s_getGyroKeepAlive = nullptr;
 SetGyroKeepAliveFn s_setGyroKeepAlive = nullptr;
 GetGyroAimDeltasFn s_getGyroAimDeltas = nullptr;
-GetSettingsFn s_getSettings = nullptr;
+GetConfigVarFn s_getConfigVar = nullptr;
 bool s_gyroKeepAliveSymbolsResolved = false;
 #endif
 bool s_flurryRushActive = false;
@@ -295,7 +296,7 @@ void resolve_bullet_time_gyro_symbols() {
     constexpr const char* getSymbol = "dusk::gyro::get_sensor_keep_alive";
     constexpr const char* setSymbol = "dusk::gyro::set_sensor_keep_alive";
     constexpr const char* deltasSymbol = "dusk::gyro::getAimDeltas";
-    constexpr const char* settingsSymbol = "dusk::getSettings";
+    constexpr const char* configVarSymbol = "dusk::config::GetConfigVar";
 
     void* address = nullptr;
     if (svc_hook->resolve(mod_ctx, getSymbol, &address, nullptr) == MOD_OK) {
@@ -310,16 +311,24 @@ void resolve_bullet_time_gyro_symbols() {
         s_getGyroAimDeltas = reinterpret_cast<GetGyroAimDeltasFn>(address);
     }
     address = nullptr;
-    if (svc_hook->resolve(mod_ctx, settingsSymbol, &address, nullptr) == MOD_OK) {
-        s_getSettings = reinterpret_cast<GetSettingsFn>(address);
+    if (svc_hook->resolve(mod_ctx, configVarSymbol, &address, nullptr) == MOD_OK) {
+        s_getConfigVar = reinterpret_cast<GetConfigVarFn>(address);
     }
     s_gyroKeepAliveSymbolsResolved = true;
 }
 
 bool bullet_time_gyro_enabled() {
     resolve_bullet_time_gyro_symbols();
-    return s_getSettings != nullptr &&
-           s_getSettings().game.enableGyroAim.getValue();
+    if (s_getConfigVar == nullptr) {
+        return false;
+    }
+
+    // Forks such as Lazy Tweaks insert fields into UserSettings. Resolve this
+    // registered bool by name instead of applying the upstream struct offsets.
+    // Look it up each time so absence is safe and runtime changes stay visible.
+    const auto* variable = s_getConfigVar("game.enableGyroAim");
+    return variable != nullptr &&
+           static_cast<const dusk::config::ConfigVar<bool>*>(variable)->getValue();
 }
 
 void sync_bullet_time_gyro_keep_alive() {

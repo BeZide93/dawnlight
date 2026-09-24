@@ -107,7 +107,7 @@ missed progression toasts are not replayed when notifications are enabled.
   until stamina recovers to 50%. Disabling Stamina Bar removes the cost.
 - **Custom glider texture:** edit a copy of
   [dawnlight-glider.png](art/glider/dawnlight-glider.png), then save it as
-  `texture_replacements/tex1_256x256_500b43cdfd40fa52_4.png` inside Dusklight's
+  `texture_replacements/tex1_256x256_dd50965e6d95c753_4.png` inside Dusklight's
   user data folder. Enable **Texture Replacements** in Dusklight and restart
   the game (or toggle that setting off/on to rescan). Preserve the atlas layout:
   the upper 208 rows contain the canopy, the bottom 48 the wood/leather.

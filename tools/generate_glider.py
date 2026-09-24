@@ -20,11 +20,16 @@ def texture():
         canvas = source.convert('RGB').resize((SIZE, CANVAS_ROWS), Image.Resampling.LANCZOS)
     im = Image.new('RGB', (SIZE, SIZE))
     im.paste(canvas, (0, 0))
-    # Separate wood/leather atlas strips must not paint over the supplied art.
-    for y in range(CANVAS_ROWS, SIZE):
+    # Reuse the detailed BMD variant's wood artwork in the fallback atlas.
+    # Existing wood UVs run along X and sample safely inside this strip.
+    with Image.open(ART / 'dawnlight-wood-source.png') as source:
+        wood = source.convert('RGB').resize((SIZE, 232-CANVAS_ROWS), Image.Resampling.LANCZOS)
+    im.paste(wood, (0, CANVAS_ROWS))
+    # Keep the existing leather strip and canopy pixels unchanged.
+    for y in range(232, SIZE):
         for x in range(SIZE):
             grain = ((x * 17 + y * 31 + x * y * 3) % 9) - 4
-            base = (118, 79, 42) if y < 232 else (67, 43, 27)
+            base = (67, 43, 27)
             im.putpixel((x, y), tuple(c + grain for c in base))
     return im
 

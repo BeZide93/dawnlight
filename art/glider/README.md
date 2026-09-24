@@ -2,7 +2,7 @@
 
 Original Dawnlight mesh. The canopy artwork comes from the project logo supplied
 by the user (`1001012593.png`), with only the large Dawnlight title removed using
-the built-in image editor. The original image and runtime atlas are unchanged;
+the built-in image editor. The original canopy artwork is preserved;
 mesh UVs enlarge the crest and runtime lighting keeps the decoration readable.
 No model or texture was extracted from another game or mod.
 
@@ -14,6 +14,9 @@ No model or texture was extracted from another game or mod.
 - `dawnlight-glider.mtl`: material referencing the PNG atlas.
 - `dawnlight-canopy-source.png`: original supplied logo/background,
   without the title; the complete edited image is the editable texture source.
+- `dawnlight-wood-source.png`: detailed wood material from the custom BMD
+  glider, reused by the built-in fallback. The generator downsamples it into
+  atlas rows 208–231; grain follows the existing beams' longitudinal UVs.
 - `dawnlight-glider.png`: 256x256 runtime atlas: full artwork in the canvas region,
   separate wood/leather strips below it. No colored panel or substitute symbol
   is drawn over the supplied artwork. The canvas UVs turn the artwork 180 degrees
@@ -27,12 +30,26 @@ reconstruct the stone/ornament behind the letters; preserve the crest, its
 position/size, colors, background, runes and frame. Keep an opaque square image
 without new elements. No further image editing is needed for the UV enlargement.
 
+## Detailed fallback wood
+
+The fallback uses the same authored wood image as the detailed BMD variant,
+resampled to its existing atlas layout. Canopy and leather base pixels, all
+mesh positions/UVs, atlas dimensions and texture memory usage remain unchanged.
+This applies to gliding and the item-get presentation whenever no BMD is loaded.
+
+The source was created with the built-in Imagegen tool as the wood half of the
+custom model's material sheet, then cropped and resized to 512×256. Wood prompt:
+“warm aged walnut wood, long fine horizontal grain running left to right across
+the full width, elegant weathered handcrafted wood, subtle thin grain lines
+and small knots, warm medium brown with ochre rubbed highlights, no planks,
+no perspective.”
+
 ## Replacing the texture without rebuilding
 
 1. Download `dawnlight-glider.png` from this directory and edit a copy. Keep the
    square atlas layout: canopy rows 0–207, wood 208–231, leather 232–255.
    A higher-resolution square PNG works too if every region scales proportionally.
-2. Name it **`tex1_256x256_500b43cdfd40fa52_4.png`**, even when using a larger
+2. Name it **`tex1_256x256_dd50965e6d95c753_4.png`**, even when using a larger
    image. The filename identifies the original 256×256 RGB565 texture.
 3. Place it in **`<Dusklight user data>/texture_replacements/`**. This is the
    host's data folder, not Dawnlight's `.dusk` archive or the game ISO.
@@ -46,6 +63,8 @@ use the bottom atlas strips separately. Changes affect both sides of the canvas.
 
 The hash above is XXH64 (seed 0) of the embedded, GX-tiled RGB565 **base mip**,
 not of the PNG file or the whole mip chain. It is specific to this artwork.
+The previous atlas used `tex1_256x256_500b43cdfd40fa52_4.png`; rename existing
+replacement files to the new name when using this build.
 Do not use a wildcard hash: it could replace unrelated 256×256 game textures.
 An enabled mod that replaces the same texture takes priority over this folder.
 
@@ -112,7 +131,7 @@ python3 tools/package_glider_model.py MyGlider.bmd MyGlider.dusk
 
 Install and enable the resulting `.dusk` alongside Dawnlight, then restart the
 game. The packer uses only Python's standard library and preserves the BMD bytes.
-Use `--id your.unique.mod-id --name "My Glider"` for a separately named pack.
+Use `--id your.unique.mod_id --name "My Glider"` for a separately named pack.
 The archive contains `mod.json` and
 `overlay/res/Object/DawnlightGlider.bmd`; it contains no platform binary.
 Dusklight's normal overlay priority applies if multiple packs supply this path.
@@ -150,8 +169,8 @@ and the existing attachment/presentation behavior; they do not run the game.
 
 ## Icon/model alignment update
 
-The canopy source PNG, atlas PNG, embedded GX texture bytes, and complete original
-3D grip assemblies remain unchanged. Only the cloth/frame geometry and the
+In the initial alignment update, the canopy source PNG, atlas PNG, embedded GX
+texture bytes, and complete original 3D grip assemblies were unchanged. Only the cloth/frame geometry and the
 separate inventory icon were edited. The icon's grips now run fore/aft in two
 wooden U-shaped bows. The editable icon is `glider-item-icon.png`; the generated
 128x128 GX resource is `res/glider-item-icon.rgba8` at the repository root.

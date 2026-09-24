@@ -98,7 +98,8 @@ int main(){
  assert(before_glide_carrier_draw(nullptr,&owned,&result,nullptr)==HOOK_CONTINUE);
 }
 '''
-fixture=fixture.replace('// PRODUCTION',(ROOT/'src/glide_presentation.inc').read_text())
+presentation=(ROOT/'src/glide_presentation.inc').read_text()
+fixture=fixture.replace('// PRODUCTION',presentation[presentation.index('HookAction before_glide_carrier_draw'):])
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test';cpp.write_text(fixture)
     subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)

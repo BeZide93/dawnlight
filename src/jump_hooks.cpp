@@ -35,6 +35,7 @@ DEFINE_HOOK(&daAlink_c::getMainBckData, GetMainBckDataSprint);
 DEFINE_HOOK(&daAlink_c::setDoubleAnime, SetDoubleAnimeSprint);
 DEFINE_HOOK(&daAlink_c::execute, JumpAbilitiesExecute);
 DEFINE_HOOK(&daAlink_c::draw, JumpAbilitiesDraw);
+DEFINE_HOOK(&daAlink_c::setDrawHand, GliderDrawHand);
 DEFINE_HOOK(&fpcLf_Delete, JumpAbilitiesDelete);
 DEFINE_HOOK(&fpcLf_Draw, GlideCarrierDraw);
 // MSVC cannot const-initialize metadata from these virtual member pointers.
@@ -426,6 +427,7 @@ HookAction before_set_body_angle_x_ready_anime(ModContext*, void* args, void*, v
 }  // namespace
 
 ModResult install_jump_hooks(ModError* error) {
+    init_glider_visual();
     ModResult result =
         mods::hook_add_pre<CheckAutoJumpAction>(svc_hook, before_check_auto_jump);
     if (result == MOD_OK) {
@@ -458,6 +460,7 @@ ModResult install_jump_hooks(ModError* error) {
     if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesExecute>(svc_hook, before_jump_abilities_execute);
     if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesExecute>(svc_hook, after_jump_abilities_execute);
     if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesDraw>(svc_hook, after_jump_abilities_draw);
+    if (result == MOD_OK) result = mods::hook_add_post<GliderDrawHand>(svc_hook, after_glider_draw_hand);
     if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesDelete>(svc_hook, before_jump_abilities_delete);
     if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierDraw>(svc_hook, before_glide_carrier_draw);
     if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierSound>(svc_hook, before_glide_carrier_sound);

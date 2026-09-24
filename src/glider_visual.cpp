@@ -1,5 +1,6 @@
 #include "glider_visual.hpp"
 #include "generated/glider_art.hpp"
+#include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
@@ -9,6 +10,16 @@
 
 namespace dawnlight {
 namespace {
+// Resolve through the host manifest: private interpolation functions are not
+// part of the cross-platform mod link stubs.
+using LookupPresentationMatrix = bool (*)(const void*, Mtx);
+LookupPresentationMatrix s_lookupPresentationMatrix = nullptr;
+
+void presented_matrix(MtxP source, Mtx out) {
+    if (!s_lookupPresentationMatrix || !s_lookupPresentationMatrix(source, out))
+        MTXCopy(source, out);
+}
+
 // A persistent packet owns only a pose snapshot, never an actor/archive pointer.
 // Queued through the same native opaque list as the custom Shade pedestal.
 class GliderPacket : public J3DPacket {
@@ -68,12 +79,39 @@ public:
 GliderPacket s_glider;
 }
 
+void init_glider_visual() {
+    s_lookupPresentationMatrix = nullptr;
+    void* address = nullptr;
+    if (svc_hook && svc_hook->resolve &&
+        svc_hook->resolve(mod_ctx, "dusk::interp::lookup_replacement", &address, nullptr) == MOD_OK)
+        s_lookupPresentationMatrix = reinterpret_cast<LookupPresentationMatrix>(address);
+    if (!s_lookupPresentationMatrix && svc_log)
+        svc_log->warn(mod_ctx, "Glider: presentation matrix lookup unavailable; using simulation pose");
+}
+
 void clear_glider_visual() { s_glider.active=false; }
 
 void queue_glider_visual(daAlink_c* link) {
-    if (link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
-    s_glider.origin=(link->mLeftHandPos+link->mRightHandPos)*0.5f;
-    const float yaw=link->shape_angle.y*(3.14159265358979323846f/32768.0f);
+    if (!link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
+    // mLeft/RightHandPos only advance on simulation ticks. Sample the same
+    // presented joints as Link's renderer on EVERY draw, including intermediate
+    // frames, so a smoothly moving camera cannot slide past a frozen glider.
+    Mtx left, right, root;
+    presented_matrix(link->mpLinkModel->getAnmMtx(link->mLeftHandJntNo), left);
+    presented_matrix(link->mpLinkModel->getAnmMtx(link->mRightHandJntNo), right);
+    s_glider.origin.set((left[0][3]+right[0][3])*0.5f,
+        (left[1][3]+right[1][3])*0.5f, (left[2][3]+right[2][3])*0.5f);
+    // Apply the presented root's yaw delta as well. Using shape_angle alone
+    // would still snap the canopy on turns; a matrix delta also crosses +/-pi.
+    MtxP currentRoot = link->mpLinkModel->getAnmMtx(0);
+    presented_matrix(currentRoot, root);
+    float turnSine = 0, turnCosine = 0;
+    for (int axis = 0; axis < 3; ++axis) {
+        turnSine += root[0][axis]*currentRoot[2][axis] - root[2][axis]*currentRoot[0][axis];
+        turnCosine += root[0][axis]*currentRoot[0][axis] + root[2][axis]*currentRoot[2][axis];
+    }
+    const float yaw=link->shape_angle.y*(3.14159265358979323846f/32768.0f) +
+        std::atan2(turnSine, turnCosine);
     s_glider.sine=std::sin(yaw);
     s_glider.cosine=std::cos(yaw);
     const auto& ambient=link->tevStr.AmbCol;

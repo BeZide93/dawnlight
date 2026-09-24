@@ -309,10 +309,7 @@ void after_jump_abilities_draw(ModContext*, void* args, void*, void*) {
     clear_glider_visual();
     if (owns_jump_abilities(link)) {
         s_galeVisual.draw(link);
-        auto* actor = glide_actor();
-        if (actor && s_jumpAbilities.attached && !s_jumpAbilities.retiring && glide_enabled() &&
-            glide_item() == GlideItem::Glider && aerial_glide_context(link) &&
-            link->mGrabItemAcKeep.getActor() == actor)
+        if (custom_glider_active(link))
             queue_glider_visual(link);
     }
 }

@@ -29,12 +29,19 @@ same mesh and texture (GX RGB565, seven mip levels) directly in the mod binary;
 no room archive or external installation is required.
 
 The runtime uses a native J3D draw packet/GX textured mesh, as the custom Shade
-pedestal does, rather than requiring a BMD exporter. The pose follows Link's
-hand midpoint and facing; native carrying animation and glide physics remain
-responsible for movement. The GLIDE-owned Cucco still exists internally and is
+pedestal does, rather than requiring a BMD exporter. Each draw samples Link's
+presented hand matrices and root rotation so the canopy follows the same
+interpolation as the player and camera. The host matrix lookup is resolved
+through the symbol manifest, with a logged simulation-pose fallback if absent.
+While the custom glider is attached, a post-hook on `setDrawHand` selects Link's
+native sword/shield grip shapes (materials 0/6). The next native hand draw restores
+the normal shapes after landing or switching items. The overhead arm animation
+and native glide physics still drive movement. The GLIDE-owned Cucco exists internally and is
 hidden/muted only for the Glider selection. No world Cucco is replaced.
 
 In-game QA: check deployment during a manual jump and an ordinary fall; camera
 above/below; both turn directions; switching Glide Item while airborne; landing,
 damage, disabling Glide, cutscenes and room changes; ordinary carried Cuccos.
+Also check interpolation off/on and turning at higher presentation frame rates,
+plus closed hands while gliding and normal hands after landing or item switching.
 The mesh preview and automated tests do not replace this runtime visual check.

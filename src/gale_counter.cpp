@@ -128,8 +128,10 @@ void after_draw(ModContext*, void* args, void*, void*) {
     if (!combat_meter_next_row_anchor(meter, stamina_meter_visible() ? 1 : 0, x, y, scale)) return;
     // The default follows the Fierce Deity bar. These independent controls add
     // offsets and scale only to the Gale Counter, including imported presets.
+    // Keep the built-in X offset in sync with the preset defaults in config.cpp.
     const auto transform = custom_hud_layout_enabled() ?
-        hud_custom_element_transform(HudElement::GaleCounter) : DuskModHudTransform{};
+        hud_custom_element_transform(HudElement::GaleCounter) :
+        DuskModHudTransform{.offset_x = 25.0f};
     update_charges();
     s_visual.draw(x + transform.offset_x, y + transform.offset_y,
         0.65f * scale * transform.scale, s_charges.available(), s_charges.capacity);

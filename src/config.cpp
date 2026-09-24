@@ -187,7 +187,7 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
-    {"gale-counter", 0, 0, 100},
+    {"gale-counter", 25, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
@@ -217,7 +217,7 @@ constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults =
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
-    {"gale-counter", 0, 0, 100},
+    {"gale-counter", 25, 0, 100},
 }};
 
 constexpr std::array<HudButtonDefaults, kHudButtonCount> kHudButtonDefaults = {{
@@ -247,7 +247,7 @@ constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
-    {"gale-counter", 0, 0, 100},
+    {"gale-counter", 25, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kWiiUHudButtonDefaults = {{
@@ -277,7 +277,7 @@ constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 100, 0, 100},
     {"fierce-deity-bar", 100, 0, 100},
-    {"gale-counter", 0, 0, 100},
+    {"gale-counter", 25, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kDawnlightHudButtonDefaults = {{

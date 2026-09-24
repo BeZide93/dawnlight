@@ -105,15 +105,13 @@ missed progression toasts are not replayed when notifications are enabled.
   With **Stamina Bar** enabled, either Glide Item consumes 5 stamina per second
   while gliding. Empty stamina ends the glide; exhaustion blocks redeployment
   until stamina recovers to 50%. Disabling Stamina Bar removes the cost.
-- **Custom glider texture:** edit a copy of
-  [dawnlight-glider.png](art/glider/dawnlight-glider.png), then save it as
-  `texture_replacements/tex1_256x256_500b43cdfd40fa52_4.png` inside Dusklight's
-  user data folder. Enable **Texture Replacements** in Dusklight and restart
-  the game (or toggle that setting off/on to rescan). Preserve the atlas layout:
-  the upper 208 rows contain the canopy, the bottom 48 the wood/leather.
-  This replaces the texture without rebuilding Dawnlight; it does not change
-  the model. The filename matches this build's texture and can change when the
-  bundled artwork changes. See [glider texture details](art/glider/README.md).
+- **Glider model and textures:** Dawnlight bundles the BMD from
+  [DawnlightCustomGlider](https://github.com/BeZide93/DawnlightCustomGlider),
+  including its canopy, detailed wood, and leather textures. No separate model
+  pack is needed. An enabled external `DawnlightGlider.bmd` pack takes priority.
+  To customize the three textures through Dusklight's **Texture Replacements**,
+  use the source PNGs and filenames in the
+  [glider texture guide](art/glider/README.md#replacing-the-texture-without-rebuilding).
 - Optional **Revali's Gale**: ZR immediately performs a normal jump, including
   while running or sprinting. Keep ZR held through landing to stop and crouch;
   stay crouched for at least one second, then release to launch with the saved

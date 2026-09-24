@@ -17,19 +17,28 @@ def texture():
     for y in range(SIZE):
         for x in range(SIZE):
             grain = ((x * 17 + y * 31 + x * y * 3) % 9) - 4
-            base = (214, 199, 156) if y < 104 else (103, 64, 36) if y < 116 else (57, 39, 29)
+            # Burgundy center, olive side panels and warm wood, inspired by the
+            # reference's palette while retaining our own woven atlas/motif.
+            cloth = (132, 49, 39) if 26 <= x <= 101 else (64, 73, 42)
+            base = cloth if y < 104 else (118, 79, 42) if y < 116 else (67, 43, 27)
             weave = (2 if x % 2 else -2) + (2 if y % 2 else -2)
             im.putpixel((x, y), tuple(max(0, min(255, c + grain + weave)) for c in base))
     d = ImageDraw.Draw(im)
-    d.rectangle((0, 0, 127, 103), outline=(48, 85, 77), width=6)
-    for x in (22, 43, 84, 105):
-        d.line((x, 6, x, 97), fill=(155, 133, 96), width=1)
+    d.rectangle((0, 0, 127, 103), outline=(192, 151, 79), width=4)
+    d.rectangle((5, 5, 122, 98), outline=(45, 49, 29), width=2)
+    for x in (25, 102):
+        d.line((x, 7, x, 96), fill=(181, 134, 65), width=2)
     # Original wing/sun motif; no borrowed game or other mod textures.
     d.polygon([(64, 22), (74, 42), (111, 28), (96, 55), (76, 62), (64, 84),
-               (52, 62), (32, 55), (17, 28), (54, 42)], fill=(42, 83, 76))
+               (52, 62), (32, 55), (17, 28), (54, 42)], fill=(226, 185, 102))
     d.polygon([(64, 32), (70, 49), (91, 43), (76, 56), (64, 71),
-               (52, 56), (37, 43), (58, 49)], fill=(211, 171, 91))
+               (52, 56), (37, 43), (58, 49)], fill=(132, 49, 39))
     d.ellipse((58, 45, 70, 57), fill=(240, 222, 170))
+    for side in (-1, 1):
+        for i in range(3):
+            x = 64 + side * (24 + i * 9)
+            d.polygon([(x, 64-i*4), (x+side*7, 58-i*4),
+                       (x+side*4, 71-i*4)], fill=(226, 185, 102))
     for x in range(8, 121, 5):
         d.line((x, 7, x+1, 7), fill=(243, 225, 185))
         d.line((x, 96, x+1, 96), fill=(243, 225, 185))
@@ -46,8 +55,10 @@ def mesh():
     def triangle(a, b, c):
         faces.append((a,b,c))
     def canopy(x, t):
-        return (x * 125, 54 + 24 * (1-x*x) + 5*math.sin(t*math.pi),
-                (t-.5) * (110 - 34*abs(x)) + 14*abs(x))
+        # 20% narrower, tapered rear edge; peak above the grips drops from
+        # 83 to 56 units. Keep the grip positions fixed to Link's carrying pose.
+        return (x * (82 + 18*t), 34 + 18 * (1-x*x) + 4*math.sin(t*math.pi),
+                (t-.5) * (80 - 12*abs(x)) + 8*abs(x))
     for i in range(16):
         for j in range(6):
             q = []
@@ -72,7 +83,7 @@ def mesh():
             triangle(a0,b0,b1);triangle(a0,b1,a1)
         for k in range(1,5):
             triangle(ring[0],ring[k+1],ring[k]);triangle(ring[6],ring[6+k],ring[7+k])
-    # Curved ribs below canvas, leading/trailing spars, suspension and grip bar.
+    # Curved ribs below canvas and leading/trailing spars.
     for x in (-1,-.5,0,.5,1):
         for j in range(6):
             a=list(canopy(x,j/6));b=list(canopy(x,(j+1)/6));a[1]-=2;b[1]-=2
@@ -80,11 +91,18 @@ def mesh():
     for t in (0,1):
         for i in range(16):
             beam(canopy(i/8-1,t),canopy((i+1)/8-1,t),1.8)
+    # Two independent bowed handles, one at each hand. No transverse bar.
+    # Each U-shaped frame joins the canopy twice and curves down to its own
+    # leather grip. The center below the sail remains completely open.
     for side in (-1,1):
-        for t in (0,1):
-            beam((side*22,0,0),canopy(side*.56,t),1.6)
-    beam((-38,0,0),(38,0,0),2.5)
-    beam((-30,0,0),(-14,0,0),3.1,True);beam((14,0,0),(30,0,0),3.1,True)
+        inner = [canopy(side*.24,.68), (side*12,20,10),
+                 (side*11,9,4), (side*14,0,0)]
+        outer = [(side*30,0,0), (side*39,5,-3), (side*50,17,-10),
+                 canopy(side*.70,.22)]
+        for path in (inner, outer):
+            for a,b in zip(path,path[1:]):
+                beam(a,b,2.0)
+        beam((side*14,0,0),(side*30,0,0),2.7,True)
     return vertices,faces
 
 

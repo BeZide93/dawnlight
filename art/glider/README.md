@@ -4,11 +4,14 @@ Original mesh and texture authored for Dawnlight; no model, texture or symbols
 were extracted from Zelda, another game, or another mod. Covered by this
 repository's license.
 
-- `dawnlight-glider.obj`: 1,572 triangles, Y up, Z forward, origin at the midpoint
-  of the carrying hands. Wingspan 250 game units; grip bar spans X = -38 to +38.
+- `dawnlight-glider.obj`: 1,712 triangles, Y up, Z forward, origin at the midpoint
+  of the carrying hands. Canvas wingspan 200 game units (previously 250); peak
+  height above the hands 56 units (previously 83). Two separate curved handles
+  have leather grips at X = -30 to -14 and +14 to +30, with an open center.
 - `dawnlight-glider.mtl`: material referencing the original PNG atlas.
 - `dawnlight-glider.png`: 128x128 woven canvas, original wing/sun motif, timber
-  and leather atlas. Canvas is two-sided at runtime.
+  and leather atlas. Burgundy center, olive side panels and gold trim follow the
+  requested BotW-inspired palette. Canvas is two-sided at runtime.
 
 `python3 tools/generate_glider.py` regenerates the editable assets and
 `src/generated/glider_art.hpp`. This developer tool needs Pillow. Normal builds

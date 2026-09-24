@@ -7,6 +7,8 @@
 
 namespace dawnlight {
 
+enum class BulletTimeMode : int { Off = 0, Always = 1, Botw = 2 };
+
 enum class AimMode : int {
     Vanilla = 0,
     ThirdPerson = 1,
@@ -94,6 +96,7 @@ AimMode aim_mode();
 bool aim_movement_enabled();
 int cinema_zoom_percent();
 int third_person_reticle_offset_y();
+BulletTimeMode bullet_time_mode();
 bool bullet_time_enabled();
 bool flurry_rush_enabled();
 bool fierce_deity_enabled();

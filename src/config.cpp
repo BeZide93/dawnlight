@@ -34,7 +34,8 @@ ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
 ConfigVarHandle s_thirdPersonReticleOffsetY = 0;
-ConfigVarHandle s_bulletTime = 0;
+ConfigVarHandle s_bulletTime = 0; // Legacy boolean, read only for migration.
+ConfigVarHandle s_bulletTimeMode = 0;
 ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_greatSpinProjectile = 0;
@@ -878,6 +879,7 @@ ModResult register_config(ModError* error) {
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
         register_int("third-person-reticle-offset-y", 0, s_thirdPersonReticleOffsetY) != MOD_OK ||
         register_bool("bullet-time", true, s_bulletTime) != MOD_OK ||
+        register_int("bullet-time-mode", -1, s_bulletTimeMode) != MOD_OK ||
         register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
@@ -928,6 +930,14 @@ ModResult register_config(ModError* error) {
     if (register_custom_hud_config() != MOD_OK) {
         return mods::set_error(
             error, MOD_ERROR, "failed to register Dawnlight custom HUD variables");
+    }
+
+    // A sentinel distinguishes old configs from an explicitly chosen mode.
+    // Keep the legacy boolean's type so saved Off/On values remain readable.
+    if (get_int(s_bulletTimeMode, -1, -1, 2) == -1 &&
+        !set_int(s_bulletTimeMode, get_bool(s_bulletTime, true) ? 1 : 0))
+    {
+        return mods::set_error(error, MOD_ERROR, "failed to migrate Bullet Time mode");
     }
 
     if (!get_bool(s_aimDefaultsMigrated, false)) {
@@ -1074,8 +1084,12 @@ int third_person_reticle_offset_y() {
     return get_int(s_thirdPersonReticleOffsetY, 0, -40, 40);
 }
 
+BulletTimeMode bullet_time_mode() {
+    return static_cast<BulletTimeMode>(get_int(s_bulletTimeMode, 1, 0, 2));
+}
+
 bool bullet_time_enabled() {
-    return get_bool(s_bulletTime, true);
+    return bullet_time_mode() != BulletTimeMode::Off;
 }
 
 bool flurry_rush_enabled() {
@@ -1339,7 +1353,7 @@ ConfigVarHandle third_person_reticle_offset_y_config_var() {
 }
 
 ConfigVarHandle bullet_time_config_var() {
-    return s_bulletTime;
+    return s_bulletTimeMode;
 }
 
 ConfigVarHandle flurry_rush_config_var() {

@@ -21,6 +21,8 @@ constexpr const char* kAimModeOptions[] = {
     "Cinema",
 };
 
+constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
+
 constexpr const char* kNewSaveModeOptions[] = {
     "Vanilla",
     "Intro Skip",
@@ -360,9 +362,11 @@ ModResult build_aiming_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "Bullet Time", bullet_time_config_var(),
-            "Slows gameplay while aiming the Bow during a manual R jump. Uses 20% stamina per "
-            "second and ends when stamina is empty. Press A to cancel it.")
+    if (add_select(ctx, left, "Bullet Time", bullet_time_config_var(), kBulletTimeOptions,
+            std::size(kBulletTimeOptions),
+            "Off disables Bullet Time. Always keeps the original airborne Bow aiming behavior. "
+            "BOTW requires twice the original jump height above the ground to activate, independent "
+            "of Jump Height and Gale Height. Uses 20% stamina per second. Press A to cancel.")
         != MOD_OK)
     {
         return MOD_ERROR;

@@ -19,8 +19,14 @@ aiming, boss, and HUD features for Twilight Princess.
 - Optional [Arrow Modes](#arrow-modes): press ZR while aiming the Bow to cycle
   normal arrows, fire arrows, and a three-arrow spread, with a visual mode indicator.
 - Touch and gyro aiming support for the modded aiming modes.
-- Optional Bullet Time while aiming the Bow during a manual R jump, Flurry Rush
-  after a perfectly timed evade, and a ranged Great Spin projectile.
+- Bullet Time while aiming the Bow during a manual jump or Gale: **Off** disables
+  it, **Always** preserves the previous On behavior, and **BOTW** requires a ground
+  clearance of twice the original 100% jump height when activating. The threshold
+  is independent of Jump Height/Gale Height. A 100% jump from level ground cannot
+  trigger BOTW Bullet Time; jumping off a ledge or using Gale can. A 200% jump
+  reaches the threshold near its apex. Once activated, duration, stamina and
+  cancellation work as before. Existing On/Off configurations migrate to Always/Off.
+- Optional Flurry Rush after a perfectly timed evade and a ranged Great Spin projectile.
 - Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, and the Great Spin
   projectile, including compatibility with Lazy Tweaks stamina actions. Emptying
   the meter causes exhaustion until it recovers to 50%. The Stamina Bar setting

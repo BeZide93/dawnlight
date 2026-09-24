@@ -546,7 +546,8 @@ ModResult build_controls_tab(
     }
     if (add_toggle(ctx, left, "Dawnlight Touch UI", dawnlight_touch_ui_config_var(),
             "Shows the third item on the touch Z button and moves Midna to the Skip button "
-            "outside cutscenes. This works independently from Dawnlight's Z Item Slot for "
+            "outside cutscenes. Keeps the L touch button available on the map. "
+            "This works independently from Dawnlight's Z Item Slot for "
             "compatibility with other third-item mods. Restart the app after changing this "
             "setting.")
         != MOD_OK)

@@ -121,6 +121,10 @@ DEFINE_HOOK(&daAlink_c::setHeavyBoots, SetHeavyBootsHook);
 DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
 #if defined(__ANDROID__)
 DEFINE_HOOK(&PADSetVirtualStatus, PadSetVirtualStatusHook);
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui20set_control_overrideENS0_7ControlENS0_15ControlOverrideE",
+    void(dusk::ui::Control, dusk::ui::ControlOverride), TouchSetControlOverrideHook);
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls17sync_visual_stateEv",
+    void(dusk::ui::TouchControls*), TouchSyncVisualStateHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_action_bar_stateEv",
     void(dusk::ui::TouchControls*), TouchSyncActionBarHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_control_displaysEv",
@@ -202,6 +206,8 @@ Rml::Element* s_zTouchMeterButton = nullptr;
 Rml::Element* s_zTouchMeterContainer = nullptr;
 std::string s_zTouchMeterRml;
 bool s_inTouchControlDisplaySync = false;
+dusk::ui::ControlOverride s_hostLTouchOverride = dusk::ui::ControlOverride::Default;
+bool s_mapLTouchOverrideActive = false;
 #endif
 
 bool z_item_slot_active() {
@@ -3501,6 +3507,47 @@ void after_meter_button_draw(ModContext*, void* args, void*, void*) {
 }
 
 #if defined(__ANDROID__)
+bool map_l_touch_override_needed() {
+    const auto windowStatus = dMeter2Info_getWindowStatus();
+    // dMw_c uses 4 for the field map and 5 for the dungeon map, including
+    // their opening/closing animations. Other menus keep the host behavior.
+    return dawnlight_touch_ui_active() && (windowStatus == 4 || windowStatus == 5);
+}
+
+void sync_map_l_touch_override() {
+    if (TouchSetControlOverrideHook::g_orig == nullptr) {
+        return;
+    }
+
+    const bool mapActive = map_l_touch_override_needed();
+    if (mapActive || s_mapLTouchOverrideActive) {
+        // Action keeps L visible and uses momentary input instead of target
+        // locking. Apply before sync_visual_state can hide/release the button.
+        TouchSetControlOverrideHook::g_orig(dusk::ui::Control::L,
+            mapActive ? dusk::ui::ControlOverride::Action : s_hostLTouchOverride);
+    }
+    s_mapLTouchOverrideActive = mapActive;
+}
+
+HookAction before_touch_set_control_override(ModContext*, void* args, void*, void*) {
+    if (mods::arg<dusk::ui::Control>(args, 0) == dusk::ui::Control::L) {
+        auto& requested = mods::arg_ref<dusk::ui::ControlOverride>(args, 1);
+        // Remember the latest host/other-mod request so closing the map does
+        // not clear an L action that belongs to another menu.
+        s_hostLTouchOverride = requested;
+        s_mapLTouchOverrideActive = map_l_touch_override_needed();
+        if (s_mapLTouchOverrideActive) {
+            requested = dusk::ui::ControlOverride::Action;
+        }
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction before_touch_sync_visual_state(ModContext*, void*, void*, void*) {
+    sync_map_l_touch_override();
+    return HOOK_CONTINUE;
+}
+
 HookAction before_pad_set_virtual_status(ModContext*, void* args, void*, void*) {
     if (!dawnlight_touch_ui_active() || mods::arg<u32>(args, 0) != PAD_1) {
         return HOOK_CONTINUE;
@@ -3820,6 +3867,14 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
 #if defined(__ANDROID__)
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<TouchSetControlOverrideHook>(
+            svc_hook, before_touch_set_control_override);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<TouchSyncVisualStateHook>(
+            svc_hook, before_touch_sync_visual_state);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<PadSetVirtualStatusHook>(
             svc_hook, before_pad_set_virtual_status, &touchInputObserveOptions);
     }
@@ -3884,6 +3939,9 @@ void shutdown_item_slot_hooks() {
     s_dpadArrowVisibility = {};
     s_dpadShadowVisibility = {};
 #if defined(__ANDROID__)
+    sync_map_l_touch_override();
+    s_hostLTouchOverride = dusk::ui::ControlOverride::Default;
+    s_mapLTouchOverrideActive = false;
     s_touchZItemHeld = false;
     s_touchZItemTrig = false;
     s_inTouchActionBarSync = false;

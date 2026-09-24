@@ -32,6 +32,7 @@ constexpr float kFlurryRushCost = 50.0f;
 constexpr float kGreatSpinCost = 40.0f;
 constexpr float kBulletTimeDrainPerSecond = 20.0f;
 constexpr float kSprintDrainPerSecond = 5.0f;
+constexpr float kGlideDrainPerSecond = 5.0f;
 constexpr float kRecoveryPerSecond = 5.0f;
 constexpr float kExhaustionRecoveryThreshold = 50.0f;
 constexpr float kLazySkillCost = 50.0f;
@@ -45,6 +46,7 @@ struct RuntimeState {
     float stamina = kMaximumStamina;
     Clock::time_point lastUpdate{};
     bool sprintActive = false;
+    bool glideActive = false;
     bool exhausted = false;
 };
 
@@ -61,6 +63,7 @@ void reset_for_link(daAlink_c* link) {
     s_state.stamina = kMaximumStamina;
     s_state.lastUpdate = Clock::now();
     s_state.sprintActive = false;
+    s_state.glideActive = false;
     s_state.exhausted = false;
 }
 
@@ -271,7 +274,7 @@ void shutdown_stamina() {
 bool stamina_meter_visible() {
     return stamina_enabled() &&
            (bullet_time_enabled() || flurry_rush_enabled() ||
-               great_spin_projectile_enabled() || sprint_enabled());
+               great_spin_projectile_enabled() || sprint_enabled() || glide_enabled());
 }
 
 bool stamina_available_for_bullet_time() {
@@ -296,6 +299,17 @@ void mark_sprint_stamina_active() {
 
 bool consume_flurry_rush_stamina() {
     return try_consume(kFlurryRushCost);
+}
+
+bool stamina_available_for_glide() {
+    return can_consume(0.0001f);
+}
+
+void set_glide_stamina_active(bool active) {
+    current_link();
+    // Retain this state between simulation ticks: stamina updates can also run
+    // on presentation frames. Clear it when the owned carrier is retired.
+    s_state.glideActive = active;
 }
 
 bool consume_great_spin_stamina() {
@@ -342,12 +356,12 @@ bool update_stamina(bool bulletTimeActive) {
         std::chrono::duration<float>(now - s_state.lastUpdate).count(), 0.0f, 0.25f);
     s_state.lastUpdate = now;
     const bool wasExhausted = s_state.exhausted;
-    if (bulletTimeActive && !s_state.exhausted) {
+    float drainPerSecond = bulletTimeActive ? kBulletTimeDrainPerSecond :
+        (sprintActive ? kSprintDrainPerSecond : 0.0f);
+    if (s_state.glideActive && glide_enabled()) drainPerSecond += kGlideDrainPerSecond;
+    if (drainPerSecond > 0.0f && !s_state.exhausted) {
         s_state.stamina = std::max(
-            0.0f, s_state.stamina - elapsed * kBulletTimeDrainPerSecond);
-    } else if (sprintActive && !s_state.exhausted) {
-        s_state.stamina = std::max(
-            0.0f, s_state.stamina - elapsed * kSprintDrainPerSecond);
+            0.0f, s_state.stamina - elapsed * drainPerSecond);
     } else {
         s_state.stamina = std::min(
             kMaximumStamina, s_state.stamina + elapsed * kRecoveryPerSecond);

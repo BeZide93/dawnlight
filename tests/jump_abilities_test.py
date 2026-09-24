@@ -32,6 +32,9 @@ struct Angles {int x=0,y=0,z=0;};
 struct fopAc_ac_c {int id=42,profile=fpcNm_NI_e;struct Pos {cXyz pos;Angles angle;} current,old;};
 struct Hio {struct {struct {float mGravity=-3.4f,mMaxFallSpeed=-100,mCuccoJumpMaxSpeed=20,mCuccoFallMaxSpeed=-7;} m;} mAutoJump;} hio;
 bool glide=false,gale=false,event=false,stage=false,pressed=false,held=false,bPressed=false,rjump=true;
+bool glideStamina=true,staminaGliding=false;
+bool stamina_available_for_glide(){return glideStamina;}
+void set_glide_stamina_active(bool active){staminaGliding=active;}
 int charges=3;
 bool gale_charge_available(){return charges>0;}
 void consume_gale_charge(){assert(charges>0);--charges;}
@@ -109,6 +112,7 @@ void close(float a,float b){assert(std::fabs(a-b)<0.001f);}
 void setup(daAlink_c& l){
  charges=3;l=daAlink_c{};l.id=1;s_jumpAbilities=JumpAbilities{};s_jumpAbilities.owner=&l;s_jumpAbilities.ownerId=l.id;
  glide=gale=event=stage=pressed=held=bPressed=creating=live=busy=false;
+ glideStamina=true;staminaGliding=false;
  cancelOk=deleteOk=spawnOk=rjump=true;g_fpcCtTg_Queue.mpHead=&tag;heightPercent=100;galePercent=500;
 }
 bool tick(daAlink_c& l,bool trigger,bool hold){s_jumpAbilities.handled=false;pressed=trigger;held=hold;return handle_jump_abilities(&l);}
@@ -189,10 +193,23 @@ int main(){
  setup(l);gale=glide=true;assert(tick(l,true,true));assert(!tick(l,false,false));assert(tick(l,true,true));assert(creating&&s_jumpAbilities.charge==GaleCharge::Idle);
  for(auto proc:{daAlink_c::PROC_AUTO_JUMP,daAlink_c::PROC_FALL})for(float velocity:{25.0f,-60.0f}){
   setup(l);glide=true;l.mProcID=proc;l.mLinkAcch.ground=false;l.speed.y=velocity;l.mNormalSpeed=12;
-  assert(tick(l,true,true));assert(creating);update_glide(&l);assert(!s_jumpAbilities.attached);
+  assert(tick(l,true,true));assert(creating);update_glide(&l);assert(!s_jumpAbilities.attached&&!staminaGliding);
   creating=false;live=true;update_glide(&l);assert(s_jumpAbilities.attached);assert(l.mGrabItemAcKeep.actor==&cucco);
-  assert(l.mProcID==daAlink_c::PROC_AUTO_JUMP&&l.launches==0);close(l.speed.y,std::max(velocity,-7.0f));close(l.mNormalSpeed,12);close(l.gravity,-1);
+  assert(staminaGliding);assert(l.mProcID==daAlink_c::PROC_AUTO_JUMP&&l.launches==0);close(l.speed.y,std::max(velocity,-7.0f));close(l.mNormalSpeed,12);close(l.gravity,-1);
   l.mLinkAcch.ground=true;update_glide(&l);assert(!live&&!l.mGrabItemAcKeep.actor&&l.frees==1);assert(s_jumpAbilities.cucco==kNoGlideActor);close(l.gravity,-3.4f);
+  assert(!staminaGliding);
+ }
+ // Exhaustion blocks deployment and cancels pending or attached carriers.
+ setup(l);glide=true;glideStamina=false;l.mProcID=daAlink_c::PROC_FALL;l.mLinkAcch.ground=false;
+ request_glide(&l);assert(!creating&&!staminaGliding);
+ for(bool attach:{false,true}){
+  setup(l);glide=true;l.mProcID=daAlink_c::PROC_FALL;l.mLinkAcch.ground=false;
+  request_glide(&l);
+  if(attach){creating=false;live=true;update_glide(&l);assert(staminaGliding);}
+  glideStamina=false;update_glide(&l);
+  assert(!staminaGliding&&!creating&&!live&&!l.mGrabItemAcKeep.actor);
+  assert(s_jumpAbilities.cucco==kNoGlideActor);
+  if(attach){close(l.gravity,-3.4f);assert(l.frees==1);}
  }
  // A pending load is cancelled on landing; a busy request retains ownership for a later retry.
  setup(l);glide=true;l.mProcID=daAlink_c::PROC_FALL;l.mLinkAcch.ground=false;request_glide(&l);

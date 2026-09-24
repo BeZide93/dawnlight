@@ -33,6 +33,7 @@ fopAc_ac_c* glide_actor() {
 }
 
 void retire_glide_actor(daAlink_c* link) {
+    set_glide_stamina_active(false);
     clear_glider_visual();
     if (s_jumpAbilities.cucco == kNoGlideActor) return;
     s_jumpAbilities.retiring = true;
@@ -78,7 +79,8 @@ bool aerial_glide_context(daAlink_c* link) {
 }
 
 void request_glide(daAlink_c* link) {
-    if (s_jumpAbilities.cucco != kNoGlideActor || link->mGrabItemAcKeep.getActor()) return;
+    if (s_jumpAbilities.cucco != kNoGlideActor || link->mGrabItemAcKeep.getActor() ||
+        !stamina_available_for_glide()) return;
     // White, ordinary Cucco; no dialogue flow. The standalone helper assigns
     // Link's scene layer and isolates room-state side effects during creation.
     const ActorSpawnParams params{
@@ -122,12 +124,14 @@ void attach_glide_actor(daAlink_c* link, fopAc_ac_c* actor) {
     actor->old.pos = actor->current.pos;
     link->setGrabItemPos();
     s_jumpAbilities.attached = true;
+    set_glide_stamina_active(true);
 }
 
 void update_glide(daAlink_c* link) {
     if (s_jumpAbilities.cucco == kNoGlideActor) return;
     auto* actor = glide_actor();
     if (s_jumpAbilities.retiring || !glide_enabled() || !aerial_glide_context(link) ||
+        !stamina_available_for_glide() ||
         (s_jumpAbilities.attached && (!actor || link->mGrabItemAcKeep.getActor() != actor)) ||
         (!s_jumpAbilities.attached && link->mGrabItemAcKeep.getActor()))
     {

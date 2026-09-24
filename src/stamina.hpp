@@ -11,6 +11,8 @@ bool stamina_meter_visible();
 bool stamina_available_for_bullet_time();
 bool stamina_available_for_sprint();
 void mark_sprint_stamina_active();
+bool stamina_available_for_glide();
+void set_glide_stamina_active(bool active);
 bool consume_flurry_rush_stamina();
 bool consume_great_spin_stamina();
 bool update_stamina(bool bulletTimeActive);

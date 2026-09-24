@@ -27,7 +27,7 @@ aiming, boss, and HUD features for Twilight Princess.
   reaches the threshold near its apex. Once activated, duration, stamina and
   cancellation work as before. Existing On/Off configurations migrate to Always/Off.
 - Optional Flurry Rush after a perfectly timed evade and a ranged Great Spin projectile.
-- Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, and the Great Spin
+- Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, Glide, and the Great Spin
   projectile, including compatibility with Lazy Tweaks stamina actions. Emptying
   the meter causes exhaustion until it recovers to 50%. The Stamina Bar setting
   can disable both the meter and all Dawnlight stamina costs.
@@ -46,6 +46,9 @@ aiming, boss, and HUD features for Twilight Princess.
   an original textured **Glider** with a wooden frame and leather grips. Both use
   native Cucco glide movement; landing puts the selected item away. The Glider
   hides and silences only its internally summoned Cucco, leaving world Cuccos alone.
+  With **Stamina Bar** enabled, either Glide Item consumes 5 stamina per second
+  while gliding. Empty stamina ends the glide; exhaustion blocks redeployment
+  until stamina recovers to 50%. Disabling Stamina Bar removes the cost.
 - Optional **Revali's Gale**: ZR immediately performs a normal jump, including
   while running or sprinting. Keep ZR held through landing to stop and crouch;
   stay crouched for at least one second, then release to launch with the saved

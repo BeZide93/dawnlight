@@ -45,6 +45,9 @@ ConfigVarHandle s_jumpHeight = 0;
 ConfigVarHandle s_glide = 0;
 ConfigVarHandle s_revalisGale = 0;
 ConfigVarHandle s_galeHeight = 0;
+ConfigVarHandle s_galeCounterVisible = 0;
+ConfigVarHandle s_galeCounterCapacity = 0;
+ConfigVarHandle s_galeRecovery = 0;
 ConfigVarHandle s_stamina = 0;
 ConfigVarHandle s_sprint = 0;
 ConfigVarHandle s_sprintSpeedPercent = 0;
@@ -182,6 +185,7 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
@@ -211,6 +215,7 @@ constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults =
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 0, 0, 100},
 }};
 
 constexpr std::array<HudButtonDefaults, kHudButtonCount> kHudButtonDefaults = {{
@@ -240,6 +245,7 @@ constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kWiiUHudButtonDefaults = {{
@@ -269,6 +275,7 @@ constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 100, 0, 100},
     {"fierce-deity-bar", 100, 0, 100},
+    {"gale-counter", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kDawnlightHudButtonDefaults = {{
@@ -298,6 +305,7 @@ constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
     "D-Pad Map Text",
     "Stamina Bar",
     "Fierce Deity Bar",
+    "Gale Counter",
 }};
 
 constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{
@@ -880,6 +888,9 @@ ModResult register_config(ModError* error) {
         register_bool("glide", false, s_glide) != MOD_OK ||
         register_bool("revalis-gale", false, s_revalisGale) != MOD_OK ||
         register_int("gale-height-percent", 500, s_galeHeight) != MOD_OK ||
+        register_bool("gale-counter-visible", true, s_galeCounterVisible) != MOD_OK ||
+        register_int("gale-counter-capacity", 3, s_galeCounterCapacity) != MOD_OK ||
+        register_int("gale-recovery-seconds", 120, s_galeRecovery) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
         register_int("sprint-speed-percent", 150, s_sprintSpeedPercent) != MOD_OK ||
@@ -1098,6 +1109,10 @@ float jump_height_multiplier() {
 float gale_height_bonus() {
     return static_cast<float>(get_int(s_galeHeight, 500, 100, 1000)) / 100.0f;
 }
+
+bool gale_counter_visible() { return get_bool(s_galeCounterVisible, true); }
+int gale_counter_capacity() { return get_int(s_galeCounterCapacity, 3, 1, 12); }
+int gale_recovery_seconds() { return get_int(s_galeRecovery, 120, 1, 3600); }
 
 bool glide_enabled() { return get_bool(s_glide, false); }
 bool revalis_gale_enabled() { return get_bool(s_revalisGale, false); }
@@ -1355,6 +1370,9 @@ ConfigVarHandle jump_height_config_var() { return s_jumpHeight; }
 ConfigVarHandle glide_config_var() { return s_glide; }
 ConfigVarHandle revalis_gale_config_var() { return s_revalisGale; }
 ConfigVarHandle gale_height_config_var() { return s_galeHeight; }
+ConfigVarHandle gale_counter_visible_config_var() { return s_galeCounterVisible; }
+ConfigVarHandle gale_counter_capacity_config_var() { return s_galeCounterCapacity; }
+ConfigVarHandle gale_recovery_config_var() { return s_galeRecovery; }
 
 ConfigVarHandle stamina_config_var() {
     return s_stamina;

@@ -410,6 +410,16 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "Gale Counter", gale_counter_visible_config_var(),
+            "Shows remaining Gale charges. Hiding the counter does not remove the resource cost.") != MOD_OK ||
+        add_number(ctx, left, "Gale Charges", gale_counter_capacity_config_var(), 1, 12, 1, "",
+            "Maximum Gale charges. Default 3. A successful Gale launch consumes one charge.") != MOD_OK ||
+        add_number(ctx, left, "Gale Recovery Time", gale_recovery_config_var(), 1, 3600, 1, " sec",
+            "Seconds to restore one charge, one at a time. Default 120. Recovery continues through "
+            "cutscenes and scene changes; another use does not restart the timer.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Stamina Bar", stamina_config_var(),
             "Enables shared stamina costs and the stamina meter. When disabled, Dawnlight moves "
             "do not consume stamina.")
@@ -616,6 +626,10 @@ ModResult build_hud_tab(
     }
     if (add_custom_transform_controls(
             ctx, left, "Custom Fierce Deity Bar", HudElement::FierceDeityBar) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_custom_transform_controls(ctx, left, "Custom Gale Counter", HudElement::GaleCounter) != MOD_OK)
     {
         return MOD_ERROR;
     }

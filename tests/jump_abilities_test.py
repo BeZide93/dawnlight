@@ -32,6 +32,9 @@ struct Angles {int x=0,y=0,z=0;};
 struct fopAc_ac_c {int id=42,profile=fpcNm_NI_e;struct Pos {cXyz pos;Angles angle;} current,old;};
 struct Hio {struct {struct {float mGravity=-3.4f,mMaxFallSpeed=-100,mCuccoJumpMaxSpeed=20,mCuccoFallMaxSpeed=-7;} m;} mAutoJump;} hio;
 bool glide=false,gale=false,event=false,stage=false,pressed=false,held=false,bPressed=false,rjump=true;
+int charges=3;
+bool gale_charge_available(){return charges>0;}
+void consume_gale_charge(){assert(charges>0);--charges;}
 int heightPercent=100,s_jumpHeight=1,galePercent=500,s_galeHeight=2,marks=0;
 bool hasConfig=true;
 int get_int(int handle,int fallback,int low,int high){return hasConfig?std::clamp(handle==s_galeHeight?galePercent:heightPercent,low,high):fallback;}
@@ -103,7 +106,7 @@ bool daAlink_c::procCrouchInit(){if(!initSucceeds)return false;jump_abilities_pr
 bool daAlink_c::procAutoJumpInit(int){if(!initSucceeds)return false;++launches;jump_abilities_proc_change(this,PROC_AUTO_JUMP);mProcID=PROC_AUTO_JUMP;speed.y=25;mNormalSpeed=20;speedF=26;mMaxSpeed=26;return true;}
 void close(float a,float b){assert(std::fabs(a-b)<0.001f);}
 void setup(daAlink_c& l){
- l=daAlink_c{};l.id=1;s_jumpAbilities=JumpAbilities{};s_jumpAbilities.owner=&l;s_jumpAbilities.ownerId=l.id;
+ charges=3;l=daAlink_c{};l.id=1;s_jumpAbilities=JumpAbilities{};s_jumpAbilities.owner=&l;s_jumpAbilities.ownerId=l.id;
  glide=gale=event=stage=pressed=held=bPressed=creating=live=busy=false;
  cancelOk=deleteOk=spawnOk=rjump=true;g_fpcCtTg_Queue.mpHead=&tag;heightPercent=100;galePercent=500;
 }
@@ -137,6 +140,11 @@ int main(){
  assert(tick(l,false,false));assert(l.launches==2);close(l.speed.y,25*std::sqrt(6.0f));assert(!l.mLinkAcch.ground);assert(s_manualJumpOwner==&l);
  setup(l);heightPercent=500;charge(l);assert(tick(l,false,false));close(l.speed.y,25*std::sqrt(10.0f));
  setup(l);rjump=false;charge(l);assert(tick(l,false,false));assert(l.launches==2); // Gale includes the first jump.
+ // Costs only the successful Gale launch, never the setup jump or a failed launch.
+ setup(l);charge(l);assert(charges==3);assert(tick(l,false,false));assert(charges==2);
+ setup(l);charge(l);l.initSucceeds=false;assert(!tick(l,false,false));assert(charges==3);
+ setup(l);charges=0;gale=true;assert(tick(l,true,true));assert(l.launches==1&&s_jumpAbilities.charge==GaleCharge::Idle);
+ setup(l);charge(l);charges=0;assert(!tick(l,false,false));assert(l.launches==1&&l.mProcID==daAlink_c::PROC_WAIT);
  // Landing drives readiness, regardless of flight length; no elapsed-time charge.
  for(int airtime:{1,10,60,180}){
   setup(l);gale=true;assert(tick(l,true,true));

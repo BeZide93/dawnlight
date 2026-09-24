@@ -61,6 +61,7 @@ enum class HudElement : int {
     DPadMapText,
     StaminaBar,
     FierceDeityBar,
+    GaleCounter,
     Count,
 };
 
@@ -102,6 +103,9 @@ bool manual_shielding_enabled();
 bool r_jump_enabled();
 float jump_height_multiplier();
 float gale_height_bonus();
+bool gale_counter_visible();
+int gale_counter_capacity();
+int gale_recovery_seconds();
 bool glide_enabled();
 bool revalis_gale_enabled();
 bool stamina_enabled();
@@ -160,6 +164,9 @@ ConfigVarHandle manual_shielding_config_var();
 ConfigVarHandle r_jump_config_var();
 ConfigVarHandle jump_height_config_var();
 ConfigVarHandle gale_height_config_var();
+ConfigVarHandle gale_counter_visible_config_var();
+ConfigVarHandle gale_counter_capacity_config_var();
+ConfigVarHandle gale_recovery_config_var();
 ConfigVarHandle glide_config_var();
 ConfigVarHandle revalis_gale_config_var();
 ConfigVarHandle stamina_config_var();

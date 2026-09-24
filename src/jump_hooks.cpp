@@ -1,5 +1,6 @@
 #include "bullet_time.hpp"
 #include "config.hpp"
+#include "gale_counter.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
 

@@ -46,6 +46,15 @@ aiming, boss, and HUD features for Twilight Princess.
   There is no timed charge. Releasing before landing leaves the normal jump.
   Gale also enables the initial ZR jump when R Jump is off; Glide is independent.
   Both new abilities default to disabled.
+- Gale uses three charges by default. **Gale Charges** adjusts capacity (1–12),
+  and **Gale Recovery Time** adjusts seconds per recovered charge (1–3600,
+  default 120). Charges recover one at a time; another use never restarts a
+  pending recharge. Recovery uses elapsed real time, including menus, cutscenes
+  and scene transitions. The state lasts for the session, without save-file data.
+- **Gale Counter** toggles only the display: native Epona sprint icons beneath
+  the Fierce Deity bar, with full and spent charges. **Custom Gale Counter** in
+  the HUD Editor adjusts X/Y offsets and scale relative to that default anchor.
+  Empty charges block Gale, while the initial normal ZR jump remains available.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
 - Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
   faster tracking, and selected profile-specific mechanics.

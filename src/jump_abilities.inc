@@ -177,6 +177,10 @@ void stop_for_gale(daAlink_c* link) {
 }
 
 bool launch_gale(daAlink_c* link) {
+    if (!gale_charge_available()) {
+        cancel_gale_charge(link, true);
+        return false;
+    }
     const cXyz origin = link->current.pos;
     const float launchSpeed = s_jumpAbilities.launchSpeed;
     const s16 launchAngle = s_jumpAbilities.launchAngle;
@@ -185,6 +189,7 @@ bool launch_gale(daAlink_c* link) {
         if (link->mProcID == daAlink_c::PROC_CROUCH) link->procWaitInit();
         return false;
     }
+    consume_gale_charge();
     apply_manual_jump_movement(link);
     // Restore the actual ground speed captured BEFORE the first jump resets it.
     // Do not recalculate from the stick or sprint toggle after waiting in crouch.
@@ -240,7 +245,7 @@ bool handle_jump_abilities(daAlink_c* link) {
         const float launchSpeed = std::max(0.0f, link->mNormalSpeed);
         const s16 launchAngle = link->checkInputOnR() ? link->mMoveAngle : link->shape_angle.y;
         if (!start_ground_jump(link)) return false;
-        if (link->mProcID == daAlink_c::PROC_AUTO_JUMP) {
+        if (link->mProcID == daAlink_c::PROC_AUTO_JUMP && gale_charge_available()) {
             s_jumpAbilities.charge = GaleCharge::Airborne;
             s_jumpAbilities.launchSpeed = launchSpeed;
             s_jumpAbilities.launchAngle = launchAngle;

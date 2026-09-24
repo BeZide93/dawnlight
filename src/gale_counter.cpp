@@ -94,13 +94,13 @@ struct CounterVisual {
         mDoExt_adjustSolidHeap(heap);
         return true;
     }
-    void draw(float x, float y, float scale, int available, int capacity) {
+    void draw(float x, float y, float scale, float alpha, int available, int capacity) {
         if (!prepare()) return;
         auto* graf = dComIfGp_getCurrentGrafPort();
         if (!graf) return;
         graf->setup2D();
-        full->setAlphaRate(1.0f);
-        empty->setAlphaRate(1.0f);
+        full->setAlphaRate(alpha);
+        empty->setAlphaRate(alpha);
         full->scale(scale, scale);
         empty->scale(scale, scale);
         for (int i = 0; i < capacity; ++i) {
@@ -119,11 +119,12 @@ struct CounterVisual {
 CounterVisual s_visual;
 
 void after_draw(ModContext*, void* args, void*, void*) {
-    if (!revalis_gale_enabled() || !gale_counter_visible()) return;
+    if (!revalis_gale_enabled() || !gale_counter_visible() || !combat_meter_hud_visible()) return;
     auto* link = daAlink_getAlinkActorClass();
-    if (!link || link->checkWolf() || dComIfGp_event_runCheck() || dComIfGp_isEnableNextStage() ||
-        dComIfGp_isPauseFlag() || dMeter2Info_getWindowStatus() || dMeter2Info_getPauseStatus()) return;
+    if (!link || link->checkWolf() || dComIfGp_isEnableNextStage()) return;
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
+    const float alpha = combat_meter_screen_alpha(meter);
+    if (alpha <= 0.0f) return;
     float x, y, scale;
     if (!combat_meter_next_row_anchor(meter, stamina_meter_visible() ? 1 : 0, x, y, scale)) return;
     // The default follows the Fierce Deity bar. These independent controls add
@@ -134,7 +135,7 @@ void after_draw(ModContext*, void* args, void*, void*) {
         DuskModHudTransform{.offset_x = 25.0f};
     update_charges();
     s_visual.draw(x + transform.offset_x, y + transform.offset_y,
-        0.65f * scale * transform.scale, s_charges.available(), s_charges.capacity);
+        0.65f * scale * transform.scale, alpha, s_charges.available(), s_charges.capacity);
 }
 
 HookAction before_meter_delete(ModContext*, void*, void*, void*) {

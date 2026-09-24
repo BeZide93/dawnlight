@@ -76,9 +76,7 @@ daAlink_c* current_link() {
 }
 
 bool menu_or_pause_active() {
-    return dMeter2Info_getWindowStatus() != 0 || dMeter2Info_getPauseStatus() != 0 ||
-           dComIfGp_isPauseFlag() || dComIfGp_event_runCheck() ||
-           dMeter2Info_isShopTalkFlag() || dMsgObject_isTalkNowCheck();
+    return !combat_meter_hud_visible();
 }
 
 bool try_consume(float amount) {

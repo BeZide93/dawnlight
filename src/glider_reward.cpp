@@ -11,6 +11,7 @@
 #include "d/d_msg_object.h"
 #include "f_pc/f_pc_create_req.h"
 #include "f_pc/f_pc_create_tag.h"
+#include "f_pc/f_pc_layer.h"
 #include "f_pc/f_pc_leaf.h"
 #include "f_pc/f_pc_method.h"
 #include "mods/svc/flow.hpp"
@@ -193,6 +194,16 @@ void update_glider_reward() {
     auto* link = daAlink_getAlinkActorClass();
     if (s_reward.item == kNoActor) {
         if (!safe_to_start(link)) return;
+        auto* layer = link->layer_tag.layer;
+        if (!layer || layer == fpcLy_RootLayer() || fpcLy_IsDeletingMesg(layer)) return;
+        // mod_update can run on the root layer. Room number alone does not
+        // give the prop scene ownership: a root actor also gets a second draw
+        // through root traversal, in addition to the play scene's actor queue.
+        struct RestoreLayer {
+            layer_class* previous;
+            ~RestoreLayer() { fpcLy_SetCurrentLayer(previous); }
+        } restore{fpcLy_CurrentLayer()};
+        fpcLy_SetCurrentLayer(layer);
         s_reward.item = fopAcM_createDemoItem(&link->current.pos, dItemNo_BOMB_5_e, -1,
             nullptr, fopAcM_GetRoomNo(link), nullptr, kPresentationOnly);
         s_reward.player = fopAcM_GetID(link);

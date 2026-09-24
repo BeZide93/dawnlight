@@ -26,7 +26,14 @@ struct ModContext{};
 enum HookAction {HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 struct Vec {float x=0,y=0,z=0;};
 struct leafdraw_class {int id=0;};
-struct Actor:leafdraw_class {int name=0;};
+struct layer_class {bool deleting=false;};
+layer_class rootLayer, sceneLayer, callbackLayer;
+layer_class* currentLayer=&rootLayer;
+layer_class* fpcLy_RootLayer(){return &rootLayer;}
+layer_class* fpcLy_CurrentLayer(){return currentLayer;}
+void fpcLy_SetCurrentLayer(layer_class* layer){currentLayer=layer;}
+bool fpcLy_IsDeletingMesg(layer_class* layer){return layer->deleting;}
+struct Actor:leafdraw_class {int name=0;struct {layer_class* layer=&sceneLayer;} layer_tag;};
 struct EventInfo {bool command=false; int condition=0;
     bool checkCommandItem(){return command;}
     void onCondition(int c){condition|=c;}};
@@ -76,6 +83,7 @@ int fopAcM_GetRoomNo(Actor*){return 0;}
 int fopAcM_delete(Actor*){if(!deleteAllowed)return 0;alive=false;++deleted;return 1;}
 int fopAcM_createDemoItem(Vec*,int item,int bit,void*,int,void*,u8 flags){
     assert(item==dItemNo_BOMB_5_e&&bit==-1&&flags==1); // Presentation-only, no inventory grant.
+    assert(currentLayer==player.layer_tag.layer&&currentLayer!=&rootLayer);
     ++created;if(createFails)return -1;
     alive=true;prop.id=100;prop.name=fpcNm_Demo_Item_e;return prop.id;
 }
@@ -103,6 +111,7 @@ void cancel_glider_reward();
 // PRODUCTION
 void fresh(){
     s_reward={};prop={};player={};player.id=1;event.mPt2=-1;
+    currentLayer=&rootLayer;sceneLayer.deleting=false;
     alive=creating=doing=running=paused=talking=stageChange=eventEnded=createFails=false;
     mode=playerPresent=deleteAllowed=true;window=pauseStatus=0;
     created=ordered=reset=deleted=drawn=cleared=0;itemPartner=-1;
@@ -118,7 +127,7 @@ int main(){
     player.wolf=true;update_glider_reward();assert(created==0);player.wolf=false;
     player.mProcID=daAlink_c::OTHER;update_glider_reward();assert(created==0);
     player.mProcID=daAlink_c::PROC_WAIT;
-    update_glider_reward();assert(created==1&&ordered==0);
+    update_glider_reward();assert(created==1&&ordered==0&&currentLayer==&rootLayer);
     update_glider_reward();assert(ordered==1&&prop.eventInfo.condition==dEvtCnd_CANGETITEM_e);
     // Another actor's reward cannot alter Link's parameters or message.
     before_get_init(nullptr,&player,nullptr,nullptr);assert(player.mDemo.p0==90);
@@ -160,7 +169,18 @@ int main(){
     fresh();queue_glider_reward();update_glider_reward();
     for(int i=0;i<kOrderTimeout+2;++i)update_glider_reward();
     assert(!alive&&s_reward.item==-1&&created==1); // Event never accepted.
-    fresh();createFails=true;queue_glider_reward();update_glider_reward();update_glider_reward();assert(created==1);
+    // A global mod callback must create the prop in Link's scene, then restore
+    // the caller's layer, including when native actor creation fails.
+    fresh();queue_glider_reward();currentLayer=&callbackLayer;
+    update_glider_reward();assert(created==1&&currentLayer==&callbackLayer);
+    fresh();queue_glider_reward();player.layer_tag.layer=nullptr;
+    update_glider_reward();assert(created==0&&s_reward.pending&&currentLayer==&rootLayer);
+    player.layer_tag.layer=&rootLayer;
+    update_glider_reward();assert(created==0&&s_reward.pending);
+    player.layer_tag.layer=&sceneLayer;sceneLayer.deleting=true;
+    update_glider_reward();assert(created==0&&s_reward.pending);
+    sceneLayer.deleting=false;update_glider_reward();assert(created==1&&!s_reward.pending);
+    fresh();createFails=true;queue_glider_reward();update_glider_reward();update_glider_reward();assert(created==1&&currentLayer==&rootLayer);
     fresh();queue_glider_reward();update_glider_reward();deleteAllowed=false;cancel_glider_reward();
     assert(s_reward.retiring&&alive);deleteAllowed=true;update_glider_reward();assert(!alive&&s_reward.item==-1);
     fresh();queue_glider_reward();update_glider_reward();creating=true;doing=true;
@@ -180,4 +200,4 @@ with tempfile.TemporaryDirectory() as tmp:
     for extra in ([], ['-D__APPLE__']):
         subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror',*extra,str(cpp),'-o',str(exe)],check=True)
         subprocess.run([str(exe)],check=True)
-print('Glider reward: dialogue safety, native pose/message, prop isolation, completion, cancellation and save cleanup passed')
+print('Glider reward: scene ownership/layer restoration, dialogue safety, native pose/message, prop isolation and cleanup passed')

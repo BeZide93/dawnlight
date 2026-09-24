@@ -88,6 +88,19 @@ public:
 GliderPacket s_glider;
 GliderPacket s_rewardGlider;
 
+void queue_glider_packet(J3DPacket* packet) {
+    auto* list = dComIfGd_getOpaList();
+    if (!list || !list->mpBuffer || list->getEntryTableSize() == 0) return;
+    // entryImm is an intrusive prepend, not a set. Re-inserting a retained
+    // packet creates a cycle and draws until Aurora's vertex buffer overflows.
+    // Check actual membership: draw lists survive presentation-only frames,
+    // while frameInit clears their heads without clearing packet next pointers.
+    for (auto* queued = list->mpBuffer[0]; queued; queued = queued->getNextPacket()) {
+        if (queued == packet) return;
+    }
+    list->entryImm(packet, 0);
+}
+
 bool prepare_glider_pose(GliderPacket& packet) {
     if (!packet.active) return false;
     auto* actor = fopAcM_SearchByID(packet.ownerId);
@@ -166,7 +179,7 @@ void queue_glider_visual(daAlink_c* link) {
     if (!link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
     s_glider.ownerId=fopAcM_GetID(link);
     s_glider.active=true;
-    dComIfGd_getOpaList()->entryImm(&s_glider,0);
+    queue_glider_packet(&s_glider);
 }
 
 void clear_glider_reward_visual() {
@@ -181,7 +194,7 @@ void queue_glider_reward_visual(daAlink_c* link, ActorId item) {
     s_rewardGlider.rewardItem = item;
     s_rewardGlider.reward = true;
     s_rewardGlider.active = true;
-    dComIfGd_getOpaList()->entryImm(&s_rewardGlider, 0);
+    queue_glider_packet(&s_rewardGlider);
 }
 
 }

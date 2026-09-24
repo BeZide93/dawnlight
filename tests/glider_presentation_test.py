@@ -82,11 +82,30 @@ bool aerial_glide_context(daAlink_c* l){return l->airborne;}
 Actor* glide_actor(){return live?&owned:nullptr;}
 // HANDS
 
-struct GliderPacket {int ownerId=-1;Vec origin;float sine=0,cosine=1;struct {u8 r,g,b,a;} color;bool active=false,reward=false;int rewardItem=-1;float modelScale=1;} s_glider,s_rewardGlider;
-struct List {int entries=0;void entryImm(GliderPacket*,int){++entries;}} list;
+struct J3DPacket {
+    J3DPacket* next=nullptr;
+    J3DPacket* getNextPacket(){return next;}
+    void setNextPacket(J3DPacket* p){next=p;}
+};
+struct GliderPacket:J3DPacket {int ownerId=-1;Vec origin;float sine=0,cosine=1;struct {u8 r,g,b,a;} color;bool active=false,reward=false;int rewardItem=-1;float modelScale=1;} s_glider,s_rewardGlider;
+struct List {
+    int entries=0;J3DPacket* heads[1]{};J3DPacket** mpBuffer=heads;
+    unsigned getEntryTableSize(){return 1;}
+    // Match native J3DDrawBuffer: inserting the same packet twice makes a cycle.
+    void entryImm(J3DPacket* packet,int i){
+        ++entries;packet->setNextPacket(mpBuffer[i]);mpBuffer[i]=packet;
+    }
+    void frameInit(){mpBuffer[0]=nullptr;}
+    int drawCount(){
+        int count=0;
+        for(auto* p=mpBuffer[0];p;p=p->getNextPacket())assert(++count<=4);
+        return count;
+    }
+} list;
 List* dComIfGd_getOpaList(){return &list;}
 using LookupPresentationMatrix=bool (*)(const void*,Mtx);
 LookupPresentationMatrix s_lookupPresentationMatrix=nullptr;
+// QUEUE_ONCE
 // PRESENTED_MATRIX
 // PREPARE
 // CLEAR
@@ -166,6 +185,24 @@ int main(){
     clear_glider_reward_visual();assert(!prepare_glider_reward_draw());
     assert(s_rewardGlider.ownerId==-1&&s_rewardGlider.rewardItem==-1);
 
+    // Repeated native actor callbacks must not turn the intrusive packet
+    // chain into an endless draw loop, even with another packet in between.
+    list.frameInit();int before=list.entries;
+    queue_glider_reward_visual(&link,43);
+    queue_glider_reward_visual(&link,43);
+    assert(list.entries==before+1&&list.drawCount()==1);
+    J3DPacket other;list.entryImm(&other,0);
+    queue_glider_reward_visual(&link,43);
+    assert(list.entries==before+2&&list.drawCount()==2);
+    clear_glider_reward_visual();queue_glider_reward_visual(&link,43);
+    assert(list.entries==before+2&&list.drawCount()==2);
+    queue_glider_visual(&link);queue_glider_visual(&link);
+    assert(list.entries==before+3&&list.drawCount()==3);
+    // Presentation-only draws keep the list; a new simulation frame resets it.
+    assert(list.drawCount()==3&&list.drawCount()==3);
+    list.frameInit();queue_glider_reward_visual(&link,43);
+    queue_glider_visual(&link);assert(list.entries==before+5&&list.drawCount()==2);
+
     link.nativeOpenHands();after_glider_draw_hand(nullptr,&link,nullptr,nullptr);
     assert(link.field_0x06d0==&link.hands.data.materials[0].shape);
     assert(link.field_0x06d4==&link.hands.data.materials[6].shape);
@@ -192,6 +229,7 @@ int main(){
 }
 '''
 fixture = fixture.replace('// HANDS', presentation[:presentation.index('HookAction before_glide_carrier_draw')])
+fixture = fixture.replace('// QUEUE_ONCE', function(visual, 'void queue_glider_packet'))
 fixture = fixture.replace('// PRESENTED_MATRIX', function(visual, 'void presented_matrix'))
 fixture = fixture.replace('// PREPARE', function(visual, 'bool prepare_glider_pose') + '\n' + function(visual, 'bool prepare_glider_draw'))
 fixture = fixture.replace('// CLEAR', function(visual, 'void clear_glider_visual'))
@@ -202,4 +240,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Glider presentation passed: retained packet across renders, grip anchors, turning, fallback and cleanup')
+print('Glider presentation passed: duplicate-safe queue, frame reset/replay, grip anchors, turning, fallback and cleanup')

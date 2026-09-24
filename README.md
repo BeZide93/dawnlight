@@ -14,7 +14,8 @@ Both new options default to **Off**, preserving existing configurations.
 
 **Dawnlight Mode** applies the intended preset: Sprint at 150%, R Jump at 110%,
 Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode, 300% HP Scaling,
-Manual Shielding, 60-second Gale recovery, Arrow Modes, Great Spin Projectile,
+Manual Shielding, 500% Gale Height, 60-second Gale recovery, Stamina Bar On,
+Arrow Modes, Great Spin Projectile,
 No Normal-Hit Invulnerability, and the Progression System.
 Controlled settings display their effective values and are grayed out.
 Your personal Off-mode settings remain saved separately: switching Dawnlight Mode

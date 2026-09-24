@@ -1073,6 +1073,8 @@ ModeSetting mode_setting_for_config(ConfigVarHandle var) {
     if (var == s_healthScale) return ModeSetting::HealthScale;
     if (var == s_manualShielding) return ModeSetting::ManualShielding;
     if (var == s_galeRecovery) return ModeSetting::GaleRecovery;
+    if (var == s_galeHeight) return ModeSetting::GaleHeight;
+    if (var == s_stamina) return ModeSetting::Stamina;
     if (var == s_arrowModes) return ModeSetting::ArrowModes;
     if (var == s_greatSpinProjectile) return ModeSetting::GreatSpin;
     if (var == s_removeNormalHitInvulnerability) return ModeSetting::NoNormalHitInvulnerability;

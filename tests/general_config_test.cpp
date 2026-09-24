@@ -79,11 +79,16 @@ int main() {
     set_int(nullptr, jump_height_config_var(), 240);
     set_int(nullptr, health_scale_config_var(), 175);
     set_int(nullptr, gale_recovery_config_var(), 91);
+    set_int(nullptr, gale_height_config_var(), 320);
+    set_bool(nullptr, stamina_config_var(), false);
     set_int(nullptr, bullet_time_config_var(), 0);
     set_bool(nullptr, sprint_config_var(), false);
     set_bool(nullptr, glide_config_var(), true);
     set_bool(nullptr, fierce_deity_config_var(), true);
 
+    auto galeHeight = control(gale_height_config_var(), UI_CONTROL_NUMBER);
+    auto stamina = control(stamina_config_var(), UI_CONTROL_TOGGLE);
+    assert(!disabled(galeHeight) && !disabled(stamina));
     auto sprint = control(sprint_config_var(), UI_CONTROL_TOGGLE);
     auto speed = control(sprint_speed_config_var(), UI_CONTROL_NUMBER);
     auto progression = control(progression_system_config_var(), UI_CONTROL_TOGGLE);
@@ -94,6 +99,9 @@ int main() {
     assert(std::abs(jump_height_multiplier() - 1.1f) < 0.001f);
     assert(health_scale_percent() == 300 && gale_recovery_seconds() == 60);
     assert(bullet_time_mode() == BulletTimeMode::Botw);
+    assert(gale_height_bonus() == 5.0f && stamina_enabled());
+    assert(disabled(galeHeight) && disabled(stamina));
+    assert(shown(galeHeight).int_value == 500 && shown(stamina).bool_value);
     assert(flurry_rush_enabled() && enemy_hard_mode_enabled() && bossrush_hardmode_hazards_enabled());
     assert(manual_shielding_enabled() && arrow_modes_enabled() && great_spin_projectile_enabled());
     assert(remove_normal_hit_invulnerability_enabled());
@@ -107,6 +115,13 @@ int main() {
     progression.set(mod_ctx, progression.user_data, &attempt);
     assert(disk.at("sprint-speed-percent").value == 185); // No hidden settings overwritten.
     assert(progression_system_enabled());
+    attempt.int_value = 900;
+    galeHeight.set(mod_ctx, galeHeight.user_data, &attempt);
+    attempt.bool_value = false;
+    stamina.set(mod_ctx, stamina.user_data, &attempt);
+    assert(disk.at("gale-height-percent").value == 320);
+    assert(disk.at("stamina-enabled").value == 0);
+    assert(gale_height_bonus() == 5.0f && stamina_enabled());
     testProgress = {true, true, true, 6};
     assert(glide_enabled() && revalis_gale_enabled() && gale_counter_visible() && fierce_deity_enabled());
     assert(gale_counter_capacity() == 6);
@@ -114,6 +129,7 @@ int main() {
     // Restart: register from the same disk values with fresh handles.
     assert(register_config(nullptr) == MOD_OK);
     assert(dawnlight_mode_enabled() && progression_system_enabled() && health_scale_percent() == 300);
+    assert(gale_height_bonus() == 5.0f && stamina_enabled());
     set_bool(nullptr, dawnlight_mode_config_var(), false);
     assert(!progression_system_enabled());
     assert(!sprint_enabled() && glide_enabled() && fierce_deity_enabled());
@@ -121,6 +137,10 @@ int main() {
     assert(std::abs(jump_height_multiplier() - 2.4f) < 0.001f);
     assert(health_scale_percent() == 175 && gale_recovery_seconds() == 91);
     assert(bullet_time_mode() == BulletTimeMode::Off);
+    assert(std::abs(gale_height_bonus() - 3.2f) < 0.001f && !stamina_enabled());
+    galeHeight = control(gale_height_config_var(), UI_CONTROL_NUMBER);
+    stamina = control(stamina_config_var(), UI_CONTROL_TOGGLE);
+    assert(!disabled(galeHeight) && !disabled(stamina));
     speed = control(sprint_speed_config_var(), UI_CONTROL_NUMBER);
     attempt.int_value = 205;
     speed.set(mod_ctx, speed.user_data, &attempt);
@@ -130,6 +150,8 @@ int main() {
     set_bool(nullptr, dawnlight_mode_config_var(), true);
     set_bool(nullptr, dawnlight_mode_config_var(), false);
     assert(progression_system_enabled()); // Restore independent progression On.
+    assert(!disabled(galeHeight) && !disabled(stamina));
+    assert(std::abs(gale_height_bonus() - 3.2f) < 0.001f && !stamina_enabled());
     assert(sprint_enabled() && std::abs(sprint_speed_multiplier() - 2.05f) < 0.001f);
     testProgress = {}; // A new save immediately gates features again.
     assert(!glide_enabled() && !revalis_gale_enabled() && !fierce_deity_enabled());

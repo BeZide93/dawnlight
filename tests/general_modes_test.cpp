@@ -20,9 +20,9 @@ int main() {
         ModeSetting::ArrowModes, ModeSetting::GreatSpin, ModeSetting::NoNormalHitInvulnerability,
         ModeSetting::Progression, ModeSetting::Glide, ModeSetting::GlideItem,
         ModeSetting::Gale, ModeSetting::GaleCounter, ModeSetting::GaleCharges,
-        ModeSetting::FierceDeity};
+        ModeSetting::FierceDeity, ModeSetting::GaleHeight, ModeSetting::Stamina};
     constexpr std::array<int64_t, settings.size()> intended{
-        1, 150, 1, 110, 1, 2, 1, 1, 300, 1, 60, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0};
+        1, 150, 1, 110, 1, 2, 1, 1, 300, 1, 60, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1};
     for (size_t i = 0; i < settings.size(); ++i) {
         int64_t value = 777;
         assert(!mode_override(settings[i], false, false, {}, value));
@@ -44,6 +44,8 @@ int main() {
     int64_t value = 123;
     assert(!mode_override(ModeSetting::SprintSpeed, false, true, {}, value));
     assert(!mode_override(ModeSetting::JumpHeight, false, true, {}, value));
+    assert(!mode_override(ModeSetting::GaleHeight, false, true, {}, value));
+    assert(!mode_override(ModeSetting::Stamina, false, true, {}, value));
     assert(!mode_override(ModeSetting::None, true, true, {}, value));
     assert(mode_override(ModeSetting::GaleCharges, false, true, completed, value) && value == 6);
 

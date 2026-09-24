@@ -48,7 +48,23 @@ with tempfile.TemporaryDirectory() as temp:
     with zipfile.ZipFile(one) as z:
         assert set(z.namelist()) == {'mod.json', 'overlay/' + p.DISC_PATH}
         assert z.read('overlay/' + p.DISC_PATH) == valid
-        assert json.loads(z.read('mod.json'))['id'] != 'dev.bezide.dawnlight'
+        assert json.loads(z.read('mod.json'))['id'] == 'dev.bezide.dawnlight_custom_glider'
+    # Exercise the CLI default too: it must produce a loader-compatible manifest.
+    subprocess.run([sys.executable, str(ROOT / 'tools/package_glider_model.py'),
+                    str(source), str(two)], check=True, capture_output=True)
+    assert one.read_bytes() == two.read_bytes()
+    for mod_id in ('', 'dev.bezide.glider-model', '.glider', 'glider.',
+                   'dev..glider', 'Glider', 'glider\n', 'glidér'):
+        try:
+            p.package(source, two, mod_id=mod_id)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f'Accepted invalid mod ID: {mod_id!r}')
+        assert one.read_bytes() == two.read_bytes()  # Reject before overwriting.
+    p.package(source, two, mod_id='custom_glider.v2')
+    with zipfile.ZipFile(two) as z:
+        assert json.loads(z.read('mod.json'))['id'] == 'custom_glider.v2'
     fixture = '''
 #include "glider_bmd_format.hpp"
 #include <cassert>

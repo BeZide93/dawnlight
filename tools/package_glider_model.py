@@ -3,10 +3,12 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import struct
 import zipfile
 
 DISC_PATH = 'res/Object/DawnlightGlider.bmd'
+DEFAULT_MOD_ID = 'dev.bezide.dawnlight_custom_glider'
 MAX_BYTES = 8 * 1024 * 1024
 SECTIONS = {'INF1': 24, 'VTX1': 64, 'EVP1': 28, 'DRW1': 20,
             'JNT1': 24, 'SHP1': 44, 'MAT3': 132, 'TEX1': 20}
@@ -36,7 +38,11 @@ def validate(data):
         raise ValueError('Unexpected data after BMD sections')
 
 
-def package(source, output, mod_id='dev.bezide.dawnlight.glider-model', name='Dawnlight Glider Model'):
+def package(source, output, mod_id=DEFAULT_MOD_ID, name='Dawnlight Glider Model'):
+    # Match Dusklight's is_valid_mod_id: nonempty dot-separated segments.
+    if re.fullmatch(r'[a-z0-9_]+(?:\.[a-z0-9_]+)*', mod_id) is None:
+        raise ValueError('Invalid mod ID: use lowercase letters, digits, or underscores '
+                         'in nonempty dot-separated segments (no hyphens)')
     if source.resolve() == output.resolve():
         raise ValueError('The output must not overwrite the input BMD')
     data = source.read_bytes()
@@ -59,7 +65,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('model', type=Path)
     parser.add_argument('output', type=Path)
-    parser.add_argument('--id', default='dev.bezide.dawnlight.glider-model')
+    parser.add_argument('--id', default=DEFAULT_MOD_ID)
     parser.add_argument('--name', default='Dawnlight Glider Model')
     args = parser.parse_args()
     if args.output.suffix != '.dusk':

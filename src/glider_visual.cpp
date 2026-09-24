@@ -3,6 +3,7 @@
 #include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
+#include "f_pc/f_pc_name.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include <algorithm>
 #include <cmath>
@@ -20,10 +21,13 @@ void presented_matrix(MtxP source, Mtx out) {
         MTXCopy(source, out);
 }
 
-// A persistent packet owns only a pose snapshot, never an actor/archive pointer.
+bool prepare_glider_draw();
+
+// Keep only an actor ID across frames; resolve the live pose at packet draw time.
 // Queued through the same native opaque list as the custom Shade pedestal.
 class GliderPacket : public J3DPacket {
 public:
+    ActorId ownerId = fpcM_ERROR_PROCESS_ID_e;
     cXyz origin{0,0,0};
     float sine=0, cosine=1;
     GXColor color{255,255,255,255};
@@ -31,7 +35,7 @@ public:
     bool ready=false, active=false;
 
     void draw() override {
-        if (!active) return;
+        if (!prepare_glider_draw()) return;
         if (!ready) {
             GXInitTexObj(&texture,glider_art::kPixels,glider_art::kSize,glider_art::kSize,
                 GX_TF_RGB565,GX_CLAMP,GX_CLAMP,GX_TRUE);
@@ -77,22 +81,16 @@ public:
     }
 };
 GliderPacket s_glider;
-}
 
-void init_glider_visual() {
-    s_lookupPresentationMatrix = nullptr;
-    void* address = nullptr;
-    if (svc_hook && svc_hook->resolve &&
-        svc_hook->resolve(mod_ctx, "dusk::interp::lookup_replacement", &address, nullptr) == MOD_OK)
-        s_lookupPresentationMatrix = reinterpret_cast<LookupPresentationMatrix>(address);
-    if (!s_lookupPresentationMatrix && svc_log)
-        svc_log->warn(mod_ctx, "Glider: presentation matrix lookup unavailable; using simulation pose");
-}
-
-void clear_glider_visual() { s_glider.active=false; }
-
-void queue_glider_visual(daAlink_c* link) {
-    if (!link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
+bool prepare_glider_draw() {
+    if (!s_glider.active) return false;
+    auto* actor = fopAcM_SearchByID(s_glider.ownerId);
+    if (!actor || fopAcM_GetName(actor) != fpcNm_ALINK_e) return false;
+    auto* link = static_cast<daAlink_c*>(actor);
+    if (!link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return false;
+    // fpcLf_Draw skips Link on presentation-only frames. Interpolation lookup
+    // must happen here in J3DPacket::draw, which is replayed on every render,
+    // rather than when Link first queues this packet during the simulation tick.
     // Hand joints are the wrists. Use the item attachment joints instead: these
     // are the native sword/shield grip points inside the closed hands. Sample
     // their presented matrices on EVERY draw, including intermediate frames,
@@ -119,6 +117,28 @@ void queue_glider_visual(daAlink_c* link) {
     // Follow the player's room lighting; retain a little fill for the woodwork.
     auto channel=[](int value) { return static_cast<u8>(std::clamp(value+48,48,255)); };
     s_glider.color={channel(ambient.r),channel(ambient.g),channel(ambient.b),255};
+    return true;
+}
+}
+
+void init_glider_visual() {
+    s_lookupPresentationMatrix = nullptr;
+    void* address = nullptr;
+    if (svc_hook && svc_hook->resolve &&
+        svc_hook->resolve(mod_ctx, "dusk::interp::lookup_replacement", &address, nullptr) == MOD_OK)
+        s_lookupPresentationMatrix = reinterpret_cast<LookupPresentationMatrix>(address);
+    if (!s_lookupPresentationMatrix && svc_log)
+        svc_log->warn(mod_ctx, "Glider: presentation matrix lookup unavailable; using simulation pose");
+}
+
+void clear_glider_visual() {
+    s_glider.active=false;
+    s_glider.ownerId=fpcM_ERROR_PROCESS_ID_e;
+}
+
+void queue_glider_visual(daAlink_c* link) {
+    if (!link->mpLinkModel || link->checkPlayerNoDraw() || link->checkStatusWindowDraw()) return;
+    s_glider.ownerId=fopAcM_GetID(link);
     s_glider.active=true;
     dComIfGd_getOpaList()->entryImm(&s_glider,0);
 }

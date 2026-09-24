@@ -2,6 +2,7 @@
 Run: python3 tests/glider_presentation_test.py. No game assets required.
 """
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -10,7 +11,7 @@ visual = (ROOT / 'src/glider_visual.cpp').read_text()
 presentation = (ROOT / 'src/glide_presentation.inc').read_text()
 
 def function(source, signature):
-    start = source.index(signature + '(')
+    start = re.search(re.escape(signature) + r'\([^;{}]*\)\s*\{', source).start()
     return source[start:source.index('\n}', start) + 2]
 
 fixture = r'''
@@ -36,7 +37,7 @@ struct Model {
     Data* getModelData(){return &data;}
 };
 struct Actor {} owned,ordinary;
-struct daAlink_c {
+struct daAlink_c: Actor {
     Model body,hands;Model* mpLinkModel=&body;Model* mpLinkHandModel=&hands;
     int mLeftHandJntNo=1,mRightHandJntNo=2;
     int mLeftItemJntNo=3,mRightItemJntNo=4;
@@ -55,6 +56,11 @@ struct daAlink_c {
         field_0x06d0->show();field_0x06d4->show();
     }
 };
+constexpr int fpcNm_ALINK_e=1,fpcM_ERROR_PROCESS_ID_e=-1;
+daAlink_c* liveLink=nullptr;
+int fopAcM_GetID(daAlink_c*){return 42;}
+Actor* fopAcM_SearchByID(int id){return id==42?liveLink:nullptr;}
+int fopAcM_GetName(Actor* actor){return actor==liveLink?fpcNm_ALINK_e:0;}
 struct ModContext {};
 namespace mods {template<class T>T arg(void* p,int){return static_cast<T>(p);}}
 struct {bool attached=true,retiring=false;} s_jumpAbilities;
@@ -68,12 +74,14 @@ bool aerial_glide_context(daAlink_c* l){return l->airborne;}
 Actor* glide_actor(){return live?&owned:nullptr;}
 // HANDS
 
-struct Packet {Vec origin;float sine=0,cosine=1;struct {u8 r,g,b,a;} color;bool active=false;} s_glider;
+struct Packet {int ownerId=-1;Vec origin;float sine=0,cosine=1;struct {u8 r,g,b,a;} color;bool active=false;} s_glider;
 struct List {int entries=0;void entryImm(Packet*,int){++entries;}} list;
 List* dComIfGd_getOpaList(){return &list;}
 using LookupPresentationMatrix=bool (*)(const void*,Mtx);
 LookupPresentationMatrix s_lookupPresentationMatrix=nullptr;
 // PRESENTED_MATRIX
+// PREPARE
+// CLEAR
 // QUEUE
 
 Model* sampledModel=nullptr;
@@ -90,7 +98,11 @@ void yawMatrix(Mtx m,float angle){
 }
 bool near(float a,float b){return std::abs(a-b)<0.001f;}
 int main(){
-    daAlink_c link;sampledModel=&link.body;s_lookupPresentationMatrix=lookup;
+    daAlink_c link;liveLink=&link;sampledModel=&link.body;s_lookupPresentationMatrix=lookup;
+    // Link's actor draw runs ONCE, outside presentation. The retained packet
+    // must resample each later render without queueing/re-running Link::draw.
+    interpolation=false;queue_glider_visual(&link);assert(list.entries==1);
+    interpolation=true;
     yawMatrix(link.body.joints[0],0);
     for(int i=1;i<3;++i){yawMatrix(link.body.joints[i],0);link.body.joints[i][0][3]=100+(i==1?-22:22);link.body.joints[i][1][3]=80;}
     // Distinct wrist and grip points: the canopy must follow the latter.
@@ -98,12 +110,13 @@ int main(){
     for(float t:{0.f,.25f,.5f,.75f,1.f}){
         for(int i=0;i<5;++i)MTXCopy(link.body.joints[i],replacements[i]);
         for(int i=1;i<5;++i)replacements[i][0][3]-=20*(1-t);
-        queue_glider_visual(&link);
+        assert(prepare_glider_draw());
+        assert(list.entries==1);
         assert(near(s_glider.origin.x,80+20*t)&&near(s_glider.origin.y,89)&&near(s_glider.origin.z,-3));
     }
     // No interpolation/history (including first frame): use current joints.
-    interpolation=false;queue_glider_visual(&link);assert(near(s_glider.origin.x,100)&&near(s_glider.origin.y,89));
-    s_lookupPresentationMatrix=nullptr;queue_glider_visual(&link);assert(near(s_glider.origin.x,100)&&near(s_glider.origin.y,89));
+    interpolation=false;assert(prepare_glider_draw());assert(near(s_glider.origin.x,100)&&near(s_glider.origin.y,89));
+    s_lookupPresentationMatrix=nullptr;assert(prepare_glider_draw());assert(near(s_glider.origin.x,100)&&near(s_glider.origin.y,89));
     s_lookupPresentationMatrix=lookup;interpolation=true;
     // Turn through the signed-angle boundary: presented facing is still -Z,
     // not an unrelated half-turn or the latest simulation yaw.
@@ -111,15 +124,17 @@ int main(){
     link.shape_angle.y=-32000;
     yawMatrix(link.body.joints[0],link.shape_angle.y*pi/32768);
     yawMatrix(replacements[0],pi);
-    queue_glider_visual(&link);assert(near(s_glider.sine,0)&&near(s_glider.cosine,-1));
+    assert(prepare_glider_draw());assert(near(s_glider.sine,0)&&near(s_glider.cosine,-1));
     // Root animation may point a basis vector vertically; use the full rotation.
     yawMatrix(link.body.joints[0],0);
     std::swap(link.body.joints[0][1][1],link.body.joints[0][1][2]);
     std::swap(link.body.joints[0][2][1],link.body.joints[0][2][2]);
     link.body.joints[0][2][1]=-1;
     MTXCopy(link.body.joints[0],replacements[0]);link.shape_angle.y=0;
-    queue_glider_visual(&link);assert(near(s_glider.sine,0)&&near(s_glider.cosine,1));
-    int entries=list.entries;link.hidden=true;queue_glider_visual(&link);assert(entries==list.entries);link.hidden=false;
+    assert(prepare_glider_draw());assert(near(s_glider.sine,0)&&near(s_glider.cosine,1));
+    int entries=list.entries;link.hidden=true;assert(!prepare_glider_draw());assert(entries==list.entries);link.hidden=false;
+    liveLink=nullptr;assert(!prepare_glider_draw());liveLink=&link;
+    clear_glider_visual();assert(!prepare_glider_draw());assert(s_glider.ownerId==-1);
 
     link.nativeOpenHands();after_glider_draw_hand(nullptr,&link,nullptr,nullptr);
     assert(link.field_0x06d0==&link.hands.data.materials[0].shape);
@@ -148,10 +163,12 @@ int main(){
 '''
 fixture = fixture.replace('// HANDS', presentation[:presentation.index('HookAction before_glide_carrier_draw')])
 fixture = fixture.replace('// PRESENTED_MATRIX', function(visual, 'void presented_matrix'))
+fixture = fixture.replace('// PREPARE', function(visual, 'bool prepare_glider_draw'))
+fixture = fixture.replace('// CLEAR', function(visual, 'void clear_glider_visual'))
 fixture = fixture.replace('// QUEUE', function(visual, 'void queue_glider_visual'))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp)/'test.cpp', Path(tmp)/'test'
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Glider presentation passed: intermediate hand poses, turning, fallback, grip shapes and cleanup')
+print('Glider presentation passed: retained packet across renders, grip anchors, turning, fallback and cleanup')

@@ -29,11 +29,15 @@ same mesh and texture (GX RGB565, seven mip levels) directly in the mod binary;
 no room archive or external installation is required.
 
 The runtime uses a native J3D draw packet/GX textured mesh, as the custom Shade
-pedestal does, rather than requiring a BMD exporter. Each draw samples Link's
+pedestal does, rather than requiring a BMD exporter. Each packet render samples Link's
 presented sword/shield attachment matrices and root rotation so the canopy follows
 the same interpolation as the player and camera. The grip midpoint uses the item
 joints inside the palms, not the wrist joints. The host matrix lookup is resolved
 through the symbol manifest, with a logged simulation-pose fallback if absent.
+Link's actor draw only queues the packet during simulation updates; `fpcLf_Draw`
+skips that actor on intermediate frames. Pose sampling therefore happens inside
+the retained packet's `draw()`, when presentation replacements are active. The
+packet keeps an actor ID and resolves it at render time, avoiding stale pointers.
 While the custom glider is attached, a post-hook on `setDrawHand` selects Link's
 native sword/shield grip shapes (materials 0/6). The next native hand draw restores
 the normal shapes after landing or switching items. The overhead arm animation

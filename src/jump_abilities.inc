@@ -3,13 +3,14 @@
 #include "jump_gale_visual.inc"
 
 constexpr ActorId kNoGlideActor = fpcM_ERROR_PROCESS_ID_e;
-enum class GaleCharge { Idle, Holding, Ready };
+enum class GaleCharge { Idle, Airborne, Ready };
 struct JumpAbilities {
     daAlink_c* owner = nullptr;
     ActorId ownerId = kNoGlideActor;
     ActorId cucco = kNoGlideActor;
     GaleCharge charge = GaleCharge::Idle;
-    int chargeTicks = 0;
+    float launchSpeed = 0.0f;
+    s16 launchAngle = 0;
     int loadTicks = 0;
     bool attached = false;
     bool retiring = false;
@@ -139,7 +140,8 @@ void update_glide(daAlink_c* link) {
 void cancel_gale_charge(daAlink_c* link, bool restorePose) {
     const bool wasReady = s_jumpAbilities.charge == GaleCharge::Ready;
     s_jumpAbilities.charge = GaleCharge::Idle;
-    s_jumpAbilities.chargeTicks = 0;
+    s_jumpAbilities.launchSpeed = 0.0f;
+    s_jumpAbilities.launchAngle = 0;
     if (restorePose && wasReady && owns_jump_abilities(link) && link->mProcID == daAlink_c::PROC_CROUCH)
         link->procWaitInit();
 }
@@ -151,28 +153,46 @@ void reset_jump_abilities(daAlink_c* link) {
     s_jumpAbilities.owner = nullptr;
     s_jumpAbilities.ownerId = kNoGlideActor;
     s_jumpAbilities.handled = false;
-    s_deferredJumpTrigger = false;
 }
 
-bool gale_standing_context(daAlink_c* link) {
-    const bool crouched = s_jumpAbilities.charge == GaleCharge::Ready &&
-        link->mProcID == daAlink_c::PROC_CROUCH;
-    return !link->checkInputOnR() && std::fabs(link->mNormalSpeed) < 0.1f &&
-        !link->checkWolf() && link->mLinkAcch.ChkGroundHit() &&
-        !link->checkEventRun() && !dComIfGp_event_runCheck() && !dComIfGp_isEnableNextStage() &&
-        !link->checkMagneBootsOn() && !link->mGrabItemAcKeep.getActor() &&
-        !link->checkPlayerDemoMode() && !link->getSumouMode() && !r_action_context_active(link) &&
-        ((link->mProcID == daAlink_c::PROC_WAIT && ground_jump_context_ready(link)) || crouched);
+bool gale_context_ready(daAlink_c* link) {
+    return !link->checkWolf() && !link->checkEventRun() &&
+        !dComIfGp_event_runCheck() && !dComIfGp_isEnableNextStage() &&
+        !link->checkMagneBootsOn() && !link->checkModeFlg(daAlink_c::MODE_SWIMMING) &&
+        !link->mGrabItemAcKeep.getActor() && s_jumpAbilities.cucco == kNoGlideActor &&
+        !link->checkPlayerDemoMode() && !link->getSumouMode() && !r_action_context_active(link);
+}
+
+bool gale_landing_proc(u16 proc) {
+    return proc == daAlink_c::PROC_AUTO_JUMP || proc == daAlink_c::PROC_FALL ||
+        proc == daAlink_c::PROC_LAND;
+}
+
+void stop_for_gale(daAlink_c* link) {
+    link->mNormalSpeed = 0.0f;
+    link->speedF = 0.0f;
+    link->speed.set(0.0f, 0.0f, 0.0f);
+    link->shape_angle.y = s_jumpAbilities.launchAngle;
+    link->current.angle.y = s_jumpAbilities.launchAngle;
 }
 
 bool launch_gale(daAlink_c* link) {
     const cXyz origin = link->current.pos;
+    const float launchSpeed = s_jumpAbilities.launchSpeed;
+    const s16 launchAngle = s_jumpAbilities.launchAngle;
     cancel_gale_charge(link, false);
     if (!link->procAutoJumpInit(1)) {
         if (link->mProcID == daAlink_c::PROC_CROUCH) link->procWaitInit();
         return false;
     }
     apply_manual_jump_movement(link);
+    // Restore the actual ground speed captured BEFORE the first jump resets it.
+    // Do not recalculate from the stick or sprint toggle after waiting in crouch.
+    link->mNormalSpeed = launchSpeed;
+    link->speedF = launchSpeed;
+    link->mMaxSpeed = std::max(link->mMaxSpeed, launchSpeed);
+    link->shape_angle.y = launchAngle;
+    link->current.angle.y = launchAngle;
     apply_manual_jump_height(link, 4.0f * jump_height_multiplier());
     s_manualJumpOwner = link;
     mark_manual_jump_started(link);
@@ -184,33 +204,47 @@ bool handle_jump_abilities(daAlink_c* link) {
     if (!owns_jump_abilities(link) || s_jumpAbilities.handled) return false;
     s_jumpAbilities.handled = true;
     if (s_jumpAbilities.charge != GaleCharge::Idle) {
-        if (!revalis_gale_enabled() || !gale_standing_context(link)) {
+        if (!revalis_gale_enabled() || !gale_context_ready(link)) {
             cancel_gale_charge(link, true);
             return false;
         }
-        if (!jump_held(active_jump_binding())) {
-            if (s_jumpAbilities.charge == GaleCharge::Ready) return launch_gale(link);
+        if (s_jumpAbilities.charge == GaleCharge::Ready) {
+            if (link->mProcID != daAlink_c::PROC_CROUCH || !link->mLinkAcch.ChkGroundHit()) {
+                cancel_gale_charge(link, true);
+                return false;
+            }
+            if (!jump_held(active_jump_binding())) return launch_gale(link);
+            stop_for_gale(link);
+            return true;
+        }
+        if (!jump_held(active_jump_binding()) || !gale_landing_proc(link->mProcID)) {
+            // Releasing in the first jump only cancels Gale. There is no delayed
+            // normal jump and no extra airborne launch.
             cancel_gale_charge(link, false);
-            // Only stationary presses are deferred. Keep the normal jump's
-            // checks, direction, height and sprint/Bullet Time handling.
-            s_deferredJumpTrigger = true;
-            const bool jumped = start_ground_jump(link);
-            s_deferredJumpTrigger = false;
-            return jumped;
+            return false;
         }
-        if (s_jumpAbilities.charge == GaleCharge::Holding && ++s_jumpAbilities.chargeTicks >= 60) {
-            s_jumpAbilities.charge = GaleCharge::Ready;
-            if (!link->procCrouchInit()) cancel_gale_charge(link, false);
-            else s_galeVisual.prepare();
+        if (!link->mLinkAcch.ChkGroundHit()) return false;
+        s_jumpAbilities.charge = GaleCharge::Ready;
+        if (!link->procCrouchInit()) {
+            cancel_gale_charge(link, false);
+            return false;
         }
+        stop_for_gale(link);
+        s_galeVisual.prepare();
         return true;
     }
     if (!jump_pressed(active_jump_binding())) return false;
-    if (revalis_gale_enabled() && gale_standing_context(link) &&
+    if (revalis_gale_enabled() && gale_context_ready(link) && ground_jump_context_ready(link) &&
         !mDoCPd_c::getHoldB(PAD_1) && !mDoCPd_c::getTrigB(PAD_1))
     {
-        s_jumpAbilities.charge = GaleCharge::Holding;
-        s_jumpAbilities.chargeTicks = 0;
+        const float launchSpeed = std::max(0.0f, link->mNormalSpeed);
+        const s16 launchAngle = link->checkInputOnR() ? link->mMoveAngle : link->shape_angle.y;
+        if (!start_ground_jump(link)) return false;
+        if (link->mProcID == daAlink_c::PROC_AUTO_JUMP) {
+            s_jumpAbilities.charge = GaleCharge::Airborne;
+            s_jumpAbilities.launchSpeed = launchSpeed;
+            s_jumpAbilities.launchAngle = launchAngle;
+        }
         return true;
     }
     if (glide_enabled() && aerial_glide_context(link)) {
@@ -222,8 +256,9 @@ bool handle_jump_abilities(daAlink_c* link) {
 
 void jump_abilities_proc_change(daAlink_c* link, daAlink_c::daAlink_PROC nextProc) {
     if (!owns_jump_abilities(link)) return;
-    if (nextProc != daAlink_c::PROC_WAIT && nextProc != daAlink_c::PROC_CROUCH)
-        cancel_gale_charge(link, false);
+    const bool continuingJump = s_jumpAbilities.charge == GaleCharge::Airborne && gale_landing_proc(nextProc);
+    const bool enteringCrouch = s_jumpAbilities.charge == GaleCharge::Ready && nextProc == daAlink_c::PROC_CROUCH;
+    if (!continuingJump && !enteringCrouch) cancel_gale_charge(link, false);
     if (nextProc != daAlink_c::PROC_AUTO_JUMP && nextProc != daAlink_c::PROC_FALL)
         retire_glide_actor(link);
 }

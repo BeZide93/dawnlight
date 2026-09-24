@@ -37,11 +37,13 @@ aiming, boss, and HUD features for Twilight Princess.
   from 100% (the original height and default) to 500%.
 - Optional **Glide**: press ZR in the air to deploy a Cucco using native gliding,
   during manual jumps or ordinary falls. Landing removes the summoned Cucco.
-- Optional **Revali's Gale**: stand still and hold ZR for two seconds until Link
-  crouches, then release to jump four times the configured Jump Height with the
-  native Gale Boomerang tornado. With Gale enabled, a short stationary ZR tap
-  performs R Jump on release; moving jumps remain immediate. Glide and Gale work
-  independently of the R Jump toggle. Both new abilities default to disabled.
+- Optional **Revali's Gale**: ZR immediately performs a normal jump, including
+  while running or sprinting. Keep ZR held through landing to stop and crouch;
+  release to launch with the saved pre-jump speed/direction and four times the
+  configured Jump Height, accompanied by the native Gale Boomerang tornado.
+  There is no timed charge. Releasing before landing leaves the normal jump.
+  Gale also enables the initial ZR jump when R Jump is off; Glide is independent.
+  Both new abilities default to disabled.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
 - Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
   faster tracking, and selected profile-specific mechanics.

@@ -46,7 +46,6 @@ const daAlink_c* s_manualJumpOwner = nullptr;
 daAlink_c* s_slowSpeedOwner = nullptr;
 float s_previousNormalSpeed = 0.0f;
 daAlink_c* s_sprintOwner = nullptr;
-bool s_deferredJumpTrigger = false;
 
 JumpBinding active_jump_binding() {
     return JumpBinding::LockR;
@@ -55,7 +54,7 @@ JumpBinding active_jump_binding() {
 bool jump_pressed(JumpBinding binding) {
     switch (binding) {
     case JumpBinding::LockR:
-        return s_deferredJumpTrigger || mDoCPd_c::getTrigLockR(PAD_1) != 0;
+        return mDoCPd_c::getTrigLockR(PAD_1) != 0;
     }
     return false;
 }
@@ -197,7 +196,8 @@ bool ground_jump_context_ready(daAlink_c* link) {
 }
 
 bool jump_state_ready(daAlink_c* link) {
-    return r_jump_enabled() && jump_pressed(active_jump_binding()) && ground_jump_context_ready(link);
+    return (r_jump_enabled() || revalis_gale_enabled()) && jump_pressed(active_jump_binding()) &&
+        ground_jump_context_ready(link);
 }
 
 void apply_manual_jump_height(daAlink_c* link, float heightMultiplier) {

@@ -112,6 +112,11 @@ missed progression toasts are not replayed when notifications are enabled.
   To customize the three textures through Dusklight's **Texture Replacements**,
   use the source PNGs and filenames in the
   [glider texture guide](art/glider/README.md#replacing-the-texture-without-rebuilding).
+- **Custom glider replacement:** see
+  [DawnlightCustomGlider](https://github.com/BeZide93/DawnlightCustomGlider)
+  for an example of replacing the Glider model and its embedded textures with
+  a separate `.dusk` overlay mod. Enable it alongside Dawnlight and restart the
+  game. The repository also includes editable model and texture source files.
 - Optional **Revali's Gale**: ZR immediately performs a normal jump, including
   while running or sprinting. Keep ZR held through landing to stop and crouch;
   stay crouched for at least one second, then release to launch with the saved

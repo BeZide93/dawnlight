@@ -7,6 +7,7 @@ struct GaleVisual {
     mDoExt_btkAnm texture;
     cXyz origin{0, 0, 0};
     int ticks = 0;
+    bool readyLoop = false;
     bool failed = false;
 
     bool prepare() {
@@ -36,6 +37,7 @@ struct GaleVisual {
         return false;
     }
     void launch(const cXyz& position) {
+        stop_ready();
         origin = position;
         if (prepare()) {
             ticks = 60;
@@ -43,19 +45,34 @@ struct GaleVisual {
             texture.setFrame(0);
         }
     }
+    void hold_ready(const cXyz& position) {
+        origin = position;
+        if (readyLoop || !prepare()) return;
+        readyLoop = true;
+        ticks = 0;
+        motion.setFrame(0);
+        texture.setFrame(0);
+        Z2GetAudioMgr()->seStartLevel(Z2SE_BOOM_TORNADO, &origin, 0, 0, 1, 1, -1, -1, 0);
+    }
+    void stop_ready() {
+        readyLoop = false;
+    }
     void update() {
-        if (ticks <= 0) return;
-        --ticks;
+        if (!readyLoop && ticks <= 0) return;
+        if (!readyLoop) --ticks;
         motion.play();
         texture.play();
         Z2GetAudioMgr()->seStartLevel(Z2SE_BOOM_TORNADO, &origin, 0, 0, 1, 1, -1, -1, 0);
     }
     void draw(daAlink_c* link) {
-        if (!model || ticks <= 0) return;
-        const float fade = std::min(1.0f, ticks / 15.0f);
-        const cXyz scale(2.0f * fade, 2.5f * fade, 2.0f * fade);
+        if (!model || (!readyLoop && ticks <= 0)) return;
+        const float fade = readyLoop ? 1.0f : std::min(1.0f, ticks / 15.0f);
+        // Compress the launch tornado vertically by 25x, keeping its foot at
+        // ground level. Its native looping BCK/BTK and level sound keep running.
+        const float height = readyLoop ? 0.1f : 2.5f;
+        const cXyz scale(2.0f * fade, height * fade, 2.0f * fade);
         model->setBaseScale(scale);
-        mDoMtx_stack_c::transS(origin.x, origin.y + 150.0f * fade, origin.z);
+        mDoMtx_stack_c::transS(origin.x, origin.y + 60.0f * height * fade, origin.z);
         model->setBaseTRMtx(mDoMtx_stack_c::get());
         auto* data = model->getModelData();
         // The real boomerang installs an actor-dependent joint callback on
@@ -81,6 +98,7 @@ struct GaleVisual {
             data->getJointNodePointer(i)->setCallBack(callbacks[i]);
     }
     void release() {
+        stop_ready();
         ticks = 0;
         model = nullptr;
         if (heap) mDoExt_destroySolidHeap(heap);

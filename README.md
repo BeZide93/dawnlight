@@ -58,6 +58,8 @@ aiming, boss, and HUD features for Twilight Princess.
   Height plus 500% Gale Height gives 700% total height.
   Releasing before landing or before the full second in crouch cancels Gale
   without spending a charge. Time spent in the initial jump does not count.
+  After one second, a flattened Gale tornado loops at Link's feet with wind
+  audio until release. Cancelling the charge also stops this readiness cue.
   Gale also enables the initial ZR jump when R Jump is off; Glide is independent.
   Both new abilities default to disabled.
 - Gale uses three charges by default. **Gale Charges** adjusts capacity (1–12),
@@ -66,7 +68,8 @@ aiming, boss, and HUD features for Twilight Princess.
   pending recharge. Recovery uses elapsed real time, including menus, cutscenes
   and scene transitions. The state lasts for the session, without save-file data.
 - **Gale Counter** toggles only the display: native Epona sprint icons beneath
-  the Fierce Deity bar, with full and spent charges. **Custom Gale Counter** in
+  the Fierce Deity bar, with full and spent charges aligned at the bars' left
+  anchor. **Custom Gale Counter** in
   the HUD Editor adjusts X/Y offsets and scale relative to that default anchor.
   Empty charges block Gale, while the initial normal ZR jump remains available.
 - Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.

@@ -20,6 +20,8 @@
 #include "mods/svc/hook.hpp"
 
 #include <chrono>
+#include <algorithm>
+#include <limits>
 
 namespace dawnlight {
 namespace {
@@ -31,6 +33,25 @@ void update_charges() {
     const double now = std::chrono::duration<double>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     s_charges.update(now, gale_counter_capacity(), gale_recovery_seconds());
+}
+
+void include_icon_left(CPaneMgr* manager, J2DPane* pane, float& left) {
+    if (!pane || !pane->isVisible()) return;
+    // haku_n/haku_b_n are layout containers, not the left edge of the icon.
+    // Their picture children extend left of that anchor. Align the artwork.
+    if (pane->getTypeID() == 18) { // J2DPicture (including J2DPictureEx)
+        Mtx matrix;
+        for (u8 corner = 0; corner < 4; ++corner)
+            left = std::min(left, manager->getGlobalVtx(pane, &matrix, corner, false, 0).x);
+    }
+    for (auto* child = pane->getFirstChildPane(); child; child = child->getNextChildPane())
+        include_icon_left(manager, child, left);
+}
+
+float icon_left(CPaneMgr* pane, float fallback) {
+    float left = std::numeric_limits<float>::max();
+    include_icon_left(pane, pane->getPanePtr(), left);
+    return left == std::numeric_limits<float>::max() ? fallback : left;
 }
 
 struct CounterVisual {
@@ -90,7 +111,7 @@ struct CounterVisual {
             pane->translate(0, 0);
             Mtx matrix;
             const Vec corner = pane->getGlobalVtx(&matrix, 0, false, 0);
-            pane->translate(x + i * 32.0f * scale - corner.x, y - corner.y);
+            pane->translate(x + i * 32.0f * scale - icon_left(pane, corner.x), y - corner.y);
             screen->draw(0, 0, graf);
         }
     }

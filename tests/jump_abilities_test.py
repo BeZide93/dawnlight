@@ -89,7 +89,11 @@ int create_standalone_actor(int profile,const ActorSpawnParams& p,int& id){
 struct Service {int delete_actor(void*,int id){assert(id==cucco.id);++deletes;if(!deleteOk)return 1;live=false;return MOD_OK;}} service;
 auto* svc_actor=&service;void* mod_ctx=nullptr;
 void clear_glider_visual() {}
-struct Visual {int launches=0;void release(){}void prepare(){}void launch(const cXyz&){++launches;}} s_galeVisual;
+struct Visual {
+ int launches=0;bool ready=false;
+ void stop_ready(){ready=false;} void release(){stop_ready();} void prepare(){}
+ void hold_ready(const cXyz&){ready=true;} void launch(const cXyz&){stop_ready();++launches;}
+} s_galeVisual;
 daAlink_c* s_manualJumpOwner=nullptr;
 int active_jump_binding(){return 0;}bool jump_pressed(int){return pressed;}bool jump_held(int){return held;}
 namespace mDoCPd_c {bool getHoldB(int){return bPressed;}bool getTrigB(int){return bPressed;}}
@@ -112,7 +116,7 @@ void close(float a,float b){assert(std::fabs(a-b)<0.001f);}
 void setup(daAlink_c& l){
  charges=3;l=daAlink_c{};l.id=1;s_jumpAbilities=JumpAbilities{};s_jumpAbilities.owner=&l;s_jumpAbilities.ownerId=l.id;
  glide=gale=event=stage=pressed=held=bPressed=creating=live=busy=false;
- glideStamina=true;staminaGliding=false;
+ glideStamina=true;staminaGliding=false;s_galeVisual=Visual{};
  cancelOk=deleteOk=spawnOk=rjump=true;g_fpcCtTg_Queue.mpHead=&tag;heightPercent=100;galePercent=500;
 }
 bool tick(daAlink_c& l,bool trigger,bool hold){s_jumpAbilities.handled=false;pressed=trigger;held=hold;return handle_jump_abilities(&l);}
@@ -158,9 +162,10 @@ int main(){
   for(int i=0;i<airtime;++i){assert(!tick(l,false,true));assert(s_jumpAbilities.charge==GaleCharge::Airborne);}
   land(l);assert(s_jumpAbilities.crouchTicks==0);
   hold_crouch(l,releaseTick-1);
+  assert(s_galeVisual.ready==(releaseTick>30));
   const bool ready=releaseTick>=30;
   assert(tick(l,false,false)==ready);
-  assert(l.launches==(ready?2:1));assert(charges==(ready?2:3));
+  assert(l.launches==(ready?2:1));assert(charges==(ready?2:3));assert(!s_galeVisual.ready);
   assert(s_jumpAbilities.charge==GaleCharge::Idle&&s_jumpAbilities.crouchTicks==0);
   if(!ready){assert(l.mProcID==daAlink_c::PROC_WAIT);assert(!tick(l,false,true));}
  }
@@ -179,9 +184,9 @@ int main(){
   assert(s_jumpAbilities.charge==GaleCharge::Idle); // The Gale launch must not arm itself again.
  }
  for(int scenario=0;scenario<7;++scenario){
-  setup(l);charge(l);
+  setup(l);charge(l);hold_crouch(l,1);assert(s_galeVisual.ready);
   switch(scenario){case 0:gale=false;break;case 1:l.swim=true;break;case 2:event=true;break;case 3:stage=true;break;case 4:l.wolf=true;break;case 5:l.action=true;break;case 6:l.mLinkAcch.ground=false;break;}
-  assert(!tick(l,false,false));assert(s_jumpAbilities.charge==GaleCharge::Idle);assert(l.launches==1);assert(l.mProcID==daAlink_c::PROC_WAIT);
+  assert(!tick(l,false,false));assert(!s_galeVisual.ready);assert(s_jumpAbilities.charge==GaleCharge::Idle);assert(l.launches==1);assert(l.mProcID==daAlink_c::PROC_WAIT);
  }
  setup(l);charge(l);jump_abilities_proc_change(&l,daAlink_c::PROC_DAMAGE);assert(s_jumpAbilities.charge==GaleCharge::Idle);
  setup(l);gale=true;assert(tick(l,true,true));jump_abilities_proc_change(&l,daAlink_c::PROC_FALL);assert(s_jumpAbilities.charge==GaleCharge::Airborne);

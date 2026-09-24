@@ -146,6 +146,7 @@ void update_glide(daAlink_c* link) {
 }
 
 void cancel_gale_charge(daAlink_c* link, bool restorePose) {
+    s_galeVisual.stop_ready();
     const bool wasReady = s_jumpAbilities.charge == GaleCharge::Ready;
     s_jumpAbilities.charge = GaleCharge::Idle;
     s_jumpAbilities.crouchTicks = 0;
@@ -237,6 +238,8 @@ bool handle_jump_abilities(daAlink_c* link) {
                 return false;
             }
             stop_for_gale(link);
+            if (s_jumpAbilities.crouchTicks >= kGaleCrouchTicks)
+                s_galeVisual.hold_ready(link->current.pos);
             return true;
         }
         if (!jump_held(active_jump_binding()) || !gale_landing_proc(link->mProcID)) {

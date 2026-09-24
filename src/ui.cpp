@@ -397,6 +397,16 @@ ModResult build_general_tab(
             "free Ordona for Revali's Gale, and free Faron for Fierce Deity. Gale gains one charge "
             "per three full heart containers. Controlled settings are locked while On.")
         != MOD_OK) return MOD_ERROR;
+    if (add_section(ctx, left, "New Saves") != MOD_OK) return MOD_ERROR;
+    if (add_select(ctx, left, "New Save Mode", new_save_mode_config_var(),
+            kNewSaveModeOptions, std::size(kNewSaveModeOptions),
+            "Changes how newly created empty save slots are initialized. Vanilla keeps upstream "
+            "behavior, and Intro Skip starts after the Faron intro setup.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+
     return MOD_OK;
 }
 
@@ -718,16 +728,6 @@ ModResult build_hud_tab(
 
 ModResult build_gameplay_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
-    if (add_section(ctx, left, "New Saves") != MOD_OK) return MOD_ERROR;
-    if (add_select(ctx, left, "New Save Mode", new_save_mode_config_var(),
-            kNewSaveModeOptions, std::size(kNewSaveModeOptions),
-            "Changes how newly created empty save slots are initialized. Vanilla keeps upstream "
-            "behavior, and Intro Skip starts after the Faron intro setup.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Arrow Modes", arrow_modes_config_var(),
             "Press ZR while aiming the Bow to cycle Normal, Fire (2 arrows, +50% damage), "
@@ -771,19 +771,6 @@ ModResult build_gameplay_tab(
     }
     if (add_button(ctx, left, "SPAWN", spawn_selected_enemy) != MOD_OK) return MOD_ERROR;
 
-    if (add_section(ctx, left, "Compatibility") != MOD_OK) return MOD_ERROR;
-    if (add_toggle(ctx, left, "Save Compatibility Repairs", save_compatibility_config_var(),
-            "Repairs known Dawnlight save-state issues while loading or progressing saves.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    if (add_toggle(ctx, left, "Item Integrity Fixes", item_integrity_config_var(),
-            "Keeps bottle contents and item combinations from turning into invalid items.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
     return MOD_OK;
 }
 
@@ -815,19 +802,11 @@ ModResult build_hard_mode_tab(
 
     if (add_section(ctx, left, "Enemy Scaling") != MOD_OK) return MOD_ERROR;
     if (add_number(ctx, left, "HP Scaling", health_scale_config_var(), 1, 9999, 10, "%",
-            "Scales enemy health when enemies spawn. New Game Plus can raise the effective value "
-            "above this setting when automatic scaling is enabled.")
+            "Scales enemy health when enemies spawn.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "NG+ Auto HP Scaling", automatic_health_scale_config_var(),
-            "Applies Dawnlight's NG+ health floor based on the NG+ counter.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-
     return MOD_OK;
 }
 
@@ -940,19 +919,6 @@ ModResult build_models_tab(
     return MOD_OK;
 }
 
-ModResult build_deferred_tab(
-    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
-    if (add_section(ctx, left, "Waiting For Services") != MOD_OK) return MOD_ERROR;
-    if (add_text(ctx, left,
-            "New Game+ is not enabled in this upstream-main package yet because it needs a "
-            "source-save selection flow.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    return MOD_OK;
-}
-
 void settings_closed(ModContext*, UiWindowHandle, void*) {
     s_settingsWindow = 0;
 }
@@ -962,7 +928,7 @@ void open_settings(ModContext* ctx, void*) {
         return;
     }
 
-    std::array<UiTabDesc, 8> tabs{};
+    std::array<UiTabDesc, 7> tabs{};
     for (auto& tab : tabs) {
         tab = UI_TAB_DESC_INIT;
     }
@@ -980,8 +946,6 @@ void open_settings(ModContext* ctx, void*) {
     tabs[5].build = build_hard_mode_tab;
     tabs[6].title = "Models";
     tabs[6].build = build_models_tab;
-    tabs[7].title = "Deferred";
-    tabs[7].build = build_deferred_tab;
 
     UiWindowDesc desc = UI_WINDOW_DESC_INIT;
     desc.tabs = tabs.data();

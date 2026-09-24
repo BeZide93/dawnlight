@@ -10,7 +10,9 @@ aiming, boss, and HUD features for Twilight Princess.
 ## General settings
 
 The first tab in `Mod Manager -> Dawnlight -> Open Dawnlight Settings` is **General**.
-Both new options default to **Off**, preserving existing configurations.
+Dawnlight Mode and Progression System default to **Off**, preserving existing
+configurations. **New Save Mode** is also in General; it selects how new empty
+save slots are initialized.
 
 **Dawnlight Mode** applies the intended preset: Sprint at 150%, R Jump at 110%,
 Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode, 300% HP Scaling,
@@ -127,7 +129,7 @@ Disabling progression restores the corresponding personal settings.
   anchor. **Custom Gale Counter** in
   the HUD Editor adjusts X/Y offsets and scale relative to that default anchor.
   Empty charges block Gale, while the initial normal ZR jump remains available.
-- Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
+- Intro Skip new-save mode and enemy HP scaling.
 - Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
   faster tracking, and selected profile-specific mechanics.
 - Boss Rush Game Mode with the Garden of Twilight hub, individual boss portals,
@@ -225,8 +227,8 @@ spears, selected Stalhounds can immediately follow up a pounce, and Bokoblins,
 Lizalfos, and Dynalfos only suffer knockdown from every second normal combo
 finisher.
 
-Enemy HP scaling, NG+ HP scaling, and enemy damage scaling remain separate
-settings and can be combined freely with these options. See
+Enemy HP scaling and enemy damage scaling remain separate settings and can be
+combined freely with these options. See
 [ENEMY_HARD_MODE.md](ENEMY_HARD_MODE.md) for the complete enemy and boss profile
 list, exact multipliers, exclusions, and implementation details.
 

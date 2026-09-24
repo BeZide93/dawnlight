@@ -1,5 +1,28 @@
 # Dawnlight glider
 
+## Bundled default BMD
+
+`res/DawnlightGlider.bmd` is an exact copy of
+[`BeZide93/DawnlightCustomGlider`](https://github.com/BeZide93/DawnlightCustomGlider/tree/3d1cea0f4f6a8a66550fb8edd93f0f34976e0255)
+commit `3d1cea0f4f6a8a66550fb8edd93f0f34976e0255`, root file `DawnlightGlider.bmd`
+(927,520 bytes; SHA-256
+`c03615be7649b8e1bc53ddbeecb0775e801da007f4be48452a7fc3d4bd984aa9`).
+It includes the model, materials, and all seven mip levels of the Canvas, Wood,
+and Leather textures. The matching OBJ/MTL, PNGs, and material/export settings
+remain in that repository's `source/` directory; the Blender project is at its root.
+
+Normal builds package the BMD through `RES_DIR res`; no converter or download
+is required. Dawnlight loads an external DVD overlay first, then this private
+bundled resource if the overlay is absent or cannot load. Both gliding and the
+item-get animation use the selected BMD. The original generated GX mesh below
+is retained only as an emergency fallback if neither BMD can load.
+
+To update the default, copy the upstream BMD into `res/DawnlightGlider.bmd`,
+update this source revision/checksum, and verify its embedded textures. Running
+`tools/generate_glider.py` changes only the emergency mesh, not the default BMD.
+
+## Original emergency mesh
+
 Original Dawnlight mesh. The canopy artwork comes from the project logo supplied
 by the user (`1001012593.png`), with only the large Dawnlight title removed using
 the built-in image editor. The original image and runtime atlas are unchanged;
@@ -29,25 +52,26 @@ without new elements. No further image editing is needed for the UV enlargement.
 
 ## Replacing the texture without rebuilding
 
-1. Download `dawnlight-glider.png` from this directory and edit a copy. Keep the
-   square atlas layout: canopy rows 0–207, wood 208–231, leather 232–255.
-   A higher-resolution square PNG works too if every region scales proportionally.
-2. Name it **`tex1_256x256_500b43cdfd40fa52_4.png`**, even when using a larger
-   image. The filename identifies the original 256×256 RGB565 texture.
-3. Place it in **`<Dusklight user data>/texture_replacements/`**. This is the
-   host's data folder, not Dawnlight's `.dusk` archive or the game ISO.
-4. Enable Dusklight's **Texture Replacements** setting. Restart the game, or
-   switch the setting off and on to reload the directory after editing files.
+The default BMD has three separate textures. Download the matching PNG from
+[the pinned source directory](https://github.com/BeZide93/DawnlightCustomGlider/tree/3d1cea0f4f6a8a66550fb8edd93f0f34976e0255/source),
+edit a copy, and use the filename below:
 
-The mesh rotates the canopy art 180° and samples only source Y=10.8–63.5%; keep
-the emblem inside that range. Left/right background panels use different UV
-spacing to preserve the crest's proportions on the wide sail. Wood and leather
-use the bottom atlas strips separately. Changes affect both sides of the canvas.
+| Source PNG | Replacement filename |
+| --- | --- |
+| `Canvas.png` | `tex1_256x256_500b43cdfd40fa52_4.png` |
+| `Wood.png` | `tex1_512x256_36018d9e1ea9b592_4.png` |
+| `Leather.png` | `tex1_512x256_e11c67725590fd8d_4.png` |
 
-The hash above is XXH64 (seed 0) of the embedded, GX-tiled RGB565 **base mip**,
-not of the PNG file or the whole mip chain. It is specific to this artwork.
-Do not use a wildcard hash: it could replace unrelated 256×256 game textures.
-An enabled mod that replaces the same texture takes priority over this folder.
+Place the replacements in `<Dusklight user data>/texture_replacements/`, enable
+**Texture Replacements**, and restart or toggle that setting off/on to rescan.
+Preserve each image's layout and aspect ratio; higher-resolution replacements
+keep the same filename. Wood and leather now use their own textures, so editing
+the bottom strips of the old canopy atlas does not change the BMD's frame/grips.
+
+These hashes are XXH64 (seed 0) of each GX-tiled RGB565 base mip. They are
+specific to the bundled BMD; external packs may have different texture hashes.
+The emergency mesh still uses the old `dawnlight-glider.png` atlas and its canopy
+hash. An enabled mod replacing the same texture takes priority over this folder.
 
 `python3 tools/generate_glider.py` regenerates the editable assets and
 `src/generated/glider_art.hpp`. This developer tool needs Pillow. Normal builds
@@ -55,7 +79,7 @@ need neither Pillow nor a model converter. The checked-in header embeds the
 same mesh and texture (GX RGB565, seven mip levels) directly in the mod binary;
 no room archive or external installation is required.
 
-The built-in model uses a native J3D draw packet/GX textured mesh, as the custom Shade
+The emergency model uses a native J3D draw packet/GX textured mesh, as the custom Shade
 pedestal does, rather than requiring a BMD exporter. Each packet render samples Link's
 presented sword/shield attachment matrices and root rotation so the canopy follows
 the same interpolation as the player and camera. The grip midpoint uses the item
@@ -112,7 +136,7 @@ python3 tools/package_glider_model.py MyGlider.bmd MyGlider.dusk
 
 Install and enable the resulting `.dusk` alongside Dawnlight, then restart the
 game. The packer uses only Python's standard library and preserves the BMD bytes.
-Use `--id your.unique.mod-id --name "My Glider"` for a separately named pack.
+Use `--id your.unique.mod_id --name "My Glider"` for a separately named pack.
 The archive contains `mod.json` and
 `overlay/res/Object/DawnlightGlider.bmd`; it contains no platform binary.
 Dusklight's normal overlay priority applies if multiple packs supply this path.
@@ -136,15 +160,16 @@ Model requirements:
 - Keep the same coordinate system for the full-size model; Dawnlight supplies
   translation, yaw, and reward scale. There is no per-pack transform setting.
 
-Without an overlay the built-in mesh is used. A failed file read, rejected
-container, or failed model creation logs a warning and keeps the built-in mesh.
+Without a usable overlay, the bundled DawnlightCustomGlider BMD is used. A failed
+file read, rejected container, or failed model creation logs a warning and tries
+the bundled BMD. Only a failure of that resource uses the emergency GX mesh.
 The file and native J3D allocations stay in a dedicated heap across room changes
 and are freed at mod shutdown. Opaque/translucent materials draw into private
 lists; the world lists, camera, and J3D state are restored after each packet.
 
 Runtime QA still needed with an exported replacement BMD: load a pack on each
 supported host, glide and turn at interpolated frame rates, acquire the Glider,
-change rooms, and restart after disabling the pack to verify the built-in fallback.
+change rooms, and restart after disabling the pack to verify the bundled BMD fallback.
 Automated tests cover container rejection, exact packaging, render-state isolation,
 and the existing attachment/presentation behavior; they do not run the game.
 

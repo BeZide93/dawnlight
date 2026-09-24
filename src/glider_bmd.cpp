@@ -7,10 +7,14 @@
 #include "JSystem/JKernel/JKRExpHeap.h"
 #include "d/d_kankyo.h"
 #include <dvd.h>
+#include "mods/svc/resource.h"
+#include <memory>
+#include <new>
 
 namespace dawnlight {
 namespace {
 JKRExpHeap* s_heap = nullptr;
+std::unique_ptr<u8[]> s_heapStorage;
 J3DModel* s_model = nullptr;
 J3DDrawBuffer* s_opaque = nullptr;
 J3DDrawBuffer* s_translucent = nullptr;
@@ -30,6 +34,66 @@ void release_model() {
     s_opaque = s_translucent = nullptr;
     if (s_heap) s_heap->destroy();
     s_heap = nullptr;
+    s_heapStorage.reset();
+}
+
+bool create_model_heap(u32 size) {
+    if (size < 32 || size > kGliderBmdMaxBytes) return false;
+    // J3D retains pointers into the BMD. Keep both outside room heaps, backed
+    // by host memory so loading the default model cannot exhaust the game heap.
+    const u32 heapSize = 8 * 1024 * 1024 + size * 4;
+    s_heapStorage.reset(new (std::nothrow) u8[heapSize + 31]);
+    if (!s_heapStorage) return false;
+    auto* memory = reinterpret_cast<void*>(
+        (reinterpret_cast<uintptr_t>(s_heapStorage.get()) + 31) & ~uintptr_t{31});
+    s_heap = JKRExpHeap::create(memory, heapSize, JKRHeap::getRootHeap(), false);
+    if (!s_heap) s_heapStorage.reset();
+    return s_heap != nullptr;
+}
+
+bool load_model(void* bytes, u32 size) {
+    if (!valid_glider_bmd(bytes, size)) return false;
+    auto* data = J3DModelLoaderDataBase::load(bytes, 0x59020010);
+    if (!data || !data->getJointNum() || !data->getShapeNum() || !data->getMaterialNum())
+        return false;
+    auto* model = JKR_NEW J3DModel();
+    if (!model || model->entryModelData(data, 0, 1) != kJ3DError_Success) return false;
+    s_opaque = JKR_NEW J3DDrawBuffer();
+    s_translucent = JKR_NEW J3DDrawBuffer();
+    if (!s_opaque || !s_translucent ||
+        s_opaque->allocBuffer(32) != kJ3DError_Success ||
+        s_translucent->allocBuffer(32) != kJ3DError_Success) return false;
+    s_translucent->setZSort();
+    s_model = model;
+    return true;
+}
+
+bool load_overlay_model(DVDFileInfo& file) {
+    const u32 size = file.length;
+    if (!create_model_heap(size)) return false;
+    CurrentHeap scope(s_heap);
+    const auto paddedSize = (size + 31) & ~31u;
+    auto* bytes = s_heap->alloc(paddedSize, 32);
+    return bytes && DVDReadPrio(&file, bytes, paddedSize, 0, 2) >= static_cast<s32>(size) &&
+           load_model(bytes, size);
+}
+
+bool load_bundled_model() {
+    ResourceBuffer buffer = RESOURCE_BUFFER_INIT;
+    if (svc_resource->load(mod_ctx, "DawnlightGlider.bmd", &buffer) != MOD_OK) return false;
+    bool loaded = false;
+    if (valid_glider_bmd(buffer.data, buffer.size) &&
+        create_model_heap(static_cast<u32>(buffer.size))) {
+        CurrentHeap scope(s_heap);
+        auto* bytes = s_heap->alloc(static_cast<u32>(buffer.size), 32);
+        if (bytes) {
+            std::memcpy(bytes, buffer.data, buffer.size);
+            loaded = load_model(bytes, static_cast<u32>(buffer.size));
+        }
+    }
+    // J3D uses the aligned heap copy, never the resource service's allocation.
+    svc_resource->free(mod_ctx, &buffer);
+    return loaded;
 }
 }
 
@@ -42,42 +106,24 @@ void prepare_glider_bmd() {
     if (svc_hook && svc_hook->resolve &&
         svc_hook->resolve(mod_ctx, "J3DModel::forgetMtx", &address, nullptr) == MOD_OK)
         s_forgetMatrices = reinterpret_cast<ForgetModelMatrices>(address);
-    // Called from the first actor queue, after overlays and the DVD are ready.
+    // Overlay packs take priority; the bundled BMD is private to Dawnlight's
+    // resources and cannot shadow a pack through DVD overlay ordering.
     DVDFileInfo file{};
-    if (!DVDOpen(kGliderBmdPath, &file)) return;
-    const auto size = file.length;
-    if (size >= 32 && size <= kGliderBmdMaxBytes) {
-        // Neither the file nor J3D's pointers into it may live in a room heap.
-        s_heap = JKRExpHeap::create(8 * 1024 * 1024 + size * 4, JKRHeap::getRootHeap(), false);
-        if (s_heap) {
-            CurrentHeap scope(s_heap);
-            const auto paddedSize = (size + 31) & ~31u;
-            auto* bytes = s_heap->alloc(paddedSize, 32);
-            if (bytes && DVDReadPrio(&file, bytes, paddedSize, 0, 2) >= static_cast<s32>(size) &&
-                valid_glider_bmd(bytes, size)) {
-                auto* data = J3DModelLoaderDataBase::load(bytes, 0x59020010);
-                if (data && data->getJointNum() && data->getShapeNum() && data->getMaterialNum()) {
-                    auto* model = JKR_NEW J3DModel();
-                    if (model && model->entryModelData(data, 0, 1) == kJ3DError_Success) {
-                        s_opaque = JKR_NEW J3DDrawBuffer();
-                        s_translucent = JKR_NEW J3DDrawBuffer();
-                        if (s_opaque && s_translucent &&
-                            s_opaque->allocBuffer(32) == kJ3DError_Success &&
-                            s_translucent->allocBuffer(32) == kJ3DError_Success) {
-                            s_translucent->setZSort();
-                            s_model = model;
-                        }
-                    }
-                }
-            }
+    if (DVDOpen(kGliderBmdPath, &file)) {
+        const bool loaded = load_overlay_model(file);
+        DVDClose(&file);
+        if (loaded) {
+            if (svc_log) svc_log->info(mod_ctx, "Glider BMD: loaded /res/Object/DawnlightGlider.bmd");
+            return;
         }
-    }
-    DVDClose(&file);
-    if (!s_model) {
         release_model();
-        if (svc_log) svc_log->warn(mod_ctx, "Glider BMD: failed to load; using the built-in model");
-    } else if (svc_log) {
-        svc_log->info(mod_ctx, "Glider BMD: loaded /res/Object/DawnlightGlider.bmd");
+        if (svc_log) svc_log->warn(mod_ctx, "Glider BMD: overlay failed; trying bundled model");
+    }
+    if (load_bundled_model()) {
+        if (svc_log) svc_log->info(mod_ctx, "Glider BMD: loaded bundled DawnlightCustomGlider model");
+    } else {
+        release_model();
+        if (svc_log) svc_log->warn(mod_ctx, "Glider BMD: bundled model failed; using emergency mesh");
     }
 }
 

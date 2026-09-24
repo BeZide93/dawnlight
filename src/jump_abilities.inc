@@ -21,6 +21,8 @@ struct JumpAbilities {
 };
 JumpAbilities s_jumpAbilities;
 
+void suppress_glide_carrier_feathers(ni_class* actor);
+
 bool owns_jump_abilities(daAlink_c* link) {
     return link && link == s_jumpAbilities.owner && fopAcM_GetID(link) == s_jumpAbilities.ownerId;
 }
@@ -49,6 +51,7 @@ void retire_glide_actor(daAlink_c* link) {
     }
     s_jumpAbilities.attached = false;
     if (actor) {
+        suppress_glide_carrier_feathers(static_cast<ni_class*>(actor));
         fopAcM_offDraw(actor);
         if (!svc_actor || svc_actor->delete_actor(mod_ctx, s_jumpAbilities.cucco) != MOD_OK) return;
     } else if (fpcM_IsCreating(s_jumpAbilities.cucco)) {

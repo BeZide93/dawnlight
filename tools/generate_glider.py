@@ -36,11 +36,18 @@ def mesh():
         return len(vertices)-1
     def triangle(a, b, c):
         faces.append((a,b,c))
-    def canopy(x, t):
-        # 20% narrower, tapered rear edge; peak above the grips drops from
-        # 83 to 56 units. Keep the grip positions fixed to Link's carrying pose.
+    def grip_anchor(x, t):
+        # Original sail endpoints: preserve the complete existing grip bows,
+        # including their attachment coordinates and Link's carrying pose.
         return (x * (82 + 18*t), 34 + 18 * (1-x*x) + 4*math.sin(t*math.pi),
                 (t-.5) * (80 - 12*abs(x)) + 8*abs(x))
+    def canopy(x, t):
+        # Match the icon's swept bow and pointed/scalloped trailing cloth.
+        # Keep the central 80-unit depth so the existing crest UVs stay round.
+        leading = 40 - 35*x*x
+        trailing = -40 + 36*x*x + 8*abs(math.sin(2*math.pi*x))
+        return (x*(94+6*t), 34+18*(1-x*x)+4*math.sin(t*math.pi),
+                trailing*(1-t)+leading*t)
     def canopy_uv(u, t):
         # The sail is roughly 200 units wide but only 80 deep. Give the central
         # crest more texture space in X so its circular outline stays round on
@@ -89,19 +96,23 @@ def mesh():
             beam(a,b,1.4)
     for t in (0,1):
         for i in range(16):
-            beam(canopy(i/8-1,t),canopy((i+1)/8-1,t),1.8)
+            beam(canopy(i/8-1,t),canopy((i+1)/8-1,t),3.2 if t else 1.2)
     # Longitudinal bows: each joins the REAR and FRONT of the sail, with
     # its own fore/aft leather grip. Keep the midpoint at the existing hand.
     # Z is forward; a 4-unit rise over 22 units gives a gentle ~10 degree rake.
     for side in (-1,1):
-        rear = [canopy(side*.36,0), (side*28,19,-25),
+        rear = [grip_anchor(side*.36,0), (side*28,19,-25),
                 (side*23,5,-16), (side*22,-2,-11)]
         front = [(side*22,2,11), (side*23,8,19), (side*28,23,31),
-                 canopy(side*.36,1)]
+                 grip_anchor(side*.36,1)]
         for path in (rear, front):
             for a,b in zip(path,path[1:]):
                 beam(a,b,2.0)
         beam((side*22,-2,-11),(side*22,2,11),2.7,True)
+    # Bridge the retained bows to the new sail without moving either grip.
+    for side in (-1,1):
+        for t in (0,1):
+            beam(grip_anchor(side*.36,t),canopy(side*.36,t),2.0)
     return vertices,faces
 
 

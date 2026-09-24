@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "gale_counter.hpp"
 #include "glider_visual.hpp"
+#include "glider_bmd.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
 
@@ -19,6 +20,7 @@
 #include "enemy_spawner.hpp"
 #include "f_pc/f_pc_create_req.h"
 #include "f_pc/f_pc_leaf.h"
+#include "f_pc/f_pc_method.h"
 #include "f_pc/f_pc_name.h"
 #include "JSystem/J3DGraphAnimator/J3DJoint.h"
 #include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
@@ -38,6 +40,11 @@ DEFINE_HOOK(&daAlink_c::draw, JumpAbilitiesDraw);
 DEFINE_HOOK(&daAlink_c::setDrawHand, GliderDrawHand);
 DEFINE_HOOK(&fpcLf_Delete, JumpAbilitiesDelete);
 DEFINE_HOOK(&fpcLf_Draw, GlideCarrierDraw);
+#if defined(__APPLE__)
+DEFINE_HOOK(&fpcMtd_Method, GlideCarrierExecute);
+#else
+DEFINE_HOOK(&fpcMtd_Execute, GlideCarrierExecute);
+#endif
 // MSVC cannot const-initialize metadata from these virtual member pointers.
 // Resolve the concrete implementations by name (receiver first in the ABI).
 DEFINE_HOOK_SYMBOL("Z2SoundObjSimple::startSound",
@@ -462,6 +469,7 @@ ModResult install_jump_hooks(ModError* error) {
     if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesDraw>(svc_hook, after_jump_abilities_draw);
     if (result == MOD_OK) result = mods::hook_add_post<GliderDrawHand>(svc_hook, after_glider_draw_hand);
     if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesDelete>(svc_hook, before_jump_abilities_delete);
+    if (result == MOD_OK) result = mods::hook_add_post<GlideCarrierExecute>(svc_hook, after_glide_carrier_execute);
     if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierDraw>(svc_hook, before_glide_carrier_draw);
     if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierSound>(svc_hook, before_glide_carrier_sound);
     if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierLevelSound>(svc_hook, before_glide_carrier_sound);
@@ -473,6 +481,7 @@ ModResult install_jump_hooks(ModError* error) {
 
 void shutdown_jump_hooks() {
     reset_jump_abilities(daAlink_getAlinkActorClass());
+    shutdown_glider_bmd();
 }
 
 }  // namespace dawnlight

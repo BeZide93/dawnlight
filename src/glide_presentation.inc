@@ -31,6 +31,37 @@ void after_glider_draw_hand(ModContext*, void* args, void*, void*) {
     right->show();
 }
 
+// Cucco feathers are independent particle draws, emitted by native actor
+// execute rather than draw. Keep its physics running and silence only the
+// owned carrier's emitter after each native tick (also before retirement).
+void suppress_glide_carrier_feathers(ni_class* actor) {
+    if (!actor || s_jumpAbilities.cucco == kNoGlideActor ||
+        fopAcM_GetID(actor) != s_jumpAbilities.cucco ||
+        (!s_jumpAbilities.retiring && glide_item() != GlideItem::Glider)) return;
+    if (auto* emitter = dComIfGp_particle_getEmitter(actor->mHaneEmitterID)) {
+        emitter->setRate(0.0f);
+        emitter->deleteAllParticle();
+        // Do not invalidate the emitter or leave StopEmit/StopDraw flags set:
+        // native hane_set restores its rate when switching back to Cucco.
+    }
+}
+
+void after_glide_carrier_execute(ModContext*, void* args, void*, void*) {
+    if (s_jumpAbilities.cucco == kNoGlideActor ||
+        (!s_jumpAbilities.retiring && glide_item() != GlideItem::Glider)) return;
+    auto* actor = static_cast<ni_class*>(glide_actor());
+    if (!actor || mods::arg<void*>(args, 1) != actor || !actor->sub_method) return;
+    const auto* methods = reinterpret_cast<const process_method_class*>(actor->sub_method);
+#if defined(__APPLE__)
+    const bool executing = mods::arg<process_method_func>(args, 0) == methods->execute_method;
+#else
+    const bool executing = mods::arg<const process_method_class*>(args, 0) == methods;
+#endif
+    // The process dispatcher also handles deletion/creation on some hosts.
+    // Never inspect a deleted process or touch unrelated actors' emitters.
+    if (executing) suppress_glide_carrier_feathers(actor);
+}
+
 HookAction before_glide_carrier_draw(ModContext*, void* args, void* result, void*) {
     auto* process = mods::arg<leafdraw_class*>(args, 0);
     if (process && s_jumpAbilities.cucco != kNoGlideActor &&

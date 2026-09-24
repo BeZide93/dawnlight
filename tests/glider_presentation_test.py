@@ -69,6 +69,7 @@ int fopAcM_GetID(daAlink_c*){return 42;}
 Actor* fopAcM_SearchByID(int id){if(id==43&&rewardAlive)return &rewardItem;return id==42?liveLink:nullptr;}
 daAlink_c* daAlink_getAlinkActorClass(){return liveLink;}
 int fopAcM_GetName(Actor* actor){return actor==liveLink?fpcNm_ALINK_e:actor==&rewardItem?fpcNm_Demo_Item_e:0;}
+void prepare_glider_bmd() {}
 struct ModContext {};
 namespace mods {template<class T>T arg(void* p,int){return static_cast<T>(p);}}
 struct {bool attached=true,retiring=false;} s_jumpAbilities;
@@ -228,7 +229,7 @@ int main(){
     assert(!custom_glider_active(nullptr));
 }
 '''
-fixture = fixture.replace('// HANDS', presentation[:presentation.index('HookAction before_glide_carrier_draw')])
+fixture = fixture.replace('// HANDS', '\n'.join(function(presentation, signature) for signature in ('bool custom_glider_active', 'void after_glider_draw_hand')))
 fixture = fixture.replace('// QUEUE_ONCE', function(visual, 'void queue_glider_packet'))
 fixture = fixture.replace('// PRESENTED_MATRIX', function(visual, 'void presented_matrix'))
 fixture = fixture.replace('// PREPARE', function(visual, 'bool prepare_glider_pose') + '\n' + function(visual, 'bool prepare_glider_draw'))

@@ -30,6 +30,9 @@ struct cXyz {float x=0,y=0,z=0; cXyz()=default;cXyz(float a,float b,float c):x(a
  cXyz operator+(const cXyz& b)const{return {x+b.x,y+b.y,z+b.z};}};
 struct Angles {int x=0,y=0,z=0;};
 struct fopAc_ac_c {int id=42,profile=fpcNm_NI_e;struct Pos {cXyz pos;Angles angle;} current,old;};
+using ni_class=fopAc_ac_c;
+int featherCleanups=0;
+void suppress_glide_carrier_feathers(ni_class*){++featherCleanups;}
 struct Hio {struct {struct {float mGravity=-3.4f,mMaxFallSpeed=-100,mCuccoJumpMaxSpeed=20,mCuccoFallMaxSpeed=-7;} m;} mAutoJump;} hio;
 bool glide=false,gale=false,event=false,stage=false,pressed=false,held=false,bPressed=false,rjump=true;
 bool glideStamina=true,staminaGliding=false;
@@ -229,7 +232,8 @@ int main(){
  setup(l);fopAc_ac_c other;other.id=99;l.mGrabItemAcKeep.actor=&other;int oldSpawns=spawns;request_glide(&l);assert(spawns==oldSpawns);
  s_jumpAbilities.cucco=cucco.id;live=true;s_jumpAbilities.attached=true;retire_glide_actor(&l);assert(l.mGrabItemAcKeep.actor==&other&&l.frees==0);
  setup(l);glide=true;live=true;s_jumpAbilities.cucco=cucco.id;l.mGrabItemAcKeep.actor=&cucco;s_jumpAbilities.attached=true;
- deleteOk=false;retire_glide_actor(&l);assert(s_jumpAbilities.retiring&&l.frees==1);deleteOk=true;retire_glide_actor(&l);assert(s_jumpAbilities.cucco==kNoGlideActor&&l.frees==1);
+ const int beforeCleanup=featherCleanups;
+ deleteOk=false;retire_glide_actor(&l);assert(s_jumpAbilities.retiring&&l.frees==1);deleteOk=true;retire_glide_actor(&l);assert(s_jumpAbilities.cucco==kNoGlideActor&&l.frees==1);assert(featherCleanups==beforeCleanup+2);
  setup(l);charge(l);reset_jump_abilities(&l);assert(!s_jumpAbilities.owner&&l.mProcID==daAlink_c::PROC_WAIT);
 }
 '''

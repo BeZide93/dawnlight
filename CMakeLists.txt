@@ -98,6 +98,7 @@ add_mod(dawnlight_mod
         src/jump_hooks.cpp
         src/glider_visual.cpp
         src/glider_reward.cpp
+        src/glider_reward_icon.cpp
         src/manual_shield_hooks.cpp
         src/mod.cpp
         src/model_overlays.cpp

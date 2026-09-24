@@ -76,3 +76,18 @@ damage, disabling Glide, cutscenes and room changes; ordinary carried Cuccos.
 Also check interpolation off/on and turning at higher presentation frame rates,
 plus closed hands while gliding and normal hands after landing or item switching.
 The mesh preview and automated tests do not replace this runtime visual check.
+
+
+## Glider acquisition icon
+
+`glider-item-icon.png` is a separate 256x256 transparent, hand-painted-style
+inventory illustration created with the built-in Imagegen tool. It is used only
+for Dawnlight's Glider acquisition message, not for the 3D canopy texture.
+`python tools/generate_glider_item_icon.py` downsamples it to 128x128 and writes
+`res/glider-item-icon.rgba8` in GX RGBA8 tile order. The checked-in resource is
+bundled by normal builds; Pillow is only needed to regenerate it. The native
+J2D message keeps its usual 48px layout footprint, placement and fade animation.
+
+Generation prompt:
+
+> Use case: stylized-concept. Create one production-ready transparent 2D inventory item icon for a Zelda Twilight Princess game mod, square 1024x1024 PNG with genuine alpha transparency. Subject: a handheld fantasy paraglider, seen in three-quarter perspective from slightly above, entire glider isolated and centered with safe transparent margins. Wide slightly curved dark charcoal/brown cloth canopy, wooden rim and spars, TWO separate wooden/leather grips hanging below left and right, each running front-to-back. On the canopy a clear golden sunrise above a small horizon framed below by a blue crescent with golden edging; no writing. Twilight Princess inventory-icon look: hand-painted muted earthy colors, simplified strong readable silhouette, chunky dark outline and thin warm ivory outer edging like the bow item icon, crisp highlights and restrained shading. Must remain readable as a tiny 48 to 96 pixel icon. No Link, no hands, no character, no background scene, no UI window, no text, no bow, no arrows, no drop shadow beyond icon outline. Glider fills about 85 percent of width and 70 percent of height. Save the resulting PNG for use as a repository asset.

@@ -1,4 +1,5 @@
 #include "glider_reward.hpp"
+#include "glider_reward_icon.hpp"
 
 #include "config.hpp"
 #include "glider_visual.hpp"
@@ -175,8 +176,14 @@ ModResult initialize_glider_reward(ModError* error) {
     if (result == MOD_OK) result = mods::hook::add_post<GliderRewardGetInit>(svc_hook, after_get_init);
     if (result == MOD_OK) result = mods::hook::add_pre<GliderRewardItemDraw>(svc_hook, before_item_draw);
     if (result == MOD_OK) result = mods::hook::add_pre<GliderRewardExecute>(svc_hook, before_item_execute);
-    return result == MOD_OK ? MOD_OK : mods::set_error(error, result,
+    if (result != MOD_OK) return mods::set_error(error, result,
         "failed to hook Glider reward presentation");
+    return initialize_glider_reward_icon(error);
+}
+
+bool glider_reward_message_active() {
+    return s_reward.started && s_message && dMsgObject_getMsgObjectClass() &&
+        dMsgObject_getMessageID() == s_message.id();
 }
 
 void queue_glider_reward() {
@@ -247,6 +254,7 @@ void cancel_glider_reward() {
 }
 
 void shutdown_glider_reward() {
+    shutdown_glider_reward_icon();
     if (s_reward.started && owns_event()) dComIfGp_event_reset();
     cancel_glider_reward();
     s_message.reset();

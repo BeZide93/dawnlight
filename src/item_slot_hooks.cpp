@@ -14,6 +14,7 @@
 #include "d/d_meter_button.h"
 #include "d/d_meter_HIO.h"
 #include "d/d_meter2_info.h"
+#include "d/d_menu_fmap.h"
 #include "d/d_menu_window.h"
 #include "d/d_menu_item_explain.h"
 #include "d/d_pane_class.h"
@@ -121,6 +122,12 @@ DEFINE_HOOK(&daAlink_c::setHeavyBoots, SetHeavyBootsHook);
 DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
 #if defined(__ANDROID__)
 DEFINE_HOOK(&PADSetVirtualStatus, PadSetVirtualStatusHook);
+DEFINE_HOOK(&PADClearVirtualStatus, PadClearVirtualStatusHook);
+DEFINE_HOOK(&dMenu_Fmap_c::_move, TouchFmapMoveHook);
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui20set_control_overrideENS0_7ControlENS0_15ControlOverrideE",
+    void(dusk::ui::Control, dusk::ui::ControlOverride), TouchSetControlOverrideHook);
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls17sync_visual_stateEv",
+    void(dusk::ui::TouchControls*), TouchSyncVisualStateHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_action_bar_stateEv",
     void(dusk::ui::TouchControls*), TouchSyncActionBarHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_control_displaysEv",
@@ -202,6 +209,14 @@ Rml::Element* s_zTouchMeterButton = nullptr;
 Rml::Element* s_zTouchMeterContainer = nullptr;
 std::string s_zTouchMeterRml;
 bool s_inTouchControlDisplaySync = false;
+dusk::ui::ControlOverride s_hostLTouchOverride = dusk::ui::ControlOverride::Default;
+bool s_mapLTouchOverrideActive = false;
+bool s_touchMapLRawHeld = false;
+bool s_touchMapLHeld = false;
+bool s_touchMapLPressed = false;
+u32 s_touchMapZHeldOriginal = 0;
+u32 s_touchMapZPressedOriginal = 0;
+bool s_touchMapPortalInputActive = false;
 #endif
 
 bool z_item_slot_active() {
@@ -3501,16 +3516,102 @@ void after_meter_button_draw(ModContext*, void* args, void*, void*) {
 }
 
 #if defined(__ANDROID__)
+bool map_l_touch_override_needed() {
+    const auto windowStatus = dMeter2Info_getWindowStatus();
+    // dMw_c uses 4 for the field map and 5 for the dungeon map, including
+    // their opening/closing animations. Other menus keep the host behavior.
+    return dawnlight_touch_ui_active() && (windowStatus == 4 || windowStatus == 5);
+}
+
+void sync_map_l_touch_override() {
+    if (TouchSetControlOverrideHook::g_orig == nullptr) {
+        return;
+    }
+
+    const bool mapActive = map_l_touch_override_needed();
+    if (mapActive || s_mapLTouchOverrideActive) {
+        // Action keeps L visible and uses momentary input instead of target
+        // locking. Apply before sync_visual_state can hide/release the button.
+        TouchSetControlOverrideHook::g_orig(dusk::ui::Control::L,
+            mapActive ? dusk::ui::ControlOverride::Action : s_hostLTouchOverride);
+    }
+    s_mapLTouchOverrideActive = mapActive;
+}
+
+HookAction before_touch_set_control_override(ModContext*, void* args, void*, void*) {
+    if (mods::arg<dusk::ui::Control>(args, 0) == dusk::ui::Control::L) {
+        auto& requested = mods::arg_ref<dusk::ui::ControlOverride>(args, 1);
+        // Remember the latest host/other-mod request so closing the map does
+        // not clear an L action that belongs to another menu.
+        s_hostLTouchOverride = requested;
+        s_mapLTouchOverrideActive = map_l_touch_override_needed();
+        if (s_mapLTouchOverrideActive) {
+            requested = dusk::ui::ControlOverride::Action;
+        }
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction before_touch_sync_visual_state(ModContext*, void*, void*, void*) {
+    sync_map_l_touch_override();
+    return HOOK_CONTINUE;
+}
+
 HookAction before_pad_set_virtual_status(ModContext*, void* args, void*, void*) {
     if (!dawnlight_touch_ui_active() || mods::arg<u32>(args, 0) != PAD_1) {
         return HOOK_CONTINUE;
     }
 
     auto* status = const_cast<PADStatus*>(mods::arg<const PADStatus*>(args, 1));
+    s_touchMapLRawHeld = status != nullptr && (status->button & PAD_TRIGGER_L) != 0;
     if (status != nullptr) {
         status->button &= ~PAD_TRIGGER_Z;
     }
     return HOOK_CONTINUE;
+}
+
+HookAction before_pad_clear_virtual_status(ModContext*, void* args, void*, void*) {
+    if (mods::arg<u32>(args, 0) == PAD_1) {
+        s_touchMapLRawHeld = false;
+    }
+    return HOOK_CONTINUE;
+}
+
+void observe_map_touch_input(ModContext*, void*, void*, void*) {
+    // Observe the host's accepted input before TPHD's Fixed mode rebuilds L/R
+    // from physical triggers. Requiring both sources respects input blocking
+    // and prevents a physical L press from becoming a second portal shortcut.
+    const auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
+    const bool held = dawnlight_touch_ui_active() && dMeter2Info_getWindowStatus() == 4 &&
+        s_touchMapLRawHeld && (pad.mButtonFlags & PAD_TRIGGER_L) != 0;
+    s_touchMapLPressed = held && !s_touchMapLHeld;
+    s_touchMapLHeld = held;
+}
+
+HookAction before_touch_fmap_move(ModContext*, void*, void*, void*) {
+    if (!dawnlight_touch_ui_active() || dMeter2Info_getWindowStatus() != 4) {
+        return HOOK_CONTINUE;
+    }
+
+    // TPHD maps only physical L to native Z and clears other Z input here.
+    // Add touch L after that mapping, scoped to the field-map update only.
+    auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
+    s_touchMapZHeldOriginal = pad.mButtonFlags & PAD_TRIGGER_Z;
+    s_touchMapZPressedOriginal = pad.mPressedButtonFlags & PAD_TRIGGER_Z;
+    s_touchMapPortalInputActive = true;
+    if (s_touchMapLHeld) pad.mButtonFlags |= PAD_TRIGGER_Z;
+    if (s_touchMapLPressed) pad.mPressedButtonFlags |= PAD_TRIGGER_Z;
+    s_touchMapLPressed = false;
+    return HOOK_CONTINUE;
+}
+
+void after_touch_fmap_move(ModContext*, void*, void*, void*) {
+    if (!s_touchMapPortalInputActive) return;
+    auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
+    pad.mButtonFlags = (pad.mButtonFlags & ~PAD_TRIGGER_Z) | s_touchMapZHeldOriginal;
+    pad.mPressedButtonFlags =
+        (pad.mPressedButtonFlags & ~PAD_TRIGGER_Z) | s_touchMapZPressedOriginal;
+    s_touchMapPortalInputActive = false;
 }
 
 HookAction before_touch_sync_control_displays(ModContext*, void*, void*, void*) {
@@ -3820,6 +3921,30 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
 #if defined(__ANDROID__)
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<PadClearVirtualStatusHook>(
+            svc_hook, before_pad_clear_virtual_status, &touchInputObserveOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_post<PadReadHook>(
+            svc_hook, observe_map_touch_input, &touchInputObserveOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<TouchFmapMoveHook>(
+            svc_hook, before_touch_fmap_move, &touchInputApplyOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_post<TouchFmapMoveHook>(
+            svc_hook, after_touch_fmap_move, &touchInputObserveOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<TouchSetControlOverrideHook>(
+            svc_hook, before_touch_set_control_override);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<TouchSyncVisualStateHook>(
+            svc_hook, before_touch_sync_visual_state);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<PadSetVirtualStatusHook>(
             svc_hook, before_pad_set_virtual_status, &touchInputObserveOptions);
     }
@@ -3884,6 +4009,13 @@ void shutdown_item_slot_hooks() {
     s_dpadArrowVisibility = {};
     s_dpadShadowVisibility = {};
 #if defined(__ANDROID__)
+    sync_map_l_touch_override();
+    after_touch_fmap_move(nullptr, nullptr, nullptr, nullptr);
+    s_touchMapLRawHeld = false;
+    s_touchMapLHeld = false;
+    s_touchMapLPressed = false;
+    s_hostLTouchOverride = dusk::ui::ControlOverride::Default;
+    s_mapLTouchOverrideActive = false;
     s_touchZItemHeld = false;
     s_touchZItemTrig = false;
     s_inTouchActionBarSync = false;

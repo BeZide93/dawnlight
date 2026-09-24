@@ -34,7 +34,7 @@ void notify(const char* message) {
     toast.title_rml = "Dawnlight Progression";
     toast.body_rml = message;
     toast.duration_ms = 4000;
-    push_dawnlight_toast(mod_ctx, svc_ui, toast);
+    push_progression_toast(mod_ctx, svc_ui, toast);
 }
 } // namespace
 

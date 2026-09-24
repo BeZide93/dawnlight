@@ -1,6 +1,7 @@
 // Exercise the real config getters and UI callbacks against persisted fake cvars.
 #include "../src/config.hpp"
 #include "../src/progression.hpp"
+#include "../src/notifications.hpp"
 #include "../src/ui.cpp"
 #include <cassert>
 #include <cmath>
@@ -85,19 +86,21 @@ int main() {
     assert(!notifications_enabled());
     assert(mode_setting_for_config(notifications_config_var()) == ModeSetting::None);
     auto send_notifications = [&] {
+        const int before = toasts;
         dawnlight::push_toast("HUD/Spawner result", "Result");
         for(auto var : {z_item_slot_config_var(), dawnlight_touch_ui_config_var(),
                 custom_model_config_var(CustomModel::OrdonLink)})
             subscriptions.at(var)(mod_ctx, var, nullptr, nullptr, nullptr);
         UiToastDesc desc = UI_TOAST_DESC_INIT;
-        desc.title_rml = "Progression/update";
-        push_dawnlight_toast(mod_ctx, svc_ui, desc);
+        desc.title_rml = "Progression";
+        push_progression_toast(mod_ctx, svc_ui, desc);
+        assert(toasts - before == (notifications_enabled() ? 5 : 4));
     };
-    send_notifications();assert(toasts == 0);
+    send_notifications();
     set_bool(nullptr, notifications_config_var(), true);
-    send_notifications();assert(toasts == 5);
+    send_notifications();
     set_bool(nullptr, notifications_config_var(), false);
-    send_notifications();assert(toasts == 5);
+    send_notifications();
     set_int(nullptr, sprint_speed_config_var(), 185);
     set_int(nullptr, jump_height_config_var(), 240);
     set_int(nullptr, health_scale_config_var(), 175);
@@ -118,11 +121,11 @@ int main() {
     assert(!disabled(speed) && shown(speed).int_value == 185);
     set_bool(nullptr, dawnlight_mode_config_var(), true);
     assert(progression_system_enabled() && sprint_enabled() && r_jump_enabled());
-    assert(!notifications_enabled());send_notifications();assert(toasts == 5);
+    assert(!notifications_enabled());send_notifications();
     int64_t notificationValue = 0;
     assert(!mode_config_override(notifications_config_var(), notificationValue));
     set_bool(nullptr, notifications_config_var(), true);
-    send_notifications();assert(toasts == 10);
+    send_notifications();
     assert(std::abs(sprint_speed_multiplier() - 1.5f) < 0.001f);
     assert(std::abs(jump_height_multiplier() - 1.1f) < 0.001f);
     assert(health_scale_percent() == 300 && gale_recovery_seconds() == 60);
@@ -159,7 +162,7 @@ int main() {
     assert(dawnlight_mode_enabled() && progression_system_enabled() && health_scale_percent() == 300);
     assert(notifications_enabled());
     set_bool(nullptr, notifications_config_var(), false);
-    send_notifications();assert(toasts == 10);
+    send_notifications();
     assert(gale_height_bonus() == 5.0f && stamina_enabled());
     set_bool(nullptr, dawnlight_mode_config_var(), false);
     assert(!progression_system_enabled());

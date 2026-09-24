@@ -57,9 +57,9 @@ changing saves does not carry unlocks or spent Gale charges into the next save.
 Disabling progression restores the corresponding personal settings.
 
 **Notifications**, directly below Progression System, defaults to **Off** and
-controls all Dawnlight toasts and update notifications: progression unlocks,
-Gale capacity, restart reminders, HUD import/export/copy results, and enemy
-spawner feedback. It remains editable independently of Dawnlight Mode. Muting
+controls only Progression System unlock and Gale capacity notifications. Other
+Dawnlight messages, including update, restart, HUD and spawner feedback, are
+unaffected. It remains editable independently of Dawnlight Mode. Muting these
 notifications does not pause progression or the Glider acquisition sequence;
 missed progression toasts are not replayed when notifications are enabled.
 

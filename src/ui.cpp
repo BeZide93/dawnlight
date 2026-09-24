@@ -1,4 +1,3 @@
-#include "notifications.hpp"
 #include "config.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
@@ -83,7 +82,7 @@ void push_toast(const char* title, const char* body, const char* type = nullptr)
     toast.type = type;
     toast.title_rml = title;
     toast.body_rml = body;
-    push_dawnlight_toast(mod_ctx, svc_ui, toast);
+    svc_ui->push_toast(mod_ctx, &toast);
 }
 
 // Stable callback data survives tab rebuilds. Managed controls display the
@@ -399,8 +398,8 @@ ModResult build_general_tab(
             "per three full heart containers. Controlled settings are locked while On.")
         != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Notifications", notifications_config_var(),
-            "Show Dawnlight notifications, including progression, restart, HUD, spawner and update "
-            "messages. Off by default. Does not affect ability unlocks or item-acquisition scenes.")
+            "Show Progression System unlock and Gale capacity notifications. Off by default. "
+            "Does not affect ability unlocks, item-acquisition scenes or other Dawnlight messages.")
         != MOD_OK) return MOD_ERROR;
     if (add_section(ctx, left, "New Saves") != MOD_OK) return MOD_ERROR;
     if (add_select(ctx, left, "New Save Mode", new_save_mode_config_var(),

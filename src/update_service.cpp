@@ -1,4 +1,3 @@
-#include "notifications.hpp"
 #include "update_service.hpp"
 #include "service_imports.hpp"
 
@@ -399,14 +398,6 @@ void update_update_service(const LogService* log_svc, ModContext* mod_ctx, const
         return;
     }
 
-    // Poll/download work is independent of notification visibility. Consume
-    // completed results silently while muted rather than replaying them later.
-    if (!notifications_enabled()) {
-        const auto state = s_downloadState.load();
-        if (state == DL_SUCCESS || state == DL_FAILED) s_downloadState = DL_HANDLED;
-        return;
-    }
-
     if (s_updateAvailable && !s_dialogShown) {
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - s_updateDetectedTime).count() < 1000) {
@@ -461,7 +452,7 @@ void update_update_service(const LogService* log_svc, ModContext* mod_ctx, const
             toast.title_rml = "Dawnlight";
             toast.body_rml = s_toastRml.c_str();
             toast.duration_ms = 6000;
-            push_dawnlight_toast(mod_ctx, ui_svc, toast);
+            ui_svc->push_toast(mod_ctx, &toast);
         }
     }
 

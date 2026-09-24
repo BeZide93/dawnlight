@@ -1,4 +1,3 @@
-#include "notifications.hpp"
 #include "config.hpp"
 #include "progression.hpp"
 #include "enemy_spawner.hpp"
@@ -121,7 +120,7 @@ void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarVal
     UiToastDesc toast = UI_TOAST_DESC_INIT;
     toast.title_rml = "Z-Items";
     toast.body_rml = "Restart game after toggling Z-items";
-    push_dawnlight_toast(ctx, svc_ui, toast);
+    svc_ui->push_toast(ctx, &toast);
 }
 
 void on_dawnlight_touch_ui_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
@@ -129,7 +128,7 @@ void on_dawnlight_touch_ui_changed(ModContext* ctx, ConfigVarHandle, const Confi
     UiToastDesc toast = UI_TOAST_DESC_INIT;
     toast.title_rml = "Dawnlight Touch UI";
     toast.body_rml = "Restart game after toggling Dawnlight Touch UI";
-    push_dawnlight_toast(ctx, svc_ui, toast);
+    svc_ui->push_toast(ctx, &toast);
 }
 
 void on_custom_model_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
@@ -137,7 +136,7 @@ void on_custom_model_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarVa
     UiToastDesc toast = UI_TOAST_DESC_INIT;
     toast.title_rml = "Models";
     toast.body_rml = "Restart game to apply model changes";
-    push_dawnlight_toast(ctx, svc_ui, toast);
+    svc_ui->push_toast(ctx, &toast);
 }
 
 void on_check_for_updates_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* value,

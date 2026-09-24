@@ -193,7 +193,7 @@ bool launch_gale(daAlink_c* link) {
     link->mMaxSpeed = std::max(link->mMaxSpeed, launchSpeed);
     link->shape_angle.y = launchAngle;
     link->current.angle.y = launchAngle;
-    apply_manual_jump_height(link, 5.0f * jump_height_multiplier());
+    apply_manual_jump_height(link, jump_height_multiplier() + gale_height_bonus());
     s_manualJumpOwner = link;
     mark_manual_jump_started(link);
     s_galeVisual.launch(origin);

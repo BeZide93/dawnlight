@@ -44,6 +44,7 @@ ConfigVarHandle s_rJump = 0;
 ConfigVarHandle s_jumpHeight = 0;
 ConfigVarHandle s_glide = 0;
 ConfigVarHandle s_revalisGale = 0;
+ConfigVarHandle s_galeHeight = 0;
 ConfigVarHandle s_stamina = 0;
 ConfigVarHandle s_sprint = 0;
 ConfigVarHandle s_sprintSpeedPercent = 0;
@@ -878,6 +879,7 @@ ModResult register_config(ModError* error) {
         register_int("jump-height-percent", 100, s_jumpHeight) != MOD_OK ||
         register_bool("glide", false, s_glide) != MOD_OK ||
         register_bool("revalis-gale", false, s_revalisGale) != MOD_OK ||
+        register_int("gale-height-percent", 500, s_galeHeight) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
         register_int("sprint-speed-percent", 150, s_sprintSpeedPercent) != MOD_OK ||
@@ -1091,6 +1093,10 @@ bool r_jump_enabled() {
 
 float jump_height_multiplier() {
     return static_cast<float>(get_int(s_jumpHeight, 100, 100, 500)) / 100.0f;
+}
+
+float gale_height_bonus() {
+    return static_cast<float>(get_int(s_galeHeight, 500, 100, 1000)) / 100.0f;
 }
 
 bool glide_enabled() { return get_bool(s_glide, false); }
@@ -1348,6 +1354,7 @@ ConfigVarHandle r_jump_config_var() {
 ConfigVarHandle jump_height_config_var() { return s_jumpHeight; }
 ConfigVarHandle glide_config_var() { return s_glide; }
 ConfigVarHandle revalis_gale_config_var() { return s_revalisGale; }
+ConfigVarHandle gale_height_config_var() { return s_galeHeight; }
 
 ConfigVarHandle stamina_config_var() {
     return s_stamina;

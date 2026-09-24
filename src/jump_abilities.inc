@@ -30,6 +30,7 @@ fopAc_ac_c* glide_actor() {
 }
 
 void retire_glide_actor(daAlink_c* link) {
+    clear_glider_visual();
     if (s_jumpAbilities.cucco == kNoGlideActor) return;
     s_jumpAbilities.retiring = true;
     auto* actor = glide_actor();
@@ -268,6 +269,8 @@ void jump_abilities_proc_change(daAlink_c* link, daAlink_c::daAlink_PROC nextPro
         retire_glide_actor(link);
 }
 
+#include "glide_presentation.inc"
+
 HookAction before_jump_abilities_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!owns_jump_abilities(link)) {
@@ -294,13 +297,24 @@ HookAction before_jump_abilities_execute(ModContext*, void* args, void*, void*) 
 void after_jump_abilities_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!owns_jump_abilities(link) || dComIfGp_isPauseFlag()) return;
+    if (glide_item() == GlideItem::Glider) {
+        if (auto* actor = glide_actor()) static_cast<ni_class*>(actor)->mSound.stopAllSounds(0);
+    }
     // Link's ground collision is resolved at the end of execute, before draw.
     if (s_jumpAbilities.attached && !aerial_glide_context(link)) retire_glide_actor(link);
 }
 
 void after_jump_abilities_draw(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (owns_jump_abilities(link)) s_galeVisual.draw(link);
+    clear_glider_visual();
+    if (owns_jump_abilities(link)) {
+        s_galeVisual.draw(link);
+        auto* actor = glide_actor();
+        if (actor && s_jumpAbilities.attached && !s_jumpAbilities.retiring && glide_enabled() &&
+            glide_item() == GlideItem::Glider && aerial_glide_context(link) &&
+            link->mGrabItemAcKeep.getActor() == actor)
+            queue_glider_visual(link);
+    }
 }
 
 HookAction before_jump_abilities_delete(ModContext*, void* args, void*, void*) {

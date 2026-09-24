@@ -1,11 +1,13 @@
 #include "bullet_time.hpp"
 #include "config.hpp"
 #include "gale_counter.hpp"
+#include "glider_visual.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"
+#include "d/actor/d_a_ni.h"
 #include "d/d_com_inf_game.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "mods/hook.hpp"
@@ -34,6 +36,9 @@ DEFINE_HOOK(&daAlink_c::setDoubleAnime, SetDoubleAnimeSprint);
 DEFINE_HOOK(&daAlink_c::execute, JumpAbilitiesExecute);
 DEFINE_HOOK(&daAlink_c::draw, JumpAbilitiesDraw);
 DEFINE_HOOK(&fpcLf_Delete, JumpAbilitiesDelete);
+DEFINE_HOOK(&fpcLf_Draw, GlideCarrierDraw);
+DEFINE_HOOK(&Z2SoundObjSimple::startSound, GlideCarrierSound);
+DEFINE_HOOK(&Z2SoundObjSimple::startLevelSound, GlideCarrierLevelSound);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
 DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
@@ -450,6 +455,9 @@ ModResult install_jump_hooks(ModError* error) {
     if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesExecute>(svc_hook, after_jump_abilities_execute);
     if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesDraw>(svc_hook, after_jump_abilities_draw);
     if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesDelete>(svc_hook, before_jump_abilities_delete);
+    if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierDraw>(svc_hook, before_glide_carrier_draw);
+    if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierSound>(svc_hook, before_glide_carrier_sound);
+    if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierLevelSound>(svc_hook, before_glide_carrier_sound);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight R jump hooks");
     }

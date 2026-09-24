@@ -21,6 +21,7 @@ constexpr const char* kAimModeOptions[] = {
     "Cinema",
 };
 
+constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
 constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
 
 constexpr const char* kNewSaveModeOptions[] = {
@@ -397,8 +398,14 @@ ModResult build_controls_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Glide", glide_config_var(),
-            "Press ZR again in midair to hold a Cucco and glide, including during ordinary falls. "
-            "The Cucco disappears when you land.") != MOD_OK)
+            "Press ZR again in midair to deploy the selected glide item, including during ordinary falls. "
+            "It is put away when you land.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Glide Item", glide_item_config_var(), kGlideItemOptions,
+            std::size(kGlideItemOptions),
+            "Choose a Cucco or Dawnlight's cloth glider. Both use the same glide movement.") != MOD_OK)
     {
         return MOD_ERROR;
     }

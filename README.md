@@ -41,8 +41,11 @@ aiming, boss, and HUD features for Twilight Princess.
   **Sprint** in the Controls settings.
 - **Jump Height**, directly below **R Jump** in Controls, sets manual jump height
   from 100% (the original height and default) to 500%.
-- Optional **Glide**: press ZR in the air to deploy a Cucco using native gliding,
-  during manual jumps or ordinary falls. Landing removes the summoned Cucco.
+- Optional **Glide**: press ZR in the air to glide during manual jumps or ordinary
+  falls. **Glide Item**, directly below the toggle, selects **Cucco** (default) or
+  an original textured **Glider** with a wooden frame and leather grips. Both use
+  native Cucco glide movement; landing puts the selected item away. The Glider
+  hides and silences only its internally summoned Cucco, leaving world Cuccos alone.
 - Optional **Revali's Gale**: ZR immediately performs a normal jump, including
   while running or sprinting. Keep ZR held through landing to stop and crouch;
   release to launch with the saved pre-jump speed/direction and the native Gale

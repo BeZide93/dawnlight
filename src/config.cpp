@@ -44,6 +44,7 @@ ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
 ConfigVarHandle s_jumpHeight = 0;
 ConfigVarHandle s_glide = 0;
+ConfigVarHandle s_glideItem = 0;
 ConfigVarHandle s_revalisGale = 0;
 ConfigVarHandle s_galeHeight = 0;
 ConfigVarHandle s_galeCounterVisible = 0;
@@ -888,6 +889,7 @@ ModResult register_config(ModError* error) {
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
         register_int("jump-height-percent", 100, s_jumpHeight) != MOD_OK ||
         register_bool("glide", false, s_glide) != MOD_OK ||
+        register_int("glide-item", 0, s_glideItem) != MOD_OK ||
         register_bool("revalis-gale", false, s_revalisGale) != MOD_OK ||
         register_int("gale-height-percent", 500, s_galeHeight) != MOD_OK ||
         register_bool("gale-counter-visible", true, s_galeCounterVisible) != MOD_OK ||
@@ -1129,6 +1131,7 @@ int gale_counter_capacity() { return get_int(s_galeCounterCapacity, 3, 1, 12); }
 int gale_recovery_seconds() { return get_int(s_galeRecovery, 120, 1, 3600); }
 
 bool glide_enabled() { return get_bool(s_glide, false); }
+GlideItem glide_item() { return static_cast<GlideItem>(get_int(s_glideItem, 0, 0, 1)); }
 bool revalis_gale_enabled() { return get_bool(s_revalisGale, false); }
 
 bool stamina_enabled() {
@@ -1382,6 +1385,7 @@ ConfigVarHandle r_jump_config_var() {
 
 ConfigVarHandle jump_height_config_var() { return s_jumpHeight; }
 ConfigVarHandle glide_config_var() { return s_glide; }
+ConfigVarHandle glide_item_config_var() { return s_glideItem; }
 ConfigVarHandle revalis_gale_config_var() { return s_revalisGale; }
 ConfigVarHandle gale_height_config_var() { return s_galeHeight; }
 ConfigVarHandle gale_counter_visible_config_var() { return s_galeCounterVisible; }

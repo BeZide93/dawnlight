@@ -85,6 +85,7 @@ int create_standalone_actor(int profile,const ActorSpawnParams& p,int& id){
 }
 struct Service {int delete_actor(void*,int id){assert(id==cucco.id);++deletes;if(!deleteOk)return 1;live=false;return MOD_OK;}} service;
 auto* svc_actor=&service;void* mod_ctx=nullptr;
+void clear_glider_visual() {}
 struct Visual {int launches=0;void release(){}void prepare(){}void launch(const cXyz&){++launches;}} s_galeVisual;
 daAlink_c* s_manualJumpOwner=nullptr;
 int active_jump_binding(){return 0;}bool jump_pressed(int){return pressed;}bool jump_held(int){return held;}
@@ -199,7 +200,7 @@ int main(){
 }
 '''
 height = function('float gale_height_bonus', config) + '\n' + function('float jump_height_multiplier', config) + '\n' + function('void apply_manual_jump_height', hooks)
-production = abilities[:abilities.index('HookAction before_jump_abilities_execute')].replace('#include "jump_gale_visual.inc"', '')
+production = abilities[:abilities.index('HookAction before_jump_abilities_execute')].replace('#include "jump_gale_visual.inc"', '').replace('#include "glide_presentation.inc"', '')
 fixture = fixture.replace('// HEIGHT', height).replace('// ABILITIES', production)
 fixture = fixture.replace('// START_JUMP', function('bool jump_state_ready', hooks) + '\n' + function('bool start_ground_jump', hooks))
 assert 'register_int("jump-height-percent", 100, s_jumpHeight)' in config

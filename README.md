@@ -14,7 +14,8 @@ Dawnlight Mode and Progression System default to **Off**, preserving existing
 configurations. **New Save Mode** is also in General; it selects how new empty
 save slots are initialized.
 
-**Dawnlight Mode** applies the intended preset: Sprint at 150%, R Jump at 110%,
+**Dawnlight Mode** applies the intended preset: Sprint at 150%, Wolf Sprint On at 100%, R Jump at 110%,
+Disable Auto Jump On (human and wolf),
 Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode, 300% HP Scaling,
 Manual Shielding, 500% Gale Height, 60-second Gale recovery, Stamina Bar On,
 Arrow Modes, Great Spin Projectile,

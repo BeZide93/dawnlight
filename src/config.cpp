@@ -1100,6 +1100,9 @@ ModeSetting mode_setting_for_config(ConfigVarHandle var) {
     if (var == s_progressionSystem) return ModeSetting::Progression;
     if (var == s_sprint) return ModeSetting::Sprint;
     if (var == s_sprintSpeedPercent) return ModeSetting::SprintSpeed;
+    if (var == s_wolfSprint) return ModeSetting::WolfSprint;
+    if (var == s_wolfSpeedPercent) return ModeSetting::WolfSpeed;
+    if (var == s_disableAutoJump) return ModeSetting::DisableAutoJump;
     if (var == s_rJump) return ModeSetting::Jump;
     if (var == s_jumpHeight) return ModeSetting::JumpHeight;
     if (var == s_flurryRush) return ModeSetting::FlurryRush;

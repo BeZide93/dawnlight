@@ -8,7 +8,7 @@ enum class ModeSetting {
     None, Progression, Sprint, SprintSpeed, Jump, JumpHeight, FlurryRush, BulletTime,
     EnemyHardMode, BossHardMode, HealthScale, ManualShielding, GaleRecovery,
     ArrowModes, GreatSpin, NoNormalHitInvulnerability, Glide, GlideItem, Gale,
-    GaleCounter, GaleCharges, FierceDeity, GaleHeight, Stamina,
+    GaleCounter, GaleCharges, FierceDeity, GaleHeight, Stamina, WolfSprint, WolfSpeed, DisableAutoJump,
 };
 
 struct ProgressionState {
@@ -33,6 +33,8 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
         case ModeSetting::Stamina:
         case ModeSetting::Progression:
         case ModeSetting::Jump:
+        case ModeSetting::WolfSprint:
+        case ModeSetting::DisableAutoJump:
         case ModeSetting::FlurryRush:
         case ModeSetting::EnemyHardMode:
         case ModeSetting::BossHardMode:
@@ -41,6 +43,7 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
         case ModeSetting::GreatSpin:
         case ModeSetting::NoNormalHitInvulnerability: value = 1; return true;
         case ModeSetting::SprintSpeed: value = 150; return true;
+        case ModeSetting::WolfSpeed: value = 100; return true;
         case ModeSetting::JumpHeight: value = 110; return true;
         case ModeSetting::BulletTime: value = 2; return true; // BOTW
         case ModeSetting::HealthScale: value = 300; return true;

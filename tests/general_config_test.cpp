@@ -53,10 +53,11 @@ ModResult subscribe(ModContext*, ConfigVarHandle var, ConfigChangedFn fn, void*,
     subscriptions[var] = fn;
     return MOD_OK;
 }
-UiControlDesc control(ConfigVarHandle var, UiControlKind kind) {
+UiControlDesc control(ConfigVarHandle var, UiControlKind kind, UiPredicateFn isDisabled = nullptr) {
     UiControlDesc desc = UI_CONTROL_DESC_INIT;
     desc.kind = kind;
     desc.config_var = var;
+    desc.is_disabled = isDisabled;
     dawnlight::bind_mode_control(desc);
     assert(desc.binding == UI_BINDING_CALLBACKS);
     return desc;
@@ -195,4 +196,60 @@ int main() {
     assert(disabled(glide) && !shown(glide).bool_value);
     set_bool(nullptr, progression_system_config_var(), false);
     assert(!disabled(glide) && shown(glide).bool_value);
+
+    // Exercise the real mode bindings with both saved toggle values, including
+    // restart, attempted writes while locked and the existing parent dependency.
+    for (bool savedJump : {false, true}) for (bool savedWolf : {false, true})
+    for (bool savedNoAutoJump : {false, true}) {
+        if (!savedJump && savedNoAutoJump) continue; // Invalid persisted combination.
+        set_bool(nullptr, r_jump_config_var(), savedJump);
+        set_bool(nullptr, wolf_sprint_config_var(), savedWolf);
+        set_bool(nullptr, disable_auto_jump_config_var(), savedNoAutoJump);
+        set_int(nullptr, wolf_speed_config_var(), 235);
+        auto checkPersonal = [&] {
+            assert(r_jump_enabled() == savedJump);
+            assert(wolf_sprint_enabled() == savedWolf);
+            assert(disable_auto_jump_enabled() == savedNoAutoJump);
+            assert(std::abs(wolf_speed_multiplier() - 2.35f) < 0.001f);
+            assert(disk.at("wolf-sprint").value == savedWolf);
+            assert(disk.at("wolf-speed-percent").value == 235);
+            assert(disk.at("disable-auto-jump").value == savedNoAutoJump);
+            auto wolf = control(wolf_sprint_config_var(), UI_CONTROL_TOGGLE);
+            auto speed = control(wolf_speed_config_var(), UI_CONTROL_NUMBER, wolf_speed_disabled);
+            auto noAuto = control(disable_auto_jump_config_var(), UI_CONTROL_TOGGLE, auto_jump_setting_disabled);
+            assert(!disabled(wolf) && shown(wolf).bool_value == savedWolf);
+            assert(disabled(speed) == !savedWolf && shown(speed).int_value == 235);
+            assert(disabled(noAuto) == !savedJump && shown(noAuto).bool_value == savedNoAutoJump);
+        };
+        checkPersonal();
+        set_bool(nullptr, dawnlight_mode_config_var(), true);
+        for (int restart = 0; restart < 2; ++restart) {
+            if (restart) assert(register_config(nullptr) == MOD_OK);
+            assert(r_jump_enabled() && wolf_sprint_enabled() && disable_auto_jump_enabled());
+            assert(std::abs(wolf_speed_multiplier() - 1.0f) < 0.001f);
+            auto wolf = control(wolf_sprint_config_var(), UI_CONTROL_TOGGLE);
+            auto speed = control(wolf_speed_config_var(), UI_CONTROL_NUMBER, wolf_speed_disabled);
+            auto noAuto = control(disable_auto_jump_config_var(), UI_CONTROL_TOGGLE, auto_jump_setting_disabled);
+            assert(disabled(wolf) && shown(wolf).bool_value);
+            assert(disabled(speed) && shown(speed).int_value == 100);
+            assert(disabled(noAuto) && shown(noAuto).bool_value);
+            UiControlValue attempt = UI_CONTROL_VALUE_INIT;
+            attempt.bool_value = false;
+            attempt.int_value = 300;
+            wolf.set(mod_ctx, wolf.user_data, &attempt);
+            speed.set(mod_ctx, speed.user_data, &attempt);
+            noAuto.set(mod_ctx, noAuto.user_data, &attempt);
+            assert(disk.at("wolf-sprint").value == savedWolf);
+            assert(disk.at("wolf-speed-percent").value == 235);
+            assert(disk.at("disable-auto-jump").value == savedNoAutoJump);
+        }
+        set_bool(nullptr, dawnlight_mode_config_var(), false);
+        subscriptions.at(dawnlight_mode_config_var())(mod_ctx,
+            dawnlight_mode_config_var(), nullptr, nullptr, nullptr);
+        checkPersonal();
+        set_bool(nullptr, progression_system_config_var(), true);
+        checkPersonal(); // Independent progression does not own these settings.
+        set_bool(nullptr, progression_system_config_var(), false);
+    }
+
 }

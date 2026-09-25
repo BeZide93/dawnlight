@@ -9,6 +9,8 @@ DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls15handle_touch_upERN3Rml5EventE", 
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls19handle_touch_cancelERN3Rml5EventE", void(NativeTouch*, Rml::Event*), ExtraTouchCancel);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControlsD2Ev", void(NativeTouch*), ExtraTouchDelete);
 DEFINE_HOOK(&PADSetVirtualStatus, ExtraTouchSetPad);
+DEFINE_HOOK_SYMBOL("SDL_GetGamepadButton", bool(SDL_Gamepad*, SDL_GamepadButton), ExtraTouchLbSdl);
+DEFINE_HOOK(&PADGetNativeButtonPressed, ExtraTouchLbNative);
 DEFINE_HOOK(&PADClearVirtualStatus, ExtraTouchClearPad);
 DEFINE_HOOK(&PADClearAllVirtualStatus, ExtraTouchClearAllPads);
 
@@ -182,6 +184,27 @@ HookAction extra_delete(ModContext*, void* args, void*, void*) {
     if (mods::arg<NativeTouch*>(args, 0) == s_touchOwner) remove_extra_elements();
     return HOOK_CONTINUE;
 }
+bool extra_lb_held() {
+    prune_extra_presses(s_touchOwner);
+    return s_extraHooksReady && s_extraPresses.held(0);
+}
+void extra_sdl_button(ModContext*, void* args, void* result, void*) {
+    if (!result || mods::arg<SDL_GamepadButton>(args, 1) != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER ||
+        !extra_lb_held()) return;
+    // Add LB to player one's real gamepad queries without touching other players
+    // or replacing physical input. Mods may cache the resolved SDL function.
+    const auto index = PADGetIndexForPort(PAD_1);
+    auto* gamepad = mods::arg<SDL_Gamepad*>(args, 0);
+    if (index >= 0 && gamepad && gamepad == PADGetSDLGamepadForIndex(static_cast<u32>(index)))
+        *static_cast<bool*>(result) = true;
+}
+void extra_native_button(ModContext*, void* args, void* result, void*) {
+    if (!result || mods::arg<u32>(args, 0) != PAD_1 || !extra_lb_held()) return;
+    // This query also works without a controller. Preserve a physical result:
+    // its API can report only one button, while SDL queries remain independent.
+    auto& button = *static_cast<s32*>(result);
+    if (button < 0) button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
+}
 HookAction extra_set_pad(ModContext*, void* args, void*, void*) {
     if (mods::arg<u32>(args, 0) != PAD_1) return HOOK_CONTINUE;
     const auto* status = mods::arg<const PADStatus*>(args, 1);
@@ -251,6 +274,8 @@ ModResult install_native_buttons(ModError* error) {
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchSetPad>(svc_hook, extra_set_pad);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchClearPad>(svc_hook, extra_clear_pad);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchClearAllPads>(svc_hook, extra_clear_all);
+    if (result == MOD_OK) result = mods::hook_add_post<ExtraTouchLbSdl>(svc_hook, extra_sdl_button);
+    if (result == MOD_OK) result = mods::hook_add_post<ExtraTouchLbNative>(svc_hook, extra_native_button);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install extra touch button hooks");
     s_extraHooksReady = true;
     s_touchRuntimeAvailable = true;

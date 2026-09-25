@@ -59,7 +59,7 @@ touch controls. Restart Dusklight after changing it.
 
 ### Extra touch buttons
 
-**Controls → Touch Buttons** contains independent switches for ZL, D-Pad Up,
+**Controls → Touch Buttons** contains independent switches for LB, D-Pad Up,
 Down, Left and Right, all off by default. They require both native Touch Controls
 and Dawnlight Touch UI on Android. The switches and layout changes apply live;
 changing the parent Dawnlight Touch UI setting still requires a restart.
@@ -80,10 +80,16 @@ rolled back. Android v2.0.1 does not expose `end_edit`; the adapter scopes
 `restore_active_control` instead to handle cancelled drags. This still requires
 runtime verification on the supported Dusklight/Lazy Tweaks build.
 
-ZL sends the independent left analog trigger used by the game's lock-trigger
-checks, including Dawnlight manual shielding; it does not send digital L.
-D-Pad buttons send normal logical pad directions. Physical-only input readers in
-other mods are not emulated. Additional inputs are merged with native touch
+LB exposes SDL's left-shoulder button (LB/L1) through `SDL_GetGamepadButton` for
+the player-one controller and `PADGetNativeButtonPressed(PAD_1)` when no physical
+button is reported. Twilight HD HUD uses these two paths for its physical LB
+bindings, including Midna in TPHD Fixed Bindings. No fixed Midna action or analog
+trigger is injected. Physical inputs and other player ports are preserved.
+Mods that insist on a connected device and provide no native-query fallback
+still need their own touch support; no synthetic controller is attached.
+The old `touch-button-zl-*` config keys remain internal storage for LB, preserving
+existing enabled state, position and size. D-Pad buttons send normal logical pad
+directions. Additional inputs are merged with native touch
 input before the host combines it with controller input. Multiple fingers are
 tracked independently; hiding/disabling controls or clearing native touch input
 releases the extra buttons. Extras are hidden during game menus, dialogue and
@@ -92,7 +98,7 @@ cutscenes. No new APK is needed.
 Run `python3 tests/touch_buttons_test.py` for input ownership, pad merging and
 layout bounds. Run `python3 tests/touch_button_editor_test.py` after fetching the
 pinned Dusklight source (or set `DUSKLIGHT_DIR`) for the viewport contract, native
-layout round-trips, scoped metadata and Save/Cancel/Reset behavior. Device QA should cover all five buttons, simultaneous ZL + face
+layout round-trips, scoped metadata and Save/Cancel/Reset behavior. Device QA should cover all five buttons, simultaneous LB + face
 buttons and stick movement, disabling a held button, app/menu transitions,
 orientation/safe-area changes, drag and edge/corner resizing, Save/Cancel/Reset,
 vanilla editor isolation, persistent layouts after restart, and mod unload with
@@ -192,3 +198,8 @@ The editor's required symbols have also been checked against the official Androi
 v2.0.1 APK, build ID `8431032be1f483cf884995a28bddd81556950b09`.
 Run `python3 tests/touch_editor_install_test.py` for missing-symbol and hook-failure
 rollback tests; set `DUSKLIGHT_APK` to a local APK for the real symbol check.
+
+Run `python3 tests/touch_lb_test.py` for SDL/native LB query behavior without a
+controller, physical/touch combinations, other-player isolation, disable/menu
+release and controller reconnect. Direct SDL-only mods without a no-controller
+fallback are outside this adapter's controller-free compatibility.

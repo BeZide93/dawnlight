@@ -105,7 +105,7 @@ bool s_editorConstructing=false,s_touchEditorAvailable=true;
 std::array<dusk::ui::TouchLayoutControlInfo,touch::Count> s_editorControls{};
 std::string s_editorFragment="extra buttons";
 std::vector<EditorDocument*> s_editorChildren;
-const char* kExtraEditorIds[]={"zl","up","down","left","right"};
+const char* kExtraEditorIds[]={"lb","up","down","left","right"};
 int cancels=0,uncovers=0;
 struct EditorApi {
  void (*setPseudo)(Rml::Element*,const Rml::String*,bool)=[](Rml::Element* e,const Rml::String* n,bool v){e->SetPseudoClass(*n,v);};
@@ -152,14 +152,14 @@ int main(){
  // Vanilla Save reaches the host; custom Save writes only Dawnlight keys.
  which=&vanilla;assert(save_extra_editor(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE&&cancels==0);
  config.values[99]="native touch layout";
- ours.mWorkingLayout.controls["zl"]=p;which=&ours;
+ ours.mWorkingLayout.controls["lb"]=p;which=&ours;
  assert(save_extra_editor(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&cancels==1);
  assert(config.values[99]=="native touch layout"&&saved_extra_props(0,viewport)==p);
  // Original native Reset clears the working map; save now uses default props.
  ours.mWorkingLayout={};save_extra_editor(nullptr,args,nullptr,nullptr);
  assert(saved_extra_props(0,viewport)==s_editorControls[0].props);
  // Unsaved changes and native Cancel never mutate persistent data.
- const auto before=config.values;ours.mWorkingLayout.controls["zl"]=p;
+ const auto before=config.values;ours.mWorkingLayout.controls["lb"]=p;
  s_editorApi.cancel(&ours);assert(config.values==before);
  // The actual native document is visible only behind our editor/reset modal.
  NativeTouch touchControls;auto* touchPointer=&touchControls;void* touchArgs[]={&touchPointer};

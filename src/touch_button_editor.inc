@@ -41,7 +41,7 @@ bool s_editorConstructing = false;
 std::array<dusk::ui::TouchLayoutControlInfo, touch::Count> s_editorControls{};
 std::string s_editorFragment;
 std::vector<EditorDocument*> s_editorChildren;
-constexpr const char* kExtraEditorIds[] = {"dawnlight-zl", "dawnlight-up", "dawnlight-down", "dawnlight-left", "dawnlight-right"};
+constexpr const char* kExtraEditorIds[] = {"dawnlight-lb", "dawnlight-up", "dawnlight-down", "dawnlight-left", "dawnlight-right"};
 static_assert(touch::Count <= dusk::ui::kTouchLayoutControlCount);
 
 bool editor_background_active() {

@@ -51,11 +51,12 @@ int main(){
  touch::Presses presses;
  PADStatus pad;
  assert(!presses.merge(pad));
- // Every button maps independently. ZL never sets digital L.
+ // Every button maps independently. LB never sets digital L or an analog trigger.
  const unsigned masks[5]={0,8,4,1,2};
  for(size_t i=0;i<touch::Count;++i){
   presses.clear();pad={};assert(presses.press(123,i));assert(presses.merge(pad));
-  assert(pad.button==masks[i]);assert(pad.triggerLeft==(i==0?255:0));
+  assert(pad.button==masks[i]);assert(pad.triggerLeft==0);
+  pad.triggerLeft=123;presses.merge(pad);assert(pad.triggerLeft==123);
   assert(presses.release(123));assert(!presses.release(123));pad={};assert(!presses.merge(pad));
  }
  assert(!presses.press(1,touch::Count));
@@ -81,12 +82,12 @@ int main(){
  s_extraPresses.press(5,0);s_extraPresses.press(6,1);
  assert(extra_set_pad(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
  assert(input!=&base&&base.button==0x840&&base.triggerLeft==0);
- assert(input->button==0x848&&input->triggerLeft==255&&input->triggerRight==180);
+ assert(input->button==0x848&&input->triggerLeft==0&&input->triggerRight==180);
  assert(input->stickX==50&&input->stickY==-30&&input->substickX==-70);
  assert(input->analogB==140&&input->extButton==0x2000);
  // Native clears when only our buttons are held: keep extras, not old native bits.
  assert(extra_clear_pad(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
- assert(writes==1&&written.button==8&&written.triggerLeft==255&&written.stickX==0);
+ assert(writes==1&&written.button==8&&written.triggerLeft==0&&written.stickX==0);
  // Other controller ports are untouched.
  port=1;input=&base;
  assert(extra_set_pad(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE&&input==&base);
@@ -94,7 +95,7 @@ int main(){
  port=0;
  // Disabling a held button and opening a menu both release it without a new edge.
  enabled[1]=false;input=&base;extra_set_pad(nullptr,args,nullptr,nullptr);
- assert(input->button==base.button&&input->triggerLeft==255);
+ assert(input->button==base.button&&input->triggerLeft==0);
  allowed=false;input=&base;extra_set_pad(nullptr,args,nullptr,nullptr);
  assert(input==&base&&!s_extraPadOwned);
  assert(extra_clear_pad(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
@@ -116,4 +117,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror','-I'+str(root/'src'),
                     str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print('Touch buttons passed: independent ZL/D-pad, multitouch ownership, pad merge, menu/disable release and layout bounds')
+print('Touch buttons passed: independent LB/D-pad, multitouch ownership, pad merge, menu/disable release and layout bounds')

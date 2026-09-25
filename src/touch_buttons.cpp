@@ -16,6 +16,7 @@
 
 #if defined(__ANDROID__)
 #include "global.h"
+#include <SDL3/SDL_gamepad.h>
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_meter2_info.h"
@@ -91,7 +92,7 @@ ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle 
         desc.label = touch::Names[i];
         desc.binding = UI_BINDING_CONFIG_VAR;
         desc.config_var = s_buttons[i].enabled;
-        if (i == 0) desc.help_rml = "Independent left analog trigger, including Dawnlight's manual shield. The existing L button stays available.";
+        if (i == 0) desc.help_rml = "Virtual left bumper (LB/L1) for compatible mods, including Twilight HD HUD. The action is defined by the mod; no fixed Midna action is assigned.";
         if (svc_ui->pane_add_control(ctx, left, &desc, nullptr) != MOD_OK) return MOD_ERROR;
     }
     UiControlDesc editor = UI_CONTROL_DESC_INIT;

@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <cstring>
+#include <cstdio>
 #include <new>
 
 namespace dawnlight {
@@ -105,26 +106,44 @@ void release() {
     if(s.heap) s.heap->destroy();
     s=State{};
 }
+void model_failure(const char* name,const char* reason) {
+    if(!svc_log) return;
+    char message[256];
+    std::snprintf(message,sizeof(message),"Dual Wield: %s: %s",name,reason);
+    svc_log->warn(mod_ctx,message);
+}
 J3DModel* copy_model(JKRArchive* archive,const char* name) {
-    void* raw=archive->getResource(name);if(!raw) return nullptr;
+    // The one-argument overload is a path lookup relative to the archive's
+    // current directory. Alink's meshes live under bmwr/, not at its root.
+    // Type 0 searches by name across the archive, independent of that directory.
+    void* raw=archive->getResource(0,name);
+    if(!raw) { model_failure(name,"resource not found in archive");return nullptr; }
     const u32 bytes=archive->getExpandedResSize(raw);
-    if(bytes<32 || bytes>4*1024*1024 || std::memcmp(raw,"J3D2bmd",7)!=0) return nullptr;
-    void* copy=s.heap->alloc(bytes,32);if(!copy) return nullptr;
+    if(bytes<32 || bytes>4*1024*1024 || std::memcmp(raw,"J3D2bmd",7)!=0) {
+        model_failure(name,"invalid BMD header or resource size");return nullptr;
+    }
+    void* copy=s.heap->alloc(bytes,32);
+    if(!copy) { model_failure(name,"private model allocation failed");return nullptr; }
     std::memcpy(copy,raw,bytes);
     // Alink stores both meshes as BMWR: initialize their material animators,
     // warp material and display lists exactly like native resource loading.
     auto* data=dRes_info_c::loaderBasicBmd(0x424D5752,copy);
-    if(!data || !data->getJointNum() || !data->getMaterialNum()) return nullptr;
-    return mDoExt_J3DModel__create(data,0x80000,0x11000284);
+    if(!data || !data->getJointNum() || !data->getMaterialNum()) {
+        model_failure(name,"native BMD loader failed");return nullptr;
+    }
+    auto* model=mDoExt_J3DModel__create(data,0x80000,0x11000284);
+    if(!model) model_failure(name,"native model creation failed");
+    return model;
 }
 bool prepare(daAlink_c* link) {
     if(s.owner!=link) release();
     if(s.sword && s.sheath) return true;
     constexpr u32 size=8*1024*1024;
-    s.storage.reset(new(std::nothrow) u8[size+31]);if(!s.storage) return false;
+    s.storage.reset(new(std::nothrow) u8[size+31]);
+    if(!s.storage) { model_failure("heap","backing allocation failed");return false; }
     auto* memory=reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(s.storage.get())+31)&~uintptr_t{31});
     s.heap=JKRExpHeap::create(memory,size,JKRHeap::getRootHeap(),false);
-    if(!s.heap) { release();return false; }
+    if(!s.heap) { model_failure("heap","creation failed");release();return false; }
     auto* previous=s.heap->becomeCurrentHeap();
     // The live Alink archive has already had its vertex arrays byte-swapped
     // by J3D. A distinct heap makes mount return a fresh archive, not that
@@ -135,10 +154,12 @@ bool prepare(daAlink_c* link) {
         s.sword=copy_model(archive,"al_swa.bmd");
         s.sheath=copy_model(archive,"al_poda.bmd");
         archive->unmount();
-    }
+    } else model_failure("/res/Object/Alink.arc","private archive mount failed");
     previous->becomeCurrentHeap();
     if(!s.sword || !s.sheath) { release();return false; }
-    s.owner=link;return true;
+    s.owner=link;
+    if(svc_log) svc_log->info(mod_ctx,"Dual Wield: private Ordon sword and scabbard ready");
+    return true;
 }
 bool human(daAlink_c* link) {
     return link && !link->checkWolf() && link->mpLinkModel && link->field_0x2060 &&

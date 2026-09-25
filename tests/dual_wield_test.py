@@ -154,6 +154,79 @@ int main() {
 }
 '''
 
+loader_fixture = r'''
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <map>
+#include <string>
+#include <array>
+using u32=std::uint32_t;
+struct ModelData {int getJointNum(){return 1;}int getMaterialNum(){return 2;}} data;
+struct J3DModel {} model;
+struct Heap {
+    std::array<char,64> bytes{};bool fail=false;
+    void* alloc(u32 size,int alignment){assert(size==64 && alignment==32);return fail?nullptr:bytes.data();}
+} heap;
+struct {Heap* heap;} s{&heap};
+struct JKRArchive {
+    std::map<std::string,std::array<char,64>> files;
+    std::string directory;
+    void* getResource(const char* path) {
+        auto it=files.find(directory+path);
+        return it==files.end()?nullptr:it->second.data();
+    }
+    void* getResource(u32 type,const char* name) {
+        assert(type==0);
+        for(auto& [path,bytes]:files) {
+            if(path.substr(path.find_last_of('/')+1)==name)return bytes.data();
+        }
+        return nullptr;
+    }
+    u32 getExpandedResSize(void*){return 64;}
+};
+std::string warning;
+struct Log {void warn(void*,const char* message){warning=message;}} logService;
+Log* svc_log=&logService;void* mod_ctx=nullptr;
+struct dRes_info_c {
+    static ModelData* loaderBasicBmd(u32 tag,void* raw) {
+        assert(tag==0x424D5752 && raw==heap.bytes.data());
+        assert(std::memcmp(raw,"J3D2bmd3",8)==0);
+        static_cast<char*>(raw)[8]=42; // Native loader modifies only the private copy.
+        return &data;
+    }
+};
+J3DModel* mDoExt_J3DModel__create(ModelData* d,u32 flags,u32 diff) {
+    assert(d==&data && flags==0x80000 && diff==0x11000284);return &model;
+}
+'''
+loader_fixture += function("model_failure") + function("copy_model", "J3DModel*")
+loader_fixture += r'''
+int main() {
+    JKRArchive archive;
+    for(const char* name:{"al_swa.bmd","al_poda.bmd"}) {
+        auto& bytes=archive.files[std::string("bmwr/")+name];
+        std::memcpy(bytes.data(),"J3D2bmd3",8);
+    }
+    for(const char* directory:{"","bck/","bmwr/"}) {
+        archive.directory=directory;
+        for(const char* name:{"al_swa.bmd","al_poda.bmd"}) {
+            assert(copy_model(&archive,name)==&model);
+            assert(archive.files.at(std::string("bmwr/")+name)[8]==0);
+        }
+    }
+    assert(warning.empty());
+    assert(!copy_model(&archive,"missing.bmd"));
+    assert(warning.find("missing.bmd: resource not found")!=std::string::npos);
+    heap.fail=true;assert(!copy_model(&archive,"al_swa.bmd"));
+    assert(warning.find("allocation failed")!=std::string::npos);heap.fail=false;
+    archive.files.at("bmwr/al_swa.bmd")[0]='X';
+    assert(!copy_model(&archive,"al_swa.bmd"));
+    assert(warning.find("invalid BMD header")!=std::string::npos);
+}
+'''
+
 with tempfile.TemporaryDirectory() as folder:
     temp = Path(folder)
     for name, content in [
@@ -164,9 +237,11 @@ with tempfile.TemporaryDirectory() as folder:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
     (temp / "native.cpp").write_text(fixture)
-    for name, path in [("math", root / "tests/dual_wield_math_test.cpp"), ("native", temp / "native.cpp")]:
+    (temp / "loader.cpp").write_text(loader_fixture)
+    for name, path in [("math", root / "tests/dual_wield_math_test.cpp"),
+                       ("native", temp / "native.cpp"), ("loader", temp / "loader.cpp")]:
         executable = temp / name
         subprocess.run(["c++", "-std=c++17", "-Wall", "-Wextra", "-I", str(temp),
                         "-I", str(root / "src"), str(path), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)
-print("Dual Wield math, animation borrowing, hand contacts and lifecycle: OK")
+print("Dual Wield math, animation borrowing, hand contacts, lifecycle and archive loading: OK")

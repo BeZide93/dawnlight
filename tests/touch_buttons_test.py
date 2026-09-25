@@ -102,10 +102,14 @@ int main(){
  enabled[1]=true;s_extraPresses.press(7,1);
  extra_clear_input(nullptr,nullptr,nullptr,nullptr);
  assert(!s_extraPresses.held(1)&&extra_clear_pad(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
+ // Global input loss must also invalidate the snapshot used during unload.
+ s_extraPresses.press(8,0);input=&base;extra_set_pad(nullptr,args,nullptr,nullptr);
+ assert(s_extraPadOwned);extra_clear_all(nullptr,nullptr,nullptr,nullptr);
+ assert(!s_extraPadOwned&&!s_extraPresses.held(0)&&s_extraBasePad.button==0);
 }
 '''
 fixture = fixture.replace('// HOOKS', '\n'.join(function(n) for n in (
-    'extra_set_pad', 'extra_clear_pad', 'extra_clear_input')))
+    'extra_set_pad', 'extra_clear_pad', 'extra_clear_input', 'extra_clear_all')))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp)/'test.cpp', Path(tmp)/'test'
     cpp.write_text(fixture)

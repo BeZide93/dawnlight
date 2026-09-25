@@ -163,6 +163,12 @@ HookAction extra_clear_input(ModContext*, void*, void*, void*) {
     s_extraPresses.clear();
     return HOOK_CONTINUE;
 }
+HookAction extra_clear_all(ModContext*, void*, void*, void*) {
+    s_extraPresses.clear();
+    s_extraPadOwned = false;
+    s_extraBasePad = {};
+    return HOOK_CONTINUE;
+}
 HookAction extra_sync_input(ModContext*, void* args, void*, void*) {
     prune_extra_presses(mods::arg<NativeTouch*>(args, 0));
     return HOOK_CONTINUE;
@@ -235,7 +241,7 @@ ModResult install_native_buttons(ModError* error) {
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchCancel>(svc_hook, extra_touch_up);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchSetPad>(svc_hook, extra_set_pad);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchClearPad>(svc_hook, extra_clear_pad);
-    if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchClearAllPads>(svc_hook, extra_clear_input);
+    if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchClearAllPads>(svc_hook, extra_clear_all);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install extra touch button hooks");
     s_extraHooksReady = true;
     s_touchRuntimeAvailable = true;

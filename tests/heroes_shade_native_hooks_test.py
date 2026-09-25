@@ -104,7 +104,7 @@ struct Cylinder {
 struct daPy_py_c {
     enum {CUT_TYPE_LARGE_JUMP_INIT=18,CUT_TYPE_LARGE_JUMP=19,CUT_TYPE_LARGE_JUMP_FINISH=20,CUT_TYPE_TURN_RIGHT=8,CUT_TYPE_TURN_LEFT=22,CUT_TYPE_LARGE_TURN_LEFT=23,CUT_TYPE_LARGE_TURN_RIGHT=24};
 };
-struct Player { std::array<Cylinder,3> mTgCyls; int cut=0; int getCutType(){return cut;} bool checkDeadHP(){return false;} } player;
+struct Player { struct { cXyz pos; } current; std::array<Cylinder,3> mTgCyls; int cut=0; int getCutType(){return cut;} bool checkDeadHP(){return false;} } player;
 Player* daAlink_getAlinkActorClass() { return &player; }
 Player* daPy_getPlayerActorClass() { return &player; }
 struct Sphere {
@@ -145,6 +145,9 @@ struct Fighter {
     shade::BladeMotion blade;
     std::array<dCcD_Cps,2> bladeSweeps;
     cXyz jumpBodyOffset{5,0,10};
+    bool jumpLaunched=false;
+    float jumpSpeed=0,orbitAngle=0,orbitRadius=150;
+    cXyz jumpTarget;
 };
 struct daNpc_Kn_c {
     bool owned=true, mNoDraw=false;
@@ -260,6 +263,56 @@ struct Wolf {int id=1001;void prepare(const cXyz&,s16){id=1001;}} sShadeWolf;
 
 checks = r'''
 int main() {
+    // Execute production movement routing, including inherited approach speed.
+    for (int divide=0;divide<3;++divide) {
+        daNpc_Kn_c fighter;
+        fighter.entry.divide=divide;
+        fighter.entry.offense=shade::sword;
+        player.current.pos={0,0,300};fighter.current.pos={0,0,0};
+        for(int frame=0;frame<=40;++frame) {
+            fighter.speedF=8;fighter.speed={10,-3,12};
+            attack_movement(&fighter,fighter.entry,0,frame,40);
+            assert(fighter.speedF==0 && fighter.speed.absXZ()==0 && fighter.speed.y==-3);
+        }
+        for(int attack:{shade::helm_splitter,shade::jump_strike}) {
+            fighter.entry.offense=attack;fighter.entry.jumpLaunched=false;
+            fighter.current.pos={0,0,0};fighter.mAcch.grounded=true;
+            player.current.pos={0,0,300};
+            const int takeoff=attack==shade::helm_splitter ? 27 : 42;
+            const int landing=attack==shade::helm_splitter ? 48 : 62;
+            const int end=attack==shade::helm_splitter ? 114 : 89;
+            for(int frame=0;frame<=end;++frame) {
+                fighter.speedF=8;fighter.speed={10,-3,12};
+                attack_movement(&fighter,fighter.entry,0,frame,end);
+                assert(fighter.speedF==0 && fighter.speed.y==-3);
+                if(frame<takeoff || frame>=landing) assert(fighter.speed.absXZ()==0);
+                else assert(fighter.speed.z>0 && fighter.speed.x==0);
+                if(frame<takeoff) assert(!fighter.entry.jumpLaunched);
+                fighter.current.pos+=fighter.speed;
+                if(frame==takeoff) player.current.pos={300,0,0}; // evade after commitment
+            }
+            const float expected=attack==shade::helm_splitter ? 440 : 190;
+            assert(std::abs(fighter.current.pos.z-expected)<0.001f);
+            assert(fighter.current.pos.x==0);
+            // A sequence's return step cannot reuse its attack-frame window.
+            fighter.speed={1,-3,2};
+            attack_movement(&fighter,fighter.entry,1,takeoff,end);
+            assert(fighter.speed.absXZ()==0);
+            // Late entry cannot launch after the feet have already landed.
+            fighter.entry.jumpLaunched=false;fighter.speed={1,-3,2};
+            attack_movement(&fighter,fighter.entry,0,landing,end);
+            assert(!fighter.entry.jumpLaunched && fighter.speed.absXZ()==0);
+            fighter.entry.animationStarted=false;fighter.speed={1,-3,2};
+            attack_movement(&fighter,fighter.entry,0,takeoff,end);
+            assert(!fighter.entry.jumpLaunched && fighter.speed.absXZ()==0);
+            fighter.entry.animationStarted=true;
+        }
+        fighter.entry.offense=shade::back_slice;
+        player.current.pos={0,0,300};fighter.current.pos={0,0,0};
+        attack_movement(&fighter,fighter.entry,2,10,40);
+        assert(fighter.speed.z==10); // keep Back Slice's gap closing
+    }
+
     // Spawn requests overlap the boss, including yaw; pending actors are not
     // requested again. Async creation then follows the boss's current pose.
     for(unsigned phase : {6u,7u}) {
@@ -889,7 +942,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-source = fixture + function("retire_double", "void") + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + function("begin_victory", "void") + function("before_execute") + checks
+source = fixture + function("move_toward", "void") + function("attack_movement", "void") + function("retire_double", "void") + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + function("begin_victory", "void") + function("before_execute") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"
@@ -898,6 +951,7 @@ with tempfile.TemporaryDirectory() as tmp:
                     "-I", str(root / "src"), str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 action = function("combat_action")
+assert "attack_movement(actor,*entry,step,frame,end);" in action
 assert action.index("if (!entry)") < action.index("skill_counter_action(actor,*entry)")
 assert action.index("skill_counter_action(actor,*entry)") < action.index("if (sBattle.recovery)")
 assert action.index("return_double(actor,*entry)") < action.index("if (sCinema.active()")

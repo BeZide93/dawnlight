@@ -80,6 +80,7 @@ struct Fighter {
     float orbitRadius = 150;
     bool swordContact = false;
     bool jumpLaunched = false;
+    float jumpSpeed = 0;
     bool helmTurnPending = false;
     bool animationStarted = false;
     cXyz jumpTarget{0,0,0};
@@ -910,6 +911,55 @@ void move_toward(daNpc_Kn_c* actor,const cXyz& target,float speed,float stop_dis
     actor->speed.x=velocity.x;
     actor->speed.z=velocity.z;
 }
+void attack_movement(daNpc_Kn_c* actor,Fighter& entry,int step,float frame,float end) {
+    actor->speedF=0;
+    actor->speed.x=actor->speed.z=0;
+    auto* player=daPy_getPlayerActorClass();
+    const float progress=end>0 ? std::clamp(frame/end,0.0f,1.0f) : 0;
+    if (entry.animationStarted) {
+        if (entry.offense==shade::back_slice && step<2) {
+            // Sidestep and roll follow a semicircle around Link, not a forward
+            // drift along the Shade's continually rotating facing direction.
+            const auto offset=shade::back_slice_offset(entry.orbitAngle,entry.orbitRadius,step,progress);
+            cXyz target=player->current.pos;
+            target.x+=offset.x; target.z+=offset.z;
+            move_toward(actor,target,14,0);
+            actor->setAngle(step==1 && actor->speed.absXZ()>0.01f ?
+                cLib_targetAngleY(&actor->current.pos,&target) : fopAcM_searchPlayerAngleY(actor));
+        } else if (shade::jumping_attack(entry.offense)) {
+            // Native BCK push-off / first foot contact: KN_KABUTO 27..48,
+            // KN_DAIJUMP 42..62. Ground collision cannot identify these phases:
+            // the actor stays grounded while the skeleton supplies jump height.
+            const float takeoff=entry.offense==shade::helm_splitter ? 27.0f : 42.0f;
+            const float landing=entry.offense==shade::helm_splitter ? 48.0f : 62.0f;
+            if (step!=0 || frame<takeoff || frame>=landing) return;
+            if (!entry.jumpLaunched && actor->mAcch.ChkGroundHit()) {
+                entry.jumpLaunched=true;
+                entry.jumpTarget=player->current.pos;
+                const auto target=shade::jump_landing_target(entry.offense,
+                    {actor->current.pos.x,actor->current.pos.z},
+                    {player->current.pos.x,player->current.pos.z});
+                entry.jumpTarget.x=target.x; entry.jumpTarget.z=target.z;
+                // Cover the committed distance during the airborne interval,
+                // not by sliding during charge or landing recovery. Keep this
+                // speed fixed even if collision blocks part of the jump.
+                entry.jumpSpeed=(entry.jumpTarget-actor->current.pos).absXZ()/(landing-takeoff);
+                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+            }
+            if (entry.jumpLaunched) move_toward(actor,entry.jumpTarget,entry.jumpSpeed,0);
+        } else if (entry.offense==shade::sword) {
+            // Face Link before committing the swing, but keep both feet planted.
+            if (progress<0.4f) actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+        } else {
+            // Reacquire Link before the Back Slice cut; stop at sword reach.
+            // Once the swing is committed, dodging still works.
+            if (progress<0.4f || (entry.offense==shade::back_slice && step==2)) {
+                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+                move_toward(actor,player->current.pos,10,120);
+            }
+        }
+    }
+}
 void before_movement(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     if (!fighter(actor) || (sBattle.dying && !cinema_landing()) || actor->speedF!=0) return;
@@ -1048,44 +1098,10 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     }
     ++entry->attackTicks;
     actor->mCcStts.Move();
-    actor->speedF=0;
-    actor->speed.x=actor->speed.z=0;
     const int step=actor->mMotionSeqMngr.getStepNo();
     const float frame=actor->mpModelMorf[0]->getFrame();
     const float end=actor->mpModelMorf[0]->getEndFrame();
-    const float progress=end>0 ? std::clamp(frame/end,0.0f,1.0f) : 0;
-    if (entry->animationStarted) {
-        if (entry->offense==shade::back_slice && step<2) {
-            // Sidestep and roll follow a semicircle around Link, not a forward
-            // drift along the Shade's continually rotating facing direction.
-            const auto offset=shade::back_slice_offset(entry->orbitAngle,entry->orbitRadius,step,progress);
-            cXyz target=player->current.pos;
-            target.x+=offset.x; target.z+=offset.z;
-            move_toward(actor,target,14,0);
-            actor->setAngle(step==1 && actor->speed.absXZ()>0.01f ?
-                cLib_targetAngleY(&actor->current.pos,&target) : fopAcM_searchPlayerAngleY(actor));
-        } else if (shade::jumping_attack(entry->offense)) {
-            if (!entry->jumpLaunched && progress>=0.2f && actor->mAcch.ChkGroundHit()) {
-                entry->jumpLaunched=true;
-                entry->jumpTarget=player->current.pos;
-                const auto target=shade::jump_landing_target(entry->offense,
-                    {actor->current.pos.x,actor->current.pos.z},
-                    {player->current.pos.x,player->current.pos.z});
-                entry->jumpTarget.x=target.x; entry->jumpTarget.z=target.z;
-                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
-                // Vertical jump travel is already in the BCK; adding another
-                // physical jump lifts the blade above Link at the impact pose.
-            }
-            if (entry->jumpLaunched && progress<0.75f) move_toward(actor,entry->jumpTarget,12,0);
-        } else {
-            // Reacquire Link before the Back Slice cut; stop at sword reach.
-            // Once the swing is committed, dodging still works.
-            if (progress<0.4f || (entry->offense==shade::back_slice && step==2)) {
-                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
-                move_toward(actor,player->current.pos,10,120);
-            }
-        }
-    }
+    attack_movement(actor,*entry,step,frame,end);
     const bool finished=entry->animationStarted && !actor->mMotionSeqMngr.checkEntryNewMotion() &&
         (entry->offense==shade::back_slice ? step>=3 :
          (step>0 || actor->mpModelMorf[0]->isStop()));

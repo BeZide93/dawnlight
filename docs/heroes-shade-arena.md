@@ -549,6 +549,8 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   lesson's hit reaction) retain their sequence number when they return to a
   ready/walking stance in step 1. Those return steps are now
   recognized; requiring sequence 9 alone previously suppressed later attacks.
+- Ordinary sword swings keep forward and X/Z speed at zero for their entire
+  animation; only facing can track Link before the swing commits.
 - Back Slice uses animation progress to follow a semicircle around Link at a
   150-unit radius, with bounded movement through native collision. The cut then
   faces Link and closes to sword reach. Sidestep/roll frames never deal damage.
@@ -560,6 +562,11 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   or registering another draw entry. Helm Splitter commits to a landing 140
   units beyond Link, where its turning cut faces him; Jump Strike stops 110
   units before him. Targets are captured at takeoff, so Link can evade them.
+  Translation is restricted to the source BCK's push-off/landing interval:
+  frames 27–48 for KN_KABUTO and 42–62 for KN_DAIJUMP. The charge and landing
+  recovery stay stationary. Jump speed is captured once to cover the target
+  distance within that interval; collision still constrains every movement and
+  never triggers a catch-up acceleration. Native skeleton motion supplies Y.
   On natural completion, Helm Splitter keeps its authored ending pose, then
   transfers the final half-turn into actor yaw and installs native stance 6
   with zero blend before clearing the attack. Position stays at the landing

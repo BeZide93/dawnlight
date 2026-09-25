@@ -34,6 +34,7 @@ DEFINE_HOOK(&daAlink_c::procCutNormalInit, DualCut);
 DEFINE_HOOK(&daAlink_c::procCutFinishInit, DualFinish);
 DEFINE_HOOK(&daAlink_c::procGuardAttackInit, DualGuardAttack);
 DEFINE_HOOK(&daAlink_c::swordUnequip, DualUnequip);
+DEFINE_HOOK(&daAlink_c::swordEquip, DualEquip);
 DEFINE_HOOK(&daAlink_c::procSwordUnequipSpInit, DualFlourish);
 DEFINE_HOOK(&daAlink_c::setCollision, DualCollision);
 DEFINE_HOOK(&fpcLf_Delete, DualDelete);
@@ -192,6 +193,16 @@ HookAction before_execute(ModContext*,void* args,void*,void*) {
     if(s.owner==link) ++s.tick;
     return HOOK_CONTINUE;
 }
+Pose hand_mount(daAlink_c* link,bool right) {
+    const auto& t=*link->field_0x2060->getOldFrameTransInfo(10);
+    Quaternion q;JMAEulerToQuat(t.mRotation.x,t.mRotation.y,t.mRotation.z,&q);
+    Pose mount{{q.x,q.y,q.z,q.w},{t.mTranslate.x,t.mTranslate.y,t.mTranslate.z}};
+    if(right) { mount.q.x=-mount.q.x;mount.q.y=-mount.q.y;mount.p.z=-mount.p.z; }
+    return mount;
+}
+Pose sword_at_hand(daAlink_c* link,bool right) {
+    return dual::compose(pose(link->mpLinkModel->getAnmMtx(right ? 14 : 9)),hand_mount(link,right));
+}
 void start_stow(daAlink_c* link,bool special) {
     if(!active(link) || s.draw<=0) return;
     s.stow={};s.stow.active=true;s.stow.special=special;
@@ -201,6 +212,18 @@ void start_stow(daAlink_c* link,bool special) {
     s.stow.phase=special ? link->field_0x3198 : 0;
     s.stow.start=dual::compose(dual::inverse(pose(link->mpLinkModel->getBaseTRMtx())),s.rightSword);
 }
+void start_draw(daAlink_c* link,bool nativeClock) {
+    if(!active(link) || s.draw>0) return;
+    s.stow={};s.stow.active=true;s.stow.drawing=true;s.stow.nativeClock=nativeClock;
+    const auto& frame=link->mUpperFrameCtrl[2];
+    s.stow.lastFrame=frame.getFrame();
+    s.stow.duration=nativeClock ? std::max(1.0f,frame.getFrame()-frame.getStart()) : 20.0f;
+    s.stow.start=dual::compose(dual::inverse(pose(link->mpLinkModel->getBaseTRMtx())),sword_at_hand(link,true));
+}
+void after_equip(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(link->checkSwordEquipAnime() && link->mUpperFrameCtrl[2].getRate()<0) start_draw(link,true);
+}
 void after_unequip(ModContext*,void* args,void*,void*) {
     start_stow(mods::arg<daAlink_c*>(args,0),false);
 }
@@ -208,19 +231,20 @@ void after_flourish(ModContext*,void* args,void* result,void*) {
     if(*static_cast<int*>(result)) start_stow(mods::arg<daAlink_c*>(args,0),true);
 }
 void update_stow(daAlink_c* link,bool guard) {
-    if(!s.active || ordinary(link) || guard ||
+    if(!s.active || ordinary(link) || (guard && !s.stow.drawing) ||
        (link->mEquipItem!=0x103 && link->mEquipItem!=dItemNo_NONE_e)) {
         s.stow={};return;
     }
     if(s.stow.active) {
-        const bool playing=s.stow.special ? link->mProcID==daAlink_c::PROC_SWORD_UNEQUIP_SP :
-            link->checkSwordEquipAnime() && link->mUpperFrameCtrl[2].getRate()>0;
+        const bool playing=!s.stow.nativeClock ? s.stow.progress<1 : s.stow.special ? link->mProcID==daAlink_c::PROC_SWORD_UNEQUIP_SP :
+            link->checkSwordEquipAnime() && (s.stow.drawing ? link->mUpperFrameCtrl[2].getRate()<0 : link->mUpperFrameCtrl[2].getRate()>0);
         if(playing) {
             const auto& frame=s.stow.special ? link->mUnderFrameCtrl[0] : link->mUpperFrameCtrl[2];
-            s.stow.advance(frame.getFrame(),s.stow.special ? link->field_0x3198 : 0);
+            s.stow.advance(s.stow.nativeClock ? frame.getFrame() : s.stow.lastFrame+(s.stow.drawing ? -1 : 1),
+                           s.stow.special ? link->field_0x3198 : 0);
         } else {
             s.stow.active=false;
-            s.stow.release=link->mEquipItem==dItemNo_NONE_e ? 1.0f : 0.0f;
+            s.stow.release=(s.stow.drawing || link->mEquipItem==dItemNo_NONE_e) ? 1.0f : 0.0f;
         }
     } else s.stow.release=dual::approach(s.stow.release,0,1.0f/6);
 }
@@ -242,11 +266,17 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     const bool guard=s.active && (link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e) &&
                      link->checkPlayerGuardAndAttack();
     const bool drawn=s.active && (link->mEquipItem==0x103 || guard);
+    if(drawn && s.draw==0 && !s.stow.active && s.stow.release==0 && !ordinary(link)) start_draw(link,false);
+    if(s.active && !drawn && s.draw>0 && !s.stow.active && s.stow.release==0 && !ordinary(link) &&
+       link->mEquipItem==dItemNo_NONE_e) {
+        start_stow(link,false);s.stow.nativeClock=false;s.stow.duration=24;
+    }
     update_stow(link,guard);
     s.guard=dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
     if(s.stow.active) {
-        s.guard=0;
-        s.draw=s.stow.progress<dual::stow_insert_end ? 1.0f : 0.0f;
+        if(!s.stow.drawing) s.guard=0;
+        const bool held=s.stow.drawing ? s.stow.progress>=dual::draw_grip_start : s.stow.progress<dual::stow_insert_end;
+        s.draw=held ? 1.0f : 0.0f;
     } else s.draw=dual::approach(s.draw,drawn ? 1.0f : 0.0f,1.0f/8);
 }
 void after_cut(ModContext*,void* args,void* result,void*) {
@@ -306,22 +336,12 @@ void after_model_calc(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(s_calculating && s.owner==link && mods::arg<J3DModel*>(args,1)==link->mpLinkModel) detach();
 }
-Pose hand_mount(daAlink_c* link,bool right) {
-    const auto& t=*link->field_0x2060->getOldFrameTransInfo(10);
-    Quaternion q;JMAEulerToQuat(t.mRotation.x,t.mRotation.y,t.mRotation.z,&q);
-    Pose mount{{q.x,q.y,q.z,q.w},{t.mTranslate.x,t.mTranslate.y,t.mTranslate.z}};
-    if(right) { mount.q.x=-mount.q.x;mount.q.y=-mount.q.y;mount.p.z=-mount.p.z; }
-    return mount;
-}
-Pose sword_at_hand(daAlink_c* link,bool right) {
-    return dual::compose(pose(link->mpLinkModel->getAnmMtx(right ? 14 : 9)),hand_mount(link,right));
-}
-void solve_arm(daAlink_c* link,bool right,Pose sword,float weight) {
+void solve_arm(daAlink_c* link,bool right,Pose sword,float weight,const Vec* elbowPole=nullptr) {
     auto* model=link->mpLinkModel;int first=right ? 12 : 7;
     dual::Arm arm{pose(model->getAnmMtx(first)),pose(model->getAnmMtx(first+1)),pose(model->getAnmMtx(first+2))};
     const Pose item=dual::compose(dual::inverse(arm.hand),pose(model->getAnmMtx(first+3)));
     Pose hand=dual::compose(sword,dual::inverse(hand_mount(link,right)));
-    const auto solved=dual::reach(arm,hand,weight);
+    const auto solved=dual::reach(arm,hand,weight,elbowPole);
     put(model,first,solved.upper);put(model,first+1,solved.lower);put(model,first+2,solved.hand);
     // Both item joints remain attached to their hands after the IK pass.
     put(model,first+3,dual::compose(solved.hand,item));
@@ -334,29 +354,12 @@ void after_arms(ModContext*,void* args,void*,void*) {
     // blade direction. The sheath inherits this same pose in after_items.
     constexpr float halfTurn90=.70710678118f;
     s.hipSword=dual::compose(s.hipSword,Pose{{halfTurn90,0,0,halfTurn90},{}});
-    if(s.stow.active || s.stow.release>0) {
-        const Pose base=pose(model->getBaseTRMtx());
-        const Pose start=dual::compose(base,s.stow.start);
-        const Vec shoulder=dual::compose(dual::inverse(base),pose(model->getAnmMtx(12))).p;
-        // After releasing the hilt, lower the empty hand on Link's right side.
-        // Keep overriding until the whole native clip ends: its late frames
-        // still reach behind the back to put away the shield.
-        Pose restHand=dual::compose(start,dual::inverse(hand_mount(link,true)));
-        restHand.p=dual::compose(base,Pose{{},{shoulder.x+(shoulder.x<0 ? -8.0f : 8.0f),
-                                            shoulder.y-51,shoulder.z}}).p;
-        const Pose rest=dual::compose(restHand,hand_mount(link,true));
-        const float progress=s.stow.active ? s.stow.progress : 1.0f;
-        const Pose target=dual::stow_hand_target(start,s.hipSword,rest,progress);
-        solve_arm(link,true,target,s.stow.active ? 1.0f : s.stow.release);
-        s.rightSword=s.stow.active && progress<dual::stow_insert_end ? sword_at_hand(link,true) : s.hipSword;
-        return;
-    }
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());
         const Pose inverseBase=dual::inverse(base);
-        const float push=16*guard_thrust(link);
+        const float thrust=guard_thrust(link);
         std::array<Pose,2> blades;
-        float plane=44+push;
+        float plane=32+16*thrust;
         for(bool right:{false,true}) {
             const int first=right ? 12 : 7;
             dual::Arm arm{dual::compose(inverseBase,pose(model->getAnmMtx(first))),
@@ -368,7 +371,7 @@ void after_arms(ModContext*,void* args,void*,void*) {
             // The primary (left-hand) blade stays 12 units ahead of the Ordon
             // blade. Clamp both together so reach limits cannot reverse them.
             const float depth=right ? -6.0f : 6.0f;
-            blades[right]={dual::between({1,0,0},dual::unit({-.65f*side,.75f,.32f})),{18*side,112,44+push+depth}};
+            blades[right]=dual::cross_guard_blade(side,right,thrust);
             plane=std::min(plane,dual::max_sword_depth(arm,blades[right],hand_mount(link,right))-depth);
         }
         for(bool right:{false,true}) {
@@ -376,11 +379,32 @@ void after_arms(ModContext*,void* args,void*,void*) {
             solve_arm(link,right,dual::compose(base,blades[right]),dual::smooth(s.guard));
         }
     }
-    // Apply the draw after the guard solve too: raising the guard directly
-    // from a holstered state must not teleport the offhand sword off the hip.
-    if(s.draw>0 && s.draw<1 && !ordinary(link)) {
-        Pose target=dual::blend(s.hipSword,sword_at_hand(link,true),dual::smooth(s.draw));
-        solve_arm(link,true,target,1);
+    if(s.stow.active || s.stow.release>0) {
+        const Pose base=pose(model->getBaseTRMtx()),inverseBase=dual::inverse(base);
+        const float progress=s.stow.active ? s.stow.progress : 1.0f;
+        const Pose follow=dual::shoulder_follow(pose(model->getAnmMtx(11)),pose(model->getAnmMtx(12)),
+                                                dual::rotate(base.q,{0,0,1}),progress);
+        for(int joint=11;joint<=15;++joint) put(model,joint,dual::compose(follow,pose(model->getAnmMtx(joint))));
+        const Vec shoulder=dual::compose(inverseBase,pose(model->getAnmMtx(12))).p;
+        const float side=shoulder.x<0 ? -1.0f : 1.0f;
+        const Pose mount=hand_mount(link,true);
+        // Suppress the native shield-back arm motion for the whole clip.
+        // The same forward route is used by the empty hand after release.
+        Pose restHand=dual::compose(s.stow.start,dual::inverse(mount));
+        restHand.p={shoulder.x+14*side,shoulder.y-51,shoulder.z+2};
+        Pose rest=dual::compose(restHand,mount);
+        if(s.stow.drawing && s.guard>0) rest=dual::compose(inverseBase,sword_at_hand(link,true));
+        const Pose target=dual::sheath_hand_target(s.stow.start,dual::compose(inverseBase,s.hipSword),
+                                                  rest,mount,progress,s.stow.drawing);
+        // A stable pole in front of the right shoulder prevents the vanilla
+        // shield animation from dragging the elbow behind/through the torso.
+        const float poleWeight=dual::smooth(progress/.12f)*dual::smooth((1-progress)/.12f);
+        const Vec forwardPole=dual::compose(base,Pose{{},{shoulder.x,shoulder.y,shoulder.z+60}}).p;
+        const Vec pole=pose(model->getAnmMtx(13)).p*(1-poleWeight)+forwardPole*poleWeight;
+        solve_arm(link,true,dual::compose(base,target),s.stow.active ? 1.0f : s.stow.release,&pole);
+        const bool held=s.stow.drawing ? progress>=dual::draw_grip_start : progress<dual::stow_insert_end;
+        s.rightSword=held ? sword_at_hand(link,true) : s.hipSword;
+        return;
     }
     s.rightSword=s.draw>0 ? sword_at_hand(link,true) : s.hipSword;
 }
@@ -452,7 +476,7 @@ ModResult install_dual_wield_hooks(ModError* error) {
     POST(DualShieldDraw,after_shield_draw);POST(DualModelDraw,after_model_draw);
     POST(DualCut,after_cut);POST(DualFinish,after_cut);POST(DualCollision,after_collision);
     PRE(DualGuardAttack,before_guard_attack);
-    POST(DualUnequip,after_unequip);POST(DualFlourish,after_flourish);
+    POST(DualEquip,after_equip);POST(DualUnequip,after_unequip);POST(DualFlourish,after_flourish);
     PRE(DualDelete,before_delete);
 #undef PRE
 #undef POST

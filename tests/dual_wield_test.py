@@ -32,6 +32,7 @@ struct J3DAnmTransformKey : J3DAnmTransform {
     void calcTransform(float t,u16 joint,J3DTransformInfo* out) const {
         *out={};out->mTranslate={float(joint),t,float(100+joint)};
         out->mRotation={s16(joint*30),s16(joint*20),s16(joint*10)};
+        if(joint==0) out->mRotation={s16(t*80),s16(t*100),s16(t*180)};
     }
     void getTransform(u16 joint,J3DTransformInfo* out) const override {calcTransform(frame,joint,out);}
 };
@@ -55,7 +56,7 @@ enum HookAction {HOOK_CONTINUE};
 constexpr int dItemNo_NONE_e=0xff;
 struct Args {void* link;void* model=nullptr;};
 namespace mods {template<class T>T arg(void* p,int i){auto* a=static_cast<Args*>(p);return static_cast<T>(i?a->model:a->link);}}
-struct J3DModel {};
+struct J3DModel {dual::Pose base;auto getBaseTRMtx(){return base;}};
 struct cXyz {float x=0,y=0,z=0;void set(float a,float b,float c){x=a;y=b;z=c;}};
 struct Morph {
     int calls=0;bool valid=true;
@@ -75,7 +76,7 @@ struct daAlink_c {
     Morph morph;Morph* field_0x2060=&morph;
     J3DModel model;J3DModel* mpLinkModel=&model;
     std::array<mDoExt_AnmRatioPack,3> mNowAnmPackUnder,mNowAnmPackUpper;
-    struct Frame {float frame=10,rate=1;float getFrame() const{return frame;}float getRate() const{return rate;}};
+    struct Frame {float frame=10,rate=1;float getFrame() const{return frame;}float getRate() const{return rate;}float getStart() const{return 0;}float getEnd() const{return 22;}};
     std::array<Frame,3> mUnderFrameCtrl,mUpperFrameCtrl;
     float field_0x3478=6,field_0x347c=14;
     cXyz field_0x3498,mSwordTopPos,field_0x3720,field_0x34a4,field_0x34b0,field_0x34bc;
@@ -90,18 +91,19 @@ struct State {
     float guard=0,draw=0;unsigned tick=0,poseTick=~0u;
     dual::Alternation attacks;
     DualGuardBodyPose guardBody;bool haveGuardBody=false;
-    dual::StowMotion stow;
+    dual::StowMotion stow;Pose rightSword;
 } s;
 struct Borrow {mDoExt_AnmRatioPack* pack=nullptr;J3DAnmTransform* original=nullptr;std::optional<DualWieldAnimation> wrapper;};
 std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
 bool dual_wield_enabled(){return setting;}
 bool human(daAlink_c* l){return l->human;}
 bool active(daAlink_c* l){return s.owner==l && s.active;}
+Pose pose(Pose p){return p;}
 Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
 '''
 
 fixture += "\n".join(function(name, result) for name, result in [
-    ("detach", "void"), ("ordinary", "bool"), ("update_stow", "void"), ("after_matrix", "void"),
+    ("detach", "void"), ("ordinary", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
@@ -168,8 +170,8 @@ int main() {
     // Event/wolf boundaries never modify another rig.
     link.human=false;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(!s.active);
 
-    // The thrust borrows a captured guard body, not the animated shield-bash
-    // torso. Legs still use the native clip and the real frame keeps advancing.
+    // Root/pelvis/legs must remain one native motion. Chest orientation stays
+    // stable despite the root rotation; only a 3-unit forward translation is added.
     link.human=true;link.mProcID=daAlink_c::PROC_WAIT;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
     link.morph.transforms[0].mTranslate.y=102;
@@ -184,9 +186,22 @@ int main() {
         auto* anm=link.mNowAnmPackUnder[0].value;
         J3DTransformInfo root,spine,leg;
         anm->getTransform(0,&root);anm->getTransform(1,&spine);anm->getTransform(17,&leg);
-        assert(root.mTranslate.y==102 && std::abs(root.mRotation.z-16384)<=1);
-        assert(spine.mRotation.x==0 && spine.mRotation.y==0);
-        assert(std::abs(spine.mRotation.z-(frame==10 ? 910 : 0))<=1);
+        for(int joint=0;joint<=26;++joint) {
+            if(joint>0 && joint<16)continue;
+            J3DTransformInfo actual,native;
+            anm->getTransform(joint,&actual);original.getTransform(joint,&native);
+            assert(actual.mTranslate.x==native.mTranslate.x && actual.mTranslate.y==native.mTranslate.y && actual.mTranslate.z==native.mTranslate.z);
+            assert(actual.mRotation.x==native.mRotation.x && actual.mRotation.y==native.mRotation.y && actual.mRotation.z==native.mRotation.z);
+        }
+        auto rotation=[](const J3DTransformInfo& t) {
+            constexpr float radians=3.14159265358979323846f/32768;
+            return dual::from_euler({t.mRotation.x*radians,t.mRotation.y*radians,t.mRotation.z*radians});
+        };
+        const auto world=dual::multiply(rotation(root),rotation(spine));
+        assert(dual::length(dual::rotate(world,{1,0,0})-Vec{0,1,0})<.001f);
+        assert(dual::length(dual::rotate(world,{0,0,1})-Vec{0,0,1})<.001f);
+        const auto shift=dual::rotate(rotation(root),{spine.mTranslate.x,spine.mTranslate.y,spine.mTranslate.z});
+        assert(dual::length(shift-Vec{0,0,frame==10 ? 3.0f : 0.0f})<.001f);
         assert(leg.mTranslate.y==frame && leg.mRotation.x==17*30);
         after_model_calc(nullptr,&args,nullptr,nullptr);
         assert(link.mNowAnmPackUnder[0].value==&original);
@@ -212,6 +227,32 @@ int main() {
     assert(!s.stow.active && s.stow.release==1);
     for(int i=0;i<7;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
     assert(s.stow.release==0);
+    // Draw starts before the inventory swap, using the reversed equip clock.
+    s.draw=0;link.equipping=true;link.mEquipItem=dItemNo_NONE_e;
+    link.mUpperFrameCtrl[2].rate=-1;link.mUpperFrameCtrl[2].frame=22;
+    after_equip(nullptr,&args,nullptr,nullptr);
+    assert(s.stow.active && s.stow.drawing && s.stow.duration==22);
+    link.mUpperFrameCtrl[2].frame=18;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(s.draw==0); // empty hand approaches; sword remains in its sheath
+    link.mUpperFrameCtrl[2].frame=14;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.draw==1);
+    link.mEquipItem=0x103;link.mUpperFrameCtrl[2].frame=5;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(s.stow.active && s.stow.drawing && s.draw==1);
+    link.equipping=false;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(!s.stow.active && s.stow.release==1);
+    // Raising/lowering guard while holstered uses both halves of the same
+    // route even when there is no native equip animation controller.
+    s.stow={};s.draw=0;link.mEquipItem=dItemNo_NONE_e;link.guard=true;
+    for(int i=0;i<21;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
+    assert(s.draw==1 && !s.stow.active);
+    for(int i=0;i<6;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
+    link.guard=false;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(s.stow.active && !s.stow.drawing && !s.stow.nativeClock);
+    for(int i=0;i<25;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
+    assert(s.draw==0 && !s.stow.active);
     // An attack interruption immediately returns ownership to combat.
     s.stow.active=true;link.mProcID=daAlink_c::PROC_CUT_NORMAL;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);

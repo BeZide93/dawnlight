@@ -48,10 +48,11 @@ int main() {
         Vec shoulder{i ? -18.0f : 18.0f,130,i ? 16.0f : -10.0f};
         arms[i]={{{},shoulder},{{},shoulder+Vec{0,-29,0}},{{},shoulder+Vec{0,-55.5f,0}}};
         float side=i ? -1.0f : 1.0f;
-        blades[i]={between({1,0,0},unit({-.65f*side,.75f,.32f})),{18*side,112,0}};
+        blades[i]=cross_guard_blade(side,i!=0,0);
     }
+    float restDepth=0;
     for(float push:{0.0f,8.0f,16.0f}) {
-        float plane=44+push;
+        float plane=32+push;
         for(int i=0;i<2;++i)plane=std::min(plane,max_sword_depth(arms[i],blades[i],mount)-(i ? -6 : 6));
         Pose actual[2];
         for(int i=0;i<2;++i) {
@@ -61,7 +62,14 @@ int main() {
             near(actual[i].p,blades[i].p);
         }
         assert(std::abs(actual[0].p.z-actual[1].p.z-12)<.003f);
+        if(push==0) restDepth=actual[0].p.z;
+        if(push==16) assert(actual[0].p.z-restDepth>8); // visible arm extension, not already at full reach
     }
+    // Moving the grips back must not move the blade crossing toward the face.
+    auto front=cross_guard_blade(1,false,0);
+    Vec direction=rotate(front.q,{1,0,0});
+    Vec crossing=front.p+direction*(-front.p.x/direction.x);
+    assert(crossing.z>58); // previous front blade crossed at about Z=59
 
     // Eight ticks to draw/stow with no overshoot, including mid-transition reversal.
     float draw=0;
@@ -76,12 +84,12 @@ int main() {
 
     Pose hip{between({1,0,0},unit({0,-1,-.4f})),{18,105,5}};
     Pose start{{},{-25,90,10}},rest{{},{-25,80,5}};
-    near(stow_hand_target(start,hip,rest,0).p,start.p);
-    near(stow_hand_target(start,hip,rest,.75f).p,hip.p);
-    near(stow_hand_target(start,hip,rest,1).p,rest.p);
+    near(sheath_hand_target(start,hip,rest,{},0,false).p,start.p);
+    near(sheath_hand_target(start,hip,rest,{},.75f,false).p,hip.p);
+    near(sheath_hand_target(start,hip,rest,{},1,false).p,rest.p);
     float previous=-43;
     for(int i=0;i<=40;++i) {
-        const Pose p=stow_hand_target(start,hip,rest,.35f+i*.01f);
+        const Pose p=sheath_hand_target(start,hip,rest,{},.35f+i*.01f,false);
         const Pose relative=compose(inverse(hip),p);
         // Insertion is axial: no lateral sweep through the scabbard wall.
         assert(std::abs(relative.p.y)<.001f && std::abs(relative.p.z)<.001f);
@@ -89,6 +97,47 @@ int main() {
         previous=relative.p.x;
         near(rotate(relative.q,{1,0,0}),{1,0,0});
     }
+    // Native neutral hand/hip geometry, including the actual grip offset.
+    // Sample the solved wrist, not only the requested curve: IK clamping can
+    // otherwise conceal a route that still cuts across the torso.
+    const Pose sheath{{-.133265f,-.148526f,.694090f,-.691678f},{19.239038f,105.013702f,4.7635f}};
+    const Pose gripMount{{.579250f,.405549f,.405549f,.579250f},{9.664279f,2.136274f,-3.018636f}};
+    const Pose held{{.560311f,-.397551f,.279636f,.670678f},{-26.408121f,74.036564f,7.210265f}};
+    const Arm native{{{-.407928f,.416675f,.701111f,-.410391f},{-16.337433f,134.640355f,2.338878f}},
+                     {{.272577f,-.515485f,-.555439f,.592844f},{-25.917520f,108.093595f,-4.331315f}},
+                     {{.210702f,-.437019f,-.567528f,.665229f},{-29.852111f,83.194294f,3.841432f}}};
+    const Vec elbow{-16.337433f,134.640355f,62.338878f};
+    const Pose clavicle{{},{-.749549f,136.704381f,2.512908f}};
+    for(bool drawing:{false,true}) {
+        Vec previousHand{};
+        for(int i=0;i<=1000;++i) {
+            const float t=i/1000.0f;
+            const Pose blade=sheath_hand_target(held,sheath,held,gripMount,t,drawing);
+            const Pose hand=compose(blade,inverse(gripMount));
+            const Pose follow=shoulder_follow(clavicle,native.upper,{0,0,1},t);
+            const Arm moved{compose(follow,native.upper),compose(follow,native.lower),compose(follow,native.hand)};
+            const float poleWeight=smooth(t/.12f)*smooth((1-t)/.12f);
+            const Vec pole=moved.lower.p*(1-poleWeight)+(moved.upper.p+Vec{0,0,60})*poleWeight;
+            const Arm solved=reach(moved,hand,1,&pole);
+            if(i==0 || i==1000) near(solved.lower.p,native.lower.p,.01f);
+            if(std::abs(solved.hand.p.x)<16) assert(solved.hand.p.z>20);
+            if(i) assert(length(solved.hand.p-previousHand)<1.5f);
+            previousHand=solved.hand.p;
+            // The forearm also stays in front of a conservative torso envelope.
+            for(int j=1;j<=10;++j) {
+                const Vec p=solved.lower.p+(solved.hand.p-solved.lower.p)*(j/10.0f);
+                if(p.y>90 && p.y<130) assert(p.x*p.x/(20*20)+p.z*p.z/(14*14)>=1);
+            }
+        }
+        const float contact=drawing ? draw_grip_start : stow_insert_end;
+        const Pose blade=sheath_hand_target(held,sheath,held,gripMount,contact,drawing);
+        const Arm solved=reach(native,compose(blade,inverse(gripMount)),1,&elbow);
+        near(compose(solved.hand,gripMount).p,sheath.p,.01f); // no snap at grip/release
+    }
+    StowMotion drawMotion;drawMotion.drawing=true;drawMotion.lastFrame=22;
+    drawMotion.advance(11,0);assert(drawMotion.progress==.5f);
+    drawMotion.advance(11,0);assert(drawMotion.progress==.5f);
+    drawMotion.advance(0,0);assert(drawMotion.progress==1);
     StowMotion stow;stow.active=true;stow.duration=18;
     stow.advance(9,0);assert(stow.progress==.5f);
     stow.advance(9,0);assert(stow.progress==.5f); // extra model calc cannot advance it

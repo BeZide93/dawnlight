@@ -32,6 +32,7 @@ struct EditorApi {
     void (*hide)(EditorDocument*, bool) = nullptr;
     void (*cancel)(NativeEditor*) = nullptr;
     void (*clearTouch)(NativeTouch*) = nullptr;
+    void (*showTouch)(NativeTouch*) = nullptr;
 } s_editorApi;
 NativeEditor* s_extraEditor = nullptr;
 unsigned s_editorScope = 0;
@@ -53,7 +54,7 @@ HookAction show_editor_background(ModContext*, void* args, void*, void*) {
     // stick motion, or native menu commands while arranging the extra controls.
     controls->mWasSuppressed = true;
     s_editorApi.clearTouch(controls);
-    controls->show();
+    s_editorApi.showTouch(controls);
     return HOOK_SKIP_ORIGINAL;
 }
 HookAction enter_extra_editor(ModContext*, void* args, void*, void*) {
@@ -182,7 +183,8 @@ ModResult install_extra_editor(ModError*) {
         !resolve_extra("dusk::ui::uncover_top_document", s_editorApi.uncover) ||
         !resolve_extra("dusk::ui::Document::hide", s_editorApi.hide) ||
         !resolve_extra("dusk::ui::TouchControlsEditor::cancel_edit", s_editorApi.cancel) ||
-        !resolve_extra("dusk::ui::TouchControls::clear_virtual_input", s_editorApi.clearTouch)) return MOD_OK;
+        !resolve_extra("dusk::ui::TouchControls::clear_virtual_input", s_editorApi.clearTouch) ||
+        !resolve_extra("dusk::ui::TouchControls::show", s_editorApi.showTouch)) return MOD_OK;
     const std::array bindings = {
         editor_hook<ExtraEditorBackground>("TouchControls::sync_visibility", show_editor_background, nullptr),
         editor_hook<ExtraEditorControls>("touch_layout_controls", nullptr, extra_editor_controls),

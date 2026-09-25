@@ -92,6 +92,7 @@ const char* kExtraEditorIds[]={"zl","up","down","left","right"};
 int cancels=0,uncovers=0;
 struct EditorApi {
  EditorDocument* (*top)()=[](){return topDocument;};
+ void (*showTouch)(NativeTouch*)=[](NativeTouch* t){t->show();};
  void (*clearTouch)(NativeTouch*)=[](NativeTouch* t){t->held=false;};
  void (*cancel)(NativeEditor*)=[](NativeEditor*){++cancels;};
  void (*hide)(EditorDocument*,bool)=[](EditorDocument* e,bool c){e->closed=c;};

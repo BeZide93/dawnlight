@@ -180,6 +180,12 @@ Dusklight. If you changed it with `Change Data Folder`, create or use the
 See [COMPATIBILITY.md](COMPATIBILITY.md) for tested Twilit Essentials and
 Twilight HD HUD versions, compatible Z-item settings, and details about the
 Android-only `Dawnlight Touch UI` option.
+Under **Controls → Touch Buttons**, enable **ZL** and each of the four **D-Pad**
+directions individually (all default to off). Both Dusklight Touch Controls and
+Dawnlight Touch UI must be enabled. The submenu's **Layout Editor** provides a
+live layout preview, horizontal/vertical position and size for each extra button,
+plus a reset for the selected button. Changes save automatically. These extra
+buttons use their own editor; the native touch editor still manages vanilla controls.
 
 ## Arrow Modes
 

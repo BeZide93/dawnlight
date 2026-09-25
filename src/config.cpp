@@ -1,3 +1,4 @@
+#include "touch_buttons.hpp"
 #include "config.hpp"
 #include "progression.hpp"
 #include "enemy_spawner.hpp"
@@ -878,6 +879,7 @@ ModResult register_custom_hud_config() {
 }  // namespace
 
 ModResult register_config(ModError* error) {
+    if (const auto result = register_touch_button_config(error); result != MOD_OK) return result;
     if (register_bool("dawnlight-mode", false, s_dawnlightMode) != MOD_OK ||
         register_bool("progression-system", false, s_progressionSystem) != MOD_OK ||
         register_bool("notifications", false, s_notifications) != MOD_OK ||

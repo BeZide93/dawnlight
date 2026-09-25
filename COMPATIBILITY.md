@@ -57,6 +57,34 @@ This toggle works independently from Dawnlight's `Z Item Slot` setting so that
 another mod can own the third item slot while Dawnlight supplies the compatible
 touch controls. Restart Dusklight after changing it.
 
+### Extra touch buttons
+
+**Controls → Touch Buttons** contains independent switches for ZL, D-Pad Up,
+Down, Left and Right, all off by default. They require both native Touch Controls
+and Dawnlight Touch UI on Android. The switches and layout changes apply live;
+changing the parent Dawnlight Touch UI setting still requires a restart.
+
+The **Layout Editor** tab selects one extra button and edits its X/Y position
+(0–100% of the safe area available to that button) and size (28–120 dp), with a
+scaled preview and per-button reset. Values are saved through ConfigService.
+The native touch editor has a fixed-size control array, so Dawnlight keeps its
+additional layouts separate and does not extend that array or the host settings
+struct. The native editor continues to edit the original controls.
+
+ZL sends the independent left analog trigger used by the game's lock-trigger
+checks, including Dawnlight manual shielding; it does not send digital L.
+D-Pad buttons send normal logical pad directions. Physical-only input readers in
+other mods are not emulated. Additional inputs are merged with native touch
+input before the host combines it with controller input. Multiple fingers are
+tracked independently; hiding/disabling controls or clearing native touch input
+releases the extra buttons. Extras are hidden during game menus, dialogue and
+cutscenes. No new APK is needed.
+
+Run `python3 tests/touch_buttons_test.py` for input ownership, pad merging and
+layout bounds. Device QA should cover all five buttons, simultaneous ZL + face
+buttons and stick movement, disabling a held button, app/menu transitions,
+orientation/safe-area changes, persistent layouts after restart, and mod unload.
+
 The portal shortcut uses a touch press edge, so holding L does not repeatedly
 toggle portals. It is scoped to field-map input processing and also works
 with Twilight HD HUD's Fixed controller bindings, which rebuild logical L/R

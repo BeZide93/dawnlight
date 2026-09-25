@@ -110,6 +110,7 @@ add_mod(dawnlight_mod
         src/save_compat.cpp
         src/save_state.cpp
         src/stamina.cpp
+        src/touch_buttons.cpp
         src/ui.cpp
         src/update_service.cpp
     MOD_JSON mod.json

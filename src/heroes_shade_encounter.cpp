@@ -1,6 +1,7 @@
 #include "heroes_shade_encounter.hpp"
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
+#include "heroes_shade_stride_animation.hpp"
 #include "SSystem/SComponent/c_math.h"
 #include "generated/pedestal_stone.hpp"
 #include "pedestal_mesh.hpp"
@@ -44,6 +45,8 @@
 #include <cstring>
 #include <cstdio>
 #include <unordered_set>
+#include <memory>
+#include <new>
 
 namespace dawnlight {
 namespace {
@@ -53,12 +56,14 @@ constexpr char kSwordArchive[] = "MstrSword";
 constexpr int kAttackCooldown = 18;
 constexpr int kComboGap = 6;
 constexpr int kDoubleAttackDelay = 15;
-constexpr float kApproachSpeed = 6.0f;
+constexpr float kApproachSpeed = shade::stride::speed;
 ProfileName sProfile = -1;
 ActorHandle sRegistration = 0;
 ActorId sPedestal = kNone;
 struct Fighter {
     ActorId id = kNone;
+    std::unique_ptr<ShadeStrideAnimation> stride;
+    float walkSpeed = 0;
     int divide = 0;
     bool forming = false;
     bool returning = false;
@@ -75,6 +80,7 @@ struct Fighter {
     float orbitRadius = 150;
     bool swordContact = false;
     bool jumpLaunched = false;
+    float jumpSpeed = 0;
     bool helmTurnPending = false;
     bool animationStarted = false;
     cXyz jumpTarget{0,0,0};
@@ -172,6 +178,16 @@ void remove_actor(ActorId id) {
     if (actor_by_id(id)) svc_actor->delete_actor(mod_ctx,id);
 }
 #include "heroes_shade_wolf.inc"
+
+void release_step_animation(daNpc_Kn_c* actor,Fighter& entry) {
+    // Detach mod-owned animation before native Delete frees the model and archive.
+    if (entry.stride) for (auto* model:actor->mpModelMorf)
+        if (model && model->getAnm()==entry.stride.get())
+            model->changeAnm(const_cast<J3DAnmTransformKey*>(entry.stride->original));
+    if (entry.stride && actor->mBckAnm.getBckAnm()==entry.stride.get())
+        actor->mBckAnm.changeBckOnly(const_cast<J3DAnmTransformKey*>(entry.stride->original));
+    entry.stride.reset();
+}
 
 void retire_double(Fighter& entry,bool recall) {
     if (recall && !entry.deleting && pending_or_live(entry.id)) {
@@ -484,6 +500,7 @@ DEFINE_HOOK(&daNpc_Kn_c::action, ShadeActionHook);
 DEFINE_HOOK(&daNpc_Kn_c::teach01_swordFinishWait, ShadeEndingBlowHook);
 DEFINE_HOOK(&daNpc_Kn_c::calcSwordAttackMove, ShadeApproachHook);
 DEFINE_HOOK(&daNpc_Kn_c::ctrlMotion, ShadeMotionHook);
+DEFINE_HOOK(&daNpc_Kn_c::setMotionAnm, ShadeStepAnimationHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterSetMotionAnm, ShadeAccessoryMotionHook);
 DEFINE_HOOK(&daNpc_Kn_c::beforeMove, ShadeMovementHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterMoved, ShadeLandingHook);
@@ -714,6 +731,7 @@ HookAction before_delete(ModContext*,void* args,void*,void*) {
         if (!entry->divide) { stop_shade_music(); release_cinema(); cancel_trial(); remove_companions(); }
         stop_blade_sweeps(*entry);
         actor->mType=6;
+        release_step_animation(actor,*entry);
         *entry={};
     }
     return HOOK_CONTINUE;
@@ -772,11 +790,58 @@ void after_approach(ModContext*,void* args,void*,void*) {
         if (std::abs(static_cast<int>(remaining))>0x400) {
             actor->speedF=0;
             actor->speed.x=actor->speed.z=0;
+            entry->walkSpeed=0;
             return;
         }
         entry->helmTurnPending=false;
     }
-    if (actor->speedF>0) actor->speedF=kApproachSpeed;
+    if (actor->speedF>0) {
+        entry->walkSpeed=shade::stride::approach_speed(entry->walkSpeed);
+        actor->speedF=entry->walkSpeed;
+    } else entry->walkSpeed=0;
+}
+
+HookAction step_animation(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    auto* entry=fighter(actor);
+    if (!entry) return HOOK_CONTINUE;
+    // Native animation-table entries: 2 = KN_STEP_IKAKU, 1 = KN_STEP.
+    // Replace the clip, not sequence 9: combat and attack-return sequences
+    // must retain their native IDs and step progression.
+    auto& animation=mods::arg_ref<int>(args,1);
+    if (animation==2) animation=1;
+    // Native restart checks compare archive pointers. Expose that pointer for
+    // the native call, while retaining our state until its result is known.
+    if (entry->stride) for (auto* model:actor->mpModelMorf)
+        if (model && model->getAnm()==entry->stride.get())
+            model->changeAnm(const_cast<J3DAnmTransformKey*>(entry->stride->original));
+    return HOOK_CONTINUE;
+}
+
+void install_step_animation(ModContext*,void* args,void* result,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    auto* entry=fighter(actor);
+    if (!entry || !actor->mpModelMorf[0]) return;
+    auto* animation=actor->mpModelMorf[0]->getAnm();
+    const int motion=mods::arg<int>(args,1);
+    // Failed native changes must not remove the previous corrected animation.
+    if (entry->stride && animation==entry->stride->original &&
+        (!*static_cast<bool*>(result) || motion==entry->stride->animation)) {
+        for (auto* model:actor->mpModelMorf)
+            if (model && model->getAnm()==animation) model->changeAnm(entry->stride.get());
+        return;
+    }
+    if (!*static_cast<bool*>(result) || !animation || !ShadeStrideAnimation::accepts(motion,*animation)) return;
+    auto* source=static_cast<J3DAnmTransformKey*>(animation);
+    auto next=std::unique_ptr<ShadeStrideAnimation>(new(std::nothrow) ShadeStrideAnimation(*source,motion));
+    if (!next) return;
+    // These are the last displayed local rotations, including an interrupted
+    // native morph. Euler fields in mpTransformInfo can be stale during morphs.
+    if (entry->stride) next->capture(actor->mpModelMorf[0]->getOldQuaternion());
+    release_step_animation(actor,*entry);
+    entry->stride=std::move(next);
+    for (auto* model:actor->mpModelMorf)
+        if (model && model->getAnm()==source) model->changeAnm(entry->stride.get());
 }
 
 HookAction accessory_motion(ModContext*,void* args,void* result,void*) {
@@ -798,8 +863,20 @@ void after_motion(ModContext*,void* args,void*,void*) {
     const bool attacking=entry->offense>=0 && actor->mMotionSeqMngr.getNo()==entry->offense &&
         !actor->mMotionSeqMngr.checkEntryNewMotion();
     if (attacking) entry->animationStarted=true;
-    const float rate=attacking && entry->offense==shade::sword &&
+    float rate=attacking && entry->offense==shade::sword &&
         actor->mMotionSeqMngr.getStepNo()==0 ? 1.65f : 1.0f;
+    if (entry->stride) entry->stride->advance();
+    const bool stepping=entry->stride && entry->stride->animation==1 && actor->mpModelMorf[0] &&
+        actor->mpModelMorf[0]->getAnm()==entry->stride.get();
+    if (stepping) {
+        const bool moving=actor->speedF>0 && !attacking && !sBattle.recovery &&
+            !sBattle.dying && !sCinema.active();
+        entry->stride->weight=shade::stride::blend_weight(entry->stride->weight,moving);
+        if (moving) rate=shade::stride::playback*std::clamp(actor->speedF/kApproachSpeed,0.1f,1.0f);
+    } else {
+        entry->walkSpeed=0;
+        if (entry->stride) entry->stride->weight=0;
+    }
     for (auto* model:actor->mpModelMorf) if (model) model->setPlaySpeed(rate);
 }
 void start_attack(daNpc_Kn_c* actor,Fighter& entry) {
@@ -833,6 +910,55 @@ void move_toward(daNpc_Kn_c* actor,const cXyz& target,float speed,float stop_dis
     actor->speedF=0;
     actor->speed.x=velocity.x;
     actor->speed.z=velocity.z;
+}
+void attack_movement(daNpc_Kn_c* actor,Fighter& entry,int step,float frame,float end) {
+    actor->speedF=0;
+    actor->speed.x=actor->speed.z=0;
+    auto* player=daPy_getPlayerActorClass();
+    const float progress=end>0 ? std::clamp(frame/end,0.0f,1.0f) : 0;
+    if (entry.animationStarted) {
+        if (entry.offense==shade::back_slice && step<2) {
+            // Sidestep and roll follow a semicircle around Link, not a forward
+            // drift along the Shade's continually rotating facing direction.
+            const auto offset=shade::back_slice_offset(entry.orbitAngle,entry.orbitRadius,step,progress);
+            cXyz target=player->current.pos;
+            target.x+=offset.x; target.z+=offset.z;
+            move_toward(actor,target,14,0);
+            actor->setAngle(step==1 && actor->speed.absXZ()>0.01f ?
+                cLib_targetAngleY(&actor->current.pos,&target) : fopAcM_searchPlayerAngleY(actor));
+        } else if (shade::jumping_attack(entry.offense)) {
+            // Native BCK push-off / first foot contact: KN_KABUTO 27..48,
+            // KN_DAIJUMP 42..62. Ground collision cannot identify these phases:
+            // the actor stays grounded while the skeleton supplies jump height.
+            const float takeoff=entry.offense==shade::helm_splitter ? 27.0f : 42.0f;
+            const float landing=entry.offense==shade::helm_splitter ? 48.0f : 62.0f;
+            if (step!=0 || frame<takeoff || frame>=landing) return;
+            if (!entry.jumpLaunched && actor->mAcch.ChkGroundHit()) {
+                entry.jumpLaunched=true;
+                entry.jumpTarget=player->current.pos;
+                const auto target=shade::jump_landing_target(entry.offense,
+                    {actor->current.pos.x,actor->current.pos.z},
+                    {player->current.pos.x,player->current.pos.z});
+                entry.jumpTarget.x=target.x; entry.jumpTarget.z=target.z;
+                // Cover the committed distance during the airborne interval,
+                // not by sliding during charge or landing recovery. Keep this
+                // speed fixed even if collision blocks part of the jump.
+                entry.jumpSpeed=(entry.jumpTarget-actor->current.pos).absXZ()/(landing-takeoff);
+                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+            }
+            if (entry.jumpLaunched) move_toward(actor,entry.jumpTarget,entry.jumpSpeed,0);
+        } else if (entry.offense==shade::sword) {
+            // Face Link before committing the swing, but keep both feet planted.
+            if (progress<0.4f) actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+        } else {
+            // Reacquire Link before the Back Slice cut; stop at sword reach.
+            // Once the swing is committed, dodging still works.
+            if (progress<0.4f || (entry.offense==shade::back_slice && step==2)) {
+                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
+                move_toward(actor,player->current.pos,10,120);
+            }
+        }
+    }
 }
 void before_movement(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
@@ -972,44 +1098,10 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
     }
     ++entry->attackTicks;
     actor->mCcStts.Move();
-    actor->speedF=0;
-    actor->speed.x=actor->speed.z=0;
     const int step=actor->mMotionSeqMngr.getStepNo();
     const float frame=actor->mpModelMorf[0]->getFrame();
     const float end=actor->mpModelMorf[0]->getEndFrame();
-    const float progress=end>0 ? std::clamp(frame/end,0.0f,1.0f) : 0;
-    if (entry->animationStarted) {
-        if (entry->offense==shade::back_slice && step<2) {
-            // Sidestep and roll follow a semicircle around Link, not a forward
-            // drift along the Shade's continually rotating facing direction.
-            const auto offset=shade::back_slice_offset(entry->orbitAngle,entry->orbitRadius,step,progress);
-            cXyz target=player->current.pos;
-            target.x+=offset.x; target.z+=offset.z;
-            move_toward(actor,target,14,0);
-            actor->setAngle(step==1 && actor->speed.absXZ()>0.01f ?
-                cLib_targetAngleY(&actor->current.pos,&target) : fopAcM_searchPlayerAngleY(actor));
-        } else if (shade::jumping_attack(entry->offense)) {
-            if (!entry->jumpLaunched && progress>=0.2f && actor->mAcch.ChkGroundHit()) {
-                entry->jumpLaunched=true;
-                entry->jumpTarget=player->current.pos;
-                const auto target=shade::jump_landing_target(entry->offense,
-                    {actor->current.pos.x,actor->current.pos.z},
-                    {player->current.pos.x,player->current.pos.z});
-                entry->jumpTarget.x=target.x; entry->jumpTarget.z=target.z;
-                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
-                // Vertical jump travel is already in the BCK; adding another
-                // physical jump lifts the blade above Link at the impact pose.
-            }
-            if (entry->jumpLaunched && progress<0.75f) move_toward(actor,entry->jumpTarget,12,0);
-        } else {
-            // Reacquire Link before the Back Slice cut; stop at sword reach.
-            // Once the swing is committed, dodging still works.
-            if (progress<0.4f || (entry->offense==shade::back_slice && step==2)) {
-                actor->setAngle(fopAcM_searchPlayerAngleY(actor));
-                move_toward(actor,player->current.pos,10,120);
-            }
-        }
-    }
+    attack_movement(actor,*entry,step,frame,end);
     const bool finished=entry->animationStarted && !actor->mMotionSeqMngr.checkEntryNewMotion() &&
         (entry->offense==shade::back_slice ? step>=3 :
          (step>0 || actor->mpModelMorf[0]->isStop()));
@@ -1077,11 +1169,17 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     }
     // Called after playAllAnm / setAttnPos / modelCalc: these are the same
     // posed joints as the visible sword, not last tick's pose or a timer proxy.
+    const float frame=actor->mpModelMorf[0]->getFrame();
+    const bool shield=entry->offense==shade::helm_splitter && frame<27;
+    const float radius=shield ? 40.0f : 30.0f;
     std::array<cXyz,2> positions;
     std::array<shade::BladePoint,2> points;
     for (unsigned i=0;i<positions.size();++i) {
-        cXyz offset(60.0f+60*i,0,0);
-        MTXMultVec(actor->mpModelMorf[0]->getModel()->getAnmMtx(13),&offset,&positions[i]);
+        // weaponR (21) carries the shield; weaponL (13) carries the sword.
+        // One sphere at the shield grip follows the visible bash, not the blade
+        // raised behind him. The sword retains its two native coverage points.
+        cXyz offset(shield ? 0.0f : 60.0f+60*i,0,0);
+        MTXMultVec(actor->mpModelMorf[0]->getModel()->getAnmMtx(shield ? 21 : 13),&offset,&positions[i]);
         points[i]={positions[i].x,positions[i].y,positions[i].z};
         auto& sphere=actor->mSphCc[i];
         // All contact volumes share one strike budget, including shield hits.
@@ -1097,34 +1195,29 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
         !sBattle.recovery && !sBattle.dying && !entry->deleting;
     bool active=false;
     if (attacking) {
-        bool clear_of_target=true;
-        for (const auto& target:daAlink_getAlinkActorClass()->mTgCyls) {
-            const auto& center=target.GetC();
-            clear_of_target &= shade::blade_clear_of_body(points,
-                {center.x,center.y,center.z},target.GetR(),target.GetH());
-        }
         active=entry->blade.sample(entry->offense,actor->mMotionSeqMngr.getStepNo(),
-                                   actor->mpModelMorf[0]->getFrame(),points,clear_of_target);
+                                   actor->mpModelMorf[0]->getFrame(),points);
     } else entry->blade={};
     for (unsigned i=0;i<positions.size();++i) {
         auto& sphere=actor->mSphCc[i];
-        if (active) {
+        const bool volume_active=active && (!shield || i==0);
+        if (volume_active) {
             sphere.SetC(positions[i]);
-            sphere.SetR(30); // native blade coverage; no delayed area-damage proxy
+            sphere.SetR(radius); // posed weapon coverage; no delayed area-damage proxy
             sphere.SetAtAtp(shade::attack_power(entry->offense));
             sphere.OnAtSetBit();
             dComIfG_Ccsp()->Set(&sphere);
         } else sphere.OffAtSetBit();
         sphere.ClrAtHit();
         auto& sweep=entry->bladeSweeps[i];
-        if (active && entry->blade.sweep && entry->offense!=shade::sword) {
+        if (volume_active && entry->blade.sweep) {
             // Trace the actual blade points between consecutive poses. A fast
             // cut can cross Link entirely between two endpoint sphere tests.
             const cXyz start(previous[i].x,previous[i].y,previous[i].z);
-            static_cast<cM3dGCps*>(&sweep)->Set(start,positions[i],30);
+            static_cast<cM3dGCps*>(&sweep)->Set(start,positions[i],radius);
             cXyz direction=positions[i]-start;
             sweep.SetAtVec(direction);
-            sweep.SetAtAtp(shade::special_attack_power);
+            sweep.SetAtAtp(shade::attack_power(entry->offense));
             sweep.OnAtSetBit();
             dComIfG_Ccsp()->Set(&sweep);
         } else sweep.OffAtSetBit();
@@ -1410,6 +1503,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeSwordHook,sword_collision);
     POST(ShadeBodyHook,trial_body_collision);
     PRE(ShadeAccessoryMotionHook,accessory_motion);
+    PRE(ShadeStepAnimationHook,step_animation); POST(ShadeStepAnimationHook,install_step_animation);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);
     POST(ShadeLandingHook,after_knockdown_movement);
@@ -1514,6 +1608,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeEndingBlowHook>(svc_hook);
     mods::hook::uninstall<ShadeApproachHook>(svc_hook);
     mods::hook::uninstall<ShadeAccessoryMotionHook>(svc_hook);
+    mods::hook::uninstall<ShadeStepAnimationHook>(svc_hook);
     mods::hook::uninstall<ShadeMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMovementHook>(svc_hook);
     mods::hook::uninstall<ShadeLandingHook>(svc_hook);

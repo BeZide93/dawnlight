@@ -23,6 +23,63 @@ actor heap buffer is borrowed or rewritten. The checked-in generated header
 keeps Python/Pillow out of platform builds. Regenerate it only after changing
 the source PNG with `python tools/generate_pedestal_texture.py`.
 
+## Walking animation
+
+Boss Rush uses a longer, authored stride based on the `KN_STEP` skeleton instead
+of the original short stepping-in-place loop. Six leg joints and the root are
+resampled with fixed-length two-bone IK: each foot has a planted stance and a
+raised swing, with a continuous 30-frame loop. Native upper-body animation,
+attack sequences and bone translations remain intact.
+
+Forward approach accelerates to 8 units per tick (previously 6). Playback follows
+actual approach speed, reaching 1.2x at full pace; 120 units of planted travel over
+18 animation frames matches that speed. An eight-tick blend restores the original
+stance when movement stops. Main Shade and doubles own separate animation state;
+native story lessons and the shared game animation are not modified. Deletion
+detaches the private animation before the native model/archive is released.
+
+The checked-in `src/generated/shade_stride.hpp` contains only the authored leg
+and root tracks. Regenerate it with NumPy/SciPy installed:
+
+```sh
+python3 tools/generate_shade_stride.py /path/to/KN_a.arc
+```
+
+The source archive is supplied locally and is not needed by platform builds.
+Skeleton checks cover fixed bone lengths, foot trajectories, toe clearance and
+loop continuity; final appearance with the character mesh needs in-game review.
+
+## Combat footwork and transitions
+
+Grounded attacks, guards, sidesteps and recovery poses now use a wider support
+stance and longer leg reach. Fixed-length two-bone IK increases lateral spacing
+by up to 14% and forward/back spacing by up to 24%, limited by each leg's reach.
+The source ankle height and foot orientation are preserved. The correction fades
+out as a foot rises or the pelvis tilts into a roll; airborne choreography, root
+travel (including Helm Splitter's coordinate reset), upper-body poses, animation
+lengths and damage windows remain native.
+
+All 35 native motion-table entries share an actor-local transition layer. On a
+clip change, six leg joints blend over six simulation ticks from the last
+rendered quaternions, including interrupted native morphs. Native full-body morphs
+still apply. Same-clip restarts retain their native pointer comparison and failed
+changes retain the previous wrapper. Cleanup also detaches a wrapper borrowed
+by the facial-animation joint callback.
+
+Combat corrections are sampled as additive quaternions with cubic interpolation;
+looping clips wrap and one-shot clips hold their last correction. The original
+archive remains read-only, and the existing authored walking cycle is unchanged.
+Regenerate the checked-in combat tracks with:
+
+```sh
+python3 tools/generate_shade_combat.py /path/to/KN_a.arc
+```
+
+The generator checks foot contact height, foot orientation and bone lengths.
+Runtime regression checks cover interrupted transitions, failed clip changes,
+separate actor state, one-shot endpoints and safe animation detachment. Final
+appearance and transition feel still require an in-game check with the mesh.
+
 ## Intro and victory scenes
 
 The sword now starts a short original boss introduction. Shade stays hidden
@@ -475,13 +532,22 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   step, a moving blade enables those native hit volumes at their current pose;
   there is no delayed proximity hit. Two stable capsule colliders also trace
   those points between consecutive poses, so fast cuts cannot pass through Link
-  between sphere samples. Back Slice activates its first cut pose immediately,
+  between sphere samples. This includes ordinary swings for the main Shade and
+  both doubles: KN_MAGIC at 1.65x moves its tip about 322 units per tick. Its
+  sweep accepts up to 400 units only between consecutive poses inside frames
+  30–40 (at most two animation frames apart), and retains one-heart damage.
+  Windup, return poses, skipped intervals and larger jumps cannot create that
+  sweep. Each fighter consumes only its own contact budget.
+  Back Slice activates its first cut pose immediately,
   without tracing the preceding non-damaging roll. Frozen frames, interrupted
   motions and large discontinuities cannot generate swept hits.
-  A player hit or shield block consumes the strike. Jump Strike alone can rearm
-  once, after both blade points remain clearly separated from all of Link's hurt
-  cylinders for two samples. This permits its second blow without repeated hits
-  from a blade resting on Link. Normal sword damage is 4 quarter-heart units
+  A player hit or shield block consumes only the current strike. Helm Splitter
+  has three independent strike budgets; Jump Strike has two. KN_DAIJUMP's first
+  sweep uses frames 40–49 and its landing blow uses frames 58–66. Entering the
+  second phase rearms contact even if the blade remains close to Link. A miss
+  or block on the first blow cannot suppress the second, and withdrawing the
+  blade cannot earn a second hit during the same phase. Charge, somersault gap
+  and recovery do not deal damage. Normal sword damage is 4 quarter-heart units
   (one heart); specials use 8 (two hearts). Native shield and
   invulnerability handling still decide whether each contact damages Link.
 - Gaps are six simulation ticks within a combo and 18 between combos. Doubles
@@ -492,9 +558,19 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   lesson's hit reaction) retain their sequence number when they return to a
   ready/walking stance in step 1. Those return steps are now
   recognized; requiring sequence 9 alone previously suppressed later attacks.
+- Ordinary sword swings keep forward and X/Z speed at zero for their entire
+  animation; only facing can track Link before the swing commits.
 - Back Slice uses animation progress to follow a semicircle around Link at a
   150-unit radius, with bounded movement through native collision. The cut then
   faces Link and closes to sword reach. Sidestep/roll frames never deal damage.
+- Helm Splitter has three separate, single-contact strikes: the shield bash
+  (KN_KABUTO frames 8–18), aerial sword cut (27–67), and final sword thrust into
+  the stance (68–76). The bash uses one 40-unit sphere and its swept path at
+  shield attachment joint 21. Sword phases use the native joint 13 coverage.
+  The shield-to-sword switch cannot create a sweep between the two weapons.
+  A hit or shield block consumes only that phase; the following authored strike
+  can hit again. The planted final pose accepts endpoint contact at frames
+  75–76 even as the blade stops, but holding the stance never rearms damage.
 - Jump animations already contain vertical motion and forward root travel.
   Do not add a second physical jump: it puts the sword above Link at impact.
   A post-`setAttnPos` hook anchors the backbone's X/Z position to actor movement
@@ -503,6 +579,11 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   or registering another draw entry. Helm Splitter commits to a landing 140
   units beyond Link, where its turning cut faces him; Jump Strike stops 110
   units before him. Targets are captured at takeoff, so Link can evade them.
+  Translation is restricted to the source BCK's push-off/landing interval:
+  frames 27–48 for KN_KABUTO and 42–62 for KN_DAIJUMP. The charge and landing
+  recovery stay stationary. Jump speed is captured once to cover the target
+  distance within that interval; collision still constrains every movement and
+  never triggers a catch-up acceleration. Native skeleton motion supplies Y.
   On natural completion, Helm Splitter keeps its authored ending pose, then
   transfers the final half-turn into actor yaw and installs native stance 6
   with zero blend before clearing the attack. Position stays at the landing
@@ -528,7 +609,7 @@ tilt or height, restarts an existing landing, or changes the main Shade's native
 Ending Blow action 3 and its down/finishing flags. Both visible models continue
 through the engine's shared motion controller.
 
-Native approach speed remains six units per tick. Ordinary sword swings use
+Forward approach accelerates to eight units per tick with matched stride playback. Ordinary sword swings use
 attack power 4 (one heart). All special blade strikes, their swept volumes and
 the light ball use power 8 (two hearts) per accepted hit. Native damage modifiers
 and invulnerability still apply. Successful counters still grant 45 ticks of

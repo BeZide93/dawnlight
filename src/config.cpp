@@ -47,6 +47,7 @@ ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_arrowModes = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
+ConfigVarHandle s_disableAutoJump = 0;
 ConfigVarHandle s_jumpHeight = 0;
 ConfigVarHandle s_glide = 0;
 ConfigVarHandle s_glideItem = 0;
@@ -115,6 +116,19 @@ ConfigVarHandle s_hudMinimapSlideDirection = 0;
 ConfigVarHandle s_hudDpadHideArrows = 0;
 ConfigVarHandle s_hudDpadHideShadows = 0;
 std::array<ConfigVarHandle, kCustomModelCount> s_customModels = {};
+
+void enforce_auto_jump_dependency() {
+    bool enabled = false;
+    if (s_disableAutoJump && !r_jump_enabled() &&
+        svc_config->get_bool(mod_ctx, s_disableAutoJump, &enabled) == MOD_OK && enabled) {
+        svc_config->set_bool(mod_ctx, s_disableAutoJump, false);
+    }
+}
+
+void on_jump_setting_changed(ModContext*, ConfigVarHandle, const ConfigVarValue*,
+    const ConfigVarValue*, void*) {
+    enforce_auto_jump_dependency();
+}
 
 void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
     const ConfigVarValue*, void*) {
@@ -900,6 +914,7 @@ ModResult register_config(ModError* error) {
         register_bool("arrow-modes", true, s_arrowModes) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
+        register_bool("disable-auto-jump", false, s_disableAutoJump) != MOD_OK ||
         register_int("jump-height-percent", 100, s_jumpHeight) != MOD_OK ||
         register_bool("glide", false, s_glide) != MOD_OK ||
         register_int("glide-item", 0, s_glideItem) != MOD_OK ||
@@ -995,6 +1010,13 @@ ModResult register_config(ModError* error) {
     }
 
     ModResult subscribeResult = MOD_OK;
+    for (const auto handle : {s_rJump, s_disableAutoJump, s_dawnlightMode, s_progressionSystem}) {
+        subscribeResult = svc_config->subscribe(
+            mod_ctx, handle, on_jump_setting_changed, nullptr, nullptr);
+        if (subscribeResult != MOD_OK) return mods::set_error(error, subscribeResult,
+            "failed to subscribe to jump setting dependencies");
+    }
+    enforce_auto_jump_dependency();
     g_configCheckForUpdatesEnabled = false;
     if constexpr (kDawnlightUpdateCheckerAvailable) {
         g_configCheckForUpdatesEnabled = get_bool(s_checkForUpdates, true);
@@ -1180,6 +1202,13 @@ bool arrow_modes_enabled() {
 
 bool manual_shielding_enabled() {
     return get_bool(s_manualShielding, true);
+}
+
+bool disable_auto_jump_enabled() {
+    // Also normalize after save/progression changes that change the effective
+    // Jump setting without writing its stored config value.
+    enforce_auto_jump_dependency();
+    return r_jump_enabled() && get_bool(s_disableAutoJump, false);
 }
 
 bool r_jump_enabled() {
@@ -1446,6 +1475,8 @@ ConfigVarHandle arrow_modes_config_var() {
 ConfigVarHandle manual_shielding_config_var() {
     return s_manualShielding;
 }
+
+ConfigVarHandle disable_auto_jump_config_var() { return s_disableAutoJump; }
 
 ConfigVarHandle r_jump_config_var() {
     return s_rJump;

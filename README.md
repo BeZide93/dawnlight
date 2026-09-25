@@ -95,7 +95,15 @@ missed progression toasts are not replayed when notifications are enabled.
   Manual jumps during sprinting carry the earned speed bonus into horizontal
   speed and distance, independently of the selected jump height. Set **Sprint Speed** beside
   **Sprint** in the Controls settings.
-- **Jump Height**, directly below **R Jump** in Controls, sets manual jump height
+- **R Jump** also works as wolf Link while standing, moving or dashing, using
+  the same jump binding and **Jump Height** setting with native wolf jump physics.
+- **Disable Auto Jump**, directly below **R Jump** in Controls, is off by default.
+  It prevents human and wolf Link's automatic running jump at ledges, requiring the manual
+  jump button instead. Normal falling and ledge grabbing remain available.
+  Scripted/forced jumps, Midna's targeted jumps, manual jumps and Revali's Gale are preserved.
+  Turning **R Jump** off also resets this option to off and greys it out;
+  re-enabling R Jump does not automatically re-enable it.
+- **Jump Height** in Controls sets manual jump height
   from 100% (the original height and default) to 500%.
 - Optional **Glide**: press ZR in the air to glide during manual jumps or ordinary
   falls. **Glide Item**, directly below the toggle, selects **Cucco** (default) or

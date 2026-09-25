@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 #include "enemy_spawner.hpp"
 #include "f_pc/f_pc_create_req.h"
 #include "f_pc/f_pc_leaf.h"
@@ -192,13 +193,17 @@ bool ground_jump_context_ready(daAlink_c* link) {
     case daAlink_c::PROC_ATN_ACTOR_MOVE:
     case daAlink_c::PROC_WAIT_TURN:
     case daAlink_c::PROC_MOVE_TURN:
+    case daAlink_c::PROC_WOLF_WAIT:
+    case daAlink_c::PROC_WOLF_MOVE:
+    case daAlink_c::PROC_WOLF_DASH:
+    case daAlink_c::PROC_WOLF_WAIT_TURN:
+    case daAlink_c::PROC_WOLF_ATN_AC_MOVE:
         break;
     default:
         return false;
     }
 
-    return !link->checkWolf()
-        && link->mGndPolyAtt1 != 0xFF
+    return link->mGndPolyAtt1 != 0xFF
         && !link->checkFlyAtnWait()
         && !link->checkModeFlg(0x70C12)
         && link->mProcID != daAlink_c::PROC_DOOR_OPEN
@@ -211,13 +216,15 @@ bool ground_jump_context_ready(daAlink_c* link) {
         && !link->checkMagneBootsOn()
         && !link->checkNotJumpSinkLimit()
         && !link->checkGrabAnime()
+        && !(link->checkWolf() && link->checkWolfGrabAnime())
         && link->mGrabItemAcKeep.getActor() == nullptr
         && link->mLinkAcch.ChkGroundHit()
         && !r_action_context_active(link);
 }
 
 bool jump_state_ready(daAlink_c* link) {
-    return !s_galeInputCancelled && (r_jump_enabled() || revalis_gale_enabled()) &&
+    return link && !s_galeInputCancelled &&
+        (r_jump_enabled() || (!link->checkWolf() && revalis_gale_enabled())) &&
         jump_pressed(active_jump_binding()) &&
         ground_jump_context_ready(link);
 }
@@ -272,8 +279,18 @@ bool start_ground_jump(daAlink_c* link) {
         return false;
     }
 
-    const float sprintJumpMultiplier = sprint_jump_speed_multiplier(link);
     set_manual_jump_direction(link);
+    if (link->checkWolf()) {
+        // Use wolf animations, dash parameters and landing/collision handling.
+        // Human sword attacks and Bullet Time do not own wolf jumps.
+        if (!link->procWolfAutoJumpInit(1)) return false;
+        apply_manual_jump_movement(link);
+        apply_manual_jump_height(link, jump_height_multiplier());
+        s_manualJumpOwner = nullptr;
+        clear_manual_jump(link);
+        return true;
+    }
+    const float sprintJumpMultiplier = sprint_jump_speed_multiplier(link);
 
     if (link->mEquipItem == kSwordItem &&
         (mDoCPd_c::getHoldB(PAD_1) || mDoCPd_c::getTrigB(PAD_1)))
@@ -319,13 +336,39 @@ bool start_air_jump_attack(daAlink_c* link) {
 
 #include "jump_abilities.inc"
 
+struct AutoJumpFlagScope {
+    daAlink_c* link;
+    bool added = false;
+};
+thread_local std::vector<AutoJumpFlagScope> s_autoJumpFlagScopes;
+
+void suppress_ledge_auto_jump(daAlink_c* link) {
+    if (!disable_auto_jump_enabled() || !link ||
+        link->checkPlayerDemoMode() || link->checkEventRun() || dComIfGp_event_runCheck() ||
+        link->checkEndResetFlg0(daPy_py_c::ERFLG0_FORCE_AUTO_JUMP) ||
+        link->checkEndResetFlg0(daPy_py_c::ERFLG0_NOT_AUTO_JUMP)) return;
+    // The native edge check still handles falling, hanging, climbing and water.
+    // Set only its existing auto-jump veto, after manual jump/Gale handling.
+    link->onEndResetFlg0(daPy_py_c::ERFLG0_NOT_AUTO_JUMP);
+    s_autoJumpFlagScopes.back().added = true;
+}
+
+void after_check_auto_jump(ModContext*, void*, void*, void*) {
+    if (s_autoJumpFlagScopes.empty()) return;
+    const auto scope = s_autoJumpFlagScopes.back();
+    s_autoJumpFlagScopes.pop_back();
+    if (scope.added) scope.link->mEndResetFlg0 &= ~daPy_py_c::ERFLG0_NOT_AUTO_JUMP;
+}
+
 HookAction before_check_auto_jump(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
+    s_autoJumpFlagScopes.push_back({link});
     if (handle_jump_abilities(link)) {
         *static_cast<BOOL*>(retval) = TRUE;
         return HOOK_SKIP_ORIGINAL;
     }
     if (!start_ground_jump(link)) {
+        suppress_ledge_auto_jump(link);
         return HOOK_CONTINUE;
     }
 
@@ -446,6 +489,7 @@ ModResult install_jump_hooks(ModError* error) {
     init_glider_visual();
     ModResult result =
         mods::hook_add_pre<CheckAutoJumpAction>(svc_hook, before_check_auto_jump);
+    if (result == MOD_OK) result = mods::hook_add_post<CheckAutoJumpAction>(svc_hook, after_check_auto_jump);
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ProcAutoJump>(svc_hook, before_proc_auto_jump);
     }

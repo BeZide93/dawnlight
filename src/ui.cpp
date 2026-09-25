@@ -183,6 +183,12 @@ ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
     return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
 }
 
+bool auto_jump_setting_disabled(ModContext*, void*) {
+    // Normalize persisted state before displaying an unavailable child toggle.
+    (void)disable_auto_jump_enabled();
+    return !r_jump_enabled();
+}
+
 bool sprint_speed_disabled(ModContext*, void*) {
     return !sprint_enabled();
 }
@@ -470,9 +476,16 @@ ModResult build_controls_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "R Jump", r_jump_config_var(),
-            "Uses R as a fallback jump button when no R interaction or targeting action is active. "
-            "Press R+B during the jump to start a jump attack.")
+            "Uses R as a fallback jump button for human and wolf Link when no R interaction or targeting action is active. "
+            "As human Link, press R+B during the jump to start a jump attack.")
         != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Disable Auto Jump", disable_auto_jump_config_var(),
+            "Stops human and wolf Link from automatically jumping when running off a ledge. "
+            "Use the jump button to jump; normal falling and ledge grabbing still work. "
+            "Turns off when R Jump is disabled.", auto_jump_setting_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }

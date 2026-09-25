@@ -186,7 +186,9 @@ Dawnlight Touch UI must be enabled. Choose **Open Touch Layout Editor** to use
 Dusklight's original touch editor with the five extra buttons: drag to move,
 resize with the edge/corner handles, then **Save**. **Cancel** discards changes;
 **Reset** restores defaults in the editor until you save. The usual Dusklight
-editor continues to manage vanilla controls separately.
+editor continues to manage vanilla controls separately. While editing extra buttons,
+the normal Dusklight touch UI stays visible in the background at its saved positions
+for reference; its buttons cannot be edited or activated there.
 
 ## Arrow Modes
 

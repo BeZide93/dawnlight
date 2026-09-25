@@ -5,6 +5,7 @@
 using NativeEditor = dusk::ui::TouchControlsEditor;
 using LayoutSpan = std::span<const dusk::ui::TouchLayoutControlInfo>;
 using EditorDocument = dusk::ui::Document;
+DEFINE_HOOK_SYMBOL("dusk::ui::TouchControls::sync_visibility", void(NativeTouch*), ExtraEditorBackground);
 DEFINE_HOOK_SYMBOL("dusk::ui::touch_layout_controls", LayoutSpan(), ExtraEditorControls);
 DEFINE_HOOK_SYMBOL("dusk::ui::touch_controls_rml_fragment", std::string_view(), ExtraEditorFragment);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::sync_control_layouts", void(NativeEditor*), ExtraEditorLayouts);
@@ -30,6 +31,7 @@ struct EditorApi {
     void (*uncover)() = nullptr;
     void (*hide)(EditorDocument*, bool) = nullptr;
     void (*cancel)(NativeEditor*) = nullptr;
+    void (*clearTouch)(NativeTouch*) = nullptr;
 } s_editorApi;
 NativeEditor* s_extraEditor = nullptr;
 unsigned s_editorScope = 0;
@@ -40,6 +42,20 @@ std::vector<EditorDocument*> s_editorChildren;
 constexpr const char* kExtraEditorIds[] = {"dawnlight-zl", "dawnlight-up", "dawnlight-down", "dawnlight-left", "dawnlight-right"};
 static_assert(touch::Count <= dusk::ui::kTouchLayoutControlCount);
 
+HookAction show_editor_background(ModContext*, void* args, void*, void*) {
+    if (!s_extraEditor || s_extraEditor->mClosed || s_extraEditor->mPendingClose) return HOOK_CONTINUE;
+    auto* top = s_editorApi.top();
+    if (top != s_extraEditor && std::find(s_editorChildren.begin(), s_editorChildren.end(), top) ==
+        s_editorChildren.end()) return HOOK_CONTINUE;
+    auto* controls = mods::arg<NativeTouch*>(args, 0);
+    // Keep the real native document and saved layout visible behind our editor.
+    // Input stays suppressed: background buttons must not trigger game actions,
+    // stick motion, or native menu commands while arranging the extra controls.
+    controls->mWasSuppressed = true;
+    s_editorApi.clearTouch(controls);
+    controls->show();
+    return HOOK_SKIP_ORIGINAL;
+}
 HookAction enter_extra_editor(ModContext*, void* args, void*, void*) {
     if (mods::arg<NativeEditor*>(args, 0) == s_extraEditor) ++s_editorScope;
     return HOOK_CONTINUE;
@@ -165,8 +181,10 @@ ModResult install_extra_editor(ModError*) {
         !resolve_extra("dusk::ui::top_document", s_editorApi.top) ||
         !resolve_extra("dusk::ui::uncover_top_document", s_editorApi.uncover) ||
         !resolve_extra("dusk::ui::Document::hide", s_editorApi.hide) ||
-        !resolve_extra("dusk::ui::TouchControlsEditor::cancel_edit", s_editorApi.cancel)) return MOD_OK;
+        !resolve_extra("dusk::ui::TouchControlsEditor::cancel_edit", s_editorApi.cancel) ||
+        !resolve_extra("dusk::ui::TouchControls::clear_virtual_input", s_editorApi.clearTouch)) return MOD_OK;
     const std::array bindings = {
+        editor_hook<ExtraEditorBackground>("TouchControls::sync_visibility", show_editor_background, nullptr),
         editor_hook<ExtraEditorControls>("touch_layout_controls", nullptr, extra_editor_controls),
         editor_hook<ExtraEditorFragment>("touch_controls_rml_fragment", nullptr, extra_editor_fragment),
         editor_hook<ExtraEditorLayouts>("sync_control_layouts", enter_extra_editor, leave_extra_editor),

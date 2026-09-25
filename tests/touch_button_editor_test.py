@@ -77,7 +77,9 @@ struct TouchApi {
  dusk::ui::ControlLayoutSize (*dimensions)(Rml::Context*)=dusk::ui::touch_document_size_dp;
 } s_touchApi;
 // LAYOUT
-struct EditorDocument {bool closed=false;};
+struct EditorDocument {bool closed=false,mClosed=false,mPendingClose=false;};
+struct NativeTouch {bool mWasSuppressed=false,shown=false,held=true;void show(){shown=true;}};
+EditorDocument* topDocument=nullptr;
 struct NativeEditor:EditorDocument {dusk::ui::ControlLayout mWorkingLayout;};
 using LayoutSpan=std::span<const dusk::ui::TouchLayoutControlInfo>;
 NativeEditor* s_extraEditor=nullptr;
@@ -89,6 +91,8 @@ std::vector<EditorDocument*> s_editorChildren;
 const char* kExtraEditorIds[]={"zl","up","down","left","right"};
 int cancels=0,uncovers=0;
 struct EditorApi {
+ EditorDocument* (*top)()=[](){return topDocument;};
+ void (*clearTouch)(NativeTouch*)=[](NativeTouch* t){t->held=false;};
  void (*cancel)(NativeEditor*)=[](NativeEditor*){++cancels;};
  void (*hide)(EditorDocument*,bool)=[](EditorDocument* e,bool c){e->closed=c;};
  void (*uncover)()=[](){++uncovers;};
@@ -138,6 +142,22 @@ int main(){
  // Unsaved changes and native Cancel never mutate persistent data.
  const auto before=config.values;ours.mWorkingLayout.controls["zl"]=p;
  s_editorApi.cancel(&ours);assert(config.values==before);
+ // The actual native document is visible only behind our editor/reset modal.
+ NativeTouch touchControls;auto* touchPointer=&touchControls;void* touchArgs[]={&touchPointer};
+ topDocument=&ours;
+ assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(touchControls.shown&&touchControls.mWasSuppressed&&!touchControls.held);
+ topDocument=&vanilla;touchControls.shown=false;
+ assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_CONTINUE&&!touchControls.shown);
+ EditorDocument resetModal;s_editorChildren.push_back(&resetModal);topDocument=&resetModal;
+ assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&touchControls.shown);
+ ours.mPendingClose=true;
+ assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_CONTINUE);
+ ours.mPendingClose=false;ours.mClosed=true;
+ assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_CONTINUE);
+ ours.mClosed=false;s_extraEditor=nullptr;
+ assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_CONTINUE);
+ s_extraEditor=&ours;s_editorChildren.clear();
  // Mod unload closes reset modals before the editor and resumes its parent.
  EditorDocument modal;s_editorChildren.push_back(&modal);close_extra_editor();
  assert(modal.closed&&ours.closed&&uncovers==1&&!s_extraEditor&&s_editorChildren.empty());
@@ -146,7 +166,7 @@ int main(){
 fixture=fixture.replace('// HOST_DIMENSIONS',function(common,'ControlLayoutSize touch_document_size_dp'))
 fixture=fixture.replace('// LAYOUT',(root/'src/touch_button_layout.inc').read_text())
 fixture=fixture.replace('// ADAPTER','\n'.join(function(adapter,s) for s in (
-    'HookAction enter_extra_editor','void leave_extra_editor','void extra_editor_controls',
+    'HookAction show_editor_background','HookAction enter_extra_editor','void leave_extra_editor','void extra_editor_controls',
     'void extra_editor_fragment','HookAction save_extra_editor','void close_extra_editor')))
 with tempfile.TemporaryDirectory() as tmp:
     cpp,exe=Path(tmp)/'test.cpp',Path(tmp)/'test'
@@ -154,4 +174,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror','-I'+str(root/'src'),
                     '-I'+str(dusk/'src'),str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print('Native touch editor passed: real viewport contract, full-size buttons, fractional layouts, scoped metadata, Save/Cancel/Reset and teardown')
+print('Native touch editor passed: real viewport contract, full-size buttons, fractional layouts, scoped metadata, Save/Cancel/Reset, read-only native background and teardown')

@@ -25,9 +25,10 @@ const HookService* svc_hook=nullptr;
 struct Log {std::vector<std::string> messages;void warn(ModContext*,const char* s){messages.emplace_back(s);}} logService;
 auto* svc_log=&logService;
 bool s_touchEditorAvailable=false;
-struct EditorApi {void (*construct)(),(*push)(),(*top)(),(*uncover)(),(*hide)(),(*cancel)();} s_editorApi;
+struct EditorApi {void (*construct)(),(*push)(),(*top)(),(*uncover)(),(*hide)(),(*cancel)(),(*clearTouch)();} s_editorApi;
 bool resolveMethods=true;
 template<class T> bool resolve_extra(const char*,T&){return resolveMethods;}
+HookAction show_editor_background(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}
 HookAction enter_extra_editor(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}
 void leave_extra_editor(ModContext*,void*,void*,void*){}
 void extra_editor_controls(ModContext*,void*,void*,void*){}

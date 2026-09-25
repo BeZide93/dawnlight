@@ -195,7 +195,9 @@ HookAction before_execute(ModContext*,void* args,void*,void*) {
 }
 Pose hand_mount(daAlink_c* link,bool right) {
     const auto& t=*link->field_0x2060->getOldFrameTransInfo(10);
-    Quaternion q;JMAEulerToQuat(t.mRotation.x,t.mRotation.y,t.mRotation.z,&q);
+    // Euler fields retain an input clip's angles during native blending;
+    // the quaternion is the rotation actually used for the rendered joint.
+    const auto& q=*link->field_0x2060->getOldFrameQuaternion(10);
     Pose mount{{q.x,q.y,q.z,q.w},{t.mTranslate.x,t.mTranslate.y,t.mTranslate.z}};
     if(right) { mount.q.x=-mount.q.x;mount.q.y=-mount.q.y;mount.p.z=-mount.p.z; }
     return mount;
@@ -340,11 +342,15 @@ void solve_arm(daAlink_c* link,bool right,Pose sword,float weight,const Vec* elb
     auto* model=link->mpLinkModel;int first=right ? 12 : 7;
     dual::Arm arm{pose(model->getAnmMtx(first)),pose(model->getAnmMtx(first+1)),pose(model->getAnmMtx(first+2))};
     const Pose item=dual::compose(dual::inverse(arm.hand),pose(model->getAnmMtx(first+3)));
-    Pose hand=dual::compose(sword,dual::inverse(hand_mount(link,right)));
+    const Pose mount=hand_mount(link,right);
+    Pose hand=dual::compose(sword,dual::inverse(mount));
     const auto solved=dual::reach(arm,hand,weight,elbowPole);
     put(model,first,solved.upper);put(model,first+1,solved.lower);put(model,first+2,solved.hand);
     // Both item joints remain attached to their hands after the IK pass.
-    put(model,first+3,dual::compose(solved.hand,item));
+    // The primary model is rendered from joint 10. Use the same grip mount
+    // as the hand solve, not a second animated item rotation that can fold
+    // the Master Sword sideways during the guard-attack morph.
+    put(model,first+3,dual::compose(solved.hand,right ? item : mount));
 }
 void after_arms(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);if(!active(link)) return;
@@ -359,7 +365,7 @@ void after_arms(ModContext*,void* args,void*,void*) {
         const Pose inverseBase=dual::inverse(base);
         const float thrust=guard_thrust(link);
         std::array<Pose,2> blades;
-        float plane=44+16*thrust;
+        float plane=50+16*thrust;
         // Follow the arm extension with the clavicles only during the thrust.
         // This leaves the resting shoulder stance intact and supplies reach
         // without folding the blades forward or pulling the grips back in.
@@ -375,13 +381,12 @@ void after_arms(ModContext*,void* args,void*,void*) {
             dual::Arm arm{dual::compose(inverseBase,pose(model->getAnmMtx(first))),
                           dual::compose(inverseBase,pose(model->getAnmMtx(first+1))),
                           dual::compose(inverseBase,pose(model->getAnmMtx(first+2)))};
-            const float side=arm.upper.p.x>=0 ? 1.0f : -1.0f;
             // Keep the crossing in front of the face: lower the grips slightly,
             // extend them forward, and lean the blades away from the head.
             // The Ordon (right-hand) blade stays 12 units ahead of the Master
             // Sword. Clamp both together so reach limits cannot reverse them.
             const float depth=right ? 6.0f : -6.0f;
-            blades[right]=dual::cross_guard_blade(side,right,thrust);
+            blades[right]=dual::cross_guard_blade(right,thrust);
             plane=std::min(plane,dual::max_sword_depth(arm,blades[right],hand_mount(link,right))-depth);
         }
         for(bool right:{false,true}) {

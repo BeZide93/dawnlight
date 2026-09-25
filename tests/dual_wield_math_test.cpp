@@ -50,11 +50,11 @@ int main() {
     for(int i=0;i<2;++i) {
         Vec shoulder{i ? -18.0f : 18.0f,130,i ? 16.0f : -10.0f};
         arms[i]={{{},shoulder},{{},shoulder+Vec{0,-29,0}},{{},shoulder+Vec{0,-55.5f,0}}};
-        blades[i]=cross_guard_blade(i ? -1.0f : 1.0f,i!=0,0);
+        blades[i]=cross_guard_blade(i!=0,0);
     }
     float restDepth=0;
     for(float thrust:{0.0f,.5f,1.0f}) {
-        float plane=44+16*thrust;
+        float plane=50+16*thrust;
         Arm reaching[2];
         for(int i=0;i<2;++i) {
             const Pose clavicle{{},{0,132,2}};
@@ -68,6 +68,11 @@ int main() {
             auto solved=reach(reaching[i],compose(blades[i],inverse(guardMount[i])),1);
             actual[i]=compose(solved.hand,guardMount[i]);
             near(actual[i].p,blades[i].p);
+            if(i==0) {
+                const Vec forearm=unit(solved.hand.p-solved.lower.p);
+                assert(dot(forearm,rotate(solved.hand.q,{1,0,0}))>.5f);
+            }
+            near(rotate(actual[i].q,{1,0,0}),unit({i ? .65f : -.65f,.75f,.32f}));
             if(thrust==0) assert(solved.hand.p.z>36); // both wrists in front of the torso
             Vec direction=rotate(actual[i].q,{1,0,0});
             assert(direction.z/direction.y<.45f); // upright, not the previous 45-degree lean

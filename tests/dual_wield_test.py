@@ -56,7 +56,7 @@ enum HookAction {HOOK_CONTINUE};
 constexpr int dItemNo_NONE_e=0xff;
 struct Args {void* link;void* model=nullptr;};
 namespace mods {template<class T>T arg(void* p,int i){auto* a=static_cast<Args*>(p);return static_cast<T>(i?a->model:a->link);}}
-struct J3DModel {dual::Pose base;auto getBaseTRMtx(){return base;}};
+struct J3DModel {dual::Pose base;std::array<dual::Pose,35> joints;auto getBaseTRMtx(){return base;}auto getAnmMtx(int i){return joints[i];}};
 struct cXyz {float x=0,y=0,z=0;void set(float a,float b,float c){x=a;y=b;z=c;}};
 struct Morph {
     int calls=0;bool valid=true;
@@ -99,11 +99,12 @@ bool dual_wield_enabled(){return setting;}
 bool human(daAlink_c* l){return l->human;}
 bool active(daAlink_c* l){return s.owner==l && s.active;}
 Pose pose(Pose p){return p;}
+void put(J3DModel* model,int joint,Pose p){model->joints[joint]=p;}
 Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
 '''
 
 fixture += "\n".join(function(name, result) for name, result in [
-    ("detach", "void"), ("ordinary", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
+    ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
@@ -208,6 +209,31 @@ int main() {
     }
     link.mProcID=daAlink_c::PROC_WAIT;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(!s.haveGuardBody);
+
+    // A morph can have stale Euler angles and a different blended quaternion.
+    // Both the hand solver and rendered primary item must use the latter.
+    for(int sample=0;sample<=20;++sample) {
+        const float t=sample/20.0f;
+        auto& grip=link.morph.transforms[10];
+        grip.mRotation={0,16384,0}; // deliberately differs from the rendered rotation
+        grip.mTranslate={9.664279f,2.136274f,3.018636f};
+        link.morph.quaternions[10]=dual::blend(dual::Quat{-.579250f,-.405549f,.405549f,.579250f},
+                                             dual::Quat{0,0,0,1},t);
+        const Pose mount=hand_mount(&link,false);
+        assert(dual::length(dual::rotate(mount.q,{1,0,0})-
+                           dual::rotate(link.morph.quaternions[10],{1,0,0}))<.001f);
+        link.model.joints[7]={{},{18,130,-10}};
+        link.model.joints[8]={{},{32,105,0}};
+        link.model.joints[9]={{},{24,93,22}};
+        link.model.joints[10]={{},{-30,100,0}}; // native item matrix that would fold the blade
+        const Pose blade=dual::cross_guard_blade(false,t);
+        solve_arm(&link,false,blade,1);
+        const Pose rendered=link.model.joints[10];
+        const Pose attached=dual::compose(link.model.joints[9],mount);
+        assert(dual::length(rendered.p-attached.p)<.001f);
+        for(Vec axis:{Vec{1,0,0},Vec{0,1,0},Vec{0,0,1}})
+            assert(dual::length(dual::rotate(rendered.q,axis)-dual::rotate(blade.q,axis))<.001f);
+    }
 
     // Begin while the sword is still equipped; keep the offhand override
     // through the native inventory switch and the late shield-back frames.

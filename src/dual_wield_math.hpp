@@ -61,11 +61,16 @@ inline float smooth(float t) { t=std::clamp(t,0.0f,1.0f);return t*t*(3-2*t); }
 inline float approach(float value,float target,float step) {
     return value<target ? std::min(target,value+step) : std::max(target,value-step);
 }
-inline Pose cross_guard_blade(float side,bool right,float thrust) {
+inline Pose cross_guard_blade(bool right,float thrust) {
+    const float side=right ? -1.0f : 1.0f;
     // Keep the blades upright and the grips away from the torso. The right
     // shoulder leads this stance, so the Ordon blade occupies the front plane.
-    return {between({1,0,0},unit({-.65f*side,.75f,.32f})),
-            {18*side,112,44+16*thrust+(right ? 6.0f : -6.0f)}};
+    Quat rotation=between({1,0,0},unit({-.65f*side,.75f,.32f}));
+    // The left grip needs the opposite roll about the blade axis. Without it
+    // the wrist's forward axis points back into the forearm (a reversed grip).
+    // Blade direction and the two crossing planes remain unchanged.
+    if(!right) rotation=multiply(rotation,{1,0,0,0});
+    return {rotation,{18*side,112,50+16*thrust+(right ? 6.0f : -6.0f)}};
 }
 constexpr float stow_insert_end=.75f;
 constexpr float draw_grip_start=.30f;

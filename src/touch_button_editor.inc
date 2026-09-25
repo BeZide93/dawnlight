@@ -33,6 +33,7 @@ struct EditorApi {
     void (*cancel)(NativeEditor*) = nullptr;
     void (*clearTouch)(NativeTouch*) = nullptr;
     void (*showTouch)(NativeTouch*) = nullptr;
+    void (*setPseudo)(Rml::Element*, const Rml::String*, bool) = nullptr;
 } s_editorApi;
 NativeEditor* s_extraEditor = nullptr;
 unsigned s_editorScope = 0;
@@ -43,11 +44,30 @@ std::vector<EditorDocument*> s_editorChildren;
 constexpr const char* kExtraEditorIds[] = {"dawnlight-zl", "dawnlight-up", "dawnlight-down", "dawnlight-left", "dawnlight-right"};
 static_assert(touch::Count <= dusk::ui::kTouchLayoutControlCount);
 
-HookAction show_editor_background(ModContext*, void* args, void*, void*) {
-    if (!s_extraEditor || s_extraEditor->mClosed || s_extraEditor->mPendingClose) return HOOK_CONTINUE;
+bool editor_background_active() {
+    if (!s_extraEditor || s_extraEditor->mClosed || s_extraEditor->mPendingClose) return false;
     auto* top = s_editorApi.top();
-    if (top != s_extraEditor && std::find(s_editorChildren.begin(), s_editorChildren.end(), top) ==
-        s_editorChildren.end()) return HOOK_CONTINUE;
+    return top == s_extraEditor || std::find(s_editorChildren.begin(), s_editorChildren.end(), top) !=
+        s_editorChildren.end();
+}
+void sync_editor_background(NativeTouch* controls) {
+    if (!editor_background_active()) return;
+    // Native update hides individual controls while input is suppressed, even
+    // when the document itself is shown. Restore the reference AFTER that update.
+    const Rml::String hidden = "hidden";
+    for (const auto control : {dusk::ui::Control::L, dusk::ui::Control::R, dusk::ui::Control::Z,
+             dusk::ui::Control::A, dusk::ui::Control::B, dusk::ui::Control::X, dusk::ui::Control::Y}) {
+        auto* element = controls->mControlElements[static_cast<size_t>(control)].root;
+        if (element) s_editorApi.setPseudo(element, &hidden, false);
+    }
+    if (controls->mActionBar) s_editorApi.setPseudo(controls->mActionBar, &hidden, false);
+    // Skip is a cutscene action at the same default location as R; it must not
+    // cover the gameplay reference while arranging extra buttons.
+    auto* skip = controls->mControlElements[static_cast<size_t>(dusk::ui::Control::SKIP)].root;
+    if (skip) s_editorApi.setPseudo(skip, &hidden, true);
+}
+HookAction show_editor_background(ModContext*, void* args, void*, void*) {
+    if (!editor_background_active()) return HOOK_CONTINUE;
     auto* controls = mods::arg<NativeTouch*>(args, 0);
     // Keep the real native document and saved layout visible behind our editor.
     // Input stays suppressed: background buttons must not trigger game actions,
@@ -184,7 +204,8 @@ ModResult install_extra_editor(ModError*) {
         !resolve_extra("dusk::ui::Document::hide", s_editorApi.hide) ||
         !resolve_extra("dusk::ui::TouchControlsEditor::cancel_edit", s_editorApi.cancel) ||
         !resolve_extra("dusk::ui::TouchControls::clear_virtual_input", s_editorApi.clearTouch) ||
-        !resolve_extra("dusk::ui::TouchControls::show", s_editorApi.showTouch)) return MOD_OK;
+        !resolve_extra("dusk::ui::TouchControls::show", s_editorApi.showTouch) ||
+        !resolve_extra("Rml::Element::SetPseudoClass", s_editorApi.setPseudo)) return MOD_OK;
     const std::array bindings = {
         editor_hook<ExtraEditorBackground>("TouchControls::sync_visibility", show_editor_background, nullptr),
         editor_hook<ExtraEditorControls>("touch_layout_controls", nullptr, extra_editor_controls),

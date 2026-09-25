@@ -1,3 +1,4 @@
+#include "touch_buttons.hpp"
 #include "bow_modes.hpp"
 #include "bullet_time.hpp"
 #include "boss_hard_mode.hpp"
@@ -111,6 +112,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::install_item_slot_hooks(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::install_touch_button_hooks(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::install_manual_shield_hooks(error); result != MOD_OK) {
         return result;
     }
@@ -156,6 +160,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    dawnlight::shutdown_touch_buttons();
     dawnlight::shutdown_jump_hooks();
     dawnlight::shutdown_gale_counter();
     dawnlight::shutdown_model_overlays();

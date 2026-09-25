@@ -1,3 +1,4 @@
+#include "touch_buttons.hpp"
 #include "config.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
@@ -554,6 +555,7 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (add_button(ctx, left, "Touch Buttons", open_touch_buttons) != MOD_OK) return MOD_ERROR;
     return MOD_OK;
 }
 

@@ -57,6 +57,53 @@ This toggle works independently from Dawnlight's `Z Item Slot` setting so that
 another mod can own the third item slot while Dawnlight supplies the compatible
 touch controls. Restart Dusklight after changing it.
 
+### Extra touch buttons
+
+**Controls → Touch Buttons** contains independent switches for LB, D-Pad Up,
+Down, Left and Right, all off by default. They require both native Touch Controls
+and Dawnlight Touch UI on Android. The switches and layout changes apply live;
+changing the parent Dawnlight Touch UI setting still requires a restart.
+
+**Open Touch Layout Editor** creates a separate instance of Dusklight's original
+`TouchControlsEditor`, including its drag/resize handles, docking, reset dialog,
+and Save/Cancel navigation. Five replacement controls are supplied only while
+that instance executes. The native fixed-size array and vanilla editor remain
+unchanged. Save writes Dawnlight's layouts through ConfigService; Cancel discards
+unsaved edits, and Reset needs Save to persist. Older numeric layouts are migrated
+when first saved. Layout uses the live RML document context and native DP geometry;
+a missing context no longer collapses the buttons to 1 dp at the origin.
+
+The adapter uses the pinned Android host's private touch ABI. If required editor
+methods or hook targets cannot be resolved, its launch button is disabled while
+Dawnlight and the extra buttons remain active. Partial editor hook installation is
+rolled back. Android v2.0.1 does not expose `end_edit`; the adapter scopes
+`restore_active_control` instead to handle cancelled drags. This still requires
+runtime verification on the supported Dusklight/Lazy Tweaks build.
+
+LB exposes SDL's left-shoulder button (LB/L1) through `SDL_GetGamepadButton` for
+the player-one controller and `PADGetNativeButtonPressed(PAD_1)` when no physical
+button is reported. Twilight HD HUD uses these two paths for its physical LB
+bindings, including Midna in TPHD Fixed Bindings. No fixed Midna action or analog
+trigger is injected. Physical inputs and other player ports are preserved.
+Mods that insist on a connected device and provide no native-query fallback
+still need their own touch support; no synthetic controller is attached.
+The old `touch-button-zl-*` config keys remain internal storage for LB, preserving
+existing enabled state, position and size. D-Pad buttons send normal logical pad
+directions. Additional inputs are merged with native touch
+input before the host combines it with controller input. Multiple fingers are
+tracked independently; hiding/disabling controls or clearing native touch input
+releases the extra buttons. Extras are hidden during game menus, dialogue and
+cutscenes. No new APK is needed.
+
+Run `python3 tests/touch_buttons_test.py` for input ownership, pad merging and
+layout bounds. Run `python3 tests/touch_button_editor_test.py` after fetching the
+pinned Dusklight source (or set `DUSKLIGHT_DIR`) for the viewport contract, native
+layout round-trips, scoped metadata and Save/Cancel/Reset behavior. Device QA should cover all five buttons, simultaneous LB + face
+buttons and stick movement, disabling a held button, app/menu transitions,
+orientation/safe-area changes, drag and edge/corner resizing, Save/Cancel/Reset,
+vanilla editor isolation, persistent layouts after restart, and mod unload with
+the editor or its reset confirmation open.
+
 The portal shortcut uses a touch press edge, so holding L does not repeatedly
 toggle portals. It is scoped to field-map input processing and also works
 with Twilight HD HUD's Fixed controller bindings, which rebuild logical L/R
@@ -146,3 +193,13 @@ Twilight HD HUD must be the only owner of the third item slot:
 - Dawnlight `Dawnlight Touch UI`: On on Android when its touch layout is wanted
 
 Twilit Essentials features unrelated to its Custom Z Button can remain enabled.
+
+The editor's required symbols have also been checked against the official Android
+v2.0.1 APK, build ID `8431032be1f483cf884995a28bddd81556950b09`.
+Run `python3 tests/touch_editor_install_test.py` for missing-symbol and hook-failure
+rollback tests; set `DUSKLIGHT_APK` to a local APK for the real symbol check.
+
+Run `python3 tests/touch_lb_test.py` for SDL/native LB query behavior without a
+controller, physical/touch combinations, other-player isolation, disable/menu
+release and controller reconnect. Direct SDL-only mods without a no-controller
+fallback are outside this adapter's controller-free compatibility.

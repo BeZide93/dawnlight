@@ -1169,11 +1169,17 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     }
     // Called after playAllAnm / setAttnPos / modelCalc: these are the same
     // posed joints as the visible sword, not last tick's pose or a timer proxy.
+    const float frame=actor->mpModelMorf[0]->getFrame();
+    const bool shield=entry->offense==shade::helm_splitter && frame<27;
+    const float radius=shield ? 40.0f : 30.0f;
     std::array<cXyz,2> positions;
     std::array<shade::BladePoint,2> points;
     for (unsigned i=0;i<positions.size();++i) {
-        cXyz offset(60.0f+60*i,0,0);
-        MTXMultVec(actor->mpModelMorf[0]->getModel()->getAnmMtx(13),&offset,&positions[i]);
+        // weaponR (21) carries the shield; weaponL (13) carries the sword.
+        // One sphere at the shield grip follows the visible bash, not the blade
+        // raised behind him. The sword retains its two native coverage points.
+        cXyz offset(shield ? 0.0f : 60.0f+60*i,0,0);
+        MTXMultVec(actor->mpModelMorf[0]->getModel()->getAnmMtx(shield ? 21 : 13),&offset,&positions[i]);
         points[i]={positions[i].x,positions[i].y,positions[i].z};
         auto& sphere=actor->mSphCc[i];
         // All contact volumes share one strike budget, including shield hits.
@@ -1200,20 +1206,21 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
     } else entry->blade={};
     for (unsigned i=0;i<positions.size();++i) {
         auto& sphere=actor->mSphCc[i];
-        if (active) {
+        const bool volume_active=active && (!shield || i==0);
+        if (volume_active) {
             sphere.SetC(positions[i]);
-            sphere.SetR(30); // native blade coverage; no delayed area-damage proxy
+            sphere.SetR(radius); // posed weapon coverage; no delayed area-damage proxy
             sphere.SetAtAtp(shade::attack_power(entry->offense));
             sphere.OnAtSetBit();
             dComIfG_Ccsp()->Set(&sphere);
         } else sphere.OffAtSetBit();
         sphere.ClrAtHit();
         auto& sweep=entry->bladeSweeps[i];
-        if (active && entry->blade.sweep && entry->offense!=shade::sword) {
+        if (volume_active && entry->blade.sweep && entry->offense!=shade::sword) {
             // Trace the actual blade points between consecutive poses. A fast
             // cut can cross Link entirely between two endpoint sphere tests.
             const cXyz start(previous[i].x,previous[i].y,previous[i].z);
-            static_cast<cM3dGCps*>(&sweep)->Set(start,positions[i],30);
+            static_cast<cM3dGCps*>(&sweep)->Set(start,positions[i],radius);
             cXyz direction=positions[i]-start;
             sweep.SetAtVec(direction);
             sweep.SetAtAtp(shade::special_attack_power);

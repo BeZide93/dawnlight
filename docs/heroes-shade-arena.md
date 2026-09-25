@@ -554,6 +554,14 @@ Native expiry still waits for an already-started Ending Blow to resolve.
 - Back Slice uses animation progress to follow a semicircle around Link at a
   150-unit radius, with bounded movement through native collision. The cut then
   faces Link and closes to sword reach. Sidestep/roll frames never deal damage.
+- Helm Splitter has three separate, single-contact strikes: the shield bash
+  (KN_KABUTO frames 8–18), aerial sword cut (27–67), and final sword thrust into
+  the stance (68–76). The bash uses one 40-unit sphere and its swept path at
+  shield attachment joint 21. Sword phases use the native joint 13 coverage.
+  The shield-to-sword switch cannot create a sweep between the two weapons.
+  A hit or shield block consumes only that phase; the following authored strike
+  can hit again. The planted final pose accepts endpoint contact at frames
+  75–76 even as the blade stops, but holding the stance never rearms damage.
 - Jump animations already contain vertical motion and forward root travel.
   Do not add a second physical jump: it puts the sword above Link at impact.
   A post-`setAttnPos` hook anchors the backbone's X/Z position to actor movement

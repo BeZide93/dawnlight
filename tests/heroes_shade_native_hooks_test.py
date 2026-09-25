@@ -58,9 +58,9 @@ void MTXMultVec(const Mtx m,const cXyz* in,cXyz* out) {
     *out={in->x+m[0][3],in->y+m[1][3],in->z+m[2][3]};
 }
 struct Model {
-    Mtx blade{},body{},base{};
+    Mtx blade{},shield{},body{},base{};
     cXyz authoredBody{20,200,594};
-    auto getAnmMtx(int joint) -> float (*)[4] { assert(joint==1 || joint==13); return joint==1 ? body : blade; }
+    auto getAnmMtx(int joint) -> float (*)[4] { assert(joint==1 || joint==13 || joint==21); return joint==1 ? body : joint==21 ? shield : blade; }
     auto getBaseTRMtx() -> float (*)[4] { return base; }
     void setBaseTRMtx(const Mtx m) { MTXCopy(m,base); }
 };
@@ -481,6 +481,7 @@ int main() {
     assert(accessory_motion(nullptr,&a,&result,nullptr)==HOOK_CONTINUE);
     assert(a.mPodAnmFlags==0x41);
 
+    a.entry.offense=23;a.mMotionSeqMngr.no=23;
     auto sample=[&](float frame,float z) {
         a.morf.frame=frame;
         a.morf.model.blade[1][3]=100;
@@ -518,6 +519,36 @@ int main() {
     a.entry.bladeSweeps[1].target=&player;
     assert(sample(2,110)==0);
     assert(!a.entry.bladeSweeps[0].enabled);
+
+    // Helm Splitter uses its shield joint before jumping, then independent
+    // budgets for the aerial cut and final sword thrust into the stance.
+    a.entry.blade={};a.entry.offense=shade::helm_splitter;
+    a.mMotionSeqMngr.no=shade::helm_splitter;
+    a.morf.model.shield[0][3]=-20;a.morf.model.shield[1][3]=140;
+    a.morf.model.shield[2][3]=90;
+    assert(sample(7,900)==0); // sword is far away and must not represent the bash
+    a.morf.model.shield[2][3]=110;
+    assert(sample(8,900)==2); // one shield sphere plus its sweep
+    assert(a.mSphCc[0].center.x==-20 && a.mSphCc[0].center.z==110);
+    assert(a.mSphCc[0].radius==40 && !a.mSphCc[1].enabled);
+    assert(a.entry.bladeSweeps[0].start.z==90 && a.entry.bladeSweeps[0].end.z==110);
+    a.mSphCc[0].hit=true;a.mSphCc[0].target=&player;
+    a.morf.model.shield[2][3]=130;
+    assert(sample(9,910)==0); // the bash is consumed
+    assert(sample(26,900)==0);
+    assert(sample(27,0)==0); // attachment switch cannot sweep across the arena
+    assert(sample(28,10)==4);
+    assert(a.mSphCc[0].center.x==60 && a.mSphCc[0].radius==30);
+    a.entry.bladeSweeps[0].shield=true;a.entry.bladeSweeps[0].target=&player;
+    assert(sample(29,20)==0);
+    assert(sample(67,30)==0);
+    assert(sample(68,40)==4); // final thrust has its own contact budget
+    a.mSphCc[1].hit=true;a.mSphCc[1].target=&player;
+    assert(sample(69,50)==0);
+    assert(sample(75,60)==0);
+    assert(sample(76,70)==0);
+    assert(sample(90,80)==0); // holding the stance never rearms it
+    assert(a.entry.blade.contacts==3);
 
     a.entry.blade={}; a.entry.offense=shade::jump_strike;
     a.mMotionSeqMngr.no=shade::jump_strike;

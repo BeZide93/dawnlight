@@ -85,6 +85,14 @@ inline bool striking_step(int attack, int step) {
     return false;
 }
 
+// KN_KABUTO: shield thrust, aerial cut, then the thrust into its final stance.
+// Recovery/held stance must not repeatedly damage someone touching the weapon.
+inline int helm_strike(float frame) {
+    if (frame>=8 && frame<19) return 0;
+    if (frame>=27 && frame<68) return 1;
+    if (frame>=68 && frame<=76) return 2;
+    return -1;
+}
 struct BladePoint { float x, y, z; };
 inline float blade_distance_squared(const BladePoint& a, const BladePoint& b) {
     const float x=a.x-b.x, y=a.y-b.y, z=a.z-b.z;
@@ -99,6 +107,7 @@ struct BladeMotion {
     unsigned contacts = 0;
     unsigned clear_samples = 0;
     bool sweep = false;
+    int helmStrike = -1;
 
     void contact() {
         if (!resolved) { resolved=true; ++contacts; clear_samples=0; }
@@ -111,6 +120,17 @@ struct BladeMotion {
         const float travel=std::max(blade_distance_squared(points[0],previous[0]),
                                     blade_distance_squared(points[1],previous[1]));
         sweep=continuous && travel<=300.0f*300.0f;
+        if (next_attack==helm_splitter) {
+            const int strike=helm_strike(next_frame);
+            if (strike>helmStrike) {
+                // Consume previous-pose contacts before advancing the budget.
+                // Only a later authored strike may rearm; a frame rewind cannot.
+                if (continuous) resolved=false;
+                helmStrike=strike;
+            }
+            // Never trace the shield attachment into the sword attachment.
+            if (frame<27 && next_frame>=27) sweep=false;
+        }
         if (resolved && next_attack==jump_strike && contacts==1) {
             // Jump Strike has two blows in one native motion. Rearm only after
             // the blade has visibly withdrawn, never while it remains on Link.
@@ -122,6 +142,13 @@ struct BladeMotion {
         // non-damaging roll into this strike.
         if (cut_entry && !resolved) return true;
         if (resolved || !continuous || !striking_step(attack,step)) return false;
+        if (attack==helm_splitter) {
+            if (step!=0 || helm_strike(frame)<0) return false;
+            // The final planted thrust gets endpoint contact even as it settles;
+            // its consumed budget still prevents repeated damage from the hold.
+            if (frame>=75 && frame<=76) return travel<=300.0f*300.0f;
+            if (!sweep) return false;
+        }
         if (attack==sword) return frame>=30 && frame<=40; // native ordinary swing
         // Special animation lengths/windups differ. Use the posed blade's
         // movement, not an invented common percentage of the animation. The

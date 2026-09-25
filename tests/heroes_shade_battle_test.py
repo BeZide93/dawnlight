@@ -175,7 +175,7 @@ int main() {
     assert(battle.health==10 && battle.phase==0 && !battle.dying);
     for (unsigned phase=0;phase<phases.size();++phase) {
         const int attack=phases[phase].attack;
-        if (attack<0) continue; // native projectile owns its collision
+        if (attack<0 || attack==helm_splitter) continue; // projectile / dedicated Helm tests
         const int step=attack==back_slice ? 2 : 0;
         BladeMotion blade;
         std::array<BladePoint,2> pose{{{60,100,0},{120,100,0}}};
@@ -219,6 +219,26 @@ int main() {
     pose[0].z=pose[1].z=20;
     assert(cut.sample(back_slice,2,1,pose) && cut.sweep);
 
+    BladeMotion helm;
+    auto helm_pose=ordinary_pose;
+    assert(!helm.sample(helm_splitter,0,0,helm_pose));
+    for(int frame=1;frame<=114;++frame) {
+        helm_pose[0].z=helm_pose[1].z=frame*2;
+        const bool active=helm.sample(helm_splitter,0,frame,helm_pose);
+        if(frame==8 || frame==28 || frame==68) {
+            assert(active);helm.contact();helm.contact(); // spheres/sweeps share a budget
+        } else assert(!active);
+        if(frame==27) assert(!helm.sweep); // no shield-to-sword sweep
+    }
+    assert(helm.contacts==3);
+    helm_pose[0].z=helm_pose[1].z=230;
+    assert(!helm.sample(helm_splitter,0,68,helm_pose)); // rewind cannot rearm
+    assert(!helm.sample(helm_splitter,0,69,helm_pose));
+    BladeMotion stance;
+    assert(!stance.sample(helm_splitter,0,74,helm_pose));
+    assert(stance.sample(helm_splitter,0,75,helm_pose)); // exact final pose can hit
+    stance.contact();assert(!stance.sample(helm_splitter,0,76,helm_pose));
+    assert(!stance.sample(helm_splitter,0,80,helm_pose));
     BladeMotion jump;
     assert(!jump.sample(jump_strike,0,0,pose));
     jump.contact();

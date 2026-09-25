@@ -554,7 +554,7 @@ tilt or height, restarts an existing landing, or changes the main Shade's native
 Ending Blow action 3 and its down/finishing flags. Both visible models continue
 through the engine's shared motion controller.
 
-Native approach speed remains six units per tick. Ordinary sword swings use
+Forward approach accelerates to eight units per tick with matched stride playback. Ordinary sword swings use
 attack power 4 (one heart). All special blade strikes, their swept volumes and
 the light ball use power 8 (two hearts) per accepted hit. Native damage modifiers
 and invulnerability still apply. Successful counters still grant 45 ticks of

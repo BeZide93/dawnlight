@@ -1195,14 +1195,8 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
         !sBattle.recovery && !sBattle.dying && !entry->deleting;
     bool active=false;
     if (attacking) {
-        bool clear_of_target=true;
-        for (const auto& target:daAlink_getAlinkActorClass()->mTgCyls) {
-            const auto& center=target.GetC();
-            clear_of_target &= shade::blade_clear_of_body(points,
-                {center.x,center.y,center.z},target.GetR(),target.GetH());
-        }
         active=entry->blade.sample(entry->offense,actor->mMotionSeqMngr.getStepNo(),
-                                   actor->mpModelMorf[0]->getFrame(),points,clear_of_target);
+                                   actor->mpModelMorf[0]->getFrame(),points);
     } else entry->blade={};
     for (unsigned i=0;i<positions.size();++i) {
         auto& sphere=actor->mSphCc[i];

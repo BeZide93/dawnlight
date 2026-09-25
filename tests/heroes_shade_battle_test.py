@@ -175,7 +175,7 @@ int main() {
     assert(battle.health==10 && battle.phase==0 && !battle.dying);
     for (unsigned phase=0;phase<phases.size();++phase) {
         const int attack=phases[phase].attack;
-        if (attack<0 || attack==helm_splitter) continue; // projectile / dedicated Helm tests
+        if (attack<0 || jumping_attack(attack)) continue; // projectile / dedicated Helm tests
         const int step=attack==back_slice ? 2 : 0;
         BladeMotion blade;
         std::array<BladePoint,2> pose{{{60,100,0},{120,100,0}}};
@@ -239,27 +239,32 @@ int main() {
     assert(stance.sample(helm_splitter,0,75,helm_pose)); // exact final pose can hit
     stance.contact();assert(!stance.sample(helm_splitter,0,76,helm_pose));
     assert(!stance.sample(helm_splitter,0,80,helm_pose));
-    BladeMotion jump;
-    assert(!jump.sample(jump_strike,0,0,pose));
-    jump.contact();
-    for (int frame=1;frame<=10;++frame) {
-        pose[0].z=pose[1].z=frame*10;
-        assert(!jump.sample(jump_strike,0,frame,pose,false));
+    // Every strike has an independent opportunity, including after an earlier
+    // miss or block. Exhaust all contact/miss combinations for both attacks.
+    for (int attack:{helm_splitter,jump_strike}) {
+        const int count=attack==helm_splitter ? 3 : 2;
+        const int end=attack==helm_splitter ? 114 : 89;
+        for (int mask=0;mask<(1<<count);++mask) {
+            BladeMotion multi;
+            std::array<BladePoint,2> points{{{60,100,0},{120,100,0}}};
+            assert(!multi.sample(attack,0,0,points));
+            unsigned expected=0;
+            for (int frame=1;frame<=end;++frame) {
+                // Both points stay within Link's cylinder throughout: spacing
+                // is no longer required to earn the second attack's budget.
+                points[0].z=points[1].z=frame%2 ? 2 : 0;
+                const int phase=attack==helm_splitter ? helm_strike(frame) : jump_strike_phase(frame);
+                const bool active=multi.sample(attack,0,frame,points);
+                const bool strike_start=attack==helm_splitter ?
+                    (frame==8 || frame==28 || frame==68) : (frame==40 || frame==58);
+                if(strike_start) {
+                    assert(active);
+                    if(mask&(1<<phase)) { multi.contact();multi.contact();++expected; }
+                } else if(phase<0 || (phase>=0 && (mask&(1<<phase)))) assert(!active);
+            }
+            assert(multi.contacts==expected);
+        }
     }
-    pose[0].z=pose[1].z=150;
-    assert(!jump.sample(jump_strike,0,11,pose,true));
-    pose[0].z=pose[1].z=180;
-    assert(jump.sample(jump_strike,0,12,pose,true));
-    jump.contact();
-    for (int frame=13;frame<30;++frame) {
-        pose[0].z=pose[1].z=frame*10;
-        assert(!jump.sample(jump_strike,0,frame,pose,true));
-    }
-    assert(jump.contacts==2);
-    const BladePoint body{0,0,0};
-    assert(!blade_clear_of_body({{{-100,100,0},{100,100,0}}},body,30,150));
-    assert(!blade_clear_of_body({{{60,100,0},{120,100,0}}},body,30,150));
-    assert(blade_clear_of_body({{{60,200,0},{120,200,0}}},body,30,150));
     for (float angle : {0.0f,0.7f,1.57f,3.14f,-2.4f}) {
         const GroundPoint link{std::sin(angle)*300,std::cos(angle)*300};
         const auto helm=jump_landing_target(helm_splitter,{0,0},link);

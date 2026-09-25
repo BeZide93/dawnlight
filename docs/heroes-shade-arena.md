@@ -535,10 +535,13 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   between sphere samples. Back Slice activates its first cut pose immediately,
   without tracing the preceding non-damaging roll. Frozen frames, interrupted
   motions and large discontinuities cannot generate swept hits.
-  A player hit or shield block consumes the strike. Jump Strike alone can rearm
-  once, after both blade points remain clearly separated from all of Link's hurt
-  cylinders for two samples. This permits its second blow without repeated hits
-  from a blade resting on Link. Normal sword damage is 4 quarter-heart units
+  A player hit or shield block consumes only the current strike. Helm Splitter
+  has three independent strike budgets; Jump Strike has two. KN_DAIJUMP's first
+  sweep uses frames 40–49 and its landing blow uses frames 58–66. Entering the
+  second phase rearms contact even if the blade remains close to Link. A miss
+  or block on the first blow cannot suppress the second, and withdrawing the
+  blade cannot earn a second hit during the same phase. Charge, somersault gap
+  and recovery do not deal damage. Normal sword damage is 4 quarter-heart units
   (one heart); specials use 8 (two hearts). Native shield and
   invulnerability handling still decide whether each contact damages Link.
 - Gaps are six simulation ticks within a combo and 18 between combos. Doubles

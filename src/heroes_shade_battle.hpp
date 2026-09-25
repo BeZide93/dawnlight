@@ -93,6 +93,13 @@ inline int helm_strike(float frame) {
     if (frame>=68 && frame<=76) return 2;
     return -1;
 }
+// KN_DAIJUMP: first sweep at takeoff, then the downward landing blow.
+// Charging, the intervening somersault and recovery do not spend either hit.
+inline int jump_strike_phase(float frame) {
+    if (frame>=40 && frame<50) return 0;
+    if (frame>=58 && frame<=66) return 1;
+    return -1;
+}
 struct BladePoint { float x, y, z; };
 inline float blade_distance_squared(const BladePoint& a, const BladePoint& b) {
     const float x=a.x-b.x, y=a.y-b.y, z=a.z-b.z;
@@ -105,37 +112,30 @@ struct BladeMotion {
     float frame = -1;
     bool resolved = false;
     unsigned contacts = 0;
-    unsigned clear_samples = 0;
     bool sweep = false;
-    int helmStrike = -1;
+    int strikePhase = -1;
 
     void contact() {
-        if (!resolved) { resolved=true; ++contacts; clear_samples=0; }
+        if (!resolved) { resolved=true; ++contacts; }
     }
 
     bool sample(int next_attack, int next_step, float next_frame,
-                const std::array<BladePoint,2>& points, bool clear_of_target=false) {
+                const std::array<BladePoint,2>& points) {
         const bool continuous=attack==next_attack && step==next_step && next_frame>frame;
         const bool cut_entry=attack==back_slice && next_attack==back_slice && step==1 && next_step==2;
         const float travel=std::max(blade_distance_squared(points[0],previous[0]),
                                     blade_distance_squared(points[1],previous[1]));
         sweep=continuous && travel<=300.0f*300.0f;
-        if (next_attack==helm_splitter) {
-            const int strike=helm_strike(next_frame);
-            if (strike>helmStrike) {
+        if (jumping_attack(next_attack)) {
+            const int strike=next_attack==helm_splitter ? helm_strike(next_frame) : jump_strike_phase(next_frame);
+            if (strike>strikePhase) {
                 // Consume previous-pose contacts before advancing the budget.
                 // Only a later authored strike may rearm; a frame rewind cannot.
                 if (continuous) resolved=false;
-                helmStrike=strike;
+                strikePhase=strike;
             }
             // Never trace the shield attachment into the sword attachment.
-            if (frame<27 && next_frame>=27) sweep=false;
-        }
-        if (resolved && next_attack==jump_strike && contacts==1) {
-            // Jump Strike has two blows in one native motion. Rearm only after
-            // the blade has visibly withdrawn, never while it remains on Link.
-            clear_samples=sweep && clear_of_target ? clear_samples+1 : 0;
-            if (clear_samples>=2) resolved=false;
+            if (next_attack==helm_splitter && frame<27 && next_frame>=27) sweep=false;
         }
         attack=next_attack; step=next_step; frame=next_frame; previous=points;
         // Register the first cut pose immediately. Do not sweep the preceding
@@ -149,6 +149,7 @@ struct BladeMotion {
             if (frame>=75 && frame<=76) return travel<=300.0f*300.0f;
             if (!sweep) return false;
         }
+        if (attack==jump_strike && jump_strike_phase(frame)<0) return false;
         if (attack==sword) return frame>=30 && frame<=40; // native ordinary swing
         // Special animation lengths/windups differ. Use the posed blade's
         // movement, not an invented common percentage of the animation. The
@@ -157,20 +158,6 @@ struct BladeMotion {
         return travel>=1.0f && travel<=300.0f*300.0f;
     }
 };
-
-// Conservative separation from a hurt-cylinder's bounding box, with blade
-// thickness and a margin. A false result keeps the strike consumed; it never
-// grants another hit just because one of the two blade points left the body.
-inline bool blade_clear_of_body(const std::array<BladePoint,2>& points,
-                                BladePoint base, float radius, float height) {
-    constexpr float margin=45;
-    return std::max(points[0].x,points[1].x)+margin < base.x-radius ||
-        std::min(points[0].x,points[1].x)-margin > base.x+radius ||
-        std::max(points[0].z,points[1].z)+margin < base.z-radius ||
-        std::min(points[0].z,points[1].z)-margin > base.z+radius ||
-        std::max(points[0].y,points[1].y)+margin < base.y ||
-        std::min(points[0].y,points[1].y)-margin > base.y+height;
-}
 
 struct GroundPoint { float x, z; };
 inline GroundPoint jump_landing_target(int attack, GroundPoint origin, GroundPoint target) {

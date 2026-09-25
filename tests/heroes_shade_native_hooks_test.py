@@ -553,18 +553,25 @@ int main() {
     a.entry.blade={}; a.entry.offense=shade::jump_strike;
     a.mMotionSeqMngr.no=shade::jump_strike;
     assert(sample(0,0)==0);
-    assert(sample(1,10)==4);
+    assert(sample(10,10)==0); // raising the sword / charge cannot spend a hit
+    assert(sample(39,20)==0);
+    assert(sample(40,30)==4); // first authored sweep
     a.mSphCc[0].hit=true; a.mSphCc[0].target=&player;
-    assert(sample(2,20)==0);
-    assert(sample(3,30)==0); // still on the body, never rearms
-    assert(sample(4,150)==0); // withdrawal sample 1
-    assert(sample(5,180)==4); // withdrawal sample 2, second cut allowed
-    assert(sample(6,0)==4); // return toward Link
+    assert(sample(41,40)==0);
+    assert(sample(42,50)==0);
+    assert(sample(43,180)==0); // withdrawal cannot rearm the SAME strike
+    assert(sample(44,190)==0);
+    assert(sample(49,20)==0);
+    assert(sample(50,30)==0); // somersault gap
+    assert(sample(57,40)==0);
+    assert(sample(58,50)==4); // second blow, even while still next to Link
     a.entry.bladeSweeps[0].hit=true;
     a.entry.bladeSweeps[0].target=&player;
-    assert(sample(7,10)==0);
-    assert(sample(8,150)==0);
-    assert(sample(9,180)==0); // no third strike in the same animation
+    assert(sample(59,60)==0);
+    assert(sample(65,170)==0);
+    assert(sample(66,190)==0);
+    assert(sample(80,0)==0);
+    assert(a.entry.blade.contacts==2);
 
     a.entry.blade={}; a.entry.offense=shade::back_slice;
     a.mMotionSeqMngr.no=shade::back_slice;

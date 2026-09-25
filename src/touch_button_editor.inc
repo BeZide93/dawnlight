@@ -12,7 +12,9 @@ DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::sync_selection_frame", void(N
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::begin_edit",
     bool(NativeEditor*, size_t, NativeEditor::EditHandle, Rml::Vector2f, bool, SDL_FingerID), ExtraEditorBegin);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::continue_edit", bool(NativeEditor*, Rml::Vector2f), ExtraEditorMove);
-DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::end_edit", bool(NativeEditor*, bool, SDL_FingerID, bool), ExtraEditorEnd);
+// end_edit has no hookable entry in Android v2.0.1. Only its cancel branch
+// needs our metadata: scope the actual layout-restoration operation instead.
+DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::restore_active_control", void(NativeEditor*), ExtraEditorRestore);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::request_reset", void(NativeEditor*), ExtraEditorReset);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::save_layout", void(NativeEditor*), ExtraEditorSave);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui8DocumentD2Ev", void(EditorDocument*), ExtraEditorDelete);
@@ -138,30 +140,71 @@ void open_native_touch_editor(ModContext*, void*) {
     if (parent) parent->cover();
 }
 
-template<class Hook> ModResult scope_editor_hook() {
-    auto result = mods::hook_add_pre<Hook>(svc_hook, enter_extra_editor);
-    if (result == MOD_OK) result = mods::hook_add_post<Hook>(svc_hook, leave_extra_editor);
-    return result;
+struct EditorHookBinding {
+    const char* name;
+    void* (*address)();
+    ModResult (*install)();
+    ModResult (*remove)();
+    HookPreFn pre;
+    HookPostFn post;
+};
+template<class Hook> EditorHookBinding editor_hook(
+    const char* name, HookPreFn pre, HookPostFn post) {
+    return {name, Hook::resolved_target,
+        [] { return mods::hook_install<Hook>(svc_hook); },
+        [] { return mods::hook_uninstall<Hook>(svc_hook); }, pre, post};
 }
-ModResult install_extra_editor(ModError* error) {
+ModResult install_extra_editor(ModError*) {
+    s_touchEditorAvailable = false;
+    if (!SERVICE_HAS(svc_hook, HookService, uninstall) || !svc_hook->uninstall) {
+        svc_log->warn(mod_ctx, "Touch editor unavailable: hook rollback is unsupported");
+        return MOD_OK;
+    }
     if (!resolve_extra("_ZN4dusk2ui19TouchControlsEditorC1Ev", s_editorApi.construct) ||
         !resolve_extra("dusk::ui::push_document", s_editorApi.push) ||
         !resolve_extra("dusk::ui::top_document", s_editorApi.top) ||
         !resolve_extra("dusk::ui::uncover_top_document", s_editorApi.uncover) ||
         !resolve_extra("dusk::ui::Document::hide", s_editorApi.hide) ||
         !resolve_extra("dusk::ui::TouchControlsEditor::cancel_edit", s_editorApi.cancel)) return MOD_OK;
-    auto result = mods::hook_add_post<ExtraEditorControls>(svc_hook, extra_editor_controls);
-    if (result == MOD_OK) result = mods::hook_add_post<ExtraEditorFragment>(svc_hook, extra_editor_fragment);
-    if (result == MOD_OK) result = scope_editor_hook<ExtraEditorLayouts>();
-    if (result == MOD_OK) result = scope_editor_hook<ExtraEditorFrame>();
-    if (result == MOD_OK) result = scope_editor_hook<ExtraEditorBegin>();
-    if (result == MOD_OK) result = scope_editor_hook<ExtraEditorMove>();
-    if (result == MOD_OK) result = scope_editor_hook<ExtraEditorEnd>();
-    if (result == MOD_OK) result = scope_editor_hook<ExtraEditorReset>();
-    if (result == MOD_OK) result = mods::hook_add_pre<ExtraEditorSave>(svc_hook, save_extra_editor);
-    if (result == MOD_OK) result = mods::hook_add_pre<ExtraEditorDelete>(svc_hook, extra_editor_delete);
-    if (result == MOD_OK) result = mods::hook_add_pre<ExtraEditorPush>(svc_hook, extra_editor_push);
-    if (result != MOD_OK) return mods::set_error(error, result, "failed to install native touch editor adapter");
+    const std::array bindings = {
+        editor_hook<ExtraEditorControls>("touch_layout_controls", nullptr, extra_editor_controls),
+        editor_hook<ExtraEditorFragment>("touch_controls_rml_fragment", nullptr, extra_editor_fragment),
+        editor_hook<ExtraEditorLayouts>("sync_control_layouts", enter_extra_editor, leave_extra_editor),
+        editor_hook<ExtraEditorFrame>("sync_selection_frame", enter_extra_editor, leave_extra_editor),
+        editor_hook<ExtraEditorBegin>("begin_edit", enter_extra_editor, leave_extra_editor),
+        editor_hook<ExtraEditorMove>("continue_edit", enter_extra_editor, leave_extra_editor),
+        editor_hook<ExtraEditorRestore>("restore_active_control", enter_extra_editor, leave_extra_editor),
+        editor_hook<ExtraEditorReset>("request_reset", enter_extra_editor, leave_extra_editor),
+        editor_hook<ExtraEditorSave>("save_layout", save_extra_editor, nullptr),
+        editor_hook<ExtraEditorDelete>("Document destructor", extra_editor_delete, nullptr),
+        editor_hook<ExtraEditorPush>("push_document", extra_editor_push, nullptr),
+    };
+    // Validate the complete optional adapter before changing any host function.
+    // A missing editor symbol must not prevent the rest of Dawnlight loading.
+    for (const auto& binding : bindings) {
+        if (!binding.address()) {
+            const auto message = std::string("Touch editor unavailable: missing hook ") + binding.name;
+            svc_log->warn(mod_ctx, message.c_str());
+            return MOD_OK;
+        }
+    }
+    size_t installed = 0;
+    for (const auto& binding : bindings) {
+        auto result = binding.install();
+        if (result == MOD_OK) {
+            ++installed;
+            if (binding.pre) result = svc_hook->add_pre(mod_ctx, binding.address(), binding.pre, nullptr);
+            if (result == MOD_OK && binding.post)
+                result = svc_hook->add_post(mod_ctx, binding.address(), binding.post, nullptr);
+        }
+        if (result != MOD_OK) {
+            const auto message = std::string("Touch editor unavailable: failed hook ") + binding.name +
+                " (" + std::to_string(result) + "); Dawnlight remains active";
+            svc_log->warn(mod_ctx, message.c_str());
+            while (installed) bindings[--installed].remove();
+            return MOD_OK;
+        }
+    }
     s_touchEditorAvailable = true;
     return MOD_OK;
 }

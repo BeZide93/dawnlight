@@ -74,7 +74,10 @@ when first saved. Layout uses the live RML document context and native DP geomet
 a missing context no longer collapses the buttons to 1 dp at the origin.
 
 The adapter uses the pinned Android host's private touch ABI. If required editor
-methods cannot be resolved, its launch button is disabled. This still requires
+methods or hook targets cannot be resolved, its launch button is disabled while
+Dawnlight and the extra buttons remain active. Partial editor hook installation is
+rolled back. Android v2.0.1 does not expose `end_edit`; the adapter scopes
+`restore_active_control` instead to handle cancelled drags. This still requires
 runtime verification on the supported Dusklight/Lazy Tweaks build.
 
 ZL sends the independent left analog trigger used by the game's lock-trigger
@@ -184,3 +187,8 @@ Twilight HD HUD must be the only owner of the third item slot:
 - Dawnlight `Dawnlight Touch UI`: On on Android when its touch layout is wanted
 
 Twilit Essentials features unrelated to its Custom Z Button can remain enabled.
+
+The editor's required symbols have also been checked against the official Android
+v2.0.1 APK, build ID `8431032be1f483cf884995a28bddd81556950b09`.
+Run `python3 tests/touch_editor_install_test.py` for missing-symbol and hook-failure
+rollback tests; set `DUSKLIGHT_APK` to a local APK for the real symbol check.

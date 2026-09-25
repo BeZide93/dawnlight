@@ -261,6 +261,10 @@ void after_arms(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);if(!active(link)) return;
     auto* model=link->mpLinkModel;
     s.hipSword=dual::compose(pose(model->getAnmMtx(16)),local(-3,0,18,20));
+    // Roll around the blade's local X axis, preserving the grip position and
+    // blade direction. The sheath inherits this same pose in after_items.
+    constexpr float halfTurn90=.70710678118f;
+    s.hipSword=dual::compose(s.hipSword,Pose{{halfTurn90,0,0,halfTurn90},{}});
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());
         float push=0;
@@ -272,7 +276,9 @@ void after_arms(ModContext*,void* args,void*,void*) {
         for(bool right:{false,true}) {
             const Vec shoulder=dual::rotate(dual::conjugate(base.q),pose(model->getAnmMtx(right ? 12 : 7)).p-base.p);
             const float side=shoulder.x>=0 ? 1.0f : -1.0f;
-            Pose cross{dual::between({1,0,0},dual::unit({-.65f*side,.75f,.12f})),{18*side,118,26+push}};
+            // Keep the crossing in front of the face: lower the grips slightly,
+            // extend them forward, and lean the blades away from the head.
+            Pose cross{dual::between({1,0,0},dual::unit({-.65f*side,.75f,.32f})),{18*side,112,44+push}};
             solve_arm(link,right,dual::compose(base,cross),dual::smooth(s.guard));
         }
     }

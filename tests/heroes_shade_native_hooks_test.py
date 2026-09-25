@@ -20,6 +20,7 @@ def function(name, result="HookAction"):
 fixture = r'''
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
+#include "heroes_shade_stride.hpp"
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -133,6 +134,7 @@ struct dCcD_Cps : Sphere, cM3dGCps {
 };
 struct Fighter {
     int id=42, divide=0;
+    float walkSpeed=0;
     bool forming=false,returning=false;
     int defeatPhase=-1;
     int formationTicks=0;
@@ -224,7 +226,7 @@ std::array<Fighter,3> sFighters;
 daNpc_Kn_c* formationBoss=nullptr;
 daNpc_Kn_c* actor_by_id(int id){return id==sFighters[0].id ? formationBoss : nullptr;}
 struct daObjKnBullet_c { int parentActorID=42; Sphere mCcSph; };
-constexpr float kApproachSpeed=6;
+constexpr float kApproachSpeed=shade::stride::speed;
 float fopAcM_GetMaxFallSpeed(daNpc_Kn_c*) { return -40; }
 s16 playerYaw=0;
 s16 fopAcM_searchPlayerAngleY(daNpc_Kn_c*) { return playerYaw; }
@@ -588,16 +590,25 @@ int main() {
     }
     a.current.angle.y=playerYaw; a.speedF=3;
     after_approach(nullptr,&a,nullptr,nullptr);
-    assert(!a.entry.helmTurnPending && a.speedF==kApproachSpeed);
+    assert(!a.entry.helmTurnPending && a.speedF>0 && a.speedF<kApproachSpeed);
     // Link already in front: movement resumes immediately, including yaw wrap.
     a.entry.helmTurnPending=true;
     a.current.angle.y=32760; playerYaw=-32760; a.speedF=3;
     after_approach(nullptr,&a,nullptr,nullptr);
-    assert(!a.entry.helmTurnPending && a.speedF==kApproachSpeed);
+    assert(!a.entry.helmTurnPending && a.speedF>0 && a.speedF<kApproachSpeed);
     // Only the post-Helm turn is constrained, never an ordinary native approach.
     a.current.angle.y=0; playerYaw=static_cast<s16>(0x8000); a.speedF=3;
     after_approach(nullptr,&a,nullptr,nullptr);
+    assert(a.speedF>0 && a.speedF<kApproachSpeed);
+    float previous=a.speedF;
+    for (int tick=0;tick<20;++tick) {
+        a.speedF=3;after_approach(nullptr,&a,nullptr,nullptr);
+        assert(a.speedF>=previous && a.speedF<=kApproachSpeed);
+        assert(a.speedF-previous<=0.801f);previous=a.speedF;
+    }
     assert(a.speedF==kApproachSpeed);
+    a.speedF=0;after_approach(nullptr,&a,nullptr,nullptr);
+    assert(a.entry.walkSpeed==0 && a.speedF==0);
     a.entry.helmTurnPending=true; a.owned=false; a.speedF=3;
     after_approach(nullptr,&a,nullptr,nullptr);
     assert(a.speedF==3);

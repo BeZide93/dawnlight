@@ -23,6 +23,32 @@ actor heap buffer is borrowed or rewritten. The checked-in generated header
 keeps Python/Pillow out of platform builds. Regenerate it only after changing
 the source PNG with `python tools/generate_pedestal_texture.py`.
 
+## Walking animation
+
+Boss Rush uses a longer, authored stride based on the `KN_STEP` skeleton instead
+of the original short stepping-in-place loop. Six leg joints and the root are
+resampled with fixed-length two-bone IK: each foot has a planted stance and a
+raised swing, with a continuous 30-frame loop. Native upper-body animation,
+attack sequences and bone translations remain intact.
+
+Forward approach accelerates to 8 units per tick (previously 6). Playback follows
+actual approach speed, reaching 1.2x at full pace; 120 units of planted travel over
+18 animation frames matches that speed. An eight-tick blend restores the original
+stance when movement stops. Main Shade and doubles own separate animation state;
+native story lessons and the shared game animation are not modified. Deletion
+detaches the private animation before the native model/archive is released.
+
+The checked-in `src/generated/shade_stride.hpp` contains only the authored leg
+and root tracks. Regenerate it with NumPy/SciPy installed:
+
+```sh
+python3 tools/generate_shade_stride.py /path/to/KN_a.arc
+```
+
+The source archive is supplied locally and is not needed by platform builds.
+Skeleton checks cover fixed bone lengths, foot trajectories, toe clearance and
+loop continuity; final appearance with the character mesh needs in-game review.
+
 ## Intro and victory scenes
 
 The sword now starts a short original boss introduction. Shade stays hidden

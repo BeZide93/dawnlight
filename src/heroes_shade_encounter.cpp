@@ -1,6 +1,7 @@
 #include "heroes_shade_encounter.hpp"
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
+#include "heroes_shade_stride_animation.hpp"
 #include "SSystem/SComponent/c_math.h"
 #include "generated/pedestal_stone.hpp"
 #include "pedestal_mesh.hpp"
@@ -44,6 +45,8 @@
 #include <cstring>
 #include <cstdio>
 #include <unordered_set>
+#include <memory>
+#include <new>
 
 namespace dawnlight {
 namespace {
@@ -53,12 +56,14 @@ constexpr char kSwordArchive[] = "MstrSword";
 constexpr int kAttackCooldown = 18;
 constexpr int kComboGap = 6;
 constexpr int kDoubleAttackDelay = 15;
-constexpr float kApproachSpeed = 6.0f;
+constexpr float kApproachSpeed = shade::stride::speed;
 ProfileName sProfile = -1;
 ActorHandle sRegistration = 0;
 ActorId sPedestal = kNone;
 struct Fighter {
     ActorId id = kNone;
+    std::unique_ptr<ShadeStrideAnimation> stride;
+    float walkSpeed = 0;
     int divide = 0;
     bool forming = false;
     bool returning = false;
@@ -172,6 +177,14 @@ void remove_actor(ActorId id) {
     if (actor_by_id(id)) svc_actor->delete_actor(mod_ctx,id);
 }
 #include "heroes_shade_wolf.inc"
+
+void release_step_animation(daNpc_Kn_c* actor,Fighter& entry) {
+    // Detach mod-owned animation before native Delete frees the model and archive.
+    if (entry.stride) for (auto* model:actor->mpModelMorf)
+        if (model && model->getAnm()==entry.stride.get())
+            model->changeAnm(const_cast<J3DAnmTransformKey*>(entry.stride->original));
+    entry.stride.reset();
+}
 
 void retire_double(Fighter& entry,bool recall) {
     if (recall && !entry.deleting && pending_or_live(entry.id)) {
@@ -715,6 +728,7 @@ HookAction before_delete(ModContext*,void* args,void*,void*) {
         if (!entry->divide) { stop_shade_music(); release_cinema(); cancel_trial(); remove_companions(); }
         stop_blade_sweeps(*entry);
         actor->mType=6;
+        release_step_animation(actor,*entry);
         *entry={};
     }
     return HOOK_CONTINUE;
@@ -773,11 +787,15 @@ void after_approach(ModContext*,void* args,void*,void*) {
         if (std::abs(static_cast<int>(remaining))>0x400) {
             actor->speedF=0;
             actor->speed.x=actor->speed.z=0;
+            entry->walkSpeed=0;
             return;
         }
         entry->helmTurnPending=false;
     }
-    if (actor->speedF>0) actor->speedF=kApproachSpeed;
+    if (actor->speedF>0) {
+        entry->walkSpeed=shade::stride::approach_speed(entry->walkSpeed);
+        actor->speedF=entry->walkSpeed;
+    } else entry->walkSpeed=0;
 }
 
 HookAction step_animation(ModContext*,void* args,void*,void*) {
@@ -789,6 +807,21 @@ HookAction step_animation(ModContext*,void* args,void*,void*) {
     auto& animation=mods::arg_ref<int>(args,1);
     if (animation==2) animation=1;
     return HOOK_CONTINUE;
+}
+
+void install_step_animation(ModContext*,void* args,void* result,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    auto* entry=fighter(actor);
+    if (!entry || !*static_cast<bool*>(result) || mods::arg<int>(args,1)!=1 ||
+        !actor->mpModelMorf[0]) return;
+    auto* animation=actor->mpModelMorf[0]->getAnm();
+    if (!animation || animation->getKind()!=8 || animation->getFrameMax()!=shade::stride::frames ||
+        animation->field_0x1e!=37 || animation->getAttribute()!=2) return;
+    auto* source=static_cast<J3DAnmTransformKey*>(animation);
+    if (!entry->stride) entry->stride.reset(new(std::nothrow) ShadeStrideAnimation(*source));
+    if (!entry->stride || entry->stride->original!=source) return;
+    for (auto* model:actor->mpModelMorf)
+        if (model && model->getAnm()==source) model->changeAnm(entry->stride.get());
 }
 
 HookAction accessory_motion(ModContext*,void* args,void* result,void*) {
@@ -810,8 +843,19 @@ void after_motion(ModContext*,void* args,void*,void*) {
     const bool attacking=entry->offense>=0 && actor->mMotionSeqMngr.getNo()==entry->offense &&
         !actor->mMotionSeqMngr.checkEntryNewMotion();
     if (attacking) entry->animationStarted=true;
-    const float rate=attacking && entry->offense==shade::sword &&
+    float rate=attacking && entry->offense==shade::sword &&
         actor->mMotionSeqMngr.getStepNo()==0 ? 1.65f : 1.0f;
+    const bool stepping=entry->stride && actor->mpModelMorf[0] &&
+        actor->mpModelMorf[0]->getAnm()==entry->stride.get();
+    if (stepping) {
+        const bool moving=actor->speedF>0 && !attacking && !sBattle.recovery &&
+            !sBattle.dying && !sCinema.active();
+        entry->stride->weight=shade::stride::blend_weight(entry->stride->weight,moving);
+        if (moving) rate=shade::stride::playback*std::clamp(actor->speedF/kApproachSpeed,0.1f,1.0f);
+    } else {
+        entry->walkSpeed=0;
+        if (entry->stride) entry->stride->weight=0;
+    }
     for (auto* model:actor->mpModelMorf) if (model) model->setPlaySpeed(rate);
 }
 void start_attack(daNpc_Kn_c* actor,Fighter& entry) {
@@ -1422,7 +1466,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeSwordHook,sword_collision);
     POST(ShadeBodyHook,trial_body_collision);
     PRE(ShadeAccessoryMotionHook,accessory_motion);
-    PRE(ShadeStepAnimationHook,step_animation);
+    PRE(ShadeStepAnimationHook,step_animation); POST(ShadeStepAnimationHook,install_step_animation);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);
     POST(ShadeLandingHook,after_knockdown_movement);

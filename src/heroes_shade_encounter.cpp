@@ -183,6 +183,8 @@ void release_step_animation(daNpc_Kn_c* actor,Fighter& entry) {
     if (entry.stride) for (auto* model:actor->mpModelMorf)
         if (model && model->getAnm()==entry.stride.get())
             model->changeAnm(const_cast<J3DAnmTransformKey*>(entry.stride->original));
+    if (entry.stride && actor->mBckAnm.getBckAnm()==entry.stride.get())
+        actor->mBckAnm.changeBckOnly(const_cast<J3DAnmTransformKey*>(entry.stride->original));
     entry.stride.reset();
 }
 
@@ -800,26 +802,43 @@ void after_approach(ModContext*,void* args,void*,void*) {
 
 HookAction step_animation(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
-    if (!fighter(actor)) return HOOK_CONTINUE;
+    auto* entry=fighter(actor);
+    if (!entry) return HOOK_CONTINUE;
     // Native animation-table entries: 2 = KN_STEP_IKAKU, 1 = KN_STEP.
     // Replace the clip, not sequence 9: combat and attack-return sequences
     // must retain their native IDs and step progression.
     auto& animation=mods::arg_ref<int>(args,1);
     if (animation==2) animation=1;
+    // Native restart checks compare archive pointers. Expose that pointer for
+    // the native call, while retaining our state until its result is known.
+    if (entry->stride) for (auto* model:actor->mpModelMorf)
+        if (model && model->getAnm()==entry->stride.get())
+            model->changeAnm(const_cast<J3DAnmTransformKey*>(entry->stride->original));
     return HOOK_CONTINUE;
 }
 
 void install_step_animation(ModContext*,void* args,void* result,void*) {
     auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
     auto* entry=fighter(actor);
-    if (!entry || !*static_cast<bool*>(result) || mods::arg<int>(args,1)!=1 ||
-        !actor->mpModelMorf[0]) return;
+    if (!entry || !actor->mpModelMorf[0]) return;
     auto* animation=actor->mpModelMorf[0]->getAnm();
-    if (!animation || animation->getKind()!=8 || animation->getFrameMax()!=shade::stride::frames ||
-        animation->field_0x1e!=37 || animation->getAttribute()!=2) return;
+    const int motion=mods::arg<int>(args,1);
+    // Failed native changes must not remove the previous corrected animation.
+    if (entry->stride && animation==entry->stride->original &&
+        (!*static_cast<bool*>(result) || motion==entry->stride->animation)) {
+        for (auto* model:actor->mpModelMorf)
+            if (model && model->getAnm()==animation) model->changeAnm(entry->stride.get());
+        return;
+    }
+    if (!*static_cast<bool*>(result) || !animation || !ShadeStrideAnimation::accepts(motion,*animation)) return;
     auto* source=static_cast<J3DAnmTransformKey*>(animation);
-    if (!entry->stride) entry->stride.reset(new(std::nothrow) ShadeStrideAnimation(*source));
-    if (!entry->stride || entry->stride->original!=source) return;
+    auto next=std::unique_ptr<ShadeStrideAnimation>(new(std::nothrow) ShadeStrideAnimation(*source,motion));
+    if (!next) return;
+    // These are the last displayed local rotations, including an interrupted
+    // native morph. Euler fields in mpTransformInfo can be stale during morphs.
+    if (entry->stride) next->capture(actor->mpModelMorf[0]->getOldQuaternion());
+    release_step_animation(actor,*entry);
+    entry->stride=std::move(next);
     for (auto* model:actor->mpModelMorf)
         if (model && model->getAnm()==source) model->changeAnm(entry->stride.get());
 }
@@ -845,7 +864,8 @@ void after_motion(ModContext*,void* args,void*,void*) {
     if (attacking) entry->animationStarted=true;
     float rate=attacking && entry->offense==shade::sword &&
         actor->mMotionSeqMngr.getStepNo()==0 ? 1.65f : 1.0f;
-    const bool stepping=entry->stride && actor->mpModelMorf[0] &&
+    if (entry->stride) entry->stride->advance();
+    const bool stepping=entry->stride && entry->stride->animation==1 && actor->mpModelMorf[0] &&
         actor->mpModelMorf[0]->getAnm()==entry->stride.get();
     if (stepping) {
         const bool moving=actor->speedF>0 && !attacking && !sBattle.recovery &&

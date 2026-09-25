@@ -49,6 +49,37 @@ The source archive is supplied locally and is not needed by platform builds.
 Skeleton checks cover fixed bone lengths, foot trajectories, toe clearance and
 loop continuity; final appearance with the character mesh needs in-game review.
 
+## Combat footwork and transitions
+
+Grounded attacks, guards, sidesteps and recovery poses now use a wider support
+stance and longer leg reach. Fixed-length two-bone IK increases lateral spacing
+by up to 14% and forward/back spacing by up to 24%, limited by each leg's reach.
+The source ankle height and foot orientation are preserved. The correction fades
+out as a foot rises or the pelvis tilts into a roll; airborne choreography, root
+travel (including Helm Splitter's coordinate reset), upper-body poses, animation
+lengths and damage windows remain native.
+
+All 35 native motion-table entries share an actor-local transition layer. On a
+clip change, six leg joints blend over six simulation ticks from the last
+rendered quaternions, including interrupted native morphs. Native full-body morphs
+still apply. Same-clip restarts retain their native pointer comparison and failed
+changes retain the previous wrapper. Cleanup also detaches a wrapper borrowed
+by the facial-animation joint callback.
+
+Combat corrections are sampled as additive quaternions with cubic interpolation;
+looping clips wrap and one-shot clips hold their last correction. The original
+archive remains read-only, and the existing authored walking cycle is unchanged.
+Regenerate the checked-in combat tracks with:
+
+```sh
+python3 tools/generate_shade_combat.py /path/to/KN_a.arc
+```
+
+The generator checks foot contact height, foot orientation and bone lengths.
+Runtime regression checks cover interrupted transitions, failed clip changes,
+separate actor state, one-shot endpoints and safe animation detachment. Final
+appearance and transition feel still require an in-game check with the mesh.
+
 ## Intro and victory scenes
 
 The sword now starts a short original boss introduction. Shade stays hidden

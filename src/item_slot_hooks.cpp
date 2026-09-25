@@ -41,8 +41,10 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <string_view>
 
 #if defined(__ANDROID__)
+#include "dusk/config_var.hpp"
 #define private public
 #include "dusk/ui/touch_controls.hpp"
 #undef private
@@ -82,6 +84,9 @@ enum class Control {
 #endif
 
 namespace dawnlight {
+
+bool gale_shortcut_priority_active(const daAlink_c* link);
+
 namespace {
 
 constexpr u8 kZItemSlot = SELECT_ITEM_DOWN;
@@ -113,6 +118,8 @@ DEFINE_HOOK(&dMeterMap_c::draw, MeterMapDrawHook);
 DEFINE_HOOK(static_cast<void (J2DPicture::*)(f32, f32, f32, f32, bool, bool, bool)>(
     &J2DPicture::draw), MinimapPictureDrawHook);
 DEFINE_HOOK(&daAlink_c::midnaTalkTrigger, MidnaTalkTriggerHook);
+DEFINE_HOOK(&daAlink_c::handleQuickTransform, NativeQuickTransformHook);
+DEFINE_HOOK(&daAlink_c::handleWolfHowl, NativeWolfHowlHook);
 DEFINE_HOOK(&mDoCPd_c::read, PadReadHook);
 DEFINE_HOOK(&daAlink_c::checkItemButtonChange, CheckItemButtonChangeHook);
 DEFINE_HOOK(&daAlink_c::checkItemChangeFromButton, CheckItemChangeFromButtonHook);
@@ -3585,6 +3592,8 @@ void after_meter_button_draw(ModContext*, void* args, void*, void*) {
     draw_z_prompt_dpad(mods::arg<dMeterButton_c*>(args, 0));
 }
 
+#include "native_shortcut_compat.inc"
+
 #if defined(__ANDROID__)
 bool map_l_touch_override_needed() {
     const auto windowStatus = dMeter2Info_getWindowStatus();
@@ -3997,7 +4006,23 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<MeterButtonDrawHook>(svc_hook, after_meter_button_draw);
     }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<NativeQuickTransformHook>(svc_hook, before_native_shortcut);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<NativeQuickTransformHook>(svc_hook, after_native_shortcut);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<NativeWolfHowlHook>(svc_hook, before_native_shortcut);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<NativeWolfHowlHook>(svc_hook, after_native_shortcut);
+    }
 #if defined(__ANDROID__)
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        // Optional lookup: avoid depending on UserSettings offsets in forks.
+        (void)resolve_z_touch_symbol("dusk::config::GetConfigVar", s_touchGetConfigVar);
+    }
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<PadClearVirtualStatusHook>(
             svc_hook, before_pad_clear_virtual_status, &touchInputObserveOptions);
@@ -4086,7 +4111,9 @@ void shutdown_item_slot_hooks() {
     s_dawnlightTouchUiSessionEnabled = false;
     s_dpadArrowVisibility = {};
     s_dpadShadowVisibility = {};
+    after_native_shortcut(nullptr, nullptr, nullptr, nullptr);
 #if defined(__ANDROID__)
+    s_touchGetConfigVar = nullptr;
     sync_map_l_touch_override();
     after_touch_fmap_move(nullptr, nullptr, nullptr, nullptr);
     s_touchMapLRawHeld = false;

@@ -44,6 +44,8 @@ or own a third item slot. It:
 
 - displays the active third-slot item on the touch Z button;
 - displays supported ammo counts and lantern oil on that button;
+- restores native Quick Transform (R+Y) and Sun Song (R+X, wolf form) while
+  Dusklight touch controls are enabled, for both touch and controller input;
 - allows the touch Z button to assign the selected item from the item wheel;
 - keeps touch L available on field and dungeon maps, and routes it to the
   field map's portal action after Twilight HD HUD's physical-L mapping;
@@ -61,6 +63,10 @@ with Twilight HD HUD's Fixed controller bindings, which rebuild logical L/R
 from physical triggers. Physical controller shortcuts remain independent.
 Run `python3 tests/touch_map_l_test.py` and
 `python3 tests/touch_map_portal_test.py` for the focused regression checks.
+Run `python3 tests/native_shortcut_compat_test.py` for shortcut eligibility and
+HUD restoration checks. Test both native shortcuts on-device with touch alone
+and with a controller while both touch settings are enabled. Normal progression
+and gameplay restrictions still apply.
 Device validation should cover opening the field map, toggling portals with
 touch L, releasing/repeating the press, and returning to normal gameplay.
 

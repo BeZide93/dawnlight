@@ -36,6 +36,7 @@ DEFINE_HOOK(&daAlink_c::procMove, ProcMoveSprint);
 DEFINE_HOOK(&daAlink_c::getMainBckData, GetMainBckDataSprint);
 DEFINE_HOOK(&daAlink_c::setDoubleAnime, SetDoubleAnimeSprint);
 DEFINE_HOOK(&daAlink_c::execute, JumpAbilitiesExecute);
+DEFINE_HOOK_SYMBOL("dusk::processGameCombos", void(), JumpGameCombos);
 DEFINE_HOOK(&daAlink_c::draw, JumpAbilitiesDraw);
 DEFINE_HOOK(&daAlink_c::setDrawHand, GliderDrawHand);
 DEFINE_HOOK(&fpcLf_Delete, JumpAbilitiesDelete);
@@ -64,6 +65,8 @@ const daAlink_c* s_manualJumpOwner = nullptr;
 daAlink_c* s_slowSpeedOwner = nullptr;
 float s_previousNormalSpeed = 0.0f;
 daAlink_c* s_sprintOwner = nullptr;
+bool s_galeInputCancelled = false;
+bool s_galeChargeCancelledThisTick = false;
 
 JumpBinding active_jump_binding() {
     return JumpBinding::LockR;
@@ -214,7 +217,8 @@ bool ground_jump_context_ready(daAlink_c* link) {
 }
 
 bool jump_state_ready(daAlink_c* link) {
-    return (r_jump_enabled() || revalis_gale_enabled()) && jump_pressed(active_jump_binding()) &&
+    return !s_galeInputCancelled && (r_jump_enabled() || revalis_gale_enabled()) &&
+        jump_pressed(active_jump_binding()) &&
         ground_jump_context_ready(link);
 }
 
@@ -433,6 +437,11 @@ HookAction before_set_body_angle_x_ready_anime(ModContext*, void* args, void*, v
 
 }  // namespace
 
+bool gale_shortcut_priority_active(const daAlink_c* link) {
+    return link != nullptr && link == s_jumpAbilities.owner &&
+        s_galeChargeCancelledThisTick;
+}
+
 ModResult install_jump_hooks(ModError* error) {
     init_glider_visual();
     ModResult result =
@@ -464,6 +473,7 @@ ModResult install_jump_hooks(ModError* error) {
         result = mods::hook_add_pre<SetBodyAngleXReadyAnime>(
             svc_hook, before_set_body_angle_x_ready_anime);
     }
+    if (result == MOD_OK) result = mods::hook_add_pre<JumpGameCombos>(svc_hook, before_jump_game_combos);
     if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesExecute>(svc_hook, before_jump_abilities_execute);
     if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesExecute>(svc_hook, after_jump_abilities_execute);
     if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesDraw>(svc_hook, after_jump_abilities_draw);

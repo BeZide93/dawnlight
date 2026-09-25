@@ -64,12 +64,18 @@ Down, Left and Right, all off by default. They require both native Touch Control
 and Dawnlight Touch UI on Android. The switches and layout changes apply live;
 changing the parent Dawnlight Touch UI setting still requires a restart.
 
-The **Layout Editor** tab selects one extra button and edits its X/Y position
-(0–100% of the safe area available to that button) and size (28–120 dp), with a
-scaled preview and per-button reset. Values are saved through ConfigService.
-The native touch editor has a fixed-size control array, so Dawnlight keeps its
-additional layouts separate and does not extend that array or the host settings
-struct. The native editor continues to edit the original controls.
+**Open Touch Layout Editor** creates a separate instance of Dusklight's original
+`TouchControlsEditor`, including its drag/resize handles, docking, reset dialog,
+and Save/Cancel navigation. Five replacement controls are supplied only while
+that instance executes. The native fixed-size array and vanilla editor remain
+unchanged. Save writes Dawnlight's layouts through ConfigService; Cancel discards
+unsaved edits, and Reset needs Save to persist. Older numeric layouts are migrated
+when first saved. Layout uses the live RML document context and native DP geometry;
+a missing context no longer collapses the buttons to 1 dp at the origin.
+
+The adapter uses the pinned Android host's private touch ABI. If required editor
+methods cannot be resolved, its launch button is disabled. This still requires
+runtime verification on the supported Dusklight/Lazy Tweaks build.
 
 ZL sends the independent left analog trigger used by the game's lock-trigger
 checks, including Dawnlight manual shielding; it does not send digital L.
@@ -81,9 +87,13 @@ releases the extra buttons. Extras are hidden during game menus, dialogue and
 cutscenes. No new APK is needed.
 
 Run `python3 tests/touch_buttons_test.py` for input ownership, pad merging and
-layout bounds. Device QA should cover all five buttons, simultaneous ZL + face
+layout bounds. Run `python3 tests/touch_button_editor_test.py` after fetching the
+pinned Dusklight source (or set `DUSKLIGHT_DIR`) for the viewport contract, native
+layout round-trips, scoped metadata and Save/Cancel/Reset behavior. Device QA should cover all five buttons, simultaneous ZL + face
 buttons and stick movement, disabling a held button, app/menu transitions,
-orientation/safe-area changes, persistent layouts after restart, and mod unload.
+orientation/safe-area changes, drag and edge/corner resizing, Save/Cancel/Reset,
+vanilla editor isolation, persistent layouts after restart, and mod unload with
+the editor or its reset confirmation open.
 
 The portal shortcut uses a touch press edge, so holding L does not repeatedly
 toggle portals. It is scoped to field-map input processing and also works

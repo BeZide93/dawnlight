@@ -9,6 +9,10 @@
 
 #include <cstdio>
 #include <string>
+#include <sstream>
+#include <locale>
+#include <cmath>
+#include <vector>
 
 #if defined(__ANDROID__)
 #include "global.h"
@@ -23,6 +27,7 @@
 #define private public
 #define protected public
 #include "dusk/ui/touch_controls.hpp"
+#include "dusk/ui/touch_controls_editor.hpp"
 #undef protected
 #undef private
 #include "dusk/ui/touch_controls_common.hpp"
@@ -30,16 +35,30 @@
 
 namespace dawnlight {
 namespace {
-struct ButtonConfig { ConfigVarHandle enabled = 0, x = 0, y = 0, size = 0; };
+struct ButtonConfig { ConfigVarHandle enabled = 0, x = 0, y = 0, size = 0, layout = 0; };
 std::array<ButtonConfig, touch::Count> s_buttons{};
 UiWindowHandle s_touchWindow = 0;
-size_t s_editButton = 0;
-UiElementHandle s_preview = 0;
-std::string s_previewRml;
-float s_viewWidth = 800.f, s_viewHeight = 450.f;
 #if defined(__ANDROID__)
 bool s_touchRuntimeAvailable = false;
+bool s_touchEditorAvailable = false;
+void open_native_touch_editor(ModContext*, void*);
 #endif
+
+bool touch_editor_disabled(ModContext*, void*) {
+#if defined(__ANDROID__)
+    return !s_touchEditorAvailable;
+#else
+    return true;
+#endif
+}
+void edit_touch_layout(ModContext* ctx, void* data) {
+#if defined(__ANDROID__)
+    open_native_touch_editor(ctx, data);
+#else
+    (void)ctx;
+    (void)data;
+#endif
+}
 
 bool button_enabled(size_t i) {
     bool value = false;
@@ -56,61 +75,8 @@ touch::Layout button_layout(size_t i) {
     const auto d = touch::Defaults[i];
     return touch::clamp({config_number(c.x, d.x), config_number(c.y, d.y), config_number(c.size, d.size)});
 }
-void reset_layout(ModContext* ctx, void*) {
-    const auto& c = s_buttons[s_editButton];
-    const auto d = touch::Defaults[s_editButton];
-    svc_config->set_int(ctx, c.x, d.x);
-    svc_config->set_int(ctx, c.y, d.y);
-    svc_config->set_int(ctx, c.size, d.size);
-}
-ConfigVarHandle edit_var(size_t field) {
-    const auto& c = s_buttons[s_editButton];
-    return field == 1 ? c.x : field == 2 ? c.y : c.size;
-}
-std::array<size_t, 4> s_editFields = {0, 1, 2, 3};
-void editor_get(ModContext* ctx, void* data, UiControlValue* out) {
-    const auto field = *static_cast<size_t*>(data);
-    if (field == 0) out->int_value = s_editButton;
-    else svc_config->get_int(ctx, edit_var(field), &out->int_value);
-}
-void editor_set(ModContext* ctx, void* data, const UiControlValue* value) {
-    const auto field = *static_cast<size_t*>(data);
-    if (field == 0) s_editButton = static_cast<size_t>(std::clamp<int64_t>(value->int_value, 0, touch::Count - 1));
-    else svc_config->set_int(ctx, edit_var(field), std::clamp<int64_t>(value->int_value,
-        field == 3 ? 28 : 0, field == 3 ? 120 : 100));
-}
-ModResult update_preview(ModContext* ctx, void*, ModError*) {
-    if (s_preview == 0) return MOD_OK;
-    // Preview uses the last live touch viewport, scaled to fit the settings pane.
-    const float width = 360.f;
-    const float scale = width / std::max(s_viewWidth, 1.f);
-    const float height = s_viewHeight * scale;
-    char text[512];
-    std::snprintf(text, sizeof(text),
-        "<div style='position:relative;width:360dp;height:%.1fdp;background-color:#17212b;border:1dp #8294a4;'>", height);
-    std::string rml = text;
-    for (size_t i = 0; i < touch::Count; ++i) {
-        if (!button_enabled(i) && i != s_editButton) continue;
-        const auto r = touch::rect(button_layout(i), s_viewWidth, s_viewHeight);
-        std::snprintf(text, sizeof(text),
-            "<div style='position:absolute;left:%.1fdp;top:%.1fdp;width:%.1fdp;height:%.1fdp;"
-            "display:flex;align-items:center;justify-content:center;border:1dp #ccd7df;border-radius:6dp;"
-            "font-size:12dp;color:#ffffff;background-color:%s;'>%s</div>",
-            r.x * scale, r.y * scale, r.size * scale, r.size * scale,
-            i == s_editButton ? "#386d88" : "#424c56", touch::Labels[i]);
-        rml += text;
-    }
-    rml += "</div>";
-    if (rml != s_previewRml) {
-        const auto result = svc_ui->elem_set_rml(ctx, s_preview, rml.c_str());
-        if (result != MOD_OK) return result;
-        s_previewRml = std::move(rml);
-    }
-    return MOD_OK;
-}
 ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle left,
     UiElementHandle, void*, ModError*) {
-    s_preview = 0;
     if (svc_ui->pane_add_text(ctx, left,
         "Enable extra buttons for Dawnlight Touch UI on Android. Dusklight Touch Controls and "
         "Dawnlight Touch UI must both be enabled. Changes here apply immediately.", nullptr) != MOD_OK) return MOD_ERROR;
@@ -128,47 +94,16 @@ ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle 
         if (i == 0) desc.help_rml = "Independent left analog trigger, including Dawnlight's manual shield. The existing L button stays available.";
         if (svc_ui->pane_add_control(ctx, left, &desc, nullptr) != MOD_OK) return MOD_ERROR;
     }
-    return MOD_OK;
-}
-ModResult build_button_editor(ModContext* ctx, UiWindowHandle, UiElementHandle left,
-    UiElementHandle, void*, ModError* error) {
-    s_preview = 0;
-    s_previewRml.clear();
-    if (svc_ui->pane_add_text(ctx, left,
-        "Select a button, then adjust its position and size. X runs left to right; Y runs top to bottom. "
-        "The highlighted button appears in this preview even when disabled. Layout changes are saved automatically.", nullptr) != MOD_OK) return MOD_ERROR;
-    const char* labels[] = {"Button", "Horizontal Position", "Vertical Position", "Button Size"};
-    for (size_t field = 0; field < 4; ++field) {
-        UiControlDesc desc = UI_CONTROL_DESC_INIT;
-        desc.kind = field == 0 ? UI_CONTROL_SELECT : UI_CONTROL_NUMBER;
-        desc.label = labels[field];
-        desc.binding = UI_BINDING_CALLBACKS;
-        desc.get = editor_get;
-        desc.set = editor_set;
-        desc.user_data = &s_editFields[field];
-        if (field == 0) {
-            desc.options = touch::Names.data();
-            desc.option_count = touch::Names.size();
-        } else {
-            desc.min = field == 3 ? 28 : 0;
-            desc.max = field == 3 ? 120 : 100;
-            desc.step = 1;
-            desc.suffix = field == 3 ? "dp" : "%";
-        }
-        if (svc_ui->pane_add_control(ctx, left, &desc, nullptr) != MOD_OK) return MOD_ERROR;
-    }
-    UiControlDesc reset = UI_CONTROL_DESC_INIT;
-    reset.kind = UI_CONTROL_BUTTON;
-    reset.label = "Reset Selected Button Layout";
-    reset.on_pressed = reset_layout;
-    if (svc_ui->pane_add_control(ctx, left, &reset, nullptr) != MOD_OK) return MOD_ERROR;
-    if (svc_ui->pane_add_rml(ctx, left, "", &s_preview) != MOD_OK) return MOD_ERROR;
-    return update_preview(ctx, nullptr, error);
+    UiControlDesc editor = UI_CONTROL_DESC_INIT;
+    editor.kind = UI_CONTROL_BUTTON;
+    editor.label = "Open Touch Layout Editor";
+    editor.help_rml = "Move buttons by dragging them. Use the edge handles to resize and the corner handles to scale. Save applies changes; Cancel discards them.";
+    editor.on_pressed = edit_touch_layout;
+    editor.is_disabled = touch_editor_disabled;
+    return svc_ui->pane_add_control(ctx, left, &editor, nullptr);
 }
 void touch_window_closed(ModContext*, UiWindowHandle, void*) {
     s_touchWindow = 0;
-    s_preview = 0;
-    s_previewRml.clear();
 }
 
 #if defined(__ANDROID__)
@@ -193,20 +128,24 @@ ModResult register_touch_button_config(ModError* error) {
             const auto result = svc_config->register_var(mod_ctx, &desc, handles[f]);
             if (result != MOD_OK) return mods::set_error(error, result, "failed to register touch button setting");
         }
+        const auto key = std::string("touch-button-") + touch::Keys[i] + "-layout";
+        ConfigVarDesc desc = CONFIG_VAR_DESC_INIT;
+        desc.name = key.c_str();
+        desc.type = CONFIG_VAR_STRING;
+        desc.default_string = "";
+        const auto result = svc_config->register_var(mod_ctx, &desc, &c.layout);
+        if (result != MOD_OK) return mods::set_error(error, result, "failed to register touch button layout");
     }
     return MOD_OK;
 }
 void open_touch_buttons(ModContext* ctx, void*) {
     if (s_touchWindow != 0) return;
-    UiTabDesc tabs[2] = {UI_TAB_DESC_INIT, UI_TAB_DESC_INIT};
+    UiTabDesc tabs[1] = {UI_TAB_DESC_INIT};
     tabs[0].title = "Touch Buttons";
     tabs[0].build = build_button_choices;
-    tabs[1].title = "Layout Editor";
-    tabs[1].build = build_button_editor;
-    tabs[1].update = update_preview;
     UiWindowDesc desc = UI_WINDOW_DESC_INIT;
     desc.tabs = tabs;
-    desc.tab_count = 2;
+    desc.tab_count = 1;
     desc.on_closed = touch_window_closed;
     svc_ui->window_push(ctx, &desc, &s_touchWindow);
 }

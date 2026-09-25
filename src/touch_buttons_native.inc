@@ -17,6 +17,8 @@ struct TouchApi {
     Rml::ElementPtr (*remove)(Rml::Element*, Rml::Element*) = nullptr;
     void (*setRml)(Rml::Element*, const Rml::String*) = nullptr;
     bool (*setProperty)(Rml::Element*, const Rml::String*, const Rml::String*) = nullptr;
+    Rml::Context* (*context)(const Rml::Element*) = nullptr;
+    void (*applyBox)(Rml::Element*, std::optional<dusk::ui::ControlRect>*, dusk::ui::ControlRect) = nullptr;
     Rml::Element* (*child)(const Rml::Element*, int) = nullptr;
     Rml::Element* (*parent)(const Rml::Element*) = nullptr;
     Rml::Element* (*target)(const Rml::Event*) = nullptr;
@@ -31,6 +33,7 @@ NativeTouch* s_touchOwner = nullptr;
 Rml::Element* s_extraRoot = nullptr;
 std::array<Rml::Element*, touch::Count> s_extraElements{};
 std::array<std::string, touch::Count> s_extraStyles{};
+std::array<std::optional<dusk::ui::ControlRect>, touch::Count> s_extraBoxes{};
 touch::Presses s_extraPresses;
 bool s_extraSessionEnabled = false;
 bool s_extraHooksReady = false;
@@ -65,6 +68,7 @@ void remove_extra_elements() {
     s_touchOwner = nullptr;
     s_extraElements = {};
     s_extraStyles = {};
+    s_extraBoxes = {};
     s_extraPresses.clear();
 }
 bool create_extra_elements(NativeTouch* controls) {
@@ -94,37 +98,36 @@ bool create_extra_elements(NativeTouch* controls) {
     for (size_t i = 0; i < touch::Count; ++i) s_extraElements[i] = s_touchApi.child(s_extraRoot, int(i));
     return true;
 }
+#include "touch_button_layout.inc"
+
 void update_extra_elements(ModContext*, void* args, void*, void*) {
     if (!s_extraHooksReady) return;
     auto* controls = mods::arg<NativeTouch*>(args, 0);
     if (!create_extra_elements(controls)) return;
     prune_extra_presses(controls);
     const bool available = extra_controls_available(controls);
-    const float scale = std::max(0.01f, s_touchApi.scale(nullptr));
-    const auto size = s_touchApi.dimensions(nullptr);
-    const auto inset = controls->mSafeInsets;
-    const float left = inset.left / scale, top = inset.top / scale;
-    const float width = std::max(1.f, size.w - left - inset.right / scale);
-    const float height = std::max(1.f, size.h - top - inset.bottom / scale);
-    s_viewWidth = width;
-    s_viewHeight = height;
+    dusk::ui::ControlLayoutSize size;
+    if (!extra_viewport(controls->mDocument, size)) {
+        s_extraPresses.clear();
+        for (auto* element : s_extraElements) if (element) extra_property(element, "display", "none");
+        s_extraStyles = {};
+        return;
+    }
     for (size_t i = 0; i < touch::Count; ++i) {
         auto* element = s_extraElements[i];
         if (element == nullptr) continue;
-        const auto rect = touch::rect(button_layout(i), width, height, left, top);
+        const auto props = saved_extra_props(i, size);
+        const auto rect = dusk::ui::resolve_control_layout(props, size).visual;
+        s_touchApi.applyBox(element, &s_extraBoxes[i], rect);
         const bool show = available && button_enabled(i);
         const bool held = s_extraPresses.held(i);
         char key[160];
-        std::snprintf(key, sizeof(key), "%.2f/%.2f/%.2f/%d/%d", rect.x, rect.y, rect.size, show, held);
+        std::snprintf(key, sizeof(key), "%.2f/%.2f/%d/%d", rect.w, rect.h, show, held);
         if (s_extraStyles[i] == key) continue;
         s_extraStyles[i] = key;
         const auto dp = [](float value) { return std::to_string(value) + "dp"; };
-        extra_property(element, "left", dp(rect.x));
-        extra_property(element, "top", dp(rect.y));
-        extra_property(element, "width", dp(rect.size));
-        extra_property(element, "height", dp(rect.size));
-        extra_property(element, "font-size", dp(rect.size * 0.42f));
-        extra_property(element, "border-radius", dp(rect.size * 0.3f));
+        extra_property(element, "font-size", dp(std::min(rect.w, rect.h) * 0.42f));
+        extra_property(element, "border-radius", dp(std::min(rect.w, rect.h) * 0.3f));
         extra_property(element, "background-color", held ? "rgba(63,78,90,90%)" : "rgba(22,24,28,58%)");
         extra_property(element, "display", show ? "flex" : "none");
     }
@@ -212,12 +215,16 @@ template<class Fn> bool resolve_extra(const char* name, Fn& function) {
     function = reinterpret_cast<Fn>(address);
     return true;
 }
+#include "touch_button_editor.inc"
+
 ModResult install_native_buttons(ModError* error) {
     s_extraSessionEnabled = dawnlight_touch_ui_enabled();
     if (!s_extraSessionEnabled) return MOD_OK;
     // Resolve host methods rather than adding mandatory RmlUi imports. A host
     // lacking these private APIs can still load the rest of Dawnlight.
-    if (!resolve_extra("Rml::ElementDocument::CreateElement", s_touchApi.create) ||
+    if (!resolve_extra("Rml::Element::GetContext", s_touchApi.context) ||
+        !resolve_extra("dusk::ui::apply_control_box_if_changed", s_touchApi.applyBox) ||
+        !resolve_extra("Rml::ElementDocument::CreateElement", s_touchApi.create) ||
         !resolve_extra("Rml::Element::AppendChild", s_touchApi.append) ||
         !resolve_extra("Rml::Element::RemoveChild", s_touchApi.remove) ||
         !resolve_extra("_ZN3Rml7Element11SetInnerRMLERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE", s_touchApi.setRml) ||
@@ -245,9 +252,10 @@ ModResult install_native_buttons(ModError* error) {
     if (result != MOD_OK) return mods::set_error(error, result, "failed to install extra touch button hooks");
     s_extraHooksReady = true;
     s_touchRuntimeAvailable = true;
-    return MOD_OK;
+    return install_extra_editor(error);
 }
 void shutdown_native_buttons() {
+    close_extra_editor();
     s_extraHooksReady = false;
     s_touchRuntimeAvailable = false;
     s_extraPresses.clear();

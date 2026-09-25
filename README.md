@@ -182,10 +182,11 @@ Twilight HD HUD versions, compatible Z-item settings, and details about the
 Android-only `Dawnlight Touch UI` option.
 Under **Controls → Touch Buttons**, enable **ZL** and each of the four **D-Pad**
 directions individually (all default to off). Both Dusklight Touch Controls and
-Dawnlight Touch UI must be enabled. The submenu's **Layout Editor** provides a
-live layout preview, horizontal/vertical position and size for each extra button,
-plus a reset for the selected button. Changes save automatically. These extra
-buttons use their own editor; the native touch editor still manages vanilla controls.
+Dawnlight Touch UI must be enabled. Choose **Open Touch Layout Editor** to use
+Dusklight's original touch editor with the five extra buttons: drag to move,
+resize with the edge/corner handles, then **Save**. **Cancel** discards changes;
+**Reset** restores defaults in the editor until you save. The usual Dusklight
+editor continues to manage vanilla controls separately.
 
 ## Arrow Modes
 

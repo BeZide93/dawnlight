@@ -14,7 +14,8 @@ Dawnlight Mode and Progression System default to **Off**, preserving existing
 configurations. **New Save Mode** is also in General; it selects how new empty
 save slots are initialized.
 
-**Dawnlight Mode** applies the intended preset: Sprint at 150%, R Jump at 110%,
+**Dawnlight Mode** applies the intended preset: Sprint at 150%, Wolf Sprint On at 100%, R Jump at 110%,
+Disable Auto Jump On (human and wolf),
 Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode, 300% HP Scaling,
 Manual Shielding, 500% Gale Height, 60-second Gale recovery, Stamina Bar On,
 Arrow Modes, Great Spin Projectile,
@@ -95,7 +96,23 @@ missed progression toasts are not replayed when notifications are enabled.
   Manual jumps during sprinting carry the earned speed bonus into horizontal
   speed and distance, independently of the selected jump height. Set **Sprint Speed** beside
   **Sprint** in the Controls settings.
-- **Jump Height**, directly below **R Jump** in Controls, sets manual jump height
+- **Wolf Sprint**, directly below **Sprint**, is off by default. Hold the assigned
+  Dash button (B in the Dawnlight layout) while moving to sustain wolf dash speed.
+  **Wolf Speed** sets 100–300% of native dash speed (default 100%) and is greyed
+  out while Wolf Sprint is off. Native slow-area dash limits still apply.
+  Actual earned horizontal momentum carries into wolf jumps without increasing
+  their height, and into ledge falls with **Disable Auto Jump** enabled.
+- **R Jump** also works as wolf Link while standing, moving or dashing, using
+  the same jump binding and **Jump Height** setting with native wolf jump physics.
+- **Disable Auto Jump**, directly below **R Jump** in Controls, is off by default.
+  It prevents human and wolf Link's automatic running jump at ledges, requiring the manual
+  jump button instead. Walking off a ledge carries the actual forward speed and
+  direction into the fall, including sprint/dash speed, without an upward jump
+  impulse. Normal fall physics and ledge grabbing remain available.
+  Scripted/forced jumps, Midna's targeted jumps, manual jumps and Revali's Gale are preserved.
+  Turning **R Jump** off also resets this option to off and greys it out;
+  re-enabling R Jump does not automatically re-enable it.
+- **Jump Height** in Controls sets manual jump height
   from 100% (the original height and default) to 500%.
 - Optional **Glide**: press ZR in the air to glide during manual jumps or ordinary
   falls. **Glide Item**, directly below the toggle, selects **Cucco** (default) or

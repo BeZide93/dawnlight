@@ -189,6 +189,10 @@ bool auto_jump_setting_disabled(ModContext*, void*) {
     return !r_jump_enabled();
 }
 
+bool wolf_speed_disabled(ModContext*, void*) {
+    return !wolf_sprint_enabled();
+}
+
 bool sprint_speed_disabled(ModContext*, void*) {
     return !sprint_enabled();
 }
@@ -539,6 +543,19 @@ ModResult build_controls_tab(
             "Hold the Roll button while running to sprint at the configured speed. "
             "Uses 5% stamina per second.")
         != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Wolf Sprint", wolf_sprint_config_var(),
+            "Hold the Dash button (B in the Dawnlight layout) while moving as wolf Link to keep dash speed. "
+            "Uses the assigned Dash action for controller and touch input.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_number(ctx, left, "Wolf Speed", wolf_speed_config_var(), 100, 300, 5, "%",
+            "Wolf sprint speed: 100% is native dash speed. Keeps native slow-area limits. "
+            "Earned momentum carries into wolf jumps and falls with Disable Auto Jump.",
+            wolf_speed_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }

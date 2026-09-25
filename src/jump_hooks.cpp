@@ -36,6 +36,9 @@ DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
 DEFINE_HOOK(&daAlink_c::procFallInit, LedgeFallInit);
 DEFINE_HOOK(&daAlink_c::procWolfFallInit, WolfLedgeFallInit);
 DEFINE_HOOK(&daAlink_c::procMove, ProcMoveSprint);
+DEFINE_HOOK(&daAlink_c::setSpeedAndAngleWolf, WolfSprintMovement);
+DEFINE_HOOK(&daAlink_c::procWolfDash, WolfSprintDash);
+DEFINE_HOOK(&daAlink_c::procWolfAutoJumpInit, WolfSprintJump);
 DEFINE_HOOK(&daAlink_c::getMainBckData, GetMainBckDataSprint);
 DEFINE_HOOK(&daAlink_c::setDoubleAnime, SetDoubleAnimeSprint);
 DEFINE_HOOK(&daAlink_c::execute, JumpAbilitiesExecute);
@@ -223,6 +226,8 @@ bool ground_jump_context_ready(daAlink_c* link) {
         && link->mLinkAcch.ChkGroundHit()
         && !r_action_context_active(link);
 }
+
+#include "wolf_sprint.inc"
 
 bool jump_state_ready(daAlink_c* link) {
     return link && !s_galeInputCancelled &&
@@ -488,6 +493,10 @@ HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const auto nextProc = mods::arg<daAlink_c::daAlink_PROC>(args, 1);
     jump_abilities_proc_change(link, nextProc);
+    if (s_wolfSprintOwner == link && nextProc != daAlink_c::PROC_WOLF_MOVE &&
+        nextProc != daAlink_c::PROC_WOLF_DASH && nextProc != daAlink_c::PROC_WOLF_WAIT) {
+        s_wolfSprintOwner = nullptr;
+    }
     if (s_sprintOwner == link && nextProc != daAlink_c::PROC_MOVE) {
         s_sprintOwner = nullptr;
     }
@@ -515,6 +524,10 @@ ModResult install_jump_hooks(ModError* error) {
     ModResult result =
         mods::hook_add_pre<CheckAutoJumpAction>(svc_hook, before_check_auto_jump);
     if (result == MOD_OK) result = mods::hook_add_post<CheckAutoJumpAction>(svc_hook, after_check_auto_jump);
+    if (result == MOD_OK) result = mods::hook_add_pre<WolfSprintMovement>(svc_hook, before_wolf_sprint_movement);
+    if (result == MOD_OK) result = mods::hook_add_pre<WolfSprintDash>(svc_hook, before_wolf_sprint_movement);
+    if (result == MOD_OK) result = mods::hook_add_pre<WolfSprintJump>(svc_hook, before_wolf_sprint_jump);
+    if (result == MOD_OK) result = mods::hook_add_post<WolfSprintJump>(svc_hook, after_wolf_sprint_jump);
     if (result == MOD_OK) result = mods::hook_add_pre<LedgeFallInit>(svc_hook, before_ledge_fall_init);
     if (result == MOD_OK) result = mods::hook_add_pre<WolfLedgeFallInit>(svc_hook, before_ledge_fall_init);
     if (result == MOD_OK) {

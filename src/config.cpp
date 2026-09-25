@@ -58,6 +58,8 @@ ConfigVarHandle s_galeCounterCapacity = 0;
 ConfigVarHandle s_galeRecovery = 0;
 ConfigVarHandle s_stamina = 0;
 ConfigVarHandle s_sprint = 0;
+ConfigVarHandle s_wolfSprint = 0;
+ConfigVarHandle s_wolfSpeedPercent = 0;
 ConfigVarHandle s_sprintSpeedPercent = 0;
 ConfigVarHandle s_enemySpawnerProfile = 0;
 ConfigVarHandle s_zItemSlot = 0;
@@ -925,6 +927,8 @@ ModResult register_config(ModError* error) {
         register_int("gale-recovery-seconds", 120, s_galeRecovery) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
+        register_bool("wolf-sprint", false, s_wolfSprint) != MOD_OK ||
+        register_int("wolf-speed-percent", 100, s_wolfSpeedPercent) != MOD_OK ||
         register_int("sprint-speed-percent", 150, s_sprintSpeedPercent) != MOD_OK ||
         register_int("enemy-spawner-profile", 0, s_enemySpawnerProfile) != MOD_OK ||
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
@@ -1239,6 +1243,12 @@ bool sprint_enabled() {
     return get_bool(s_sprint, false);
 }
 
+bool wolf_sprint_enabled() { return get_bool(s_wolfSprint, false); }
+
+float wolf_speed_multiplier() {
+    return static_cast<float>(get_int(s_wolfSpeedPercent, 100, 100, 300)) / 100.0f;
+}
+
 float sprint_speed_multiplier() {
     return static_cast<float>(get_int(s_sprintSpeedPercent, 150, 100, 300)) / 100.0f;
 }
@@ -1498,6 +1508,9 @@ ConfigVarHandle stamina_config_var() {
 ConfigVarHandle sprint_config_var() {
     return s_sprint;
 }
+
+ConfigVarHandle wolf_sprint_config_var() { return s_wolfSprint; }
+ConfigVarHandle wolf_speed_config_var() { return s_wolfSpeedPercent; }
 
 ConfigVarHandle sprint_speed_config_var() {
     return s_sprintSpeedPercent;

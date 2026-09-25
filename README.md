@@ -95,6 +95,12 @@ missed progression toasts are not replayed when notifications are enabled.
   Manual jumps during sprinting carry the earned speed bonus into horizontal
   speed and distance, independently of the selected jump height. Set **Sprint Speed** beside
   **Sprint** in the Controls settings.
+- **Wolf Sprint**, directly below **Sprint**, is off by default. Hold the assigned
+  Dash button (B in the Dawnlight layout) while moving to sustain wolf dash speed.
+  **Wolf Speed** sets 100–300% of native dash speed (default 100%) and is greyed
+  out while Wolf Sprint is off. Native slow-area dash limits still apply.
+  Actual earned horizontal momentum carries into wolf jumps without increasing
+  their height, and into ledge falls with **Disable Auto Jump** enabled.
 - **R Jump** also works as wolf Link while standing, moving or dashing, using
   the same jump binding and **Jump Height** setting with native wolf jump physics.
 - **Disable Auto Jump**, directly below **R Jump** in Controls, is off by default.

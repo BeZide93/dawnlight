@@ -359,7 +359,17 @@ void after_arms(ModContext*,void* args,void*,void*) {
         const Pose inverseBase=dual::inverse(base);
         const float thrust=guard_thrust(link);
         std::array<Pose,2> blades;
-        float plane=32+16*thrust;
+        float plane=44+16*thrust;
+        // Follow the arm extension with the clavicles only during the thrust.
+        // This leaves the resting shoulder stance intact and supplies reach
+        // without folding the blades forward or pulling the grips back in.
+        for(bool right:{false,true}) {
+            const int clavicle=right ? 11 : 6;
+            const Pose follow=dual::shoulder_follow(pose(model->getAnmMtx(clavicle)),
+                pose(model->getAnmMtx(clavicle+1)),dual::rotate(base.q,{0,0,1}),.5f,thrust*dual::smooth(s.guard));
+            for(int joint=clavicle;joint<=clavicle+4;++joint)
+                put(model,joint,dual::compose(follow,pose(model->getAnmMtx(joint))));
+        }
         for(bool right:{false,true}) {
             const int first=right ? 12 : 7;
             dual::Arm arm{dual::compose(inverseBase,pose(model->getAnmMtx(first))),
@@ -368,14 +378,14 @@ void after_arms(ModContext*,void* args,void*,void*) {
             const float side=arm.upper.p.x>=0 ? 1.0f : -1.0f;
             // Keep the crossing in front of the face: lower the grips slightly,
             // extend them forward, and lean the blades away from the head.
-            // The primary (left-hand) blade stays 12 units ahead of the Ordon
-            // blade. Clamp both together so reach limits cannot reverse them.
-            const float depth=right ? -6.0f : 6.0f;
+            // The Ordon (right-hand) blade stays 12 units ahead of the Master
+            // Sword. Clamp both together so reach limits cannot reverse them.
+            const float depth=right ? 6.0f : -6.0f;
             blades[right]=dual::cross_guard_blade(side,right,thrust);
             plane=std::min(plane,dual::max_sword_depth(arm,blades[right],hand_mount(link,right))-depth);
         }
         for(bool right:{false,true}) {
-            blades[right].p.z=plane+(right ? -6.0f : 6.0f);
+            blades[right].p.z=plane+(right ? 6.0f : -6.0f);
             solve_arm(link,right,dual::compose(base,blades[right]),dual::smooth(s.guard));
         }
     }

@@ -62,10 +62,10 @@ inline float approach(float value,float target,float step) {
     return value<target ? std::min(target,value+step) : std::max(target,value-step);
 }
 inline Pose cross_guard_blade(float side,bool right,float thrust) {
-    // Bend the elbows at rest to leave room for the push. Angling the blades
-    // forward preserves their previous distance from the face at the crossing.
-    return {between({1,0,0},unit({-.65f*side,.75f,.75f})),
-            {18*side,112,32+16*thrust+(right ? -6.0f : 6.0f)}};
+    // Keep the blades upright and the grips away from the torso. The right
+    // shoulder leads this stance, so the Ordon blade occupies the front plane.
+    return {between({1,0,0},unit({-.65f*side,.75f,.32f})),
+            {18*side,112,44+16*thrust+(right ? 6.0f : -6.0f)}};
 }
 constexpr float stow_insert_end=.75f;
 constexpr float draw_grip_start=.30f;

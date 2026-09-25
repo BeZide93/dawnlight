@@ -41,35 +41,43 @@ int main() {
     near(reach(original,{{},{1,1,1}},0).hand.p,original.hand.p);
     Arm zero{};near(reach(zero,{{},{100,100,100}},1).hand.p,{});
 
-    // Unequal shoulder depth used to pull the front sword behind the other
-    // when only its arm ran out of reach. Limit their common plane instead.
+    // Use the native left/right grip mounts and the asymmetric guard stance.
+    // The right shoulder leads, so Ordon must remain ahead after reach limits.
     Arm arms[2];Pose blades[2];
+    const Pose guardMount[2]={
+        {{-.579250f,-.405549f,.405549f,.579250f},{9.664279f,2.136274f,3.018636f}},
+        {{.579250f,.405549f,.405549f,.579250f},{9.664279f,2.136274f,-3.018636f}}};
     for(int i=0;i<2;++i) {
         Vec shoulder{i ? -18.0f : 18.0f,130,i ? 16.0f : -10.0f};
         arms[i]={{{},shoulder},{{},shoulder+Vec{0,-29,0}},{{},shoulder+Vec{0,-55.5f,0}}};
-        float side=i ? -1.0f : 1.0f;
-        blades[i]=cross_guard_blade(side,i!=0,0);
+        blades[i]=cross_guard_blade(i ? -1.0f : 1.0f,i!=0,0);
     }
     float restDepth=0;
-    for(float push:{0.0f,8.0f,16.0f}) {
-        float plane=32+push;
-        for(int i=0;i<2;++i)plane=std::min(plane,max_sword_depth(arms[i],blades[i],mount)-(i ? -6 : 6));
+    for(float thrust:{0.0f,.5f,1.0f}) {
+        float plane=44+16*thrust;
+        Arm reaching[2];
+        for(int i=0;i<2;++i) {
+            const Pose clavicle{{},{0,132,2}};
+            const Pose follow=shoulder_follow(clavicle,arms[i].upper,{0,0,1},.5f,thrust);
+            reaching[i]={compose(follow,arms[i].upper),compose(follow,arms[i].lower),compose(follow,arms[i].hand)};
+            plane=std::min(plane,max_sword_depth(reaching[i],blades[i],guardMount[i])-(i ? 6 : -6));
+        }
         Pose actual[2];
         for(int i=0;i<2;++i) {
-            blades[i].p.z=plane+(i ? -6 : 6);
-            auto solved=reach(arms[i],compose(blades[i],inverse(mount)),1);
-            actual[i]=compose(solved.hand,mount);
+            blades[i].p.z=plane+(i ? 6 : -6);
+            auto solved=reach(reaching[i],compose(blades[i],inverse(guardMount[i])),1);
+            actual[i]=compose(solved.hand,guardMount[i]);
             near(actual[i].p,blades[i].p);
+            if(thrust==0) assert(solved.hand.p.z>36); // both wrists in front of the torso
+            Vec direction=rotate(actual[i].q,{1,0,0});
+            assert(direction.z/direction.y<.45f); // upright, not the previous 45-degree lean
+            Vec crossing=actual[i].p+direction*(-actual[i].p.x/direction.x);
+            assert(crossing.z>43); // rear blade also stays ahead of the face
         }
-        assert(std::abs(actual[0].p.z-actual[1].p.z-12)<.003f);
-        if(push==0) restDepth=actual[0].p.z;
-        if(push==16) assert(actual[0].p.z-restDepth>8); // visible arm extension, not already at full reach
+        assert(std::abs(actual[1].p.z-actual[0].p.z-12)<.003f);
+        if(thrust==0) restDepth=actual[0].p.z;
+        if(thrust==1) assert(actual[0].p.z-restDepth>8); // visible extension still available
     }
-    // Moving the grips back must not move the blade crossing toward the face.
-    auto front=cross_guard_blade(1,false,0);
-    Vec direction=rotate(front.q,{1,0,0});
-    Vec crossing=front.p+direction*(-front.p.x/direction.x);
-    assert(crossing.z>58); // previous front blade crossed at about Z=59
 
     // Eight ticks to draw/stow with no overshoot, including mid-transition reversal.
     float draw=0;

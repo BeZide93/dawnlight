@@ -126,6 +126,13 @@ struct BladeMotion {
         const float travel=std::max(blade_distance_squared(points[0],previous[0]),
                                     blade_distance_squared(points[1],previous[1]));
         sweep=continuous && travel<=300.0f*300.0f;
+        if (next_attack==sword) {
+            // KN_MAGIC at 1.65x moves the tip about 322 units in a single tick.
+            // Trace only consecutive poses inside the native damage window;
+            // never sweep windup, a skipped interval or a return pose into it.
+            sweep=continuous && next_step==0 && frame>=30 && next_frame<=40 &&
+                next_frame-frame<=2.0f && travel<=400.0f*400.0f;
+        }
         if (jumping_attack(next_attack)) {
             const int strike=next_attack==helm_splitter ? helm_strike(next_frame) : jump_strike_phase(next_frame);
             if (strike>strikePhase) {

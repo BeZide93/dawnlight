@@ -1210,14 +1210,14 @@ HookAction sword_collision(ModContext*,void* args,void*,void*) {
         } else sphere.OffAtSetBit();
         sphere.ClrAtHit();
         auto& sweep=entry->bladeSweeps[i];
-        if (volume_active && entry->blade.sweep && entry->offense!=shade::sword) {
+        if (volume_active && entry->blade.sweep) {
             // Trace the actual blade points between consecutive poses. A fast
             // cut can cross Link entirely between two endpoint sphere tests.
             const cXyz start(previous[i].x,previous[i].y,previous[i].z);
             static_cast<cM3dGCps*>(&sweep)->Set(start,positions[i],radius);
             cXyz direction=positions[i]-start;
             sweep.SetAtVec(direction);
-            sweep.SetAtAtp(shade::special_attack_power);
+            sweep.SetAtAtp(shade::attack_power(entry->offense));
             sweep.OnAtSetBit();
             dComIfG_Ccsp()->Set(&sweep);
         } else sweep.OffAtSetBit();

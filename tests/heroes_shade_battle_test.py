@@ -212,6 +212,21 @@ int main() {
     assert(!ordinary.sample(sword,0,41,ordinary_pose));
     assert(!ordinary.sample(sword,1,35,ordinary_pose));
 
+    // Actual KN_MAGIC samples at 1.65x: its tip travels ~322 units between
+    // frames 31.35 and 33.0. Ordinary swings need swept coverage at this speed.
+    BladeMotion fast_sword;
+    std::array<BladePoint,2> fast_pose{{{93.0f,269.3f,-0.1f},{123.3f,299.3f,-42.3f}}};
+    assert(!fast_sword.sample(sword,0,31.35f,fast_pose));
+    fast_pose={{{30.9f,129.5f,154.1f},{28.9f,128.9f,214.1f}}};
+    assert(fast_sword.sample(sword,0,33.0f,fast_pose) && fast_sword.sweep);
+    assert(fast_sword.sample(sword,0,36.3f,fast_pose) && !fast_sword.sweep); // missed tick
+    fast_pose[0].z+=500;fast_pose[1].z+=500;
+    assert(fast_sword.sample(sword,0,37.95f,fast_pose) && !fast_sword.sweep); // warp
+    assert(!fast_sword.sample(sword,1,39.6f,fast_pose) && !fast_sword.sweep);
+    BladeMotion windup;
+    assert(!windup.sample(sword,0,29.7f,fast_pose));
+    assert(windup.sample(sword,0,31.35f,fast_pose) && !windup.sweep);
+
     BladeMotion cut;
     auto pose=ordinary_pose;
     assert(!cut.sample(back_slice,1,5,pose));

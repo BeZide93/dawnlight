@@ -532,7 +532,13 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   step, a moving blade enables those native hit volumes at their current pose;
   there is no delayed proximity hit. Two stable capsule colliders also trace
   those points between consecutive poses, so fast cuts cannot pass through Link
-  between sphere samples. Back Slice activates its first cut pose immediately,
+  between sphere samples. This includes ordinary swings for the main Shade and
+  both doubles: KN_MAGIC at 1.65x moves its tip about 322 units per tick. Its
+  sweep accepts up to 400 units only between consecutive poses inside frames
+  30–40 (at most two animation frames apart), and retains one-heart damage.
+  Windup, return poses, skipped intervals and larger jumps cannot create that
+  sweep. Each fighter consumes only its own contact budget.
+  Back Slice activates its first cut pose immediately,
   without tracing the preceding non-damaging roll. Frozen frames, interrupted
   motions and large discontinuities cannot generate swept hits.
   A player hit or shield block consumes only the current strike. Helm Splitter

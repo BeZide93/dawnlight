@@ -610,6 +610,42 @@ int main() {
     a.entry.offense=shade::helm_splitter;
     space.expectedDamage=8;
 
+    // Main Shade and both doubles independently cover a fast ordinary slash.
+    // Both endpoint spheres miss the target at (60,100,0); the swept point
+    // crosses it between poses. Each collider keeps normal (one-heart) damage.
+    std::array<daNpc_Kn_c,3> attackers;
+    space.expectedDamage=4;
+    for (int i=0;i<3;++i) {
+        auto& attacker=attackers[i];attacker.entry.divide=i;
+        attacker.entry.offense=shade::sword;attacker.mMotionSeqMngr.no=shade::sword;
+        attacker.morf.model.blade[1][3]=100;attacker.morf.model.blade[2][3]=-170;
+        attacker.morf.frame=28.35f;
+        sword_collision(nullptr,&attacker,nullptr,nullptr);
+        attacker.morf.frame=30;space.registered=0;
+        sword_collision(nullptr,&attacker,nullptr,nullptr);
+        assert(space.registered==2); // no sweep from inactive windup
+        attacker.morf.frame=31.65f;attacker.morf.model.blade[2][3]=170;
+        space.registered=0;sword_collision(nullptr,&attacker,nullptr,nullptr);
+        assert(space.registered==4);
+        const auto& trace=attacker.entry.bladeSweeps[0];
+        assert(trace.start.x==60 && trace.end.x==60);
+        assert(trace.start.y==100 && trace.end.y==100);
+        assert(trace.start.z==-170 && trace.end.z==170);
+        assert(std::abs(trace.start.z)>trace.cM3dGCps::radius+30);
+        assert(std::abs(trace.end.z)>trace.cM3dGCps::radius+30);
+        assert(trace.damage==4);
+    }
+    attackers[1].entry.bladeSweeps[0].hit=true;
+    attackers[1].entry.bladeSweeps[0].target=&player;
+    for(int i=0;i<3;++i) {
+        auto& attacker=attackers[i];attacker.morf.frame=33.3f;
+        attacker.morf.model.blade[2][3]=160;space.registered=0;
+        sword_collision(nullptr,&attacker,nullptr,nullptr);
+        assert(space.registered==(i==1 ? 0 : 4)); // one clone cannot consume another's hit
+        assert(attacker.entry.blade.resolved==(i==1));
+    }
+    space.expectedDamage=8;
+
     daObjKnBullet_c bullet;
     int createResult=0;
     after_bullet(nullptr,&bullet,&createResult,nullptr);

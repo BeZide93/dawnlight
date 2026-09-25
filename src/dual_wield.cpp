@@ -32,6 +32,7 @@ DEFINE_HOOK(&daAlink_c::checkShieldDraw, DualShieldDraw);
 DEFINE_HOOK(&daAlink_c::modelDraw, DualModelDraw);
 DEFINE_HOOK(&daAlink_c::procCutNormalInit, DualCut);
 DEFINE_HOOK(&daAlink_c::procCutFinishInit, DualFinish);
+DEFINE_HOOK(&daAlink_c::procGuardAttackInit, DualGuardAttack);
 DEFINE_HOOK(&daAlink_c::setCollision, DualCollision);
 DEFINE_HOOK(&fpcLf_Delete, DualDelete);
 
@@ -49,6 +50,8 @@ struct State {
     float guard=0,draw=0;
     unsigned tick=0,poseTick=~0u;
     Pose rightSword,hipSword;
+    DualGuardBodyPose guardBody;
+    bool haveGuardBody=false;
 } s;
 struct Borrow {
     mDoExt_AnmRatioPack* pack=nullptr;
@@ -195,6 +198,7 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     }
     s.enabled=enabled;
     s.active=enabled && !link->checkEventRun();
+    if(!s.active || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) s.haveGuardBody=false;
     const bool mirror=s.active && ordinary(link) && s.attacks.right;
     if(mirror!=s.mirror) s.seedBlade=true;
     s.mirror=mirror;
@@ -214,10 +218,35 @@ void after_cut(ModContext*,void* args,void* result,void*) {
     // previous body calculation. It also blends an interrupted combination.
     link->field_0x2060->initOldFrameMorf(4,1,16);
 }
+HookAction before_guard_attack(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(!active(link) || (link->mEquipItem!=0x103 && link->mEquipItem!=dItemNo_NONE_e) ||
+       !link->field_0x2060->getOldFrameFlg()) return HOOK_CONTINUE;
+    // Capture before native init swaps in the shield-bash clip. The cache's
+    // quaternion contains the blended rotation; mRotation alone does not.
+    for(int joint=0;joint<17;++joint) {
+        s.guardBody[joint]=*link->field_0x2060->getOldFrameTransInfo(joint);
+        const auto& q=*link->field_0x2060->getOldFrameQuaternion(joint);
+        const Vec angles=dual::euler({q.x,q.y,q.z,q.w});
+        constexpr float units=32768/3.14159265358979323846f;
+        s.guardBody[joint].mRotation.x=static_cast<s16>(std::lround(angles.x*units));
+        s.guardBody[joint].mRotation.y=static_cast<s16>(std::lround(angles.y*units));
+        s.guardBody[joint].mRotation.z=static_cast<s16>(std::lround(angles.z*units));
+    }
+    s.haveGuardBody=true;
+    return HOOK_CONTINUE;
+}
+float guard_thrust(daAlink_c* link) {
+    if(link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) return 0;
+    const float start=link->field_0x3478-4,end=link->field_0x347c+4;
+    const float t=std::clamp((link->mUnderFrameCtrl[0].getFrame()-start)/std::max(1.0f,end-start),0.0f,1.0f);
+    return std::sin(3.14159265358979323846f*dual::smooth(t));
+}
 HookAction before_model_calc(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     auto* model=mods::arg<J3DModel*>(args,1);
-    if(!active(link) || !s.mirror || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
+    const bool thrust=s.haveGuardBody && link->mProcID==daAlink_c::PROC_GUARD_ATTACK;
+    if(!active(link) || (!s.mirror && !thrust) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
     // Reject nonstandard tracks as a group; never partly mirror a mixed rig.
     for(int i=0;i<6;++i) {
         auto& pack=i<3 ? link->mNowAnmPackUnder[i] : link->mNowAnmPackUpper[i-3];
@@ -228,7 +257,8 @@ HookAction before_model_calc(ModContext*,void* args,void*,void*) {
     for(int i=0;i<6;++i) {
         auto& b=s_borrow[i];b.pack=i<3 ? &link->mNowAnmPackUnder[i] : &link->mNowAnmPackUpper[i-3];
         b.original=b.pack->getAnmTransform();if(!b.original) continue;
-        b.wrapper.emplace(*static_cast<J3DAnmTransformKey*>(b.original));
+        b.wrapper.emplace(*static_cast<J3DAnmTransformKey*>(b.original),s.mirror,
+                          thrust ? &s.guardBody : nullptr,guard_thrust(link));
         b.pack->setAnmTransform(&*b.wrapper);
     }
     return HOOK_CONTINUE;
@@ -267,19 +297,27 @@ void after_arms(ModContext*,void* args,void*,void*) {
     s.hipSword=dual::compose(s.hipSword,Pose{{halfTurn90,0,0,halfTurn90},{}});
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());
-        float push=0;
-        if(link->mProcID==daAlink_c::PROC_GUARD_ATTACK) {
-            const float start=link->field_0x3478-4,end=link->field_0x347c+4;
-            const float t=std::clamp((link->mUnderFrameCtrl[0].getFrame()-start)/std::max(1.0f,end-start),0.0f,1.0f);
-            push=16*std::sin(3.14159265358979323846f*dual::smooth(t));
-        }
+        const Pose inverseBase=dual::inverse(base);
+        const float push=16*guard_thrust(link);
+        std::array<Pose,2> blades;
+        float plane=44+push;
         for(bool right:{false,true}) {
-            const Vec shoulder=dual::rotate(dual::conjugate(base.q),pose(model->getAnmMtx(right ? 12 : 7)).p-base.p);
-            const float side=shoulder.x>=0 ? 1.0f : -1.0f;
+            const int first=right ? 12 : 7;
+            dual::Arm arm{dual::compose(inverseBase,pose(model->getAnmMtx(first))),
+                          dual::compose(inverseBase,pose(model->getAnmMtx(first+1))),
+                          dual::compose(inverseBase,pose(model->getAnmMtx(first+2)))};
+            const float side=arm.upper.p.x>=0 ? 1.0f : -1.0f;
             // Keep the crossing in front of the face: lower the grips slightly,
             // extend them forward, and lean the blades away from the head.
-            Pose cross{dual::between({1,0,0},dual::unit({-.65f*side,.75f,.32f})),{18*side,112,44+push}};
-            solve_arm(link,right,dual::compose(base,cross),dual::smooth(s.guard));
+            // The primary (left-hand) blade stays 12 units ahead of the Ordon
+            // blade. Clamp both together so reach limits cannot reverse them.
+            const float depth=right ? -6.0f : 6.0f;
+            blades[right]={dual::between({1,0,0},dual::unit({-.65f*side,.75f,.32f})),{18*side,112,44+push+depth}};
+            plane=std::min(plane,dual::max_sword_depth(arm,blades[right],hand_mount(link,right))-depth);
+        }
+        for(bool right:{false,true}) {
+            blades[right].p.z=plane+(right ? -6.0f : 6.0f);
+            solve_arm(link,right,dual::compose(base,blades[right]),dual::smooth(s.guard));
         }
     }
     // Apply the draw after the guard solve too: raising the guard directly
@@ -357,6 +395,7 @@ ModResult install_dual_wield_hooks(ModError* error) {
     POST(DualArms,after_arms);POST(DualItems,after_items);POST(DualSwordPos,after_sword_pos);
     POST(DualShieldDraw,after_shield_draw);POST(DualModelDraw,after_model_draw);
     POST(DualCut,after_cut);POST(DualFinish,after_cut);POST(DualCollision,after_collision);
+    PRE(DualGuardAttack,before_guard_attack);
     PRE(DualDelete,before_delete);
 #undef PRE
 #undef POST

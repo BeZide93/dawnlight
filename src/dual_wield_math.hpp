@@ -29,6 +29,13 @@ inline Vec rotate(Quat q,Vec v) {
     Vec xyz{q.x,q.y,q.z};Vec t=cross(xyz,v)*2;
     return v+t*q.w+cross(xyz,t);
 }
+// J3D's Euler convention is Rz * Ry * Rx; return radians in that order.
+inline Vec euler(Quat q) {
+    q=normalized(q);
+    return {std::atan2(2*(q.w*q.x+q.y*q.z),1-2*(q.x*q.x+q.y*q.y)),
+            std::asin(std::clamp(2*(q.w*q.y-q.z*q.x),-1.0f,1.0f)),
+            std::atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))};
+}
 inline Quat blend(Quat a,Quat b,float t) {
     float sign=a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w<0 ? -1.0f : 1.0f;
     return normalized({a.x*(1-t)+b.x*t*sign,a.y*(1-t)+b.y*t*sign,
@@ -50,6 +57,15 @@ inline float approach(float value,float target,float step) {
 // Two-bone reach with a pole from the native elbow. Keeps the original lengths
 // even while blending into the cross guard or reaching down to the hip sheath.
 struct Arm { Pose upper,lower,hand; };
+// Work in actor space (+Z forward). Limit the shared guard plane using both
+// arms, rather than allowing IK to pull just the front blade behind its mate.
+inline float max_sword_depth(Arm arm,Pose sword,Pose mount) {
+    const Vec offset=compose(sword,inverse(mount)).p-sword.p;
+    const Vec hand=sword.p+offset;
+    const float radius=std::max(0.0f,length(arm.lower.p-arm.upper.p)+length(arm.hand.p-arm.lower.p)-.5f);
+    const float dx=hand.x-arm.upper.p.x,dy=hand.y-arm.upper.p.y;
+    return arm.upper.p.z+std::sqrt(std::max(0.0f,radius*radius-dx*dx-dy*dy))-offset.z;
+}
 inline Arm reach(Arm source,Pose target,float weight) {
     const float l1=length(source.lower.p-source.upper.p),l2=length(source.hand.p-source.lower.p);
     if(l1<1e-3f || l2<1e-3f || weight<=0) return source;

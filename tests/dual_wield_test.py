@@ -57,15 +57,26 @@ struct Args {void* link;void* model=nullptr;};
 namespace mods {template<class T>T arg(void* p,int i){auto* a=static_cast<Args*>(p);return static_cast<T>(i?a->model:a->link);}}
 struct J3DModel {};
 struct cXyz {float x=0,y=0,z=0;void set(float a,float b,float c){x=a;y=b;z=c;}};
-struct Morph {int calls=0;void initOldFrameMorf(int,int,int){++calls;}};
+struct Morph {
+    int calls=0;bool valid=true;
+    std::array<J3DTransformInfo,35> transforms;
+    std::array<dual::Quat,35> quaternions;
+    void initOldFrameMorf(int,int,int){++calls;}
+    bool getOldFrameFlg(){return valid;}
+    auto getOldFrameTransInfo(int i){return &transforms[i];}
+    auto getOldFrameQuaternion(int i){return &quaternions[i];}
+};
 struct daPy_py_c {enum {CUT_TYPE_FINISH_LEFT,CUT_TYPE_FINISH_RIGHT,CUT_TYPE_FINISH_VERTICAL,CUT_TYPE_FINISH_STAB};};
 struct daAlink_c {
-    enum {PROC_CUT_NORMAL=1,PROC_CUT_FINISH=2,PROC_WAIT=3};
+    enum {PROC_CUT_NORMAL=1,PROC_CUT_FINISH=2,PROC_WAIT=3,PROC_GUARD_ATTACK=4};
     int mProcID=PROC_WAIT,cut=0,mEquipItem=0x103;
     bool event=false,guard=false,human=true;
     Morph morph;Morph* field_0x2060=&morph;
     J3DModel model;J3DModel* mpLinkModel=&model;
     std::array<mDoExt_AnmRatioPack,3> mNowAnmPackUnder,mNowAnmPackUpper;
+    struct Frame {float frame=10;float getFrame(){return frame;}};
+    std::array<Frame,3> mUnderFrameCtrl;
+    float field_0x3478=6,field_0x347c=14;
     cXyz field_0x3498,mSwordTopPos,field_0x3720,field_0x34a4,field_0x34b0,field_0x34bc;
     int getCutType(){return cut;}
     bool checkEventRun(){return event;}
@@ -76,6 +87,7 @@ struct State {
     bool enabled=false,active=false,mirror=false,seedBlade=false;
     float guard=0,draw=0;unsigned tick=0,poseTick=~0u;
     dual::Alternation attacks;
+    DualGuardBodyPose guardBody;bool haveGuardBody=false;
 } s;
 struct Borrow {mDoExt_AnmRatioPack* pack=nullptr;J3DAnmTransform* original=nullptr;std::optional<DualWieldAnimation> wrapper;};
 std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
@@ -87,7 +99,8 @@ Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
 
 fixture += "\n".join(function(name, result) for name, result in [
     ("detach", "void"), ("ordinary", "bool"), ("after_matrix", "void"),
-    ("after_cut", "void"), ("before_model_calc", "HookAction"),
+    ("after_cut", "void"), ("before_guard_attack", "HookAction"),
+    ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
     ("after_shield_draw", "void"),
 ])
@@ -151,6 +164,32 @@ int main() {
     after_cut(nullptr,&args,&success,nullptr);assert(!s.attacks.right);
     // Event/wolf boundaries never modify another rig.
     link.human=false;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(!s.active);
+
+    // The thrust borrows a captured guard body, not the animated shield-bash
+    // torso. Legs still use the native clip and the real frame keeps advancing.
+    link.human=true;link.mProcID=daAlink_c::PROC_WAIT;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    link.morph.transforms[0].mTranslate.y=102;
+    link.morph.quaternions[0]=dual::between({1,0,0},{0,1,0});
+    before_guard_attack(nullptr,&args,nullptr,nullptr);assert(s.haveGuardBody);
+    assert(std::abs(s.guardBody[0].mRotation.z-16384)<=1);
+    link.mProcID=daAlink_c::PROC_GUARD_ATTACK;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    for(float frame:{2.0f,10.0f,18.0f}) {
+        link.mUnderFrameCtrl[0].frame=frame;original.frame=frame;
+        before_model_calc(nullptr,&args,nullptr,nullptr);assert(s_calculating);
+        auto* anm=link.mNowAnmPackUnder[0].value;
+        J3DTransformInfo root,spine,leg;
+        anm->getTransform(0,&root);anm->getTransform(1,&spine);anm->getTransform(17,&leg);
+        assert(root.mTranslate.y==102 && std::abs(root.mRotation.z-16384)<=1);
+        assert(spine.mRotation.x==0 && spine.mRotation.y==0);
+        assert(std::abs(spine.mRotation.z-(frame==10 ? 910 : 0))<=1);
+        assert(leg.mTranslate.y==frame && leg.mRotation.x==17*30);
+        after_model_calc(nullptr,&args,nullptr,nullptr);
+        assert(link.mNowAnmPackUnder[0].value==&original);
+    }
+    link.mProcID=daAlink_c::PROC_WAIT;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(!s.haveGuardBody);
 }
 '''
 

@@ -54,6 +54,29 @@ inline float smooth(float t) { t=std::clamp(t,0.0f,1.0f);return t*t*(3-2*t); }
 inline float approach(float value,float target,float step) {
     return value<target ? std::min(target,value+step) : std::max(target,value-step);
 }
+constexpr float stow_insert_end=.75f;
+inline Pose stow_hand_target(Pose start,Pose hip,Pose rest,float progress) {
+    // Local +X points down the blade. Approach the sheath from above its
+    // mouth, align first, then slide along its axis before releasing the grip.
+    const Pose raised=compose(hip,Pose{{},{-42,0,0}});
+    if(progress<.35f) return blend(start,raised,smooth(progress/.35f));
+    if(progress<stow_insert_end)
+        return blend(raised,hip,smooth((progress-.35f)/(stow_insert_end-.35f)));
+    return blend(hip,rest,smooth((progress-stow_insert_end)/(1-stow_insert_end)));
+}
+struct StowMotion {
+    bool active=false,special=false;
+    int phase=0;
+    float elapsed=0,lastFrame=0,duration=22,progress=0,release=0;
+    Pose start;
+    void advance(float frame,int nextPhase) {
+        // Flourish changes from FINISH to FINISH_END and resets its controller.
+        if(nextPhase==phase) elapsed+=std::max(0.0f,frame-lastFrame);
+        else {elapsed+=std::max(0.0f,frame);phase=nextPhase;}
+        lastFrame=frame;
+        progress=std::clamp(elapsed/std::max(1.0f,duration),0.0f,1.0f);
+    }
+};
 // Two-bone reach with a pole from the native elbow. Keeps the original lengths
 // even while blending into the cross guard or reaching down to the hip sheath.
 struct Arm { Pose upper,lower,hand; };

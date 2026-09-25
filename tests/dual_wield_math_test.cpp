@@ -74,6 +74,27 @@ int main() {
     assert(smooth(0)==0 && smooth(1)==1);
     assert(smooth(.001f)<.00001f && 1-smooth(.999f)<.00001f);
 
+    Pose hip{between({1,0,0},unit({0,-1,-.4f})),{18,105,5}};
+    Pose start{{},{-25,90,10}},rest{{},{-25,80,5}};
+    near(stow_hand_target(start,hip,rest,0).p,start.p);
+    near(stow_hand_target(start,hip,rest,.75f).p,hip.p);
+    near(stow_hand_target(start,hip,rest,1).p,rest.p);
+    float previous=-43;
+    for(int i=0;i<=40;++i) {
+        const Pose p=stow_hand_target(start,hip,rest,.35f+i*.01f);
+        const Pose relative=compose(inverse(hip),p);
+        // Insertion is axial: no lateral sweep through the scabbard wall.
+        assert(std::abs(relative.p.y)<.001f && std::abs(relative.p.z)<.001f);
+        assert(relative.p.x>=previous-.001f && relative.p.x<=.001f);
+        previous=relative.p.x;
+        near(rotate(relative.q,{1,0,0}),{1,0,0});
+    }
+    StowMotion stow;stow.active=true;stow.duration=18;
+    stow.advance(9,0);assert(stow.progress==.5f);
+    stow.advance(9,0);assert(stow.progress==.5f); // extra model calc cannot advance it
+    stow.advance(2,1);assert(stow.elapsed==11); // flourish phase/controller reset
+    stow.advance(20,1);assert(stow.progress==1);
+
     Alternation attacks;
     for(int i=0;i<12;++i) { attacks.begin();assert(attacks.right==bool(i%2)); }
     attacks.reset();attacks.begin();assert(!attacks.right);

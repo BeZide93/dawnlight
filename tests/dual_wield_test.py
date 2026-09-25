@@ -68,19 +68,21 @@ struct Morph {
 };
 struct daPy_py_c {enum {CUT_TYPE_FINISH_LEFT,CUT_TYPE_FINISH_RIGHT,CUT_TYPE_FINISH_VERTICAL,CUT_TYPE_FINISH_STAB};};
 struct daAlink_c {
-    enum {PROC_CUT_NORMAL=1,PROC_CUT_FINISH=2,PROC_WAIT=3,PROC_GUARD_ATTACK=4};
+    enum {PROC_CUT_NORMAL=1,PROC_CUT_FINISH=2,PROC_WAIT=3,PROC_GUARD_ATTACK=4,PROC_SWORD_UNEQUIP_SP=5};
     int mProcID=PROC_WAIT,cut=0,mEquipItem=0x103;
-    bool event=false,guard=false,human=true;
+    bool event=false,guard=false,human=true,equipping=false;
+    int field_0x3198=0;
     Morph morph;Morph* field_0x2060=&morph;
     J3DModel model;J3DModel* mpLinkModel=&model;
     std::array<mDoExt_AnmRatioPack,3> mNowAnmPackUnder,mNowAnmPackUpper;
-    struct Frame {float frame=10;float getFrame(){return frame;}};
-    std::array<Frame,3> mUnderFrameCtrl;
+    struct Frame {float frame=10,rate=1;float getFrame() const{return frame;}float getRate() const{return rate;}};
+    std::array<Frame,3> mUnderFrameCtrl,mUpperFrameCtrl;
     float field_0x3478=6,field_0x347c=14;
     cXyz field_0x3498,mSwordTopPos,field_0x3720,field_0x34a4,field_0x34b0,field_0x34bc;
     int getCutType(){return cut;}
     bool checkEventRun(){return event;}
     bool checkPlayerGuardAndAttack(){return guard;}
+    bool checkSwordEquipAnime(){return equipping;}
 };
 struct State {
     daAlink_c* owner=nullptr;
@@ -88,6 +90,7 @@ struct State {
     float guard=0,draw=0;unsigned tick=0,poseTick=~0u;
     dual::Alternation attacks;
     DualGuardBodyPose guardBody;bool haveGuardBody=false;
+    dual::StowMotion stow;
 } s;
 struct Borrow {mDoExt_AnmRatioPack* pack=nullptr;J3DAnmTransform* original=nullptr;std::optional<DualWieldAnimation> wrapper;};
 std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
@@ -98,7 +101,7 @@ Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
 '''
 
 fixture += "\n".join(function(name, result) for name, result in [
-    ("detach", "void"), ("ordinary", "bool"), ("after_matrix", "void"),
+    ("detach", "void"), ("ordinary", "bool"), ("update_stow", "void"), ("after_matrix", "void"),
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
@@ -190,6 +193,29 @@ int main() {
     }
     link.mProcID=daAlink_c::PROC_WAIT;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(!s.haveGuardBody);
+
+    // Begin while the sword is still equipped; keep the offhand override
+    // through the native inventory switch and the late shield-back frames.
+    link.equipping=true;link.mEquipItem=0x103;
+    s.stow={};s.stow.active=true;
+    link.mUpperFrameCtrl[2].frame=5;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(s.stow.active && s.stow.progress>0 && s.draw==1);
+    link.mEquipItem=dItemNo_NONE_e;link.mUpperFrameCtrl[2].frame=11;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(s.stow.active && s.draw==1);
+    link.mUpperFrameCtrl[2].frame=18;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(s.stow.active && s.draw==0);
+    link.equipping=false;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(!s.stow.active && s.stow.release==1);
+    for(int i=0;i<7;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
+    assert(s.stow.release==0);
+    // An attack interruption immediately returns ownership to combat.
+    s.stow.active=true;link.mProcID=daAlink_c::PROC_CUT_NORMAL;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(!s.stow.active && s.stow.release==0);
 }
 '''
 

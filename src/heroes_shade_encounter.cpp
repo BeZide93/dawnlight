@@ -484,6 +484,7 @@ DEFINE_HOOK(&daNpc_Kn_c::action, ShadeActionHook);
 DEFINE_HOOK(&daNpc_Kn_c::teach01_swordFinishWait, ShadeEndingBlowHook);
 DEFINE_HOOK(&daNpc_Kn_c::calcSwordAttackMove, ShadeApproachHook);
 DEFINE_HOOK(&daNpc_Kn_c::ctrlMotion, ShadeMotionHook);
+DEFINE_HOOK(&daNpc_Kn_c::setMotionAnm, ShadeStepAnimationHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterSetMotionAnm, ShadeAccessoryMotionHook);
 DEFINE_HOOK(&daNpc_Kn_c::beforeMove, ShadeMovementHook);
 DEFINE_HOOK(&daNpc_Kn_c::afterMoved, ShadeLandingHook);
@@ -777,6 +778,17 @@ void after_approach(ModContext*,void* args,void*,void*) {
         entry->helmTurnPending=false;
     }
     if (actor->speedF>0) actor->speedF=kApproachSpeed;
+}
+
+HookAction step_animation(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daNpc_Kn_c*>(args,0);
+    if (!fighter(actor)) return HOOK_CONTINUE;
+    // Native animation-table entries: 2 = KN_STEP_IKAKU, 1 = KN_STEP.
+    // Replace the clip, not sequence 9: combat and attack-return sequences
+    // must retain their native IDs and step progression.
+    auto& animation=mods::arg_ref<int>(args,1);
+    if (animation==2) animation=1;
+    return HOOK_CONTINUE;
 }
 
 HookAction accessory_motion(ModContext*,void* args,void* result,void*) {
@@ -1410,6 +1422,7 @@ ModResult initialize_heroes_shade_encounter(ModError* error) {
     PRE(ShadeSwordHook,sword_collision);
     POST(ShadeBodyHook,trial_body_collision);
     PRE(ShadeAccessoryMotionHook,accessory_motion);
+    PRE(ShadeStepAnimationHook,step_animation);
     POST(ShadeMotionHook,after_motion);
     POST(ShadeMovementHook,before_movement);
     POST(ShadeLandingHook,after_knockdown_movement);
@@ -1514,6 +1527,7 @@ void shutdown_heroes_shade_encounter() {
     mods::hook::uninstall<ShadeEndingBlowHook>(svc_hook);
     mods::hook::uninstall<ShadeApproachHook>(svc_hook);
     mods::hook::uninstall<ShadeAccessoryMotionHook>(svc_hook);
+    mods::hook::uninstall<ShadeStepAnimationHook>(svc_hook);
     mods::hook::uninstall<ShadeMotionHook>(svc_hook);
     mods::hook::uninstall<ShadeMovementHook>(svc_hook);
     mods::hook::uninstall<ShadeLandingHook>(svc_hook);

@@ -33,6 +33,8 @@ namespace {
 
 DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, CheckAutoJumpAction);
 DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
+DEFINE_HOOK(&daAlink_c::procFallInit, LedgeFallInit);
+DEFINE_HOOK(&daAlink_c::procWolfFallInit, WolfLedgeFallInit);
 DEFINE_HOOK(&daAlink_c::procMove, ProcMoveSprint);
 DEFINE_HOOK(&daAlink_c::getMainBckData, GetMainBckDataSprint);
 DEFINE_HOOK(&daAlink_c::setDoubleAnime, SetDoubleAnimeSprint);
@@ -180,11 +182,7 @@ bool r_action_context_active(daAlink_c* link) {
     return target_or_shield_context_active(link) || chain_context_active(link);
 }
 
-bool ground_jump_context_ready(daAlink_c* link) {
-    if (link == nullptr) {
-        return false;
-    }
-
+bool ground_movement_proc(daAlink_c* link) {
     switch (link->mProcID) {
     case daAlink_c::PROC_WAIT:
     case daAlink_c::PROC_MOVE:
@@ -198,10 +196,14 @@ bool ground_jump_context_ready(daAlink_c* link) {
     case daAlink_c::PROC_WOLF_DASH:
     case daAlink_c::PROC_WOLF_WAIT_TURN:
     case daAlink_c::PROC_WOLF_ATN_AC_MOVE:
-        break;
+        return true;
     default:
         return false;
     }
+}
+
+bool ground_jump_context_ready(daAlink_c* link) {
+    if (!link || !ground_movement_proc(link)) return false;
 
     return link->mGndPolyAtt1 != 0xFF
         && !link->checkFlyAtnWait()
@@ -339,6 +341,8 @@ bool start_air_jump_attack(daAlink_c* link) {
 struct AutoJumpFlagScope {
     daAlink_c* link;
     bool added = false;
+    float forwardSpeed = 0.0f;
+    s16 moveAngle = 0;
 };
 thread_local std::vector<AutoJumpFlagScope> s_autoJumpFlagScopes;
 
@@ -350,7 +354,28 @@ void suppress_ledge_auto_jump(daAlink_c* link) {
     // The native edge check still handles falling, hanging, climbing and water.
     // Set only its existing auto-jump veto, after manual jump/Gale handling.
     link->onEndResetFlg0(daPy_py_c::ERFLG0_NOT_AUTO_JUMP);
-    s_autoJumpFlagScopes.back().added = true;
+    auto& scope = s_autoJumpFlagScopes.back();
+    scope.added = true;
+    // speedF includes ground/slope modifiers and the earned sprint bonus.
+    scope.forwardSpeed = link->speedF;
+    scope.moveAngle = link->current.angle.y;
+}
+
+HookAction before_ledge_fall_init(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!link || s_autoJumpFlagScopes.empty()) return HOOK_CONTINUE;
+    const auto& scope = s_autoJumpFlagScopes.back();
+    if (!scope.added || scope.link != link || mods::arg<int>(args, 1) != 1 ||
+        link->mLinkAcch.ChkGroundHit() || !ground_movement_proc(link)) return HOOK_CONTINUE;
+
+    // Mode 1 explicitly zeroes horizontal speed. Mode 2 preserves it and lets
+    // native fall initialization choose the correct moving-fall collision state.
+    // Keep the ordinary zero vertical launch: this is a fall, not a jump.
+    mods::arg_ref<int>(args, 1) = 2;
+    link->mNormalSpeed = scope.forwardSpeed;
+    link->current.angle.y = scope.moveAngle;
+    link->speed.y = 0.0f;
+    return HOOK_CONTINUE;
 }
 
 void after_check_auto_jump(ModContext*, void*, void*, void*) {
@@ -490,6 +515,8 @@ ModResult install_jump_hooks(ModError* error) {
     ModResult result =
         mods::hook_add_pre<CheckAutoJumpAction>(svc_hook, before_check_auto_jump);
     if (result == MOD_OK) result = mods::hook_add_post<CheckAutoJumpAction>(svc_hook, after_check_auto_jump);
+    if (result == MOD_OK) result = mods::hook_add_pre<LedgeFallInit>(svc_hook, before_ledge_fall_init);
+    if (result == MOD_OK) result = mods::hook_add_pre<WolfLedgeFallInit>(svc_hook, before_ledge_fall_init);
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ProcAutoJump>(svc_hook, before_proc_auto_jump);
     }

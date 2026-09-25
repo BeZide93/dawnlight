@@ -99,7 +99,9 @@ missed progression toasts are not replayed when notifications are enabled.
   the same jump binding and **Jump Height** setting with native wolf jump physics.
 - **Disable Auto Jump**, directly below **R Jump** in Controls, is off by default.
   It prevents human and wolf Link's automatic running jump at ledges, requiring the manual
-  jump button instead. Normal falling and ledge grabbing remain available.
+  jump button instead. Walking off a ledge carries the actual forward speed and
+  direction into the fall, including sprint/dash speed, without an upward jump
+  impulse. Normal fall physics and ledge grabbing remain available.
   Scripted/forced jumps, Midna's targeted jumps, manual jumps and Revali's Gale are preserved.
   Turning **R Jump** off also resets this option to off and greys it out;
   re-enabling R Jump does not automatically re-enable it.

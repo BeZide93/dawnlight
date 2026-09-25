@@ -83,7 +83,7 @@ int main(){
 '''
 fixture = fixture.replace('#include <cmath>', '#include <cmath>\n#include <initializer_list>')
 fixture = fixture.replace('// FUNCTIONS', '\n'.join(function(s) for s in (
-    'bool ground_jump_context_ready', 'bool jump_state_ready',
+    'bool ground_movement_proc', 'bool ground_jump_context_ready', 'bool jump_state_ready',
     'void apply_manual_jump_height', 'void set_manual_jump_direction',
     'void apply_manual_jump_movement', 'bool start_ground_jump')))
 with tempfile.TemporaryDirectory() as tmp:

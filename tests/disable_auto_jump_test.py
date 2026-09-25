@@ -26,11 +26,18 @@ auto* svc_config=&configService;
 bool r_jump_enabled(){return parentEnabled;}
 bool get_bool(ConfigVarHandle,bool){return childStored;}
 // CONFIG
+using s16=short;
 using BOOL=int;constexpr BOOL TRUE=1;
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
-namespace mods {template<class T>T arg(void* args,int i){return *static_cast<T*>(static_cast<void**>(args)[i]);}}
+namespace mods {template<class T>T& arg_ref(void* args,int i){return *static_cast<T*>(static_cast<void**>(args)[i]);}
+template<class T>T arg(void* args,int i){return *static_cast<T*>(static_cast<void**>(args)[i]);}}
 struct daPy_py_c{enum {ERFLG0_NOT_AUTO_JUMP=0x20,ERFLG0_FORCE_AUTO_JUMP=0x40};};
 struct daAlink_c:daPy_py_c {
+ bool locomotion=true;
+ struct Ground {bool hit=false;bool ChkGroundHit(){return hit;}}mLinkAcch;
+ struct Angle {s16 y=0;};struct {Angle angle;}current;
+ struct {float y=0;}speed;
+ float speedF=0,mNormalSpeed=0;
  unsigned mEndResetFlg0=0;bool wolf=false,demo=false,event=false;
  bool checkWolf(){return wolf;}bool checkPlayerDemoMode(){return demo;}bool checkEventRun(){return event;}
  bool checkEndResetFlg0(unsigned f){return mEndResetFlg0&f;}
@@ -40,6 +47,7 @@ bool eventRunning=false,manualJump=false,ability=false;
 bool dComIfGp_event_runCheck(){return eventRunning;}
 bool handle_jump_abilities(daAlink_c*){return ability;}
 bool start_ground_jump(daAlink_c*){return manualJump;}
+bool ground_movement_proc(daAlink_c* link){return link->locomotion;}
 // JUMP
 int main(){
  assert(!disable_auto_jump_enabled()&&!auto_jump_setting_disabled(nullptr,nullptr)&&configWrites==0);
@@ -68,6 +76,35 @@ int main(){
  manualJump=false;ability=true;assert(begin()==HOOK_SKIP_ORIGINAL&&result==TRUE&&!link.mEndResetFlg0);end();
  ability=false;parentEnabled=false;assert(begin()==HOOK_CONTINUE&&!link.mEndResetFlg0&&!childStored);end();
  assert(s_autoJumpFlagScopes.empty());
+ parentEnabled=true;childStored=true;
+ int mode=1;float morph=3;void* fallArgs[]={&owner,&mode,&morph};
+ auto fall=[&](){return before_ledge_fall_init(nullptr,fallArgs,nullptr,nullptr);};
+ // Both native initializers use mode 1 to reset speed, mode 2 to retain it.
+ // Slow walk, running and sprint/dash must enter with their measured speed.
+ for(bool wolf: {false,true}) for(float velocity: {0.0f,2.5f,20.0f,45.0f}) {
+  link={};link.wolf=wolf;link.speedF=velocity;link.mNormalSpeed=velocity+5;
+  link.current.angle.y=1234;link.speed.y=7;mode=1;
+  begin();assert(fall()==HOOK_CONTINUE&&mode==2&&morph==3);
+  assert(link.mNormalSpeed==velocity&&link.current.angle.y==1234&&link.speed.y==0);
+  end();assert(!link.mEndResetFlg0);
+ }
+ // No momentum intervention outside our ledge check, when disabled, when another
+ // system supplied the veto, or for scripted/special/airborne/grounded actions.
+ for(int i=0;i<9;++i) {
+  link={};link.speedF=20;link.mNormalSpeed=3;link.speed.y=-5;mode=i==4?4:1;
+  childStored=i!=1;link.demo=i==2;link.mEndResetFlg0=i==3?0x20:0;
+  link.locomotion=i!=5;link.mLinkAcch.hit=i==6;
+  manualJump=i==7;ability=i==8;
+  if(i!=0)begin();
+  fall();assert(mode==(i==4?4:1)&&link.mNormalSpeed==3&&link.speed.y==-5);
+  if(i!=0)end();
+ }
+ manualJump=ability=false;childStored=true;
+ // An unrelated actor's nested fall must not inherit Link's speed.
+ link={};link.speedF=25;begin();
+ daAlink_c other;other.mNormalSpeed=4;owner=&other;mode=1;
+ fall();assert(mode==1&&other.mNormalSpeed==4);owner=&link;end();
+ assert(s_autoJumpFlagScopes.empty());
 }
 '''
 fixture=fixture.replace('// CONFIG','\n'.join(function(config,s) for s in (
@@ -80,4 +117,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp,exe=Path(tmp)/'test.cpp',Path(tmp)/'test';cpp.write_text(fixture)
     subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print('Disable Auto Jump passed: default/dependency/reset, scoped veto, nested calls, preserved flags, human/wolf veto, manual/Gale and demo/forced-jump exemptions')
+print('Disable Auto Jump passed: default/dependency/reset, scoped veto, nested calls, preserved flags, human/wolf momentum and veto, manual/Gale and demo/forced-jump exemptions')

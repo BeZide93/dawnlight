@@ -125,7 +125,10 @@ missed progression toasts are not replayed when notifications are enabled.
   original jump height (default 500%) to **Jump Height**. For example, 200% Jump
   Height plus 500% Gale Height gives 700% total height.
   Releasing before landing or before the full second in crouch cancels Gale
-  without spending a charge. Time spent in the initial jump does not count.
+  without spending a charge. Pressing X, Y, A or B during charging also cancels
+  Gale and passes the press to its normal action, including native R+Y Quick
+  Transform and R+X Sun Song where available. This includes touch input; release
+  ZR before starting another charge. Time spent in the initial jump does not count.
   After one second, a flattened Gale tornado loops at Link's feet with wind
   audio until release. Cancelling the charge also stops this readiness cue.
   Gale also enables the initial ZR jump when R Jump is off; Glide is independent.

@@ -161,11 +161,26 @@ void cancel_gale_charge(daAlink_c* link, bool restorePose) {
 
 void reset_jump_abilities(daAlink_c* link) {
     cancel_gale_charge(link, true);
+    s_galeInputCancelled = false;
+    s_galeChargeCancelledThisTick = false;
     retire_glide_actor(link);
     s_galeVisual.release();
     s_jumpAbilities.owner = nullptr;
     s_jumpAbilities.ownerId = kNoGlideActor;
     s_jumpAbilities.handled = false;
+}
+
+void cancel_gale_for_face_input(daAlink_c* link) {
+    constexpr u32 faceButtons = PAD_BUTTON_A | PAD_BUTTON_B | PAD_BUTTON_X | PAD_BUTTON_Y;
+    if (owns_jump_abilities(link) && s_jumpAbilities.charge != GaleCharge::Idle &&
+        (mDoCPd_c::getTrig(PAD_1) & faceButtons) != 0)
+    {
+        // Keep every button bit intact for native actions and R+X/R+Y combos.
+        // Do not allow this same R hold/release to re-arm or launch Gale.
+        s_galeInputCancelled = true;
+        s_galeChargeCancelledThisTick = true;
+        cancel_gale_charge(link, true);
+    }
 }
 
 bool gale_context_ready(daAlink_c* link) {
@@ -221,6 +236,8 @@ bool launch_gale(daAlink_c* link) {
 bool handle_jump_abilities(daAlink_c* link) {
     if (!owns_jump_abilities(link) || s_jumpAbilities.handled) return false;
     s_jumpAbilities.handled = true;
+    cancel_gale_for_face_input(link);
+    if (s_galeInputCancelled) return false;
     if (s_jumpAbilities.charge != GaleCharge::Idle) {
         if (!revalis_gale_enabled() || !gale_context_ready(link)) {
             cancel_gale_charge(link, true);
@@ -294,6 +311,30 @@ void jump_abilities_proc_change(daAlink_c* link, daAlink_c::daAlink_PROC nextPro
 
 #include "glide_presentation.inc"
 
+HookAction before_jump_game_combos(ModContext*, void*, void*, void*) {
+    s_galeChargeCancelledThisTick = false;
+    auto* link = daAlink_getAlinkActorClass();
+    if (link == nullptr) {
+        reset_jump_abilities(nullptr);
+        return HOOK_CONTINUE;
+    }
+    if (!owns_jump_abilities(link)) {
+        reset_jump_abilities(nullptr);
+        s_jumpAbilities.owner = link;
+        s_jumpAbilities.ownerId = fopAcM_GetID(link);
+    }
+    if (!jump_held(active_jump_binding())) s_galeInputCancelled = false;
+    cancel_gale_for_face_input(link);
+    // The host consumes X/Y before Link::execute. Remember their priority even
+    // if a combo is unavailable and leaves R's initial trigger untouched.
+    if (jump_held(active_jump_binding()) &&
+        (mDoCPd_c::getTrig(PAD_1) & (PAD_BUTTON_X | PAD_BUTTON_Y)) != 0)
+    {
+        s_galeInputCancelled = true;
+    }
+    return HOOK_CONTINUE;
+}
+
 HookAction before_jump_abilities_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!owns_jump_abilities(link)) {
@@ -302,6 +343,7 @@ HookAction before_jump_abilities_execute(ModContext*, void* args, void*, void*) 
         s_jumpAbilities.ownerId = fopAcM_GetID(link);
     }
     s_jumpAbilities.handled = false;
+    cancel_gale_for_face_input(link);
     if (dComIfGp_isPauseFlag()) {
         cancel_gale_charge(link, true);
         return HOOK_CONTINUE;

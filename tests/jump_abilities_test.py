@@ -20,7 +20,10 @@ fixture = r'''
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-using ActorId=int;using s16=short;using u16=unsigned short;
+using ActorId=int;using s16=short;using u16=unsigned short;using u32=unsigned int;
+constexpr u32 PAD_BUTTON_A=0x100,PAD_BUTTON_B=0x200,PAD_BUTTON_X=0x400,PAD_BUTTON_Y=0x800;
+u32 facePressed=0;bool s_galeInputCancelled=false,s_galeChargeCancelledThisTick=false;
+struct ModContext {}; enum HookAction {HOOK_CONTINUE};
 constexpr int kSwordItem=0x103;
 constexpr int fpcM_ERROR_PROCESS_ID_e=-1, fpcNm_NI_e=7, PAD_1=0, MOD_OK=0;
 constexpr bool TRUE=true,FALSE=false;
@@ -98,8 +101,10 @@ struct Visual {
  void hold_ready(const cXyz&){ready=true;} void launch(const cXyz&){stop_ready();++launches;}
 } s_galeVisual;
 daAlink_c* s_manualJumpOwner=nullptr;
+daAlink_c* currentLink=nullptr;
+daAlink_c* daAlink_getAlinkActorClass(){return currentLink;}
 int active_jump_binding(){return 0;}bool jump_pressed(int){return pressed;}bool jump_held(int){return held;}
-namespace mDoCPd_c {bool getHoldB(int){return bPressed;}bool getTrigB(int){return bPressed;}}
+namespace mDoCPd_c {u32 getTrig(int){return facePressed;}bool getHoldB(int){return bPressed;}bool getTrigB(int){return bPressed;}}
 bool r_action_context_active(daAlink_c* l){return l->action;}
 bool ground_jump_context_ready(daAlink_c* l){return l->valid&&l->mLinkAcch.ground;}
 void apply_manual_jump_movement(daAlink_c* l){l->mLinkAcch.ground=false;if(!l->input)l->mNormalSpeed=0;}
@@ -117,12 +122,13 @@ bool daAlink_c::procCrouchInit(){if(!initSucceeds)return false;jump_abilities_pr
 bool daAlink_c::procAutoJumpInit(int){if(!initSucceeds)return false;++launches;jump_abilities_proc_change(this,PROC_AUTO_JUMP);mProcID=PROC_AUTO_JUMP;speed.y=25;mNormalSpeed=20;speedF=26;mMaxSpeed=26;return true;}
 void close(float a,float b){assert(std::fabs(a-b)<0.001f);}
 void setup(daAlink_c& l){
+ facePressed=0;s_galeInputCancelled=false;currentLink=&l;
  charges=3;l=daAlink_c{};l.id=1;s_jumpAbilities=JumpAbilities{};s_jumpAbilities.owner=&l;s_jumpAbilities.ownerId=l.id;
  glide=gale=event=stage=pressed=held=bPressed=creating=live=busy=false;
  glideStamina=true;staminaGliding=false;s_galeVisual=Visual{};
  cancelOk=deleteOk=spawnOk=rjump=true;g_fpcCtTg_Queue.mpHead=&tag;heightPercent=100;galePercent=500;
 }
-bool tick(daAlink_c& l,bool trigger,bool hold){s_jumpAbilities.handled=false;pressed=trigger;held=hold;return handle_jump_abilities(&l);}
+bool tick(daAlink_c& l,bool trigger,bool hold){s_jumpAbilities.handled=false;pressed=trigger;held=hold;before_jump_game_combos(nullptr,nullptr,nullptr,nullptr);return handle_jump_abilities(&l);}
 void land(daAlink_c& l){l.mLinkAcch.ground=true;assert(tick(l,false,true));assert(s_jumpAbilities.charge==GaleCharge::Ready);assert(l.mProcID==daAlink_c::PROC_CROUCH);close(l.mNormalSpeed,0);close(l.speedF,0);}
 void hold_crouch(daAlink_c& l,int ticks=29){const int launches=l.launches;for(int i=0;i<ticks;++i){assert(tick(l,false,true));assert(l.launches==launches);const int elapsed=s_jumpAbilities.crouchTicks;assert(!handle_jump_abilities(&l));assert(s_jumpAbilities.crouchTicks==elapsed);}}
 void charge(daAlink_c& l){gale=true;assert(tick(l,true,true));assert(l.launches==1);assert(s_jumpAbilities.charge==GaleCharge::Airborne);assert(!tick(l,false,true));land(l);hold_crouch(l);}
@@ -133,6 +139,34 @@ int main(){
   setup(l);heightPercent=percent;float h=std::clamp(percent,100,500)/100.0f;
   close(jump_height_multiplier(),h);l.mNormalSpeed=12;
   apply_manual_jump_height(&l,jump_height_multiplier());close(l.speed.y*l.speed.y,625*h);close(l.mNormalSpeed,12);close(l.gravity,-3.4f);
+ }
+ // Face buttons cancel both the setup jump and crouch without consuming input.
+ for(u32 button:{PAD_BUTTON_A,PAD_BUTTON_B,PAD_BUTTON_X,PAD_BUTTON_Y}){
+  for(bool ready:{false,true}) for(bool release:{false,true}){
+   setup(l);gale=true;assert(tick(l,true,true));
+   if(ready){land(l);hold_crouch(l,35);}
+   facePressed=button;assert(!tick(l,false,!release));
+   assert(s_jumpAbilities.charge==GaleCharge::Idle&&charges==3&&l.launches==1);
+   assert(facePressed==button&&!s_galeVisual.ready);
+   if(ready)assert(l.mProcID==daAlink_c::PROC_WAIT);
+   facePressed=0;assert(!tick(l,false,true));assert(!start_ground_jump(&l));
+   assert(!tick(l,false,false)); // Releasing cannot launch a cancelled charge.
+   l.mLinkAcch.ground=true;l.mProcID=daAlink_c::PROC_WAIT;
+   assert(tick(l,true,true)); // A fresh R press can start again.
+  }
+ }
+ // R+X/Y have priority before native combos consume their trigger bits.
+ for(u32 button:{PAD_BUTTON_X,PAD_BUTTON_Y}){
+  setup(l);charge(l);facePressed=button;pressed=false;held=true;
+  before_jump_game_combos(nullptr,nullptr,nullptr,nullptr);
+  assert(l.mProcID==daAlink_c::PROC_WAIT&&facePressed==button);
+  facePressed=0; // Native combo dispatch consumes X/Y.
+  s_jumpAbilities.handled=false;
+  assert(!handle_jump_abilities(&l)&&!start_ground_jump(&l)&&charges==3);
+  setup(l);gale=true;facePressed=button;pressed=held=true;
+  before_jump_game_combos(nullptr,nullptr,nullptr,nullptr);
+  facePressed=0;
+  assert(!handle_jump_abilities(&l)&&!start_ground_jump(&l)&&l.launches==0);
  }
  // Default, file-value clamping, and addition in actual Gale launches.
  hasConfig=false;galePercent=1000;close(gale_height_bonus(),5);hasConfig=true;

@@ -55,10 +55,11 @@ struct Menu {
     J2DPicture* icon=nullptr;
     CPaneMgr* iconPane=nullptr;
     J2DPicture* frame=nullptr;
+    J2DPicture* flourishes[2]{};
     struct FrameTint {J2DPicture* pane;JUtility::TColor color;};
     std::vector<FrameTint> frameTints;
-    struct DecorationPosition {J2DPane* pane;float x,y;};
-    std::vector<DecorationPosition> decorations;
+    struct DecorationVisibility {J2DPane* pane;bool shown;};
+    std::vector<DecorationVisibility> decorations;
     bool drawing=false, drawn=false;
     std::vector<collection::Cell> cells;
     collection::Placement placement;
@@ -66,13 +67,17 @@ struct Menu {
     u8 anchorX=0,anchorY=0;
     void restore_tints() {
         for(const auto& tint:frameTints) tint.pane->setWhite(tint.color);
-        for(const auto& saved:decorations) saved.pane->translate(saved.x,saved.y);
+        for(const auto& saved:decorations) {
+            if(saved.shown) saved.pane->show();else saved.pane->hide();
+        }
+        for(auto* flourish:flourishes) if(flourish) flourish->hide();
         frameTints.clear();decorations.clear();drawing=drawn=false;
     }
     void release() {
         restore_tints();
         JKR_DELETE(iconPane);JKR_DELETE(screen);
         iconPane=nullptr;screen=nullptr;icon=frame=nullptr;
+        for(auto*& flourish:flourishes) flourish=nullptr;
         if(heap) mDoExt_destroySolidHeap(heap);
         heap=nullptr;owner=nullptr;focused=visible=false;cells.clear();
     }
@@ -254,6 +259,14 @@ HookAction capture_icon(ModContext*,void* args,void*,void*) {
             s_menu.screen->appendChild(s_menu.icon);
             s_menu.iconPane=JKR_NEW CPaneMgr(s_menu.screen,MULTI_CHAR('dl_clic'),0,nullptr);
         }
+        // Allocate on our menu heap; fill from the live HUD artwork at draw time.
+        // These follow the icon/frame in draw order and share their lifetime.
+        for(int corner=0;corner<2;++corner) {
+            auto* flourish=JKR_NEW J2DPicture(MULTI_CHAR('dl_clf0')+corner,
+                JGeometry::TBox2<f32>(0,0,24,24),frame,nullptr);
+            s_menu.flourishes[corner]=flourish;
+            if(flourish) {s_menu.screen->appendChild(flourish);flourish->hide();}
+        }
     } else {
         JKR_DELETE(s_menu.frame);JKR_DELETE(s_menu.icon);
     }
@@ -287,28 +300,34 @@ void shield_frames(dMenu_Collect2D_c* menu,J2DPane* root,const ResTIMG* artwork,
     for(auto* child=root->getFirstChildPane();child;child=child->getNextChildPane())
         shield_frames(menu,child,artwork,frames);
 }
-void move_equipped_flourishes(dMenu_Collect2D_c* menu,J2DPane* pane,const collection::Cell& frame) {
+void transfer_equipped_flourishes(dMenu_Collect2D_c* menu,J2DPane* pane,const collection::Cell& frame) {
     if(!pane) return;
-    // HD HUD's equipment flourishes are separate siblings of the frame. Move
-    // that decoration with the equipped highlight, then restore after drawing.
-    if((pane->mInfoTag>>16)==(MULTI_CHAR('hd_cef00')>>16) && visible(pane)) {
+    // Hidden equipment ornaments are valid templates too: HD HUD hides them
+    // when its underlying shield is not marked equipped. Ignore hidden pages.
+    if((pane->mInfoTag>>16)==(MULTI_CHAR('hd_cef00')>>16) && pane->getTypeID()==18 && visible(pane->getParentPane())) {
         const auto r=bounds(menu,pane,0,0,false);
-        const float fx=frame.left+frame.width*.5f,fy=frame.top+frame.height*.5f;
-        if(std::fabs(r.left+r.width*.5f-fx)<frame.width && std::fabs(r.top+r.height*.5f-fy)<frame.height && pane->getParentPane()) {
-            Mtx parent;
-            menu->mpLinkPm->getGlobalVtx(pane->getParentPane(),&parent,0,false,0);
-            const float det=parent[0][0]*parent[1][1]-parent[0][1]*parent[1][0];
-            if(std::fabs(det)>1e-6f) {
+        const int corner=collection::flourish_corner(frame,r);
+        auto* source=static_cast<J2DPicture*>(pane);
+        if(corner>=0 && s_menu.flourishes[corner] && texture(source)) {
+            auto* target=s_menu.flourishes[corner];
+            if(!target->isVisible()) {
+                if(texture(target)!=texture(source)) target->changeTexture(texture(source),0);
+                target->setTexCoord(target->getTexture(0),BIND15,static_cast<J2DMirror>(corner==0?0:3),false);
+                target->setBlackWhite(source->getBlack(),source->getWhite());
+                target->setCornerColor(source->corner(0),source->corner(1),source->corner(2),source->corner(3));
+                target->setAlpha(source->getAlpha());
                 const auto p=s_menu.placement;
-                const float dx=p.left+p.size*.5f-fx,dy=p.top+p.size*.5f-fy;
-                s_menu.decorations.push_back({pane,pane->getTranslateX(),pane->getTranslateY()});
-                pane->translate(pane->getTranslateX()+(dx*parent[1][1]-dy*parent[0][1])/det,
-                                pane->getTranslateY()+(dy*parent[0][0]-dx*parent[1][0])/det);
+                const float sx=(p.size+6)/frame.width,sy=(p.size+6)/frame.height;
+                target->move(p.left-3+(r.left-frame.left)*sx,p.top-3+(r.top-frame.top)*sy);
+                target->resize(r.width*sx,r.height*sy);target->show();
             }
+            bool saved=false;for(const auto& old:s_menu.decorations) if(old.pane==pane) saved=true;
+            if(!saved) s_menu.decorations.push_back({pane,pane->isVisible()});
+            pane->hide();
         }
     }
     for(auto* child=pane->getFirstChildPane();child;child=child->getNextChildPane())
-        move_equipped_flourishes(menu,child,frame);
+        transfer_equipped_flourishes(menu,child,frame);
 }
 void present_equipment(dMenu_Collect2D_c* menu) {
     if(!s_menu.visible || !s_menu.drawing) return;
@@ -325,7 +344,7 @@ void present_equipment(dMenu_Collect2D_c* menu) {
     s_menu.frame->setBlackWhite(reference->getBlack(),dual_wield_equipped()?equipped:inactive);
     if(!dual_wield_equipped()) return;
     for(auto* frame:frames) {
-        if(frame->getWhite().r>200) move_equipped_flourishes(menu,menu->mpScreen,bounds(menu,frame,0,1,true));
+        transfer_equipped_flourishes(menu,menu->mpScreen,bounds(menu,frame,0,1,true));
         s_menu.frameTints.push_back({frame,frame->getWhite()});
         frame->setWhite(inactive);
     }
@@ -339,7 +358,6 @@ HookAction before_draw(ModContext*,void* args,void*,void*) {
 void after_layout(ModContext*,void* args,void*,void*) {
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     layout(menu);
-    if(s_menu.owner==menu && s_menu.frameTints.empty()) present_equipment(menu);
 }
 void draw_icon() {
     if(!s_menu.visible || s_menu.drawn) return;
@@ -353,6 +371,14 @@ void after_draw(ModContext*,void* args,void*,void*) {
 }
 HookAction before_cursor_screen_draw(ModContext*,void* args,void*,void*) {
     if(!s_menu.owner || !s_menu.drawing) return HOOK_CONTINUE;
+    if(mods::arg<J2DScreen*>(args,0)==s_menu.owner->mpScreen) {
+        // Final boundary: HUD layout/visibility updates have finished. Transfer
+        // the equipped decoration before the native menu is drawn, then render
+        // our own pair above our icon later with the independent sword screen.
+        s_menu.restore_tints();s_menu.drawing=true;
+        layout(s_menu.owner);present_equipment(s_menu.owner);
+        return HOOK_CONTINUE;
+    }
     auto* cursor=s_menu.owner->mpDrawCursor;
     if(!cursor || mods::arg<J2DScreen*>(args,0)!=cursor->mpScreen) return HOOK_CONTINUE;
     // The cursor's draw() updates its shield-bound target again, and HUD mods

@@ -65,6 +65,7 @@ struct dSelect_cursor_c {
     int artwork=91;float pulse=.73f;
 };
 struct dMenu_Collect2D_c {
+    J2DScreen* mpScreen=nullptr;
     u8 mCursorX=4,mCursorY=1,field_0x259=0,field_0x25a=0;
     bool mIsWolf=false;
     int field_0x22d[7][6]{};
@@ -124,8 +125,11 @@ struct Menu {
     std::vector<collection::Cell> cells;
     collection::Placement placement;
     CPaneMgr iconBounds{};CPaneMgr* iconPane=&iconBounds;
+    void restore_tints(){drawing=drawn=false;}
 } s_menu;
 void layout(dMenu_Collect2D_c*){}
+int equipmentPresentations=0;
+void present_equipment(dMenu_Collect2D_c*){++equipmentPresentations;}
 void show_name(dMenu_Collect2D_c*){}
 int context=-1,hover=-1;
 float pointerX=-999,pointerY=-999;bool pendingClick=false;
@@ -258,6 +262,9 @@ int main(){
     menu.mpDrawCursor=&cursor;s_menu.visible=true;s_menu.focused=true;
     s_menu.anchorX=menu.mCursorX;s_menu.anchorY=menu.mCursorY;
     s_menu.placement={200,100,40,0};
+    J2DScreen menuScreen;menu.mpScreen=&menuScreen;s_menu.drawing=true;
+    before_cursor_screen_draw(nullptr,&menuScreen,nullptr,nullptr);
+    assert(s_menu.drawing&&equipmentPresentations==1&&!s_menu.drawn);
     for(int frame=0;frame<4;++frame){
         s_menu.drawing=true;s_menu.drawn=false;
         cursorRoot.translate(220,120); // an earlier correction is not enough
@@ -340,64 +347,115 @@ print("Collection Dual Wield passed: layouts, input, pointer, pages, save isolat
 presentation = r'''
 #include "collection_dual_wield_state.hpp"
 #include <cassert>
+#include <cstdint>
 #include <vector>
 using namespace dawnlight;
 namespace JUtility {
 struct TColor {int r,g,b,a;bool operator==(const TColor&)const=default;};
 }
 using JUtility::TColor;
-struct ResTIMG {} artwork;
-struct J2DPicture {
+struct ResTIMG {} artwork,ornamentArt;
+constexpr uint64_t tag(const char* s){uint64_t n=0;while(*s)n=(n<<8)|*s++;return n;}
+#define MULTI_CHAR(x) tag(#x+1)>>8
+using J2DMirror=int;
+constexpr int BIND15=15;
+struct J2DPane {
+    uint64_t mInfoTag=0;bool shown=true;
+    J2DPane* parent=nullptr;J2DPane* child=nullptr;J2DPane* next=nullptr;
+    collection::Cell rect{};
+    virtual int getTypeID(){return 0;}
+    J2DPane* getParentPane(){return parent;}
+    J2DPane* getFirstChildPane(){return child;}
+    J2DPane* getNextChildPane(){return next;}
+    bool isVisible(){return shown;}
+    void show(){shown=true;}void hide(){shown=false;}
+    void move(float x,float y){rect.left=x;rect.top=y;}
+    void resize(float w,float h){rect.width=w;rect.height=h;}
+};
+struct J2DPicture: J2DPane {
     TColor white{255,255,0,255},black{0,0,0,0};
+    ResTIMG const* art=&artwork;int mirror=0,alpha=255;
+    int getTypeID() override{return 18;}
     TColor getWhite(){return white;}TColor getBlack(){return black;}
     void setWhite(TColor v){white=v;}
     void setBlackWhite(TColor a,TColor b){black=a;white=b;}
+    void changeTexture(ResTIMG const* a,int){art=a;}
+    void* getTexture(int){return this;}
+    void setTexCoord(void*,int binding,int m,bool tumble){assert(binding==15&&!tumble);mirror=m;}
+    TColor corner(int){return {255,255,255,255};}
+    void setCornerColor(TColor,TColor,TColor,TColor){}
+    int getAlpha(){return alpha;}void setAlpha(int a){alpha=a;}
 };
-struct J2DPane {float x=1,y=2;void translate(float a,float b){x=a;y=b;}};
-struct dMenu_Collect2D_c {void* mpScreen=nullptr;};
-J2DPicture hylian,foreignFrame,ownFrame;
-J2DPicture* picture(void*,int){return &hylian;}
-const ResTIMG* texture(J2DPicture*){return &artwork;}
-#define MULTI_CHAR(x) 0
-void shield_frames(dMenu_Collect2D_c*,void*,const ResTIMG*,std::vector<J2DPicture*>& out){out={&hylian,&foreignFrame};}
-collection::Cell bounds(dMenu_Collect2D_c*,J2DPicture*,int,int,bool){return {};}
-int transferred=0;
-void move_equipped_flourishes(dMenu_Collect2D_c*,void*,const collection::Cell&){++transferred;}
+struct dMenu_Collect2D_c {J2DPane* mpScreen=nullptr;};
+J2DPicture hylian,foreignFrame,ownFrame,ownTL,ownBR;
+J2DPicture* picture(J2DPane*,uint64_t){return &hylian;}
+const ResTIMG* texture(J2DPicture* p){return p->art;}
+void shield_frames(dMenu_Collect2D_c*,J2DPane*,const ResTIMG*,std::vector<J2DPicture*>& out){out={&hylian,&foreignFrame};}
+collection::Cell bounds(dMenu_Collect2D_c*,J2DPane* p,int,int,bool){return p->rect;}
 bool equipped=true;
 bool dual_wield_equipped(){return equipped;}
 struct Menu {
     bool visible=true,drawing=true,drawn=false;
     J2DPicture* frame=&ownFrame;
+    J2DPicture* flourishes[2]{&ownTL,&ownBR};
+    collection::Placement placement{200,100,46,0};
     struct FrameTint {J2DPicture* pane;TColor color;};
     std::vector<FrameTint> frameTints;
-    struct DecorationPosition {J2DPane* pane;float x,y;};
-    std::vector<DecorationPosition> decorations;
+    struct DecorationVisibility {J2DPane* pane;bool shown;};
+    std::vector<DecorationVisibility> decorations;
     // RESTORE
 } s_menu;
 // PRESENT
 int main(){
-    dMenu_Collect2D_c menu;
-    for(const auto high:{TColor{255,255,0,255},TColor{246,244,198,255}}){
-        const TColor low{132,134,104,255};
+    J2DPane root;dMenu_Collect2D_c menu{&root};
+    J2DPicture tl,br,otherRow;
+    root.child=&tl;tl.next=&br;br.next=&otherRow;
+    for(auto* p:{&tl,&br,&otherRow}){p->parent=&root;p->mInfoTag=MULTI_CHAR('hd_cef00');p->art=&ornamentArt;}
+    hylian.rect={0,1,37,97,52,52,true};foreignFrame.rect={1,1,97,97,52,52,true};
+    tl.rect={0,0,88,88,24,24,false};br.rect={0,0,128,128,24,24,false};
+    otherRow.rect={0,0,88,28,24,24,false};
+    const TColor high{246,244,198,255},low{132,134,104,255};
+    tl.white=br.white=high;tl.alpha=br.alpha=173;
+    for(bool sourceShown:{false,true}){
         hylian.white=low;foreignFrame.white=high;s_menu.drawing=true;
+        tl.shown=br.shown=sourceShown;ownTL.hide();ownBR.hide();
         present_equipment(&menu);
         assert(ownFrame.white==high&&foreignFrame.white==low&&hylian.white==low);
         assert(s_menu.frameTints.size()==2);
-        J2DPane flourish;flourish.translate(100,200);
-        s_menu.decorations.push_back({&flourish,1,2});
+        // The regression: hidden source ornaments must still produce our pair.
+        assert(ownTL.shown&&ownBR.shown&&!tl.shown&&!br.shown&&otherRow.shown);
+        assert(ownTL.art==&ornamentArt&&ownBR.art==&ornamentArt);
+        assert(ownTL.mirror==0&&ownBR.mirror==3&&ownTL.white==high&&ownBR.alpha==173);
+        assert(ownTL.rect.left==188&&ownTL.rect.top==88&&ownTL.rect.width==24);
+        assert(ownBR.rect.left==228&&ownBR.rect.top==128);
+        assert(s_menu.decorations.size()==2&&tl.rect.left==88&&br.rect.left==128);
         s_menu.restore_tints();
         assert(hylian.white==low&&foreignFrame.white==high);
-        assert(flourish.x==1&&flourish.y==2&&s_menu.decorations.empty());
+        assert(tl.shown==sourceShown&&br.shown==sourceShown&&s_menu.decorations.empty());
+        assert(!ownTL.shown&&!ownBR.shown);
         assert(s_menu.frameTints.empty()&&!s_menu.drawing);
         equipped=false;s_menu.drawing=true;present_equipment(&menu);
         assert(ownFrame.white==low&&foreignFrame.white==high&&s_menu.frameTints.empty());
+        assert(!ownTL.shown&&!ownBR.shown&&s_menu.decorations.empty());
         equipped=true;
     }
-    assert(transferred==2);
+    // HD scaling is inherited from the source frame and each ornament's bounds.
+    s_menu.placement={200,100,98,0};s_menu.drawing=true;present_equipment(&menu);
+    assert(ownTL.rect.left==179&&ownTL.rect.top==79&&ownTL.rect.width==48);
+    assert(ownBR.rect.left==259&&ownBR.rect.top==159);
+    s_menu.restore_tints();
+    // Missing HD artwork / a hidden page leaves a plain frame, never stale art.
+    root.hide();s_menu.drawing=true;present_equipment(&menu);
+    assert(!ownTL.shown&&!ownBR.shown&&s_menu.decorations.empty());
+    s_menu.restore_tints();root.show();root.child=nullptr;
+    s_menu.drawing=true;present_equipment(&menu);
+    assert(!ownTL.shown&&!ownBR.shown);
+    assert(collection::flourish_corner(hylian.rect,tl.rect)==-1);
 }
 '''
 presentation = presentation.replace("// RESTORE", function("restore_tints"))
-presentation = presentation.replace("// PRESENT", function("present_equipment"))
+presentation = presentation.replace("// PRESENT", "\n".join(function(n) for n in
+    ["visible", "transfer_equipped_flourishes", "present_equipment"]))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / "presentation.cpp", Path(tmp) / "presentation"
     cpp.write_text(presentation)

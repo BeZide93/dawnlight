@@ -8,6 +8,16 @@
 namespace dawnlight::collection {
 struct Cell { int x, y; float left, top, width, height; bool available; };
 struct Placement { float left=0, top=0, size=0; int neighbor=-1; };
+// Match only the diagonal corners, not another slot's nearby ornament.
+inline int flourish_corner(const Cell& frame,const Cell& ornament) {
+    if(frame.width<=0 || frame.height<=0) return -1;
+    const float cx=ornament.left+ornament.width*.5f,cy=ornament.top+ornament.height*.5f;
+    for(int corner=0;corner<2;++corner) {
+        const float x=frame.left+corner*frame.width,y=frame.top+corner*frame.height;
+        if(std::fabs(cx-x)<frame.width*.3f && std::fabs(cy-y)<frame.height*.3f) return corner;
+    }
+    return -1;
+}
 // Use rendered positions, not native column numbers (mods remap those).
 inline Placement append_shield(std::span<const Cell> cells) {
     Placement out;

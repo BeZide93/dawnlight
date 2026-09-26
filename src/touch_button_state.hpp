@@ -5,16 +5,17 @@
 #include <cstdint>
 
 namespace dawnlight::touch {
-constexpr size_t Count = 5;
+constexpr size_t Midna = 5;
+constexpr size_t Count = 6;
 constexpr std::array<const char*, Count> Names = {
-    "LB", "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right"};
+    "LB", "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right", "Midna"};
 // Keep the old first-slot key so existing enabled state and layout survive the LB correction.
-constexpr std::array<const char*, Count> Keys = {"zl", "up", "down", "left", "right"};
-constexpr std::array<const char*, Count> Labels = {"LB", "&#8593;", "&#8595;", "&#8592;", "&#8594;"};
+constexpr std::array<const char*, Count> Keys = {"zl", "up", "down", "left", "right", "midna"};
+constexpr std::array<const char*, Count> Labels = {"LB", "&#8593;", "&#8595;", "&#8592;", "&#8594;", "Midna"};
 struct Layout { int x, y, size; bool operator==(const Layout&) const = default; };
 // Positions are percentages of the available travel inside the safe screen area.
 constexpr std::array<Layout, Count> Defaults = {{{3, 22, 56}, {19, 55, 44},
-    {19, 81, 44}, {13, 68, 44}, {25, 68, 44}}};
+    {19, 81, 44}, {13, 68, 44}, {25, 68, 44}, {88, 22, 56}}};
 inline Layout clamp(Layout value) {
     return {std::clamp(value.x, 0, 100), std::clamp(value.y, 0, 100),
         std::clamp(value.size, 28, 120)};
@@ -58,9 +59,10 @@ public:
     }
     template<class Pad> bool merge(Pad& pad) const {
         // LB is supplied through native button queries, not a GameCube trigger.
-        // Keep the virtual port active for LB-only touch with no physical pad.
-        constexpr uint16_t masks[Count] = {0, 0x0008, 0x0004, 0x0001, 0x0002};
-        bool active = held(0);
+        // Keep the virtual port active for LB/Midna-only touch with no physical pad.
+        // Midna uses a direct press edge, without borrowing START, Z or D-pad.
+        constexpr uint16_t masks[Count] = {0, 0x0008, 0x0004, 0x0001, 0x0002, 0};
+        bool active = held(0) || held(Midna);
         for (size_t i = 1; i < Count; ++i) if (held(i)) { pad.button |= masks[i]; active = true; }
         return active;
     }

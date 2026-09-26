@@ -36,7 +36,8 @@ namespace mods {
 touch::Presses s_extraPresses;
 NativeTouch touchOwner;NativeTouch* s_touchOwner=&touchOwner;
 bool allowed=true;
-std::array<bool, touch::Count> enabled={true,true,true,true,true};
+bool s_midnaTouchPending=false;
+std::array<bool, touch::Count> enabled={true,true,true,true,true,true};
 PADStatus s_extraBasePad{},s_extraMergedPad{},written{};
 bool s_extraPadOwned=false;
 int writes=0;
@@ -52,7 +53,7 @@ int main(){
  PADStatus pad;
  assert(!presses.merge(pad));
  // Every button maps independently. LB never sets digital L or an analog trigger.
- const unsigned masks[5]={0,8,4,1,2};
+ const unsigned masks[touch::Count]={0,8,4,1,2,0};
  for(size_t i=0;i<touch::Count;++i){
   presses.clear();pad={};assert(presses.press(123,i));assert(presses.merge(pad));
   assert(pad.button==masks[i]);assert(pad.triggerLeft==0);

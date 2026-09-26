@@ -75,7 +75,7 @@ auto* svc_config=&config;
 struct Log {void warn(ModContext*,const char*){assert(false);}} logService;
 auto* svc_log=&logService;
 struct ButtonConfig{int layout;};
-std::array<ButtonConfig,touch::Count> s_buttons={{{0},{1},{2},{3},{4}}};
+std::array<ButtonConfig,touch::Count> s_buttons={{{0},{1},{2},{3},{4},{5}}};
 touch::Layout button_layout(size_t i){return touch::Defaults[i];}
 struct TouchApi {
  Rml::Context* (*context)(const Rml::Element*)=[](const Rml::Element* e){return e->context;};
@@ -90,13 +90,20 @@ struct NativeTouch {
  std::array<Elements,static_cast<size_t>(Control::COUNT)> mControlElements{};
  Rml::Element* mActionBar=nullptr;
  void show(){shown=true;}
+ bool visible(){return shown;}
+ void hide(bool){shown=false;held=false;}
+ void clear_virtual_input(){held=false;}
+ void sync_visibility() noexcept;
  void clear_motion_touch_input(){} void release_control(Control){} void clear_equip_targets(){}
  void sync_visual_state() noexcept;void sync_action_bar_state() noexcept;void sync_control_displays() noexcept;
 };
 struct Settings{struct Game{bool enableTouchControls=true;}game;} settings;
 Settings& getSettings(){return settings;}
+bool any_document_visible();
+namespace menu_pointer {bool enabled(){return false;}bool active(){return false;}}
 // HOST_SUPPRESSION
 EditorDocument* topDocument=nullptr;
+bool any_document_visible(){return topDocument!=nullptr;}
 struct NativeEditor:EditorDocument {dusk::ui::ControlLayout mWorkingLayout;};
 using LayoutSpan=std::span<const dusk::ui::TouchLayoutControlInfo>;
 NativeEditor* s_extraEditor=nullptr;
@@ -105,7 +112,7 @@ bool s_editorConstructing=false,s_touchEditorAvailable=true;
 std::array<dusk::ui::TouchLayoutControlInfo,touch::Count> s_editorControls{};
 std::string s_editorFragment="extra buttons";
 std::vector<EditorDocument*> s_editorChildren;
-const char* kExtraEditorIds[]={"lb","up","down","left","right"};
+const char* kExtraEditorIds[]={"lb","up","down","left","right","midna"};
 int cancels=0,uncovers=0;
 struct EditorApi {
  void (*setPseudo)(Rml::Element*,const Rml::String*,bool)=[](Rml::Element* e,const Rml::String* n,bool v){e->SetPseudoClass(*n,v);};
@@ -136,14 +143,14 @@ int main(){
  for(const char* bad:{"","1 0 0 -2 40 1 0","1 0 0 40 40 1 9","2 0 0 40 40 1 0","1 0 0 40 40 1 0 junk","1 nan 0 40 40 1 0"})
   assert(!decode_extra_props(bad,loaded));
  config.values[0]=encode_extra_props(p);assert(saved_extra_props(0,viewport)==p);
- // Native editor is unaffected; only our scoped instance sees five entries.
+ // Native editor is unaffected; only our scoped instance sees the extra entries.
  std::array<dusk::ui::TouchLayoutControlInfo,9> vanillaControls{};
  NativeEditor ours,vanilla;s_extraEditor=&ours;NativeEditor* which=&vanilla;void* args[]={&which};
  LayoutSpan span=vanillaControls;enter_extra_editor(nullptr,args,nullptr,nullptr);
  extra_editor_controls(nullptr,nullptr,&span,nullptr);assert(span.size()==9);
  leave_extra_editor(nullptr,args,nullptr,nullptr);assert(s_editorScope==0);
  which=&ours;enter_extra_editor(nullptr,args,nullptr,nullptr);enter_extra_editor(nullptr,args,nullptr,nullptr);
- extra_editor_controls(nullptr,nullptr,&span,nullptr);assert(span.size()==5&&span.data()==s_editorControls.data());
+ extra_editor_controls(nullptr,nullptr,&span,nullptr);assert(span.size()==touch::Count&&span.data()==s_editorControls.data());
  leave_extra_editor(nullptr,args,nullptr,nullptr);assert(s_editorScope==1);
  leave_extra_editor(nullptr,args,nullptr,nullptr);span=vanillaControls;
  extra_editor_controls(nullptr,nullptr,&span,nullptr);assert(span.size()==9);
@@ -152,16 +159,18 @@ int main(){
  // Vanilla Save reaches the host; custom Save writes only Dawnlight keys.
  which=&vanilla;assert(save_extra_editor(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE&&cancels==0);
  config.values[99]="native touch layout";
- ours.mWorkingLayout.controls["lb"]=p;which=&ours;
+ ours.mWorkingLayout.controls["lb"]=p;ours.mWorkingLayout.controls["midna"]=p;which=&ours;
  assert(save_extra_editor(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&cancels==1);
  assert(config.values[99]=="native touch layout"&&saved_extra_props(0,viewport)==p);
+ assert(saved_extra_props(touch::Midna,viewport)==p);
  // Original native Reset clears the working map; save now uses default props.
  ours.mWorkingLayout={};save_extra_editor(nullptr,args,nullptr,nullptr);
  assert(saved_extra_props(0,viewport)==s_editorControls[0].props);
+ assert(saved_extra_props(touch::Midna,viewport)==s_editorControls[touch::Midna].props);
  // Unsaved changes and native Cancel never mutate persistent data.
  const auto before=config.values;ours.mWorkingLayout.controls["lb"]=p;
  s_editorApi.cancel(&ours);assert(config.values==before);
- // The actual native document is visible only behind our editor/reset modal.
+ // The native background is visible behind the editor, never above its modal.
  NativeTouch touchControls;auto* touchPointer=&touchControls;void* touchArgs[]={&touchPointer};
  topDocument=&ours;
  assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
@@ -186,7 +195,14 @@ int main(){
  touchControls.sync_visual_state();sync_editor_background(&touchControls);
  assert(nativeElements[static_cast<size_t>(Control::L)].hidden);
  EditorDocument resetModal;s_editorChildren.push_back(&resetModal);topDocument=&resetModal;
- assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&touchControls.shown);
+ assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_CONTINUE);
+ touchControls.sync_visibility();assert(!touchControls.shown&&!touchControls.held);
+ touchControls.sync_visual_state();sync_editor_background(&touchControls);
+ assert(nativeElements[static_cast<size_t>(Control::L)].hidden);
+ // Closing the modal restores the editor preview, with game input suppressed.
+ topDocument=&ours;
+ assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(touchControls.shown&&touchControls.mWasSuppressed&&!touchControls.held);
  ours.mPendingClose=true;
  assert(show_editor_background(nullptr,touchArgs,nullptr,nullptr)==HOOK_CONTINUE);
  ours.mPendingClose=false;ours.mClosed=true;
@@ -213,6 +229,7 @@ fixture=fixture.replace('// HOST_SUPPRESSION','\n'.join(suppression))
 # The correction runs in the existing update post-hook, after native suppression.
 native_adapter=(root/'src/touch_buttons_native.inc').read_text()
 assert 'sync_editor_background(controls);' in function(native_adapter,'void update_extra_elements')
+fixture += '\n' + function(native_source, 'void TouchControls::sync_visibility').replace('TouchControls::', 'NativeTouch::')
 with tempfile.TemporaryDirectory() as tmp:
     cpp,exe=Path(tmp)/'test.cpp',Path(tmp)/'test'
     cpp.write_text(fixture)

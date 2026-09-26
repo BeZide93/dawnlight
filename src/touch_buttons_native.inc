@@ -43,6 +43,7 @@ bool s_extraHooksReady = false;
 PADStatus s_extraMergedPad{};
 PADStatus s_extraBasePad{};
 bool s_extraPadOwned = false;
+std::string s_midnaButtonRml;
 
 void extra_property(Rml::Element* element, const char* name, const std::string& value) {
     const std::string property = name;
@@ -59,8 +60,15 @@ bool extra_controls_available(NativeTouch* controls) {
         !(dComIfGp_getMsgObjectClass() != nullptr && dMsgObject_isTalkNowCheck());
 }
 void prune_extra_presses(NativeTouch* controls) {
-    if (!extra_controls_available(controls)) s_extraPresses.clear();
-    else for (size_t i = 0; i < touch::Count; ++i) if (!button_enabled(i)) s_extraPresses.disable(i);
+    if (!extra_controls_available(controls)) {
+        s_extraPresses.clear();
+        s_midnaTouchPending = false;
+    } else for (size_t i = 0; i < touch::Count; ++i) {
+        if (!button_enabled(i) || (i == touch::Midna && !midna_touch_button_available())) {
+            s_extraPresses.disable(i);
+            if (i == touch::Midna) s_midnaTouchPending = false;
+        }
+    }
 }
 void remove_extra_elements() {
     // Called before TouchControls destruction, while its document is still live.
@@ -73,6 +81,8 @@ void remove_extra_elements() {
     s_extraStyles = {};
     s_extraBoxes = {};
     s_extraPresses.clear();
+    s_midnaTouchPending = false;
+    s_midnaButtonRml.clear();
 }
 bool create_extra_elements(NativeTouch* controls) {
     if (controls->mRoot == nullptr || controls->mDocument == nullptr) return false;
@@ -122,14 +132,24 @@ void update_extra_elements(ModContext*, void* args, void*, void*) {
         const auto props = saved_extra_props(i, size);
         const auto rect = dusk::ui::resolve_control_layout(props, size).visual;
         s_touchApi.applyBox(element, &s_extraBoxes[i], rect);
-        const bool show = available && button_enabled(i);
+        const bool show = available && button_enabled(i) &&
+            (i != touch::Midna || midna_touch_button_available());
+        if (i == touch::Midna && show) {
+            const auto icon = midna_touch_button_icon();
+            const auto rml = icon.empty() ? std::string("<span>Midna</span>") :
+                "<img class='midna-icon visible' style='left: 15%; top: 0; height: 85%;' src='" + icon + "' /><span></span>";
+            if (rml != s_midnaButtonRml) {
+                s_touchApi.setRml(element, &rml);
+                s_midnaButtonRml = rml;
+            }
+        }
         const bool held = s_extraPresses.held(i);
         char key[160];
         std::snprintf(key, sizeof(key), "%.2f/%.2f/%d/%d", rect.w, rect.h, show, held);
         if (s_extraStyles[i] == key) continue;
         s_extraStyles[i] = key;
         const auto dp = [](float value) { return std::to_string(value) + "dp"; };
-        extra_property(element, "font-size", dp(std::min(rect.w, rect.h) * 0.42f));
+        extra_property(element, "font-size", dp(std::min(rect.w, rect.h) * (i == touch::Midna ? 0.25f : 0.42f)));
         extra_property(element, "border-radius", dp(std::min(rect.w, rect.h) * 0.3f));
         extra_property(element, "background-color", held ? "rgba(63,78,90,90%)" : "rgba(22,24,28,58%)");
         extra_property(element, "display", show ? "flex" : "none");
@@ -146,7 +166,10 @@ HookAction extra_touch_down(ModContext*, void* args, void*, void*) {
     auto* target = s_touchApi.target(event);
     for (int depth = 0; target && target != s_extraRoot && depth < 4; ++depth) {
         for (size_t i = 0; i < touch::Count; ++i) if (target == s_extraElements[i] && button_enabled(i)) {
-            s_extraPresses.press(s_touchApi.finger(event), i);
+            if (i == touch::Midna && !midna_touch_button_available()) return HOOK_CONTINUE;
+            const bool held = s_extraPresses.held(i);
+            if (s_extraPresses.press(s_touchApi.finger(event), i) && i == touch::Midna && !held)
+                s_midnaTouchPending = true;
             s_touchApi.stop(event);
             return HOOK_SKIP_ORIGINAL;
         }
@@ -166,12 +189,19 @@ HookAction extra_touch_up(ModContext*, void* args, void*, void*) {
     s_touchApi.stop(event);
     return HOOK_SKIP_ORIGINAL;
 }
+HookAction extra_touch_cancel(ModContext* ctx, void* args, void* retval, void* data) {
+    // A cancelled gesture must never call Midna later, after focus returns.
+    s_midnaTouchPending = false;
+    return extra_touch_up(ctx, args, retval, data);
+}
 HookAction extra_clear_input(ModContext*, void*, void*, void*) {
     s_extraPresses.clear();
+    s_midnaTouchPending = false;
     return HOOK_CONTINUE;
 }
 HookAction extra_clear_all(ModContext*, void*, void*, void*) {
     s_extraPresses.clear();
+    s_midnaTouchPending = false;
     s_extraPadOwned = false;
     s_extraBasePad = {};
     return HOOK_CONTINUE;
@@ -270,7 +300,7 @@ ModResult install_native_buttons(ModError* error) {
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchDown>(svc_hook, extra_touch_down);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchMotion>(svc_hook, extra_touch_motion);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchUp>(svc_hook, extra_touch_up);
-    if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchCancel>(svc_hook, extra_touch_up);
+    if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchCancel>(svc_hook, extra_touch_cancel);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchSetPad>(svc_hook, extra_set_pad);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchClearPad>(svc_hook, extra_clear_pad);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchClearAllPads>(svc_hook, extra_clear_all);

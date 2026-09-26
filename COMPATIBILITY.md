@@ -49,8 +49,7 @@ or own a third item slot. It:
 - allows the touch Z button to assign the selected item from the item wheel;
 - keeps touch L available on field and dungeon maps, and routes it to the
   field map's portal action after Twilight HD HUD's physical-L mapping;
-- moves the Midna touch action and Midna's head to the Skip button outside
-  cutscenes; and
+- offers a separate Midna button with her icon, enabled under Controls → Touch Buttons; and
 - leaves the normal Skip button behavior intact during cutscenes.
 
 This toggle works independently from Dawnlight's `Z Item Slot` setting so that
@@ -96,9 +95,11 @@ releases the extra buttons. Extras are hidden during game menus, dialogue and
 cutscenes. No new APK is needed.
 
 Run `python3 tests/touch_buttons_test.py` for input ownership, pad merging and
-layout bounds. Run `python3 tests/touch_button_editor_test.py` after fetching the
+layout bounds, and `python3 tests/touch_midna_test.py` for Midna taps, cancellation,
+availability and coexistence with native Skip/Z and the D-pad shortcut.
+Run `python3 tests/touch_button_editor_test.py` after fetching the
 pinned Dusklight source (or set `DUSKLIGHT_DIR`) for the viewport contract, native
-layout round-trips, scoped metadata and Save/Cancel/Reset behavior. Device QA should cover all five buttons, simultaneous LB + face
+layout round-trips, scoped metadata and Save/Cancel/Reset behavior. Device QA should cover all six buttons, simultaneous LB + face
 buttons and stick movement, disabling a held button, app/menu transitions,
 orientation/safe-area changes, drag and edge/corner resizing, Save/Cancel/Reset,
 vanilla editor isolation, persistent layouts after restart, and mod unload with
@@ -133,7 +134,7 @@ using Twilit Essentials' Custom Z Button is:
 In this configuration, Twilit Essentials owns the item slot and its gameplay
 behavior. Dawnlight supplies the Android touch integration: item-wheel
 assignment through touch Z, the item icon and counters on touch Z, and Midna's
-head and action on the touch Skip button.
+head and action on the separate Midna button (enable it under Controls → Touch Buttons).
 
 Alternatively, Dawnlight's `Z Item Slot` can be enabled when Twilit Essentials'
 `Custom Z Button` is disabled. Enabling both Z item implementations at the same
@@ -155,8 +156,8 @@ toggle that disables only that feature. When Twilight HD HUD is active, use:
 
 This avoids competing third-item implementations. `Dawnlight Touch UI` may
 remain enabled because it does not create another slot; it adapts the active
-third slot to Dawnlight's Android touch layout and keeps Midna on the touch Skip
-button outside cutscenes.
+third slot to Dawnlight's Android touch layout. Enable the separate Midna button
+under Controls → Touch Buttons to call her; Skip remains a cutscene-only button.
 
 Dawnlight's HUD Layout Editor is compatible with Twilight HD HUD's gameplay HUD
 for the supported elements. Twilight HD HUD owns its artwork and base layout;

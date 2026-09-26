@@ -1,6 +1,6 @@
 // Reuse the running Dusklight TouchControlsEditor, including its RML/CSS,
 // drag threshold, resize handles, docking, reset confirmation and navigation.
-// Only our instance sees five alternative controls. The host's nine-element
+// Only our instance sees the extra controls. The host's nine-element
 // array stays unchanged, and vanilla editor instances use their original data.
 using NativeEditor = dusk::ui::TouchControlsEditor;
 using LayoutSpan = std::span<const dusk::ui::TouchLayoutControlInfo>;
@@ -41,14 +41,15 @@ bool s_editorConstructing = false;
 std::array<dusk::ui::TouchLayoutControlInfo, touch::Count> s_editorControls{};
 std::string s_editorFragment;
 std::vector<EditorDocument*> s_editorChildren;
-constexpr const char* kExtraEditorIds[] = {"dawnlight-lb", "dawnlight-up", "dawnlight-down", "dawnlight-left", "dawnlight-right"};
+constexpr const char* kExtraEditorIds[] = {"dawnlight-lb", "dawnlight-up", "dawnlight-down", "dawnlight-left", "dawnlight-right", "dawnlight-midna"};
 static_assert(touch::Count <= dusk::ui::kTouchLayoutControlCount);
 
 bool editor_background_active() {
     if (!s_extraEditor || s_extraEditor->mClosed || s_extraEditor->mPendingClose) return false;
     auto* top = s_editorApi.top();
-    return top == s_extraEditor || std::find(s_editorChildren.begin(), s_editorChildren.end(), top) !=
-        s_editorChildren.end();
+    // Re-showing TouchControls raises its document above the reset modal and
+    // intercepts touches. Let native suppression hide it while a modal is up.
+    return top == s_extraEditor;
 }
 void sync_editor_background(NativeTouch* controls) {
     if (!editor_background_active()) return;

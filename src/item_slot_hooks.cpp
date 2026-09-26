@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "touch_buttons.hpp"
 #include "hud_layout.hpp"
 #include "save_state.hpp"
 #include "service_imports.hpp"
@@ -135,16 +136,12 @@ DEFINE_HOOK_SYMBOL("_ZN4dusk2ui20set_control_overrideENS0_7ControlENS0_15Control
     void(dusk::ui::Control, dusk::ui::ControlOverride), TouchSetControlOverrideHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls17sync_visual_stateEv",
     void(dusk::ui::TouchControls*), TouchSyncVisualStateHook);
-DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_action_bar_stateEv",
-    void(dusk::ui::TouchControls*), TouchSyncActionBarHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_control_displaysEv",
     void(dusk::ui::TouchControls*), TouchSyncControlDisplaysHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls19set_control_pressedENS0_7ControlEb",
     void(dusk::ui::TouchControls*, dusk::ui::Control, bool), TouchSetControlPressedHook);
 DEFINE_HOOK_SYMBOL("_ZN3Rml7Element8SetClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb",
     void(Rml::Element*, const Rml::String*, bool), RmlSetClassHook);
-DEFINE_HOOK_SYMBOL("_ZN3Rml7Element14SetPseudoClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb",
-    void(Rml::Element*, const Rml::String*, bool), RmlSetPseudoClassHook);
 DEFINE_HOOK_SYMBOL("_ZN3Rml7Element11SetInnerRMLERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE",
     void(Rml::Element*, const Rml::String*), RmlSetInnerRMLHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui17midna_icon_sourceEv", std::string(), MidnaIconSourceHook);
@@ -185,16 +182,8 @@ bool s_zHeavyBootsWaitRelease = false;
 u8 s_zHeavyBootsGuardFrames = 0;
 bool s_dpadLeftHeld = false;
 bool s_dpadLeftTrig = false;
-bool s_touchMidnaTrig = false;
 bool s_touchZItemHeld = false;
 bool s_touchZItemTrig = false;
-u8 s_touchMidnaBlockStartFrames = 0;
-bool s_inTouchActionBarSync = false;
-Rml::Element* s_skipTouchElement = nullptr;
-Rml::Element* s_skipTouchRmlElement = nullptr;
-bool s_skipTouchMidnaMode = false;
-bool s_skipTouchMidnaPressed = false;
-std::string s_skipTouchMidnaSource;
 bool s_midnaPromptThisFrame = false;
 bool s_zPromptCustomVisualsActive = false;
 bool s_hideZPromptButton = false;
@@ -377,12 +366,6 @@ std::array<RoundPictureState, 32> s_roundPictureStates;
 dMeter2Draw_c* s_roundHudMeter = nullptr;
 dMeter2Draw_c* s_hudLayoutMeter = nullptr;
 J2DScreen* s_hudLayoutScreen = nullptr;
-
-bool consume_touch_midna_trigger() {
-    const bool triggered = s_touchMidnaTrig;
-    s_touchMidnaTrig = false;
-    return triggered;
-}
 
 J2DPane* prompt_pane(dMeterButton_c* meter, u64 tag) {
     return meter != nullptr && meter->mpButtonScreen != nullptr ? meter->mpButtonScreen->search(tag) :
@@ -660,7 +643,7 @@ bool midna_touch_available() {
     return midna_unlocked() || boss_rush_save_active();
 }
 
-bool skip_touch_can_be_midna() {
+bool midna_touch_button_ready() {
     return dawnlight_touch_ui_active() && !cutscene_skip_touch_visible() &&
            !touch_midna_controls_suppressed() && midna_touch_available() &&
            dComIfGp_getLinkPlayer() != nullptr;
@@ -774,58 +757,6 @@ void sync_z_touch_item_meter(Rml::Element* button) {
     s_zTouchMeterRml = rml;
 }
 
-void set_skip_touch_rml(Rml::Element* element, const std::string& rml) {
-    if (element == nullptr || RmlSetInnerRMLHook::g_orig == nullptr) {
-        return;
-    }
-    RmlSetInnerRMLHook::g_orig(element, &rml);
-}
-
-void set_skip_touch_hidden(Rml::Element* element, const bool hidden) {
-    if (element == nullptr || RmlSetPseudoClassHook::g_orig == nullptr) {
-        return;
-    }
-
-    const std::string hiddenClass = "hidden";
-    RmlSetPseudoClassHook::g_orig(element, &hiddenClass, hidden);
-}
-
-void sync_skip_touch_midna_button(Rml::Element* element) {
-    const std::string source = true_midna_icon_source();
-    if (element == s_skipTouchRmlElement && s_skipTouchMidnaMode &&
-        source == s_skipTouchMidnaSource)
-    {
-        return;
-    }
-
-    s_skipTouchElement = element;
-    s_skipTouchRmlElement = element;
-    s_skipTouchMidnaMode = true;
-
-    if (source.empty()) {
-        s_skipTouchMidnaSource.clear();
-        set_skip_touch_rml(element, "<span>Midna</span>");
-        return;
-    }
-
-    s_skipTouchMidnaSource = source;
-    set_skip_touch_rml(element,
-        "<img class=\"midna-icon visible\" src=\"" + source + "\" /><span></span>");
-}
-
-void restore_skip_touch_button(Rml::Element* element) {
-    if (element == s_skipTouchRmlElement && !s_skipTouchMidnaMode) {
-        return;
-    }
-
-    s_skipTouchElement = element;
-    s_skipTouchRmlElement = element;
-    s_skipTouchMidnaMode = false;
-    s_skipTouchMidnaPressed = false;
-    s_skipTouchMidnaSource.clear();
-    set_skip_touch_rml(element, "<icon><glyph>&#xe044;</glyph></icon>");
-}
-
 void collect_pane_render_state(
     J2DPane* pane, std::array<PaneRenderState, 64>& states, size_t& count) {
     if (pane == nullptr || count >= states.size()) {
@@ -875,9 +806,6 @@ void refresh_midna_touch_icon_texture(J2DPane* midnaPane) {
     restore_pane_render_state(states, count);
 }
 #else
-void set_skip_touch_hidden(Rml::Element*, bool) {}
-void sync_skip_touch_midna_button(Rml::Element*) {}
-void restore_skip_touch_button(Rml::Element*) {}
 void refresh_midna_touch_icon_texture(J2DPane*) {}
 #endif
 
@@ -2914,20 +2842,12 @@ void after_pad_read(ModContext*, void*, void*, void*) {
     if (!zItemsActive && !touchUiActive) {
         s_dpadLeftHeld = false;
         s_dpadLeftTrig = false;
-        s_touchMidnaTrig = false;
         s_touchZItemHeld = false;
         s_touchZItemTrig = false;
-        s_skipTouchMidnaPressed = false;
-        s_touchMidnaBlockStartFrames = 0;
         return;
     }
 
     interface_of_controller_pad& pad = mDoCPd_c::getCpadInfo(PAD_1);
-    if (touchUiActive && s_touchMidnaBlockStartFrames != 0) {
-        pad.mButtonFlags &= ~PAD_BUTTON_START;
-        pad.mPressedButtonFlags &= ~PAD_BUTTON_START;
-        --s_touchMidnaBlockStartFrames;
-    }
 
     if (touchUiActive && s_touchZItemHeld && dComIfGp_getLinkPlayer() != nullptr &&
         daAlink_getAlinkActorClass() != nullptr)
@@ -2942,11 +2862,6 @@ void after_pad_read(ModContext*, void*, void*, void*) {
     if (!zItemsActive) {
         s_dpadLeftHeld = false;
         s_dpadLeftTrig = false;
-        if (dComIfGp_getLinkPlayer() == nullptr || daAlink_getAlinkActorClass() == nullptr ||
-            z_item_menu_or_pause_context())
-        {
-            s_touchMidnaTrig = false;
-        }
         return;
     }
 
@@ -2955,7 +2870,6 @@ void after_pad_read(ModContext*, void*, void*, void*) {
     {
         s_dpadLeftHeld = false;
         s_dpadLeftTrig = false;
-        s_touchMidnaTrig = false;
         return;
     }
 
@@ -3186,12 +3100,6 @@ void after_meter_midna_alpha(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
     if (dawnlight_touch_ui_active() && meter != nullptr && meter->mpButtonMidona != nullptr) {
         refresh_midna_touch_icon_texture(meter->mpButtonMidona->getPanePtr());
-#if defined(__ANDROID__)
-        if (s_skipTouchElement != nullptr && !cutscene_skip_touch_visible())
-        {
-            sync_skip_touch_midna_button(s_skipTouchElement);
-        }
-#endif
     }
     if (z_item_slot_active()) {
         move_midna_hud_to_dpad(meter);
@@ -3290,7 +3198,7 @@ HookAction before_midna_talk_trigger(ModContext*, void* args, void* retval, void
         return HOOK_CONTINUE;
     }
 
-    const bool touchTriggered = consume_touch_midna_trigger();
+    const bool touchTriggered = consume_midna_touch_press();
     if (z_item_slot_active()) {
         *static_cast<BOOL*>(retval) = s_dpadLeftTrig || touchTriggered;
         return HOOK_SKIP_ORIGINAL;
@@ -3720,66 +3628,6 @@ HookAction before_rml_set_class(ModContext*, void* args, void*, void*) {
 }
 #endif
 
-HookAction before_touch_sync_action_bar(ModContext*, void* args, void*, void*) {
-#if defined(__ANDROID__)
-    auto* controls = mods::arg<dusk::ui::TouchControls*>(args, 0);
-    if (controls != nullptr) {
-        s_skipTouchElement = controls->mControlElements[
-            static_cast<std::size_t>(dusk::ui::Control::SKIP)].root;
-    }
-#else
-    (void)args;
-#endif
-
-    if (s_skipTouchMidnaPressed) {
-        s_inTouchActionBarSync = false;
-        return HOOK_SKIP_ORIGINAL;
-    }
-
-    s_inTouchActionBarSync = true;
-    return HOOK_CONTINUE;
-}
-
-void after_touch_sync_action_bar(ModContext*, void*, void*, void*) {
-    Rml::Element* skipElement = s_skipTouchElement;
-    const bool canShowMidna = skip_touch_can_be_midna();
-
-    s_inTouchActionBarSync = false;
-
-    if (canShowMidna && skipElement != nullptr) {
-        set_skip_touch_hidden(skipElement, false);
-        sync_skip_touch_midna_button(skipElement);
-    } else if (s_skipTouchMidnaPressed && skipElement != nullptr) {
-        set_skip_touch_hidden(skipElement, false);
-    } else if (s_skipTouchMidnaMode) {
-        restore_skip_touch_button(skipElement);
-    }
-}
-
-HookAction before_rml_set_pseudo_class(ModContext*, void* args, void*, void*) {
-    if (!s_inTouchActionBarSync) {
-        return HOOK_CONTINUE;
-    }
-
-    auto* element = mods::arg<Rml::Element*>(args, 0);
-    const auto* pseudoClass = mods::arg<const Rml::String*>(args, 1);
-    const bool active = mods::arg<bool>(args, 2);
-    if (pseudoClass == nullptr || *pseudoClass != "hidden") {
-        return HOOK_CONTINUE;
-    }
-
-    if (element == nullptr || element != s_skipTouchElement) {
-        return HOOK_CONTINUE;
-    }
-
-    if (!skip_touch_can_be_midna()) {
-        return HOOK_CONTINUE;
-    }
-
-    s_skipTouchElement = element;
-    return active ? HOOK_SKIP_ORIGINAL : HOOK_CONTINUE;
-}
-
 HookAction before_touch_set_control_pressed(ModContext*, void* args, void*, void*) {
     const auto control = mods::arg<dusk::ui::Control>(args, 1);
     const bool pressed = mods::arg<bool>(args, 2);
@@ -3788,30 +3636,7 @@ HookAction before_touch_set_control_pressed(ModContext*, void* args, void*, void
         s_touchZItemHeld = pressed;
         return HOOK_CONTINUE;
     }
-    if (control != dusk::ui::Control::SKIP) {
-        return HOOK_CONTINUE;
-    }
-
-    const bool midnaTouch =
-        s_skipTouchMidnaMode || s_skipTouchMidnaPressed || s_touchMidnaBlockStartFrames != 0;
-    if (pressed) {
-        if (!skip_touch_can_be_midna()) {
-            return midnaTouch && !cutscene_skip_touch_visible() ? HOOK_SKIP_ORIGINAL :
-                HOOK_CONTINUE;
-        }
-
-        s_skipTouchMidnaPressed = true;
-        s_touchMidnaTrig = true;
-        s_touchMidnaBlockStartFrames = 4;
-        return HOOK_SKIP_ORIGINAL;
-    }
-
-    if (!midnaTouch) {
-        return HOOK_CONTINUE;
-    }
-
-    s_skipTouchMidnaPressed = false;
-    return cutscene_skip_touch_visible() ? HOOK_CONTINUE : HOOK_SKIP_ORIGINAL;
+    return HOOK_CONTINUE;
 }
 
 void after_midna_icon_source(ModContext*, void*, void* retval, void*) {
@@ -3833,6 +3658,15 @@ ModResult add_hook(ModResult result, ModError* error) {
 }
 
 }  // namespace
+
+bool midna_touch_button_available() { return midna_touch_button_ready(); }
+std::string midna_touch_button_icon() {
+#if defined(__ANDROID__)
+    return true_midna_icon_source();
+#else
+    return {};
+#endif
+}
 
 ModResult install_item_slot_hooks(ModError* error) {
     s_zItemSlotSessionEnabled = z_item_slot_enabled();
@@ -4078,15 +3912,6 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook::install<UpdateMidnaIconTextureHook>(svc_hook);
     }
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
-        result = mods::hook_add_pre<TouchSyncActionBarHook>(svc_hook, before_touch_sync_action_bar);
-    }
-    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
-        result = mods::hook_add_post<TouchSyncActionBarHook>(svc_hook, after_touch_sync_action_bar);
-    }
-    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
-        result = mods::hook_add_pre<RmlSetPseudoClassHook>(svc_hook, before_rml_set_pseudo_class);
-    }
-    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<TouchSetControlPressedHook>(
             svc_hook, before_touch_set_control_pressed);
     }
@@ -4123,12 +3948,6 @@ void shutdown_item_slot_hooks() {
     s_mapLTouchOverrideActive = false;
     s_touchZItemHeld = false;
     s_touchZItemTrig = false;
-    s_inTouchActionBarSync = false;
-    s_skipTouchElement = nullptr;
-    s_skipTouchRmlElement = nullptr;
-    s_skipTouchMidnaMode = false;
-    s_skipTouchMidnaPressed = false;
-    s_skipTouchMidnaSource.clear();
     s_zTouchDisplayButton = nullptr;
     s_zTouchMeterButton = nullptr;
     s_zTouchMeterContainer = nullptr;

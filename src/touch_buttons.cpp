@@ -39,6 +39,7 @@ namespace {
 struct ButtonConfig { ConfigVarHandle enabled = 0, x = 0, y = 0, size = 0, layout = 0; };
 std::array<ButtonConfig, touch::Count> s_buttons{};
 UiWindowHandle s_touchWindow = 0;
+bool s_midnaTouchPending = false;
 #if defined(__ANDROID__)
 bool s_touchRuntimeAvailable = false;
 bool s_touchEditorAvailable = false;
@@ -93,6 +94,7 @@ ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle 
         desc.binding = UI_BINDING_CONFIG_VAR;
         desc.config_var = s_buttons[i].enabled;
         if (i == 0) desc.help_rml = "Virtual left bumper (LB/L1) for compatible mods, including Twilight HD HUD. The action is defined by the mod; no fixed Midna action is assigned.";
+        if (i == touch::Midna) desc.help_rml = "Call Midna with a dedicated touch button. Shown when Midna is available; move and resize it in the Touch Layout Editor.";
         if (svc_ui->pane_add_control(ctx, left, &desc, nullptr) != MOD_OK) return MOD_ERROR;
     }
     UiControlDesc editor = UI_CONTROL_DESC_INIT;
@@ -111,6 +113,15 @@ void touch_window_closed(ModContext*, UiWindowHandle, void*) {
 #include "touch_buttons_native.inc"
 #endif
 }  // namespace
+
+bool consume_midna_touch_press() {
+#if defined(__ANDROID__)
+    prune_extra_presses(s_touchOwner);
+#endif
+    const bool pressed = s_midnaTouchPending;
+    s_midnaTouchPending = false;
+    return pressed;
+}
 
 ModResult register_touch_button_config(ModError* error) {
     for (size_t i = 0; i < touch::Count; ++i) {

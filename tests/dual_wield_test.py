@@ -102,6 +102,7 @@ std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
 bool dual_wield_enabled(){return setting;}
 bool human(daAlink_c* l){return l->human;}
 bool active(daAlink_c* l){return s.owner==l && s.active;}
+bool equipment_visible(daAlink_c* l){return active(l);} // event warp rendering tested below
 Pose pose(Pose p){return p;}
 void put(J3DModel* model,int joint,Pose p){model->joints[joint]=p;}
 Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
@@ -322,13 +323,43 @@ loader_fixture = r'''
 #include <string>
 #include <array>
 using u32=std::uint32_t;
-struct ModelData {int getJointNum(){return 1;}int getMaterialNum(){return 2;}} data;
-struct J3DModel {} model;
+struct J3DTexMtx {
+    struct Info {float scrollX=0,scrollY=0,worldX=0;} info;
+    auto& getTexMtxInfo(){return info;}
+};
+struct Shape {bool visible=true;void hide(){visible=false;}void show(){visible=true;}};
+struct Tev {
+    struct Order {int map;int getTexMap(){return map;}};
+    std::array<Order,2> orders{{{0},{3}}};int count=2;
+    int getTevStageNum(){return count;}
+    auto getTevOrder(int i){return &orders.at(i);}
+};
+struct Tex {
+    std::array<J3DTexMtx*,2> matrices{};int count=2;
+    int getTexGenNum(){return count;}
+    auto getTexMtx(int i){return matrices.at(i);}
+};
+struct Material {
+    Shape shape;Tev tev;Tex tex;
+    auto getTevBlock(){return &tev;}auto getTexGenBlock(){return &tex;}
+    auto getShape(){return &shape;}
+};
+struct ModelData {
+    J3DTexMtx warp;std::array<Material,2> materials;
+    ModelData(){for(auto& m:materials)m.tex.matrices[1]=&warp;}
+    int getJointNum(){return 1;}int getMaterialNum(){return 2;}
+    auto getMaterialNodePointer(int i){return &materials.at(i);}
+} data;
+struct J3DModel {ModelData* data;auto getModelData(){return data;}} model{&data};
+struct daAlink_c {J3DModel* mSheathModel=nullptr;};
 struct Heap {
     std::array<char,64> bytes{};bool fail=false;
     void* alloc(u32 size,int alignment){assert(size==64 && alignment==32);return fail?nullptr:bytes.data();}
 } heap;
-struct {Heap* heap;} s{&heap};
+struct {
+    Heap* heap;daAlink_c* owner=nullptr;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
+    bool enabled=false,active=false;float draw=0;
+} s{&heap};
 struct JKRArchive {
     std::map<std::string,std::array<char,64>> files;
     std::string directory;
@@ -350,19 +381,37 @@ struct Log {void warn(void*,const char* message){warning=message;}} logService;
 Log* svc_log=&logService;void* mod_ctx=nullptr;
 struct dRes_info_c {
     static ModelData* loaderBasicBmd(u32 tag,void* raw) {
-        // Archive directory is BMWR, but private copies must not opt into
-        // its world-position-dependent warp mask. Both use normal BMDR.
-        assert(tag==0x424D4452 && raw==heap.bytes.data());
+        assert(tag==0x424D5752 && raw==heap.bytes.data());
         assert(std::memcmp(raw,"J3D2bmd3",8)==0);
         static_cast<char*>(raw)[8]=42; // Native loader modifies only the private copy.
+        onWarpMaterial(&data); // BMWR initially enables its warp stage.
         return &data;
     }
+    static void onWarpMaterial(ModelData* d) {
+        for(auto& m:d->materials) {
+            if(m.tev.getTevOrder(m.tev.count-1)->getTexMap()==3)break;
+            ++m.tev.count;++m.tex.count;
+        }
+    }
+    static void offWarpMaterial(ModelData* d) {
+        for(auto& m:d->materials) {
+            if(m.tev.getTevOrder(m.tev.count-1)->getTexMap()!=3)break;
+            --m.tev.count;--m.tex.count;
+        }
+    }
 };
+bool createFails=false;
 J3DModel* mDoExt_J3DModel__create(ModelData* d,u32 flags,u32 diff) {
-    assert(d==&data && flags==0x80000 && diff==0x11000284);return &model;
+    assert(d==&data && flags==0x80000 && diff==0x13000684);
+    for(auto& m:d->materials)assert(m.tev.count==2 && m.tex.count==2);
+    return createFails?nullptr:&model;
 }
 '''
 loader_fixture += function("model_failure") + function("copy_model", "J3DModel*")
+loader_fixture += r'''
+bool active(daAlink_c* link){return s.owner==link && s.active && s.sword && s.sheath;}
+'''
+loader_fixture += function("warp_texture", "J3DTexMtx*") + function("equipment_visible", "bool") + function("sync_equipment_materials")
 loader_fixture += r'''
 int main() {
     JKRArchive archive;
@@ -375,6 +424,7 @@ int main() {
         for(const char* name:{"al_swa.bmd","al_poda.bmd"}) {
             assert(copy_model(&archive,name)==&model);
             assert(archive.files.at(std::string("bmwr/")+name)[8]==0);
+            assert(!warp_texture(&model)); // no world-dependent clipping after load
         }
     }
     assert(warning.empty());
@@ -382,9 +432,48 @@ int main() {
     assert(warning.find("missing.bmd: resource not found")!=std::string::npos);
     heap.fail=true;assert(!copy_model(&archive,"al_swa.bmd"));
     assert(warning.find("allocation failed")!=std::string::npos);heap.fail=false;
+    createFails=true;assert(!copy_model(&archive,"al_swa.bmd"));
+    assert(!warp_texture(&model));createFails=false;
     archive.files.at("bmwr/al_swa.bmd")[0]='X';
     assert(!copy_model(&archive,"al_swa.bmd"));
     assert(warning.find("invalid BMD header")!=std::string::npos);
+
+    ModelData nativeData,swordData,sheathData;
+    J3DModel native{&nativeData},sword{&swordData},sheath{&sheathData};
+    daAlink_c link{&native},other{&native};
+    s.owner=&link;s.sword=&sword;s.sheath=&sheath;s.enabled=s.active=true;
+    dRes_info_c::offWarpMaterial(&nativeData);
+    // Fully sheathed: only the secondary blade disappears.
+    sync_equipment_materials(&link);
+    assert(!swordData.materials[0].shape.visible);
+    assert(swordData.materials[1].shape.visible && sheathData.materials[0].shape.visible);
+    assert(nativeData.materials[0].shape.visible);
+    s.draw=1;sync_equipment_materials(&link);assert(swordData.materials[0].shape.visible);
+    assert(equipment_visible(&link) && !equipment_visible(&other));
+    // An arrival can already be in progress when the private models appear.
+    for(int cycle=0;cycle<3;++cycle) {
+        dRes_info_c::onWarpMaterial(&nativeData);
+        for(int frame=0;frame<80;++frame) {
+            nativeData.warp.info={frame*.15f,4.6f-frame*.06f,float(cycle*1000)};
+            sync_equipment_materials(&link);
+            for(auto* d:{&swordData,&sheathData}) {
+                assert(d->warp.info.scrollX==nativeData.warp.info.scrollX);
+                assert(d->warp.info.scrollY==nativeData.warp.info.scrollY);
+                assert(d->warp.info.worldX==nativeData.warp.info.worldX);
+                for(auto& m:d->materials)assert(m.tev.count==2 && m.tex.count==2);
+            }
+        }
+        s.active=false;assert(equipment_visible(&link)); // scripted warp, arms untouched
+        sync_equipment_materials(&link);assert(!swordData.materials[0].shape.visible);
+        s.enabled=false;assert(!equipment_visible(&link));s.enabled=true;
+        dRes_info_c::offWarpMaterial(&nativeData);
+        assert(!equipment_visible(&link)); // ordinary events retain native equipment
+        s.active=true;
+        for(int frame=0;frame<5;++frame)sync_equipment_materials(&link);
+        for(auto* d:{&swordData,&sheathData,&nativeData})
+            for(auto& m:d->materials)assert(m.tev.count==1 && m.tex.count==1);
+        assert(swordData.materials[0].shape.visible);
+    }
 }
 '''
 
@@ -405,4 +494,4 @@ with tempfile.TemporaryDirectory() as folder:
         subprocess.run(["c++", "-std=c++17", "-Wall", "-Wextra", "-I", str(temp),
                         "-I", str(root / "src"), str(path), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)
-print("Dual Wield math, animation borrowing, hand contacts, lifecycle and archive loading: OK")
+print("Dual Wield math, animation borrowing, hand contacts, lifecycle, blade visibility and warp materials: OK")

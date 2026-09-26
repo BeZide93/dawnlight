@@ -132,16 +132,15 @@ J3DModel* copy_model(JKRArchive* archive,const char* name) {
     void* copy=s.heap->alloc(bytes,32);
     if(!copy) { model_failure(name,"private model allocation failed");return nullptr; }
     std::memcpy(copy,raw,bytes);
-    // Use the normal BMDR material path for these private copies. BMWR adds
-    // an active world-projected warp mask; native Link disables/toggles it in
-    // initModel/setEffect, but our private models are not part of that list.
-    // Leaving it enabled clips the sword/sheath differently by world position.
-    // BMDR still initializes lighting, material animators and display lists.
-    auto* data=dRes_info_c::loaderBasicBmd(0x424D4452,copy);
+    // BMWR reserves the native warp stage and its texture matrix. As in
+    // Link's initModel, allocate dynamic display lists while it is enabled,
+    // then disable it immediately: an idle mask clips equipment by location.
+    auto* data=dRes_info_c::loaderBasicBmd(0x424D5752,copy);
     if(!data || !data->getJointNum() || !data->getMaterialNum()) {
         model_failure(name,"native BMD loader failed");return nullptr;
     }
-    auto* model=mDoExt_J3DModel__create(data,0x80000,0x11000284);
+    auto* model=mDoExt_J3DModel__create(data,0x80000,0x13000684);
+    dRes_info_c::offWarpMaterial(data);
     if(!model) model_failure(name,"native model creation failed");
     return model;
 }
@@ -211,6 +210,38 @@ bool sword_attack(daAlink_c* link) {
     }
 }
 bool active(daAlink_c* link) { return s.owner==link && s.active && s.sword && s.sheath; }
+J3DTexMtx* warp_texture(J3DModel* model) {
+    if(!model || !model->getModelData()->getMaterialNum()) return nullptr;
+    auto* material=model->getModelData()->getMaterialNodePointer(0);
+    auto* tev=material->getTevBlock();
+    const auto stages=tev->getTevStageNum();
+    if(!stages || tev->getTevOrder(stages-1)->getTexMap()!=3) return nullptr;
+    auto* tex=material->getTexGenBlock();
+    return tex->getTexGenNum() ? tex->getTexMtx(tex->getTexGenNum()-1) : nullptr;
+}
+bool equipment_visible(daAlink_c* link) {
+    // Event warps still carry the hip equipment, without taking over the
+    // event's arm animation. Ordinary events keep their native equipment.
+    return s.owner==link && s.enabled && s.sword && s.sheath &&
+        (s.active || warp_texture(link->mSheathModel));
+}
+void sync_equipment_materials(daAlink_c* link) {
+    auto* warp=warp_texture(link->mSheathModel);
+    for(auto* model:{s.sword,s.sheath}) {
+        auto* data=model->getModelData();
+        if(warp) {
+            dRes_info_c::onWarpMaterial(data);
+            // Copy the final native projection/scroll at draw time, including
+            // arrival warps and models created after a warp has already begun.
+            // Never write to the shared native equipment material.
+            warp_texture(model)->getTexMtxInfo()=warp->getTexMtxInfo();
+        } else dRes_info_c::offWarpMaterial(data);
+    }
+    // al_swa material 0 is the blade, just as in native offSwordModel.
+    // The draw/stow grip milestones leave the hilt and scabbard visible.
+    auto* blade=s.sword->getModelData()->getMaterialNodePointer(0)->getShape();
+    if(active(link) && s.draw>0) blade->show();else blade->hide();
+}
 HookAction before_execute(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(s.owner && s.owner!=link) release();
@@ -385,13 +416,14 @@ void solve_arm(daAlink_c* link,bool right,Pose sword,float weight,const Vec* elb
     put(model,first+3,dual::compose(solved.hand,right ? item : mount));
 }
 void after_arms(ModContext*,void* args,void*,void*) {
-    auto* link=mods::arg<daAlink_c*>(args,0);if(!active(link)) return;
+    auto* link=mods::arg<daAlink_c*>(args,0);if(!equipment_visible(link)) return;
     auto* model=link->mpLinkModel;
     s.hipSword=dual::compose(pose(model->getAnmMtx(16)),local(-3,0,18,20));
     // Roll around the blade's local X axis, preserving the grip position and
     // blade direction. The sheath inherits this same pose in after_items.
     constexpr float halfTurn90=.70710678118f;
     s.hipSword=dual::compose(s.hipSword,Pose{{halfTurn90,0,0,halfTurn90},{}});
+    if(!active(link)) { s.rightSword=s.hipSword;return; }
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());
         const Pose inverseBase=dual::inverse(base);
@@ -461,13 +493,13 @@ void after_items(ModContext*,void* args,void*,void*) {
     if(s.forcedBlade && (!active(link) || s.guard<=0)) {
         if(link->mEquipItem!=0x103) link->offSwordModel();s.forcedBlade=false;
     }
-    if(!active(link)) return;
+    if(!equipment_visible(link)) return;
     put(s.sword,s.rightSword);
     // Native Ordon sword-in-sheath transform, inverted to place the scabbard
     // around the same hip-mounted blade rather than creating a second offset.
     const Pose mount=local(-18.5f,.14f,12.2f,0,33.1f);
     put(s.sheath,dual::compose(s.hipSword,dual::inverse(mount)));
-    if(s.guard>0 && link->mEquipItem!=0x103) {
+    if(active(link) && s.guard>0 && link->mEquipItem!=0x103) {
         put(link->mSwordModel,sword_at_hand(link,false));
         link->mSwordModel->getModelData()->getMaterialNodePointer(0)->getShape()->show();
         s.forcedBlade=true;
@@ -489,11 +521,12 @@ void after_sword_pos(ModContext*,void* args,void*,void*) {
     }
 }
 void after_shield_draw(ModContext*,void* args,void* result,void*) {
-    if(active(mods::arg<daAlink_c*>(args,0))) *static_cast<bool*>(result)=false;
+    if(equipment_visible(mods::arg<daAlink_c*>(args,0))) *static_cast<bool*>(result)=false;
 }
 void after_model_draw(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
-    if(!active(link) || mods::arg<J3DModel*>(args,1)!=link->mSwordModel) return;
+    if(!equipment_visible(link) || mods::arg<J3DModel*>(args,1)!=link->mSwordModel) return;
+    sync_equipment_materials(link);
     const int hidden=mods::arg<int>(args,2);
     link->modelDraw(s.sword,hidden);link->modelDraw(s.sheath,hidden);
 }

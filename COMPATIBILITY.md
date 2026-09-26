@@ -25,7 +25,46 @@ test. In-game verification should cover both app startup with Dawnlight
 installed and installation through the mod browser on Lazy Tweaks, followed
 by gyro aiming during Bullet Time on upstream Dusklight and Lazy Tweaks.
 
-## Tested versions
+## Dual Wield Collection option
+
+Enabling Dual Wield adds an Ordon Sword icon after the rightmost visible shield
+slot. Selecting it equips Dual Wield; the setting itself only enables the menu
+option. The existing equipped shield remains the underlying source of native
+blocking behavior. Shield-slot actions leave Dual Wield and retain the other
+mod's normal equip/unequip behavior.
+
+The adapter reads the current `getItemTag` mapping and transformed pane bounds
+after layout hooks, including the Hylian Shield's reserved position. It uses a
+separate screen and cursor instead of replacing grid entries, selection-pane
+pointers, or another mod's menu root. Native and foreign actions pass through
+except when interacting with the added sword. Shoulder-button page changes
+release its focus. The icon follows the equipment row when it slides offscreen.
+
+Source review for this adapter used:
+
+| Source | Revision |
+| --- | --- |
+| Dusklight | `35cdedced6fb77c128be115429907cf0990e1cc7` |
+| BeZide93/dawnlight-twilit-essentials (2.1.1) | `b0bc7b1dcb7ad7b1fc8b6472f0d2b8ff45c67654` |
+| BeZide93/dawnlight-hd-hud (2.4.4) | `0e3a495e7df93b45afa4f1800e02291b89a4e8f8` |
+
+These are source-inspected versions, **not an in-game compatibility claim**.
+The inspected forks do not yet provide a shared Collection extension API;
+Twilight HD HUD uses a fixed native-cell layout and hides other menu roots.
+Dawnlight's separate icon survives that behavior, but does not make Essentials'
+own extra entries compatible with that HUD. When Essentials exposes those
+entries in a compatible shield row, Dawnlight follows their rendered positions.
+Future layouts must still leave enough space to append the sword.
+
+Run `python3 tests/collection_dual_wield_test.py` for the callback/geometry
+regressions and `python3 tests/dual_wield_test.py` for combat regressions.
+For a host-symbol check, pass `DUSKLIGHT_APK=/path/to/Dusklight.apk` to the
+collection test. Visual/device QA remains necessary: native Collection, each
+mod separately, both mods in both load orders, missing shields, extra shield
+slots, Essentials page changes, menu scaling, mouse/touch/controller selection,
+and normal-save/Boss-Rush/app-restart persistence.
+
+## Previously tested versions
 
 | Mod | Tested version |
 | --- | --- |

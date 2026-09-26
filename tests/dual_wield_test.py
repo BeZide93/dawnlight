@@ -99,7 +99,7 @@ struct State {
 } s;
 struct Borrow {mDoExt_AnmRatioPack* pack=nullptr;J3DAnmTransform* original=nullptr;std::optional<DualWieldAnimation> wrapper;};
 std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
-bool dual_wield_enabled(){return setting;}
+bool dual_wield_equipped(){return setting;}
 bool human(daAlink_c* l){return l->human;}
 bool active(daAlink_c* l){return s.owner==l && s.active;}
 bool equipment_visible(daAlink_c* l){return s.owner==l && s.enabled;} // material/model gating tested below

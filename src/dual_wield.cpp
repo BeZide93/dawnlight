@@ -1,4 +1,5 @@
 #include "dual_wield.hpp"
+#include "collection_dual_wield.hpp"
 #include "dual_wield_math.hpp"
 #include "dual_wield_animation.hpp"
 #include "config.hpp"
@@ -245,8 +246,8 @@ void sync_equipment_materials(daAlink_c* link) {
 HookAction before_execute(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(s.owner && s.owner!=link) release();
-    if(!dual_wield_enabled()) s_failedOwner=nullptr;
-    if(dual_wield_enabled() && human(link) && s_failedOwner!=link && !prepare(link)) {
+    if(!dual_wield_equipped()) s_failedOwner=nullptr;
+    if(dual_wield_equipped() && human(link) && s_failedOwner!=link && !prepare(link)) {
         s_failedOwner=link;
         if(svc_log) svc_log->warn(mod_ctx,"Dual Wield: could not prepare private Ordon models; keeping native equipment");
     }
@@ -312,7 +313,7 @@ void update_stow(daAlink_c* link,bool guard) {
 }
 void after_matrix(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);if(s.owner!=link) return;
-    const bool enabled=dual_wield_enabled() && human(link);
+    const bool enabled=dual_wield_equipped() && human(link);
     if(enabled!=s.enabled) {
         s.attacks.reset();s.seedBlade=true;
         if(human(link)) link->field_0x2060->initOldFrameMorf(6,1,16);

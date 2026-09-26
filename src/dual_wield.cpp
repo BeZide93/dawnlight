@@ -184,6 +184,32 @@ bool ordinary(daAlink_c* link) {
         link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_VERTICAL ||
         link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_STAB;
 }
+bool sword_attack(daAlink_c* link) {
+    // Guard input can remain set throughout a technique. Its full-body clip
+    // owns the arms from charge/takeoff through landing, including recovery.
+    // Shield Attack deliberately remains eligible for the crossed thrust.
+    switch(link->mProcID) {
+    case daAlink_c::PROC_CUT_NORMAL:
+    case daAlink_c::PROC_CUT_FINISH:
+    case daAlink_c::PROC_CUT_FINISH_JUMP_UP:
+    case daAlink_c::PROC_CUT_FINISH_JUMP_UP_LAND:
+    case daAlink_c::PROC_CUT_REVERSE:
+    case daAlink_c::PROC_CUT_JUMP:
+    case daAlink_c::PROC_CUT_JUMP_LAND:
+    case daAlink_c::PROC_CUT_TURN:
+    case daAlink_c::PROC_CUT_TURN_CHARGE:
+    case daAlink_c::PROC_CUT_TURN_MOVE:
+    case daAlink_c::PROC_CUT_DOWN:
+    case daAlink_c::PROC_CUT_DOWN_LAND:
+    case daAlink_c::PROC_CUT_HEAD:
+    case daAlink_c::PROC_CUT_HEAD_LAND:
+    case daAlink_c::PROC_CUT_LARGE_JUMP_CHARGE:
+    case daAlink_c::PROC_CUT_LARGE_JUMP:
+    case daAlink_c::PROC_CUT_LARGE_JUMP_LAND:
+        return true;
+    default: return false;
+    }
+}
 bool active(daAlink_c* link) { return s.owner==link && s.active && s.sword && s.sheath; }
 HookAction before_execute(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
@@ -236,7 +262,7 @@ void after_flourish(ModContext*,void* args,void* result,void*) {
     if(*static_cast<int*>(result)) start_stow(mods::arg<daAlink_c*>(args,0),true);
 }
 void update_stow(daAlink_c* link,bool guard) {
-    if(!s.active || ordinary(link) || (guard && !s.stow.drawing) ||
+    if(!s.active || sword_attack(link) || (guard && !s.stow.drawing) ||
        (link->mEquipItem!=0x103 && link->mEquipItem!=dItemNo_NONE_e)) {
         s.stow={};return;
     }
@@ -268,16 +294,19 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     s.mirror=mirror;
     if(s.poseTick==s.tick) return;
     s.poseTick=s.tick;
-    const bool guard=s.active && (link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e) &&
+    const bool attacking=sword_attack(link);
+    const bool guard=s.active && !attacking && (link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e) &&
                      link->checkPlayerGuardAndAttack();
-    const bool drawn=s.active && (link->mEquipItem==0x103 || guard);
-    if(drawn && s.draw==0 && !s.stow.active && s.stow.release==0 && !ordinary(link)) start_draw(link,false);
-    if(s.active && !drawn && s.draw>0 && !s.stow.active && s.stow.release==0 && !ordinary(link) &&
+    const bool drawn=s.active && (link->mEquipItem==0x103 || guard || attacking);
+    if(drawn && s.draw==0 && !s.stow.active && s.stow.release==0 && !attacking) start_draw(link,false);
+    if(s.active && !drawn && s.draw>0 && !s.stow.active && s.stow.release==0 && !attacking &&
        link->mEquipItem==dItemNo_NONE_e) {
         start_stow(link,false);s.stow.nativeClock=false;s.stow.duration=24;
     }
     update_stow(link,guard);
-    s.guard=dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
+    // Do not spend five more frames imposing the guard on an attack clip.
+    // Native animation morphing handles the transition into the technique.
+    s.guard=attacking ? 0.0f : dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
     if(s.stow.active) {
         if(!s.stow.drawing) s.guard=0;
         const bool held=s.stow.drawing ? s.stow.progress>=dual::draw_grip_start : s.stow.progress<dual::stow_insert_end;

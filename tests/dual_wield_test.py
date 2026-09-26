@@ -69,7 +69,11 @@ struct Morph {
 };
 struct daPy_py_c {enum {CUT_TYPE_FINISH_LEFT,CUT_TYPE_FINISH_RIGHT,CUT_TYPE_FINISH_VERTICAL,CUT_TYPE_FINISH_STAB};};
 struct daAlink_c {
-    enum {PROC_CUT_NORMAL=1,PROC_CUT_FINISH=2,PROC_WAIT=3,PROC_GUARD_ATTACK=4,PROC_SWORD_UNEQUIP_SP=5};
+    enum {PROC_CUT_NORMAL=1,PROC_CUT_FINISH=2,PROC_WAIT=3,PROC_GUARD_ATTACK=4,PROC_SWORD_UNEQUIP_SP=5,
+        PROC_CUT_FINISH_JUMP_UP,PROC_CUT_FINISH_JUMP_UP_LAND,PROC_CUT_REVERSE,
+        PROC_CUT_JUMP,PROC_CUT_JUMP_LAND,PROC_CUT_TURN,PROC_CUT_TURN_CHARGE,PROC_CUT_TURN_MOVE,
+        PROC_CUT_DOWN,PROC_CUT_DOWN_LAND,PROC_CUT_HEAD,PROC_CUT_HEAD_LAND,
+        PROC_CUT_LARGE_JUMP_CHARGE,PROC_CUT_LARGE_JUMP,PROC_CUT_LARGE_JUMP_LAND};
     int mProcID=PROC_WAIT,cut=0,mEquipItem=0x103;
     bool event=false,guard=false,human=true,equipping=false;
     int field_0x3198=0;
@@ -104,7 +108,7 @@ Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
 '''
 
 fixture += "\n".join(function(name, result) for name, result in [
-    ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
+    ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
@@ -279,6 +283,29 @@ int main() {
     assert(s.stow.active && !s.stow.drawing && !s.stow.nativeClock);
     for(int i=0;i<25;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
     assert(s.draw==0 && !s.stow.active);
+    // Hold block throughout the complete aerial technique, including charge
+    // and landing. Neither lingering guard IK nor a hip draw may own its arms.
+    link.guard=true;link.mEquipItem=0x103;
+    for(int proc:{daAlink_c::PROC_CUT_JUMP,daAlink_c::PROC_CUT_JUMP_LAND,
+                  daAlink_c::PROC_CUT_HEAD,daAlink_c::PROC_CUT_HEAD_LAND,
+                  daAlink_c::PROC_CUT_LARGE_JUMP_CHARGE,daAlink_c::PROC_CUT_LARGE_JUMP,
+                  daAlink_c::PROC_CUT_LARGE_JUMP_LAND,daAlink_c::PROC_CUT_FINISH_JUMP_UP,
+                  daAlink_c::PROC_CUT_FINISH_JUMP_UP_LAND}) {
+        link.mProcID=proc;s.guard=1;s.haveGuardBody=true;
+        s.stow.active=true;s.stow.drawing=true;s.stow.release=1;s.draw=0;
+        ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+        assert(s.guard==0 && !s.stow.active && s.stow.release==0 && s.draw>0);
+        assert(!s.haveGuardBody && !s.mirror);
+        before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+        ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.guard==0);
+    }
+    // When the technique ends, held block blends back in as usual.
+    link.mProcID=daAlink_c::PROC_WAIT;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.guard>0 && s.guard<1);
+    for(int i=0;i<5;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
+    assert(s.guard==1);
+    link.mProcID=daAlink_c::PROC_GUARD_ATTACK;
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.guard==1);
     // An attack interruption immediately returns ownership to combat.
     s.stow.active=true;link.mProcID=daAlink_c::PROC_CUT_NORMAL;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);

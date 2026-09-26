@@ -194,6 +194,9 @@ HookAction capture_icon(ModContext*,void* args,void*,void*) {
     s_menu.icon=JKR_NEW J2DPicture(MULTI_CHAR('dl_clic'),JGeometry::TBox2<f32>(0,0,44,44),icon,nullptr);
     s_menu.cursor=JKR_NEW dSelect_cursor_c(2,1.f,nullptr);
     if(s_menu.screen) {
+        // A programmatic J2DScreen defaults to an opaque white background.
+        // Clear only its backdrop; pane alpha must still reach the icon/frame.
+        s_menu.screen->mColor=JUtility::TColor(0,0,0,0);
         if(s_menu.frame) s_menu.screen->appendChild(s_menu.frame);
         if(s_menu.icon) {
             s_menu.screen->appendChild(s_menu.icon);

@@ -487,7 +487,7 @@ int main(){
     J2DScreen root;J2DPane hdRoot;hdRoot.parent=&root;root.hdRoot=&hdRoot;
     dMenu_Collect2D_c menu{&root};s_menu.owner=&menu;
     ownTL.art=ownBR.art=&ornamentArt; // loaded directly from the archive at creation
-    J2DPicture tl,br,otherRow;
+    J2DPicture tl,br,otherRow,libSword,libTunic,libIcon,ownDecoration;
     root.child=&tl;tl.next=&br;br.next=&otherRow;
     for(auto* p:{&tl,&br,&otherRow}){p->parent=&root;p->mInfoTag=MULTI_CHAR('hd_cef00');p->art=&ornamentArt;}
     hylian.rect={0,1,37,97,52,52,true};foreignFrame.rect={1,1,97,97,52,52,true};
@@ -496,6 +496,12 @@ int main(){
     const TColor high{246,244,198,255},low{132,134,104,255};
     tl.white=br.white=high;tl.alpha=br.alpha=173;
     otherRow.next=&hylian;hylian.next=&foreignFrame;hylian.parent=foreignFrame.parent=&root;
+    // Collection-Lib e33f635 uses clfl{row}{column*2+corner}, where row 1
+    // is shields. Unrelated panes must survive even at a shield's corner.
+    foreignFrame.next=&libSword;libSword.next=&libTunic;libTunic.next=&libIcon;libIcon.next=&ownDecoration;
+    libSword.mInfoTag=MULTI_CHAR('clfl06');libTunic.mInfoTag=MULTI_CHAR('clfl26');
+    libIcon.mInfoTag=MULTI_CHAR('clic15');ownDecoration.mInfoTag=MULTI_CHAR('dl_clf0');
+    for(auto* p:{&libSword,&libTunic,&libIcon,&ownDecoration}){p->parent=&root;p->rect=tl.rect;}
     hylian.white=low;foreignFrame.white=high;tl.hide();br.show();
     auto snapshot=capture_visuals(&menu);
     menu.mEquippedShield=42;hylian.white=high;foreignFrame.white=low;
@@ -503,7 +509,9 @@ int main(){
     restore_visuals(&menu,snapshot);
     assert(menu.mEquippedShield==43&&hylian.white==low&&foreignFrame.white==high);
     assert(!tl.shown&&br.shown&&root.shown);
-    for(bool sourceShown:{false,true}){
+    for(u64 tag:{MULTI_CHAR('hd_cef00'),MULTI_CHAR('clfl16'),MULTI_CHAR('clfl1<')}){
+      tl.mInfoTag=tag;br.mInfoTag=tag+1;otherRow.mInfoTag=tag;
+      for(bool sourceShown:{false,true}){
         matchingFrames=sourceShown; // including distinct/remapped native frame art
         hylian.white=low;foreignFrame.white=high;s_menu.drawing=true;
         tl.shown=br.shown=sourceShown;ownTL.hide();ownBR.hide();
@@ -513,6 +521,7 @@ int main(){
         draw_icon();
         assert(ownScreen.drewTL&&ownScreen.drewBR);
         assert(ownTL.shown&&ownBR.shown&&!tl.shown&&!br.shown&&otherRow.shown);
+        assert(libSword.shown&&libTunic.shown&&libIcon.shown&&ownDecoration.shown);
         assert(ownTL.art==&ornamentArt&&ownBR.art==&ornamentArt);
         assert(ownTL.mirror==0&&ownBR.mirror==3&&ownTL.white==high&&ownBR.alpha==255);
         assert(ownTL.rect.left==191&&ownTL.rect.top==91&&ownTL.rect.width==24);
@@ -529,6 +538,7 @@ int main(){
         assert(ownFrame.white==low&&foreignFrame.white==high&&s_menu.frameTints.empty());
         assert(!ownTL.shown&&!ownBR.shown&&s_menu.decorations.empty());
         s_menu.restore_tints();equipped=true;
+      }
     }
     // Source panes may be absent, retagged or far from the remapped shield row.
     // Draw without present_equipment: no frame scan/main screen hook is needed.

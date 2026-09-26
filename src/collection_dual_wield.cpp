@@ -365,7 +365,14 @@ void hide_shield_flourishes(dMenu_Collect2D_c* menu,J2DPane* pane,const collecti
     if(!pane) return;
     // Hide the old shield's ornaments only for this draw. This is independent
     // of drawing our own pair: custom slots need not expose matching panes.
-    if((pane->mInfoTag>>16)==(MULTI_CHAR('hd_cef00')>>16) && pane->getTypeID()==18 && visible(pane->getParentPane())) {
+    // HD HUD owns the native pairs; Collection-Lib tags added pairs with
+    // clfl{row}{column*2+corner}, with each numeric part encoded as '0'+value.
+    // This includes the separate Ordon shield. Row 1 is
+    // shields. Keep the frame-corner check for both families so remapped slots
+    // do not hide other equipment's decorations.
+    const bool hdFlourish=(pane->mInfoTag>>16)==(MULTI_CHAR('hd_cef00')>>16);
+    const bool libShieldFlourish=(pane->mInfoTag>>8)==(MULTI_CHAR('clfl10')>>8);
+    if((hdFlourish || libShieldFlourish) && pane->getTypeID()==18 && visible(pane->getParentPane())) {
         const auto r=bounds(menu,pane,0,0,false);
         const int corner=collection::flourish_corner(frame,r);
         if(corner>=0) {

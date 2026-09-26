@@ -67,6 +67,7 @@ struct dSelect_cursor_c {
 struct dMenu_Collect2D_c {
     J2DScreen* mpScreen=nullptr;
     u8 mCursorX=4,mCursorY=1,field_0x259=0,field_0x25a=0;
+    u8 mEquippedShield=42;
     bool mIsWolf=false;
     int field_0x22d[7][6]{};
     CPaneMgr panes[7][6]{};CPaneMgr* mpSelPm[7][6]{};
@@ -118,6 +119,15 @@ struct Log {void warn(ModContext*,const char*){}} logger;
 auto* svc_log=&logger;
 collection::Selection s_selection;
 bool s_changingToSword=false;
+int highlightedShield=42;bool ordonOrnaments=false;
+struct EquipmentVisuals {u8 equippedShield;int highlighted;bool ornaments;};
+EquipmentVisuals capture_visuals(dMenu_Collect2D_c* m){return {m->mEquippedShield,highlightedShield,ordonOrnaments};}
+void restore_visuals(dMenu_Collect2D_c* m,const EquipmentVisuals& v){
+    m->mEquippedShield=v.equippedShield;highlightedShield=v.highlighted;ordonOrnaments=v.ornaments;
+}
+struct ShieldChoice {
+    dMenu_Collect2D_c* menu=nullptr;u8 backing=0xff;EquipmentVisuals visuals{};
+} s_shieldChoice;
 struct Menu {
     dMenu_Collect2D_c* owner=nullptr;
     bool focused=false,visible=true,drawing=false,drawn=false;
@@ -162,6 +172,15 @@ void dMenu_Collect2D_c::changeShield(){
         mDoAud_seStart(Z2SE_SY_ITEM_SET_X,nullptr,0,0);
     }
     player.setShieldChange();
+    mEquippedShield=shield;highlightedShield=42;ordonOrnaments=true;
+    after_shield_choice(nullptr,this,nullptr,nullptr);
+}
+void equip_shield(dMenu_Collect2D_c& menu,int target,bool toggle=false){
+    // Both host policies: vanilla same-item no-op, Essentials same-item toggle.
+    if(shield==target&&!toggle)return;
+    shield=shield==target?dItemNo_NONE_e:target;
+    menu.mEquippedShield=shield;highlightedShield=shield;ordonOrnaments=shield==42;
+    mDoAud_seStart(shield==dItemNo_NONE_e?Z2SE_SY_ITEM_COMBINE_OFF:Z2SE_SY_ITEM_SET_X,nullptr,0,0);
 }
 J2DScreen iconScreen;
 int iconDraws=0;
@@ -226,7 +245,10 @@ int main(){
         menu.field_0x22d[menu.mCursorX][1]=1;player.timer=0;
         menu.mIsWolf=true;before_click(nullptr,&menu,nullptr,nullptr);assert(dual_wield_equipped());
         menu.mIsWolf=false;player.timer=2;before_click(nullptr,&menu,nullptr,nullptr);assert(dual_wield_equipped());
-        player.timer=0;assert(before_click(nullptr,&menu,nullptr,nullptr)==HOOK_CONTINUE);assert(!dual_wield_equipped());
+        player.timer=0;assert(before_click(nullptr,&menu,nullptr,nullptr)==HOOK_CONTINUE);
+        assert(dual_wield_equipped()&&shield==dItemNo_NONE_e);
+        equip_shield(menu,42);after_shield_choice(nullptr,&menu,nullptr,nullptr);
+        assert(!dual_wield_equipped());
         focus(&menu);pressA=true;
         assert(before_wait(nullptr,&menu,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);assert(dual_wield_equipped());
         // Shoulder input must reach the page owner, even alongside A.
@@ -301,16 +323,23 @@ int main(){
         essentials=variant!=0;
         customShield=savedCustomShield=variant==1?9:-1;
         shield=variant==1?43:42;s_selection.chosen=false;player.timer=0;
+        menu.mEquippedShield=shield;highlightedShield=shield;ordonOrnaments=false;
         const auto count=sounds.size();const int backing=shield;
         activate(&menu);
         assert(dual_wield_equipped()&&customShield==-1&&savedCustomShield==-1);
         assert(customSword==5&&customTunic==7&&shield==backing);
+        assert(menu.mEquippedShield==backing&&highlightedShield==backing&&!ordonOrnaments);
         assert(menu.mCursorX==2&&menu.mCursorY==1&&own_focus(&menu));
         assert(!s_changingToSword&&sounds.size()==count+1&&sounds.back()==Z2SE_SY_ITEM_SET_X);
         assert(shieldChanges==variant+1);
         activate(&menu);assert(shieldChanges==variant+1&&sounds.size()==count+1);
         // Selecting a foreign shield afterwards leaves Dual Wield normally.
-        before_shield(nullptr,&menu,nullptr,nullptr);assert(!dual_wield_equipped());
+        s_menu.focused=false;menu.field_0x22d[menu.mCursorX][1]=1;
+        before_shield(nullptr,&menu,nullptr,nullptr);assert(dual_wield_equipped()&&shield==dItemNo_NONE_e);
+        equip_shield(menu,backing,essentials);after_shield_choice(nullptr,&menu,nullptr,nullptr);
+        assert(!dual_wield_equipped()&&shield==backing&&highlightedShield==backing);
+        assert(sounds.size()==count+2&&sounds.back()==Z2SE_SY_ITEM_SET_X);
+        s_menu.focused=true;
     }
     customShield=savedCustomShield=9;
     const auto soundCount=sounds.size();const int changes=shieldChanges;
@@ -319,6 +348,35 @@ int main(){
     shield=dItemNo_NONE_e;activate(&menu);
     assert(!dual_wield_equipped()&&customShield==9&&savedCustomShield==9);
     assert(shieldChanges==changes&&sounds.size()==soundCount);
+    // Repeated Hylian -> sword -> same Hylian cycles via controller and pointer.
+    // This previously left Ordon highlighted and produced a no-op/unequip.
+    for(bool toggle:{false,true})for(bool pointer:{false,true})for(int pass=0;pass<3;++pass){
+        essentials=toggle;shield=43;highlightedShield=43;ordonOrnaments=false;
+        menu.mEquippedShield=43;s_menu.focused=true;s_selection.chosen=false;
+        activate(&menu);assert(dual_wield_equipped()&&highlightedShield==43&&!ordonOrnaments);
+        s_menu.focused=false;const auto count=sounds.size();
+        pressA=!pointer;
+        if(pointer)before_click(nullptr,&menu,nullptr,nullptr);else before_wait(nullptr,&menu,nullptr,nullptr);
+        assert(s_shieldChoice.menu==&menu&&shield==dItemNo_NONE_e&&dual_wield_equipped());
+        // A nested native callback must not overwrite the saved backing item.
+        before_shield(nullptr,&menu,nullptr,nullptr);
+        assert(s_shieldChoice.backing==43);
+        equip_shield(menu,43,toggle);after_shield_choice(nullptr,&menu,nullptr,nullptr);
+        after_wait(nullptr,&menu,nullptr,nullptr);after_shield_choice(nullptr,&menu,nullptr,nullptr);
+        assert(!dual_wield_equipped()&&shield==43&&highlightedShield==43&&!ordonOrnaments);
+        assert(sounds.size()==count+1&&sounds.back()==Z2SE_SY_ITEM_SET_X);
+    }
+    // A custom handler may decline a click because its own debounce is active.
+    pressA=false;s_menu.focused=false;s_selection.chosen=true;shield=43;highlightedShield=43;
+    before_click(nullptr,&menu,nullptr,nullptr);assert(shield==dItemNo_NONE_e);
+    highlightedShield=42;ordonOrnaments=true;menu.mEquippedShield=42;
+    const auto silent=sounds.size();after_shield_choice(nullptr,&menu,nullptr,nullptr);
+    assert(dual_wield_equipped()&&shield==43&&highlightedShield==43&&!ordonOrnaments&&menu.mEquippedShield==43);
+    assert(sounds.size()==silent&&!s_shieldChoice.menu);
+    // A remapped custom shield takes the same transaction and owns its action.
+    before_click(nullptr,&menu,nullptr,nullptr);customShield=savedCustomShield=9;
+    equip_shield(menu,42);after_shield_choice(nullptr,&menu,nullptr,nullptr);
+    assert(!dual_wield_equipped()&&customShield==9&&savedCustomShield==9&&shield==42);
     // Only the internal equip/unequip feedback is suppressed, never other SFX.
     s_changingToSword=true;JAISoundID unrelated{99};bool played=true;
     assert(before_equip_sound(nullptr,&unrelated,&played,nullptr)==HOOK_CONTINUE&&played);
@@ -330,9 +388,9 @@ int main(){
 '''
 
 names = ["restore_name", "blob_name", "load_selection", "select_sword", "setting_changed",
-         "dual_wield_equipped", "own_focus", "focus", "can_equip", "clear_previous_shield", "activate",
-         "before_shield", "before_equip_sound",
-         "before_wait", "before_navigate", "before_pointer", "before_click", "before_cursor_screen_draw"]
+         "dual_wield_equipped", "own_focus", "focus", "can_equip", "begin_shield_choice", "finish_shield_choice",
+         "clear_previous_shield", "activate", "before_shield", "after_shield_choice", "before_equip_sound",
+         "before_wait", "after_wait", "before_navigate", "before_pointer", "before_click", "before_cursor_screen_draw"]
 fixture = fixture.replace("// PRODUCTION", "\n".join(function(name) for name in names))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / "test.cpp", Path(tmp) / "test"
@@ -355,8 +413,9 @@ struct TColor {int r,g,b,a;bool operator==(const TColor&)const=default;};
 }
 using JUtility::TColor;
 struct ResTIMG {} artwork,ornamentArt;
-constexpr uint64_t tag(const char* s){uint64_t n=0;while(*s)n=(n<<8)|*s++;return n;}
-#define MULTI_CHAR(x) tag(#x+1)>>8
+using u64=uint64_t;
+constexpr uint64_t pane_tag(const char* s){uint64_t n=0;while(*s)n=(n<<8)|*s++;return n;}
+#define MULTI_CHAR(x) (pane_tag(#x+1)>>8)
 using J2DMirror=int;
 constexpr int BIND15=15;
 struct J2DPane {
@@ -394,11 +453,17 @@ struct J2DScreen: J2DPane {
     J2DPane* search(uint64_t){return hdRoot;}
     void draw(int,int,Graf*);
 } ownScreen;
-struct dMenu_Collect2D_c {J2DScreen* mpScreen=nullptr;};
+using u8=uint8_t;
+struct dMenu_Collect2D_c {J2DScreen* mpScreen=nullptr;u8 mEquippedShield=43;};
+struct EquipmentVisuals {
+    struct Pane {J2DPane* pane;bool shown;TColor black,white;};
+    std::vector<Pane> panes;u8 equippedShield=0xff;
+};
 J2DPicture hylian,foreignFrame,ownFrame,ownTL,ownBR;
-J2DPicture* picture(J2DPane*,uint64_t){return &hylian;}
+J2DPicture* picture(J2DPane*,uint64_t t){return t==(MULTI_CHAR('tate_g_0'))?&foreignFrame:&hylian;}
 const ResTIMG* texture(J2DPicture* p){return p->art;}
-void shield_frames(dMenu_Collect2D_c*,J2DPane*,const ResTIMG*,std::vector<J2DPicture*>& out){out={&hylian,&foreignFrame};}
+bool matchingFrames=true;
+void shield_frames(dMenu_Collect2D_c*,J2DPane*,const ResTIMG*,std::vector<J2DPicture*>& out){if(matchingFrames)out={&hylian,&foreignFrame};}
 collection::Cell bounds(dMenu_Collect2D_c*,J2DPane* p,int,int,bool){return p->rect;}
 bool equipped=true;
 bool dual_wield_equipped(){return equipped;}
@@ -430,7 +495,16 @@ int main(){
     otherRow.rect={0,0,88,28,24,24,false};
     const TColor high{246,244,198,255},low{132,134,104,255};
     tl.white=br.white=high;tl.alpha=br.alpha=173;
+    otherRow.next=&hylian;hylian.next=&foreignFrame;hylian.parent=foreignFrame.parent=&root;
+    hylian.white=low;foreignFrame.white=high;tl.hide();br.show();
+    auto snapshot=capture_visuals(&menu);
+    menu.mEquippedShield=42;hylian.white=high;foreignFrame.white=low;
+    tl.show();br.hide();root.hide();
+    restore_visuals(&menu,snapshot);
+    assert(menu.mEquippedShield==43&&hylian.white==low&&foreignFrame.white==high);
+    assert(!tl.shown&&br.shown&&root.shown);
     for(bool sourceShown:{false,true}){
+        matchingFrames=sourceShown; // including distinct/remapped native frame art
         hylian.white=low;foreignFrame.white=high;s_menu.drawing=true;
         tl.shown=br.shown=sourceShown;ownTL.hide();ownBR.hide();
         present_equipment(&menu);
@@ -475,7 +549,8 @@ int main(){
 '''
 presentation = presentation.replace("// RESTORE", function("restore_tints"))
 presentation = presentation.replace("// PRESENT", "\n".join(function(n) for n in
-    ["visible", "hide_shield_flourishes", "present_equipment", "present_sword_flourishes", "draw_icon"]))
+    ["visible", "save_pane_visuals", "capture_visuals", "restore_visuals",
+     "hide_shield_flourishes", "present_equipment", "present_sword_flourishes", "draw_icon"]))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / "presentation.cpp", Path(tmp) / "presentation"
     cpp.write_text(presentation)

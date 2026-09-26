@@ -202,6 +202,56 @@ bool can_equip(dMenu_Collect2D_c* menu) {
     auto* link=daAlink_getAlinkActorClass();
     return !menu->mIsWolf && link && link->getShieldChangeWaitTimer()==0;
 }
+struct EquipmentVisuals {
+    struct Pane {J2DPane* pane;bool shown;JUtility::TColor black,white;};
+    std::vector<Pane> panes;
+    u8 equippedShield=0xff;
+};
+void save_pane_visuals(J2DPane* pane,EquipmentVisuals& saved) {
+    if(!pane) return;
+    auto* pic=pane->getTypeID()==18?static_cast<J2DPicture*>(pane):nullptr;
+    saved.panes.push_back({pane,pane->isVisible(),pic?pic->getBlack():JUtility::TColor(0),
+                          pic?pic->getWhite():JUtility::TColor(0)});
+    for(auto* child=pane->getFirstChildPane();child;child=child->getNextChildPane()) save_pane_visuals(child,saved);
+}
+EquipmentVisuals capture_visuals(dMenu_Collect2D_c* menu) {
+    EquipmentVisuals saved;saved.equippedShield=menu->mEquippedShield;
+    save_pane_visuals(menu->mpScreen,saved);return saved;
+}
+void restore_visuals(dMenu_Collect2D_c* menu,const EquipmentVisuals& saved) {
+    menu->mEquippedShield=saved.equippedShield;
+    for(const auto& old:saved.panes) {
+        if(old.shown) old.pane->show();else old.pane->hide();
+        if(old.pane->getTypeID()==18) static_cast<J2DPicture*>(old.pane)->setBlackWhite(old.black,old.white);
+    }
+}
+struct ShieldChoice {
+    dMenu_Collect2D_c* menu=nullptr;
+    u8 backing=0xff;
+    EquipmentVisuals visuals;
+} s_shieldChoice;
+void begin_shield_choice(dMenu_Collect2D_c* menu) {
+    if(!menu || s_changingToSword || s_shieldChoice.menu || s_menu.owner!=menu || own_focus(menu) ||
+       menu->mCursorY!=1 || !menu->field_0x22d[menu->mCursorX][1] || !can_equip(menu) || !dual_wield_equipped()) return;
+    s_shieldChoice={menu,dComIfGs_getSelectEquipShield(),capture_visuals(menu)};
+    // Dual Wield is the equipped choice. Its backing shield must not make a
+    // real shield click look like a no-op (vanilla) or an unequip (Essentials).
+    // Keep our saved selection until the downstream action actually succeeds.
+    dMeter2Info_setShield(dItemNo_NONE_e,false);
+}
+void finish_shield_choice(dMenu_Collect2D_c* menu) {
+    if(!menu || s_shieldChoice.menu!=menu) return;
+    if(dComIfGs_getSelectEquipShield()==dItemNo_NONE_e) {
+        // A debounce/unlock check rejected the action. Restore the complete
+        // previous state instead of silently losing Dual Wield or its backing.
+        dMeter2Info_setShield(s_shieldChoice.backing,false);
+        restore_visuals(menu,s_shieldChoice.visuals);
+    } else {
+        select_sword(false);
+        if(auto* link=daAlink_getAlinkActorClass()) link->setShieldChange();
+    }
+    s_shieldChoice={};
+}
 void clear_previous_shield(dMenu_Collect2D_c* menu) {
     // Custom-equipment mods keep their own selected shield in addition to the
     // game's backing item. Go through their changeShield hooks to clear it.
@@ -210,14 +260,19 @@ void clear_previous_shield(dMenu_Collect2D_c* menu) {
     struct Restore {
         dMenu_Collect2D_c* menu;
         u8 x,y,shield;
+        EquipmentVisuals visuals;
         ~Restore() {
             menu->mCursorX=x;menu->mCursorY=y;
             // Some mods toggle the backing shield off when selecting it again.
             // Dual Wield still needs that backing item for shield combat logic.
             if(dComIfGs_getSelectEquipShield()!=shield) dMeter2Info_setShield(shield,false);
+            // changeShield also touches cached equipment, frame tints and
+            // foreign ornaments. Restoring only the item ID leaves a ghost
+            // Ordon-shield highlight that HD HUD later treats as equipped.
+            restore_visuals(menu,visuals);
             s_changingToSword=false;
         }
-    } restore{menu,menu->mCursorX,menu->mCursorY,dComIfGs_getSelectEquipShield()};
+    } restore{menu,menu->mCursorX,menu->mCursorY,dComIfGs_getSelectEquipShield(),capture_visuals(menu)};
     s_changingToSword=true;
     menu->mCursorX=3;menu->mCursorY=1;
     menu->changeShield();
@@ -348,6 +403,13 @@ void present_equipment(dMenu_Collect2D_c* menu) {
     const auto* artwork=texture(reference);if(!artwork) return;
     std::vector<J2DPicture*> frames;
     shield_frames(menu,menu->mpScreen,artwork,frames);
+    // Native shields remain shield slots even if another mod assigns distinct
+    // frame textures or remaps their coordinates. Never leave their highlight
+    // active just because the shared-artwork scan did not recognize them.
+    for(u64 tag:{MULTI_CHAR('tate_g_0'),MULTI_CHAR('tate_g_1')}) {
+        auto* frame=picture(menu->mpScreen,tag);
+        if(frame && visible(frame) && std::find(frames.begin(),frames.end(),frame)==frames.end()) frames.push_back(frame);
+    }
     auto inactive=JUtility::TColor(107,107,107,255);
     auto equipped=JUtility::TColor(255,255,0,255);
     for(auto* frame:frames) {
@@ -408,7 +470,9 @@ HookAction before_cursor_screen_draw(ModContext*,void* args,void*,void*) {
     return HOOK_CONTINUE;
 }
 HookAction before_delete(ModContext*,void* args,void*,void*) {
-    if(s_menu.owner==mods::arg<dMenu_Collect2D_c*>(args,0)) s_menu.release();
+    auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
+    finish_shield_choice(menu);
+    if(s_menu.owner==menu) s_menu.release();
     return HOOK_CONTINUE;
 }
 HookAction before_wait(ModContext*,void* args,void*,void*) {
@@ -420,12 +484,12 @@ HookAction before_wait(ModContext*,void* args,void*,void*) {
     }
     if(own_focus(menu) && dMw_A_TRIGGER()) {activate(menu);return HOOK_SKIP_ORIGINAL;}
     // Native/foreign shield actions remain in their original hook chain.
-    if(s_menu.owner==menu && !own_focus(menu) && menu->mCursorY==1 && dMw_A_TRIGGER() &&
-       menu->field_0x22d[menu->mCursorX][1] && can_equip(menu) && dual_wield_equipped()) select_sword(false);
+    if(dMw_A_TRIGGER()) begin_shield_choice(menu);
     return HOOK_CONTINUE;
 }
 void after_wait(ModContext*,void* args,void*,void*) {
-    auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);layout(menu);show_name(menu);
+    auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
+    finish_shield_choice(menu);layout(menu);show_name(menu);
 }
 HookAction before_navigate(ModContext*,void* args,void*,void*) {
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
@@ -482,12 +546,15 @@ HookAction before_pointer(ModContext*,void* args,void* result,void*) {
 HookAction before_click(ModContext*,void* args,void*,void*) {
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     if(own_focus(menu)) {activate(menu);return HOOK_SKIP_ORIGINAL;}
-    if(menu->mCursorY==1&&menu->field_0x22d[menu->mCursorX][1]&&can_equip(menu)&&dual_wield_equipped()) select_sword(false);
+    begin_shield_choice(menu);
     return HOOK_CONTINUE;
 }
-HookAction before_shield(ModContext*,void*,void*,void*) {
-    if(!s_changingToSword && dual_wield_equipped()) select_sword(false);
+HookAction before_shield(ModContext*,void* args,void*,void*) {
+    begin_shield_choice(mods::arg<dMenu_Collect2D_c*>(args,0));
     return HOOK_CONTINUE;
+}
+void after_shield_choice(ModContext*,void* args,void*,void*) {
+    finish_shield_choice(mods::arg<dMenu_Collect2D_c*>(args,0));
 }
 void after_name(ModContext*,void* args,void*,void*) {show_name(mods::arg<dMenu_Collect2D_c*>(args,0));}
 template<class T> bool resolve(const char* name,T& fn) {
@@ -524,6 +591,7 @@ ModResult install_collection_dual_wield(ModError* error) {
     PRE(CollectionSwordWait,before_wait);POST(CollectionSwordWait,after_wait);
     PRE(CollectionSwordNavigate,before_navigate);
     PRE(CollectionSwordPointer,before_pointer);PRE(CollectionSwordClick,before_click);
+    POST(CollectionSwordClick,after_shield_choice);POST(CollectionSwordShield,after_shield_choice);
     PRE(CollectionSwordShield,before_shield);POST(CollectionSwordName,after_name);
     PRE(CollectionSwordEquipSound,before_equip_sound);
 #undef PRE
@@ -531,6 +599,7 @@ ModResult install_collection_dual_wield(ModError* error) {
     return MOD_OK;
 }
 void shutdown_collection_dual_wield() {
+    if(s_shieldChoice.menu) finish_shield_choice(s_shieldChoice.menu);
     if(s_menu.owner && s_menu.focused) restore_name(s_menu.owner);
     s_menu.release();s_selection={};
     if(s_saveObserver) svc_save->unobserve_saves(mod_ctx,s_saveObserver);

@@ -766,6 +766,11 @@ ModResult build_hud_tab(
 ModResult build_gameplay_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Dual Wield", dual_wield_config_var(),
+            "Replace the shield with an Ordon Sword carried at the left hip. Alternate "
+            "hands during ordinary sword attacks, cross both blades to guard, and push "
+            "them forward for Shield Attack. Turning this off restores normal equipment.")
+        != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Arrow Modes", arrow_modes_config_var(),
             "Press ZR while aiming the Bow to cycle Normal, Fire (2 arrows, +50% damage), "
             "and Triple Shot (3 arrows). Fire arrows ignite lantern-compatible objects. "

@@ -73,6 +73,7 @@ struct daAlink_c: fopAc_ac_c {
  void setGrabItemPos(){} void procWaitInit();
  bool procCrouchInit();
  bool procAutoJumpInit(int);
+ bool procWolfAutoJumpInit(int mode){return procAutoJumpInit(mode);}
  bool procCutJumpInit(bool){mProcID=PROC_CUT_JUMP;return true;}
 };
 int fopAcM_GetID(fopAc_ac_c* a){return a->id;}int fopAcM_GetName(fopAc_ac_c* a){return a->profile;}

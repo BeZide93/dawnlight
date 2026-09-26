@@ -4179,90 +4179,104 @@ void reset_bossrush_runtime_state(bool deleteActors) {
     reset_bossrush_hazards();
 }
 
+// HookService::uninstall removes every callback owned by this mod at the
+// target, including other features on Link::execute/draw and the HUD. Keep
+// runtime hooks until mod shutdown; mode switches only gate their callbacks.
+template <auto Callback>
+HookAction bossrush_pre(ModContext* ctx, void* args, void* result, void* user) {
+    return sBossRushGameModeActive ? Callback(ctx, args, result, user) : HOOK_CONTINUE;
+}
+
+template <auto Callback>
+void bossrush_post(ModContext* ctx, void* args, void* result, void* user) {
+    if (sBossRushGameModeActive) Callback(ctx, args, result, user);
+}
+
 ModResult install_bossrush_runtime_hooks(ModError* error) {
     if (sBossRushHooksInstalled) {
-        return MOD_OK;
+        // A mode switch releases the dialogue resources, not shared hooks.
+        return sMidnaRootFlowMode == MidnaRootFlowMode::None ? install_midna_flow(error) : MOD_OK;
     }
 
-    ModResult result = mods::hook_add_pre<StageChangeSceneHook>(svc_hook, on_stage_change_pre);
+    ModResult result = mods::hook_add_pre<StageChangeSceneHook>(svc_hook, bossrush_pre<on_stage_change_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush scene hook");
     }
 
-    result = mods::hook_add_pre<CaveGameOverCloseHook>(svc_hook, on_cave_gameover_close_pre);
+    result = mods::hook_add_pre<CaveGameOverCloseHook>(svc_hook, bossrush_pre<on_cave_gameover_close_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush Cave continue hook");
     }
 
-    result = mods::hook_add_pre<MessageSetDemoHook>(svc_hook, on_message_set_demo_pre);
+    result = mods::hook_add_pre<MessageSetDemoHook>(svc_hook, bossrush_pre<on_message_set_demo_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight hub banner hook");
     }
-    result = mods::hook_add_post<MessageSetDemoHook>(svc_hook, on_message_set_demo_post);
+    result = mods::hook_add_post<MessageSetDemoHook>(svc_hook, bossrush_post<on_message_set_demo_post>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight hub banner result hook");
     }
 
-    result = mods::hook_add_pre<BossWarpExecuteHook>(svc_hook, on_bosswarp_execute_pre);
+    result = mods::hook_add_pre<BossWarpExecuteHook>(svc_hook, bossrush_pre<on_bosswarp_execute_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight bossrush portal hook");
     }
 
-    result = mods::hook_add_pre<HubParticleDeleteHook>(svc_hook, on_hub_particle_delete_pre);
+    result = mods::hook_add_pre<HubParticleDeleteHook>(svc_hook, bossrush_pre<on_hub_particle_delete_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight hub particle cleanup guard");
     }
 
-    result = mods::hook_add_pre<OilTuboWaitHook>(svc_hook, on_oiltubo_wait_pre);
+    result = mods::hook_add_pre<OilTuboWaitHook>(svc_hook, bossrush_pre<on_oiltubo_wait_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight refill prompt hook");
     }
 
-    result = mods::hook_add_pre<DungeonReturnWarpHook>(svc_hook, on_dungeon_return_warp_pre);
+    result = mods::hook_add_pre<DungeonReturnWarpHook>(svc_hook, bossrush_pre<on_dungeon_return_warp_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Cave warp hook");
     }
 
-    result = mods::hook_add_pre<SkipPortalObjWarpHook>(svc_hook, on_skip_portal_obj_warp_pre);
+    result = mods::hook_add_pre<SkipPortalObjWarpHook>(svc_hook, bossrush_pre<on_skip_portal_obj_warp_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush warp destination hook");
     }
 
-    result = mods::hook_add_post<WarpPlayerCreateHook>(svc_hook, on_warp_player_create_post);
+    result = mods::hook_add_post<WarpPlayerCreateHook>(svc_hook, bossrush_post<on_warp_player_create_post>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight warp scene-boundary hook");
     }
-    result = mods::hook_add_pre<WarpPlayerExecuteHook>(svc_hook, on_warp_player_execute_pre);
+    result = mods::hook_add_pre<WarpPlayerExecuteHook>(svc_hook, bossrush_pre<on_warp_player_execute_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight warp arrival hook");
     }
-    result = mods::hook_add_pre<WarpPlayerDrawHook>(svc_hook, on_warp_player_draw_pre);
+    result = mods::hook_add_pre<WarpPlayerDrawHook>(svc_hook, bossrush_pre<on_warp_player_draw_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight warp visibility hook");
     }
 
-    result = mods::hook_add_pre<MeterExecuteHook>(svc_hook, before_meter_execute);
+    result = mods::hook_add_pre<MeterExecuteHook>(svc_hook, bossrush_pre<before_meter_execute>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Midna hub prompt meter hook");
     }
 
-    result = mods::hook_add_post<PlaySceneUpdateHook>(svc_hook, on_play_scene_update_post);
+    result = mods::hook_add_post<PlaySceneUpdateHook>(svc_hook, bossrush_post<on_play_scene_update_post>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush update hook");
     }
 
-    result = mods::hook_add_pre<PlaySceneDrawHook>(svc_hook, on_play_scene_draw_pre);
+    result = mods::hook_add_pre<PlaySceneDrawHook>(svc_hook, bossrush_pre<on_play_scene_draw_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush draw hook");
     }
 
-    result = mods::hook_add_pre<GanondorfExecuteHook>(svc_hook, on_ganondorf_execute_pre);
+    result = mods::hook_add_pre<GanondorfExecuteHook>(svc_hook, bossrush_pre<on_ganondorf_execute_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Ganondorf direct-start hook");
     }
 
     result =
-        mods::hook_add_pre<GanondorfBarrierExecuteHook>(svc_hook, on_ganondorf_barrier_execute_pre);
+        mods::hook_add_pre<GanondorfBarrierExecuteHook>(svc_hook, bossrush_pre<on_ganondorf_barrier_execute_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Ganondorf barrier hook");
     }
@@ -4435,13 +4449,13 @@ ModResult on_bossrush_game_mode_activated(void*, ModError* error) {
     return result;
 }
 
-ModResult on_bossrush_game_mode_deactivated(void*, ModError* error) {
+ModResult on_bossrush_game_mode_deactivated(void*, ModError*) {
     sBossRushGameModeActive = false;
     reset_bossrush_runtime_state(true);
-    const ModResult result = uninstall_bossrush_runtime_hooks(error);
+    shutdown_midna_flow();
     unregister_bossrush_hub_banner();
     unregister_bossrush_title_logo();
-    return result;
+    return MOD_OK;
 }
 
 ModResult on_bossrush_game_mode_play(void*, ModError* error) {

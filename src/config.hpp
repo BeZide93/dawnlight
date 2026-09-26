@@ -110,6 +110,8 @@ bool bullet_time_enabled();
 bool flurry_rush_enabled();
 bool fierce_deity_enabled();
 bool great_spin_projectile_enabled();
+bool dual_wield_enabled();
+ConfigVarHandle dual_wield_config_var();
 bool arrow_modes_enabled();
 bool manual_shielding_enabled();
 bool r_jump_enabled();

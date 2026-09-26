@@ -323,7 +323,9 @@ struct Log {void warn(void*,const char* message){warning=message;}} logService;
 Log* svc_log=&logService;void* mod_ctx=nullptr;
 struct dRes_info_c {
     static ModelData* loaderBasicBmd(u32 tag,void* raw) {
-        assert(tag==0x424D5752 && raw==heap.bytes.data());
+        // Archive directory is BMWR, but private copies must not opt into
+        // its world-position-dependent warp mask. Both use normal BMDR.
+        assert(tag==0x424D4452 && raw==heap.bytes.data());
         assert(std::memcmp(raw,"J3D2bmd3",8)==0);
         static_cast<char*>(raw)[8]=42; // Native loader modifies only the private copy.
         return &data;

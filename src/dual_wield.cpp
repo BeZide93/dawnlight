@@ -132,9 +132,12 @@ J3DModel* copy_model(JKRArchive* archive,const char* name) {
     void* copy=s.heap->alloc(bytes,32);
     if(!copy) { model_failure(name,"private model allocation failed");return nullptr; }
     std::memcpy(copy,raw,bytes);
-    // Alink stores both meshes as BMWR: initialize their material animators,
-    // warp material and display lists exactly like native resource loading.
-    auto* data=dRes_info_c::loaderBasicBmd(0x424D5752,copy);
+    // Use the normal BMDR material path for these private copies. BMWR adds
+    // an active world-projected warp mask; native Link disables/toggles it in
+    // initModel/setEffect, but our private models are not part of that list.
+    // Leaving it enabled clips the sword/sheath differently by world position.
+    // BMDR still initializes lighting, material animators and display lists.
+    auto* data=dRes_info_c::loaderBasicBmd(0x424D4452,copy);
     if(!data || !data->getJointNum() || !data->getMaterialNum()) {
         model_failure(name,"native BMD loader failed");return nullptr;
     }

@@ -1,4 +1,5 @@
 #include "dual_wield.hpp"
+#include "collection_dual_wield.hpp"
 #include "dual_wield_math.hpp"
 #include "dual_wield_animation.hpp"
 #include "config.hpp"
@@ -30,6 +31,8 @@ DEFINE_HOOK(&daAlink_c::setItemMatrix, DualItems);
 DEFINE_HOOK(&daAlink_c::setSwordPos, DualSwordPos);
 DEFINE_HOOK(&daAlink_c::checkShieldDraw, DualShieldDraw);
 DEFINE_HOOK(&daAlink_c::modelDraw, DualModelDraw);
+DEFINE_HOOK(&daAlink_c::statusWindowExecute, DualStatusExecute);
+DEFINE_HOOK(&daAlink_c::statusWindowDraw, DualStatusDraw);
 DEFINE_HOOK(&daAlink_c::procCutNormalInit, DualCut);
 DEFINE_HOOK(&daAlink_c::procCutFinishInit, DualFinish);
 DEFINE_HOOK(&daAlink_c::procGuardAttackInit, DualGuardAttack);
@@ -223,10 +226,11 @@ bool equipment_visible(daAlink_c* link) {
     // Keep the replacement equipment during dialogue and cutscenes too.
     // Only combat/arm overrides depend on active(); events carry the second
     // sword sheathed at the hip and retain their scripted body animation.
-    return s.owner==link && s.enabled && s.sword && s.sheath;
+    return s.owner==link && s.sword && s.sheath &&
+        (link->checkStatusWindowDraw() ? dual_wield_equipped() && human(link) : s.enabled);
 }
 void sync_equipment_materials(daAlink_c* link) {
-    auto* warp=warp_texture(link->mSheathModel);
+    auto* warp=link->checkStatusWindowDraw() ? nullptr : warp_texture(link->mSheathModel);
     for(auto* model:{s.sword,s.sheath}) {
         auto* data=model->getModelData();
         if(warp) {
@@ -240,13 +244,13 @@ void sync_equipment_materials(daAlink_c* link) {
     // al_swa material 0 is the blade, just as in native offSwordModel.
     // The draw/stow grip milestones leave the hilt and scabbard visible.
     auto* blade=s.sword->getModelData()->getMaterialNodePointer(0)->getShape();
-    if(active(link) && s.draw>0) blade->show();else blade->hide();
+    if(link->checkStatusWindowDraw() || (active(link) && s.draw>0)) blade->show();else blade->hide();
 }
 HookAction before_execute(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(s.owner && s.owner!=link) release();
-    if(!dual_wield_enabled()) s_failedOwner=nullptr;
-    if(dual_wield_enabled() && human(link) && s_failedOwner!=link && !prepare(link)) {
+    if(!dual_wield_equipped()) s_failedOwner=nullptr;
+    if(dual_wield_equipped() && human(link) && s_failedOwner!=link && !prepare(link)) {
         s_failedOwner=link;
         if(svc_log) svc_log->warn(mod_ctx,"Dual Wield: could not prepare private Ordon models; keeping native equipment");
     }
@@ -312,7 +316,7 @@ void update_stow(daAlink_c* link,bool guard) {
 }
 void after_matrix(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);if(s.owner!=link) return;
-    const bool enabled=dual_wield_enabled() && human(link);
+    const bool enabled=dual_wield_equipped() && human(link);
     if(enabled!=s.enabled) {
         s.attacks.reset();s.seedBlade=true;
         if(human(link)) link->field_0x2060->initOldFrameMorf(6,1,16);
@@ -494,9 +498,42 @@ void after_arms(ModContext*,void* args,void*,void*) {
     }
     s.rightSword=s.draw>0 ? sword_at_hand(link,true) : s.hipSword;
 }
+HookAction before_status_execute(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    // Gameplay execute/setMatrix do not run while this menu owns Link's model.
+    // Create equipment on demand so selecting Dual Wield is visible immediately.
+    if(!dual_wield_equipped()) s_failedOwner=nullptr;
+    if(dual_wield_equipped() && human(link) && s_failedOwner!=link && !prepare(link)) {
+        s_failedOwner=link;
+        model_failure("Collection preview","could not prepare Ordon equipment");
+    }
+    return HOOK_CONTINUE;
+}
+void status_item_matrices(daAlink_c* link) {
+    auto* model=link->mpLinkModel;
+    // Use the preview's evaluated joints, not cached gameplay blend transforms.
+    Pose mount=dual::compose(dual::inverse(pose(model->getAnmMtx(9))),pose(model->getAnmMtx(10)));
+    mount.q.x=-mount.q.x;mount.q.y=-mount.q.y;mount.p.z=-mount.p.z;
+    put(s.sword,dual::compose(pose(model->getAnmMtx(14)),mount));
+    Pose hip=dual::compose(pose(model->getAnmMtx(16)),local(-3,0,18,20));
+    constexpr float halfTurn90=.70710678118f;
+    hip=dual::compose(hip,Pose{{halfTurn90,0,0,halfTurn90},{}});
+    put(s.sheath,dual::compose(hip,dual::inverse(local(-18.5f,.14f,12.2f,0,33.1f))));
+}
+void after_status_draw(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(!link->checkStatusWindowDraw() || !equipment_visible(link) || link->mClothesChangeWaitTimer!=0) return;
+    sync_equipment_materials(link);
+    // StatusWindow uses basicModelDraw rather than the gameplay modelDraw path.
+    link->basicModelDraw(s.sword);link->basicModelDraw(s.sheath);
+}
 void after_items(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(s.owner!=link) return;
+    if(link->checkStatusWindowDraw()) {
+        if(equipment_visible(link)) status_item_matrices(link);
+        return;
+    }
     if(s.forcedBlade && (!active(link) || s.guard<=0)) {
         if(link->mEquipItem!=0x103) link->offSwordModel();s.forcedBlade=false;
     }
@@ -561,6 +598,7 @@ ModResult install_dual_wield_hooks(ModError* error) {
     PRE(DualModelCalc,before_model_calc);POST(DualModelCalc,after_model_calc);
     POST(DualArms,after_arms);POST(DualItems,after_items);POST(DualSwordPos,after_sword_pos);
     POST(DualShieldDraw,after_shield_draw);POST(DualModelDraw,after_model_draw);
+    PRE(DualStatusExecute,before_status_execute);POST(DualStatusDraw,after_status_draw);
     POST(DualCut,after_cut);POST(DualFinish,after_cut);POST(DualCollision,after_collision);
     PRE(DualGuardAttack,before_guard_attack);
     POST(DualEquip,after_equip);POST(DualUnequip,after_unequip);POST(DualFlourish,after_flourish);

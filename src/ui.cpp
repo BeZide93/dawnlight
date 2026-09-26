@@ -767,7 +767,8 @@ ModResult build_gameplay_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Dual Wield", dual_wield_config_var(),
-            "Replace the shield with an Ordon Sword carried at the left hip. Alternate "
+            "Add an Ordon Sword option to the right of the shields in the Collection menu. "
+            "Select it there to equip Dual Wield, or select a shield to return to shield combat. Alternate "
             "hands during ordinary sword attacks, cross both blades to guard, and push "
             "them forward for Shield Attack. Turning this off restores normal equipment.")
         != MOD_OK) return MOD_ERROR;

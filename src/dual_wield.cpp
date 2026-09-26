@@ -50,7 +50,7 @@ struct State {
     J3DModel* sheath=nullptr;
     dual::Alternation attacks;
     bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
-    float guard=0,draw=0;
+    float guard=0,draw=0,sheathTilt=0;
     unsigned tick=0,poseTick=~0u;
     Pose rightSword,hipSword;
     DualGuardBodyPose guardBody;
@@ -335,6 +335,10 @@ void after_matrix(ModContext*,void* args,void*,void*) {
         start_stow(link,false);s.stow.nativeClock=false;s.stow.duration=24;
     }
     update_stow(link,guard);
+    const float tilt=s.active && s.stow.active ? dual::sheath_tilt_target(s.stow.progress,s.stow.drawing) : 0;
+    // Bound per-tick movement even when an attack/event interrupts the clip.
+    // Like the arm state, this advances only once, never per render/model pass.
+    s.sheathTilt=dual::approach(s.sheathTilt,tilt,1.0f/6);
     // Do not spend five more frames imposing the guard on an attack clip.
     // Native animation morphing handles the transition into the technique.
     s.guard=attacking ? 0.0f : dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
@@ -423,6 +427,9 @@ void after_arms(ModContext*,void* args,void*,void*) {
     // blade direction. The sheath inherits this same pose in after_items.
     constexpr float halfTurn90=.70710678118f;
     s.hipSword=dual::compose(s.hipSword,Pose{{halfTurn90,0,0,halfTurn90},{}});
+    const Pose actor=pose(model->getBaseTRMtx());
+    s.hipSword=dual::compose(actor,dual::tilt_sheath(
+        dual::compose(dual::inverse(actor),s.hipSword),s.sheathTilt));
     if(!active(link)) { s.rightSword=s.hipSword;return; }
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());

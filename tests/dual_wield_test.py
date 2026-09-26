@@ -92,7 +92,7 @@ struct daAlink_c {
 struct State {
     daAlink_c* owner=nullptr;
     bool enabled=false,active=false,mirror=false,seedBlade=false;
-    float guard=0,draw=0;unsigned tick=0,poseTick=~0u;
+    float guard=0,draw=0,sheathTilt=0;unsigned tick=0,poseTick=~0u;
     dual::Alternation attacks;
     DualGuardBodyPose guardBody;bool haveGuardBody=false;
     dual::StowMotion stow;Pose rightSword;
@@ -267,6 +267,8 @@ int main() {
     link.mUpperFrameCtrl[2].frame=18;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
     assert(s.draw==0); // empty hand approaches; sword remains in its sheath
+    const float tilt=s.sheathTilt;assert(tilt>0);
+    after_matrix(nullptr,&args,nullptr,nullptr);assert(s.sheathTilt==tilt);
     link.mUpperFrameCtrl[2].frame=14;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.draw==1);
     link.mEquipItem=0x103;link.mUpperFrameCtrl[2].frame=5;
@@ -309,9 +311,12 @@ int main() {
     link.mProcID=daAlink_c::PROC_GUARD_ATTACK;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.guard==1);
     // An attack interruption immediately returns ownership to combat.
-    s.stow.active=true;link.mProcID=daAlink_c::PROC_CUT_NORMAL;
+    s.stow.active=true;s.sheathTilt=1;link.mProcID=daAlink_c::PROC_CUT_NORMAL;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
     assert(!s.stow.active && s.stow.release==0);
+    assert(s.sheathTilt>0 && s.sheathTilt<1); // return from the last pose, no snap
+    for(int i=0;i<6;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
+    assert(s.sheathTilt==0);
 }
 '''
 

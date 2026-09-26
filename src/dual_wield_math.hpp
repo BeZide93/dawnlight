@@ -74,6 +74,22 @@ inline Pose cross_guard_blade(bool right,float thrust) {
 }
 constexpr float stow_insert_end=.75f;
 constexpr float draw_grip_start=.30f;
+inline float sheath_tilt_target(float progress,bool drawing) {
+    // Open the approach before contact, hold the angle throughout the axial
+    // draw/insertion, then settle once the blade/hand has cleared the mouth.
+    const float ready=drawing ? draw_grip_start : .35f;
+    const float release=drawing ? .65f : stow_insert_end;
+    return smooth(progress/ready)*smooth((1-progress)/(1-release));
+}
+inline Pose tilt_sheath(Pose hip,float amount) {
+    // Actor-local +Z is forward and -X is Link's right. Pivot below the mouth
+    // at the belt, rather than around the hilt (which would stay in the torso).
+    // +X along the sword points into the sheath; keep the existing blade roll.
+    const Vec pivot=hip.p+rotate(hip.q,{18,0,0});
+    constexpr float radians=3.14159265359f/180;
+    const Quat turn=from_euler({28*radians*amount,0,12*radians*amount});
+    return {multiply(turn,hip.q),pivot+rotate(turn,hip.p-pivot)};
+}
 // Actor-local hand path (+Z forward). Two forward control points take the
 // hand around the chest, rather than through it. Ease both ends for a clean
 // handoff to the axial part of the motion and to the native idle pose.

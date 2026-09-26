@@ -121,11 +121,19 @@ int main() {
                      {{.210702f,-.437019f,-.567528f,.665229f},{-29.852111f,83.194294f,3.841432f}}};
     const Vec elbow{-16.337433f,134.640355f,62.338878f};
     const Pose clavicle{{},{-.749549f,136.704381f,2.512908f}};
+    const Pose tipped=tilt_sheath(sheath,1);
+    near(tilt_sheath(sheath,0).p,sheath.p);
+    near(compose(tipped,Pose{{},{18,0,0}}).p,compose(sheath,Pose{{},{18,0,0}}).p);
+    assert(tipped.p.z>sheath.p.z+6.5f); // mouth swings forward around the belt
+    assert(tipped.p.x<sheath.p.x-2); // and toward Link's right hand
+    assert(rotate(tipped.q,{-1,0,0}).z>rotate(sheath.q,{-1,0,0}).z+.35f);
     for(bool drawing:{false,true}) {
+        assert(sheath_tilt_target(0,drawing)==0 && sheath_tilt_target(1,drawing)==0);
         Vec previousHand{};
         for(int i=0;i<=1000;++i) {
             const float t=i/1000.0f;
-            const Pose blade=sheath_hand_target(held,sheath,held,gripMount,t,drawing);
+            const Pose movingSheath=tilt_sheath(sheath,sheath_tilt_target(t,drawing));
+            const Pose blade=sheath_hand_target(held,movingSheath,held,gripMount,t,drawing);
             const Pose hand=compose(blade,inverse(gripMount));
             const Pose follow=shoulder_follow(clavicle,native.upper,{0,0,1},t);
             const Arm moved{compose(follow,native.upper),compose(follow,native.lower),compose(follow,native.hand)};
@@ -143,9 +151,10 @@ int main() {
             }
         }
         const float contact=drawing ? draw_grip_start : stow_insert_end;
-        const Pose blade=sheath_hand_target(held,sheath,held,gripMount,contact,drawing);
+        assert(sheath_tilt_target(contact,drawing)==1);
+        const Pose blade=sheath_hand_target(held,tipped,held,gripMount,contact,drawing);
         const Arm solved=reach(native,compose(blade,inverse(gripMount)),1,&elbow);
-        near(compose(solved.hand,gripMount).p,sheath.p,.01f); // no snap at grip/release
+        near(compose(solved.hand,gripMount).p,tipped.p,.01f); // no snap at grip/release
     }
     StowMotion drawMotion;drawMotion.drawing=true;drawMotion.lastFrame=22;
     drawMotion.advance(11,0);assert(drawMotion.progress==.5f);

@@ -58,6 +58,10 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/collection_dual_wield_test.py
 
+      - name: Test Shield Attack and Flurry Rush prompts
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/shield_attack_prompt_test.py
+
       - name: Test Boss Rush hook lifecycle
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/bossrush_hook_lifecycle_test.py

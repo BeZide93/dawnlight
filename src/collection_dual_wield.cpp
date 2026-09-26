@@ -587,16 +587,23 @@ ModResult install_collection_dual_wield(ModError* error) {
     if(!pointer) {s_pointer={};svc_log->warn(mod_ctx,"Dual Wield collection: pointer API unavailable; use controller navigation");}
     HookOptions early=HOOK_OPTIONS_INIT;early.priority=100;
     HookOptions late=HOOK_OPTIONS_INIT;late.priority=-100;
+    // Collection-Lib also uses -100 for its final layout/frame refresh. A tie
+    // follows registration order and can re-show shield ornaments after us.
+    HookOptions finalScreen=late;finalScreen.priority=-200;
+    // Its +100 navigator consumes STControl and skips the remaining pre-hooks.
+    // Handle entry/exit of our virtual slot first; all other moves pass through.
+    HookOptions virtualNavigation=early;virtualNavigation.priority=200;
 #define PRE(H,F) if((result=mods::hook::add_pre<H>(svc_hook,F,&early))!=MOD_OK) return mods::set_error(error,result,"Dual Wield collection: " #H)
 #define POST(H,F) if((result=mods::hook::add_post<H>(svc_hook,F,&late))!=MOD_OK) return mods::set_error(error,result,"Dual Wield collection: " #H)
     PRE(CollectionSwordScreen,capture_icon);POST(CollectionSwordScreen,after_layout);
     PRE(CollectionSwordDelete,before_delete);POST(CollectionSwordLayout,after_layout);
     PRE(CollectionSwordDraw,before_draw);POST(CollectionSwordDraw,after_draw);
     // Run after ordinary screen-pre hooks as well as cursor draw/update hooks.
-    if((result=mods::hook::add_pre<CollectionSwordCursorScreen>(svc_hook,before_cursor_screen_draw,&late))!=MOD_OK)
+    if((result=mods::hook::add_pre<CollectionSwordCursorScreen>(svc_hook,before_cursor_screen_draw,&finalScreen))!=MOD_OK)
         return mods::set_error(error,result,"Dual Wield collection: CollectionSwordCursorScreen");
     PRE(CollectionSwordWait,before_wait);POST(CollectionSwordWait,after_wait);
-    PRE(CollectionSwordNavigate,before_navigate);
+    if((result=mods::hook::add_pre<CollectionSwordNavigate>(svc_hook,before_navigate,&virtualNavigation))!=MOD_OK)
+        return mods::set_error(error,result,"Dual Wield collection: CollectionSwordNavigate");
     PRE(CollectionSwordPointer,before_pointer);PRE(CollectionSwordClick,before_click);
     POST(CollectionSwordClick,after_shield_choice);POST(CollectionSwordShield,after_shield_choice);
     PRE(CollectionSwordShield,before_shield);POST(CollectionSwordName,after_name);

@@ -22,6 +22,7 @@ def function(name):
 fixture = r'''
 #include "collection_dual_wield_state.hpp"
 #include <cassert>
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -139,7 +140,7 @@ struct Menu {
 } s_menu;
 void layout(dMenu_Collect2D_c*){}
 int equipmentPresentations=0;
-void present_equipment(dMenu_Collect2D_c*){++equipmentPresentations;}
+void present_equipment(dMenu_Collect2D_c*){++equipmentPresentations;ordonOrnaments=false;}
 void show_name(dMenu_Collect2D_c*){}
 int context=-1,hover=-1;
 float pointerX=-999,pointerY=-999;bool pendingClick=false;
@@ -190,6 +191,7 @@ void draw_icon(){
     assert(before_cursor_screen_draw(nullptr,&iconScreen,nullptr,nullptr)==HOOK_CONTINUE);
     ++iconDraws;s_menu.drawn=true;
 }
+// REGISTRATION
 int main(){
     // Native slots, remapped Essentials indices, then the HD HUD shield row.
     // Hylian's unavailable reserved position must still precede our sword.
@@ -384,6 +386,35 @@ int main(){
     assert(before_equip_sound(nullptr,&equip,&played,nullptr)==HOOK_SKIP_ORIGINAL&&!played);
     s_changingToSword=false;
     assert(before_equip_sound(nullptr,&equip,&played,nullptr)==HOOK_CONTINUE);
+    // Dusklight sorts by descending priority, then registration order, and
+    // stops the pre-hook chain at SKIP_ORIGINAL. Exercise the real hook
+    // registrations against Collection-Lib's +100 navigation / -100 redraw.
+    for(bool essentialsFirst:{false,true}){
+        registered.clear();foreignMoves=0;
+        if(essentialsFirst) register_essentials();
+        assert(register_production()==MOD_OK);
+        if(!essentialsFirst) register_essentials();
+        s_menu.owner=&menu;s_menu.visible=true;s_menu.focused=false;
+        s_menu.cells={{5,1,40,80,44,44,true},{3,1,100,80,44,44,true},{4,1,160,80,44,44,true}};
+        s_menu.placement=collection::append_shield(s_menu.cells);
+        menu.mCursorX=4;menu.mCursorY=1;menu.stick={1,0,0};
+        assert(dispatch<CollectionSwordNavigate>(&menu)==HOOK_SKIP_ORIGINAL);
+        assert(own_focus(&menu)&&foreignMoves==0&&menu.stick.ticks==1);
+        pressA=true;select_sword(false);shield=42;
+        assert(dispatch<CollectionSwordWait>(&menu)==HOOK_SKIP_ORIGINAL);
+        assert(dual_wield_equipped());pressA=false;
+        for(int frame=0;frame<3;++frame){
+            s_menu.drawing=true;ordonOrnaments=true;
+            assert(dispatch<CollectionSwordCursorScreen>(&menuScreen)==HOOK_CONTINUE);
+            assert(!ordonOrnaments); // final values actually sent to the renderer
+        }
+        menu.stick={0,0,0};dispatch<CollectionSwordNavigate>(&menu);
+        assert(!own_focus(&menu)&&menu.mCursorX==4&&foreignMoves==0);
+        menu.stick={2,0,0};dispatch<CollectionSwordNavigate>(&menu);
+        assert(foreignMoves==1&&menu.stick.ticks==1); // foreign navigation still owns Up
+        s_menu.visible=false;menu.stick={1,0,0};dispatch<CollectionSwordNavigate>(&menu);
+        assert(foreignMoves==2); // disabled/hidden slot passes input through
+    }
 }
 '''
 
@@ -392,6 +423,58 @@ names = ["restore_name", "blob_name", "load_selection", "select_sword", "setting
          "clear_previous_shield", "activate", "before_shield", "after_shield_choice", "before_equip_sound",
          "before_wait", "after_wait", "before_navigate", "before_pointer", "before_click", "before_cursor_screen_draw"]
 fixture = fixture.replace("// PRODUCTION", "\n".join(function(name) for name in names))
+# Run the registration block itself so callback-only tests cannot conceal a
+# priority tie. Only unrelated callbacks are stubbed; navigation and final
+# screen presentation use their production callbacks above.
+import re
+hook_names = re.findall(r"DEFINE_HOOK\([^\n]*, (\w+)\);", source)
+registration = "\n".join(f"struct {name} {{static constexpr int id={i};}};" for i, name in enumerate(hook_names))
+registration += r'''
+using PreCallback=HookAction(*)(ModContext*,void*,void*,void*);
+struct HookOptions {int priority=0;};
+#define HOOK_OPTIONS_INIT {}
+struct Registered {int target,priority;PreCallback fn;};
+std::vector<Registered> registered;
+void* svc_hook=nullptr;
+namespace mods {
+int set_error(void*,int result,const char*){return result;}
+namespace hook {
+template<class H>int add_pre(void*,PreCallback fn,HookOptions* options){
+    registered.push_back({H::id,options->priority,fn});return MOD_OK;
+}
+template<class H,class F>int add_post(void*,F,HookOptions*){return MOD_OK;}
+}}
+HookAction capture_icon(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}
+HookAction before_delete(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}
+HookAction before_draw(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}
+void after_draw(ModContext*,void*,void*,void*){}
+void after_layout(ModContext*,void*,void*,void*){}
+void after_name(ModContext*,void*,void*,void*){}
+int register_production(){int result=MOD_OK;void* error=nullptr;
+'''
+install = function("install_collection_dual_wield")
+registration += install[install.index("    HookOptions early="):]
+registration += r'''
+int foreignMoves=0;
+void register_essentials(){
+    registered.push_back({CollectionSwordNavigate::id,100,+[](ModContext*,void* args,void*,void*){
+        auto* m=static_cast<dMenu_Collect2D_c*>(args);++foreignMoves;
+        m->mpStick->checkTrigger();m->mpStick->checkRightTrigger();
+        return HOOK_SKIP_ORIGINAL;
+    }});
+    registered.push_back({CollectionSwordCursorScreen::id,-100,+[](ModContext*,void*,void*,void*){
+        ordonOrnaments=true;return HOOK_CONTINUE;
+    }});
+}
+template<class H>HookAction dispatch(void* args){
+    auto hooks=registered;
+    std::stable_sort(hooks.begin(),hooks.end(),[](const auto& a,const auto& b){return a.priority>b.priority;});
+    for(const auto& h:hooks)if(h.target==H::id&&h.fn(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL)
+        return HOOK_SKIP_ORIGINAL;
+    return HOOK_CONTINUE;
+}
+'''
+fixture = fixture.replace("// REGISTRATION", registration)
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / "test.cpp", Path(tmp) / "test"
     cpp.write_text(fixture)

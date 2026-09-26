@@ -12,6 +12,9 @@ fixture = r'''
 using namespace dawnlight;
 struct dSv_event_flag_c { enum {F_0026, M_016, M_019}; };
 bool bossRush=false, flags[3]{};
+constexpr int dItemNo_SWORD_e=40;
+bool ordonSword=false;
+bool dComIfGs_isItemFirstBit(int item){assert(item==dItemNo_SWORD_e);return ordonSword;}
 int maxLife=15;
 bool save_state_boss_rush_active(){return bossRush;}
 bool dComIfGs_isEventBit(int flag){return flags[flag];}
@@ -19,16 +22,16 @@ int dComIfGs_getMaxLife(){return maxLife;}
 // MAPPING
 int main(){
     auto state=progression_state();
-    assert(!state.glide&&!state.gale&&!state.fierceDeity&&state.charges==1);
+    assert(!state.glide&&!state.gale&&!state.fierceDeity&&!state.dualWield&&state.charges==1);
     bossRush=true;
     for(int hearts:{3,5,6,9,20}){
         maxLife=hearts*5;state=progression_state();
-        assert(state.glide&&state.gale&&state.fierceDeity);
+        assert(state.glide&&state.gale&&state.fierceDeity&&state.dualWield);
         assert(state.charges==hearts/3);
         for(bool dawnlight:{false,true}){
             int64_t value=0;
             for(auto setting:{ModeSetting::Sprint,ModeSetting::Glide,ModeSetting::GlideItem,
-                    ModeSetting::Gale,ModeSetting::GaleCounter,ModeSetting::FierceDeity})
+                    ModeSetting::Gale,ModeSetting::GaleCounter,ModeSetting::FierceDeity,ModeSetting::DualWield})
                 assert(mode_override(setting,dawnlight,true,state,value)&&value==1);
             assert(mode_override(ModeSetting::GaleCharges,dawnlight,true,state,value)&&value==hearts/3);
             if(!dawnlight)assert(!mode_override(ModeSetting::Glide,false,false,state,value));
@@ -36,10 +39,13 @@ int main(){
     }
     assert(!flags[0]&&!flags[1]&&!flags[2]); // Never alter the story save.
     bossRush=false;state=progression_state();
-    assert(!state.glide&&!state.gale&&!state.fierceDeity);
+    assert(!state.glide&&!state.gale&&!state.fierceDeity&&!state.dualWield);
     flags[0]=true;state=progression_state();assert(state.glide&&!state.gale&&!state.fierceDeity);
     flags[1]=true;state=progression_state();assert(state.glide&&state.gale&&!state.fierceDeity);
     flags[2]=true;state=progression_state();assert(state.glide&&state.gale&&state.fierceDeity);
+    assert(!state.dualWield); // Other story milestones are not the Ordon Sword.
+    ordonSword=true;state=progression_state();assert(state.dualWield);
+    ordonSword=false;state=progression_state();assert(!state.dualWield); // another save
 }
 '''.replace('// MAPPING', function)
 with tempfile.TemporaryDirectory() as tmp:

@@ -21,9 +21,9 @@ int main() {
         ModeSetting::Progression, ModeSetting::Glide, ModeSetting::GlideItem,
         ModeSetting::Gale, ModeSetting::GaleCounter, ModeSetting::GaleCharges,
         ModeSetting::FierceDeity, ModeSetting::GaleHeight, ModeSetting::Stamina,
-        ModeSetting::WolfSprint, ModeSetting::WolfSpeed, ModeSetting::DisableAutoJump};
+        ModeSetting::WolfSprint, ModeSetting::WolfSpeed, ModeSetting::DisableAutoJump, ModeSetting::DualWield};
     constexpr std::array<int64_t, settings.size()> intended{
-        1, 150, 1, 110, 1, 2, 1, 1, 300, 1, 60, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1, 1, 100, 1};
+        1, 150, 1, 110, 1, 2, 1, 1, 300, 1, 60, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1, 1, 100, 1, 0};
     for (size_t i = 0; i < settings.size(); ++i) {
         int64_t value = 777;
         assert(!mode_override(settings[i], false, false, {}, value));
@@ -34,9 +34,9 @@ int main() {
         assert(!mode_override(settings[i], false, false, {}, value));
         assert(value == 777); // Off exposes the user's value, unchanged.
     }
-    const ProgressionState completed{true, true, true, 6};
+    const ProgressionState completed{true, true, true, 6, true};
     for (const auto setting : {ModeSetting::Glide, ModeSetting::Gale,
-            ModeSetting::GaleCounter, ModeSetting::FierceDeity}) {
+            ModeSetting::GaleCounter, ModeSetting::FierceDeity, ModeSetting::DualWield}) {
         int64_t value = 0;
         assert(mode_override(setting, false, true, completed, value) && value == 1);
         assert(mode_override(setting, true, false, completed, value) && value == 1);
@@ -66,6 +66,9 @@ int main() {
     assert(notifications.update(true, state) == 8);
     state.fierceDeity = true;
     assert(notifications.update(true, state) == 4);
+    state.dualWield = true;
+    assert(notifications.update(true, state) == 16);
+    assert(notifications.update(true, state) == 0);
     notifications = {}; // Load a completed save: no retroactive toast spam.
     assert(notifications.update(true, completed) == 0);
     notifications = {}; // Load a new save: no state inherited.

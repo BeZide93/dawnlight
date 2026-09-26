@@ -4,6 +4,7 @@
 #include "boss_hard_mode.hpp"
 #include "config.hpp"
 #include "dual_wield.hpp"
+#include "collection_dual_wield.hpp"
 #include "fierce_deity.hpp"
 #include "gale_counter.hpp"
 #include "great_spin_projectile.hpp"
@@ -116,6 +117,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::install_touch_button_hooks(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::install_collection_dual_wield(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::install_dual_wield_hooks(error); result != MOD_OK) {
         return result;
     }
@@ -164,6 +168,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    dawnlight::shutdown_collection_dual_wield();
     dawnlight::shutdown_dual_wield();
     dawnlight::shutdown_touch_buttons();
     dawnlight::shutdown_jump_hooks();

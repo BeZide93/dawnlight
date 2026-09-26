@@ -1125,6 +1125,7 @@ ModeSetting mode_setting_for_config(ConfigVarHandle var) {
     if (var == s_galeCounterVisible) return ModeSetting::GaleCounter;
     if (var == s_galeCounterCapacity) return ModeSetting::GaleCharges;
     if (var == s_fierceDeity) return ModeSetting::FierceDeity;
+    if (var == s_dualWield) return ModeSetting::DualWield;
     return ModeSetting::None;
 }
 

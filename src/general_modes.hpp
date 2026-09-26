@@ -8,7 +8,7 @@ enum class ModeSetting {
     None, Progression, Sprint, SprintSpeed, Jump, JumpHeight, FlurryRush, BulletTime,
     EnemyHardMode, BossHardMode, HealthScale, ManualShielding, GaleRecovery,
     ArrowModes, GreatSpin, NoNormalHitInvulnerability, Glide, GlideItem, Gale,
-    GaleCounter, GaleCharges, FierceDeity, GaleHeight, Stamina, WolfSprint, WolfSpeed, DisableAutoJump,
+    GaleCounter, GaleCharges, FierceDeity, GaleHeight, Stamina, WolfSprint, WolfSpeed, DisableAutoJump, DualWield,
 };
 
 struct ProgressionState {
@@ -16,6 +16,7 @@ struct ProgressionState {
     bool gale = false;
     bool fierceDeity = false;
     int charges = 1;
+    bool dualWield = false;
 };
 
 // Max life is stored in fifths of a heart (including collected heart pieces),
@@ -61,6 +62,7 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
         case ModeSetting::GaleCounter: value = state.gale; return true;
         case ModeSetting::GaleCharges: value = state.charges; return true;
         case ModeSetting::FierceDeity: value = state.fierceDeity; return true;
+        case ModeSetting::DualWield: value = state.dualWield; return true;
         default: break;
         }
     }
@@ -79,6 +81,7 @@ struct ProgressionNotifications {
             if (state.gale && !previous.gale) unlocked |= 2;
             if (state.fierceDeity && !previous.fierceDeity) unlocked |= 4;
             if (state.gale && previous.gale && state.charges > previous.charges) unlocked |= 8;
+            if (state.dualWield && !previous.dualWield) unlocked |= 16;
         }
         tracking = enabled;
         previous = state;

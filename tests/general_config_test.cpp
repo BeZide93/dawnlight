@@ -197,6 +197,30 @@ int main() {
     set_bool(nullptr, progression_system_config_var(), false);
     assert(!disabled(glide) && shown(glide).bool_value);
 
+    // Dual Wield uses the existing effective-value/UI lock, never overwriting
+    // either personal preference, including across restart and save changes.
+    for(bool personal:{false,true})for(bool dawnlight:{false,true}) {
+        set_bool(nullptr, dual_wield_config_var(), personal);
+        set_bool(nullptr, progression_system_config_var(), !dawnlight);
+        set_bool(nullptr, dawnlight_mode_config_var(), dawnlight);
+        for(bool unlocked:{false,true,false,true}) {
+            testProgress.dualWield=unlocked;
+            for(int restart=0;restart<2;++restart) {
+                if(restart)assert(register_config(nullptr)==MOD_OK);
+                auto dual=control(dual_wield_config_var(), UI_CONTROL_TOGGLE);
+                assert(disabled(dual)&&shown(dual).bool_value==unlocked);
+                assert(dual_wield_enabled()==unlocked);
+                UiControlValue attempted=UI_CONTROL_VALUE_INIT;attempted.bool_value=!unlocked;
+                dual.set(mod_ctx,dual.user_data,&attempted);
+                assert(disk.at("dual-wield").value==personal);
+            }
+        }
+        set_bool(nullptr, dawnlight_mode_config_var(), false);
+        set_bool(nullptr, progression_system_config_var(), false);
+        auto dual=control(dual_wield_config_var(), UI_CONTROL_TOGGLE);
+        assert(!disabled(dual)&&shown(dual).bool_value==personal&&dual_wield_enabled()==personal);
+    }
+
     // Exercise the real mode bindings with both saved toggle values, including
     // restart, attempted writes while locked and the existing parent dependency.
     for (bool savedJump : {false, true}) for (bool savedWolf : {false, true})

@@ -7,6 +7,11 @@ option to the Collection menu. Select that icon to replace Link's visible
 shield with a second Ordon Sword. The setting defaults to off; enabling it
 alone no longer equips the second sword.
 
+With **Progression System** active (also through Dawnlight Mode), this setting
+is locked: off before obtaining the Ordon Sword, on afterwards. Boss Rush
+unlocks it immediately. Turning progression off restores your previous setting;
+equip the second sword through its Collection icon as usual.
+
 The icon sits to the right of the shield row, after other visible shield
 options. Navigate from adjacent slots (including left from the Wooden Sword
 in the HD layout), or click/tap the sword.

@@ -46,6 +46,7 @@ ProgressionState progression_state() {
     state.glide = bossRush || dComIfGs_isEventBit(dSv_event_flag_c::F_0026);
     state.gale = bossRush || dComIfGs_isEventBit(dSv_event_flag_c::M_016);
     state.fierceDeity = bossRush || dComIfGs_isEventBit(dSv_event_flag_c::M_019);
+    state.dualWield = bossRush || dComIfGs_isItemFirstBit(dItemNo_SWORD_e);
     state.charges = progression_charges(dComIfGs_getMaxLife());
     return state;
 }
@@ -80,6 +81,7 @@ void update_progression() {
     }
     if (unlocked & 2) notify("Revali's Gale unlocked! The Gale counter is now available.");
     if (unlocked & 4) notify("Fierce Deity unlocked!");
+    if (unlocked & 16) notify("Dual Wield unlocked! Select the Ordon Sword beside the shields in Collection.");
     if (unlocked & 8) {
         char message[96];
         std::snprintf(message, sizeof(message), "Gale capacity increased: %d charges.", state.charges);

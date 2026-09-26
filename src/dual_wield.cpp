@@ -220,10 +220,10 @@ J3DTexMtx* warp_texture(J3DModel* model) {
     return tex->getTexGenNum() ? tex->getTexMtx(tex->getTexGenNum()-1) : nullptr;
 }
 bool equipment_visible(daAlink_c* link) {
-    // Event warps still carry the hip equipment, without taking over the
-    // event's arm animation. Ordinary events keep their native equipment.
-    return s.owner==link && s.enabled && s.sword && s.sheath &&
-        (s.active || warp_texture(link->mSheathModel));
+    // Keep the replacement equipment during dialogue and cutscenes too.
+    // Only combat/arm overrides depend on active(); events carry the second
+    // sword sheathed at the hip and retain their scripted body animation.
+    return s.owner==link && s.enabled && s.sword && s.sheath;
 }
 void sync_equipment_materials(daAlink_c* link) {
     auto* warp=warp_texture(link->mSheathModel);

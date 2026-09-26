@@ -102,7 +102,7 @@ std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
 bool dual_wield_enabled(){return setting;}
 bool human(daAlink_c* l){return l->human;}
 bool active(daAlink_c* l){return s.owner==l && s.active;}
-bool equipment_visible(daAlink_c* l){return active(l);} // event warp rendering tested below
+bool equipment_visible(daAlink_c* l){return s.owner==l && s.enabled;} // material/model gating tested below
 Pose pose(Pose p){return p;}
 void put(J3DModel* model,int joint,Pose p){model->joints[joint]=p;}
 Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
@@ -168,6 +168,7 @@ int main() {
     assert(!s_calculating && !s.mirror);original.field_0x1e=35;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.mirror);
     link.event=true;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(!s.active && !s.mirror);
+    shield=true;after_shield_draw(nullptr,&args,&shield,nullptr);assert(!shield);
     link.event=false;setting=false;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
     assert(!s.enabled && !s.active && !s.attacks.right);
     shield=true;after_shield_draw(nullptr,&args,&shield,nullptr);assert(shield);
@@ -467,7 +468,10 @@ int main() {
         sync_equipment_materials(&link);assert(!swordData.materials[0].shape.visible);
         s.enabled=false;assert(!equipment_visible(&link));s.enabled=true;
         dRes_info_c::offWarpMaterial(&nativeData);
-        assert(!equipment_visible(&link)); // ordinary events retain native equipment
+        assert(equipment_visible(&link)); // dialogue/cutscenes retain the hip equipment
+        sync_equipment_materials(&link);
+        assert(!swordData.materials[0].shape.visible && swordData.materials[1].shape.visible);
+        assert(sheathData.materials[0].shape.visible);
         s.active=true;
         for(int frame=0;frame<5;++frame)sync_equipment_materials(&link);
         for(auto* d:{&swordData,&sheathData,&nativeData})

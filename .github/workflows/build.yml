@@ -54,6 +54,10 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/dual_wield_test.py
 
+      - name: Test Boss Rush hook lifecycle
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/bossrush_hook_lifecycle_test.py
+
       - name: Read pinned Dusklight version
         id: dusklight
         shell: bash

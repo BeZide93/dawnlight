@@ -35,8 +35,7 @@ DEFINE_HOOK(&dMenu_Collect2D_c::pointerWait, CollectionSwordPointer);
 DEFINE_HOOK(&dMenu_Collect2D_c::pointerActivateCurrent, CollectionSwordClick);
 DEFINE_HOOK(&dMenu_Collect2D_c::setItemNameString, CollectionSwordName);
 DEFINE_HOOK(&dMenu_Collect2D_c::changeShield, CollectionSwordShield);
-DEFINE_HOOK(&dSelect_cursor_c::draw, CollectionSwordCursor);
-DEFINE_HOOK(&dSelect_cursor_c::update, CollectionSwordCursorUpdate);
+DEFINE_HOOK(&J2DScreen::draw, CollectionSwordCursorScreen);
 
 collection::Selection s_selection;
 SaveObserverHandle s_saveObserver=0;
@@ -321,18 +320,21 @@ void after_draw(ModContext*,void* args,void*,void*) {
     if(s_menu.owner!=menu) return;
     draw_icon();s_menu.restore_tints();
 }
-HookAction before_cursor_draw(ModContext*,void* args,void*,void*) {
-    auto* cursor=mods::arg<dSelect_cursor_c*>(args,0);
-    if(s_menu.owner && cursor==s_menu.owner->mpDrawCursor && s_menu.drawing) draw_icon();
+HookAction before_cursor_screen_draw(ModContext*,void* args,void*,void*) {
+    if(!s_menu.owner || !s_menu.drawing) return HOOK_CONTINUE;
+    auto* cursor=s_menu.owner->mpDrawCursor;
+    if(!cursor || mods::arg<J2DScreen*>(args,0)!=cursor->mpScreen) return HOOK_CONTINUE;
+    // The cursor's draw() updates its shield-bound target again, and HUD mods
+    // can realign it in their draw/update hooks. Apply our virtual cell at the
+    // actual screen draw boundary, after all of that work (also when inlined).
+    // Draw the icon first so the shared cursor remains above its frame.
+    draw_icon();
+    if(own_focus(s_menu.owner) && cursor->mpPaneMgr) {
+        const auto p=s_menu.placement;
+        // Keep the shared cursor's artwork, pulse and mod-provided geometry.
+        cursor->mpPaneMgr->translate(p.left+p.size*.5f,p.top+p.size*.5f);
+    }
     return HOOK_CONTINUE;
-}
-void after_cursor_update(ModContext*,void* args,void*,void*) {
-    auto* cursor=mods::arg<dSelect_cursor_c*>(args,0);
-    if(!s_menu.owner || cursor!=s_menu.owner->mpDrawCursor || !own_focus(s_menu.owner) || !cursor->mpPaneMgr) return;
-    const auto p=s_menu.placement;
-    // Preserve the actual cursor's artwork, pulse, size and mod styling. Its
-    // update and other mods have just finished; move only the rendered root.
-    cursor->mpPaneMgr->translate(p.left+p.size*.5f,p.top+p.size*.5f);
 }
 HookAction before_delete(ModContext*,void* args,void*,void*) {
     if(s_menu.owner==mods::arg<dMenu_Collect2D_c*>(args,0)) s_menu.release();
@@ -445,7 +447,9 @@ ModResult install_collection_dual_wield(ModError* error) {
     PRE(CollectionSwordScreen,capture_icon);POST(CollectionSwordScreen,after_layout);
     PRE(CollectionSwordDelete,before_delete);POST(CollectionSwordLayout,after_layout);
     PRE(CollectionSwordDraw,before_draw);POST(CollectionSwordDraw,after_draw);
-    PRE(CollectionSwordCursor,before_cursor_draw);POST(CollectionSwordCursorUpdate,after_cursor_update);
+    // Run after ordinary screen-pre hooks as well as cursor draw/update hooks.
+    if((result=mods::hook::add_pre<CollectionSwordCursorScreen>(svc_hook,before_cursor_screen_draw,&late))!=MOD_OK)
+        return mods::set_error(error,result,"Dual Wield collection: CollectionSwordCursorScreen");
     PRE(CollectionSwordWait,before_wait);POST(CollectionSwordWait,after_wait);
     PRE(CollectionSwordNavigate,before_navigate);
     PRE(CollectionSwordPointer,before_pointer);PRE(CollectionSwordClick,before_click);

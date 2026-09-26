@@ -58,7 +58,11 @@ struct CPaneMgr {
     float left,top,width,height,x=0,y=0;
     void translate(float a,float b){x=a;y=b;}
 };
-struct dSelect_cursor_c {CPaneMgr* mpPaneMgr=nullptr;int artwork=91;float pulse=.73f;};
+struct J2DScreen {};
+struct dSelect_cursor_c {
+    CPaneMgr* mpPaneMgr=nullptr;J2DScreen* mpScreen=nullptr;
+    int artwork=91;float pulse=.73f;
+};
 struct dMenu_Collect2D_c {
     int mCursorX=4,mCursorY=1,field_0x259=0,field_0x25a=0;
     bool mIsWolf=false;
@@ -103,7 +107,7 @@ auto* svc_log=&logger;
 collection::Selection s_selection;
 struct Menu {
     dMenu_Collect2D_c* owner=nullptr;
-    bool focused=false,visible=true;
+    bool focused=false,visible=true,drawing=false,drawn=false;
     u8 anchorX=0,anchorY=0;
     std::vector<collection::Cell> cells;
     collection::Placement placement;
@@ -122,7 +126,16 @@ struct Pointer {
     void (*hover)(u16)=[](u16 id){::hover=id;};
     bool (*click)()=[](){bool out=pendingClick;pendingClick=false;return out;};
 } s_pointer;
+void draw_icon();
 // PRODUCTION
+J2DScreen iconScreen;
+int iconDraws=0;
+void draw_icon(){
+    if(!s_menu.visible||s_menu.drawn)return;
+    // Our own screen draw re-enters the global hook. It must pass through.
+    assert(before_cursor_screen_draw(nullptr,&iconScreen,nullptr,nullptr)==HOOK_CONTINUE);
+    ++iconDraws;s_menu.drawn=true;
+}
 int main(){
     // Native slots, remapped Essentials indices, then the HD HUD shield row.
     // Hylian's unavailable reserved position must still precede our sword.
@@ -206,23 +219,48 @@ int main(){
     // Feature disabled: navigation and foreign input remain untouched.
     dMenu_Collect2D_c menu;s_menu.owner=&menu;s_menu.visible=false;
     assert(before_navigate(nullptr,&menu,nullptr,nullptr)==HOOK_CONTINUE&&menu.stick.ticks==0);
-    // The shared cursor keeps mod artwork/pulse and only moves its rendered root.
-    CPaneMgr cursorRoot{};dSelect_cursor_c cursor{&cursorRoot};
+    // Reproduce the full draw sequence: native/HD code restores the shield
+    // target *after* earlier positioning, then renders the cursor screen.
+    // The final placement cannot depend on update() calling a hooked entry.
+    CPaneMgr cursorRoot{};J2DScreen cursorScreen,foreignScreen;
+    dSelect_cursor_c cursor{&cursorRoot,&cursorScreen};
     menu.mpDrawCursor=&cursor;s_menu.visible=true;s_menu.focused=true;
     s_menu.anchorX=menu.mCursorX;s_menu.anchorY=menu.mCursorY;
     s_menu.placement={200,100,40,0};
-    after_cursor_update(nullptr,&cursor,nullptr,nullptr);
-    assert(cursorRoot.x==220&&cursorRoot.y==120&&cursor.artwork==91&&cursor.pulse==.73f);
-    CPaneMgr foreignRoot{};dSelect_cursor_c foreign{&foreignRoot};
-    after_cursor_update(nullptr,&foreign,nullptr,nullptr);assert(foreignRoot.x==0&&foreignRoot.y==0);
+    for(int frame=0;frame<4;++frame){
+        s_menu.drawing=true;s_menu.drawn=false;
+        cursorRoot.translate(220,120); // an earlier correction is not enough
+        cursorRoot.translate(160,120); // native draw/update or foreign alignment
+        assert(before_cursor_screen_draw(nullptr,&foreignScreen,nullptr,nullptr)==HOOK_CONTINUE);
+        assert(cursorRoot.x==160&&iconDraws==frame);
+        assert(before_cursor_screen_draw(nullptr,&cursorScreen,nullptr,nullptr)==HOOK_CONTINUE);
+        // These are the values consumed by the actual cursor screen renderer.
+        assert(cursorRoot.x==220&&cursorRoot.y==120&&iconDraws==frame+1);
+        assert(cursor.artwork==91&&cursor.pulse==.73f&&menu.mCursorX==s_menu.anchorX);
+        before_cursor_screen_draw(nullptr,&cursorScreen,nullptr,nullptr);
+        assert(iconDraws==frame+1); // one icon, even with another render pass
+    }
+    // Leaving the virtual cell restores ordinary targeting on the next draw.
     s_menu.focused=false;cursorRoot.translate(10,30);
-    after_cursor_update(nullptr,&cursor,nullptr,nullptr);assert(cursorRoot.x==10&&cursorRoot.y==30);
+    before_cursor_screen_draw(nullptr,&cursorScreen,nullptr,nullptr);
+    assert(cursorRoot.x==10&&cursorRoot.y==30);
+    s_menu.focused=true;s_menu.drawing=false;
+    before_cursor_screen_draw(nullptr,&cursorScreen,nullptr,nullptr);
+    assert(cursorRoot.x==10&&cursorRoot.y==30);
+    s_menu.drawing=true;++menu.mCursorY; // stale anchor / another mod's page
+    before_cursor_screen_draw(nullptr,&cursorScreen,nullptr,nullptr);
+    assert(cursorRoot.x==10&&cursorRoot.y==30);
+    --menu.mCursorY;s_menu.visible=false;
+    before_cursor_screen_draw(nullptr,&cursorScreen,nullptr,nullptr);
+    assert(cursorRoot.x==10&&cursorRoot.y==30);
+    s_menu.owner=nullptr;
+    before_cursor_screen_draw(nullptr,&cursorScreen,nullptr,nullptr);
 }
 '''
 
 names = ["restore_name", "blob_name", "load_selection", "select_sword", "setting_changed",
          "dual_wield_equipped", "own_focus", "focus", "can_equip", "activate",
-         "before_wait", "before_navigate", "before_pointer", "before_click", "after_cursor_update"]
+         "before_wait", "before_navigate", "before_pointer", "before_click", "before_cursor_screen_draw"]
 fixture = fixture.replace("// PRODUCTION", "\n".join(function(name) for name in names))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / "test.cpp", Path(tmp) / "test"

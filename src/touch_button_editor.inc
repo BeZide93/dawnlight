@@ -1,26 +1,21 @@
-// Reuse the running Dusklight TouchControlsEditor, including its RML/CSS,
-// drag threshold, resize handles, docking, reset confirmation and navigation.
-// Only our instance sees the extra controls. The host's nine-element
-// array stays unchanged, and vanilla editor instances use their original data.
+// Extend every native TouchControlsEditor without changing its nine-slot ABI.
+// All controls share one document and working layout. Native gestures operate
+// on one bank at a time; the inactive bank lives in mod-owned storage.
 using NativeEditor = dusk::ui::TouchControlsEditor;
 using LayoutSpan = std::span<const dusk::ui::TouchLayoutControlInfo>;
 using EditorDocument = dusk::ui::Document;
-DEFINE_HOOK_SYMBOL("dusk::ui::TouchControls::sync_visibility", void(NativeTouch*), ExtraEditorBackground);
+using EditorListener = dusk::ui::ScopedEventListener;
 DEFINE_HOOK_SYMBOL("dusk::ui::touch_layout_controls", LayoutSpan(), ExtraEditorControls);
-DEFINE_HOOK_SYMBOL("dusk::ui::touch_controls_rml_fragment", std::string_view(), ExtraEditorFragment);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::sync_control_layouts", void(NativeEditor*), ExtraEditorLayouts);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::sync_selection_frame", void(NativeEditor*), ExtraEditorFrame);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::begin_edit",
     bool(NativeEditor*, size_t, NativeEditor::EditHandle, Rml::Vector2f, bool, SDL_FingerID), ExtraEditorBegin);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::continue_edit", bool(NativeEditor*, Rml::Vector2f), ExtraEditorMove);
-// end_edit has no hookable entry in Android v2.0.1. Only its cancel branch
-// needs our metadata: scope the actual layout-restoration operation instead.
+// end_edit is inlined in Android v2.0.1; scope its restoration call instead.
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::restore_active_control", void(NativeEditor*), ExtraEditorRestore);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::request_reset", void(NativeEditor*), ExtraEditorReset);
 DEFINE_HOOK_SYMBOL("dusk::ui::TouchControlsEditor::save_layout", void(NativeEditor*), ExtraEditorSave);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui8DocumentD2Ev", void(EditorDocument*), ExtraEditorDelete);
-// C++ passes non-trivial unique_ptr values indirectly and references as
-// pointers. This ABI signature avoids copying unique_ptr in the hook trampoline.
 DEFINE_HOOK_SYMBOL("dusk::ui::push_document",
     EditorDocument*(std::unique_ptr<EditorDocument>*, bool, bool), ExtraEditorPush);
 
@@ -30,149 +25,223 @@ struct EditorApi {
     EditorDocument* (*top)() = nullptr;
     void (*uncover)() = nullptr;
     void (*hide)(EditorDocument*, bool) = nullptr;
-    void (*cancel)(NativeEditor*) = nullptr;
-    void (*clearTouch)(NativeTouch*) = nullptr;
-    void (*showTouch)(NativeTouch*) = nullptr;
-    void (*setPseudo)(Rml::Element*, const Rml::String*, bool) = nullptr;
+    void (*bindControls)(NativeEditor*) = nullptr;
+    void (*listenTouch)(EditorDocument*, Rml::Element*, const Rml::String*, EditorListener::Callback, bool) = nullptr;
+    void (*listenMouse)(EditorDocument*, Rml::Element*, Rml::EventId, EditorListener::Callback, bool) = nullptr;
+    void (*deleteListener)(EditorListener*) = nullptr;
+    void (*setClass)(Rml::Element*, const Rml::String*, bool) = nullptr;
 } s_editorApi;
-NativeEditor* s_extraEditor = nullptr;
-unsigned s_editorScope = 0;
-bool s_editorConstructing = false;
-std::array<dusk::ui::TouchLayoutControlInfo, touch::Count> s_editorControls{};
-std::string s_editorFragment;
-std::vector<EditorDocument*> s_editorChildren;
 constexpr const char* kExtraEditorIds[] = {"dawnlight-lb", "dawnlight-up", "dawnlight-down", "dawnlight-left", "dawnlight-right", "dawnlight-midna"};
 static_assert(touch::Count <= dusk::ui::kTouchLayoutControlCount);
+struct EditorState {
+    NativeEditor* editor = nullptr;
+    decltype(NativeEditor::mElements) inactive{};
+    std::array<dusk::ui::TouchLayoutControlInfo, touch::Count> controls{};
+    std::array<EditorListener*, 2> captureListeners{};
+    std::vector<EditorDocument*> children;
+    bool extras = false;
+};
+std::vector<std::unique_ptr<EditorState>> s_editors;
+EditorState* s_editorScope = nullptr;
+std::vector<EditorState*> s_editorScopes;
 
-bool editor_background_active() {
-    if (!s_extraEditor || s_extraEditor->mClosed || s_extraEditor->mPendingClose) return false;
-    auto* top = s_editorApi.top();
-    // Re-showing TouchControls raises its document above the reset modal and
-    // intercepts touches. Let native suppression hide it while a modal is up.
-    return top == s_extraEditor;
+EditorState* editor_state(NativeEditor* editor) {
+    for (const auto& state : s_editors) if (state->editor == editor) return state.get();
+    return nullptr;
 }
-void sync_editor_background(NativeTouch* controls) {
-    if (!editor_background_active()) return;
-    // Native update hides individual controls while input is suppressed, even
-    // when the document itself is shown. Restore the reference AFTER that update.
-    const Rml::String hidden = "hidden";
-    for (const auto control : {dusk::ui::Control::L, dusk::ui::Control::R, dusk::ui::Control::Z,
-             dusk::ui::Control::A, dusk::ui::Control::B, dusk::ui::Control::X, dusk::ui::Control::Y}) {
-        auto* element = controls->mControlElements[static_cast<size_t>(control)].root;
-        if (element) s_editorApi.setPseudo(element, &hidden, false);
+struct EditorScope {
+    EditorState* previous = s_editorScope;
+    explicit EditorScope(EditorState* state) { s_editorScope = state; }
+    ~EditorScope() { s_editorScope = previous; }
+};
+void swap_editor_bank(EditorState& state, bool extras) {
+    if (state.extras == extras) return;
+    std::swap(state.editor->mElements, state.inactive);
+    state.extras = extras;
+}
+void select_editor_bank(EditorState& state, Rml::Event& event) {
+    auto* editor = state.editor;
+    // Another finger cannot change the bank under an active native gesture.
+    if (editor->mPointerEdit.active || editor->mClosed || editor->mPendingClose) return;
+    auto* target = s_touchApi.target(&event);
+    for (; target && target != editor->mRoot; target = s_touchApi.parent(target)) {
+        for (bool extras : {false, true}) {
+            const auto& elements = extras == state.extras ? editor->mElements : state.inactive;
+            for (const auto& element : elements) if (element.root && element.root == target) {
+                if (extras != state.extras) {
+                    const Rml::String selected = "editor-selected";
+                    for (const auto& old : editor->mElements)
+                        if (old.root) s_editorApi.setClass(old.root, &selected, false);
+                    swap_editor_bank(state, extras);
+                    editor->mSelectedIndex = dusk::ui::kTouchLayoutControlCount;
+                    editor->mAppliedSelectionFrame.reset();
+                }
+                return;
+            }
+        }
     }
-    if (controls->mActionBar) s_editorApi.setPseudo(controls->mActionBar, &hidden, false);
-    // Skip is a cutscene action at the same default location as R; it must not
-    // cover the gameplay reference while arranging extra buttons.
-    auto* skip = controls->mControlElements[static_cast<size_t>(dusk::ui::Control::SKIP)].root;
-    if (skip) s_editorApi.setPseudo(skip, &hidden, true);
+    // A resize handle or toolbar command preserves the current bank.
 }
-HookAction show_editor_background(ModContext*, void* args, void*, void*) {
-    if (!editor_background_active()) return HOOK_CONTINUE;
-    auto* controls = mods::arg<NativeTouch*>(args, 0);
-    // Keep the real native document and saved layout visible behind our editor.
-    // Input stays suppressed: background buttons must not trigger game actions,
-    // stick motion, or native menu commands while arranging the extra controls.
-    controls->mWasSuppressed = true;
-    s_editorApi.clearTouch(controls);
-    s_editorApi.showTouch(controls);
-    return HOOK_SKIP_ORIGINAL;
+void detach_editor_listeners(EditorState& state, bool restoreBank = true) {
+    // Document::hide is asynchronous with respect to destruction. Explicitly
+    // destroy our callbacks while the module is still loaded.
+    auto& listeners = state.editor->mListeners;
+    for (auto* capture : state.captureListeners) {
+        const auto it = std::find_if(listeners.begin(), listeners.end(),
+            [capture](const auto& listener) { return listener.get() == capture; });
+        if (it != listeners.end()) {
+            auto* listener = it->release();
+            // Leave a null slot for the host vector to destroy. Erasing here
+            // would instantiate the final host class's deleter in the mod.
+            s_editorApi.deleteListener(listener);
+        }
+    }
+    state.captureListeners = {};
+    if (restoreBank) {
+        swap_editor_bank(state, false);
+        state.editor->mPointerEdit = {};
+        state.editor->mSelectedIndex = dusk::ui::kTouchLayoutControlCount;
+    }
+}
+EditorState* attach_extra_editor(NativeEditor* editor) {
+    if (auto* state = editor_state(editor)) return state;
+    dusk::ui::ControlLayoutSize size;
+    if (!s_touchEditorAvailable || editor->mClosed || editor->mPendingClose || !editor->mRoot ||
+        !extra_viewport(editor->mDocument, size)) return nullptr;
+    const Rml::String tag = "div";
+    auto root = s_touchApi.create(editor->mDocument, &tag);
+    if (!root) return nullptr;
+    extra_property(root.get(), "position", "absolute");
+    extra_property(root.get(), "width", "100%");
+    extra_property(root.get(), "height", "100%");
+    extra_property(root.get(), "left", "0dp");
+    extra_property(root.get(), "top", "0dp");
+    extra_property(root.get(), "pointer-events", "none");
+    auto owned = std::make_unique<EditorState>();
+    auto* state = owned.get();
+    state->editor = editor;
+    std::string fragment;
+    for (size_t i = 0; i < touch::Count; ++i) {
+        state->controls[i] = {kExtraEditorIds[i], kExtraEditorIds[i], default_extra_props(i, size),
+            dusk::ui::Control::COUNT, false};
+        fragment += "<button class='control trigger'><span>";
+        fragment += touch::Labels[i];
+        fragment += "</span></button>";
+        editor->mWorkingLayout.controls[kExtraEditorIds[i]] = saved_extra_props(i, size);
+    }
+    s_touchApi.setRml(root.get(), &fragment);
+    auto* element = s_touchApi.append(editor->mRoot, std::move(root), true);
+    if (!element) return nullptr;
+    for (size_t i = 0; i < touch::Count; ++i) state->inactive[i].root = s_touchApi.child(element, int(i));
+    s_editors.push_back(std::move(owned));
+    // Capture runs before the native target listeners, including nested spans.
+    const Rml::String touchStart = "touchstart";
+    s_editorApi.listenTouch(editor, editor->mRoot, &touchStart,
+        [state](Rml::Event& event) { select_editor_bank(*state, event); }, true);
+    state->captureListeners[0] = editor->mListeners.back().get();
+    s_editorApi.listenMouse(editor, editor->mRoot, Rml::EventId::Mousedown,
+        [state](Rml::Event& event) { select_editor_bank(*state, event); }, true);
+    state->captureListeners[1] = editor->mListeners.back().get();
+    // Reuse native event callbacks and gestures; their indices stay within 0..8.
+    EditorScope scope(state);
+    swap_editor_bank(*state, true);
+    s_editorApi.bindControls(editor);
+    swap_editor_bank(*state, false);
+    return state;
 }
 HookAction enter_extra_editor(ModContext*, void* args, void*, void*) {
-    if (mods::arg<NativeEditor*>(args, 0) == s_extraEditor) ++s_editorScope;
+    s_editorScopes.push_back(s_editorScope);
+    s_editorScope = editor_state(mods::arg<NativeEditor*>(args, 0));
     return HOOK_CONTINUE;
 }
-void leave_extra_editor(ModContext*, void* args, void*, void*) {
-    if (mods::arg<NativeEditor*>(args, 0) == s_extraEditor && s_editorScope) --s_editorScope;
+void leave_extra_editor(ModContext*, void*, void*, void*) {
+    s_editorScope = s_editorScopes.back();
+    s_editorScopes.pop_back();
 }
 void extra_editor_controls(ModContext*, void*, void* result, void*) {
-    if (s_editorScope) *static_cast<LayoutSpan*>(result) = s_editorControls;
+    if (s_editorScope && s_editorScope->extras) *static_cast<LayoutSpan*>(result) = s_editorScope->controls;
 }
-void extra_editor_fragment(ModContext*, void*, void* result, void*) {
-    if (s_editorConstructing) *static_cast<std::string_view*>(result) = s_editorFragment;
+HookAction layout_extra_editor(ModContext*, void* args, void*, void*) {
+    auto* editor = mods::arg<NativeEditor*>(args, 0);
+    auto* state = attach_extra_editor(editor);
+    if (!state) return HOOK_CONTINUE;
+    EditorScope scope(state);
+    const bool activeBank = state->extras;
+    // Update every visible button, without changing the active selection/drag.
+    swap_editor_bank(*state, false);
+    ExtraEditorLayouts::g_orig(editor);
+    swap_editor_bank(*state, true);
+    ExtraEditorLayouts::g_orig(editor);
+    swap_editor_bank(*state, activeBank);
+    return HOOK_SKIP_ORIGINAL;
 }
 HookAction extra_editor_push(ModContext*, void* args, void*, void*) {
-    if (s_editorScope && !s_editorConstructing) {
+    if (s_editorScope) {
         auto* document = mods::arg<std::unique_ptr<EditorDocument>*>(args, 0)->get();
-        if (document && document != s_extraEditor) s_editorChildren.push_back(document);
+        if (document && document != s_editorScope->editor) s_editorScope->children.push_back(document);
     }
     return HOOK_CONTINUE;
 }
 HookAction extra_editor_delete(ModContext*, void* args, void*, void*) {
     auto* document = mods::arg<EditorDocument*>(args, 0);
-    std::erase(s_editorChildren, document);
-    if (document == s_extraEditor) s_extraEditor = nullptr;
+    for (const auto& state : s_editors) {
+        std::erase(state->children, document);
+        if (state->editor == document) detach_editor_listeners(*state, false);
+    }
+    std::erase_if(s_editors, [document](const auto& state) { return state->editor == document; });
     return HOOK_CONTINUE;
 }
 HookAction save_extra_editor(ModContext*, void* args, void*, void*) {
     auto* editor = mods::arg<NativeEditor*>(args, 0);
-    if (editor != s_extraEditor) return HOOK_CONTINUE;
-    std::array<std::string, touch::Count> values;
+    auto* state = editor_state(editor);
+    if (!state) return HOOK_CONTINUE;
+    std::array<std::string, touch::Count> values, previous;
     for (size_t i = 0; i < touch::Count; ++i) {
         const auto found = editor->mWorkingLayout.controls.find(kExtraEditorIds[i]);
-        const auto props = found != editor->mWorkingLayout.controls.end() ? found->second : s_editorControls[i].props;
+        const auto props = found != editor->mWorkingLayout.controls.end() ? found->second : state->controls[i].props;
         if (!valid_extra_props(props)) return HOOK_SKIP_ORIGINAL;
         values[i] = encode_extra_props(props);
+        char buffer[256]{};
+        if (svc_config->get_string(mod_ctx, s_buttons[i].layout, buffer, sizeof(buffer), nullptr) != MOD_OK)
+            return HOOK_SKIP_ORIGINAL;
+        previous[i] = buffer;
     }
     for (size_t i = 0; i < touch::Count; ++i) {
         if (svc_config->set_string(mod_ctx, s_buttons[i].layout, values[i].c_str()) != MOD_OK) {
+            for (size_t j = 0; j < i; ++j) svc_config->set_string(mod_ctx, s_buttons[j].layout, previous[j].c_str());
             svc_log->warn(mod_ctx, "Could not save Touch Buttons layout");
             return HOOK_SKIP_ORIGINAL;
         }
     }
-    // Cancel/pop closes the native document without writing its working layout
-    // into Dusklight's game.touchControlsLayout. Only Dawnlight config is saved.
-    s_editorApi.cancel(editor);
+    // Native Save persists the vanilla controls and closes the same editor.
+    // Keep Dawnlight keys in their existing storage, including migrated layouts.
+    auto working = editor->mWorkingLayout;
+    for (const auto* id : kExtraEditorIds) editor->mWorkingLayout.controls.erase(id);
+    ExtraEditorSave::g_orig(editor);
+    editor->mWorkingLayout = std::move(working);
     return HOOK_SKIP_ORIGINAL;
 }
 void close_extra_editor() {
     s_touchEditorAvailable = false;
-    if (!s_extraEditor) return;
-    // Reset opens a native modal whose callback captures the editor. Close it
-    // before the editor during mod unload so that callback cannot outlive it.
-    for (auto* child : s_editorChildren) s_editorApi.hide(child, true);
-    s_editorChildren.clear();
-    s_editorApi.hide(s_extraEditor, true);
-    s_editorApi.uncover();
-    s_extraEditor = nullptr;
+    for (const auto& state : s_editors) {
+        for (auto* child : state->children) s_editorApi.hide(child, true);
+        detach_editor_listeners(*state);
+        s_editorApi.hide(state->editor, true);
+    }
+    if (!s_editors.empty()) s_editorApi.uncover();
+    s_editors.clear();
+    s_editorScope = nullptr;
+    s_editorScopes.clear();
 }
 void open_native_touch_editor(ModContext*, void*) {
-    if (!s_touchEditorAvailable || s_extraEditor) return;
-    dusk::ui::ControlLayoutSize size;
-    if (!s_touchOwner || !extra_viewport(s_touchOwner->mDocument, size)) return;
-    s_extraPresses.clear();
-    s_editorFragment.clear();
-    for (size_t i = 0; i < touch::Count; ++i) {
-        s_editorControls[i] = {kExtraEditorIds[i], kExtraEditorIds[i], default_extra_props(i, size),
-            dusk::ui::Control::COUNT, false};
-        s_editorFragment += "<button id='";
-        s_editorFragment += kExtraEditorIds[i];
-        s_editorFragment += "' class='control trigger'><span>";
-        s_editorFragment += touch::Labels[i];
-        s_editorFragment += "</span></button>";
-    }
-    // Construct the original host type in storage with its pinned ABI. Its own
-    // vtable and destructor remain native; the UI stack owns it after push.
+    if (!s_touchEditorAvailable) return;
+    // This is only a shortcut to the same editor used by Dusklight's settings.
     void* storage = ::operator new(sizeof(NativeEditor));
-    s_extraEditor = static_cast<NativeEditor*>(storage);
-    s_editorConstructing = true;
-    ++s_editorScope;
-    try {
-        s_editorApi.construct(s_extraEditor);
-    } catch (...) {
-        --s_editorScope;
-        s_editorConstructing = false;
-        s_extraEditor = nullptr;
-        ::operator delete(storage);
-        throw;
-    }
-    --s_editorScope;
-    s_editorConstructing = false;
-    std::unique_ptr<EditorDocument> owned(s_extraEditor);
-    if (!s_extraEditor->mDocument) return;
-    s_extraEditor->mWorkingLayout = {};
-    for (size_t i = 0; i < touch::Count; ++i)
-        s_extraEditor->mWorkingLayout.controls[kExtraEditorIds[i]] = saved_extra_props(i, size);
+    auto* editor = static_cast<NativeEditor*>(storage);
+    try { s_editorApi.construct(editor); }
+    catch (...) { ::operator delete(storage); throw; }
+    std::unique_ptr<EditorDocument> owned(editor);
+    if (!editor->mDocument) return;
     auto* parent = s_editorApi.top();
     s_editorApi.push(std::move(owned), true, false);
     if (parent) parent->cover();
@@ -203,15 +272,14 @@ ModResult install_extra_editor(ModError*) {
         !resolve_extra("dusk::ui::top_document", s_editorApi.top) ||
         !resolve_extra("dusk::ui::uncover_top_document", s_editorApi.uncover) ||
         !resolve_extra("dusk::ui::Document::hide", s_editorApi.hide) ||
-        !resolve_extra("dusk::ui::TouchControlsEditor::cancel_edit", s_editorApi.cancel) ||
-        !resolve_extra("dusk::ui::TouchControls::clear_virtual_input", s_editorApi.clearTouch) ||
-        !resolve_extra("dusk::ui::TouchControls::show", s_editorApi.showTouch) ||
-        !resolve_extra("Rml::Element::SetPseudoClass", s_editorApi.setPseudo)) return MOD_OK;
+        !resolve_extra("dusk::ui::TouchControlsEditor::bind_control_events", s_editorApi.bindControls) ||
+        !resolve_extra("_ZN4dusk2ui8Document6listenEPN3Rml7ElementERKNSt6__ndk112basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEENS5_8functionIFvRNS2_5EventEEEEb", s_editorApi.listenTouch) ||
+        !resolve_extra("_ZN4dusk2ui8Document6listenEPN3Rml7ElementENS2_7EventIdENSt6__ndk18functionIFvRNS2_5EventEEEEb", s_editorApi.listenMouse) ||
+        !resolve_extra("_ZN4dusk2ui19ScopedEventListenerD0Ev", s_editorApi.deleteListener) ||
+        !resolve_extra("_ZN3Rml7Element8SetClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb", s_editorApi.setClass)) return MOD_OK;
     const std::array bindings = {
-        editor_hook<ExtraEditorBackground>("TouchControls::sync_visibility", show_editor_background, nullptr),
         editor_hook<ExtraEditorControls>("touch_layout_controls", nullptr, extra_editor_controls),
-        editor_hook<ExtraEditorFragment>("touch_controls_rml_fragment", nullptr, extra_editor_fragment),
-        editor_hook<ExtraEditorLayouts>("sync_control_layouts", enter_extra_editor, leave_extra_editor),
+        editor_hook<ExtraEditorLayouts>("sync_control_layouts", layout_extra_editor, nullptr),
         editor_hook<ExtraEditorFrame>("sync_selection_frame", enter_extra_editor, leave_extra_editor),
         editor_hook<ExtraEditorBegin>("begin_edit", enter_extra_editor, leave_extra_editor),
         editor_hook<ExtraEditorMove>("continue_edit", enter_extra_editor, leave_extra_editor),

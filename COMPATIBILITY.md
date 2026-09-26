@@ -58,19 +58,26 @@ touch controls. Restart Dusklight after changing it.
 
 ### Extra touch buttons
 
-**Controls → Touch Buttons** contains independent switches for LB, D-Pad Up,
+**Controls → Touch Buttons** contains independent switches for Midna, LB, D-Pad Up,
 Down, Left and Right, all off by default. They require both native Touch Controls
 and Dawnlight Touch UI on Android. The switches and layout changes apply live;
 changing the parent Dawnlight Touch UI setting still requires a restart.
 
-**Open Touch Layout Editor** creates a separate instance of Dusklight's original
-`TouchControlsEditor`, including its drag/resize handles, docking, reset dialog,
-and Save/Cancel navigation. Five replacement controls are supplied only while
-that instance executes. The native fixed-size array and vanilla editor remain
-unchanged. Save writes Dawnlight's layouts through ConfigService; Cancel discards
-unsaved edits, and Reset needs Save to persist. Older numeric layouts are migrated
-when first saved. Layout uses the live RML document context and native DP geometry;
-a missing context no longer collapses the buttons to 1 dp at the origin.
+Dusklight's normal **Touch Layout Editor** now edits all nine native elements and
+six Dawnlight buttons in one document. Dawnlight's **Open Dusklight Touch Layout
+Editor** button is a shortcut to that same editor. The adapter keeps the host's
+nine-slot object layout intact and exchanges its active element bank before native
+selection/gesture handling. Both groups stay visible; drag, resize, scaling,
+docking and cancelled gestures use the native implementation. Metadata overrides
+are scoped to editor calls, never to gameplay touch controls.
+
+Existing Dawnlight layouts, including old numeric positions, load automatically.
+Save persists the vanilla group through the native editor and the extra group
+through Dawnlight's ConfigService. Cancel discards both groups' unsaved changes;
+Reset clears their shared working layout and requires Save to persist. The native
+touch overlay stays suppressed throughout editing and reset confirmation. During
+mod unload, editor/modal documents are closed and mod-owned callbacks are removed
+before their code can unload.
 
 The adapter uses the pinned Android host's private touch ABI. If required editor
 methods or hook targets cannot be resolved, its launch button is disabled while
@@ -99,10 +106,11 @@ layout bounds, and `python3 tests/touch_midna_test.py` for Midna taps, cancellat
 availability and coexistence with native Skip/Z and the D-pad shortcut.
 Run `python3 tests/touch_button_editor_test.py` after fetching the
 pinned Dusklight source (or set `DUSKLIGHT_DIR`) for the viewport contract, native
-layout round-trips, scoped metadata and Save/Cancel/Reset behavior. Device QA should cover all six buttons, simultaneous LB + face
+native drag/resize/scale, group switching, layout migration, failed-save rollback
+and combined Save/Cancel/Reset behavior. Device QA should cover all six buttons, simultaneous LB + face
 buttons and stick movement, disabling a held button, app/menu transitions,
 orientation/safe-area changes, drag and edge/corner resizing, Save/Cancel/Reset,
-vanilla editor isolation, persistent layouts after restart, and mod unload with
+both editor entry points, persistent layouts after restart, and mod unload with
 the editor or its reset confirmation open.
 
 The portal shortcut uses a touch press edge, so holding L does not repeatedly

@@ -99,8 +99,8 @@ ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle 
     }
     UiControlDesc editor = UI_CONTROL_DESC_INIT;
     editor.kind = UI_CONTROL_BUTTON;
-    editor.label = "Open Touch Layout Editor";
-    editor.help_rml = "Move buttons by dragging them. Use the edge handles to resize and the corner handles to scale. Save applies changes; Cancel discards them.";
+    editor.label = "Open Dusklight Touch Layout Editor";
+    editor.help_rml = "Edit vanilla and Dawnlight buttons together. Drag to move; use edge/corner handles to resize. Save applies both layouts; Cancel discards changes.";
     editor.on_pressed = edit_touch_layout;
     editor.is_disabled = touch_editor_disabled;
     return svc_ui->pane_add_control(ctx, left, &editor, nullptr);

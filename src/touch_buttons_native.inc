@@ -1,5 +1,4 @@
 using NativeTouch = dusk::ui::TouchControls;
-void sync_editor_background(NativeTouch* controls);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls6updateEv", void(NativeTouch*), ExtraTouchUpdate);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls18sync_virtual_inputEv", void(NativeTouch*), ExtraTouchSync);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls19clear_control_inputEv", void(NativeTouch*), ExtraTouchClear);
@@ -154,7 +153,6 @@ void update_extra_elements(ModContext*, void* args, void*, void*) {
         extra_property(element, "background-color", held ? "rgba(63,78,90,90%)" : "rgba(22,24,28,58%)");
         extra_property(element, "display", show ? "flex" : "none");
     }
-    sync_editor_background(controls);
 }
 HookAction extra_touch_down(ModContext*, void* args, void*, void*) {
     auto* controls = mods::arg<NativeTouch*>(args, 0);

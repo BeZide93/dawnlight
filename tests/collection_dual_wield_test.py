@@ -26,6 +26,7 @@ fixture = r'''
 #include <cstring>
 #include <map>
 #include <string>
+#include <type_traits>
 #include <vector>
 using namespace dawnlight;
 using u8=uint8_t; using u16=uint16_t;
@@ -64,7 +65,7 @@ struct dSelect_cursor_c {
     int artwork=91;float pulse=.73f;
 };
 struct dMenu_Collect2D_c {
-    int mCursorX=4,mCursorY=1,field_0x259=0,field_0x25a=0;
+    u8 mCursorX=4,mCursorY=1,field_0x259=0,field_0x25a=0;
     bool mIsWolf=false;
     int field_0x22d[7][6]{};
     CPaneMgr panes[7][6]{};CPaneMgr* mpSelPm[7][6]{};
@@ -73,8 +74,13 @@ struct dMenu_Collect2D_c {
     int restored=0,cursorUpdates=0;
     void setItemNameString(int,int){++restored;}
     void cursorPosSet(){++cursorUpdates;}
+    void changeShield();
 };
-namespace mods {template<class T>T arg(void* p,int){return static_cast<T>(p);}}
+struct JAISoundID {int id;bool operator!=(int other) const{return id!=other;}};
+namespace mods {template<class T>T arg(void* p,int){
+    if constexpr(std::is_same_v<T,JAISoundID>)return *static_cast<JAISoundID*>(p);
+    else return static_cast<T>(p);
+}}
 struct Player {
     int timer=0,changes=0;
     int getShieldChangeWaitTimer(){return timer;}
@@ -82,11 +88,16 @@ struct Player {
 } player;
 auto* daAlink_getAlinkActorClass(){return &player;}
 int shield=42,vibrations=0;
-int dComIfGs_getSelectEquipShield(){return shield;}
+u8 dComIfGs_getSelectEquipShield(){return shield;}
+void dMeter2Info_setShield(u8 id,bool remove){assert(!remove);shield=id;}
 void dMeter2Info_set2DVibration(){++vibrations;}
-constexpr int Z2SE_SY_CURSOR_ITEM=1,Z2SE_SY_CURSOR_OPTION=2,Z2SE_SY_ITEM_SET_X=3;
+constexpr int Z2SE_SY_CURSOR_ITEM=1,Z2SE_SY_CURSOR_OPTION=2,Z2SE_SY_ITEM_SET_X=3,Z2SE_SY_ITEM_COMBINE_OFF=4;
 std::vector<int> sounds;
-void mDoAud_seStart(int id,void*,int,int){sounds.push_back(id);}
+HookAction before_equip_sound(ModContext*,void*,void*,void*);
+void mDoAud_seStart(int id,void*,int,int){
+    JAISoundID sound{id};bool result=true;
+    if(before_equip_sound(nullptr,&sound,&result,nullptr)==HOOK_CONTINUE)sounds.push_back(id);
+}
 struct Save {
     int slot=0;
     std::map<std::pair<int,std::string>,std::vector<unsigned char>> blobs;
@@ -105,6 +116,7 @@ auto* svc_save=&saves;
 struct Log {void warn(ModContext*,const char*){}} logger;
 auto* svc_log=&logger;
 collection::Selection s_selection;
+bool s_changingToSword=false;
 struct Menu {
     dMenu_Collect2D_c* owner=nullptr;
     bool focused=false,visible=true,drawing=false,drawn=false;
@@ -128,6 +140,25 @@ struct Pointer {
 } s_pointer;
 void draw_icon();
 // PRODUCTION
+int shieldChanges=0,customShield=-1,savedCustomShield=-1,customSword=5,customTunic=7;
+bool essentials=false;
+void dMenu_Collect2D_c::changeShield(){
+    ++shieldChanges;
+    assert(mCursorX==3&&mCursorY==1); // explicit native cleanup, never custom neighbor
+    before_shield(nullptr,this,nullptr,nullptr);
+    if(essentials){
+        // Essentials' changeShield hook clears and saves its custom shield,
+        // then selects/toggles the native backing item and plays a sound.
+        const bool wasCustom=customShield>=0;
+        customShield=savedCustomShield=-1;
+        shield=(!wasCustom&&shield==42)?dItemNo_NONE_e:42;
+        mDoAud_seStart(shield==dItemNo_NONE_e?Z2SE_SY_ITEM_COMBINE_OFF:Z2SE_SY_ITEM_SET_X,nullptr,0,0);
+    }else{
+        shield=42;
+        mDoAud_seStart(Z2SE_SY_ITEM_SET_X,nullptr,0,0);
+    }
+    player.setShieldChange();
+}
 J2DScreen iconScreen;
 int iconDraws=0;
 void draw_icon(){
@@ -255,11 +286,45 @@ int main(){
     assert(cursorRoot.x==10&&cursorRoot.y==30);
     s_menu.owner=nullptr;
     before_cursor_screen_draw(nullptr,&cursorScreen,nullptr,nullptr);
+    // Equipment ownership is exclusive, including the custom mod's persisted
+    // state. Test native, custom, and a native shield that toggles off on reuse.
+    s_menu.owner=&menu;s_menu.visible=true;menu.mCursorX=2;menu.mCursorY=1;
+    s_menu.anchorX=2;s_menu.anchorY=1;shieldChanges=0;
+    for(int variant=0;variant<3;++variant){
+        essentials=variant!=0;
+        customShield=savedCustomShield=variant==1?9:-1;
+        shield=variant==1?43:42;s_selection.chosen=false;player.timer=0;
+        const auto count=sounds.size();const int backing=shield;
+        activate(&menu);
+        assert(dual_wield_equipped()&&customShield==-1&&savedCustomShield==-1);
+        assert(customSword==5&&customTunic==7&&shield==backing);
+        assert(menu.mCursorX==2&&menu.mCursorY==1&&own_focus(&menu));
+        assert(!s_changingToSword&&sounds.size()==count+1&&sounds.back()==Z2SE_SY_ITEM_SET_X);
+        assert(shieldChanges==variant+1);
+        activate(&menu);assert(shieldChanges==variant+1&&sounds.size()==count+1);
+        // Selecting a foreign shield afterwards leaves Dual Wield normally.
+        before_shield(nullptr,&menu,nullptr,nullptr);assert(!dual_wield_equipped());
+    }
+    customShield=savedCustomShield=9;
+    const auto soundCount=sounds.size();const int changes=shieldChanges;
+    menu.mIsWolf=true;activate(&menu);menu.mIsWolf=false;
+    player.timer=2;activate(&menu);player.timer=0;
+    shield=dItemNo_NONE_e;activate(&menu);
+    assert(!dual_wield_equipped()&&customShield==9&&savedCustomShield==9);
+    assert(shieldChanges==changes&&sounds.size()==soundCount);
+    // Only the internal equip/unequip feedback is suppressed, never other SFX.
+    s_changingToSword=true;JAISoundID unrelated{99};bool played=true;
+    assert(before_equip_sound(nullptr,&unrelated,&played,nullptr)==HOOK_CONTINUE&&played);
+    JAISoundID equip{Z2SE_SY_ITEM_SET_X};
+    assert(before_equip_sound(nullptr,&equip,&played,nullptr)==HOOK_SKIP_ORIGINAL&&!played);
+    s_changingToSword=false;
+    assert(before_equip_sound(nullptr,&equip,&played,nullptr)==HOOK_CONTINUE);
 }
 '''
 
 names = ["restore_name", "blob_name", "load_selection", "select_sword", "setting_changed",
-         "dual_wield_equipped", "own_focus", "focus", "can_equip", "activate",
+         "dual_wield_equipped", "own_focus", "focus", "can_equip", "clear_previous_shield", "activate",
+         "before_shield", "before_equip_sound",
          "before_wait", "before_navigate", "before_pointer", "before_click", "before_cursor_screen_draw"]
 fixture = fixture.replace("// PRODUCTION", "\n".join(function(name) for name in names))
 with tempfile.TemporaryDirectory() as tmp:
@@ -268,7 +333,7 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["c++", "-std=c++20", "-Wall", "-Wextra", "-I" + str(root / "src"),
                     str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("Collection Dual Wield passed: layouts, consuming input, pointer passthrough, pages and per-save selection")
+print("Collection Dual Wield passed: layouts, input, pointer, pages, save isolation, exclusive shield handoff and equip sound")
 
 # Exercise render-only tint ownership separately from input. The screen's
 # original colors must be restored for foreign equip/unequip handlers.

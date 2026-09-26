@@ -36,8 +36,10 @@ DEFINE_HOOK(&dMenu_Collect2D_c::pointerActivateCurrent, CollectionSwordClick);
 DEFINE_HOOK(&dMenu_Collect2D_c::setItemNameString, CollectionSwordName);
 DEFINE_HOOK(&dMenu_Collect2D_c::changeShield, CollectionSwordShield);
 DEFINE_HOOK(&J2DScreen::draw, CollectionSwordCursorScreen);
+DEFINE_HOOK(&Z2SeMgr::seStart, CollectionSwordEquipSound);
 
 collection::Selection s_selection;
+bool s_changingToSword=false;
 SaveObserverHandle s_saveObserver=0;
 ConfigSubscriptionHandle s_settingObserver=0;
 struct PointerApi {
@@ -193,12 +195,41 @@ bool can_equip(dMenu_Collect2D_c* menu) {
     auto* link=daAlink_getAlinkActorClass();
     return !menu->mIsWolf && link && link->getShieldChangeWaitTimer()==0;
 }
+void clear_previous_shield(dMenu_Collect2D_c* menu) {
+    // Custom-equipment mods keep their own selected shield in addition to the
+    // game's backing item. Go through their changeShield hooks to clear it.
+    // Column 3 is the native wooden-shield action, not the virtual cell's
+    // (possibly custom) visual neighbor. Never replay that neighbor's action.
+    struct Restore {
+        dMenu_Collect2D_c* menu;
+        u8 x,y,shield;
+        ~Restore() {
+            menu->mCursorX=x;menu->mCursorY=y;
+            // Some mods toggle the backing shield off when selecting it again.
+            // Dual Wield still needs that backing item for shield combat logic.
+            if(dComIfGs_getSelectEquipShield()!=shield) dMeter2Info_setShield(shield,false);
+            s_changingToSword=false;
+        }
+    } restore{menu,menu->mCursorX,menu->mCursorY,dComIfGs_getSelectEquipShield()};
+    s_changingToSword=true;
+    menu->mCursorX=3;menu->mCursorY=1;
+    menu->changeShield();
+}
 void activate(dMenu_Collect2D_c* menu) {
     auto* link=daAlink_getAlinkActorClass();
     if(!can_equip(menu) || dComIfGs_getSelectEquipShield()==dItemNo_NONE_e) return;
     if(dual_wield_equipped()) return;
+    clear_previous_shield(menu);
     select_sword(true);link->setShieldChange();dMeter2Info_set2DVibration();
     mDoAud_seStart(Z2SE_SY_ITEM_SET_X,nullptr,0,0);show_name(menu);
+}
+HookAction before_equip_sound(ModContext*,void* args,void* result,void*) {
+    if(!s_changingToSword) return HOOK_CONTINUE;
+    const auto id=mods::arg<JAISoundID>(args,1);
+    if(id!=Z2SE_SY_ITEM_SET_X && id!=Z2SE_SY_ITEM_COMBINE_OFF) return HOOK_CONTINUE;
+    // The internal shield handoff is silent; activate() plays one equip sound.
+    if(result) *static_cast<bool*>(result)=false;
+    return HOOK_SKIP_ORIGINAL;
 }
 HookAction capture_icon(ModContext*,void* args,void*,void*) {
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
@@ -415,7 +446,7 @@ HookAction before_click(ModContext*,void* args,void*,void*) {
     return HOOK_CONTINUE;
 }
 HookAction before_shield(ModContext*,void*,void*,void*) {
-    if(dual_wield_equipped()) select_sword(false);
+    if(!s_changingToSword && dual_wield_equipped()) select_sword(false);
     return HOOK_CONTINUE;
 }
 void after_name(ModContext*,void* args,void*,void*) {show_name(mods::arg<dMenu_Collect2D_c*>(args,0));}
@@ -454,6 +485,7 @@ ModResult install_collection_dual_wield(ModError* error) {
     PRE(CollectionSwordNavigate,before_navigate);
     PRE(CollectionSwordPointer,before_pointer);PRE(CollectionSwordClick,before_click);
     PRE(CollectionSwordShield,before_shield);POST(CollectionSwordName,after_name);
+    PRE(CollectionSwordEquipSound,before_equip_sound);
 #undef PRE
 #undef POST
     return MOD_OK;

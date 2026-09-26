@@ -207,7 +207,8 @@ together: drag to move, resize with the edge/corner handles, then **Save**.
 Existing Dawnlight positions are loaded automatically. **Save** applies both
 layouts; **Cancel** discards changes; **Reset** restores both groups' defaults in
 the editor until you save. No separate touch overlay is raised over the editor
-or its Reset confirmation dialog.
+or its Reset confirmation dialog. Dawnlight keeps its edit state separate from
+the native controls and leaves other mods' button events and normal save hooks intact.
 The dedicated Midna button shows her icon and calls her when available. Skip is
 reserved for cutscenes; enable Midna separately in Touch Buttons.
 

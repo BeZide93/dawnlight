@@ -65,26 +65,32 @@ changing the parent Dawnlight Touch UI setting still requires a restart.
 
 Dusklight's normal **Touch Layout Editor** now edits all nine native elements and
 six Dawnlight buttons in one document. Dawnlight's **Open Dusklight Touch Layout
-Editor** button is a shortcut to that same editor. The adapter keeps the host's
-nine-slot object layout intact and exchanges its active element bank before native
-selection/gesture handling. Both groups stay visible; drag, resize, scaling,
-docking and cancelled gestures use the native implementation. Metadata overrides
-are scoped to editor calls, never to gameplay touch controls.
+Editor** button is a shortcut to that same editor. Dawnlight owns separate
+selection, gesture and layout state for its six buttons. The native element array,
+control metadata and working layout are never swapped or repurposed. Drag, edge
+resizing, corner scaling and docking follow the pinned editor's geometry.
+
+Events targeting other mods' buttons pass through unchanged. Layout updates run
+as a post-hook, and successful saves continue the original hook chain, including
+other mods' pre-hooks and replacements. Dawnlight handles only its own buttons,
+resize handles and active pointers.
 
 Existing Dawnlight layouts, including old numeric positions, load automatically.
-Save persists the vanilla group through the native editor and the extra group
-through Dawnlight's ConfigService. Cancel discards both groups' unsaved changes;
-Reset clears their shared working layout and requires Save to persist. The native
-touch overlay stays suppressed throughout editing and reset confirmation. During
-mod unload, editor/modal documents are closed and mod-owned callbacks are removed
-before their code can unload.
+Save persists the native/foreign working layout through the normal editor and
+Dawnlight's six layouts through ConfigService. Cancel discards unsaved changes;
+Reset restores both sets of defaults in the editor and requires Save to persist.
+If another mod vetoes Save without closing the editor, Dawnlight rolls back its
+writes too. The native touch overlay stays suppressed throughout editing and
+reset confirmation. During mod unload, editor/modal documents are closed and
+mod-owned callbacks are removed before their code can unload.
 
 The adapter uses the pinned Android host's private touch ABI. If required editor
 methods or hook targets cannot be resolved, its launch button is disabled while
 Dawnlight and the extra buttons remain active. Partial editor hook installation is
-rolled back. Android v2.0.1 does not expose `end_edit`; the adapter scopes
-`restore_active_control` instead to handle cancelled drags. This still requires
-runtime verification on the supported Dusklight/Lazy Tweaks build.
+rolled back. No `end_edit` hook is required. Tests cover a simulated foreign button,
+extended metadata, both Save hook orders, veto/error rollback, and native gesture
+geometry. Actual interaction with the user's other mod still requires runtime
+verification on the supported Dusklight/Lazy Tweaks build.
 
 LB exposes SDL's left-shoulder button (LB/L1) through `SDL_GetGamepadButton` for
 the player-one controller and `PADGetNativeButtonPressed(PAD_1)` when no physical

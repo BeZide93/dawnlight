@@ -384,9 +384,17 @@ struct J2DPicture: J2DPane {
     void setTexCoord(void*,int binding,int m,bool tumble){assert(binding==15&&!tumble);mirror=m;}
     TColor corner(int){return {255,255,255,255};}
     void setCornerColor(TColor,TColor,TColor,TColor){}
+    void setCornerColor(TColor){}
     int getAlpha(){return alpha;}void setAlpha(int a){alpha=a;}
 };
-struct dMenu_Collect2D_c {J2DPane* mpScreen=nullptr;};
+struct Graf {void setup2D(){}} graf;
+Graf* dComIfGp_getCurrentGrafPort(){return &graf;}
+struct J2DScreen: J2DPane {
+    J2DPane* hdRoot=nullptr;int draws=0;bool drewTL=false,drewBR=false;
+    J2DPane* search(uint64_t){return hdRoot;}
+    void draw(int,int,Graf*);
+} ownScreen;
+struct dMenu_Collect2D_c {J2DScreen* mpScreen=nullptr;};
 J2DPicture hylian,foreignFrame,ownFrame,ownTL,ownBR;
 J2DPicture* picture(J2DPane*,uint64_t){return &hylian;}
 const ResTIMG* texture(J2DPicture* p){return p->art;}
@@ -395,9 +403,12 @@ collection::Cell bounds(dMenu_Collect2D_c*,J2DPane* p,int,int,bool){return p->re
 bool equipped=true;
 bool dual_wield_equipped(){return equipped;}
 struct Menu {
+    dMenu_Collect2D_c* owner=nullptr;
+    J2DScreen* screen=&ownScreen;
     bool visible=true,drawing=true,drawn=false;
     J2DPicture* frame=&ownFrame;
     J2DPicture* flourishes[2]{&ownTL,&ownBR};
+    const ResTIMG* flourishTexture=&ornamentArt;
     collection::Placement placement{200,100,46,0};
     struct FrameTint {J2DPicture* pane;TColor color;};
     std::vector<FrameTint> frameTints;
@@ -406,8 +417,11 @@ struct Menu {
     // RESTORE
 } s_menu;
 // PRESENT
+void J2DScreen::draw(int,int,Graf*){++draws;drewTL=ownTL.shown;drewBR=ownBR.shown;}
 int main(){
-    J2DPane root;dMenu_Collect2D_c menu{&root};
+    J2DScreen root;J2DPane hdRoot;hdRoot.parent=&root;root.hdRoot=&hdRoot;
+    dMenu_Collect2D_c menu{&root};s_menu.owner=&menu;
+    ownTL.art=ownBR.art=&ornamentArt; // loaded directly from the archive at creation
     J2DPicture tl,br,otherRow;
     root.child=&tl;tl.next=&br;br.next=&otherRow;
     for(auto* p:{&tl,&br,&otherRow}){p->parent=&root;p->mInfoTag=MULTI_CHAR('hd_cef00');p->art=&ornamentArt;}
@@ -422,12 +436,13 @@ int main(){
         present_equipment(&menu);
         assert(ownFrame.white==high&&foreignFrame.white==low&&hylian.white==low);
         assert(s_menu.frameTints.size()==2);
-        // The regression: hidden source ornaments must still produce our pair.
+        draw_icon();
+        assert(ownScreen.drewTL&&ownScreen.drewBR);
         assert(ownTL.shown&&ownBR.shown&&!tl.shown&&!br.shown&&otherRow.shown);
         assert(ownTL.art==&ornamentArt&&ownBR.art==&ornamentArt);
-        assert(ownTL.mirror==0&&ownBR.mirror==3&&ownTL.white==high&&ownBR.alpha==173);
-        assert(ownTL.rect.left==188&&ownTL.rect.top==88&&ownTL.rect.width==24);
-        assert(ownBR.rect.left==228&&ownBR.rect.top==128);
+        assert(ownTL.mirror==0&&ownBR.mirror==3&&ownTL.white==high&&ownBR.alpha==255);
+        assert(ownTL.rect.left==191&&ownTL.rect.top==91&&ownTL.rect.width==24);
+        assert(ownBR.rect.left==231&&ownBR.rect.top==131);
         assert(s_menu.decorations.size()==2&&tl.rect.left==88&&br.rect.left==128);
         s_menu.restore_tints();
         assert(hylian.white==low&&foreignFrame.white==high);
@@ -435,27 +450,32 @@ int main(){
         assert(!ownTL.shown&&!ownBR.shown);
         assert(s_menu.frameTints.empty()&&!s_menu.drawing);
         equipped=false;s_menu.drawing=true;present_equipment(&menu);
+        draw_icon();
+        assert(!ownScreen.drewTL&&!ownScreen.drewBR);
         assert(ownFrame.white==low&&foreignFrame.white==high&&s_menu.frameTints.empty());
         assert(!ownTL.shown&&!ownBR.shown&&s_menu.decorations.empty());
-        equipped=true;
+        s_menu.restore_tints();equipped=true;
     }
-    // HD scaling is inherited from the source frame and each ornament's bounds.
-    s_menu.placement={200,100,98,0};s_menu.drawing=true;present_equipment(&menu);
-    assert(ownTL.rect.left==179&&ownTL.rect.top==79&&ownTL.rect.width==48);
-    assert(ownBR.rect.left==259&&ownBR.rect.top==159);
+    // Source panes may be absent, retagged or far from the remapped shield row.
+    // Draw without present_equipment: no frame scan/main screen hook is needed.
+    root.child=nullptr;s_menu.placement={200,100,98,0};draw_icon();
+    assert(ownScreen.drewTL&&ownScreen.drewBR);
+    assert(ownTL.rect.left==185&&ownTL.rect.top==85&&ownTL.rect.width==48);
+    assert(ownBR.rect.left==265&&ownBR.rect.top==165);
     s_menu.restore_tints();
-    // Missing HD artwork / a hidden page leaves a plain frame, never stale art.
-    root.hide();s_menu.drawing=true;present_equipment(&menu);
+    // Hidden/non-HD pages and missing resources leave a plain frame.
+    root.hide();draw_icon();
     assert(!ownTL.shown&&!ownBR.shown&&s_menu.decorations.empty());
-    s_menu.restore_tints();root.show();root.child=nullptr;
-    s_menu.drawing=true;present_equipment(&menu);
+    s_menu.restore_tints();root.show();root.hdRoot=nullptr;draw_icon();
+    assert(!ownScreen.drewTL&&!ownScreen.drewBR);
+    s_menu.restore_tints();root.hdRoot=&hdRoot;s_menu.flourishTexture=nullptr;draw_icon();
     assert(!ownTL.shown&&!ownBR.shown);
     assert(collection::flourish_corner(hylian.rect,tl.rect)==-1);
 }
 '''
 presentation = presentation.replace("// RESTORE", function("restore_tints"))
 presentation = presentation.replace("// PRESENT", "\n".join(function(n) for n in
-    ["visible", "transfer_equipped_flourishes", "present_equipment"]))
+    ["visible", "hide_shield_flourishes", "present_equipment", "present_sword_flourishes", "draw_icon"]))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / "presentation.cpp", Path(tmp) / "presentation"
     cpp.write_text(presentation)

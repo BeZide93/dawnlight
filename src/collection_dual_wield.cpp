@@ -56,6 +56,7 @@ struct Menu {
     CPaneMgr* iconPane=nullptr;
     J2DPicture* frame=nullptr;
     J2DPicture* flourishes[2]{};
+    const ResTIMG* flourishTexture=nullptr;
     struct FrameTint {J2DPicture* pane;JUtility::TColor color;};
     std::vector<FrameTint> frameTints;
     struct DecorationVisibility {J2DPane* pane;bool shown;};
@@ -78,6 +79,7 @@ struct Menu {
         JKR_DELETE(iconPane);JKR_DELETE(screen);
         iconPane=nullptr;screen=nullptr;icon=frame=nullptr;
         for(auto*& flourish:flourishes) flourish=nullptr;
+        flourishTexture=nullptr;
         if(heap) mDoExt_destroySolidHeap(heap);
         heap=nullptr;owner=nullptr;focused=visible=false;cells.clear();
     }
@@ -244,6 +246,10 @@ HookAction capture_icon(ModContext*,void* args,void*,void*) {
     const auto* icon=texture(picture(menu->mpScreen,MULTI_CHAR('ken_01')));
     const auto* frame=texture(picture(menu->mpScreen,MULTI_CHAR('tate_g_1')));
     if(!icon||!frame) return HOOK_CONTINUE;
+    // The same game resource used by HD HUD. Do not depend on another mod's
+    // generated pane tags, frame artwork, visibility or slot coordinates.
+    auto* archive=dComIfGp_getCollectResArchive();
+    s_menu.flourishTexture=archive?static_cast<const ResTIMG*>(archive->getResource('TIMG',"tt_kazari_2nd_okan_64.bti")):nullptr;
     s_menu.heap=mDoExt_createSolidHeapFromGame(0x20000,0x20);
     if(!s_menu.heap) return HOOK_CONTINUE;
     auto* old=mDoExt_setCurrentHeap(s_menu.heap);
@@ -259,11 +265,11 @@ HookAction capture_icon(ModContext*,void* args,void*,void*) {
             s_menu.screen->appendChild(s_menu.icon);
             s_menu.iconPane=JKR_NEW CPaneMgr(s_menu.screen,MULTI_CHAR('dl_clic'),0,nullptr);
         }
-        // Allocate on our menu heap; fill from the live HUD artwork at draw time.
+        // Allocate the archive-backed ornaments on our menu heap.
         // These follow the icon/frame in draw order and share their lifetime.
         for(int corner=0;corner<2;++corner) {
             auto* flourish=JKR_NEW J2DPicture(MULTI_CHAR('dl_clf0')+corner,
-                JGeometry::TBox2<f32>(0,0,24,24),frame,nullptr);
+                JGeometry::TBox2<f32>(0,0,24,24),s_menu.flourishTexture?s_menu.flourishTexture:frame,nullptr);
             s_menu.flourishes[corner]=flourish;
             if(flourish) {s_menu.screen->appendChild(flourish);flourish->hide();}
         }
@@ -300,34 +306,41 @@ void shield_frames(dMenu_Collect2D_c* menu,J2DPane* root,const ResTIMG* artwork,
     for(auto* child=root->getFirstChildPane();child;child=child->getNextChildPane())
         shield_frames(menu,child,artwork,frames);
 }
-void transfer_equipped_flourishes(dMenu_Collect2D_c* menu,J2DPane* pane,const collection::Cell& frame) {
+void hide_shield_flourishes(dMenu_Collect2D_c* menu,J2DPane* pane,const collection::Cell& frame) {
     if(!pane) return;
-    // Hidden equipment ornaments are valid templates too: HD HUD hides them
-    // when its underlying shield is not marked equipped. Ignore hidden pages.
+    // Hide the old shield's ornaments only for this draw. This is independent
+    // of drawing our own pair: custom slots need not expose matching panes.
     if((pane->mInfoTag>>16)==(MULTI_CHAR('hd_cef00')>>16) && pane->getTypeID()==18 && visible(pane->getParentPane())) {
         const auto r=bounds(menu,pane,0,0,false);
         const int corner=collection::flourish_corner(frame,r);
-        auto* source=static_cast<J2DPicture*>(pane);
-        if(corner>=0 && s_menu.flourishes[corner] && texture(source)) {
-            auto* target=s_menu.flourishes[corner];
-            if(!target->isVisible()) {
-                if(texture(target)!=texture(source)) target->changeTexture(texture(source),0);
-                target->setTexCoord(target->getTexture(0),BIND15,static_cast<J2DMirror>(corner==0?0:3),false);
-                target->setBlackWhite(source->getBlack(),source->getWhite());
-                target->setCornerColor(source->corner(0),source->corner(1),source->corner(2),source->corner(3));
-                target->setAlpha(source->getAlpha());
-                const auto p=s_menu.placement;
-                const float sx=(p.size+6)/frame.width,sy=(p.size+6)/frame.height;
-                target->move(p.left-3+(r.left-frame.left)*sx,p.top-3+(r.top-frame.top)*sy);
-                target->resize(r.width*sx,r.height*sy);target->show();
-            }
+        if(corner>=0) {
             bool saved=false;for(const auto& old:s_menu.decorations) if(old.pane==pane) saved=true;
             if(!saved) s_menu.decorations.push_back({pane,pane->isVisible()});
             pane->hide();
         }
     }
     for(auto* child=pane->getFirstChildPane();child;child=child->getNextChildPane())
-        transfer_equipped_flourishes(menu,child,frame);
+        hide_shield_flourishes(menu,child,frame);
+}
+void present_sword_flourishes() {
+    for(auto* flourish:s_menu.flourishes) if(flourish) flourish->hide();
+    if(!s_menu.owner || !s_menu.visible || !dual_wield_equipped() || !s_menu.flourishTexture) return;
+    // Only the HD collection layout uses these equipment ornaments. Its root
+    // remains identifiable even when Essentials replaces every shield frame.
+    if(!visible(s_menu.owner->mpScreen->search(MULTI_CHAR('hd_colly')))) return;
+    const auto p=s_menu.placement;
+    const float scale=(p.size+6)/52.f; // HD: 46-unit icon, 52-unit frame
+    for(int corner=0;corner<2;++corner) {
+        auto* target=s_menu.flourishes[corner];if(!target) continue;
+        target->setTexCoord(target->getTexture(0),BIND15,static_cast<J2DMirror>(corner==0?0:3),false);
+        target->setBlackWhite(JUtility::TColor(0,0,0,0),JUtility::TColor(246,244,198,255));
+        target->setCornerColor(JUtility::TColor(255,255,255,255));target->setAlpha(255);
+        // HD HUD places the 24-unit corners 6 units outside the frame at TL,
+        // and 18 units before its bottom-right edge (mirrored on both axes).
+        const float offset=corner==0?-6.f*scale:p.size+6-18.f*scale;
+        target->move(p.left-3+offset,p.top-3+offset);
+        target->resize(24*scale,24*scale);target->show();
+    }
 }
 void present_equipment(dMenu_Collect2D_c* menu) {
     if(!s_menu.visible || !s_menu.drawing) return;
@@ -344,7 +357,7 @@ void present_equipment(dMenu_Collect2D_c* menu) {
     s_menu.frame->setBlackWhite(reference->getBlack(),dual_wield_equipped()?equipped:inactive);
     if(!dual_wield_equipped()) return;
     for(auto* frame:frames) {
-        transfer_equipped_flourishes(menu,menu->mpScreen,bounds(menu,frame,0,1,true));
+        hide_shield_flourishes(menu,menu->mpScreen,bounds(menu,frame,0,1,true));
         s_menu.frameTints.push_back({frame,frame->getWhite()});
         frame->setWhite(inactive);
     }
@@ -362,6 +375,7 @@ void after_layout(ModContext*,void* args,void*,void*) {
 void draw_icon() {
     if(!s_menu.visible || s_menu.drawn) return;
     auto* graf=dComIfGp_getCurrentGrafPort();if(!graf) return;graf->setup2D();
+    present_sword_flourishes();
     s_menu.screen->draw(0,0,graf);s_menu.drawn=true;
 }
 void after_draw(ModContext*,void* args,void*,void*) {

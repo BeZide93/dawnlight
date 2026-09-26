@@ -9,7 +9,7 @@ source = (root / "src/collection_dual_wield.cpp").read_text()
 
 def function(name):
     import re
-    start = re.search(r"^[\w* ]+ " + name + r"\([^;]*?\) \{", source, re.M).start()
+    start = re.search(r"^[\w:*<> ,]+ " + name + r"\([^;]*?\) \{", source, re.M).start()
     opening = source.index("{", start)
     depth = 1
     end = opening + 1
@@ -489,6 +489,7 @@ presentation = r'''
 #include "collection_dual_wield_state.hpp"
 #include <cassert>
 #include <cstdint>
+#include <map>
 #include <vector>
 using namespace dawnlight;
 namespace JUtility {
@@ -533,11 +534,22 @@ struct Graf {void setup2D(){}} graf;
 Graf* dComIfGp_getCurrentGrafPort(){return &graf;}
 struct J2DScreen: J2DPane {
     J2DPane* hdRoot=nullptr;int draws=0;bool drewTL=false,drewBR=false;
-    J2DPane* search(uint64_t){return hdRoot;}
+    std::map<u64,J2DPane*> tagged;
+    J2DPane* search(uint64_t tag){return tag==MULTI_CHAR('hd_colly')?hdRoot:tagged[tag];}
     void draw(int,int,Graf*);
 } ownScreen;
 using u8=uint8_t;
-struct dMenu_Collect2D_c {J2DScreen* mpScreen=nullptr;u8 mEquippedShield=43;};
+struct CPaneMgr {J2DPane* pane=nullptr;J2DPane* getPanePtr(){return pane;}};
+struct dMenu_Collect2D_c {
+    J2DScreen* mpScreen=nullptr;u8 mEquippedShield=43;
+    CPaneMgr* mpSelPm[7][6]{};int field_0x22d[7][6]{};
+    u64 getItemTag(int x,int y,bool){
+        // The host table has no tags for custom slots at x=5/6 in row 1.
+        if(y==1&&x==3)return MULTI_CHAR('tate_n0');
+        if(y==1&&x==4)return MULTI_CHAR('tate_n1');
+        return 0;
+    }
+};
 struct EquipmentVisuals {
     struct Pane {J2DPane* pane;bool shown;TColor black,white;};
     std::vector<Pane> panes;u8 equippedShield=0xff;
@@ -547,7 +559,9 @@ J2DPicture* picture(J2DPane*,uint64_t t){return t==(MULTI_CHAR('tate_g_0'))?&for
 const ResTIMG* texture(J2DPicture* p){return p->art;}
 bool matchingFrames=true;
 void shield_frames(dMenu_Collect2D_c*,J2DPane*,const ResTIMG*,std::vector<J2DPicture*>& out){if(matchingFrames)out={&hylian,&foreignFrame};}
-collection::Cell bounds(dMenu_Collect2D_c*,J2DPane* p,int,int,bool){return p->rect;}
+collection::Cell bounds(dMenu_Collect2D_c*,J2DPane* p,int x,int y,bool available){
+    auto r=p->rect;r.x=x;r.y=y;r.available=available;return r;
+}
 bool equipped=true;
 bool dual_wield_equipped(){return equipped;}
 struct Menu {
@@ -566,7 +580,43 @@ struct Menu {
 } s_menu;
 // PRESENT
 void J2DScreen::draw(int,int,Graf*){++draws;drewTL=ownTL.shown;drewBR=ownBR.shown;}
+void check_slot_discovery(){
+    J2DScreen root;dMenu_Collect2D_c menu{&root};
+    J2DPane ordon,wood,hylia,custom,oldWood;
+    CPaneMgr managers[4]{{&ordon},{&wood},{&hylia},{&custom}};
+    const int columns[4]{5,3,4,6};J2DPane* panes[4]{&ordon,&wood,&hylia,&custom};
+    root.tagged[MULTI_CHAR('tate_n0')]=&oldWood;
+    root.tagged[MULTI_CHAR('tate_n1')]=&hylia;
+    oldWood.parent=&root;oldWood.rect={3,1,10,80,46,46,true};
+    for(int i=0;i<4;++i){
+        panes[i]->parent=&root;panes[i]->rect={columns[i],1,100.f+i*60,80,46,46,true};
+        menu.mpSelPm[columns[i]][1]=&managers[i];menu.field_0x22d[columns[i]][1]=1;
+    }
+    for(float offset:{0.f,35.f}){
+        // Layout can move custom panes again on each final screen draw.
+        custom.rect.left=280+offset;
+        const auto cells=collect_cells(&menu);const auto p=collection::append_shield(cells);
+        assert(cells.size()==4&&cells[p.neighbor].x==6);
+        assert(p.left>custom.rect.left+custom.rect.width);
+        assert(cells[collection::neighbor(cells,p,collection::Direction::Left)].x==6);
+        for(auto c:cells)assert(c.left!=oldWood.rect.left); // no stale native substitute
+    }
+    // With no manager yet, native panes remain a valid fallback.
+    menu.mpSelPm[3][1]=nullptr;
+    auto cells=collect_cells(&menu);
+    assert(cells.size()==4&&cells[0].left==oldWood.rect.left);
+    // A hidden custom pane must not fall back to a different visible icon.
+    menu.mpSelPm[3][1]=&managers[1];wood.hide();
+    cells=collect_cells(&menu);
+    for(auto c:cells)assert(c.x!=3);
+    root.hide();assert(collect_cells(&menu).empty());
+    root.show();hylia.hide();
+    cells=collect_cells(&menu);
+    bool reserved=false;for(auto c:cells)if(c.x==-1&&c.y==1&&!c.available)reserved=true;
+    assert(reserved); // keep space for the unavailable Hylian shield
+}
 int main(){
+    check_slot_discovery();
     J2DScreen root;J2DPane hdRoot;hdRoot.parent=&root;root.hdRoot=&hdRoot;
     dMenu_Collect2D_c menu{&root};s_menu.owner=&menu;
     ownTL.art=ownBR.art=&ornamentArt; // loaded directly from the archive at creation
@@ -642,7 +692,7 @@ int main(){
 '''
 presentation = presentation.replace("// RESTORE", function("restore_tints"))
 presentation = presentation.replace("// PRESENT", "\n".join(function(n) for n in
-    ["visible", "save_pane_visuals", "capture_visuals", "restore_visuals",
+    ["visible", "collect_cells", "save_pane_visuals", "capture_visuals", "restore_visuals",
      "hide_shield_flourishes", "present_equipment", "present_sword_flourishes", "draw_icon"]))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / "presentation.cpp", Path(tmp) / "presentation"

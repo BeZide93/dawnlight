@@ -153,22 +153,34 @@ void show_name(dMenu_Collect2D_c* menu) {
     menu->mItemNameString=0;
     menu->setAButtonString(menu->mIsWolf?0:0x436);
 }
-void layout(dMenu_Collect2D_c* menu) {
-    if(s_menu.owner!=menu || !s_menu.screen || !menu->mpScreen || !menu->mpLinkPm) return;
-    s_menu.cells.clear();
+std::vector<collection::Cell> collect_cells(dMenu_Collect2D_c* menu) {
+    std::vector<collection::Cell> cells;
     for(int y=0;y<6;++y) for(int x=0;x<7;++x) {
-        const auto tag=menu->getItemTag(x,y,true);if(!tag) continue;
-        auto* pane=menu->mpScreen->search(tag);
+        // Collection-Lib replaces these managers with the actual custom-slot
+        // panes. The host getItemTag table only knows vanilla cells, so relying
+        // on its return value can omit an added shield (or find an old pane
+        // when a native cell was replaced). Use the same pane as selection.
+        auto* manager=menu->mpSelPm[x][y];
+        auto* pane=manager?manager->getPanePtr():nullptr;
+        if(!pane) {
+            const auto tag=menu->getItemTag(x,y,true);
+            if(tag) pane=menu->mpScreen->search(tag);
+        }
         if(!visible(pane)) continue;
-        s_menu.cells.push_back(bounds(menu,pane,x,y,menu->field_0x22d[x][y]!=0 || y==5));
+        cells.push_back(bounds(menu,pane,x,y,menu->field_0x22d[x][y]!=0 || y==5));
     }
     // Always include the Hylian Shield's reserved place, even before acquisition.
     auto* hylian=menu->mpScreen->search(MULTI_CHAR('tate_n1'));
     if(hylian && visible(hylian->getParentPane())) {
         auto c=bounds(menu,hylian,-1,1,false);
-        bool found=false;for(const auto& old:s_menu.cells) if(old.y==1&&std::fabs(old.left-c.left)<1) found=true;
-        if(!found) s_menu.cells.push_back(c);
+        bool found=false;for(const auto& old:cells) if(old.y==1&&std::fabs(old.left-c.left)<1) found=true;
+        if(!found) cells.push_back(c);
     }
+    return cells;
+}
+void layout(dMenu_Collect2D_c* menu) {
+    if(s_menu.owner!=menu || !s_menu.screen || !menu->mpScreen || !menu->mpLinkPm) return;
+    s_menu.cells=collect_cells(menu);
     s_menu.placement=collection::append_shield(s_menu.cells);
     const auto p=s_menu.placement;
     const bool onScreen=p.left>=mDoGph_gInf_c::getMinXF() && p.left+p.size<=mDoGph_gInf_c::getMaxXF();

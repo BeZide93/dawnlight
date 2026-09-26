@@ -435,6 +435,12 @@ void present_equipment(dMenu_Collect2D_c* menu) {
         const auto color=frame->getWhite();
         if(color.r>200) equipped=color;else inactive=color;
     }
+    // Clearing a custom shield may leave every shield frame inactive. The HD
+    // palette is fixed and must not fall back to vanilla yellow in that gap.
+    if(visible(menu->mpScreen->search(MULTI_CHAR('hd_colly')))) {
+        equipped=JUtility::TColor(246,244,198,255);
+        inactive=JUtility::TColor(132,134,104,255);
+    }
     s_menu.frame->setBlackWhite(reference->getBlack(),dual_wield_equipped()?equipped:inactive);
     if(!dual_wield_equipped()) return;
     for(auto* frame:frames) {
@@ -513,28 +519,22 @@ void after_wait(ModContext*,void* args,void*,void*) {
 HookAction before_navigate(ModContext*,void* args,void*,void*) {
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     if(s_menu.owner!=menu||!s_menu.visible||!menu->mpStick) return HOOK_CONTINUE;
+    const STControl previous=*menu->mpStick;
+    menu->mpStick->checkTrigger();
+    const int direction=menu->mpStick->checkLeftTrigger()?0:menu->mpStick->checkRightTrigger()?1:
+        menu->mpStick->checkUpTrigger()?2:menu->mpStick->checkDownTrigger()?3:-1;
     if(!own_focus(menu)) {
-        int last=-1;
-        for(std::size_t i=0;i<s_menu.cells.size();++i) {
-            const auto& c=s_menu.cells[i];
-            if(c.y==1 && c.x>=0 && c.available && (last<0 || c.left>s_menu.cells[last].left)) last=int(i);
-        }
-        if(last<0 || menu->mCursorY!=1 || menu->mCursorX!=s_menu.cells[last].x) return HOOK_CONTINUE;
         // STControl's trigger queries consume repeat state. Peek transactionally:
         // only retain that state if we handle the step into our virtual cell.
         // Otherwise the original/foreign navigator sees the untouched input.
-        const STControl previous=*menu->mpStick;
-        menu->mpStick->checkTrigger();
-        if(menu->mpStick->checkRightTrigger()) {
+        if(direction>=0 && collection::enters_slot(s_menu.cells,s_menu.placement,menu->mCursorX,menu->mCursorY,
+                                                  static_cast<collection::Direction>(direction))) {
             focus(menu);
             return HOOK_SKIP_ORIGINAL;
         }
         *menu->mpStick=previous;
         return HOOK_CONTINUE;
     }
-    menu->mpStick->checkTrigger();
-    int direction=menu->mpStick->checkLeftTrigger()?0:menu->mpStick->checkRightTrigger()?1:
-        menu->mpStick->checkUpTrigger()?2:menu->mpStick->checkDownTrigger()?3:-1;
     if(direction>=0) {
         const int next=collection::neighbor(s_menu.cells,s_menu.placement,static_cast<collection::Direction>(direction));
         if(next>=0) {

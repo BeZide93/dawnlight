@@ -48,6 +48,19 @@ inline int neighbor(std::span<const Cell> cells, const Placement& from, Directio
     }
     return result;
 }
+inline bool enters_slot(std::span<const Cell> cells,const Placement& slot,int x,int y,Direction dir) {
+    for(const auto& current:cells) {
+        if(current.x!=x || current.y!=y) continue;
+        const float size=std::min(current.width,current.height);
+        const Placement from{current.left+(current.width-size)*.5f,current.top+(current.height-size)*.5f,size,0};
+        const Cell target{-2,1,slot.left,slot.top,slot.size,slot.size,true};
+        const int existing=neighbor(cells,from,dir);
+        if(existing<0) return neighbor(std::span<const Cell>(&target,1),from,dir)==0;
+        const std::array<Cell,2> choices{cells[existing],target};
+        return neighbor(choices,from,dir)==1;
+    }
+    return false;
+}
 struct Selection {
     bool chosen=false;
     bool boss=false;

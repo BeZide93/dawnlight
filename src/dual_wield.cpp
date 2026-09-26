@@ -176,7 +176,17 @@ bool prepare(daAlink_c* link) {
 bool human(daAlink_c* link) {
     return link && !link->checkWolf() && link->mpLinkModel && link->field_0x2060 &&
         link->mpLinkModel->getModelData()->getJointNum()==35 && link->mSwordModel &&
-        link->mSheathModel && link->checkSwordGet() && !link->checkWoodSwordEquip();
+        link->mSheathModel && link->checkSwordGet();
+}
+void show_guard_blade(daAlink_c* link) {
+    // The wooden sword's stowed duplicate is material 1. Drawing it hides
+    // that duplicate; metal swords instead reveal their blade at material 0.
+    auto* data=link->mSwordModel->getModelData();
+    const bool wooden=link->checkWoodSwordEquip();
+    const int material=wooden?1:0;
+    if(data->getMaterialNum()<=material) return;
+    auto* shape=data->getMaterialNodePointer(material)->getShape();
+    if(wooden) shape->hide();else shape->show();
 }
 bool ordinary(daAlink_c* link) {
     if(link->mProcID==daAlink_c::PROC_CUT_NORMAL) return true;
@@ -545,7 +555,7 @@ void after_items(ModContext*,void* args,void*,void*) {
     put(s.sheath,dual::compose(s.hipSword,dual::inverse(mount)));
     if(active(link) && s.guard>0 && link->mEquipItem!=0x103) {
         put(link->mSwordModel,sword_at_hand(link,false));
-        link->mSwordModel->getModelData()->getMaterialNodePointer(0)->getShape()->show();
+        show_guard_blade(link);
         s.forcedBlade=true;
     }
 }

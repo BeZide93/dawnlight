@@ -261,6 +261,31 @@ int main(){
         focus(&menu);++menu.mCursorY;assert(!own_focus(&menu));
         s_menu.owner=nullptr;
     }
+    // HD places the sword row to the right of shields. Enter our virtual slot
+    // from the custom Wooden Sword with Left, and from vertical neighbors too.
+    for(int direction:{0,1,2,3}){
+        dMenu_Collect2D_c menu;s_menu.owner=&menu;s_menu.visible=true;s_menu.focused=false;
+        s_menu.cells={{6,1,400,100,46,46,true}};
+        s_menu.placement=collection::append_shield(s_menu.cells);
+        const auto p=s_menu.placement;
+        collection::Cell from{5,0,p.left,p.top,46,46,true};
+        if(direction<2)from.left+=direction==0?140:-140;
+        else from.top+=direction==2?100:-100;
+        if(direction==1)from=s_menu.cells[0];else s_menu.cells.push_back(from);
+        menu.mCursorX=from.x;menu.mCursorY=from.y;menu.stick={direction,0,0};
+        assert(before_navigate(nullptr,&menu,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&own_focus(&menu));
+        assert(menu.mCursorX==6&&menu.mCursorY==1); // retain the real shield anchor
+        if(direction==0){
+            menu.stick={1,0,0};
+            assert(before_navigate(nullptr,&menu,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+            assert(!s_menu.focused&&menu.mCursorX==5&&menu.mCursorY==0);
+            // A nearer native/custom target keeps its normal navigation action.
+            s_menu.cells.push_back({4,0,p.left+70,p.top,46,46,true});menu.stick={0,0,0};
+            assert(before_navigate(nullptr,&menu,nullptr,nullptr)==HOOK_CONTINUE);
+            assert(menu.stick.ticks==0&&menu.stick.delay==0);
+        }
+        s_menu.owner=nullptr;
+    }
     // Selection is opt-in, scoped to both slot and mode, and tolerant of absent,
     // corrupt, oversized or future-version metadata.
     saves.blobs.clear();saves.slot=0;boss=false;load_selection(nullptr,0,nullptr);
@@ -673,6 +698,17 @@ int main(){
         s_menu.restore_tints();equipped=true;
       }
     }
+    // Custom-shield cleanup can leave no active frame, or a transient vanilla
+    // yellow frame. HD always keeps its ivory palette without reopening.
+    for(TColor transient:{low,TColor{255,255,0,255}}){
+        hylian.white=low;foreignFrame.white=transient;s_menu.drawing=true;
+        present_equipment(&menu);draw_icon();
+        assert(ownFrame.white==high&&ownTL.white==high&&ownBR.white==high);
+        s_menu.restore_tints();assert(foreignFrame.white==transient);
+    }
+    root.hdRoot=nullptr;foreignFrame.white={255,255,0,255};s_menu.drawing=true;
+    present_equipment(&menu);assert(ownFrame.white==TColor(255,255,0,255));
+    s_menu.restore_tints();root.hdRoot=&hdRoot;
     // Source panes may be absent, retagged or far from the remapped shield row.
     // Draw without present_equipment: no frame scan/main screen hook is needed.
     root.child=nullptr;s_menu.placement={200,100,98,0};draw_icon();

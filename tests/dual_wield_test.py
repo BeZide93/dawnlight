@@ -366,19 +366,25 @@ struct Material {
 };
 struct ModelData {
     J3DTexMtx warp;std::array<Material,2> materials;
+    int joints=35,materialCount=2;
     ModelData(){for(auto& m:materials)m.tex.matrices[1]=&warp;}
-    int getJointNum(){return 1;}int getMaterialNum(){return 2;}
+    int getJointNum(){return joints;}int getMaterialNum(){return materialCount;}
     auto getMaterialNodePointer(int i){return &materials.at(i);}
 } data;
 struct J3DModel {ModelData* data;auto getModelData(){return data;}} model{&data};
 struct daAlink_c {
     J3DModel* mSheathModel=nullptr;
     bool preview=false,human=true;
+    J3DModel* mSwordModel=&model;J3DModel* mpLinkModel=&model;
+    void* field_0x2060=&model;
+    bool wooden=false,swordOwned=true;
+    bool checkWolf(){return !human;}
+    bool checkSwordGet(){return swordOwned;}
+    bool checkWoodSwordEquip(){return wooden;}
     bool checkStatusWindowDraw(){return preview;}
 };
 bool equipped=true;
 bool dual_wield_equipped(){return equipped;}
-bool human(daAlink_c* link){return link->human;}
 struct Heap {
     std::array<char,64> bytes{};bool fail=false;
     void* alloc(u32 size,int alignment){assert(size==64 && alignment==32);return fail?nullptr:bytes.data();}
@@ -438,6 +444,7 @@ loader_fixture += function("model_failure") + function("copy_model", "J3DModel*"
 loader_fixture += r'''
 bool active(daAlink_c* link){return s.owner==link && s.active && s.sword && s.sheath;}
 '''
+loader_fixture += function("human", "bool") + function("show_guard_blade")
 loader_fixture += function("warp_texture", "J3DTexMtx*") + function("equipment_visible", "bool") + function("sync_equipment_materials")
 loader_fixture += r'''
 int main() {
@@ -468,6 +475,20 @@ int main() {
     ModelData nativeData,swordData,sheathData;
     J3DModel native{&nativeData},sword{&swordData},sheath{&sheathData};
     daAlink_c link{&native},other{&native};
+    link.mSwordModel=&native;
+    // Custom Wooden Sword uses the ordinary native wood backing item. It must
+    // be eligible, and guard must hide its stowed duplicate, not reveal it.
+    assert(human(&link));link.wooden=true;assert(human(&link));
+    nativeData.materials[0].shape.visible=true;nativeData.materials[1].shape.visible=true;
+    show_guard_blade(&link);
+    assert(nativeData.materials[0].shape.visible&&!nativeData.materials[1].shape.visible);
+    link.wooden=false;nativeData.materials[0].shape.visible=false;show_guard_blade(&link);
+    assert(nativeData.materials[0].shape.visible);
+    link.swordOwned=false;assert(!human(&link));link.swordOwned=true;
+    link.human=false;assert(!human(&link));link.human=true;
+    data.joints=12;assert(!human(&link));data.joints=35;
+    nativeData.materialCount=1;link.wooden=true;show_guard_blade(&link);
+    nativeData.materialCount=2;link.wooden=false;
     s.owner=&link;s.sword=&sword;s.sheath=&sheath;s.enabled=s.active=true;
     dRes_info_c::offWarpMaterial(&nativeData);
     // Fully sheathed: only the secondary blade disappears.

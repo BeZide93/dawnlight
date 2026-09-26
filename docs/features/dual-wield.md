@@ -8,7 +8,8 @@ shield with a second Ordon Sword. The setting defaults to off; enabling it
 alone no longer equips the second sword.
 
 The icon sits to the right of the shield row, after other visible shield
-options. Move right from the last available shield, or click/tap the sword.
+options. Navigate from adjacent slots (including left from the Wooden Sword
+in the HD layout), or click/tap the sword.
 Its highlighted frame indicates that Dual Wield is equipped. Link’s menu
 preview carries the second sword, and navigating/equipping uses the normal
 menu sounds. The existing menu cursor supplies the selection animation,
@@ -20,7 +21,9 @@ separate choices for normal play and Boss Rush. Turning the setting off removes
 the icon and clears the current choice.
 
 The secondary sword and its scabbard rest at the left hip when stowed; the
-primary sword keeps its normal equipment slot.
+primary sword keeps its normal equipment slot. The Wooden Sword, including
+Twilit Essentials' additional starter-equipment slot, can also be used as the
+primary weapon.
 
 Ordinary sword strikes and their combo finishers alternate hands. The active
 blade supplies the hit positions and sword trail. Guarding crosses both swords;

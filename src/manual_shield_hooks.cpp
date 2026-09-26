@@ -26,6 +26,7 @@ DEFINE_HOOK(&daAlink_c::setShieldGuard, SetShieldGuardHook);
 DEFINE_HOOK(&daAlink_c::checkItemAction, CheckItemActionHook);
 DEFINE_HOOK(&daAlink_c::procGuardAttackInit, GuardAttackInitHook);
 DEFINE_HOOK(&dMeterButton_c::draw, MeterButtonDrawHook);
+DEFINE_HOOK(&J2DScreen::draw, AttackPromptScreenDrawHook);
 
 thread_local daAlink_c* s_manualGuardAttackOwner = nullptr;
 
@@ -48,6 +49,7 @@ struct AttackPromptLayerState {
 thread_local AttackPromptTextureState s_attackPromptTextureState;
 thread_local std::array<AttackPromptLayerState, 8> s_attackPromptLayerStates{};
 thread_local std::size_t s_attackPromptLayerStateCount = 0;
+thread_local dMeterButton_c* s_drawingAttackButtons = nullptr;
 
 J2DPicture* picture_for(J2DScreen* screen, u64 tag) {
     J2DPane* pane = screen != nullptr ? screen->search(tag) : nullptr;
@@ -134,12 +136,17 @@ void apply_twilight_hd_attack_prompt(dMeterButton_c* buttons) {
     ResTIMG const* hudATexture = picture_texture(hudA);
     ResTIMG const* hudBTexture = picture_texture(hudB);
 
-    // Twilight HD applies the same selected A texture to both HUD layouts, but leaves the
-    // contextual B pane untouched. Matching those live pointers detects it without a mod API.
+    // Matching the live A textures recognizes the HD layout. Newer HD HUD
+    // versions also replace contextual B; its native letter/glow still need
+    // suppression even when the base already has the selected HD texture.
     if (contextATexture == nullptr || contextATexture != hudATexture ||
-        contextB == nullptr || hudBTexture == nullptr ||
-        picture_texture(contextB) == hudBTexture)
+        contextB == nullptr || hudBTexture == nullptr)
     {
+        return;
+    }
+
+    if (picture_texture(contextB) == hudBTexture) {
+        suppress_attack_prompt_layers(buttons->mpButtonB->getPanePtr(), contextB);
         return;
     }
 
@@ -286,12 +293,25 @@ void after_check_item_action(ModContext*, void* args, void* retval, void*) {
 }
 
 HookAction before_meter_button_draw(ModContext*, void* args, void*, void*) {
-    apply_twilight_hd_attack_prompt(mods::arg<dMeterButton_c*>(args, 0));
+    restore_attack_prompt_texture();
+    s_drawingAttackButtons = mods::arg<dMeterButton_c*>(args, 0);
+    return HOOK_CONTINUE;
+}
+
+HookAction before_attack_prompt_screen_draw(ModContext*, void* args, void*, void*) {
+    // Native draw updates the button transforms/animations after its pre-hooks.
+    // Suppress stock artwork only at the final draw boundary of this screen.
+    if (s_drawingAttackButtons != nullptr &&
+        mods::arg<J2DScreen*>(args, 0) == s_drawingAttackButtons->mpButtonScreen)
+    {
+        apply_twilight_hd_attack_prompt(s_drawingAttackButtons);
+    }
     return HOOK_CONTINUE;
 }
 
 void after_meter_button_draw(ModContext*, void*, void*, void*) {
     restore_attack_prompt_texture();
+    s_drawingAttackButtons = nullptr;
 }
 
 }  // namespace
@@ -316,6 +336,11 @@ ModResult install_manual_shield_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterButtonDrawHook>(svc_hook, after_meter_button_draw);
+    }
+    if (result == MOD_OK) {
+        HookOptions late = HOOK_OPTIONS_INIT;
+        late.priority = -200;
+        result = mods::hook_add_pre<AttackPromptScreenDrawHook>(svc_hook, before_attack_prompt_screen_draw, &late);
     }
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight manual shielding hooks");

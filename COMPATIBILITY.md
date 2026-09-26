@@ -49,8 +49,7 @@ or own a third item slot. It:
 - allows the touch Z button to assign the selected item from the item wheel;
 - keeps touch L available on field and dungeon maps, and routes it to the
   field map's portal action after Twilight HD HUD's physical-L mapping;
-- moves the Midna touch action and Midna's head to the Skip button outside
-  cutscenes; and
+- offers a separate Midna button with her icon, enabled under Controls → Touch Buttons; and
 - leaves the normal Skip button behavior intact during cutscenes.
 
 This toggle works independently from Dawnlight's `Z Item Slot` setting so that
@@ -59,26 +58,39 @@ touch controls. Restart Dusklight after changing it.
 
 ### Extra touch buttons
 
-**Controls → Touch Buttons** contains independent switches for LB, D-Pad Up,
+**Controls → Touch Buttons** contains independent switches for Midna, LB, D-Pad Up,
 Down, Left and Right, all off by default. They require both native Touch Controls
 and Dawnlight Touch UI on Android. The switches and layout changes apply live;
 changing the parent Dawnlight Touch UI setting still requires a restart.
 
-**Open Touch Layout Editor** creates a separate instance of Dusklight's original
-`TouchControlsEditor`, including its drag/resize handles, docking, reset dialog,
-and Save/Cancel navigation. Five replacement controls are supplied only while
-that instance executes. The native fixed-size array and vanilla editor remain
-unchanged. Save writes Dawnlight's layouts through ConfigService; Cancel discards
-unsaved edits, and Reset needs Save to persist. Older numeric layouts are migrated
-when first saved. Layout uses the live RML document context and native DP geometry;
-a missing context no longer collapses the buttons to 1 dp at the origin.
+Dusklight's normal **Touch Layout Editor** now edits all nine native elements and
+six Dawnlight buttons in one document. Dawnlight's **Open Dusklight Touch Layout
+Editor** button is a shortcut to that same editor. Dawnlight owns separate
+selection, gesture and layout state for its six buttons. The native element array,
+control metadata and working layout are never swapped or repurposed. Drag, edge
+resizing, corner scaling and docking follow the pinned editor's geometry.
+
+Events targeting other mods' buttons pass through unchanged. Layout updates run
+as a post-hook, and successful saves continue the original hook chain, including
+other mods' pre-hooks and replacements. Dawnlight handles only its own buttons,
+resize handles and active pointers.
+
+Existing Dawnlight layouts, including old numeric positions, load automatically.
+Save persists the native/foreign working layout through the normal editor and
+Dawnlight's six layouts through ConfigService. Cancel discards unsaved changes;
+Reset restores both sets of defaults in the editor and requires Save to persist.
+If another mod vetoes Save without closing the editor, Dawnlight rolls back its
+writes too. The native touch overlay stays suppressed throughout editing and
+reset confirmation. During mod unload, editor/modal documents are closed and
+mod-owned callbacks are removed before their code can unload.
 
 The adapter uses the pinned Android host's private touch ABI. If required editor
 methods or hook targets cannot be resolved, its launch button is disabled while
 Dawnlight and the extra buttons remain active. Partial editor hook installation is
-rolled back. Android v2.0.1 does not expose `end_edit`; the adapter scopes
-`restore_active_control` instead to handle cancelled drags. This still requires
-runtime verification on the supported Dusklight/Lazy Tweaks build.
+rolled back. No `end_edit` hook is required. Tests cover a simulated foreign button,
+extended metadata, both Save hook orders, veto/error rollback, and native gesture
+geometry. Actual interaction with the user's other mod still requires runtime
+verification on the supported Dusklight/Lazy Tweaks build.
 
 LB exposes SDL's left-shoulder button (LB/L1) through `SDL_GetGamepadButton` for
 the player-one controller and `PADGetNativeButtonPressed(PAD_1)` when no physical
@@ -96,12 +108,15 @@ releases the extra buttons. Extras are hidden during game menus, dialogue and
 cutscenes. No new APK is needed.
 
 Run `python3 tests/touch_buttons_test.py` for input ownership, pad merging and
-layout bounds. Run `python3 tests/touch_button_editor_test.py` after fetching the
+layout bounds, and `python3 tests/touch_midna_test.py` for Midna taps, cancellation,
+availability and coexistence with native Skip/Z and the D-pad shortcut.
+Run `python3 tests/touch_button_editor_test.py` after fetching the
 pinned Dusklight source (or set `DUSKLIGHT_DIR`) for the viewport contract, native
-layout round-trips, scoped metadata and Save/Cancel/Reset behavior. Device QA should cover all five buttons, simultaneous LB + face
+native drag/resize/scale, group switching, layout migration, failed-save rollback
+and combined Save/Cancel/Reset behavior. Device QA should cover all six buttons, simultaneous LB + face
 buttons and stick movement, disabling a held button, app/menu transitions,
 orientation/safe-area changes, drag and edge/corner resizing, Save/Cancel/Reset,
-vanilla editor isolation, persistent layouts after restart, and mod unload with
+both editor entry points, persistent layouts after restart, and mod unload with
 the editor or its reset confirmation open.
 
 The portal shortcut uses a touch press edge, so holding L does not repeatedly
@@ -133,7 +148,7 @@ using Twilit Essentials' Custom Z Button is:
 In this configuration, Twilit Essentials owns the item slot and its gameplay
 behavior. Dawnlight supplies the Android touch integration: item-wheel
 assignment through touch Z, the item icon and counters on touch Z, and Midna's
-head and action on the touch Skip button.
+head and action on the separate Midna button (enable it under Controls → Touch Buttons).
 
 Alternatively, Dawnlight's `Z Item Slot` can be enabled when Twilit Essentials'
 `Custom Z Button` is disabled. Enabling both Z item implementations at the same
@@ -155,8 +170,8 @@ toggle that disables only that feature. When Twilight HD HUD is active, use:
 
 This avoids competing third-item implementations. `Dawnlight Touch UI` may
 remain enabled because it does not create another slot; it adapts the active
-third slot to Dawnlight's Android touch layout and keeps Midna on the touch Skip
-button outside cutscenes.
+third slot to Dawnlight's Android touch layout. Enable the separate Midna button
+under Controls → Touch Buttons to call her; Skip remains a cutscene-only button.
 
 Dawnlight's HUD Layout Editor is compatible with Twilight HD HUD's gameplay HUD
 for the supported elements. Twilight HD HUD owns its artwork and base layout;

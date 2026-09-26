@@ -197,16 +197,20 @@ Dusklight. If you changed it with `Change Data Folder`, create or use the
 See [COMPATIBILITY.md](COMPATIBILITY.md) for tested Twilit Essentials and
 Twilight HD HUD versions, compatible Z-item settings, and details about the
 Android-only `Dawnlight Touch UI` option.
-Under **Controls → Touch Buttons**, enable **LB** and each of the four **D-Pad**
+Under **Controls → Touch Buttons**, enable **Midna**, **LB**, and each of the four **D-Pad**
 directions individually (all default to off). LB supplies the native left-bumper
 input for compatible mods, including Twilight HD HUD; the mod decides its action. Both Dusklight Touch Controls and
-Dawnlight Touch UI must be enabled. Choose **Open Touch Layout Editor** to use
-Dusklight's original touch editor with the five extra buttons: drag to move,
-resize with the edge/corner handles, then **Save**. **Cancel** discards changes;
-**Reset** restores defaults in the editor until you save. The usual Dusklight
-editor continues to manage vanilla controls separately. While editing extra buttons,
-the normal Dusklight touch UI stays visible in the background at its saved positions
-for reference; its buttons cannot be edited or activated there.
+Dawnlight Touch UI must be enabled. Open **Dusklight's normal Touch Layout
+Editor**, or use **Open Dusklight Touch Layout Editor** in Dawnlight's Touch Buttons
+window. Both entry points edit the nine vanilla elements and six Dawnlight buttons
+together: drag to move, resize with the edge/corner handles, then **Save**.
+Existing Dawnlight positions are loaded automatically. **Save** applies both
+layouts; **Cancel** discards changes; **Reset** restores both groups' defaults in
+the editor until you save. No separate touch overlay is raised over the editor
+or its Reset confirmation dialog. Dawnlight keeps its edit state separate from
+the native controls and leaves other mods' button events and normal save hooks intact.
+The dedicated Midna button shows her icon and calls her when available. Skip is
+reserved for cutscenes; enable Midna separately in Touch Buttons.
 
 ## Dual Wield
 

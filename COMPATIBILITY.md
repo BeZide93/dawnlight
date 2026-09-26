@@ -34,9 +34,14 @@ blocking behavior. Shield-slot actions leave Dual Wield and retain the other
 mod's normal equip/unequip behavior.
 
 The adapter reads the current `getItemTag` mapping and transformed pane bounds
-after layout hooks, including the Hylian Shield's reserved position. It uses a
-separate screen and cursor instead of replacing grid entries, selection-pane
-pointers, or another mod's menu root. Native and foreign actions pass through
+after layout hooks, including the Hylian Shield's reserved position. The icon uses a
+transparent separate screen. Selection reuses the actual Collection cursor,
+including other mods' artwork and animation, and moves its rendered root after
+cursor-update hooks. It does not replace grid entries, selection-pane pointers,
+or another mod's menu root. Equipped shield frames are dimmed only during the
+menu draw and restored afterward; the sword inherits their equipped tint.
+HD HUD's equipment flourishes follow that highlight. Link's status-window
+preview has its own equipment update/draw path for the second sword. Native and foreign actions pass through
 except when interacting with the added sword. Shoulder-button page changes
 release its focus. The icon follows the equipment row when it slides offscreen.
 

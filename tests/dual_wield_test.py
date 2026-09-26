@@ -95,7 +95,7 @@ struct State {
     float guard=0,draw=0,sheathTilt=0;unsigned tick=0,poseTick=~0u;
     dual::Alternation attacks;
     DualGuardBodyPose guardBody;bool haveGuardBody=false;
-    dual::StowMotion stow;Pose rightSword;
+    dual::StowMotion stow;Pose rightSword;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
 } s;
 struct Borrow {mDoExt_AnmRatioPack* pack=nullptr;J3DAnmTransform* original=nullptr;std::optional<DualWieldAnimation> wrapper;};
 std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
@@ -105,11 +105,12 @@ bool active(daAlink_c* l){return s.owner==l && s.active;}
 bool equipment_visible(daAlink_c* l){return s.owner==l && s.enabled;} // material/model gating tested below
 Pose pose(Pose p){return p;}
 void put(J3DModel* model,int joint,Pose p){model->joints[joint]=p;}
+void put(J3DModel* model,Pose p){model->base=p;}
 Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
 '''
 
 fixture += "\n".join(function(name, result) for name, result in [
-    ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
+    ("local", "Pose"), ("status_item_matrices", "void"), ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
@@ -317,6 +318,19 @@ int main() {
     assert(s.sheathTilt>0 && s.sheathTilt<1); // return from the last pose, no snap
     for(int i=0;i<6;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
     assert(s.sheathTilt==0);
+    // Preview equipment follows newly evaluated menu joints rather than the
+    // previous gameplay item matrices, without changing combat transition state.
+    J3DModel previewSword,previewSheath;s.sword=&previewSword;s.sheath=&previewSheath;
+    link.model.joints[9]={{},{10,20,30}};link.model.joints[10]={{},{11,22,33}};
+    link.model.joints[14]={{},{100,200,300}};link.model.joints[16]={{},{40,50,60}};
+    s.rightSword={{},{-100,-200,-300}};const auto gameplay=s.rightSword;
+    status_item_matrices(&link);
+    assert(previewSword.base.p.x==101&&previewSword.base.p.y==202&&previewSword.base.p.z==297);
+    const auto sheathBefore=previewSheath.base.p;
+    link.model.joints[14].p.x+=50;link.model.joints[16].p.x+=50;
+    status_item_matrices(&link);
+    assert(previewSword.base.p.x==151&&std::fabs(previewSheath.base.p.x-sheathBefore.x-50)<.001f);
+    assert(s.rightSword.p.x==gameplay.p.x&&s.rightSword.p.z==gameplay.p.z);
 }
 '''
 
@@ -357,7 +371,14 @@ struct ModelData {
     auto getMaterialNodePointer(int i){return &materials.at(i);}
 } data;
 struct J3DModel {ModelData* data;auto getModelData(){return data;}} model{&data};
-struct daAlink_c {J3DModel* mSheathModel=nullptr;};
+struct daAlink_c {
+    J3DModel* mSheathModel=nullptr;
+    bool preview=false,human=true;
+    bool checkStatusWindowDraw(){return preview;}
+};
+bool equipped=true;
+bool dual_wield_equipped(){return equipped;}
+bool human(daAlink_c* link){return link->human;}
 struct Heap {
     std::array<char,64> bytes{};bool fail=false;
     void* alloc(u32 size,int alignment){assert(size==64 && alignment==32);return fail?nullptr:bytes.data();}
@@ -456,6 +477,15 @@ int main() {
     assert(nativeData.materials[0].shape.visible);
     s.draw=1;sync_equipment_materials(&link);assert(swordData.materials[0].shape.visible);
     assert(equipment_visible(&link) && !equipment_visible(&other));
+    // Preview updates do not run gameplay setMatrix: live menu selection wins
+    // over stale gameplay enabled/active/draw state, and never inherits a warp.
+    link.preview=true;s.enabled=false;s.active=false;s.draw=0;
+    assert(equipment_visible(&link));sync_equipment_materials(&link);
+    assert(swordData.materials[0].shape.visible);
+    assert(swordData.materials[0].tev.count==1);
+    equipped=false;assert(!equipment_visible(&link));equipped=true;
+    link.human=false;assert(!equipment_visible(&link));link.human=true;
+    link.preview=false;s.enabled=true;s.active=true;s.draw=1;
     // An arrival can already be in progress when the private models appear.
     for(int cycle=0;cycle<3;++cycle) {
         dRes_info_c::onWarpMaterial(&nativeData);

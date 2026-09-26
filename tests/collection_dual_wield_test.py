@@ -54,13 +54,18 @@ struct STControl {
     bool checkUpTrigger(){return consume(2);}
     bool checkDownTrigger(){return consume(3);}
 };
-struct CPaneMgr {float left,top,width,height;};
+struct CPaneMgr {
+    float left,top,width,height,x=0,y=0;
+    void translate(float a,float b){x=a;y=b;}
+};
+struct dSelect_cursor_c {CPaneMgr* mpPaneMgr=nullptr;int artwork=91;float pulse=.73f;};
 struct dMenu_Collect2D_c {
     int mCursorX=4,mCursorY=1,field_0x259=0,field_0x25a=0;
     bool mIsWolf=false;
     int field_0x22d[7][6]{};
     CPaneMgr panes[7][6]{};CPaneMgr* mpSelPm[7][6]{};
     STControl stick;STControl* mpStick=&stick;
+    dSelect_cursor_c* mpDrawCursor=nullptr;
     int restored=0,cursorUpdates=0;
     void setItemNameString(int,int){++restored;}
     void cursorPosSet(){++cursorUpdates;}
@@ -75,6 +80,9 @@ auto* daAlink_getAlinkActorClass(){return &player;}
 int shield=42,vibrations=0;
 int dComIfGs_getSelectEquipShield(){return shield;}
 void dMeter2Info_set2DVibration(){++vibrations;}
+constexpr int Z2SE_SY_CURSOR_ITEM=1,Z2SE_SY_CURSOR_OPTION=2,Z2SE_SY_ITEM_SET_X=3;
+std::vector<int> sounds;
+void mDoAud_seStart(int id,void*,int,int){sounds.push_back(id);}
 struct Save {
     int slot=0;
     std::map<std::pair<int,std::string>,std::vector<unsigned char>> blobs;
@@ -126,7 +134,7 @@ int main(){
          {3,0,455,122,46,46,true},{4,2,315,57,46,46,true}},
         {{3,1,100,80,44,44,true},{-1,1,160,80,44,44,false}}
     }){
-        s_menu.cells=cells;s_menu.placement=collection::append_shield(cells);
+        s_selection.chosen=false;s_menu.cells=cells;s_menu.placement=collection::append_shield(cells);
         auto p=s_menu.placement;
         for(const auto& c:cells)if(c.y==1)assert(p.left>c.left+c.width);
         int last=-1;float right=-1;
@@ -142,6 +150,8 @@ int main(){
         // native navigation; no second query may consume the same trigger.
         assert(before_navigate(nullptr,&menu,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
         assert(own_focus(&menu)&&menu.stick.ticks==1&&menu.stick.delay==3);
+        assert(sounds.back()==Z2SE_SY_CURSOR_ITEM);
+        const auto soundCount=sounds.size();focus(&menu);assert(sounds.size()==soundCount);
         menu.stick={0,0,0};
         assert(before_navigate(nullptr,&menu,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
         assert(!s_menu.focused&&menu.mCursorX==cells[last].x&&menu.mCursorY==1);
@@ -159,6 +169,7 @@ int main(){
         bool result=false;
         assert(before_pointer(nullptr,&menu,&result,nullptr)==HOOK_SKIP_ORIGINAL);
         assert(result&&!pendingClick&&own_focus(&menu)&&context==4&&hover==0xda01);
+        assert(sounds.back()==Z2SE_SY_ITEM_SET_X);
         assert(dual_wield_equipped());
         pointerX=cells[last].left+cells[last].width*.5f;pendingClick=true;
         assert(before_pointer(nullptr,&menu,&result,nullptr)==HOOK_CONTINUE);
@@ -195,12 +206,23 @@ int main(){
     // Feature disabled: navigation and foreign input remain untouched.
     dMenu_Collect2D_c menu;s_menu.owner=&menu;s_menu.visible=false;
     assert(before_navigate(nullptr,&menu,nullptr,nullptr)==HOOK_CONTINUE&&menu.stick.ticks==0);
+    // The shared cursor keeps mod artwork/pulse and only moves its rendered root.
+    CPaneMgr cursorRoot{};dSelect_cursor_c cursor{&cursorRoot};
+    menu.mpDrawCursor=&cursor;s_menu.visible=true;s_menu.focused=true;
+    s_menu.anchorX=menu.mCursorX;s_menu.anchorY=menu.mCursorY;
+    s_menu.placement={200,100,40,0};
+    after_cursor_update(nullptr,&cursor,nullptr,nullptr);
+    assert(cursorRoot.x==220&&cursorRoot.y==120&&cursor.artwork==91&&cursor.pulse==.73f);
+    CPaneMgr foreignRoot{};dSelect_cursor_c foreign{&foreignRoot};
+    after_cursor_update(nullptr,&foreign,nullptr,nullptr);assert(foreignRoot.x==0&&foreignRoot.y==0);
+    s_menu.focused=false;cursorRoot.translate(10,30);
+    after_cursor_update(nullptr,&cursor,nullptr,nullptr);assert(cursorRoot.x==10&&cursorRoot.y==30);
 }
 '''
 
 names = ["restore_name", "blob_name", "load_selection", "select_sword", "setting_changed",
          "dual_wield_equipped", "own_focus", "focus", "can_equip", "activate",
-         "before_wait", "before_navigate", "before_pointer", "before_click"]
+         "before_wait", "before_navigate", "before_pointer", "before_click", "after_cursor_update"]
 fixture = fixture.replace("// PRODUCTION", "\n".join(function(name) for name in names))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / "test.cpp", Path(tmp) / "test"
@@ -209,6 +231,76 @@ with tempfile.TemporaryDirectory() as tmp:
                     str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 print("Collection Dual Wield passed: layouts, consuming input, pointer passthrough, pages and per-save selection")
+
+# Exercise render-only tint ownership separately from input. The screen's
+# original colors must be restored for foreign equip/unequip handlers.
+presentation = r'''
+#include "collection_dual_wield_state.hpp"
+#include <cassert>
+#include <vector>
+using namespace dawnlight;
+namespace JUtility {
+struct TColor {int r,g,b,a;bool operator==(const TColor&)const=default;};
+}
+using JUtility::TColor;
+struct ResTIMG {} artwork;
+struct J2DPicture {
+    TColor white{255,255,0,255},black{0,0,0,0};
+    TColor getWhite(){return white;}TColor getBlack(){return black;}
+    void setWhite(TColor v){white=v;}
+    void setBlackWhite(TColor a,TColor b){black=a;white=b;}
+};
+struct J2DPane {float x=1,y=2;void translate(float a,float b){x=a;y=b;}};
+struct dMenu_Collect2D_c {void* mpScreen=nullptr;};
+J2DPicture hylian,foreignFrame,ownFrame;
+J2DPicture* picture(void*,int){return &hylian;}
+const ResTIMG* texture(J2DPicture*){return &artwork;}
+#define MULTI_CHAR(x) 0
+void shield_frames(dMenu_Collect2D_c*,void*,const ResTIMG*,std::vector<J2DPicture*>& out){out={&hylian,&foreignFrame};}
+collection::Cell bounds(dMenu_Collect2D_c*,J2DPicture*,int,int,bool){return {};}
+int transferred=0;
+void move_equipped_flourishes(dMenu_Collect2D_c*,void*,const collection::Cell&){++transferred;}
+bool equipped=true;
+bool dual_wield_equipped(){return equipped;}
+struct Menu {
+    bool visible=true,drawing=true,drawn=false;
+    J2DPicture* frame=&ownFrame;
+    struct FrameTint {J2DPicture* pane;TColor color;};
+    std::vector<FrameTint> frameTints;
+    struct DecorationPosition {J2DPane* pane;float x,y;};
+    std::vector<DecorationPosition> decorations;
+    // RESTORE
+} s_menu;
+// PRESENT
+int main(){
+    dMenu_Collect2D_c menu;
+    for(const auto high:{TColor{255,255,0,255},TColor{246,244,198,255}}){
+        const TColor low{132,134,104,255};
+        hylian.white=low;foreignFrame.white=high;s_menu.drawing=true;
+        present_equipment(&menu);
+        assert(ownFrame.white==high&&foreignFrame.white==low&&hylian.white==low);
+        assert(s_menu.frameTints.size()==2);
+        J2DPane flourish;flourish.translate(100,200);
+        s_menu.decorations.push_back({&flourish,1,2});
+        s_menu.restore_tints();
+        assert(hylian.white==low&&foreignFrame.white==high);
+        assert(flourish.x==1&&flourish.y==2&&s_menu.decorations.empty());
+        assert(s_menu.frameTints.empty()&&!s_menu.drawing);
+        equipped=false;s_menu.drawing=true;present_equipment(&menu);
+        assert(ownFrame.white==low&&foreignFrame.white==high&&s_menu.frameTints.empty());
+        equipped=true;
+    }
+    assert(transferred==2);
+}
+'''
+presentation = presentation.replace("// RESTORE", function("restore_tints"))
+presentation = presentation.replace("// PRESENT", function("present_equipment"))
+with tempfile.TemporaryDirectory() as tmp:
+    cpp, exe = Path(tmp) / "presentation.cpp", Path(tmp) / "presentation"
+    cpp.write_text(presentation)
+    subprocess.run(["c++", "-std=c++20", "-I" + str(root / "src"), str(cpp), "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
+print("Collection presentation passed: native/HD equipped tint and foreign frame/decoration restoration")
 
 # Release optimization can remove seemingly available source-level helpers.
 # Verify the real Android host when supplied, without requiring game archives.

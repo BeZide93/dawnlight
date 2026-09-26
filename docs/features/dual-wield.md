@@ -9,7 +9,10 @@ alone no longer equips the second sword.
 
 The icon sits to the right of the shield row, after other visible shield
 options. Move right from the last available shield, or click/tap the sword.
-Its highlighted frame indicates that Dual Wield is equipped. Use the shield
+Its highlighted frame indicates that Dual Wield is equipped. Link’s menu
+preview carries the second sword, and navigating/equipping uses the normal
+menu sounds. The existing menu cursor supplies the selection animation,
+including styling applied by other mods. Use the shield
 slots to leave Dual Wield; those slots retain their existing equip/unequip
 behavior, including behavior added by other mods. Selecting the sword requires
 human Link and an equipped shield. The choice is saved per save slot, with
@@ -39,8 +42,10 @@ HUD's rearranged screen without occupying a native grid cell. See
 for the inspected versions and remaining in-game checks.
 
 Validation: `python3 tests/collection_dual_wield_test.py` covers placement,
-controller repeat input, pointer handling, page handoff, and save isolation.
+controller repeat input, pointer handling, menu sounds, shared cursor placement,
+frame restoration, page handoff, and save isolation.
 `python3 tests/dual_wield_test.py` covers pose math, animation
-borrowing/restoration, alternation, blade contact history, and mode boundaries.
+borrowing/restoration, alternation, blade contact history, menu-preview
+equipment transforms/materials, and mode boundaries.
 Visual transitions still require an in-game check, particularly interrupted
 combos, guarding from a holstered stance, and equipment changes.

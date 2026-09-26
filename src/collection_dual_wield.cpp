@@ -17,6 +17,8 @@
 #include "m_Do/m_Do_ext.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"
+#include "m_Do/m_Do_audio.h"
+#include "Z2AudioLib/Z2SeMgr.h"
 #include "mods/svc/hook.hpp"
 #include <cstdio>
 #include <vector>
@@ -34,6 +36,7 @@ DEFINE_HOOK(&dMenu_Collect2D_c::pointerActivateCurrent, CollectionSwordClick);
 DEFINE_HOOK(&dMenu_Collect2D_c::setItemNameString, CollectionSwordName);
 DEFINE_HOOK(&dMenu_Collect2D_c::changeShield, CollectionSwordShield);
 DEFINE_HOOK(&dSelect_cursor_c::draw, CollectionSwordCursor);
+DEFINE_HOOK(&dSelect_cursor_c::update, CollectionSwordCursorUpdate);
 
 collection::Selection s_selection;
 SaveObserverHandle s_saveObserver=0;
@@ -51,14 +54,24 @@ struct Menu {
     J2DPicture* icon=nullptr;
     CPaneMgr* iconPane=nullptr;
     J2DPicture* frame=nullptr;
-    dSelect_cursor_c* cursor=nullptr;
+    struct FrameTint {J2DPicture* pane;JUtility::TColor color;};
+    std::vector<FrameTint> frameTints;
+    struct DecorationPosition {J2DPane* pane;float x,y;};
+    std::vector<DecorationPosition> decorations;
+    bool drawing=false, drawn=false;
     std::vector<collection::Cell> cells;
     collection::Placement placement;
     bool focused=false, visible=false;
     u8 anchorX=0,anchorY=0;
+    void restore_tints() {
+        for(const auto& tint:frameTints) tint.pane->setWhite(tint.color);
+        for(const auto& saved:decorations) saved.pane->translate(saved.x,saved.y);
+        frameTints.clear();decorations.clear();drawing=drawn=false;
+    }
     void release() {
-        JKR_DELETE(cursor);JKR_DELETE(iconPane);JKR_DELETE(screen);
-        cursor=nullptr;iconPane=nullptr;screen=nullptr;icon=frame=nullptr;
+        restore_tints();
+        JKR_DELETE(iconPane);JKR_DELETE(screen);
+        iconPane=nullptr;screen=nullptr;icon=frame=nullptr;
         if(heap) mDoExt_destroySolidHeap(heap);
         heap=nullptr;owner=nullptr;focused=visible=false;cells.clear();
     }
@@ -161,11 +174,19 @@ void layout(dMenu_Collect2D_c* menu) {
     s_menu.frame->move(p.left-3,p.top-3);s_menu.frame->resize(p.size+6,p.size+6);
     if(const auto* frame=texture(picture(menu->mpScreen,MULTI_CHAR('tate_g_1'))))
         if(texture(s_menu.frame)!=frame) s_menu.frame->changeTexture(frame,0);
-    s_menu.frame->setBlackWhite(JUtility::TColor(0,0,0,0),dual_wield_equipped()?
-        JUtility::TColor(255,235,130,255):JUtility::TColor(132,134,104,255));
+
     if(own_focus(menu)) show_name(menu);
 }
 void focus(dMenu_Collect2D_c* menu) {
+    if(own_focus(menu)) return;
+    // Reuse a shield's cursor styling even when the pointer came from Save or
+    // another oversized cell. Do not change any grid entries or pane pointers.
+    const int last=collection::neighbor(s_menu.cells,s_menu.placement,collection::Direction::Left);
+    if(last>=0 && s_menu.cells[last].y==1) {
+        menu->mCursorX=s_menu.cells[last].x;menu->mCursorY=1;
+    }
+    menu->cursorPosSet();
+    mDoAud_seStart(Z2SE_SY_CURSOR_ITEM,nullptr,0,0);
     s_menu.focused=true;s_menu.anchorX=menu->mCursorX;s_menu.anchorY=menu->mCursorY;
     show_name(menu);
 }
@@ -176,7 +197,9 @@ bool can_equip(dMenu_Collect2D_c* menu) {
 void activate(dMenu_Collect2D_c* menu) {
     auto* link=daAlink_getAlinkActorClass();
     if(!can_equip(menu) || dComIfGs_getSelectEquipShield()==dItemNo_NONE_e) return;
-    select_sword(true);link->setShieldChange();dMeter2Info_set2DVibration();show_name(menu);
+    if(dual_wield_equipped()) return;
+    select_sword(true);link->setShieldChange();dMeter2Info_set2DVibration();
+    mDoAud_seStart(Z2SE_SY_ITEM_SET_X,nullptr,0,0);show_name(menu);
 }
 HookAction capture_icon(ModContext*,void* args,void*,void*) {
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
@@ -192,7 +215,6 @@ HookAction capture_icon(ModContext*,void* args,void*,void*) {
     s_menu.screen=JKR_NEW J2DScreen();
     s_menu.frame=JKR_NEW J2DPicture(MULTI_CHAR('dl_clfr'),JGeometry::TBox2<f32>(0,0,48,48),frame,nullptr);
     s_menu.icon=JKR_NEW J2DPicture(MULTI_CHAR('dl_clic'),JGeometry::TBox2<f32>(0,0,44,44),icon,nullptr);
-    s_menu.cursor=JKR_NEW dSelect_cursor_c(2,1.f,nullptr);
     if(s_menu.screen) {
         // A programmatic J2DScreen defaults to an opaque white background.
         // Clear only its backdrop; pane alpha must still reach the icon/frame.
@@ -206,7 +228,7 @@ HookAction capture_icon(ModContext*,void* args,void*,void*) {
         JKR_DELETE(s_menu.frame);JKR_DELETE(s_menu.icon);
     }
     mDoExt_setCurrentHeap(old);
-    if(!s_menu.screen || !s_menu.frame || !s_menu.icon || !s_menu.iconPane || !s_menu.cursor) {
+    if(!s_menu.screen || !s_menu.frame || !s_menu.icon || !s_menu.iconPane) {
         s_menu.release();
         svc_log->warn(mod_ctx,"Dual Wield collection: could not allocate menu resources");
         return HOOK_CONTINUE;
@@ -215,22 +237,102 @@ HookAction capture_icon(ModContext*,void* args,void*,void*) {
     s_menu.owner=menu;
     return HOOK_CONTINUE;
 }
-void after_layout(ModContext*,void* args,void*,void*) {layout(mods::arg<dMenu_Collect2D_c*>(args,0));}
-void after_draw(ModContext*,void* args,void*,void*) {
-    auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);layout(menu);
-    if(s_menu.owner!=menu||!s_menu.visible) return;
-    auto* graf=dComIfGp_getCurrentGrafPort();if(!graf) return;graf->setup2D();
-    s_menu.screen->draw(0,0,graf);
-    if(own_focus(menu)) {
-        const auto p=s_menu.placement;
-        s_menu.cursor->setAlphaRate(menu->mpLinkPm->getAlphaRate());
-        s_menu.cursor->setScale(p.size/44.f);s_menu.cursor->setPos(p.left+p.size*.5f,p.top+p.size*.5f,s_menu.icon,false);
-        s_menu.cursor->update();s_menu.cursor->draw();
+// Find frames by their shared artwork and rendered position, so remapped or
+// dynamically registered Essentials shields do not need hard-coded pane IDs.
+void shield_frames(dMenu_Collect2D_c* menu,J2DPane* root,const ResTIMG* artwork,
+                   std::vector<J2DPicture*>& frames) {
+    if(!root) return;
+    if(root->getTypeID()==18 && visible(root)) {
+        auto* pic=static_cast<J2DPicture*>(root);
+        if(texture(pic)==artwork) {
+            const auto r=bounds(menu,root,0,0,false);
+            for(const auto& cell:s_menu.cells) {
+                if(cell.y==1 && std::fabs((r.left+r.width*.5f)-(cell.left+cell.width*.5f))<cell.width*.25f &&
+                   std::fabs((r.top+r.height*.5f)-(cell.top+cell.height*.5f))<cell.height*.25f) {
+                    frames.push_back(pic);break;
+                }
+            }
+        }
     }
+    for(auto* child=root->getFirstChildPane();child;child=child->getNextChildPane())
+        shield_frames(menu,child,artwork,frames);
+}
+void move_equipped_flourishes(dMenu_Collect2D_c* menu,J2DPane* pane,const collection::Cell& frame) {
+    if(!pane) return;
+    // HD HUD's equipment flourishes are separate siblings of the frame. Move
+    // that decoration with the equipped highlight, then restore after drawing.
+    if((pane->mInfoTag>>16)==(MULTI_CHAR('hd_cef00')>>16) && visible(pane)) {
+        const auto r=bounds(menu,pane,0,0,false);
+        const float fx=frame.left+frame.width*.5f,fy=frame.top+frame.height*.5f;
+        if(std::fabs(r.left+r.width*.5f-fx)<frame.width && std::fabs(r.top+r.height*.5f-fy)<frame.height && pane->getParentPane()) {
+            Mtx parent;
+            menu->mpLinkPm->getGlobalVtx(pane->getParentPane(),&parent,0,false,0);
+            const float det=parent[0][0]*parent[1][1]-parent[0][1]*parent[1][0];
+            if(std::fabs(det)>1e-6f) {
+                const auto p=s_menu.placement;
+                const float dx=p.left+p.size*.5f-fx,dy=p.top+p.size*.5f-fy;
+                s_menu.decorations.push_back({pane,pane->getTranslateX(),pane->getTranslateY()});
+                pane->translate(pane->getTranslateX()+(dx*parent[1][1]-dy*parent[0][1])/det,
+                                pane->getTranslateY()+(dy*parent[0][0]-dx*parent[1][0])/det);
+            }
+        }
+    }
+    for(auto* child=pane->getFirstChildPane();child;child=child->getNextChildPane())
+        move_equipped_flourishes(menu,child,frame);
+}
+void present_equipment(dMenu_Collect2D_c* menu) {
+    if(!s_menu.visible || !s_menu.drawing) return;
+    auto* reference=picture(menu->mpScreen,MULTI_CHAR('tate_g_1'));
+    const auto* artwork=texture(reference);if(!artwork) return;
+    std::vector<J2DPicture*> frames;
+    shield_frames(menu,menu->mpScreen,artwork,frames);
+    auto inactive=JUtility::TColor(107,107,107,255);
+    auto equipped=JUtility::TColor(255,255,0,255);
+    for(auto* frame:frames) {
+        const auto color=frame->getWhite();
+        if(color.r>200) equipped=color;else inactive=color;
+    }
+    s_menu.frame->setBlackWhite(reference->getBlack(),dual_wield_equipped()?equipped:inactive);
+    if(!dual_wield_equipped()) return;
+    for(auto* frame:frames) {
+        if(frame->getWhite().r>200) move_equipped_flourishes(menu,menu->mpScreen,bounds(menu,frame,0,1,true));
+        s_menu.frameTints.push_back({frame,frame->getWhite()});
+        frame->setWhite(inactive);
+    }
+}
+HookAction before_draw(ModContext*,void* args,void*,void*) {
+    if(s_menu.owner==mods::arg<dMenu_Collect2D_c*>(args,0)) {
+        s_menu.restore_tints();s_menu.drawing=true;
+    }
+    return HOOK_CONTINUE;
+}
+void after_layout(ModContext*,void* args,void*,void*) {
+    auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
+    layout(menu);
+    if(s_menu.owner==menu && s_menu.frameTints.empty()) present_equipment(menu);
+}
+void draw_icon() {
+    if(!s_menu.visible || s_menu.drawn) return;
+    auto* graf=dComIfGp_getCurrentGrafPort();if(!graf) return;graf->setup2D();
+    s_menu.screen->draw(0,0,graf);s_menu.drawn=true;
+}
+void after_draw(ModContext*,void* args,void*,void*) {
+    auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
+    if(s_menu.owner!=menu) return;
+    draw_icon();s_menu.restore_tints();
 }
 HookAction before_cursor_draw(ModContext*,void* args,void*,void*) {
     auto* cursor=mods::arg<dSelect_cursor_c*>(args,0);
-    return s_menu.owner && cursor==s_menu.owner->mpDrawCursor && own_focus(s_menu.owner)?HOOK_SKIP_ORIGINAL:HOOK_CONTINUE;
+    if(s_menu.owner && cursor==s_menu.owner->mpDrawCursor && s_menu.drawing) draw_icon();
+    return HOOK_CONTINUE;
+}
+void after_cursor_update(ModContext*,void* args,void*,void*) {
+    auto* cursor=mods::arg<dSelect_cursor_c*>(args,0);
+    if(!s_menu.owner || cursor!=s_menu.owner->mpDrawCursor || !own_focus(s_menu.owner) || !cursor->mpPaneMgr) return;
+    const auto p=s_menu.placement;
+    // Preserve the actual cursor's artwork, pulse, size and mod styling. Its
+    // update and other mods have just finished; move only the rendered root.
+    cursor->mpPaneMgr->translate(p.left+p.size*.5f,p.top+p.size*.5f);
 }
 HookAction before_delete(ModContext*,void* args,void*,void*) {
     if(s_menu.owner==mods::arg<dMenu_Collect2D_c*>(args,0)) s_menu.release();
@@ -284,6 +386,7 @@ HookAction before_navigate(ModContext*,void* args,void*,void*) {
             menu->field_0x259=menu->mCursorX;menu->field_0x25a=menu->mCursorY;
             menu->mCursorX=c.x;menu->mCursorY=c.y;
             restore_name(menu);menu->cursorPosSet();
+            mDoAud_seStart(c.y==5?Z2SE_SY_CURSOR_OPTION:Z2SE_SY_CURSOR_ITEM,nullptr,0,0);
         }
     }
     return HOOK_SKIP_ORIGINAL;
@@ -341,7 +444,8 @@ ModResult install_collection_dual_wield(ModError* error) {
 #define POST(H,F) if((result=mods::hook::add_post<H>(svc_hook,F,&late))!=MOD_OK) return mods::set_error(error,result,"Dual Wield collection: " #H)
     PRE(CollectionSwordScreen,capture_icon);POST(CollectionSwordScreen,after_layout);
     PRE(CollectionSwordDelete,before_delete);POST(CollectionSwordLayout,after_layout);
-    POST(CollectionSwordDraw,after_draw);PRE(CollectionSwordCursor,before_cursor_draw);
+    PRE(CollectionSwordDraw,before_draw);POST(CollectionSwordDraw,after_draw);
+    PRE(CollectionSwordCursor,before_cursor_draw);POST(CollectionSwordCursorUpdate,after_cursor_update);
     PRE(CollectionSwordWait,before_wait);POST(CollectionSwordWait,after_wait);
     PRE(CollectionSwordNavigate,before_navigate);
     PRE(CollectionSwordPointer,before_pointer);PRE(CollectionSwordClick,before_click);

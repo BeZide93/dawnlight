@@ -73,7 +73,8 @@ struct daAlink_c {
         PROC_CUT_FINISH_JUMP_UP,PROC_CUT_FINISH_JUMP_UP_LAND,PROC_CUT_REVERSE,
         PROC_CUT_JUMP,PROC_CUT_JUMP_LAND,PROC_CUT_TURN,PROC_CUT_TURN_CHARGE,PROC_CUT_TURN_MOVE,
         PROC_CUT_DOWN,PROC_CUT_DOWN_LAND,PROC_CUT_HEAD,PROC_CUT_HEAD_LAND,
-        PROC_CUT_LARGE_JUMP_CHARGE,PROC_CUT_LARGE_JUMP,PROC_CUT_LARGE_JUMP_LAND};
+        PROC_CUT_LARGE_JUMP_CHARGE,PROC_CUT_LARGE_JUMP,PROC_CUT_LARGE_JUMP_LAND,
+        PROC_LARGE_DAMAGE,PROC_LARGE_DAMAGE_WALL,PROC_LARGE_DAMAGE_UP,PROC_LAND_DAMAGE};
     int mProcID=PROC_WAIT,cut=0,mEquipItem=0x103;
     bool event=false,guard=false,human=true,equipping=false;
     int field_0x3198=0;
@@ -110,7 +111,7 @@ Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
 '''
 
 fixture += "\n".join(function(name, result) for name, result in [
-    ("local", "Pose"), ("status_item_matrices", "void"), ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
+    ("local", "Pose"), ("status_item_matrices", "void"), ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("knocked_down", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
@@ -304,7 +305,31 @@ int main() {
         before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
         ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.guard==0);
     }
-    // When the technique ends, held block blends back in as usual.
+    // A held/manual guard signal must not pose the arms during knockback,
+    // floor recovery or getting up, including a hit during a hip draw/stow.
+    for(int proc:{daAlink_c::PROC_LARGE_DAMAGE,daAlink_c::PROC_LARGE_DAMAGE_WALL,
+                  daAlink_c::PROC_LARGE_DAMAGE_UP,daAlink_c::PROC_LAND_DAMAGE}) {
+        for(int item:{0x103,dItemNo_NONE_e}) for(bool drawing:{false,true}) {
+            link.mProcID=proc;link.mEquipItem=item;link.guard=true;
+            s.guard=1;s.draw=1;s.stow.active=true;s.stow.drawing=drawing;s.stow.release=1;
+            ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+            assert(s.guard==0 && !s.stow.active && s.stow.release==0);
+            assert(!s.haveGuardBody && !s.mirror);
+            // Pressing block after reaching the floor must not start a draw,
+            // even after the previous blend has had plenty of time to settle.
+            s.draw=0;link.guard=false;
+            ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+            link.guard=true;
+            for(int frame=0;frame<30;++frame) {
+                ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+                assert(s.guard==0 && !s.stow.active && s.stow.release==0);
+            }
+            before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+        }
+    }
+    link.mEquipItem=0x103;
+    // After recovery, held block blends back in as usual.
+
     link.mProcID=daAlink_c::PROC_WAIT;
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.guard>0 && s.guard<1);
     for(int i=0;i<5;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}

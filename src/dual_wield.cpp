@@ -222,6 +222,18 @@ bool sword_attack(daAlink_c* link) {
     default: return false;
     }
 }
+bool knocked_down(daAlink_c* link) {
+    // These processes own the full body from knockback through the get-up
+    // animation. Manual guard can still report true while Link is on the floor.
+    switch(link->mProcID) {
+    case daAlink_c::PROC_LARGE_DAMAGE:
+    case daAlink_c::PROC_LARGE_DAMAGE_WALL:
+    case daAlink_c::PROC_LARGE_DAMAGE_UP:
+    case daAlink_c::PROC_LAND_DAMAGE:
+        return true;
+    default: return false;
+    }
+}
 bool active(daAlink_c* link) { return s.owner==link && s.active && s.sword && s.sheath; }
 J3DTexMtx* warp_texture(J3DModel* model) {
     if(!model || !model->getModelData()->getMaterialNum()) return nullptr;
@@ -307,7 +319,7 @@ void after_flourish(ModContext*,void* args,void* result,void*) {
     if(*static_cast<int*>(result)) start_stow(mods::arg<daAlink_c*>(args,0),true);
 }
 void update_stow(daAlink_c* link,bool guard) {
-    if(!s.active || sword_attack(link) || (guard && !s.stow.drawing) ||
+    if(!s.active || sword_attack(link) || knocked_down(link) || (guard && !s.stow.drawing) ||
        (link->mEquipItem!=0x103 && link->mEquipItem!=dItemNo_NONE_e)) {
         s.stow={};return;
     }
@@ -340,11 +352,12 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     if(s.poseTick==s.tick) return;
     s.poseTick=s.tick;
     const bool attacking=sword_attack(link);
-    const bool guard=s.active && !attacking && (link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e) &&
+    const bool nativeArms=attacking || knocked_down(link);
+    const bool guard=s.active && !nativeArms && (link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e) &&
                      link->checkPlayerGuardAndAttack();
     const bool drawn=s.active && (link->mEquipItem==0x103 || guard || attacking);
-    if(drawn && s.draw==0 && !s.stow.active && s.stow.release==0 && !attacking) start_draw(link,false);
-    if(s.active && !drawn && s.draw>0 && !s.stow.active && s.stow.release==0 && !attacking &&
+    if(drawn && s.draw==0 && !s.stow.active && s.stow.release==0 && !nativeArms) start_draw(link,false);
+    if(s.active && !drawn && s.draw>0 && !s.stow.active && s.stow.release==0 && !nativeArms &&
        link->mEquipItem==dItemNo_NONE_e) {
         start_stow(link,false);s.stow.nativeClock=false;s.stow.duration=24;
     }
@@ -353,9 +366,9 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     // Bound per-tick movement even when an attack/event interrupts the clip.
     // Like the arm state, this advances only once, never per render/model pass.
     s.sheathTilt=dual::approach(s.sheathTilt,tilt,1.0f/6);
-    // Do not spend five more frames imposing the guard on an attack clip.
-    // Native animation morphing handles the transition into the technique.
-    s.guard=attacking ? 0.0f : dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
+    // Attacks and knockdowns take the arms immediately, including a guard
+    // already raised before the hit. Native morphing handles their transition.
+    s.guard=nativeArms ? 0.0f : dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
     if(s.stow.active) {
         if(!s.stow.drawing) s.guard=0;
         const bool held=s.stow.drawing ? s.stow.progress>=dual::draw_grip_start : s.stow.progress<dual::stow_insert_end;

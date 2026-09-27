@@ -13,7 +13,7 @@ save slots are initialized.
 Disable Auto Jump On (human and wolf),
 Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode, 300% HP Scaling,
 Manual Shielding, 500% Gale Height, 60-second Gale recovery, Stamina Bar On with
-[default stamina settings](stamina.md),
+[default stamina settings](movement-and-abilities.md#shared-stamina),
 Arrow Modes, Great Spin Projectile,
 No Normal-Hit Invulnerability, and the Progression System.
 Controlled settings display their effective values and are grayed out.

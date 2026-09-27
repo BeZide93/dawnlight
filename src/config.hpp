@@ -1,6 +1,7 @@
 #pragma once
 
 #include "general_modes.hpp"
+#include "dual_wield_sword.hpp"
 #include "stamina_settings.hpp"
 #include "mods/api.h"
 #include "mods/svc/config.h"
@@ -115,6 +116,8 @@ bool fierce_deity_enabled();
 bool great_spin_projectile_enabled();
 bool dual_wield_enabled();
 ConfigVarHandle dual_wield_config_var();
+SecondSword second_sword();
+ConfigVarHandle second_sword_config_var();
 bool arrow_modes_enabled();
 bool manual_shielding_enabled();
 bool r_jump_enabled();

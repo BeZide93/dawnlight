@@ -2,10 +2,16 @@
 
 [← Dawnlight overview](../../README.md)
 
-Under `Gameplay -> Combat`, turn **Dual Wield** on to add an **Ordon Sword**
+Under `Gameplay -> Combat`, turn **Dual Wield** on to add a second-sword
 option to the Collection menu. Select that icon to replace Link's visible
-shield with a second Ordon Sword. The setting defaults to off; enabling it
-alone no longer equips the second sword.
+shield with the chosen sword. Dual Wield defaults to off; enabling it alone
+does not equip the second sword.
+
+The **2nd Sword** selector directly below it offers **Wooden Sword**,
+**Ordon Sword** (default), and **Master Sword**. It updates the right-hand model,
+Collection icon/name and Link's menu preview. The sword type is a global setting;
+the equipped/unequipped choice remains saved separately for each save slot.
+Changing the type keeps the current combat/arm animation state.
 
 With **Progression System** active (also through Dawnlight Mode), this setting
 is locked: off before obtaining the Ordon Sword, on afterwards. Boss Rush
@@ -25,7 +31,8 @@ human Link and an equipped shield. The choice is saved per save slot, with
 separate choices for normal play and Boss Rush. Turning the setting off removes
 the icon and clears the current choice.
 
-The secondary sword and its scabbard rest at the left hip when stowed; the
+Ordon and Master Sword use their matching scabbards at the left hip when stowed.
+Wooden Sword rests at the hip without a scabbard; the
 primary sword keeps its normal equipment slot. The Wooden Sword, including
 Twilit Essentials' additional starter-equipment slot, can also be used as the
 primary weapon.
@@ -37,7 +44,7 @@ timing, and Hidden Skill interactions. Blocking still requires an equipped
 shield in the inventory. Other tools and special sword techniques retain their
 native actions.
 
-The feature uses the game's Ordon models and Link animations, with native
+The feature uses the game's native sword models and Link animations, with native
 animation blending and arm IK for the hip draw and cross guard. No replacement
 game archives are installed. Turning it off restores normal shield rendering
 and sword behavior. Wolf form, events and nonstandard skeletons use native
@@ -49,7 +56,9 @@ HUD's rearranged screen without occupying a native grid cell. See
 [Collection compatibility](../../COMPATIBILITY.md#dual-wield-collection-option)
 for the inspected versions and remaining in-game checks.
 
-Validation: `python3 tests/collection_dual_wield_test.py` covers placement,
+Validation: `python3 tests/second_sword_test.py` covers resource selection, live
+model changes, failure recovery and Collection artwork.
+`python3 tests/collection_dual_wield_test.py` covers placement,
 controller repeat input, pointer handling, menu sounds, shared cursor placement,
 frame restoration, page handoff, and save isolation.
 `python3 tests/dual_wield_test.py` covers pose math, animation

@@ -70,6 +70,7 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: |
           python3 tests/stamina_settings_test.py
+          python3 tests/mode_unlock_test.py
           python3 tests/glide_stamina_test.py
           python3 tests/wolf_sprint_test.py
 

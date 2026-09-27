@@ -21,6 +21,17 @@ Your personal Off-mode settings remain saved separately: switching Dawnlight Mod
 Off restores them, including your previous Progression System choice. This also
 works after restarting Dusklight. Settings outside the preset remain editable.
 
+Select a gray Dawnlight-controlled setting to open a warning before editing.
+**Cancel** or Back/Escape leaves the mode and your saved values unchanged.
+**Use Dawnlight values and edit** turns Dawnlight Mode Off and replaces your old
+manual values for all preset-controlled settings with the current Dawnlight values,
+including settings in tabs you have not opened. The chosen control is then available
+for editing; later changes are saved normally. Unrelated settings are preserved.
+If Progression also controls the selected value, the warning explicitly says that
+Progression System will be turned Off too, so it no longer locks that value.
+Turning Dawnlight Mode Off with its normal toggle still restores your saved values
+without copying the preset.
+
 ## Progression System
 
 **Progression System** can also be enabled independently. Unlocks follow the

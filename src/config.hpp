@@ -90,6 +90,8 @@ enum class HudSettingsIoResult {
 
 ModResult register_config(ModError* error);
 bool dawnlight_mode_enabled();
+bool edit_requires_progression_off(ConfigVarHandle var);
+ModResult leave_dawnlight_mode_for_edit(ConfigVarHandle var);
 bool progression_system_enabled();
 bool notifications_enabled();
 ConfigVarHandle dawnlight_mode_config_var();

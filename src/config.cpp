@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
+#include <vector>
 #include <cerrno>
 #include <cctype>
 #include <cmath>
@@ -27,6 +29,7 @@
 namespace dawnlight {
 namespace {
 
+std::map<ConfigVarHandle, ConfigVarType> s_configTypes;
 ConfigVarHandle s_dawnlightMode = 0;
 ConfigVarHandle s_progressionSystem = 0;
 ConfigVarHandle s_notifications = 0;
@@ -363,7 +366,9 @@ ModResult register_bool(const char* name, bool defaultValue, ConfigVarHandle& ha
     desc.name = name;
     desc.type = CONFIG_VAR_BOOL;
     desc.default_bool = defaultValue;
-    return svc_config->register_var(mod_ctx, &desc, &handle);
+    const auto result = svc_config->register_var(mod_ctx, &desc, &handle);
+    if (result == MOD_OK) s_configTypes[handle] = CONFIG_VAR_BOOL;
+    return result;
 }
 
 ModResult register_int(const char* name, int64_t defaultValue, ConfigVarHandle& handle) {
@@ -371,7 +376,9 @@ ModResult register_int(const char* name, int64_t defaultValue, ConfigVarHandle& 
     desc.name = name;
     desc.type = CONFIG_VAR_INT;
     desc.default_int = defaultValue;
-    return svc_config->register_var(mod_ctx, &desc, &handle);
+    const auto result = svc_config->register_var(mod_ctx, &desc, &handle);
+    if (result == MOD_OK) s_configTypes[handle] = CONFIG_VAR_INT;
+    return result;
 }
 
 ModResult register_custom_int(
@@ -897,6 +904,7 @@ ModResult register_custom_hud_config() {
 }  // namespace
 
 ModResult register_config(ModError* error) {
+    s_configTypes.clear();
     for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
         const auto& desc = kStaminaSettings[i];
         if (const auto result = register_int(desc.key, desc.standard, s_staminaSettings[i]); result != MOD_OK)
@@ -1150,6 +1158,51 @@ bool mode_config_override(ConfigVarHandle var, int64_t& value) {
     const bool progression = progression_system_enabled();
     if (!dawnlight && !progression) return false;
     return mode_override(setting, dawnlight, progression, progression_state(), value);
+}
+
+bool edit_requires_progression_off(ConfigVarHandle var) {
+    int64_t ignored = 0;
+    return mode_override(mode_setting_for_config(var), false, true, progression_state(), ignored);
+}
+
+ModResult leave_dawnlight_mode_for_edit(ConfigVarHandle var) {
+    int64_t effective = 0;
+    if (!dawnlight_mode_enabled() || !mode_config_override(var, effective)) return MOD_INVALID_ARGUMENT;
+    struct Change { ConfigVarHandle var; ConfigVarType type; int64_t previous, next; };
+    std::vector<Change> changes;
+    const bool stopProgression = edit_requires_progression_off(var);
+    // Snapshot every overridden setting before any write. Unrelated preferences
+    // stay untouched, and tab visibility cannot affect which values are saved.
+    for (const auto& [handle, type] : s_configTypes) {
+        int64_t next = 0, previous = 0;
+        if (!mode_config_override(handle, next)) continue;
+        ModResult result;
+        if (type == CONFIG_VAR_BOOL) {
+            bool value = false;
+            result = svc_config->get_bool(mod_ctx, handle, &value);
+            previous = value;
+        } else result = svc_config->get_int(mod_ctx, handle, &previous);
+        if (result != MOD_OK) return result;
+        if (handle == s_progressionSystem && stopProgression) next = 0;
+        changes.push_back({handle, type, previous, next});
+    }
+    const auto apply = [](const Change& change, int64_t value) {
+        return change.type == CONFIG_VAR_BOOL ?
+            svc_config->set_bool(mod_ctx, change.var, value != 0) :
+            svc_config->set_int(mod_ctx, change.var, value);
+    };
+    size_t applied = 0;
+    ModResult result = MOD_OK;
+    for (; applied < changes.size(); ++applied) {
+        result = apply(changes[applied], changes[applied].next);
+        if (result != MOD_OK) break;
+    }
+    // Keep the preset effective until all persisted values have been adopted.
+    if (result == MOD_OK) result = svc_config->set_bool(mod_ctx, s_dawnlightMode, false);
+    if (result != MOD_OK) {
+        while (applied > 0) { --applied; apply(changes[applied], changes[applied].previous); }
+    }
+    return result;
 }
 
 ConfigVarHandle dawnlight_mode_config_var() { return s_dawnlightMode; }

@@ -136,7 +136,9 @@ at 50 points even with a capacity of 200 or more.
 
 **Dawnlight Mode** applies and locks these defaults without overwriting your saved
 manual values. Turning it Off restores them, including after restarting the app.
-You can open the menu to view the locked values.
+Select a gray value to review the edit warning. Confirming turns Dawnlight Mode
+Off and adopts its current values as your new saved manual settings before you edit;
+Cancel leaves everything unchanged. See [Dawnlight Mode](general-settings.md#dawnlight-mode).
 
 **Progression System** adds 5 maximum stamina per complete heart above the three
 starting hearts. The bonus follows the loaded save's maximum hearts, including

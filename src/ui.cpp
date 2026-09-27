@@ -10,6 +10,7 @@
 #include <map>
 #include <array>
 #include <string>
+#include <vector>
 
 namespace dawnlight {
 namespace {
@@ -94,6 +95,12 @@ struct ModeControlBinding {
     ConfigVarHandle var;
     UiControlKind kind;
     UiPredicateFn disabled;
+    UiElementHandle control = 0, unlock = 0;
+    std::string label, suffix, shownLabel;
+    std::vector<std::string> options;
+    bool initialized = false, shownLocked = false, focusAfterUnlock = false;
+    ModeControlBinding(ConfigVarHandle handle = 0, UiControlKind type = UI_CONTROL_TOGGLE,
+                       UiPredicateFn predicate = nullptr) : var(handle), kind(type), disabled(predicate) {}
 };
 std::map<ConfigVarHandle, ModeControlBinding> s_modeControls;
 
@@ -138,6 +145,8 @@ void bind_mode_control(UiControlDesc& desc) {
     desc.is_disabled = mode_control_disabled;
 }
 
+#include "mode_unlock_ui.inc"
+
 ModResult add_toggle(ModContext* ctx, UiElementHandle pane, const char* label,
     ConfigVarHandle var, const char* help = nullptr, UiPredicateFn isDisabled = nullptr) {
     UiControlDesc desc = UI_CONTROL_DESC_INIT;
@@ -148,7 +157,7 @@ ModResult add_toggle(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.config_var = var;
     desc.is_disabled = isDisabled;
     bind_mode_control(desc);
-    return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
+    return add_mode_control(ctx, pane, desc);
 }
 
 ModResult add_number(ModContext* ctx, UiElementHandle pane, const char* label,
@@ -166,7 +175,7 @@ ModResult add_number(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.suffix = suffix;
     desc.is_disabled = isDisabled;
     bind_mode_control(desc);
-    return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
+    return add_mode_control(ctx, pane, desc);
 }
 
 ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
@@ -182,7 +191,7 @@ ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.option_count = optionCount;
     desc.is_disabled = isDisabled;
     bind_mode_control(desc);
-    return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
+    return add_mode_control(ctx, pane, desc);
 }
 
 bool auto_jump_setting_disabled(ModContext*, void*) {
@@ -474,12 +483,12 @@ ModResult build_aiming_tab(
 bool stamina_settings_disabled(ModContext*, void*) { return !stamina_enabled(); }
 
 ModResult build_stamina_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
-    UiElementHandle right, void*, ModError*) {
+    UiElementHandle, void*, ModError*) {
     if (add_text(ctx, left, "Costs, recovery and Exhaust Threshold use stamina points. The threshold does not scale with maximum stamina. "
             "Progression adds 5 maximum stamina per complete heart above the starting three.") != MOD_OK) return MOD_ERROR;
     for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
         const auto& desc = kStaminaSettings[i];
-        if (add_number(ctx, i < 8 ? left : right, desc.label,
+        if (add_number(ctx, left, desc.label,
                 stamina_setting_config_var(static_cast<StaminaSetting>(i)),
                 desc.min, desc.max, 1, desc.suffix, nullptr, stamina_settings_disabled) != MOD_OK)
             return MOD_ERROR;
@@ -1072,6 +1081,10 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
 }  // namespace
 
 ModResult register_ui(ModError* error) {
+    UiStyleHandle style = 0;
+    if (const auto result = svc_ui->register_styles(mod_ctx, UI_SCOPE_WINDOW,
+            ".dawnlight-locked-setting { opacity: 0.5; }", &style); result != MOD_OK)
+        return mods::set_error(error, result, "failed to style Dawnlight locked settings");
     UiModsPanelDesc panel = UI_MODS_PANEL_DESC_INIT;
     panel.build = build_mod_panel;
     ModResult result = svc_ui->register_mods_panel(mod_ctx, &panel);

@@ -60,7 +60,9 @@ enum {dItemNo_BOOMERANG_e=0x40,dItemNo_BOW_e=0x43,dItemNo_HOOKSHOT_e=0x44,
  dItemNo_BOMB_ARROW_e=0x59,dItemNo_HAWK_ARROW_e=0x5a};
 struct Args {void* link;void* model=nullptr;};
 namespace mods {template<class T>T arg(void* p,int i){auto* a=static_cast<Args*>(p);return static_cast<T>(i?a->model:a->link);}}
-struct J3DModel {dual::Pose base;std::array<dual::Pose,35> joints;auto getBaseTRMtx(){return base;}auto getAnmMtx(int i){return joints[i];}};
+struct Joint {J3DTransformInfo info;auto& getTransformInfo(){return info;}};
+struct ModelData {std::array<Joint,35> joints;auto* getJointNodePointer(int i){return &joints[i];}};
+struct J3DModel {ModelData data;auto* getModelData(){return &data;}dual::Pose base;std::array<dual::Pose,35> joints;auto getBaseTRMtx(){return base;}auto getAnmMtx(int i){return joints[i];}};
 struct cXyz {float x=0,y=0,z=0;void set(float a,float b,float c){x=a;y=b;z=c;}};
 struct Morph {
     int calls=0;bool valid=true;
@@ -78,7 +80,8 @@ struct daAlink_c {
         PROC_CUT_JUMP,PROC_CUT_JUMP_LAND,PROC_CUT_TURN,PROC_CUT_TURN_CHARGE,PROC_CUT_TURN_MOVE,
         PROC_CUT_DOWN,PROC_CUT_DOWN_LAND,PROC_CUT_HEAD,PROC_CUT_HEAD_LAND,
         PROC_CUT_LARGE_JUMP_CHARGE,PROC_CUT_LARGE_JUMP,PROC_CUT_LARGE_JUMP_LAND,
-        PROC_LARGE_DAMAGE,PROC_LARGE_DAMAGE_WALL,PROC_LARGE_DAMAGE_UP,PROC_LAND_DAMAGE};
+        PROC_LARGE_DAMAGE,PROC_LARGE_DAMAGE_WALL,PROC_LARGE_DAMAGE_UP,PROC_LAND_DAMAGE,
+        PROC_GUARD_BREAK,PROC_DAMAGE,PROC_GUARD_SLIP};
     int mProcID=PROC_WAIT,cut=0,mEquipItem=0x103;
     bool event=false,guard=false,human=true,equipping=false;
     int field_0x3198=0;
@@ -90,6 +93,7 @@ struct daAlink_c {
     float field_0x3478=6,field_0x347c=14;
     cXyz field_0x3498,mSwordTopPos,field_0x3720,field_0x34a4,field_0x34b0,field_0x34bc;
     int getCutType(){return cut;}
+    unsigned mode=0;bool checkModeFlg(unsigned bits){return (mode&bits)!=0;}
     bool checkEventRun(){return event;}
     bool checkPlayerGuardAndAttack(){return guard;}
     bool checkSwordEquipAnime(){return equipping;}
@@ -102,6 +106,7 @@ struct State {
     bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
     float guard=0,draw=0,sheathTilt=0;unsigned tick=0,poseTick=~0u;
     dual::Alternation attacks;
+    DualGuardHeadPose guardHead;
     DualGuardBodyPose guardBody;bool haveGuardBody=false;
     dual::StowMotion stow;Pose rightSword,hipSword;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
 } s;
@@ -435,7 +440,9 @@ int main() {
     link.model.base={};
     // Switching directly from cross guard to an item cannot reuse its body override.
     link.mEquipItem=dItemNo_COPY_ROD_e;link.mProcID=daAlink_c::PROC_GUARD_ATTACK;s.haveGuardBody=true;
-    before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+    before_model_calc(nullptr,&args,nullptr,nullptr);assert(s_calculating);
+    assert(!s_borrow[0].wrapper->guardPose && s_borrow[0].wrapper->headPose);
+    after_model_calc(nullptr,&args,nullptr,nullptr);
     ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(!s.haveGuardBody);
     // Empty-handed guard still supplies the main sword, then an item hides it once.
     link.mEquipItem=dItemNo_NONE_e;s.guard=1;
@@ -443,6 +450,50 @@ int main() {
     link.mEquipItem=dItemNo_KANTERA_e;
     after_items(nullptr,&args,nullptr,nullptr);assert(!s.forcedBlade&&link.swordShown==1);
     link.mEquipItem=0x103;link.mProcID=daAlink_c::PROC_WAIT;
+    // Ordinary and hit-block clips borrow only neutral neck/head tracks.
+    // Rig translations come from the loaded model; target look-at stays in the
+    // native joint callback, outside this animation wrapper.
+    for(int joint=3;joint<=4;++joint) {
+        auto& neutral=link.model.data.joints[joint].info;
+        neutral.mTranslate={float(2*joint),float(4*joint),float(6*joint)};
+        neutral.mRotation={s16(joint*400),s16(-joint*500),s16(joint*600)};
+    }
+    s.mirror=false;s.haveGuardBody=false;s.stow={};s.guard=1;
+    for(int proc:{daAlink_c::PROC_WAIT,daAlink_c::PROC_GUARD_SLIP,daAlink_c::PROC_GUARD_ATTACK}) {
+        link.mProcID=proc;
+        for(float frame:{0.f,5.f,12.f,20.f}) {
+            original.frame=frame;
+            before_model_calc(nullptr,&args,nullptr,nullptr);assert(s_calculating);
+            for(int joint=0;joint<35;++joint) {
+                J3DTransformInfo actual,expected;
+                s_borrow[0].wrapper->getTransform(joint,&actual);
+                if(joint==3||joint==4)expected=link.model.data.joints[joint].info;
+                else original.getTransform(joint,&expected);
+                assert(actual.mTranslate.x==expected.mTranslate.x&&actual.mTranslate.y==expected.mTranslate.y&&actual.mTranslate.z==expected.mTranslate.z);
+                assert(std::abs(actual.mRotation.x-expected.mRotation.x)<=1&&std::abs(actual.mRotation.y-expected.mRotation.y)<=1&&std::abs(actual.mRotation.z-expected.mRotation.z)<=1);
+            }
+            after_model_calc(nullptr,&args,nullptr,nullptr);
+            assert(link.mNowAnmPackUnder[0].value==&original);
+        }
+    }
+    // Released block, real damage/guard break, techniques and events keep native head animation.
+    s.guard=0;before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+    s.guard=1;
+    for(int proc:{daAlink_c::PROC_GUARD_BREAK,daAlink_c::PROC_LARGE_DAMAGE_UP,daAlink_c::PROC_CUT_JUMP}) {
+        link.mProcID=proc;before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+    }
+    link.mProcID=daAlink_c::PROC_DAMAGE;link.mode=8;
+    before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);link.mode=0;
+    link.mProcID=daAlink_c::PROC_WAIT;s.active=false;
+    before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);s.active=true;
+    // Blend to neutral continuously instead of snapping when guard is raised/lowered.
+    J3DTransformInfo nativeHead;original.getTransform(3,&nativeHead);
+    for(float weight:{0.f,.25f,.5f,.75f,1.f}) {
+        DualWieldAnimation head(original,false,nullptr,0,&s.guardHead,weight);
+        J3DTransformInfo actual;head.getTransform(3,&actual);
+        const float expected=nativeHead.mTranslate.z+(s.guardHead[0].mTranslate.z-nativeHead.mTranslate.z)*weight;
+        assert(std::abs(actual.mTranslate.z-expected)<.001f);
+    }
     // Preview equipment follows newly evaluated menu joints rather than the
     // previous gameplay item matrices, without changing combat transition state.
     J3DModel previewSword,previewSheath;s.sword=&previewSword;s.sheath=&previewSheath;

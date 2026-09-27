@@ -57,6 +57,7 @@ struct State {
     unsigned tick=0,poseTick=~0u;
     Pose rightSword,hipSword;
     DualGuardBodyPose guardBody;
+    DualGuardHeadPose guardHead;
     bool haveGuardBody=false;
     dual::StowMotion stow;
 } s;
@@ -433,19 +434,24 @@ HookAction before_model_calc(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     auto* model=mods::arg<J3DModel*>(args,1);
     const bool thrust=s.haveGuardBody && sword_guard_equipment(link) && link->mProcID==daAlink_c::PROC_GUARD_ATTACK;
-    if(!active(link) || (!s.mirror && !thrust) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
+    const bool head=s.guard>0 && !sword_attack(link) && !knocked_down(link) &&
+        !link->checkModeFlg(8) && link->mProcID!=daAlink_c::PROC_GUARD_BREAK;
+    if(!active(link) || (!s.mirror && !thrust && !head) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
     // Reject nonstandard tracks as a group; never partly mirror a mixed rig.
     for(int i=0;i<6;++i) {
         auto& pack=i<3 ? link->mNowAnmPackUnder[i] : link->mNowAnmPackUpper[i-3];
         auto* anm=pack.getAnmTransform();
         if(anm && (anm->getKind()!=8 || anm->field_0x1e!=35)) { s.mirror=false;return HOOK_CONTINUE; }
     }
+    if(head) for(int joint=3;joint<=4;++joint)
+        s.guardHead[joint-3]=model->getModelData()->getJointNodePointer(joint)->getTransformInfo();
     s_calculating=true;
     for(int i=0;i<6;++i) {
         auto& b=s_borrow[i];b.pack=i<3 ? &link->mNowAnmPackUnder[i] : &link->mNowAnmPackUpper[i-3];
         b.original=b.pack->getAnmTransform();if(!b.original) continue;
         b.wrapper.emplace(*static_cast<J3DAnmTransformKey*>(b.original),s.mirror,
-                          thrust ? &s.guardBody : nullptr,guard_thrust(link));
+                          thrust ? &s.guardBody : nullptr,guard_thrust(link),
+                          head ? &s.guardHead : nullptr,dual::smooth(s.guard));
         b.pack->setAnmTransform(&*b.wrapper);
     }
     return HOOK_CONTINUE;

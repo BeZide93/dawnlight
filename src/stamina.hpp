@@ -10,6 +10,8 @@ void shutdown_stamina();
 bool stamina_meter_visible();
 bool stamina_available_for_bullet_time();
 bool stamina_available_for_sprint();
+bool stamina_available_for_wolf_sprint();
+void mark_wolf_sprint_stamina_active();
 void mark_sprint_stamina_active();
 bool stamina_available_for_glide();
 void set_glide_stamina_active(bool active);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "general_modes.hpp"
+#include "stamina_settings.hpp"
 #include "mods/api.h"
 #include "mods/svc/config.h"
 
@@ -126,6 +127,8 @@ enum class GlideItem { Cucco, Glider };
 GlideItem glide_item();
 bool revalis_gale_enabled();
 bool stamina_enabled();
+int stamina_setting(StaminaSetting setting);
+ConfigVarHandle stamina_setting_config_var(StaminaSetting setting);
 bool sprint_enabled();
 bool wolf_sprint_enabled();
 float wolf_speed_multiplier();

@@ -8,7 +8,7 @@ enum class ModeSetting {
     None, Progression, Sprint, SprintSpeed, Jump, JumpHeight, FlurryRush, BulletTime,
     EnemyHardMode, BossHardMode, HealthScale, ManualShielding, GaleRecovery,
     ArrowModes, GreatSpin, NoNormalHitInvulnerability, Glide, GlideItem, Gale,
-    GaleCounter, GaleCharges, FierceDeity, GaleHeight, Stamina, WolfSprint, WolfSpeed, DisableAutoJump, DualWield,
+    GaleCounter, GaleCharges, FierceDeity, GaleHeight, Stamina, StaminaSettings, WolfSprint, WolfSpeed, DisableAutoJump, DualWield,
 };
 
 struct ProgressionState {

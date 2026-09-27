@@ -12,7 +12,8 @@ save slots are initialized.
 **Dawnlight Mode** applies the intended preset: Sprint at 150%, Wolf Sprint On at 100%, R Jump at 110%,
 Disable Auto Jump On (human and wolf),
 Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode, 300% HP Scaling,
-Manual Shielding, 500% Gale Height, 60-second Gale recovery, Stamina Bar On,
+Manual Shielding, 500% Gale Height, 60-second Gale recovery, Stamina Bar On with
+[default stamina settings](stamina.md),
 Arrow Modes, Great Spin Projectile,
 No Normal-Hit Invulnerability, and the Progression System.
 Controlled settings display their effective values and are grayed out.
@@ -32,6 +33,7 @@ currently loaded save's story flags:
 | Obtain the Ordon Sword | Dual Wield option in Collection |
 | Free Ordona | Revali's Gale and its counter |
 | Free Faron | Fierce Deity |
+| Each complete heart above the starting three | +10 maximum stamina, including on top of Dawnlight Mode's 100-point base |
 | Each three full heart containers | One Gale charge: 3 hearts = 1, 6 = 2, 9 = 3, etc. |
 
 In Boss Rush, all progression-controlled abilities are available immediately,

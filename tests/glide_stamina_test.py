@@ -11,13 +11,28 @@ def function(name):
     start = re.search(r'^\w[^\n]*\b' + name + r'\([^;{}]*\)\s*\{', source, re.M).start()
     return source[start:source.index('\n}', start) + 2]
 
-state = source[source.index('constexpr float kMaximumStamina'):source.index('bool s_lazyTweaksDetected')]
+state = source[source.index('using Clock'):source.index('bool s_lazyTweaksDetected')]
 state = state.replace('using Clock = std::chrono::steady_clock;', '')
 fixture = r'''
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <vector>
+#include "stamina_settings.hpp"
+using namespace dawnlight;
+struct ModContext {};
+enum HookAction {HOOK_CONTINUE, HOOK_SKIP_ORIGINAL};
+namespace mods {template<class T>T arg(void* p,int i){return *static_cast<T*>(static_cast<void**>(p)[i]);}}
+struct dCcD_GObjInf {bool shield=true;bool ChkTgShieldHit(){return shield;}};
+std::array<int,kStaminaSettings.size()> settings{};
+void defaults(){for(size_t i=0;i<settings.size();++i)settings[i]=kStaminaSettings[i].standard;}
+int stamina_setting(StaminaSetting key){return settings[static_cast<size_t>(key)];}
+void setting(StaminaSetting key,int value){settings[static_cast<size_t>(key)]=value;}
+int maxLife=15;
+bool progression=false;
+int dComIfGs_getMaxLife(){return maxLife;}
+bool progression_system_enabled(){return progression;}
 using u16 = unsigned short;
 struct Clock {
     using time_point = std::chrono::steady_clock::time_point;
@@ -53,6 +68,7 @@ void step(double seconds, bool bullet = false) {
 }
 void reset() {
     link = {}; current = &link; enabled = glide = true; paused = false;
+    defaults();progression=false;maxLife=15;s_guardEvents.clear();
     reset_for_link(&link);
 }
 int main() {
@@ -76,9 +92,9 @@ int main() {
     enabled = false; step(0.2); near(s_state.stamina, 100);
     assert(stamina_available_for_glide() && !stamina_meter_visible());
     enabled = true; step(0.2); near(s_state.stamina, 99);
-    glide = false; step(0.2); near(s_state.stamina, 100); assert(!stamina_meter_visible());
+    glide = false; step(0.2); near(s_state.stamina, 100); assert(stamina_meter_visible());
     // Glide adds its own cost if bullet time overlaps; sprint cost stays intact.
-    reset(); set_glide_stamina_active(true); step(0.2, true); near(s_state.stamina, 95);
+    reset(); set_glide_stamina_active(true); step(0.2, true); near(s_state.stamina, 96);
     reset(); mark_sprint_stamina_active(); step(0.2); near(s_state.stamina, 99);
     // Empty stamina gates redeployment until normal exhaustion recovery completes.
     reset(); s_state.stamina = 0.5f; set_glide_stamina_active(true); step(0.2);
@@ -87,6 +103,82 @@ int main() {
     for (int i = 0; i < 39; ++i) step(0.25);
     assert(!stamina_available_for_glide()); step(0.25);
     near(s_state.stamina, 50); assert(stamina_available_for_glide());
+
+    // Maximum points are independent of costs and rendering percentages.
+    reset(); setting(StaminaSetting::Amount, 500); reset_for_link(&link);
+    assert(consume_flurry_rush_stamina()); near(s_state.stamina,450);
+    assert(consume_great_spin_stamina()); near(s_state.stamina,410);
+    setting(StaminaSetting::Amount,50);current_link();near(s_state.stamina,50);
+    // Progression derives from complete max hearts, never current life or a global counter.
+    reset();progression=true;
+    for(int life=0;life<=100;++life) {
+        maxLife=life;near(maximum_stamina(),100+std::max(0,life/5-3)*10);
+    }
+    maxLife=19;near(maximum_stamina(),100);maxLife=20;near(maximum_stamina(),110);
+    maxLife=100;setting(StaminaSetting::Amount,500);near(maximum_stamina(),670);
+    progression=false;near(maximum_stamina(),500);
+    progression=true;maxLife=15;++link.setID;current_link();near(s_state.stamina,500);
+    // Normal and exhausted recovery are separate; threshold scales with capacity.
+    reset();setting(StaminaSetting::Amount,200);setting(StaminaSetting::Recovery,12);
+    setting(StaminaSetting::ExhaustRecovery,40);setting(StaminaSetting::ExhaustThreshold,25);
+    s_state.stamina=80;step(.25);near(s_state.stamina,83);
+    s_state.stamina=0;s_state.exhausted=true;
+    for(int i=0;i<4;++i)step(.25);
+    near(s_state.stamina,40);assert(s_state.exhausted);step(.25);
+    near(s_state.stamina,50);assert(!s_state.exhausted);
+    for(int threshold:{0,100}) {
+        reset();setting(StaminaSetting::ExhaustThreshold,threshold);setting(StaminaSetting::ExhaustRecovery,100);
+        s_state.stamina=0;s_state.exhausted=true;step(.25);
+        assert(s_state.exhausted==(threshold==100));
+        if(threshold==100){for(int i=0;i<3;++i)step(.25);assert(!s_state.exhausted);}
+    }
+    // Zero means free, including while other actions have exhausted the meter.
+    reset();s_state.stamina=0;s_state.exhausted=true;
+    for(auto key:{StaminaSetting::Sprint,StaminaSetting::WolfSprint,StaminaSetting::Glide,
+                 StaminaSetting::BulletTime,StaminaSetting::FlurryRush,StaminaSetting::GreatSpin,
+                 StaminaSetting::ShieldAttack,StaminaSetting::BackSlice,StaminaSetting::HelmSplitter,
+                 StaminaSetting::MidnaAttack})setting(key,0);
+    assert(stamina_available_for_bullet_time()&&stamina_available_for_sprint()&&stamina_available_for_wolf_sprint());
+    assert(stamina_available_for_glide()&&consume_flurry_rush_stamina()&&consume_great_spin_stamina());
+    int success=1,failed=0;
+    assert(before_guard_attack(nullptr,nullptr,&success,nullptr)==HOOK_CONTINUE);
+    after_guard_attack(nullptr,nullptr,&success,nullptr);near(s_state.stamina,0);
+    assert(before_midna_charge(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    // Continuous costs are points per real second; wolf ticks charge once.
+    reset();setting(StaminaSetting::WolfSprint,17);
+    mark_wolf_sprint_stamina_active();mark_wolf_sprint_stamina_active();step(.2);near(s_state.stamina,96.6f);
+    setting(StaminaSetting::Sprint,20);mark_sprint_stamina_active();step(.2);near(s_state.stamina,92.6f);
+    setting(StaminaSetting::BulletTime,50);setting(StaminaSetting::Glide,20);
+    set_glide_stamina_active(true);step(.2,true);near(s_state.stamina,78.6f);
+    // Paid skills require enough points, charge once on successful init, and respect Off.
+    reset();setting(StaminaSetting::ShieldAttack,33);
+    after_guard_attack(nullptr,nullptr,&failed,nullptr);near(s_state.stamina,100);
+    assert(before_guard_attack(nullptr,nullptr,&success,nullptr)==HOOK_CONTINUE);
+    after_guard_attack(nullptr,nullptr,&success,nullptr);near(s_state.stamina,67);
+    after_back_slice(nullptr,nullptr,&success,nullptr);near(s_state.stamina,47);
+    after_helm_splitter(nullptr,nullptr,&success,nullptr);near(s_state.stamina,27);
+    assert(before_guard_attack(nullptr,nullptr,&success,nullptr)==HOOK_SKIP_ORIGINAL&&success==0);
+    assert(before_midna_charge(nullptr,nullptr,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+    enabled=false;assert(before_guard_attack(nullptr,nullptr,&success,nullptr)==HOOK_CONTINUE);
+    success=1;after_guard_attack(nullptr,nullptr,&success,nullptr);near(s_state.stamina,27);
+    enabled=true;reset();assert(before_midna_charge(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    near(s_state.stamina,50);
+    // Block or Guard Break charges once; ordinary damage / armor SE never count.
+    daAlink_c* owner=&link;dCcD_GObjInf hit,*hitPtr=&hit;
+    void* damageArgs[]={&owner};void* hitArgs[]={&owner,&hitPtr};
+    for(int kind=0;kind<4;++kind) {
+        reset();before_damage(nullptr,damageArgs,nullptr,nullptr);
+        if(kind!=0) {hit.shield=kind!=3;after_block(nullptr,hitArgs,nullptr,nullptr);}
+        if(kind==2)after_guard_break(nullptr,damageArgs,&success,nullptr);
+        after_damage(nullptr,damageArgs,nullptr,nullptr);
+        near(s_state.stamina,kind==1?90:kind==2?40:100);assert(s_guardEvents.empty());
+    }
+    reset();s_state.stamina=3;consume_defense(StaminaSetting::Block);
+    near(s_state.stamina,0);assert(s_state.exhausted);
+    reset();after_guard_break(nullptr,damageArgs,&failed,nullptr);near(s_state.stamina,100);
+    after_guard_break(nullptr,damageArgs,&success,nullptr);near(s_state.stamina,40);
+    setting(StaminaSetting::Block,0);consume_defense(StaminaSetting::Block);near(s_state.stamina,40);
+    enabled=false;consume_defense(StaminaSetting::GuardBreak);near(s_state.stamina,40);
     // New Link/death/scene reset cannot inherit an active glide drain.
     for (int reason : {0, 1, 2}) {
         reset(); set_glide_stamina_active(true);
@@ -97,13 +189,19 @@ int main() {
     }
 }
 '''
-production = state + '\n' + '\n'.join(function(name) for name in (
-    'same_link', 'reset_for_link', 'current_link', 'can_consume',
+production = function('maximum_stamina') + '\n' + state + '\n' + source[source.index('struct GuardEvent {'):source.index('HookAction before_damage')] + '\n' + '\n'.join(function(name) for name in (
+    'same_link', 'reset_for_link', 'current_link', 'can_consume', 'try_consume',
+    'consume_defense', 'before_damage', 'after_block', 'after_guard_break', 'after_damage',
+    'before_skill', 'after_skill', 'before_guard_attack', 'after_guard_attack',
+    'before_back_slice', 'after_back_slice', 'before_helm_splitter', 'after_helm_splitter',
+    'before_midna_charge', 'stamina_available_for_bullet_time', 'stamina_available_for_sprint',
+    'stamina_available_for_wolf_sprint', 'mark_wolf_sprint_stamina_active',
+    'consume_flurry_rush_stamina', 'consume_great_spin_stamina',
     'stamina_meter_visible', 'stamina_available_for_glide',
     'set_glide_stamina_active', 'mark_sprint_stamina_active', 'update_stamina'))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / 'test.cpp', Path(tmp) / 'test'
     cpp.write_text(fixture.replace('// PRODUCTION', production))
-    subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
+    subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', '-I', str(root / 'src'), str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Glide stamina passed: 5/s across frame rates, pause, toggles, exhaustion, recovery and lifecycle')
+print('Stamina runtime passed: configurable costs, guard accounting, recovery, progression, zero-cost actions and lifecycle')

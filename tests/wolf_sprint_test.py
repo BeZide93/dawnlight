@@ -11,7 +11,9 @@ fixture = r'''
 struct ModContext {};
 enum HookAction {HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods {template<class T>T arg(void* args,int i){return *static_cast<T*>(static_cast<void**>(args)[i]);}}
-bool enabled=true,event=false;float multiplier=1;
+bool enabled=true,event=false,stamina=true;int staminaTicks=0;float multiplier=1;
+bool stamina_available_for_wolf_sprint(){return stamina;}
+void mark_wolf_sprint_stamina_active(){++staminaTicks;}
 bool wolf_sprint_enabled(){return enabled;}float wolf_speed_multiplier(){return multiplier;}
 bool dComIfGp_event_runCheck(){return event;}
 struct daAlink_c {
@@ -52,6 +54,9 @@ int main(){
  }
  link.slow=true;tick();assert(link.mMaxSpeed==45);link.slow=false;
  link.field_0x2fc7=2;tick();assert(link.mMaxSpeed==60);link.field_0x2fc7=0;
+ // Exhaustion ends the sustained sprint; an accepted movement tick marks its cost.
+ int before=staminaTicks;tick();assert(staminaTicks==before+1);
+ stamina=false;tick();assert(!s_wolfSprintOwner&&staminaTicks==before+1);stamina=true;
  // Dash's persistent limit is restored on release or when toggled off.
  link.mProcID=daAlink_c::PROC_WOLF_DASH;tick();assert(link.mMaxSpeed==90);
  link.held=false;tick();assert(link.mMaxSpeed==30&&!s_wolfSprintOwner);link.held=true;

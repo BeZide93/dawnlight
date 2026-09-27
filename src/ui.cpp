@@ -14,6 +14,7 @@
 namespace dawnlight {
 namespace {
 
+UiWindowHandle s_staminaWindow = 0;
 UiWindowHandle s_settingsWindow = 0;
 UiMenuTabHandle s_menuTab = 0;
 
@@ -70,11 +71,12 @@ ModResult add_text(ModContext* ctx, UiElementHandle pane, const char* text) {
 }
 
 ModResult add_button(ModContext* ctx, UiElementHandle pane, const char* label,
-    UiPressedFn onPressed) {
+    UiPressedFn onPressed, UiPredicateFn isDisabled = nullptr) {
     UiControlDesc desc = UI_CONTROL_DESC_INIT;
     desc.kind = UI_CONTROL_BUTTON;
     desc.label = label;
     desc.on_pressed = onPressed;
+    desc.is_disabled = isDisabled;
     return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
 }
 
@@ -406,7 +408,7 @@ ModResult build_general_tab(
     if (add_toggle(ctx, left, "Progression System", progression_system_config_var(),
             "Sprint is available from the start. Give Talo the Wooden Sword to unlock the Glider, "
             "free Ordona for Revali's Gale, and free Faron for Fierce Deity. Gale gains one charge "
-            "per three full heart containers. Controlled settings are locked while On.")
+            "per three full heart containers. Each complete heart above the starting three adds 10 maximum stamina. Controlled settings are locked while On.")
         != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Notifications", notifications_config_var(),
             "Show Progression System unlock and Gale capacity notifications. Off by default. "
@@ -461,12 +463,42 @@ ModResult build_aiming_tab(
             std::size(kBulletTimeOptions),
             "Off disables Bullet Time. Always keeps the original airborne Bow aiming behavior. "
             "BOTW requires twice the original jump height above the ground to activate, independent "
-            "of Jump Height and Gale Height. Uses 20% stamina per second. Press A to cancel.")
+            "of Jump Height and Gale Height. Stamina cost is configurable in Controls -> Stamina Settings (default 15 points/sec). Press A to cancel.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
     return MOD_OK;
+}
+
+bool stamina_settings_disabled(ModContext*, void*) { return !stamina_enabled(); }
+
+ModResult build_stamina_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
+    UiElementHandle right, void*, ModError*) {
+    if (add_text(ctx, left, "Costs and recovery use stamina points. Exhaust Threshold is a percentage of maximum stamina. "
+            "Progression adds 10 maximum stamina per complete heart above the starting three.") != MOD_OK) return MOD_ERROR;
+    for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
+        const auto& desc = kStaminaSettings[i];
+        if (add_number(ctx, i < 8 ? left : right, desc.label,
+                stamina_setting_config_var(static_cast<StaminaSetting>(i)),
+                desc.min, desc.max, 1, desc.suffix, nullptr, stamina_settings_disabled) != MOD_OK)
+            return MOD_ERROR;
+    }
+    return MOD_OK;
+}
+
+void stamina_window_closed(ModContext*, UiWindowHandle, void*) { s_staminaWindow = 0; }
+
+void open_stamina_settings(ModContext* ctx, void*) {
+    if (s_staminaWindow || !stamina_enabled()) return;
+    UiTabDesc tab = UI_TAB_DESC_INIT;
+    tab.title = "Stamina Settings";
+    tab.build = build_stamina_tab;
+    UiWindowDesc desc = UI_WINDOW_DESC_INIT;
+    desc.tabs = &tab;
+    desc.tab_count = 1;
+    desc.on_closed = stamina_window_closed;
+    svc_ui->window_push(ctx, &desc, &s_staminaWindow);
 }
 
 ModResult build_controls_tab(
@@ -539,16 +571,17 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (add_button(ctx, left, "Stamina Settings", open_stamina_settings, stamina_settings_disabled) != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Sprint", sprint_config_var(),
             "Hold the Roll button while running to sprint at the configured speed. "
-            "Uses 5% stamina per second.")
+            "Stamina cost is configurable in Stamina Settings (default 5 points/sec).")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Wolf Sprint", wolf_sprint_config_var(),
             "Hold the Dash button (B in the Dawnlight layout) while moving as wolf Link to keep dash speed. "
-            "Uses the assigned Dash action for controller and touch input.") != MOD_OK)
+            "Uses the assigned Dash action for controller and touch input. Stamina cost defaults to 5 points/sec.") != MOD_OK)
     {
         return MOD_ERROR;
     }
@@ -784,7 +817,7 @@ ModResult build_gameplay_tab(
             "Perfectly evade a locked enemy attack with a side jump or backflip to slow the "
             "dodge and enemies for three seconds. A sword attack closes to melee range and "
             "restores Link's speed. Link cannot be hit while the effect is active. Releasing "
-            "the lock-on ends the effect early. Uses 25% stamina.")
+            "the lock-on ends the effect early. Uses the configured Flurry Rush cost (default 50 stamina points per activation).")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -798,7 +831,7 @@ ModResult build_gameplay_tab(
     }
     if (add_toggle(ctx, left, "Great Spin Projectile", great_spin_projectile_config_var(),
             "Launches the Great Spin trail forward as a damaging sword projectile at full "
-            "health. Uses 40% stamina.")
+            "health. Uses the configured Great Spin Projectile cost (default 40 stamina points).")
         != MOD_OK)
     {
         return MOD_ERROR;

@@ -47,9 +47,9 @@ falls. **Glide Item**, directly below the toggle, selects **Cucco** (default) or
 an original textured **Glider** with a wooden frame and leather grips. Both use
 native Cucco glide movement; landing puts the selected item away. The Glider
 hides and silences only its internally summoned Cucco, leaving world Cuccos alone.
-With **Stamina Bar** enabled, either Glide Item consumes 5 stamina per second
-while gliding. Empty stamina ends the glide; exhaustion blocks redeployment
-until stamina recovers to 50%. Disabling Stamina Bar removes the cost.
+With **Stamina Bar** enabled, either Glide Item consumes the configured Glide cost
+(default 5 stamina points per second). Empty stamina ends the glide; exhaustion blocks redeployment
+until stamina reaches the configured exhaustion threshold (default 50%). Disabling Stamina Bar removes the cost.
 
 ### Glider model and textures
 
@@ -106,10 +106,11 @@ See [HUD editing](controls-and-hud.md#hud-editing) to reposition the counter.
 
 ## Shared stamina
 
-Bullet Time, Flurry Rush, Sprint, Glide and the Great Spin projectile share a
-stamina meter, including compatibility with Lazy Tweaks stamina actions. Emptying
-the meter causes exhaustion until it recovers to 50%. The Stamina Bar setting
-can disable both the meter and all Dawnlight stamina costs.
+Movement and combat use one configurable stamina pool. Open **Controls ->
+Stamina Settings**, directly below **Stamina Bar**, to adjust capacity, recovery,
+exhaustion and individual costs. Dawnlight Mode locks the defaults while preserving
+your manual settings; Progression adds capacity for collected heart containers.
+See [Stamina settings](stamina.md) for all ranges and defaults.
 
 For Bullet Time, Flurry Rush and the Great Spin projectile, see
 [combat and aiming](combat-and-aiming.md).

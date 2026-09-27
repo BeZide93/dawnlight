@@ -55,7 +55,8 @@ struct State {
     bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
     float guard=0,draw=0,sheathTilt=0;
     unsigned tick=0,poseTick=~0u;
-    Pose rightSword,hipSword;
+    Pose rightSword,hipSword,nativeShield;
+    unsigned shieldTick=~0u;
     DualGuardBodyPose guardBody;
     bool haveGuardBody=false;
     dual::StowMotion stow;
@@ -297,7 +298,7 @@ HookAction before_execute(ModContext*,void* args,void*,void*) {
         s_failedOwner=link;
         if(svc_log) svc_log->warn(mod_ctx,"Dual Wield: could not prepare private Ordon models; keeping native equipment");
     }
-    if(s.owner==link) ++s.tick;
+    if(s.owner==link) { ++s.tick;s.shieldTick=~0u; }
     return HOOK_CONTINUE;
 }
 Pose hand_mount(daAlink_c* link,bool right) {
@@ -479,7 +480,14 @@ void after_arms(ModContext*,void* args,void*,void*) {
     const Pose actor=pose(model->getBaseTRMtx());
     s.hipSword=dual::compose(actor,dual::tilt_sheath(
         dual::compose(dual::inverse(actor),s.hipSword),s.sheathTilt));
-    if(!active(link)) { s.rightSword=s.hipSword;return; }
+    if(!active(link)) { s.rightSword=s.hipSword;s.shieldTick=~0u;return; }
+    // Save the shield's native attachment BEFORE sword IK changes the right
+    // item joint. Collision derives its facing from this hidden model, not
+    // from the rendered blades or simply Link's facing angle.
+    if(link->mRightItemJntNo<35 && !link->checkStatusWindowDraw()) {
+        s.nativeShield=pose(model->getAnmMtx(link->mRightItemJntNo));
+        s.shieldTick=s.tick;
+    } else s.shieldTick=~0u;
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());
         const Pose inverseBase=dual::inverse(base);
@@ -635,6 +643,19 @@ void after_model_draw(ModContext*,void* args,void*,void*) {
     const int hidden=mods::arg<int>(args,2);
     link->modelDraw(s.sword,hidden);link->modelDraw(s.sheath,hidden);
 }
+HookAction before_collision(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(active(link) && s.shieldTick==s.tick && link->mShieldModel &&
+       link->mShieldChangeWaitTimer==0 && !link->checkStatusWindowDraw() &&
+       link->checkPlayerGuardAndAttack()) {
+        // setItemMatrix attached the hidden shield to our sword-oriented hand.
+        // Restore the native shield basis before setCollision reads BaseZ into
+        // field_0x351c/field_0x306c. Keep all native cylinders, angle limits,
+        // shield flags, damage and Guard Break decisions exactly as they are.
+        matrix(s.nativeShield,link->mShieldModel->getBaseTRMtx());
+    }
+    return HOOK_CONTINUE;
+}
 void after_collision(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(!active(link) || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK || !link->mProcVar5.field_0x3012) return;
@@ -660,7 +681,7 @@ ModResult install_dual_wield_hooks(ModError* error) {
     POST(DualArms,after_arms);POST(DualItems,after_items);POST(DualSwordPos,after_sword_pos);
     POST(DualShieldDraw,after_shield_draw);POST(DualModelDraw,after_model_draw);
     PRE(DualStatusExecute,before_status_execute);POST(DualStatusDraw,after_status_draw);
-    POST(DualCut,after_cut);POST(DualFinish,after_cut);POST(DualCollision,after_collision);
+    POST(DualCut,after_cut);POST(DualFinish,after_cut);PRE(DualCollision,before_collision);POST(DualCollision,after_collision);
     PRE(DualGuardAttack,before_guard_attack);
     POST(DualEquip,after_equip);POST(DualUnequip,after_unequip);POST(DualFlourish,after_flourish);
     PRE(DualDelete,before_delete);

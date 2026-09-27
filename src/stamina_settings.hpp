@@ -17,7 +17,7 @@ struct StaminaSettingDesc {
 inline constexpr std::array<StaminaSettingDesc, static_cast<size_t>(StaminaSetting::Count)> kStaminaSettings{{
     {"stamina-amount", "Stamina Amount", 50, 500, 100, ""},
     {"stamina-recovery", "Recovery speed", 1, 100, 5, " /sec"},
-    {"stamina-exhaust-threshold", "Exhaust Threshold", 0, 100, 50, "%"},
+    {"stamina-exhaust-threshold", "Exhaust Threshold", 0, 100, 50, ""},
     {"stamina-exhaust-recovery", "Exhaust Recovery speed", 1, 100, 5, " /sec"},
     {"stamina-sprint", "Sprint", 0, 20, 5, " /sec"},
     {"stamina-wolf-sprint", "Wolf Sprint", 0, 20, 5, " /sec"},
@@ -33,7 +33,7 @@ inline constexpr std::array<StaminaSettingDesc, static_cast<size_t>(StaminaSetti
     {"stamina-midna-attack", "Midna Attack", 0, 100, 50, ""},
 }};
 
-// Costs/rates are points, while the exhaustion threshold is a percentage.
+// Costs, recovery rates and the exhaustion threshold use stamina points.
 // Five max-life units form a heart; incomplete heart pieces add no capacity.
 inline int stamina_capacity(int base, bool progression, int maxLife) {
     return base + (progression ? std::max(0, maxLife / 5 - 3) * 10 : 0);

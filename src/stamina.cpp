@@ -394,7 +394,7 @@ bool update_stamina(bool bulletTimeActive) {
         s_state.exhausted = true;
     } else if (s_state.exhausted &&
                s_state.stamina > 0 && s_state.stamina >=
-                   maximum_stamina() * stamina_setting(StaminaSetting::ExhaustThreshold) / 100.0f)
+                   std::min(maximum_stamina(), static_cast<float>(stamina_setting(StaminaSetting::ExhaustThreshold))))
     {
         s_state.exhausted = false;
     }

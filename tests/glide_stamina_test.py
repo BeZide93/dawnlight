@@ -118,9 +118,9 @@ int main() {
     maxLife=100;setting(StaminaSetting::Amount,500);near(maximum_stamina(),670);
     progression=false;near(maximum_stamina(),500);
     progression=true;maxLife=15;++link.setID;current_link();near(s_state.stamina,500);
-    // Normal and exhausted recovery are separate; threshold scales with capacity.
+    // Normal and exhausted recovery are separate; threshold uses fixed points.
     reset();setting(StaminaSetting::Amount,200);setting(StaminaSetting::Recovery,12);
-    setting(StaminaSetting::ExhaustRecovery,40);setting(StaminaSetting::ExhaustThreshold,25);
+    setting(StaminaSetting::ExhaustRecovery,40);setting(StaminaSetting::ExhaustThreshold,50);
     s_state.stamina=80;step(.25);near(s_state.stamina,83);
     s_state.stamina=0;s_state.exhausted=true;
     for(int i=0;i<4;++i)step(.25);
@@ -132,6 +132,18 @@ int main() {
         assert(s_state.exhausted==(threshold==100));
         if(threshold==100){for(int i=0;i<3;++i)step(.25);assert(!s_state.exhausted);}
     }
+    // The same fixed threshold applies at every capacity, including progression bonuses.
+    for(int capacity:{50,100,200,500}) for(bool bonus:{false,true}) {
+        reset();setting(StaminaSetting::Amount,capacity);progression=bonus;maxLife=100;
+        setting(StaminaSetting::ExhaustThreshold,50);setting(StaminaSetting::ExhaustRecovery,4);
+        s_state.stamina=48;s_state.exhausted=true;step(.25);
+        near(s_state.stamina,49);assert(s_state.exhausted);step(.25);
+        near(s_state.stamina,50);assert(!s_state.exhausted);
+    }
+    // A threshold above capacity cannot trap the player in permanent exhaustion.
+    reset();setting(StaminaSetting::Amount,50);setting(StaminaSetting::ExhaustThreshold,100);
+    setting(StaminaSetting::ExhaustRecovery,4);s_state.stamina=49;s_state.exhausted=true;
+    step(.25);near(s_state.stamina,50);assert(!s_state.exhausted);
     // Zero means free, including while other actions have exhausted the meter.
     reset();s_state.stamina=0;s_state.exhausted=true;
     for(auto key:{StaminaSetting::Sprint,StaminaSetting::WolfSprint,StaminaSetting::Glide,

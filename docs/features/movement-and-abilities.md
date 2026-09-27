@@ -49,7 +49,7 @@ native Cucco glide movement; landing puts the selected item away. The Glider
 hides and silences only its internally summoned Cucco, leaving world Cuccos alone.
 With **Stamina Bar** enabled, either Glide Item consumes the configured Glide cost
 (default 5 stamina points per second). Empty stamina ends the glide; exhaustion blocks redeployment
-until stamina reaches the configured exhaustion threshold (default 50%). Disabling Stamina Bar removes the cost.
+until stamina reaches the configured exhaustion threshold (default 50 points). Disabling Stamina Bar removes the cost.
 
 ### Glider model and textures
 

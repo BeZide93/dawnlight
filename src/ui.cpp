@@ -475,7 +475,7 @@ bool stamina_settings_disabled(ModContext*, void*) { return !stamina_enabled(); 
 
 ModResult build_stamina_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
     UiElementHandle right, void*, ModError*) {
-    if (add_text(ctx, left, "Costs and recovery use stamina points. Exhaust Threshold is a percentage of maximum stamina. "
+    if (add_text(ctx, left, "Costs, recovery and Exhaust Threshold use stamina points. The threshold does not scale with maximum stamina. "
             "Progression adds 10 maximum stamina per complete heart above the starting three.") != MOD_OK) return MOD_ERROR;
     for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
         const auto& desc = kStaminaSettings[i];

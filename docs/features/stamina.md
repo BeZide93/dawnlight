@@ -8,13 +8,14 @@ Stamina Bar Off disables Dawnlight's stamina costs.
 
 Costs and recovery rates use **stamina points**, not percentages of the current
 capacity. Setting an action's cost to **0** makes it free, even during exhaustion.
-The exhaustion threshold is a percentage of maximum stamina.
+The exhaustion threshold also uses fixed points: a threshold of 50 ends exhaustion
+at 50 points even with a capacity of 200 or more.
 
 | Setting | Range | Default |
 | --- | --- | --- |
 | Stamina Amount | 50–500 | 100 |
 | Recovery speed | 1–100/sec | 5/sec |
-| Exhaust Threshold | 0–100% | 50% |
+| Exhaust Threshold | 0–100 | 50 |
 | Exhaust Recovery speed | 1–100/sec | 5/sec |
 | Sprint | 0–20/sec | 5/sec |
 | Wolf Sprint | 0–20/sec | 5/sec |
@@ -43,7 +44,8 @@ the bonus. The meter displays current stamina relative to this effective maximum
 Continuous costs run per real second; menus pause their accounting. Glide adds
 its cost to Bullet Time. Recovery runs when there is no continuous drain; exhausted
 recovery runs until the configured threshold is reached. A threshold of 0 resumes
-paid actions as soon as any stamina has regenerated; 100 requires a full refill.
+paid actions as soon as any stamina has regenerated. A threshold above the current
+maximum capacity is treated as that capacity, so full stamina always ends exhaustion.
 
 Block is charged once per shielded hit, including Dual Wield. Guard Break uses its
 own cost **instead of** Block. These defensive reactions retain native behavior

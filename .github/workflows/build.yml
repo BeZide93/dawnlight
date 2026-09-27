@@ -103,6 +103,12 @@ jobs:
           fi
           cmake -B build "${args[@]}"
 
+      - name: Test Touch Editor and Quick Access compatibility
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/touch_button_editor_test.py
+          python3 tests/touch_editor_install_test.py
+
       - name: Build
         run: cmake --build build --parallel
 

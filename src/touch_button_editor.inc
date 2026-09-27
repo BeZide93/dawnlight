@@ -32,17 +32,18 @@ constexpr std::array kExtraHandles = {EditHandle::Left, EditHandle::Right, EditH
     EditHandle::Bottom, EditHandle::TopLeft, EditHandle::TopRight, EditHandle::BottomLeft, EditHandle::BottomRight};
 struct EditorState {
     NativeEditor* editor = nullptr;
-    std::array<NativeEditor::EditElement, touch::Count> elements{};
-    std::array<dusk::ui::ControlProps, touch::Count> defaults{};
-    std::array<std::optional<dusk::ui::ControlProps>, touch::Count> working{};
+    size_t count = touch::Count;
+    std::array<NativeEditor::EditElement, kExtraEditorSlotCount> elements{};
+    std::array<dusk::ui::ControlProps, kExtraEditorSlotCount> defaults{};
+    std::array<std::optional<dusk::ui::ControlProps>, kExtraEditorSlotCount> working{};
     NativeEditor::PointerEdit pointer{};
-    size_t selected = touch::Count;
+    size_t selected = kExtraEditorSlotCount;
     Rml::Element* frame = nullptr;
     std::array<Rml::Element*, 8> handles{};
     std::optional<dusk::ui::ControlRect> frameBox;
     std::vector<EditorListener*> captureListeners;
     std::vector<EditorDocument*> children;
-    std::array<std::string, touch::Count> savePrevious;
+    std::array<std::string, kExtraEditorSlotCount> savePrevious;
     bool savePending = false;
     bool saveFailed = false;
 };
@@ -62,7 +63,7 @@ dusk::ui::ControlProps extra_editor_props(const EditorState& state, size_t i) {
 void draw_extra_editor(EditorState& state) {
     dusk::ui::ControlLayoutSize size;
     if (!extra_viewport(state.editor->mDocument, size)) return;
-    for (size_t i = 0; i < touch::Count; ++i) {
+    for (size_t i = 0; i < state.count; ++i) {
         auto& element = state.elements[i];
         const auto layout = dusk::ui::resolve_control_layout(extra_editor_props(state, i), size);
         element.layout.visualRect = layout.visual;
@@ -72,7 +73,7 @@ void draw_extra_editor(EditorState& state) {
         s_editorApi.applyDock(element.root, s_editorApi.dockAnchor(layout.visual, size));
         editor_class(element.root, "editor-selected", state.selected == i);
     }
-    const bool selected = state.selected < touch::Count;
+    const bool selected = state.selected < state.count;
     editor_class(state.frame, "visible", selected);
     if (selected) s_touchApi.applyBox(state.frame, &state.frameBox, *state.elements[state.selected].layout.visualRect);
     else state.frameBox.reset();
@@ -84,7 +85,7 @@ void draw_extra_editor(EditorState& state) {
 
 bool begin_extra_edit(EditorState& state, size_t i, EditHandle handle,
     Rml::Vector2f position, bool touch, SDL_FingerID id) {
-    if (i >= touch::Count || state.pointer.active || state.editor->mPointerEdit.active) return false;
+    if (i >= state.count || state.pointer.active || state.editor->mPointerEdit.active) return false;
     dusk::ui::ControlLayoutSize size;
     if (!extra_viewport(state.editor->mDocument, size)) return false;
     const auto props = extra_editor_props(state, i);
@@ -146,13 +147,13 @@ void extra_editor_event(EditorState& state, Rml::Event& event, ExtraEditEvent ki
     }
     auto* target = s_touchApi.target(&event);
     for (; target && target != state.editor->mRoot; target = s_touchApi.parent(target)) {
-        size_t index = touch::Count;
+        size_t index = kExtraEditorSlotCount;
         EditHandle handle = EditHandle::Move;
-        for (size_t i = 0; i < touch::Count; ++i) if (target == state.elements[i].root) index = i;
+        for (size_t i = 0; i < state.count; ++i) if (target == state.elements[i].root) index = i;
         for (size_t i = 0; i < state.handles.size(); ++i) if (target == state.handles[i]) {
             index = state.selected; handle = kExtraHandles[i];
         }
-        if (index < touch::Count) {
+        if (index < state.count) {
             begin_extra_edit(state, index, handle, touch ? s_editorApi.touchPosition(&event) : s_editorApi.mousePosition(&event), touch, id);
             s_touchApi.stop(&event);
             return;
@@ -160,7 +161,7 @@ void extra_editor_event(EditorState& state, Rml::Event& event, ExtraEditEvent ki
     }
     // Any foreign/native control (including unknown mod buttons) gets the
     // original event and editor state. Only clear our own idle selection.
-    if (!state.pointer.active) { state.selected = touch::Count; draw_extra_editor(state); }
+    if (!state.pointer.active) { state.selected = kExtraEditorSlotCount; draw_extra_editor(state); }
 }
 void detach_editor_listeners(EditorState& state) {
     auto& listeners = static_cast<EditorDocument*>(state.editor)->mListeners;
@@ -188,12 +189,13 @@ EditorState* attach_extra_editor(NativeEditor* editor) {
     auto owned = std::make_unique<EditorState>();
     auto* state = owned.get();
     state->editor = editor;
+    state->count = quick_access_editor_available() ? kExtraEditorSlotCount : touch::Count;
     std::string fragment;
-    for (size_t i = 0; i < touch::Count; ++i) {
+    for (size_t i = 0; i < state->count; ++i) {
         state->defaults[i] = default_extra_props(i, size);
         state->working[i] = saved_extra_props(i, size);
         fragment += "<button class='control trigger'><span>";
-        fragment += touch::Labels[i];
+        fragment += i == kQuickAccessEditorSlot ? "Quick Access" : touch::Labels[i];
         fragment += "</span></button>";
     }
     fragment += "<selection-frame>";
@@ -205,8 +207,8 @@ EditorState* attach_extra_editor(NativeEditor* editor) {
     s_touchApi.setRml(root.get(), &fragment);
     auto* element = s_touchApi.append(editor->mRoot, std::move(root), true);
     if (!element) return nullptr;
-    for (size_t i = 0; i < touch::Count; ++i) state->elements[i].root = s_touchApi.child(element, int(i));
-    state->frame = s_touchApi.child(element, int(touch::Count));
+    for (size_t i = 0; i < state->count; ++i) state->elements[i].root = s_touchApi.child(element, int(i));
+    state->frame = s_touchApi.child(element, int(state->count));
     for (size_t i = 0; i < state->handles.size(); ++i) state->handles[i] = s_touchApi.child(state->frame, int(i));
     s_editors.push_back(std::move(owned));
     const char* touchEvents[] = {"touchstart", "touchmove", "touchend", "touchcancel"};
@@ -229,7 +231,7 @@ void layout_extra_editor(ModContext*, void* args, void*, void*) {
 }
 void reset_extra_editor(ModContext*, void* args, void*, void*) {
     if (auto* state = editor_state(mods::arg<NativeEditor*>(args, 0))) {
-        state->working = {}; state->pointer = {}; state->selected = touch::Count;
+        state->working = {}; state->pointer = {}; state->selected = kExtraEditorSlotCount;
         draw_extra_editor(*state);
     }
 }
@@ -251,18 +253,18 @@ HookAction extra_editor_delete(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 bool persist_extra_editor(EditorState& state) {
-    std::array<std::string, touch::Count> values;
-    for (size_t i = 0; i < touch::Count; ++i) {
+    std::array<std::string, kExtraEditorSlotCount> values;
+    for (size_t i = 0; i < state.count; ++i) {
         const auto props = extra_editor_props(state, i);
         if (!valid_extra_props(props)) return false;
         values[i] = encode_extra_props(props);
         char buffer[256]{};
-        if (svc_config->get_string(mod_ctx, s_buttons[i].layout, buffer, sizeof(buffer), nullptr) != MOD_OK) return false;
+        if (svc_config->get_string(mod_ctx, extra_layout_handle(i), buffer, sizeof(buffer), nullptr) != MOD_OK) return false;
         state.savePrevious[i] = buffer;
     }
-    for (size_t i = 0; i < touch::Count; ++i) {
-        if (svc_config->set_string(mod_ctx, s_buttons[i].layout, values[i].c_str()) != MOD_OK) {
-            for (size_t j = 0; j < i; ++j) svc_config->set_string(mod_ctx, s_buttons[j].layout, state.savePrevious[j].c_str());
+    for (size_t i = 0; i < state.count; ++i) {
+        if (svc_config->set_string(mod_ctx, extra_layout_handle(i), values[i].c_str()) != MOD_OK) {
+            for (size_t j = 0; j < i; ++j) svc_config->set_string(mod_ctx, extra_layout_handle(j), state.savePrevious[j].c_str());
             svc_log->warn(mod_ctx, "Could not save Touch Buttons layout");
             return false;
         }
@@ -285,8 +287,8 @@ void after_save_extra_editor(ModContext*, void* args, void*, void*) {
     const bool saved = editor->mClosed || editor->mPendingClose;
     if (state->savePending && !saved) {
         // Another mod vetoed Save after our pre-hook: undo our writes too.
-        for (size_t i = 0; i < touch::Count; ++i)
-            svc_config->set_string(mod_ctx, s_buttons[i].layout, state->savePrevious[i].c_str());
+        for (size_t i = 0; i < state->count; ++i)
+            svc_config->set_string(mod_ctx, extra_layout_handle(i), state->savePrevious[i].c_str());
     } else if (!state->savePending && !state->saveFailed && saved) {
         // A preceding replacement saved and closed without running our pre-hook.
         persist_extra_editor(*state);

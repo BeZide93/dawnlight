@@ -38,6 +38,7 @@ namespace dawnlight {
 namespace {
 struct ButtonConfig { ConfigVarHandle enabled = 0, x = 0, y = 0, size = 0, layout = 0; };
 std::array<ButtonConfig, touch::Count> s_buttons{};
+ConfigVarHandle s_quickAccessLayout = 0;
 UiWindowHandle s_touchWindow = 0;
 bool s_midnaTouchPending = false;
 #if defined(__ANDROID__)
@@ -100,7 +101,7 @@ ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle 
     UiControlDesc editor = UI_CONTROL_DESC_INIT;
     editor.kind = UI_CONTROL_BUTTON;
     editor.label = "Open Dusklight Touch Layout Editor";
-    editor.help_rml = "Edit vanilla and Dawnlight buttons together. Drag to move; use edge/corner handles to resize. Save applies both layouts; Cancel discards changes.";
+    editor.help_rml = "Edit vanilla, Dawnlight and the Twilit Essentials Quick Access button together. Drag to move; use edge/corner handles to resize. Save applies both layouts; Cancel discards changes.";
     editor.on_pressed = edit_touch_layout;
     editor.is_disabled = touch_editor_disabled;
     return svc_ui->pane_add_control(ctx, left, &editor, nullptr);
@@ -148,6 +149,12 @@ ModResult register_touch_button_config(ModError* error) {
         const auto result = svc_config->register_var(mod_ctx, &desc, &c.layout);
         if (result != MOD_OK) return mods::set_error(error, result, "failed to register touch button layout");
     }
+    ConfigVarDesc desc = CONFIG_VAR_DESC_INIT;
+    desc.name = "touch-button-twe-quick-access-layout";
+    desc.type = CONFIG_VAR_STRING;
+    desc.default_string = "";
+    const auto result = svc_config->register_var(mod_ctx, &desc, &s_quickAccessLayout);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to register Quick Access touch layout");
     return MOD_OK;
 }
 void open_touch_buttons(ModContext* ctx, void*) {

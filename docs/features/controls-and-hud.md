@@ -32,6 +32,12 @@ the native controls and leaves other mods' button events and normal save hooks i
 The dedicated Midna button shows her icon and calls her when available. Skip is
 reserved for cutscenes; enable Midna separately in Touch Buttons.
 
+When Twilit Essentials and its **Quick Access** feature are enabled, the editor
+also includes a **Quick Access** button. Move or resize it and **Save** to apply
+that layout to Essentials' existing gameplay button. **Cancel** and **Reset**
+work the same way as for the Dawnlight buttons; Essentials still controls the
+button's action and visibility.
+
 For touch requirements, restart behavior, input integration and tested mod
 combinations, see [Dawnlight Touch UI](../../COMPATIBILITY.md#dawnlight-touch-ui).
 

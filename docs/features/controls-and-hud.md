@@ -11,7 +11,10 @@ the touch controls available when another mod provides the third item slot.
 Improved item HUD support for extra item slots, including item icons, ammo,
 oil, bottle contents, and combine prompts.
 
-Only one mod should provide the third item slot. See the
+Dawnlight automatically skips its Z-slot hooks when Twilight HD HUD Z Items or
+Twilit Essentials Custom Z Button is enabled. Your saved Dawnlight toggle stays
+unchanged, and Dawnlight Touch UI remains independent. Restart Dusklight after
+changing which mod provides the slot. See the
 [compatibility guide](../../COMPATIBILITY.md) for configurations with
 Twilit Essentials and Twilight HD HUD.
 

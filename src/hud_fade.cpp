@@ -65,10 +65,15 @@ void update_idle() {
     if (enabled && link == s_player) {
         const cXyz delta = link->current.pos - s_position;
         const bool moved = delta.abs2() > 0.01f || link->current.angle.y != s_angle;
-        // Attacking, aiming, taking damage, etc. must reveal the HUD even when
-        // the animation leaves Link in the same place.
+        // Automatic idle gestures and low-health breathing use separate procs.
+        // Keep the idle timer through those transitions, but still reveal the
+        // HUD for movement, attacks, aiming, damage and other active procs.
         idle = !moved && (link->mProcID == daAlink_c::PROC_WAIT ||
-                         link->mProcID == daAlink_c::PROC_WOLF_WAIT);
+                         link->mProcID == daAlink_c::PROC_SERVICE_WAIT ||
+                         link->mProcID == daAlink_c::PROC_TIRED_WAIT ||
+                         link->mProcID == daAlink_c::PROC_WOLF_WAIT ||
+                         link->mProcID == daAlink_c::PROC_WOLF_SERVICE_WAIT ||
+                         link->mProcID == daAlink_c::PROC_WOLF_TIRED_WAIT);
         if (moved) s_position = link->current.pos;
     } else if (link) {
         s_position = link->current.pos;

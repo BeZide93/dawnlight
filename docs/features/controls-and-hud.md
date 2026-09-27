@@ -50,7 +50,8 @@ Open `Mod Manager -> Dawnlight -> Open Dawnlight Settings -> HUD`.
 
 **HUD Auto Fade**, at the top of the editor, is Off by default and independent
 of the layout preset. After Link stands still for 3 seconds, the game HUD fades
-out over 1 second. Movement or actions bring it back in 0.15 seconds. Menus,
+out over 1 second. Automatic idle gestures and low-health idle animations in
+human and wolf form keep it faded. Movement or actions bring it back in 0.15 seconds. Menus,
 dialogue and scene transitions reset the idle timer.
 
 The HUD layout setting has five modes:

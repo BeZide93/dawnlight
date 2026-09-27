@@ -29,7 +29,9 @@ enum HookAction {HOOK_CONTINUE};
 struct cXyz {float x=0,y=0,z=0; cXyz operator-(cXyz p){return {x-p.x,y-p.y,z-p.z};}
     float abs2() const {return x*x+y*y+z*z;}};
 struct daAlink_c {
-    enum {PROC_WAIT,PROC_WOLF_WAIT,PROC_ATTACK};
+    enum {PROC_WAIT,PROC_SERVICE_WAIT,PROC_TIRED_WAIT,
+          PROC_WOLF_WAIT,PROC_WOLF_SERVICE_WAIT,PROC_WOLF_TIRED_WAIT,
+          PROC_ATTACK,PROC_AIM,PROC_DAMAGE};
     struct {cXyz pos;struct {s16 y=0;} angle;} current;
     int mProcID=PROC_WAIT;
 } link;
@@ -115,6 +117,39 @@ int main(){
     shutdown_hud_fade();link.mProcID=daAlink_c::PROC_WOLF_WAIT;
     for(int i=0;i<=240;++i) tick(i/60.0);
     near(s_hudAlpha,0);++link.current.angle.y;tick(4.1);tick(4.2);near(s_hudAlpha,1);
+
+    // Idle gestures and low-health breathing preserve both the countdown and
+    // an already hidden HUD, in human and wolf form. Include the return to wait.
+    for (auto wait : {daAlink_c::PROC_WAIT, daAlink_c::PROC_WOLF_WAIT}) {
+        const bool wolf = wait == daAlink_c::PROC_WOLF_WAIT;
+        const auto gesture = wolf ? daAlink_c::PROC_WOLF_SERVICE_WAIT : daAlink_c::PROC_SERVICE_WAIT;
+        const auto tired = wolf ? daAlink_c::PROC_WOLF_TIRED_WAIT : daAlink_c::PROC_TIRED_WAIT;
+        for (auto animation : {gesture, tired}) {
+            shutdown_hud_fade(); link.mProcID = wait;
+            for (int i = 0; i <= 120; ++i) tick(i / 60.0);
+            link.mProcID = animation;
+            for (int i = 121; i <= 240; ++i) tick(i / 60.0);
+            near(s_hudAlpha, 0); // The switch at 2s did not restart the 3s delay.
+            link.mProcID = wait;
+            for (int i = 241; i <= 300; ++i) { tick(i / 60.0); near(s_hudAlpha, 0); }
+            link.mProcID = animation;
+            for (int i = 301; i <= 420; ++i) { tick(i / 60.0); near(s_hudAlpha, 0); }
+            // Real displacement/rotation still wakes the HUD in an idle proc.
+            link.current.pos.x += 1;
+            tick(7.1); tick(7.2); near(s_hudAlpha, 1);
+            for (int i = 1; i <= 240; ++i) tick(7.2 + i / 60.0);
+            near(s_hudAlpha, 0);
+            ++link.current.angle.y;
+            tick(11.3); tick(11.4); near(s_hudAlpha, 1);
+            // Attacks, aiming and damage must also wake it without displacement.
+            for (auto action : {daAlink_c::PROC_ATTACK, daAlink_c::PROC_AIM, daAlink_c::PROC_DAMAGE}) {
+                shutdown_hud_fade(); link.mProcID = animation;
+                for (int i = 0; i <= 240; ++i) tick(i / 60.0);
+                near(s_hudAlpha, 0); link.mProcID = action;
+                tick(4.1); tick(4.2); near(s_hudAlpha, 1);
+            }
+        }
+    }
 
     // Alpha inheritance: apply the fade once, including branches opting out of
     // parent alpha. Preserve native fading and leave the next draw untouched.

@@ -143,7 +143,7 @@ void show_name(dMenu_Collect2D_c* menu) {
     if(!own_focus(menu)) return;
     for(u64 tag:{MULTI_CHAR('item_n00'),MULTI_CHAR('item_n01'),MULTI_CHAR('item_n02'),MULTI_CHAR('item_n03'),
                  MULTI_CHAR('item_n04'),MULTI_CHAR('item_n05'),MULTI_CHAR('item_n06'),MULTI_CHAR('item_n07')})
-        text(menu->mpScreen,tag,"Ordon Sword");
+        text(menu->mpScreen,tag,second_sword_assets(second_sword()).name);
     const char* description=dual_wield_equipped()?"Dual Wield equipped. Select a shield to return to shield combat.":
         "Equip a second sword for Dual Wield. Requires an equipped shield.";
     for(u64 tag:{MULTI_CHAR('i_text0'),MULTI_CHAR('i_text1'),MULTI_CHAR('f_text0'),MULTI_CHAR('f_text1')})
@@ -178,8 +178,22 @@ std::vector<collection::Cell> collect_cells(dMenu_Collect2D_c* menu) {
     }
     return cells;
 }
+const ResTIMG* second_sword_icon() {
+    auto* archive=dComIfGp_getCollectResArchive();
+    return archive ? static_cast<const ResTIMG*>(
+        archive->getResource('TIMG',second_sword_assets(second_sword()).icon)) : nullptr;
+}
+void update_sword_icon() {
+    if(!s_menu.icon) return;
+    const auto* icon=second_sword_icon();
+    // Never leave a stale icon claiming a different sword after a live switch.
+    if(!icon) {s_menu.icon->hide();return;}
+    if(texture(s_menu.icon)!=icon) s_menu.icon->changeTexture(icon,0);
+    s_menu.icon->show();
+}
 void layout(dMenu_Collect2D_c* menu) {
     if(s_menu.owner!=menu || !s_menu.screen || !menu->mpScreen || !menu->mpLinkPm) return;
+    update_sword_icon();
     s_menu.cells=collect_cells(menu);
     s_menu.placement=collection::append_shield(s_menu.cells);
     const auto p=s_menu.placement;
@@ -309,8 +323,9 @@ HookAction capture_icon(ModContext*,void* args,void*,void*) {
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     if(s_menu.owner==menu && s_menu.screen) return HOOK_CONTINUE;
     s_menu.release();
-    // Read the game's Ordon icon before starter-equipment mods change its pane.
-    const auto* icon=texture(picture(menu->mpScreen,MULTI_CHAR('ken_01')));
+    // Read native artwork by resource name, independently of remapped/custom
+    // slots. The texture replacement service still sees the original resource.
+    const auto* icon=second_sword_icon();
     const auto* frame=texture(picture(menu->mpScreen,MULTI_CHAR('tate_g_1')));
     if(!icon||!frame) return HOOK_CONTINUE;
     // The same game resource used by HD HUD. Do not depend on another mod's

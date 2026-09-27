@@ -52,7 +52,9 @@ jobs:
 
       - name: Test Dual Wield
         if: matrix.platform == 'linux-x86_64'
-        run: python3 tests/dual_wield_test.py
+        run: |
+          python3 tests/dual_wield_test.py
+          python3 tests/second_sword_test.py
 
       - name: Test Collection Dual Wield
         if: matrix.platform == 'linux-x86_64'

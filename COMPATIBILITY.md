@@ -27,7 +27,7 @@ by gyro aiming during Bullet Time on upstream Dusklight and Lazy Tweaks.
 
 ## Dual Wield Collection option
 
-Enabling Dual Wield adds an Ordon Sword icon after the rightmost visible shield
+Enabling Dual Wield adds the selected second sword’s icon after the rightmost visible shield
 slot. Selecting it equips Dual Wield; the setting itself only enables the menu
 option. The existing equipped shield remains the underlying source of native
 blocking behavior. Shield-slot actions leave Dual Wield and retain the other

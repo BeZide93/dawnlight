@@ -45,10 +45,12 @@ DEFINE_HOOK(&fpcLf_Delete, DualDelete);
 using ForgetModel=void(*)(J3DModel*);
 ForgetModel s_forget=nullptr;
 daAlink_c* s_failedOwner=nullptr;
+SecondSword s_failedSword=SecondSword::Ordon;
 struct State {
     daAlink_c* owner=nullptr;
     JKRExpHeap* heap=nullptr;
     std::unique_ptr<u8[]> storage;
+    SecondSword swordType=SecondSword::Ordon;
     J3DModel* sword=nullptr;
     J3DModel* sheath=nullptr;
     dual::Alternation attacks;
@@ -109,12 +111,19 @@ void detach() {
     }
     s_calculating=false;
 }
+void release_models() {
+    if(s_forget) { if(s.sword) s_forget(s.sword);if(s.sheath) s_forget(s.sheath); }
+    if(s.heap) s.heap->destroy();
+    s.heap=nullptr;s.sword=nullptr;s.sheath=nullptr;s.storage.reset();
+}
+bool models_ready() {
+    return s.sword && (s.swordType==SecondSword::Wooden || s.sheath);
+}
 void release() {
     detach();
     if(s.forcedBlade && s.owner && s.owner->mSwordModel && s.owner->mEquipItem!=0x103)
         s.owner->offSwordModel();
-    if(s_forget) { if(s.sword) s_forget(s.sword);if(s.sheath) s_forget(s.sheath); }
-    if(s.heap) s.heap->destroy();
+    release_models();
     s=State{};
 }
 void model_failure(const char* name,const char* reason) {
@@ -123,7 +132,7 @@ void model_failure(const char* name,const char* reason) {
     std::snprintf(message,sizeof(message),"Dual Wield: %s: %s",name,reason);
     svc_log->warn(mod_ctx,message);
 }
-J3DModel* copy_model(JKRArchive* archive,const char* name) {
+J3DModel* copy_model(JKRArchive* archive,const char* name,bool environment=false) {
     // The one-argument overload is a path lookup relative to the archive's
     // current directory. Alink's meshes live under bmwr/, not at its root.
     // Type 0 searches by name across the archive, independent of that directory.
@@ -136,42 +145,54 @@ J3DModel* copy_model(JKRArchive* archive,const char* name) {
     void* copy=s.heap->alloc(bytes,32);
     if(!copy) { model_failure(name,"private model allocation failed");return nullptr; }
     std::memcpy(copy,raw,bytes);
-    // BMWR reserves the native warp stage and its texture matrix. As in
+    // BMWR/BMWE reserve the native warp stage and its texture matrix. As in
     // Link's initModel, allocate dynamic display lists while it is enabled,
     // then disable it immediately: an idle mask clips equipment by location.
-    auto* data=dRes_info_c::loaderBasicBmd(0x424D5752,copy);
+    const u32 type=environment ? 0x424D5745 : 0x424D5752; // BMWE / BMWR
+    auto* data=dRes_info_c::loaderBasicBmd(type,copy);
     if(!data || !data->getJointNum() || !data->getMaterialNum()) {
         model_failure(name,"native BMD loader failed");return nullptr;
     }
-    auto* model=mDoExt_J3DModel__create(data,0x80000,0x13000684);
+    auto* model=mDoExt_J3DModel__create(data,environment ? 0 : 0x80000,0x13000684);
     dRes_info_c::offWarpMaterial(data);
     if(!model) model_failure(name,"native model creation failed");
     return model;
 }
 bool prepare(daAlink_c* link) {
     if(s.owner!=link) release();
-    if(s.sword && s.sheath) return true;
+    const auto selected=second_sword();
+    if(models_ready() && s.swordType==selected) return true;
+    // Rebuild only private equipment on a live setting change. Keep the current
+    // hand/guard/stow blend and alternation so the pose does not restart.
+    release_models();
+    s.swordType=selected;
+    const auto assets=second_sword_assets(selected);
     constexpr u32 size=8*1024*1024;
     s.storage.reset(new(std::nothrow) u8[size+31]);
     if(!s.storage) { model_failure("heap","backing allocation failed");return false; }
     auto* memory=reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(s.storage.get())+31)&~uintptr_t{31});
     s.heap=JKRExpHeap::create(memory,size,JKRHeap::getRootHeap(),false);
-    if(!s.heap) { model_failure("heap","creation failed");release();return false; }
+    if(!s.heap) { model_failure("heap","creation failed");release_models();return false; }
     auto* previous=s.heap->becomeCurrentHeap();
     // The live Alink archive has already had its vertex arrays byte-swapped
     // by J3D. A distinct heap makes mount return a fresh archive, not that
     // cached instance. Never feed the live resource through the loader twice.
-    auto* archive=JKRArchive::mount("/res/Object/Alink.arc",JKRArchive::MOUNT_MEM,
+    auto* archive=JKRArchive::mount(assets.archive,JKRArchive::MOUNT_MEM,
                                   s.heap,JKRArchive::MOUNT_DIRECTION_HEAD);
     if(archive) {
-        s.sword=copy_model(archive,"al_swa.bmd");
-        s.sheath=copy_model(archive,"al_poda.bmd");
+        s.sword=copy_model(archive,assets.sword,assets.environmentMapped);
+        if(assets.sheath) s.sheath=copy_model(archive,assets.sheath,assets.environmentMapped);
         archive->unmount();
-    } else model_failure("/res/Object/Alink.arc","private archive mount failed");
+    } else model_failure(assets.archive,"private archive mount failed");
     previous->becomeCurrentHeap();
-    if(!s.sword || !s.sheath) { release();return false; }
+    if(!models_ready()) { release_models();return false; }
     s.owner=link;
-    if(svc_log) svc_log->info(mod_ctx,"Dual Wield: private Ordon sword and scabbard ready");
+    s.seedBlade=true;
+    if(svc_log) {
+        char message[128];
+        std::snprintf(message,sizeof(message),"Dual Wield: private %s equipment ready",assets.name);
+        svc_log->info(mod_ctx,message);
+    }
     return true;
 }
 bool human(daAlink_c* link) {
@@ -256,7 +277,7 @@ bool knocked_down(daAlink_c* link) {
     default: return false;
     }
 }
-bool active(daAlink_c* link) { return s.owner==link && s.active && s.sword && s.sheath; }
+bool active(daAlink_c* link) { return s.owner==link && s.active && models_ready(); }
 J3DTexMtx* warp_texture(J3DModel* model) {
     if(!model || !model->getModelData()->getMaterialNum()) return nullptr;
     auto* material=model->getModelData()->getMaterialNodePointer(0);
@@ -270,33 +291,40 @@ bool equipment_visible(daAlink_c* link) {
     // Keep the replacement equipment during dialogue and cutscenes too.
     // Only combat/arm overrides depend on active(); events carry the second
     // sword sheathed at the hip and retain their scripted body animation.
-    return s.owner==link && s.sword && s.sheath &&
+    return s.owner==link && models_ready() &&
         (link->checkStatusWindowDraw() ? dual_wield_equipped() && human(link) : s.enabled);
 }
 void sync_equipment_materials(daAlink_c* link) {
     auto* warp=link->checkStatusWindowDraw() ? nullptr : warp_texture(link->mSheathModel);
     for(auto* model:{s.sword,s.sheath}) {
+        if(!model) continue;
         auto* data=model->getModelData();
         if(warp) {
             dRes_info_c::onWarpMaterial(data);
             // Copy the final native projection/scroll at draw time, including
             // arrival warps and models created after a warp has already begun.
             // Never write to the shared native equipment material.
-            warp_texture(model)->getTexMtxInfo()=warp->getTexMtxInfo();
+            if(auto* target=warp_texture(model)) target->getTexMtxInfo()=warp->getTexMtxInfo();
         } else dRes_info_c::offWarpMaterial(data);
     }
-    // al_swa material 0 is the blade, just as in native offSwordModel.
-    // The draw/stow grip milestones leave the hilt and scabbard visible.
-    auto* blade=s.sword->getModelData()->getMaterialNodePointer(0)->getShape();
-    if(link->checkStatusWindowDraw() || (active(link) && s.draw>0)) blade->show();else blade->hide();
+    const bool drawn=link->checkStatusWindowDraw() || (active(link) && s.draw>0);
+    auto* data=s.sword->getModelData();
+    // Native Wooden Sword has no scabbard: material 1 is its stowed portion.
+    // Metal swords instead hide blade material 0 once released in the sheath.
+    const bool wooden=s.swordType==SecondSword::Wooden;
+    const unsigned material=wooden ? 1 : 0;
+    if(material<data->getMaterialNum()) {
+        auto* shape=data->getMaterialNodePointer(material)->getShape();
+        if(wooden ? !drawn : drawn) shape->show();else shape->hide();
+    }
 }
 HookAction before_execute(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(s.owner && s.owner!=link) release();
-    if(!dual_wield_equipped()) s_failedOwner=nullptr;
+    if(!dual_wield_equipped() || s_failedSword!=second_sword()) s_failedOwner=nullptr;
     if(dual_wield_equipped() && human(link) && s_failedOwner!=link && !prepare(link)) {
-        s_failedOwner=link;
-        if(svc_log) svc_log->warn(mod_ctx,"Dual Wield: could not prepare private Ordon models; keeping native equipment");
+        s_failedOwner=link;s_failedSword=second_sword();
+        if(svc_log) svc_log->warn(mod_ctx,"Dual Wield: could not prepare selected sword models; keeping native equipment");
     }
     if(s.owner==link) { ++s.tick;s.shieldTick=~0u; }
     return HOOK_CONTINUE;
@@ -570,10 +598,10 @@ HookAction before_status_execute(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     // Gameplay execute/setMatrix do not run while this menu owns Link's model.
     // Create equipment on demand so selecting Dual Wield is visible immediately.
-    if(!dual_wield_equipped()) s_failedOwner=nullptr;
+    if(!dual_wield_equipped() || s_failedSword!=second_sword()) s_failedOwner=nullptr;
     if(dual_wield_equipped() && human(link) && s_failedOwner!=link && !prepare(link)) {
-        s_failedOwner=link;
-        model_failure("Collection preview","could not prepare Ordon equipment");
+        s_failedOwner=link;s_failedSword=second_sword();
+        model_failure("Collection preview","could not prepare selected sword equipment");
     }
     return HOOK_CONTINUE;
 }
@@ -582,18 +610,18 @@ void status_item_matrices(daAlink_c* link) {
     // Use the preview's evaluated joints, not cached gameplay blend transforms.
     Pose mount=dual::compose(dual::inverse(pose(model->getAnmMtx(9))),pose(model->getAnmMtx(10)));
     mount.q.x=-mount.q.x;mount.q.y=-mount.q.y;mount.p.z=-mount.p.z;
-    put(s.sword,dual::compose(pose(model->getAnmMtx(14)),mount));
+    put(s.sword,dual::secondary_sword_model_pose(dual::compose(pose(model->getAnmMtx(14)),mount)));
     Pose hip=dual::compose(pose(model->getAnmMtx(16)),local(-3,0,18,20));
     constexpr float halfTurn90=.70710678118f;
     hip=dual::compose(hip,Pose{{halfTurn90,0,0,halfTurn90},{}});
-    put(s.sheath,dual::compose(hip,dual::inverse(local(-18.5f,.14f,12.2f,0,33.1f))));
+    if(s.sheath) put(s.sheath,dual::compose(dual::secondary_sword_model_pose(hip),dual::inverse(local(-18.5f,.14f,12.2f,0,33.1f))));
 }
 void after_status_draw(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(!link->checkStatusWindowDraw() || !equipment_visible(link) || link->mClothesChangeWaitTimer!=0) return;
     sync_equipment_materials(link);
     // StatusWindow uses basicModelDraw rather than the gameplay modelDraw path.
-    link->basicModelDraw(s.sword);link->basicModelDraw(s.sheath);
+    link->basicModelDraw(s.sword);if(s.sheath) link->basicModelDraw(s.sheath);
 }
 void after_items(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
@@ -607,11 +635,11 @@ void after_items(ModContext*,void* args,void*,void*) {
         s.forcedBlade=false;
     }
     if(!equipment_visible(link)) return;
-    put(s.sword,s.rightSword);
-    // Native Ordon sword-in-sheath transform, inverted to place the scabbard
+    put(s.sword,dual::secondary_sword_model_pose(s.rightSword));
+    // Native sword-in-sheath transform, inverted to place the scabbard
     // around the same hip-mounted blade rather than creating a second offset.
     const Pose mount=local(-18.5f,.14f,12.2f,0,33.1f);
-    put(s.sheath,dual::compose(s.hipSword,dual::inverse(mount)));
+    if(s.sheath) put(s.sheath,dual::compose(dual::secondary_sword_model_pose(s.hipSword),dual::inverse(mount)));
     if(active(link) && s.guard>0 && link->mEquipItem==dItemNo_NONE_e) {
         put(link->mSwordModel,sword_at_hand(link,false));
         show_guard_blade(link);
@@ -621,8 +649,8 @@ void after_items(ModContext*,void* args,void*,void*) {
 void after_sword_pos(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);if(!active(link)) return;
     if(s.mirror) {
-        const Pose blade=sword_at_hand(link,true);
-        const Vec tip=blade.p+dual::rotate(blade.q,{100,0,0});
+        const Pose blade=dual::secondary_sword_model_pose(sword_at_hand(link,true));
+        const Vec tip=blade.p+dual::rotate(blade.q,{second_sword_assets(s.swordType).bladeLength,0,0});
         const bool reverse=link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_RIGHT;
         const Vec direction=dual::rotate(blade.q,{0,0,reverse ? -1.0f : 1.0f});
         link->field_0x3498.set(blade.p.x,blade.p.y,blade.p.z);
@@ -641,7 +669,7 @@ void after_model_draw(ModContext*,void* args,void*,void*) {
     if(!equipment_visible(link) || mods::arg<J3DModel*>(args,1)!=link->mSwordModel) return;
     sync_equipment_materials(link);
     const int hidden=mods::arg<int>(args,2);
-    link->modelDraw(s.sword,hidden);link->modelDraw(s.sheath,hidden);
+    link->modelDraw(s.sword,hidden);if(s.sheath) link->modelDraw(s.sheath,hidden);
 }
 HookAction before_collision(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);

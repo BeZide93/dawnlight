@@ -46,6 +46,7 @@ struct mDoExt_AnmRatioPack {
 fixture = r'''
 #include "dual_wield_animation.hpp"
 #include "dual_wield_math.hpp"
+#include "dual_wield_sword.hpp"
 #include <array>
 #include <cassert>
 #include <optional>
@@ -99,6 +100,7 @@ struct daAlink_c {
     void offSwordModel(){++swordHidden;}
 };
 struct State {
+    SecondSword swordType=SecondSword::Ordon;
     daAlink_c* owner=nullptr;
     bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
     float guard=0,draw=0,sheathTilt=0;unsigned tick=0,poseTick=~0u;
@@ -172,6 +174,10 @@ int main() {
     assert(link.field_0x34b0.x==120 && link.field_0x34bc.x==20 && !s.seedBlade);
     link.field_0x34b0.x=99;after_sword_pos(nullptr,&args,nullptr,nullptr);
     assert(link.field_0x34b0.x==99);
+    s.swordType=SecondSword::Master;s.seedBlade=true;
+    after_sword_pos(nullptr,&args,nullptr,nullptr);
+    assert(link.mSwordTopPos.x==140 && link.field_0x34b0.x==140);
+    s.swordType=SecondSword::Ordon;
     bool shield=true;after_shield_draw(nullptr,&args,&shield,nullptr);assert(!shield);
     Args otherArgs{&other};shield=true;after_shield_draw(nullptr,&otherArgs,&shield,nullptr);assert(shield);
 
@@ -511,10 +517,37 @@ int main() {
     status_item_matrices(&link);
     assert(previewSword.base.p.x==151&&std::fabs(previewSheath.base.p.x-sheathBefore.x-50)<.001f);
     assert(s.rightSword.p.x==gameplay.p.x&&s.rightSword.p.z==gameplay.p.z);
+    // Same mesh roll in gameplay and Collection, with no wrist/IK mutation.
+    assert(dual::length(dual::rotate(previewSword.base.q,{0,1,0})-Vec{0,-1,0})<.001f);
+    const auto handsBefore=link.model.joints;
+    const Pose hipMount=local(-18.5f,.14f,12.2f,0,33.1f);
+    s.owner=&link;s.enabled=true;s.active=true;s.forcedBlade=false;
+    for(auto type:{SecondSword::Wooden,SecondSword::Ordon,SecondSword::Master}) {
+        s.swordType=type;s.sheath=type==SecondSword::Wooden?nullptr:&previewSheath;
+        for(const Pose grip:{Pose{{},{4,5,6}},dual::cross_guard_blade(true,0),
+                              dual::cross_guard_blade(true,1),Pose{dual::from_euler({.4f,.2f,1.1f}),{8,9,10}}}) {
+            s.rightSword=grip;s.hipSword=grip;
+            after_items(nullptr,&args,nullptr,nullptr);
+            assert(dual::length(previewSword.base.p-grip.p)<.001f);
+            assert(dual::length(dual::rotate(previewSword.base.q,{1,0,0})-dual::rotate(grip.q,{1,0,0}))<.001f);
+            assert(dual::length(dual::rotate(previewSword.base.q,{0,1,0})+dual::rotate(grip.q,{0,1,0}))<.001f);
+            if(s.sheath) {
+                const Pose inserted=dual::compose(previewSheath.base,hipMount);
+                assert(dual::length(inserted.p-previewSword.base.p)<.001f);
+                assert(dual::length(dual::rotate(inserted.q,{0,1,0})-dual::rotate(previewSword.base.q,{0,1,0}))<.001f);
+            }
+            for(int j=6;j<=15;++j) {
+                assert(dual::length(link.model.joints[j].p-handsBefore[j].p)<.001f);
+                assert(dual::length(dual::rotate(link.model.joints[j].q,{0,1,0})-dual::rotate(handsBefore[j].q,{0,1,0}))<.001f);
+            }
+        }
+    }
 }
 '''
 
 loader_fixture = r'''
+#include "dual_wield_sword.hpp"
+using namespace dawnlight;
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -548,7 +581,7 @@ struct ModelData {
     J3DTexMtx warp;std::array<Material,2> materials;
     int joints=35,materialCount=2;
     ModelData(){for(auto& m:materials)m.tex.matrices[1]=&warp;}
-    int getJointNum(){return joints;}int getMaterialNum(){return materialCount;}
+    int getJointNum(){return joints;}std::uint16_t getMaterialNum(){return materialCount;}
     auto getMaterialNodePointer(int i){return &materials.at(i);}
 } data;
 struct J3DModel {ModelData* data;auto getModelData(){return data;}} model{&data};
@@ -571,7 +604,7 @@ struct Heap {
 } heap;
 struct {
     Heap* heap;daAlink_c* owner=nullptr;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
-    bool enabled=false,active=false;float draw=0;
+    bool enabled=false,active=false;float draw=0;SecondSword swordType=SecondSword::Ordon;
 } s{&heap};
 struct JKRArchive {
     std::map<std::string,std::array<char,64>> files;
@@ -592,9 +625,11 @@ struct JKRArchive {
 std::string warning;
 struct Log {void warn(void*,const char* message){warning=message;}} logService;
 Log* svc_log=&logService;void* mod_ctx=nullptr;
+bool environment=false;
 struct dRes_info_c {
     static ModelData* loaderBasicBmd(u32 tag,void* raw) {
-        assert(tag==0x424D5752 && raw==heap.bytes.data());
+        assert((tag==0x424D5752 || tag==0x424D5745) && raw==heap.bytes.data());
+        environment=tag==0x424D5745;
         assert(std::memcmp(raw,"J3D2bmd3",8)==0);
         static_cast<char*>(raw)[8]=42; // Native loader modifies only the private copy.
         onWarpMaterial(&data); // BMWR initially enables its warp stage.
@@ -615,15 +650,16 @@ struct dRes_info_c {
 };
 bool createFails=false;
 J3DModel* mDoExt_J3DModel__create(ModelData* d,u32 flags,u32 diff) {
-    assert(d==&data && flags==0x80000 && diff==0x13000684);
+    assert(d==&data && flags==(environment?0u:0x80000u) && diff==0x13000684);
     for(auto& m:d->materials)assert(m.tev.count==2 && m.tex.count==2);
     return createFails?nullptr:&model;
 }
 '''
 loader_fixture += function("model_failure") + function("copy_model", "J3DModel*")
 loader_fixture += r'''
-bool active(daAlink_c* link){return s.owner==link && s.active && s.sword && s.sheath;}
+bool active(daAlink_c* link){return s.owner==link && s.active && s.sword && (s.swordType==SecondSword::Wooden || s.sheath);}
 '''
+loader_fixture += function("models_ready", "bool")
 loader_fixture += function("human", "bool") + function("show_guard_blade")
 loader_fixture += function("warp_texture", "J3DTexMtx*") + function("equipment_visible", "bool") + function("sync_equipment_materials")
 loader_fixture += r'''
@@ -640,6 +676,13 @@ int main() {
             assert(archive.files.at(std::string("bmwr/")+name)[8]==0);
             assert(!warp_texture(&model)); // no world-dependent clipping after load
         }
+    }
+    for(auto choice:{SecondSword::Wooden,SecondSword::Ordon,SecondSword::Master}) {
+        const auto assets=second_sword_assets(choice);
+        auto& bytes=archive.files[std::string("bmwr/")+assets.sword];
+        std::memcpy(bytes.data(),"J3D2bmd3",8);
+        assert(copy_model(&archive,assets.sword,assets.environmentMapped)==&model);
+        assert(environment==assets.environmentMapped);
     }
     assert(warning.empty());
     assert(!copy_model(&archive,"missing.bmd"));
@@ -714,6 +757,21 @@ int main() {
             for(auto& m:d->materials)assert(m.tev.count==1 && m.tex.count==1);
         assert(swordData.materials[0].shape.visible);
     }
+    // Wooden offhand has no metal scabbard and stays visible when stowed.
+    s.swordType=SecondSword::Wooden;s.sheath=nullptr;s.draw=0;
+    assert(models_ready() && equipment_visible(&link));
+    sync_equipment_materials(&link);
+    assert(swordData.materials[0].shape.visible && swordData.materials[1].shape.visible);
+    s.draw=1;sync_equipment_materials(&link);
+    assert(swordData.materials[0].shape.visible && !swordData.materials[1].shape.visible);
+    link.preview=true;s.draw=0;sync_equipment_materials(&link);
+    assert(!swordData.materials[1].shape.visible);link.preview=false;
+    // Master uses the metal blade/sheath rule; a missing required sheath is not ready.
+    s.swordType=SecondSword::Master;assert(!models_ready());s.sheath=&sheath;
+    assert(models_ready());sync_equipment_materials(&link);
+    assert(!swordData.materials[0].shape.visible);
+    s.draw=1;sync_equipment_materials(&link);assert(swordData.materials[0].shape.visible);
+
 }
 '''
 

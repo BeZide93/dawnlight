@@ -62,7 +62,7 @@ struct Args {void* link;void* model=nullptr;};
 namespace mods {template<class T>T arg(void* p,int i){auto* a=static_cast<Args*>(p);return static_cast<T>(i?a->model:a->link);}}
 struct Joint {J3DTransformInfo info;auto& getTransformInfo(){return info;}};
 struct ModelData {std::array<Joint,35> joints;auto* getJointNodePointer(int i){return &joints[i];}};
-struct J3DModel {ModelData data;auto* getModelData(){return &data;}dual::Pose base;std::array<dual::Pose,35> joints;auto getBaseTRMtx(){return base;}auto getAnmMtx(int i){return joints[i];}};
+struct J3DModel {ModelData data;auto* getModelData(){return &data;}dual::Pose base;std::array<dual::Pose,35> joints;auto& getBaseTRMtx(){return base;}auto getAnmMtx(int i){return joints[i];}};
 struct cXyz {float x=0,y=0,z=0;void set(float a,float b,float c){x=a;y=b;z=c;}};
 struct Morph {
     int calls=0;bool valid=true;
@@ -98,6 +98,7 @@ struct daAlink_c {
     bool checkPlayerGuardAndAttack(){return guard;}
     bool checkSwordEquipAnime(){return equipping;}
     J3DModel* mSwordModel=nullptr;int swordShown=0,swordHidden=0;
+    J3DModel* mShieldModel=nullptr;unsigned mRightItemJntNo=15;int mShieldChangeWaitTimer=0;
     bool checkStatusWindowDraw(){return false;}
     void offSwordModel(){++swordHidden;}
 };
@@ -108,7 +109,7 @@ struct State {
     dual::Alternation attacks;
     DualGuardHeadPose guardHead;
     DualGuardBodyPose guardBody;bool haveGuardBody=false;
-    dual::StowMotion stow;Pose rightSword,hipSword;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
+    dual::StowMotion stow;Pose rightSword,hipSword,nativeShield;unsigned shieldTick=~0u;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
 } s;
 struct Borrow {mDoExt_AnmRatioPack* pack=nullptr;J3DAnmTransform* original=nullptr;std::optional<DualWieldAnimation> wrapper;};
 std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
@@ -119,6 +120,7 @@ bool equipment_visible(daAlink_c* l){return s.owner==l && s.enabled;} // materia
 Pose pose(Pose p){return p;}
 void put(J3DModel* model,int joint,Pose p){model->joints[joint]=p;}
 void put(J3DModel* model,Pose p){model->base=p;}
+void matrix(Pose value,Pose& destination){destination=value;}
 Pose sword_at_hand(daAlink_c*,bool right){return {{},{right?20.f:-20.f,80,40}};}
 void show_guard_blade(daAlink_c* link){++link->swordShown;}
 '''
@@ -128,7 +130,7 @@ fixture += "\n".join(function(name, result) for name, result in [
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
-    ("after_shield_draw", "void"), ("after_arms", "void"), ("after_items", "void"),
+    ("after_shield_draw", "void"), ("after_arms", "void"), ("after_items", "void"), ("before_collision", "HookAction"),
 ])
 fixture += r'''
 int main() {
@@ -494,6 +496,59 @@ int main() {
         const float expected=nativeHead.mTranslate.z+(s.guardHead[0].mTranslate.z-nativeHead.mTranslate.z)*weight;
         assert(std::abs(actual.mTranslate.z-expected)<.001f);
     }
+    // The invisible shield must retain its original defensive facing even
+    // though setItemMatrix has attached it to the sword-oriented right hand.
+    J3DModel shieldModel;link.mShieldModel=&shieldModel;link.guard=true;
+    s.guard=1;s.draw=1;s.stow={};link.mProcID=daAlink_c::PROC_WAIT;
+    const auto normal=[](Pose p){return dual::rotate(p.q,{0,0,1});};
+    const auto shieldHit=[&](Pose shield,float attackAngle,float halfRange) {
+        const Vec n=normal(shield);const float facing=std::atan2(n.x,n.z);
+        return std::abs(std::remainder(attackAngle-facing,2*3.14159265358979323846f))<=halfRange;
+    };
+    for(int item:std::array<int,5>{0x103,dItemNo_NONE_e,dItemNo_BOW_e,dItemNo_COPY_ROD_e,dItemNo_KANTERA_e}) {
+        link.mEquipItem=item;
+        for(float yaw:{0.f,1.3f,-2.8f}) {
+            const Pose world{{0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)},{90,30,-70}};
+            link.model.base=world;link.model.joints=nativeJoints;
+            // Native shield attachment includes the current body/arm animation.
+            link.model.joints[15]={{},{-20,110,20}};
+            for(auto& joint:link.model.joints)joint=dual::compose(world,joint);
+            const Pose vanillaShield=link.model.joints[15];
+            ++s.tick;after_arms(nullptr,&args,nullptr,nullptr);
+            assert(s.shieldTick==s.tick);
+            // The host attaches the shield after our arm IK, rotating the cone.
+            shieldModel.base=link.model.joints[15];
+            assert(dual::length(normal(shieldModel.base)-normal(vanillaShield))>.1f);
+            const auto swordHand=link.model.joints[14],swordItem=link.model.joints[15];
+            assert(before_collision(nullptr,&args,nullptr,nullptr)==HOOK_CONTINUE);
+            assert(dual::length(normal(shieldModel.base)-normal(vanillaShield))<.001f);
+            assert(dual::length(shieldModel.base.p-vanillaShield.p)<.001f);
+            // Sweep frontal/flanking/rear attacks against the same native cone;
+            // test multiple limits without replacing or expanding those limits.
+            for(float range:{.5f,1.f,1.5f}) for(int degree=-180;degree<=180;++degree) {
+                const float attack=yaw+degree*3.14159265358979323846f/180;
+                assert(shieldHit(shieldModel.base,attack,range)==shieldHit(vanillaShield,attack,range));
+            }
+            assert(shieldHit(shieldModel.base,yaw,1.f));
+            assert(!shieldHit(shieldModel.base,yaw+3.14159265358979323846f,1.f));
+            assert(dual::length(link.model.joints[14].p-swordHand.p)==0);
+            assert(dual::length(link.model.joints[15].p-swordItem.p)==0&&link.mEquipItem==item);
+            // No stale sample and no writes while released, disabled or changing shields.
+            const Pose untouched{{},{900,800,700}};
+            for(int condition=0;condition<4;++condition) {
+                shieldModel.base=untouched;
+                if(condition==0)++s.tick;
+                if(condition==1)link.guard=false;
+                if(condition==2)s.active=false;
+                if(condition==3)link.mShieldChangeWaitTimer=1;
+                before_collision(nullptr,&args,nullptr,nullptr);
+                assert(shieldModel.base.p.x==900&&shieldModel.base.p.y==800&&shieldModel.base.p.z==700);
+                if(condition==0)--s.tick;
+                link.guard=true;s.active=true;link.mShieldChangeWaitTimer=0;
+            }
+        }
+    }
+    link.model.base={};link.mEquipItem=0x103;
     // Preview equipment follows newly evaluated menu joints rather than the
     // previous gameplay item matrices, without changing combat transition state.
     J3DModel previewSword,previewSheath;s.sword=&previewSword;s.sheath=&previewSheath;

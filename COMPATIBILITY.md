@@ -180,12 +180,13 @@ touch L, releasing/repeating the press, and returning to normal gameplay.
 
 Tested with Twilit Essentials 1.1.9.
 
-Only one mod should own the Z item implementation. The recommended setup for
-using Twilit Essentials' Custom Z Button is:
+Dawnlight skips its Z-slot hooks when Twilit Essentials is enabled and its
+`customZButtonEnabled` setting is on. The saved Dawnlight toggle is preserved;
+restart after changing the provider settings. The setup for using Essentials is:
 
 | Setting | Value |
 | --- | --- |
-| Dawnlight `Z Item Slot` | Off |
+| Dawnlight `Z Item Slot` | Either (automatically skipped) |
 | Dawnlight `Dawnlight Touch UI` | On on Android |
 | Twilit Essentials `Custom Z Button` | On |
 
@@ -195,20 +196,24 @@ assignment through touch Z, the item icon and counters on touch Z, and Midna's
 head and action on the separate Midna button (enable it under Controls → Touch Buttons).
 
 Alternatively, Dawnlight's `Z Item Slot` can be enabled when Twilit Essentials'
-`Custom Z Button` is disabled. Enabling both Z item implementations at the same
-time is unsupported because both mods hook the same item-slot, input, and HUD
-paths. Other Twilit Essentials features can remain enabled.
+`Custom Z Button` is disabled and Twilight HD HUD Z Items is also off or absent.
+Other Twilit Essentials features can remain enabled.
 
 ## Twilight HD HUD
 
 Tested with Twilight HD HUD 2.1.1.
 
-Twilight HD HUD currently owns its third-item behavior and does not expose a
-toggle that disables only that feature. When Twilight HD HUD is active, use:
+Dawnlight checks both Twilight HD HUD's enabled state and its `third-item-slot`
+setting, matching Essentials' guard. An enabled older version without that key
+is treated as having Z Items on (the provider default). Dawnlight makes this
+decision on its first update, after all mods have registered their saved settings,
+so it works in either startup load order. If host config lookup is unavailable,
+Dawnlight skips its Z slot and logs the reason. Dawnlight Touch UI and shared HUD
+hooks remain independent. With Twilight HD HUD Z Items enabled, use:
 
 | Setting | Value |
 | --- | --- |
-| Dawnlight `Z Item Slot` | Off |
+| Dawnlight `Z Item Slot` | Either (automatically skipped) |
 | Twilit Essentials `Custom Z Button` | Off, if Essentials is installed |
 | Dawnlight `Dawnlight Touch UI` | On on Android, if Dawnlight touch controls are desired |
 
@@ -247,8 +252,8 @@ returns the Bow to normal arrows. Already-fired arrows keep their effects.
 When Dawnlight, Twilit Essentials, and Twilight HD HUD are active together,
 Twilight HD HUD must be the only owner of the third item slot:
 
-- Dawnlight `Z Item Slot`: Off
-- Twilit Essentials `Custom Z Button`: Off
+- Dawnlight `Z Item Slot`: Either (automatically skipped)
+- Twilit Essentials `Custom Z Button`: Automatically skipped by current Essentials; off on older versions
 - Dawnlight `Dawnlight Touch UI`: On on Android when its touch layout is wanted
 
 Twilit Essentials features unrelated to its Custom Z Button can remain enabled.

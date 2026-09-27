@@ -64,6 +64,11 @@ void shutdown_jump_hooks();
 void shutdown_new_save_modes();
 }
 
+namespace {
+// Provider settings are registered by mod_initialize, in user-defined load order.
+bool s_itemSlotHooksInstalled = false;
+}
+
 extern "C" {
 
 MOD_EXPORT ModResult mod_initialize(ModError* error) {
@@ -110,9 +115,6 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         return result;
     }
     if (const ModResult result = dawnlight::install_item_integrity_hooks(error); result != MOD_OK) {
-        return result;
-    }
-    if (const ModResult result = dawnlight::install_item_slot_hooks(error); result != MOD_OK) {
         return result;
     }
     if (const ModResult result = dawnlight::install_touch_button_hooks(error); result != MOD_OK) {
@@ -163,7 +165,15 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     return MOD_OK;
 }
 
-MOD_EXPORT ModResult mod_update(ModError*) {
+MOD_EXPORT ModResult mod_update(ModError* error) {
+    // All mods have initialized before the first update, so saved provider
+    // toggles are available even when Dawnlight is earlier in the load order.
+    if (!s_itemSlotHooksInstalled) {
+        if (const ModResult result = dawnlight::install_item_slot_hooks(error); result != MOD_OK) {
+            return result;
+        }
+        s_itemSlotHooksInstalled = true;
+    }
     dawnlight::update_new_save_modes();
     dawnlight::update_progression();
     dawnlight::bullet_time_tick();
@@ -172,6 +182,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    s_itemSlotHooksInstalled = false;
     dawnlight::shutdown_collection_dual_wield();
     dawnlight::shutdown_dual_wield();
     dawnlight::shutdown_touch_buttons();

@@ -46,6 +46,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Test Z item provider guards
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/z_item_provider_guard_test.py
+
       - name: Test Bullet Time gyro compatibility
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/bullet_time_gyro_compat_test.py

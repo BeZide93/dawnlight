@@ -44,8 +44,9 @@
 #include <string>
 #include <string_view>
 
-#if defined(__ANDROID__)
 #include "dusk/config_var.hpp"
+
+#if defined(__ANDROID__)
 #define private public
 #include "dusk/ui/touch_controls.hpp"
 #undef private
@@ -214,6 +215,57 @@ u32 s_touchMapZHeldOriginal = 0;
 u32 s_touchMapZPressedOriginal = 0;
 bool s_touchMapPortalInputActive = false;
 #endif
+
+// The host escapes dots as '_' and existing underscores as '__' in mod CVar IDs.
+using ZSlotGetConfigVarFn = dusk::config::ConfigVarBase* (*)(std::string_view);
+
+bool z_slot_provider_enabled(ZSlotGetConfigVarFn getVar,
+    const char* enabledKey, const char* slotKey)
+{
+    const auto readBool = [getVar](const char* key, bool fallback) {
+        const auto* var = getVar(key);
+        return var ? static_cast<const dusk::config::ConfigVar<bool>*>(var)->getValue() :
+                     fallback;
+    };
+    // Both providers default their third slot to on. Older versions may not
+    // register the feature toggle, but a disabled/absent mod never owns the slot.
+    return readBool(enabledKey, false) && readBool(slotKey, true);
+}
+
+bool select_dawnlight_z_slot() {
+    if (!z_item_slot_enabled()) {
+        return false;
+    }
+    void* address = nullptr;
+    if (svc_hook == nullptr || svc_hook->resolve == nullptr ||
+        svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) != MOD_OK ||
+        address == nullptr)
+    {
+        if (svc_log != nullptr) {
+            svc_log->warn(mod_ctx,
+                "Dawnlight Z Items skipped: unable to check other item-slot providers");
+        }
+        return false;
+    }
+    const auto getVar = reinterpret_cast<ZSlotGetConfigVarFn>(address);
+    if (z_slot_provider_enabled(getVar,
+            "mod.org_twilight_hd__hud.enabled", "mod.org_twilight_hd__hud.third-item-slot"))
+    {
+        if (svc_log != nullptr) {
+            svc_log->info(mod_ctx, "Dawnlight Z Items skipped: Twilight HD HUD Z Items active");
+        }
+        return false;
+    }
+    if (z_slot_provider_enabled(getVar, "mod.com_dusklight_twilit__essentials.enabled",
+            "mod.com_dusklight_twilit__essentials.customZButtonEnabled"))
+    {
+        if (svc_log != nullptr) {
+            svc_log->info(mod_ctx, "Dawnlight Z Items skipped: Twilit Essentials Custom Z Button active");
+        }
+        return false;
+    }
+    return true;
+}
 
 bool z_item_slot_active() {
     return s_zItemSlotSessionEnabled;
@@ -3669,7 +3721,7 @@ std::string midna_touch_button_icon() {
 }
 
 ModResult install_item_slot_hooks(ModError* error) {
-    s_zItemSlotSessionEnabled = z_item_slot_enabled();
+    s_zItemSlotSessionEnabled = select_dawnlight_z_slot();
 #if defined(__ANDROID__)
     s_dawnlightTouchUiSessionEnabled = dawnlight_touch_ui_enabled();
 #else

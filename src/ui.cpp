@@ -613,6 +613,8 @@ ModResult build_controls_tab(
     }
     if (add_toggle(ctx, left, "Z Item Slot", z_item_slot_config_var(),
             "Adds an item slot on Z and moves Midna off the Z button. "
+            "Automatically skipped when Twilight HD HUD Z Items or "
+            "Twilit Essentials Custom Z Button is active. "
             "Restart the app after changing this setting.")
         != MOD_OK)
     {

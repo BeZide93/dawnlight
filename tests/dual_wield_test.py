@@ -393,6 +393,46 @@ int main() {
         assert(s.guard==0&&!s.stow.active&&s.stow.release==0);
         link.mProcID=daAlink_c::PROC_WAIT;
     }
+    // Native shield bash lifts its elbow. Item guard must keep its own lower,
+    // outward bend for the entire thrust/recovery, even after Link turns.
+    for(int item:{dItemNo_KANTERA_e,dItemNo_COPY_ROD_e,dItemNo_BOW_e}) {
+        link.mEquipItem=item;link.mProcID=daAlink_c::PROC_GUARD_ATTACK;
+        s.guard=1;s.draw=1;s.stow={};
+        for(float yaw:{0.f,1.7f}) {
+            const Pose world{{0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)},{80,40,-120}};
+            link.model.base=world;
+            Vec previous{};
+            for(int step=0;step<=80;++step) {
+                link.model.joints=nativeJoints;
+                link.model.joints[13].p={-32,151,0}; // Elbow above the shoulder.
+                link.model.joints[14].p={-24,125,22};
+                for(auto& joint:link.model.joints) joint=dual::compose(world,joint);
+                const auto before=link.model.joints;
+                const float upperLength=dual::length(before[13].p-before[12].p);
+                const float lowerLength=dual::length(before[14].p-before[13].p);
+                link.mUnderFrameCtrl[0].frame=2+step*.2f;
+                after_arms(nullptr,&args,nullptr,nullptr);
+                const auto& joints=link.model.joints;
+                const auto shoulder=dual::compose(dual::inverse(world),joints[12]).p;
+                const auto elbow=dual::compose(dual::inverse(world),joints[13]).p;
+                assert(elbow.y<shoulder.y);
+                const auto hand=dual::compose(dual::inverse(world),joints[14]).p;
+                const Vec direction=dual::unit(hand-shoulder);
+                const Vec bend=elbow-shoulder-direction*dual::dot(elbow-shoulder,direction);
+                assert(bend.y<0); // Bend below the shoulder-to-wrist line, not over it.
+                if(step)assert(dual::length(elbow-previous)<2.f);
+                previous=elbow;
+                assert(std::abs(dual::length(joints[13].p-joints[12].p)-upperLength)<.005f);
+                assert(std::abs(dual::length(joints[14].p-joints[13].p)-lowerLength)<.005f);
+                for(int joint=6;joint<=10;++joint) {
+                    assert(dual::length(joints[joint].p-before[joint].p)<.001f);
+                    assert(joints[joint].q.x==before[joint].q.x&&joints[joint].q.y==before[joint].q.y&&
+                           joints[joint].q.z==before[joint].q.z&&joints[joint].q.w==before[joint].q.w);
+                }
+            }
+        }
+    }
+    link.model.base={};
     // Switching directly from cross guard to an item cannot reuse its body override.
     link.mEquipItem=dItemNo_COPY_ROD_e;link.mProcID=daAlink_c::PROC_GUARD_ATTACK;s.haveGuardBody=true;
     before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);

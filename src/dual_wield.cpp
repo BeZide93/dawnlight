@@ -515,7 +515,18 @@ void after_arms(ModContext*,void* args,void*,void*) {
         for(bool right:{false,true}) {
             if(!right && !sword_guard_equipment(link)) continue;
             blades[right].p.z=plane+(right ? 6.0f : -6.0f);
-            solve_arm(link,right,dual::compose(base,blades[right]),dual::smooth(s.guard));
+            std::optional<Vec> elbowPole;
+            if(right && item_guard_equipment(link)) {
+                // The native shield-bash elbow rises above the wrist line.
+                // Keep the one-handed sword bend down/out in actor space for
+                // both guard and thrust, so entering/leaving the bash cannot
+                // flip its IK plane. The guard weight still blends the arm.
+                const Vec shoulder=dual::compose(inverseBase,pose(model->getAnmMtx(12))).p;
+                const float side=shoulder.x<0 ? -1.0f : 1.0f;
+                elbowPole=dual::compose(base,Pose{{},shoulder+Vec{24*side,-40,12}}).p;
+            }
+            solve_arm(link,right,dual::compose(base,blades[right]),dual::smooth(s.guard),
+                      elbowPole ? &*elbowPole : nullptr);
         }
     }
     if(s.stow.active || s.stow.release>0) {

@@ -1973,6 +1973,35 @@ void preserve_flurry_attack_hit(cCcD_Obj* attack, cCcD_Obj* target,
     attackInfo->SetAtHitPos(*hitPosition);
 }
 
+void show_flurry_hit_effect(cCcD_Obj* attack, cCcD_Obj* target, cXyz* hitPosition) {
+    auto* attackInfo = static_cast<dCcD_GObjInf*>(attack->GetGObjInf());
+    auto* targetInfo = static_cast<dCcD_GObjInf*>(target->GetGObjInf());
+    cCcD_Stts* attackStatus = attack->GetStts();
+    cCcD_Stts* targetStatus = target->GetStts();
+    if (attackInfo == nullptr || targetInfo == nullptr ||
+        attackStatus == nullptr || targetStatus == nullptr ||
+        attackStatus->GetGStts() == nullptr || targetStatus->GetGStts() == nullptr)
+    {
+        return;
+    }
+
+    auto* collision = dComIfG_Ccsp();
+    const bool shieldHit = collision->ChkShield(attack, target, attackInfo, targetInfo, hitPosition);
+    auto* actor = target->GetAc();
+    // A slowed actor can retain the native per-update hitmark flag across swings.
+    // The caller already deduplicates by sword attack, so allow this new impact.
+    const bool hadHitmark = fopAcM_CheckStatus(actor, fopAcStts_UNK_0x40000000_e);
+    fopAcM_OffStatus(actor, fopAcStts_UNK_0x40000000_e);
+    // Only create native particles: no target hit flags, callbacks or damage.
+    collision->ProcAtTgHitmark(true, true, attack, target, attackInfo, targetInfo,
+        attackStatus, targetStatus,
+        static_cast<dCcD_GStts*>(attackStatus->GetGStts()),
+        static_cast<dCcD_GStts*>(targetStatus->GetGStts()), hitPosition, shieldHit);
+    if (hadHitmark) {
+        fopAcM_OnStatus(actor, fopAcStts_UNK_0x40000000_e);
+    }
+}
+
 HookAction before_common_at_tg_hit(ModContext*, void* args, void*, void*) {
     if (!s_flurryRushActive || s_flurrySwordAttackSerial == 0) {
         return HOOK_CONTINUE;
@@ -2012,6 +2041,7 @@ HookAction before_common_at_tg_hit(ModContext*, void* args, void*, void*) {
     s_deferredFlurryDamage.setAttackHit = true;
     s_deferredFlurryDamage.pending = true;
 
+    show_flurry_hit_effect(attack, target, hitPosition);
     return HOOK_SKIP_ORIGINAL;
 }
 

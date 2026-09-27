@@ -51,6 +51,8 @@ namespace Rml {
   Dimensions GetDimensions(){return dimensions;}};
  struct Element {
   Element* parent=nullptr;Context* context=nullptr;bool hidden=false,selected=false,visible=false;
+  std::map<std::string,std::string> styles;
+  std::optional<dusk::ui::ControlRect> box;
   std::vector<std::unique_ptr<Element>> children;
   Context* GetContext(){return context;}
   void SetClass(const String& name,bool v){if(name=="editor-selected")selected=v;else if(name=="visible")visible=v;}
@@ -113,15 +115,24 @@ struct Config {
  int set_string(ModContext*,int k,const char* v){if(k==fail)return MOD_ERROR;values[k]=v;return MOD_OK;}
 } config;auto* svc_config=&config;
 struct Log {void warn(ModContext*,const char*){}} logService;auto* svc_log=&logService;
+using ConfigVarHandle=int;
+ConfigVarHandle s_quickAccessLayout=6;
+namespace dusk::config {
+ struct ConfigVarBase {};
+ template<class T> struct ConfigVar:ConfigVarBase {T value=false;T getValue()const{return value;}};
+}
+std::map<std::string,dusk::config::ConfigVar<bool>> hostConfig;
 struct ButtonConfig{int layout;};
 std::array<ButtonConfig,touch::Count> s_buttons={{{0},{1},{2},{3},{4},{5}}};
 touch::Layout button_layout(size_t i){return touch::Defaults[i];}
 bool s_touchEditorAvailable=true;
 struct TouchApi {
+ dusk::config::ConfigVarBase* (*config)(std::string_view)=[](std::string_view key)->dusk::config::ConfigVarBase* {
+  auto it=hostConfig.find(std::string(key));return it==hostConfig.end()?nullptr:&it->second;};
  float (*scale)(Rml::Context*)=touch_dp_scale;
  SDL_FingerID (*finger)(Rml::Event*)=[](Rml::Event* e){return e->id;};
  void (*stop)(Rml::Event*)=[](Rml::Event* e){e->StopPropagation();};
- void (*applyBox)(Rml::Element*,std::optional<ControlRect>*,ControlRect)=[](Rml::Element*,std::optional<ControlRect>* box,ControlRect r){*box=r;};
+ void (*applyBox)(Rml::Element*,std::optional<ControlRect>*,ControlRect)=[](Rml::Element* e,std::optional<ControlRect>* box,ControlRect r){*box=r;e->box=r;};
  Rml::Context* (*context)(Rml::Element*)=[](Rml::Element* e){return e->context;};
  ControlLayoutSize (*dimensions)(Rml::Context*)=touch_document_size_dp;
  Rml::ElementPtr (*create)(Rml::ElementDocument*,const Rml::String*)=[](Rml::ElementDocument* doc,const Rml::String*){
@@ -138,8 +149,12 @@ struct TouchApi {
  Rml::Element* (*target)(Rml::Event*)=[](Rml::Event* e){return e->target;};
  Rml::Element* (*parent)(Rml::Element*)=[](Rml::Element* e){return e->parent;};
 } s_touchApi;
-void extra_property(Rml::Element*,const char*,const std::string&){}
+void extra_property(Rml::Element* e,const char* key,const std::string& v){e->styles[key]=v;}
+struct NativeTouch {Rml::Element* mRoot=nullptr;};
+NativeTouch* s_touchOwner=nullptr;
+Rml::Element* liveQuickButton=nullptr;
 // LAYOUT
+// QUICK_ACCESS
 ControlLayout persistedVanilla;int saves=0,uncovered=0,deletedListeners=0;
 // ADAPTER
 std::array<TouchLayoutControlInfo,10> vanillaInfo;
@@ -200,6 +215,7 @@ int main(){
  editor.mWorkingLayout.controls["foreign-mod"]=migrated;
  const auto storedBefore=config.values;const auto vanillaBefore=editor.mWorkingLayout;
  editor.sync_control_layouts();auto* state=editor_state(&editor);assert(state);
+ assert(state->count==touch::Count&&!state->elements[kQuickAccessEditorSlot].root);
  assert(state->working[5]==migrated&&config.values==storedBefore);
  assert(editor.mWorkingLayout==vanillaBefore&&touch_layout_controls().size()==10&&foreignLayouts==1);
  std::array<Rml::Element*,6> extras;
@@ -211,7 +227,7 @@ int main(){
   editor.sync_selection_frame();assert(!frame.visible);
   dispatch(editor,extras[i],{50,50},1,false,2);}
  assert(!dispatch(editor,&foreign,{40,40}).stopped&&foreignEvents==1);
- assert(state->selected==touch::Count&&touch_layout_controls().back().layoutId=="foreign-mod");
+ assert(state->selected==kExtraEditorSlotCount&&touch_layout_controls().back().layoutId=="foreign-mod");
  Rml::Element nested;nested.parent=extras[5];
  dispatch(editor,&nested,{800,400});assert(state->selected==5);
  auto start=state->working[5];
@@ -263,7 +279,7 @@ int main(){
  saved=config.values;config.fail=3;state->working[0]=state->defaults[0];
  save(editor);assert(config.values==saved&&saves==3);config.fail=-1;
  editor.reset_working_layout();assert(editor.mWorkingLayout.controls.empty()&&config.values==saved);
- assert(!state->working[5]&&!state->pointer.active&&state->selected==touch::Count);
+ assert(!state->working[5]&&!state->pointer.active&&state->selected==kExtraEditorSlotCount);
  save(editor);assert(saves==4&&persistedVanilla.controls.empty());
  assert(saved_extra_props(5,viewport)==state->defaults[5]);editor.mPendingClose=false;
  // Cancel/unload closes child modals and detaches only our callbacks.
@@ -274,6 +290,67 @@ int main(){
  for(size_t i=0;i<9;++i)assert(editor.mElements[i].root==&vanillaElements[i]);
  for(const auto& listener:editor.mListeners)if(listener)assert(!listener->capture);
  dispatch(editor,&foreign,{40,40});assert(foreignEvents==3);
+ // The real Essentials button need not exist yet: the editor can open from settings.
+ s_quickAccessById=[](Rml::Element*,const Rml::String* id){assert(*id=="twe-quick-access-touch");return liveQuickButton;};
+ assert(!quick_access_editor_available());
+ hostConfig["mod.com_dusklight_twilit__essentials.enabled"].value=true;
+ assert(!quick_access_editor_available());
+ hostConfig["mod.com_dusklight_twilit__essentials.quickAccessEnabled"].value=true;
+ assert(quick_access_editor_available());
+ s_touchEditorAvailable=true;
+ NativeEditor quickEditor;Rml::Element quickDocument,quickFrame;
+ quickDocument.context=&context;quickEditor.mDocument=&quickDocument;
+ quickEditor.mRoot=&quickDocument;quickEditor.mSelectionFrame=&quickFrame;
+ auto* quickState=attach_extra_editor(&quickEditor);assert(quickState&&quickState->count==7);
+ draw_extra_editor(*quickState);
+ const size_t q=kQuickAccessEditorSlot;auto* quick=quickState->elements[q].root;
+ const auto original=quickState->defaults[q];
+ auto qr=*quickState->elements[q].layout.visualRect;
+ assert(qr.l==298&&qr.t==viewport.h-46&&qr.w==64&&qr.h==46);
+ dispatch(quickEditor,quick,{800,1000});
+ dispatch(quickEditor,&quickDocument,{1000,800},1,false,1);
+ dispatch(quickEditor,&quickDocument,{1000,800},1,false,2);
+ assert(quickState->working[q]!=original);
+ assert(!config.values.contains(s_quickAccessLayout)); // Drafts do not affect gameplay.
+ // Resize by mouse, then cancel a second gesture.
+ qr=*quickState->elements[q].layout.visualRect;
+ dispatch(quickEditor,quickState->handles[7],{(qr.l+qr.w)*2.5f,(qr.t+qr.h)*2.5f},0,true);
+ dispatch(quickEditor,&quickDocument,{(qr.l+qr.w+30)*2.5f,(qr.t+qr.h+30)*2.5f},0,true,1);
+ dispatch(quickEditor,&quickDocument,{0,0},0,true,2);
+ const auto quickMoved=*quickState->working[q];assert(quickMoved.scale>1);
+ dispatch(quickEditor,quick,{800,800});dispatch(quickEditor,&quickDocument,{900,900},1,false,1);
+ dispatch(quickEditor,&quickDocument,{900,900},1,false,3);assert(quickState->working[q]==quickMoved);
+ save(quickEditor);assert(saved_extra_props(q,viewport)==quickMoved);quickEditor.mPendingClose=false;
+ saved=config.values;
+ quickState->working[q]=original;quickState->working[0]=migrated;
+ config.fail=s_quickAccessLayout;save(quickEditor);assert(config.values==saved);config.fail=-1;
+ save(quickEditor,false,true);assert(config.values==saved); // Foreign save veto includes QA.
+ // Runtime uses Essentials' existing node, including after recreation. No input/visibility mutation.
+ NativeTouch live{&document};s_touchOwner=&live;
+ update_quick_access_layout(&live,viewport);assert(!s_quickAccessOverridden); // No node yet.
+ Rml::Element liveButton;liveQuickButton=&liveButton;liveButton.hidden=true;
+ update_quick_access_layout(&live,viewport);
+ auto expected=resolve_control_layout(quickMoved,viewport);
+ assert(liveButton.box&&liveButton.box->l==expected.box.l&&liveButton.box->w==expected.box.w);
+ assert(liveButton.hidden&&liveButton.styles.at("transform").starts_with("scale("));
+ Rml::Element recreated;liveQuickButton=&recreated;
+ const ControlLayoutSize portrait{432,960};update_quick_access_layout(&live,portrait);
+ assert(recreated.box&&recreated.box->t==resolve_control_layout(quickMoved,portrait).box.t);
+ restore_quick_access_layout();assert(!s_quickAccessOverridden);
+ assert(recreated.styles.at("top")=="auto"&&recreated.styles.at("width")=="64dp");
+ // Reset + Cancel retains the saved position; reopen loads it; Reset + Save restores defaults.
+ auto* qe=&quickEditor;void* qa[]={&qe};reset_extra_editor(nullptr,qa,nullptr,nullptr);
+ assert(!quickState->working[q]&&config.values==saved);
+ close_extra_editor();assert(config.values==saved);
+ s_touchEditorAvailable=true;quickEditor.mClosed=false;
+ quickState=attach_extra_editor(&quickEditor);assert(quickState->working[q]==quickMoved);
+ reset_extra_editor(nullptr,qa,nullptr,nullptr);save(quickEditor);
+ assert(saved_extra_props(q,viewport)==original);
+ close_extra_editor();
+ hostConfig["mod.com_dusklight_twilit__essentials.enabled"].value=false;
+ assert(!quick_access_editor_available());
+ liveQuickButton=nullptr;restore_quick_access_layout(); // Absent/deleted foreign node is safe.
+
 
 }
 '''
@@ -300,6 +377,7 @@ helpers = [function(native, sig) for sig in (
 constants = native[native.index('constexpr float kDragThresholdDp'):native.index('struct HandleBinding')]
 fixture = fixture.replace('// NATIVE_HELPERS', constants + '\n' + '\n'.join(helpers))
 fixture = fixture.replace('// LAYOUT', (root / 'src/touch_button_layout.inc').read_text())
+fixture = fixture.replace('// QUICK_ACCESS', (root / 'src/touch_quick_access.inc').read_text())
 production = adapter[:adapter.index('struct EditorHookBinding')]
 production = re.sub(r'DEFINE_HOOK_SYMBOL\(.*?\);\n', '', production, flags=re.S)
 fixture = fixture.replace('// ADAPTER', production)
@@ -313,4 +391,4 @@ with tempfile.TemporaryDirectory() as tmp:
                     '-I' + str(root / 'src'), '-I' + str(dusk / 'src'),
                     str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Isolated editor passed: native geometry, foreign metadata/buttons/hooks, unchanged native slots, migration, Save/Reset/Cancel, veto/error rollback and unload')
+print('Isolated editor passed: native geometry, foreign metadata/buttons/hooks, unchanged native slots, migration, Save/Reset/Cancel, veto/error rollback and unload; Quick Access discovery, drag/resize, persistence, rollback, recreation and reset')

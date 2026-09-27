@@ -69,7 +69,9 @@ void prune_extra_presses(NativeTouch* controls) {
         }
     }
 }
+void restore_quick_access_layout();
 void remove_extra_elements() {
+    restore_quick_access_layout();
     // Called before TouchControls destruction, while its document is still live.
     if (s_extraRoot && s_touchOwner && s_touchOwner->mRoot) {
         auto removed = s_touchApi.remove(s_touchOwner->mRoot, s_extraRoot);
@@ -111,6 +113,7 @@ bool create_extra_elements(NativeTouch* controls) {
     return true;
 }
 #include "touch_button_layout.inc"
+#include "touch_quick_access.inc"
 
 void update_extra_elements(ModContext*, void* args, void*, void*) {
     if (!s_extraHooksReady) return;
@@ -125,6 +128,7 @@ void update_extra_elements(ModContext*, void* args, void*, void*) {
         s_extraStyles = {};
         return;
     }
+    update_quick_access_layout(controls, size);
     for (size_t i = 0; i < touch::Count; ++i) {
         auto* element = s_extraElements[i];
         if (element == nullptr) continue;
@@ -291,6 +295,8 @@ ModResult install_native_buttons(ModError* error) {
         !resolve_extra("dusk::ui::touch_dp_scale", s_touchApi.scale) ||
         !resolve_extra("dusk::ui::Document::visible", s_touchApi.visible) ||
         !resolve_extra("dusk::config::GetConfigVar", s_touchApi.config)) return MOD_OK;
+    // Optional compatibility: an unavailable lookup must not disable our buttons.
+    resolve_extra("_ZN3Rml7Element14GetElementByIdERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE", s_quickAccessById);
     ModResult result = mods::hook_add_post<ExtraTouchUpdate>(svc_hook, update_extra_elements);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchSync>(svc_hook, extra_sync_input);
     if (result == MOD_OK) result = mods::hook_add_pre<ExtraTouchClear>(svc_hook, extra_clear_input);

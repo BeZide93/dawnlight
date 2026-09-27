@@ -19,10 +19,13 @@ fixture = r'''
 #include <cassert>
 #include <cstdint>
 #include <map>
+#include <string>
+#include <vector>
 #include "general_modes.hpp"
 #include "stamina_settings.hpp"
 using namespace dawnlight;
 using ConfigVarHandle = unsigned;
+using UiElementHandle = uint64_t;
 struct ModContext {};
 ModContext* mod_ctx = nullptr;
 struct ConfigService {

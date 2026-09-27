@@ -24,6 +24,10 @@ cancellation work as before. Existing On/Off configurations migrate to Always/Of
 **Flurry Rush** rewards a perfectly timed evade. The optional **Great Spin
 Projectile** adds a ranged attack to the Great Spin.
 
+During Flurry Rush, each sword strike that connects shows the native impact
+effect at the contact point. Damage and the enemy's hit reaction are still
+deferred until the rush ends.
+
 Bullet Time, Flurry Rush and the Great Spin projectile share the
 [stamina meter](movement-and-abilities.md#shared-stamina) with movement abilities.
 

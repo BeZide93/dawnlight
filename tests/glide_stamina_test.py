@@ -112,10 +112,10 @@ int main() {
     // Progression derives from complete max hearts, never current life or a global counter.
     reset();progression=true;
     for(int life=0;life<=100;++life) {
-        maxLife=life;near(maximum_stamina(),100+std::max(0,life/5-3)*10);
+        maxLife=life;near(maximum_stamina(),100+std::max(0,life/5-3)*5);
     }
-    maxLife=19;near(maximum_stamina(),100);maxLife=20;near(maximum_stamina(),110);
-    maxLife=100;setting(StaminaSetting::Amount,500);near(maximum_stamina(),670);
+    maxLife=19;near(maximum_stamina(),100);maxLife=20;near(maximum_stamina(),105);
+    maxLife=100;setting(StaminaSetting::Amount,500);near(maximum_stamina(),585);
     progression=false;near(maximum_stamina(),500);
     progression=true;maxLife=15;++link.setID;current_link();near(s_state.stamina,500);
     // Normal and exhausted recovery are separate; threshold uses fixed points.

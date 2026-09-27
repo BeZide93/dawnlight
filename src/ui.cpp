@@ -408,7 +408,7 @@ ModResult build_general_tab(
     if (add_toggle(ctx, left, "Progression System", progression_system_config_var(),
             "Sprint is available from the start. Give Talo the Wooden Sword to unlock the Glider, "
             "free Ordona for Revali's Gale, and free Faron for Fierce Deity. Gale gains one charge "
-            "per three full heart containers. Each complete heart above the starting three adds 10 maximum stamina. Controlled settings are locked while On.")
+            "per three full heart containers. Each complete heart above the starting three adds 5 maximum stamina. Controlled settings are locked while On.")
         != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Notifications", notifications_config_var(),
             "Show Progression System unlock and Gale capacity notifications. Off by default. "
@@ -476,7 +476,7 @@ bool stamina_settings_disabled(ModContext*, void*) { return !stamina_enabled(); 
 ModResult build_stamina_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
     UiElementHandle right, void*, ModError*) {
     if (add_text(ctx, left, "Costs, recovery and Exhaust Threshold use stamina points. The threshold does not scale with maximum stamina. "
-            "Progression adds 10 maximum stamina per complete heart above the starting three.") != MOD_OK) return MOD_ERROR;
+            "Progression adds 5 maximum stamina per complete heart above the starting three.") != MOD_OK) return MOD_ERROR;
     for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
         const auto& desc = kStaminaSettings[i];
         if (add_number(ctx, i < 8 ? left : right, desc.label,

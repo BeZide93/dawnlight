@@ -36,6 +36,6 @@ inline constexpr std::array<StaminaSettingDesc, static_cast<size_t>(StaminaSetti
 // Costs, recovery rates and the exhaustion threshold use stamina points.
 // Five max-life units form a heart; incomplete heart pieces add no capacity.
 inline int stamina_capacity(int base, bool progression, int maxLife) {
-    return base + (progression ? std::max(0, maxLife / 5 - 3) * 10 : 0);
+    return base + (progression ? std::max(0, maxLife / 5 - 3) * 5 : 0);
 }
 } // namespace dawnlight

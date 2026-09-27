@@ -33,7 +33,7 @@ currently loaded save's story flags:
 | Obtain the Ordon Sword | Dual Wield option in Collection |
 | Free Ordona | Revali's Gale and its counter |
 | Free Faron | Fierce Deity |
-| Each complete heart above the starting three | +10 maximum stamina, including on top of Dawnlight Mode's 100-point base |
+| Each complete heart above the starting three | +5 maximum stamina, including on top of Dawnlight Mode's 100-point base |
 | Each three full heart containers | One Gale charge: 3 hearts = 1, 6 = 2, 9 = 3, etc. |
 
 In Boss Rush, all progression-controlled abilities are available immediately,

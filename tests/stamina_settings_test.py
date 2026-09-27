@@ -84,8 +84,8 @@ int main(){
     // Dawnlight enables the button, but locks its controls even with manual Stamina Off.
     service.values[s_stamina]=0;service.values[s_dawnlightMode]=1;
     assert(!stamina_settings_disabled(nullptr,nullptr)&&mode_control_disabled(nullptr,&binding));
-    assert(stamina_capacity(stamina_setting(StaminaSetting::Amount),progression_system_enabled(),20)==110);
-    assert(stamina_capacity(stamina_setting(StaminaSetting::Amount),progression_system_enabled(),100)==270);
+    assert(stamina_capacity(stamina_setting(StaminaSetting::Amount),progression_system_enabled(),20)==105);
+    assert(stamina_capacity(stamina_setting(StaminaSetting::Amount),progression_system_enabled(),100)==185);
     service.values[s_dawnlightMode]=0;service.values[s_progressionSystem]=0;
     assert(stamina_settings_disabled(nullptr,nullptr));
 }

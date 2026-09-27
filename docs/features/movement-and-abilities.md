@@ -138,11 +138,11 @@ at 50 points even with a capacity of 200 or more.
 manual values. Turning it Off restores them, including after restarting the app.
 You can open the menu to view the locked values.
 
-**Progression System** adds 10 maximum stamina per complete heart above the three
+**Progression System** adds 5 maximum stamina per complete heart above the three
 starting hearts. The bonus follows the loaded save's maximum hearts, including
 hearts already collected; incomplete heart pieces and current damage do not affect
 it. It is added after the base amount, including Dawnlight Mode's default:
-3 hearts = 100, 6 hearts = 130, 20 hearts = 270. Turning Progression Off removes
+3 hearts = 100, 6 hearts = 115, 20 hearts = 185. Turning Progression Off removes
 the bonus. The meter displays current stamina relative to this effective maximum.
 
 Continuous costs run per real second; menus pause their accounting. Glide adds

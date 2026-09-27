@@ -222,6 +222,27 @@ bool sword_attack(daAlink_c* link) {
     default: return false;
     }
 }
+bool sword_guard_equipment(daAlink_c* link) {
+    return link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e;
+}
+bool item_guard_equipment(daAlink_c* link) {
+    // These items keep the left hand. Only the shield/right arm is replaced.
+    switch(link->mEquipItem) {
+    case dItemNo_PACHINKO_e:
+    case dItemNo_BOW_e:
+    case dItemNo_BOMB_ARROW_e:
+    case dItemNo_HAWK_ARROW_e:
+    case dItemNo_HOOKSHOT_e:
+    case dItemNo_W_HOOKSHOT_e:
+    case dItemNo_COPY_ROD_e:
+    case dItemNo_COPY_ROD_2_e:
+    case dItemNo_BOOMERANG_e:
+    case dItemNo_KANTERA_e:
+    case dItemNo_KANTERA2_e:
+        return true;
+    default: return false;
+    }
+}
 bool knocked_down(daAlink_c* link) {
     // These processes own the full body from knockback through the get-up
     // animation. Manual guard can still report true while Link is on the floor.
@@ -320,7 +341,7 @@ void after_flourish(ModContext*,void* args,void* result,void*) {
 }
 void update_stow(daAlink_c* link,bool guard) {
     if(!s.active || sword_attack(link) || knocked_down(link) || (guard && !s.stow.drawing) ||
-       (link->mEquipItem!=0x103 && link->mEquipItem!=dItemNo_NONE_e)) {
+       (!sword_guard_equipment(link) && !item_guard_equipment(link))) {
         s.stow={};return;
     }
     if(s.stow.active) {
@@ -332,7 +353,7 @@ void update_stow(daAlink_c* link,bool guard) {
                            s.stow.special ? link->field_0x3198 : 0);
         } else {
             s.stow.active=false;
-            s.stow.release=(s.stow.drawing || link->mEquipItem==dItemNo_NONE_e) ? 1.0f : 0.0f;
+            s.stow.release=(s.stow.drawing || link->mEquipItem==dItemNo_NONE_e || item_guard_equipment(link)) ? 1.0f : 0.0f;
         }
     } else s.stow.release=dual::approach(s.stow.release,0,1.0f/6);
 }
@@ -345,7 +366,7 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     }
     s.enabled=enabled;
     s.active=enabled && !link->checkEventRun();
-    if(!s.active || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) s.haveGuardBody=false;
+    if(!s.active || !sword_guard_equipment(link) || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) s.haveGuardBody=false;
     const bool mirror=s.active && ordinary(link) && s.attacks.right;
     if(mirror!=s.mirror) s.seedBlade=true;
     s.mirror=mirror;
@@ -353,12 +374,13 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     s.poseTick=s.tick;
     const bool attacking=sword_attack(link);
     const bool nativeArms=attacking || knocked_down(link);
-    const bool guard=s.active && !nativeArms && (link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e) &&
+    const bool canGuard=sword_guard_equipment(link) || item_guard_equipment(link);
+    const bool guard=s.active && !nativeArms && canGuard &&
                      link->checkPlayerGuardAndAttack();
     const bool drawn=s.active && (link->mEquipItem==0x103 || guard || attacking);
     if(drawn && s.draw==0 && !s.stow.active && s.stow.release==0 && !nativeArms) start_draw(link,false);
     if(s.active && !drawn && s.draw>0 && !s.stow.active && s.stow.release==0 && !nativeArms &&
-       link->mEquipItem==dItemNo_NONE_e) {
+       (link->mEquipItem==dItemNo_NONE_e || item_guard_equipment(link))) {
         start_stow(link,false);s.stow.nativeClock=false;s.stow.duration=24;
     }
     update_stow(link,guard);
@@ -368,7 +390,7 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     s.sheathTilt=dual::approach(s.sheathTilt,tilt,1.0f/6);
     // Attacks and knockdowns take the arms immediately, including a guard
     // already raised before the hit. Native morphing handles their transition.
-    s.guard=nativeArms ? 0.0f : dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
+    s.guard=(!canGuard || nativeArms) ? 0.0f : dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
     if(s.stow.active) {
         if(!s.stow.drawing) s.guard=0;
         const bool held=s.stow.drawing ? s.stow.progress>=dual::draw_grip_start : s.stow.progress<dual::stow_insert_end;
@@ -410,7 +432,7 @@ float guard_thrust(daAlink_c* link) {
 HookAction before_model_calc(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     auto* model=mods::arg<J3DModel*>(args,1);
-    const bool thrust=s.haveGuardBody && link->mProcID==daAlink_c::PROC_GUARD_ATTACK;
+    const bool thrust=s.haveGuardBody && sword_guard_equipment(link) && link->mProcID==daAlink_c::PROC_GUARD_ATTACK;
     if(!active(link) || (!s.mirror && !thrust) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
     // Reject nonstandard tracks as a group; never partly mirror a mixed rig.
     for(int i=0;i<6;++i) {
@@ -468,6 +490,7 @@ void after_arms(ModContext*,void* args,void*,void*) {
         // This leaves the resting shoulder stance intact and supplies reach
         // without folding the blades forward or pulling the grips back in.
         for(bool right:{false,true}) {
+            if(!right && !sword_guard_equipment(link)) continue;
             const int clavicle=right ? 11 : 6;
             const Pose follow=dual::shoulder_follow(pose(model->getAnmMtx(clavicle)),
                 pose(model->getAnmMtx(clavicle+1)),dual::rotate(base.q,{0,0,1}),.5f,thrust*dual::smooth(s.guard));
@@ -475,6 +498,7 @@ void after_arms(ModContext*,void* args,void*,void*) {
                 put(model,joint,dual::compose(follow,pose(model->getAnmMtx(joint))));
         }
         for(bool right:{false,true}) {
+            if(!right && !sword_guard_equipment(link)) continue;
             const int first=right ? 12 : 7;
             dual::Arm arm{dual::compose(inverseBase,pose(model->getAnmMtx(first))),
                           dual::compose(inverseBase,pose(model->getAnmMtx(first+1))),
@@ -482,12 +506,14 @@ void after_arms(ModContext*,void* args,void*,void*) {
             // Keep the crossing in front of the face: lower the grips slightly,
             // extend them forward, and lean the blades away from the head.
             // The Ordon (right-hand) blade stays 12 units ahead of the Master
-            // Sword. Clamp both together so reach limits cannot reverse them.
+            // Sword. When both are drawn, clamp them together so reach limits
+            // cannot reverse them; an item arm must not constrain the Ordon blade.
             const float depth=right ? 6.0f : -6.0f;
             blades[right]=dual::cross_guard_blade(right,thrust);
             plane=std::min(plane,dual::max_sword_depth(arm,blades[right],hand_mount(link,right))-depth);
         }
         for(bool right:{false,true}) {
+            if(!right && !sword_guard_equipment(link)) continue;
             blades[right].p.z=plane+(right ? 6.0f : -6.0f);
             solve_arm(link,right,dual::compose(base,blades[right]),dual::smooth(s.guard));
         }
@@ -557,8 +583,9 @@ void after_items(ModContext*,void* args,void*,void*) {
         if(equipment_visible(link)) status_item_matrices(link);
         return;
     }
-    if(s.forcedBlade && (!active(link) || s.guard<=0)) {
-        if(link->mEquipItem!=0x103) link->offSwordModel();s.forcedBlade=false;
+    if(s.forcedBlade && (!active(link) || s.guard<=0 || !sword_guard_equipment(link))) {
+        if(link->mEquipItem!=0x103) link->offSwordModel();
+        s.forcedBlade=false;
     }
     if(!equipment_visible(link)) return;
     put(s.sword,s.rightSword);
@@ -566,7 +593,7 @@ void after_items(ModContext*,void* args,void*,void*) {
     // around the same hip-mounted blade rather than creating a second offset.
     const Pose mount=local(-18.5f,.14f,12.2f,0,33.1f);
     put(s.sheath,dual::compose(s.hipSword,dual::inverse(mount)));
-    if(active(link) && s.guard>0 && link->mEquipItem!=0x103) {
+    if(active(link) && s.guard>0 && link->mEquipItem==dItemNo_NONE_e) {
         put(link->mSwordModel,sword_at_hand(link,false));
         show_guard_blade(link);
         s.forcedBlade=true;

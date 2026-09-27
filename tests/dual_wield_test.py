@@ -54,6 +54,10 @@ using dual::Pose;using dual::Vec;
 struct ModContext {};
 enum HookAction {HOOK_CONTINUE};
 constexpr int dItemNo_NONE_e=0xff;
+enum {dItemNo_BOOMERANG_e=0x40,dItemNo_BOW_e=0x43,dItemNo_HOOKSHOT_e=0x44,
+ dItemNo_COPY_ROD_e=0x46,dItemNo_W_HOOKSHOT_e=0x47,dItemNo_KANTERA_e=0x48,
+ dItemNo_PACHINKO_e=0x4b,dItemNo_COPY_ROD_2_e=0x4c,dItemNo_KANTERA2_e=0xf8,
+ dItemNo_BOMB_ARROW_e=0x59,dItemNo_HAWK_ARROW_e=0x5a};
 struct Args {void* link;void* model=nullptr;};
 namespace mods {template<class T>T arg(void* p,int i){auto* a=static_cast<Args*>(p);return static_cast<T>(i?a->model:a->link);}}
 struct J3DModel {dual::Pose base;std::array<dual::Pose,35> joints;auto getBaseTRMtx(){return base;}auto getAnmMtx(int i){return joints[i];}};
@@ -89,14 +93,17 @@ struct daAlink_c {
     bool checkEventRun(){return event;}
     bool checkPlayerGuardAndAttack(){return guard;}
     bool checkSwordEquipAnime(){return equipping;}
+    J3DModel* mSwordModel=nullptr;int swordShown=0,swordHidden=0;
+    bool checkStatusWindowDraw(){return false;}
+    void offSwordModel(){++swordHidden;}
 };
 struct State {
     daAlink_c* owner=nullptr;
-    bool enabled=false,active=false,mirror=false,seedBlade=false;
+    bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
     float guard=0,draw=0,sheathTilt=0;unsigned tick=0,poseTick=~0u;
     dual::Alternation attacks;
     DualGuardBodyPose guardBody;bool haveGuardBody=false;
-    dual::StowMotion stow;Pose rightSword;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
+    dual::StowMotion stow;Pose rightSword,hipSword;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
 } s;
 struct Borrow {mDoExt_AnmRatioPack* pack=nullptr;J3DAnmTransform* original=nullptr;std::optional<DualWieldAnimation> wrapper;};
 std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
@@ -107,15 +114,16 @@ bool equipment_visible(daAlink_c* l){return s.owner==l && s.enabled;} // materia
 Pose pose(Pose p){return p;}
 void put(J3DModel* model,int joint,Pose p){model->joints[joint]=p;}
 void put(J3DModel* model,Pose p){model->base=p;}
-Pose sword_at_hand(daAlink_c*,bool right){assert(right);return {{},{20,80,40}};}
+Pose sword_at_hand(daAlink_c*,bool right){return {{},{right?20.f:-20.f,80,40}};}
+void show_guard_blade(daAlink_c* link){++link->swordShown;}
 '''
 
 fixture += "\n".join(function(name, result) for name, result in [
-    ("local", "Pose"), ("status_item_matrices", "void"), ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("knocked_down", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
+    ("local", "Pose"), ("status_item_matrices", "void"), ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("knocked_down", "bool"), ("sword_guard_equipment", "bool"), ("item_guard_equipment", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
-    ("after_shield_draw", "void"),
+    ("after_shield_draw", "void"), ("after_arms", "void"), ("after_items", "void"),
 ])
 fixture += r'''
 int main() {
@@ -343,6 +351,58 @@ int main() {
     assert(s.sheathTilt>0 && s.sheathTilt<1); // return from the last pose, no snap
     for(int i=0;i<6;++i){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
     assert(s.sheathTilt==0);
+    // With another item, only the right arm/Ordon sword enters guard. The left
+    // clavicle, arm, hand and item joint must remain byte-for-byte equivalent.
+    J3DModel offhand,scabbard,primary;s.sword=&offhand;s.sheath=&scabbard;link.mSwordModel=&primary;
+    link.mProcID=daAlink_c::PROC_WAIT;
+    for(int joint=0;joint<35;++joint)link.model.joints[joint]={{},{float(joint),100.f,0}};
+    link.model.joints[12]={{},{-18,130,-10}};
+    link.model.joints[13]={{},{-32,105,0}};
+    link.model.joints[14]={{},{-24,93,22}};
+    const auto nativeJoints=link.model.joints;
+    for(int item:{dItemNo_PACHINKO_e,dItemNo_BOW_e,dItemNo_BOMB_ARROW_e,dItemNo_HAWK_ARROW_e,
+                  dItemNo_HOOKSHOT_e,dItemNo_W_HOOKSHOT_e,dItemNo_COPY_ROD_e,dItemNo_COPY_ROD_2_e,
+                  dItemNo_BOOMERANG_e,dItemNo_KANTERA_e,dItemNo_KANTERA2_e}) {
+        link.mEquipItem=item;link.guard=true;s.guard=0;s.draw=0;s.stow={};
+        primary.base={{},{500,600,700}};
+        // Also discard a synthetic Master Sword left over from empty-handed guard.
+        s.forcedBlade=true;const int hidden=link.swordHidden;
+        for(int frame=0;frame<28;++frame) {
+            link.model.joints=nativeJoints;
+            ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+            after_arms(nullptr,&args,nullptr,nullptr);after_items(nullptr,&args,nullptr,nullptr);
+            assert(link.mEquipItem==item&&!s.forcedBlade&&link.swordShown==0);
+            assert(primary.base.p.x==500&&primary.base.p.y==600&&primary.base.p.z==700);
+            for(int joint=6;joint<=10;++joint) {
+                const auto& a=link.model.joints[joint];const auto& b=nativeJoints[joint];
+                assert(a.p.x==b.p.x&&a.p.y==b.p.y&&a.p.z==b.p.z);
+                assert(a.q.x==b.q.x&&a.q.y==b.q.y&&a.q.z==b.q.z&&a.q.w==b.q.w);
+            }
+        }
+        assert(s.guard==1&&s.draw==1&&!s.stow.active);
+        assert(link.swordHidden==hidden+1);
+        assert(dual::length(link.model.joints[14].p-nativeJoints[14].p)>1);
+        // Releasing guard returns only the Ordon sword to the hip.
+        link.guard=false;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+        assert(s.stow.active&&!s.stow.drawing);
+        for(int frame=0;frame<30;++frame){++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);}
+        assert(s.guard==0&&s.draw==0&&!s.stow.active&&link.mEquipItem==item);
+        // The same one-handed mode still yields immediately to knockdown.
+        link.guard=true;link.mProcID=daAlink_c::PROC_LARGE_DAMAGE_UP;s.guard=1;
+        ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+        assert(s.guard==0&&!s.stow.active&&s.stow.release==0);
+        link.mProcID=daAlink_c::PROC_WAIT;
+    }
+    // Switching directly from cross guard to an item cannot reuse its body override.
+    link.mEquipItem=dItemNo_COPY_ROD_e;link.mProcID=daAlink_c::PROC_GUARD_ATTACK;s.haveGuardBody=true;
+    before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(!s.haveGuardBody);
+    // Empty-handed guard still supplies the main sword, then an item hides it once.
+    link.mEquipItem=dItemNo_NONE_e;s.guard=1;
+    after_items(nullptr,&args,nullptr,nullptr);assert(s.forcedBlade&&link.swordShown==1);
+    link.mEquipItem=dItemNo_KANTERA_e;
+    after_items(nullptr,&args,nullptr,nullptr);assert(!s.forcedBlade&&link.swordShown==1);
+    link.mEquipItem=0x103;link.mProcID=daAlink_c::PROC_WAIT;
     // Preview equipment follows newly evaluated menu joints rather than the
     // previous gameplay item matrices, without changing combat transition state.
     J3DModel previewSword,previewSheath;s.sword=&previewSword;s.sheath=&previewSheath;

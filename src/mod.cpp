@@ -7,6 +7,7 @@
 #include "collection_dual_wield.hpp"
 #include "fierce_deity.hpp"
 #include "gale_counter.hpp"
+#include "hud_fade.hpp"
 #include "great_spin_projectile.hpp"
 #include "model_overlays.hpp"
 #include "player_hard_mode.hpp"
@@ -129,6 +130,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::register_new_save_modes(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::initialize_hud_fade(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::initialize_gale_counter(error); result != MOD_OK) {
         return result;
     }
@@ -172,6 +176,7 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_dual_wield();
     dawnlight::shutdown_touch_buttons();
     dawnlight::shutdown_jump_hooks();
+    dawnlight::shutdown_hud_fade();
     dawnlight::shutdown_gale_counter();
     dawnlight::shutdown_model_overlays();
     dawnlight::shutdown_bow_modes();

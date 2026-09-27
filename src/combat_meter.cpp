@@ -1,6 +1,7 @@
 #include "combat_meter.hpp"
 
 #include "hud_layout.hpp"
+#include "hud_fade.hpp"
 
 #include "JSystem/J2DGraph/J2DGrafContext.h"
 #include "JSystem/J2DGraph/J2DPicture.h"
@@ -290,7 +291,8 @@ void draw_combat_meter(
     position_combat_meter(meter, row, combat_meter_transform(style));
 
     J2DGrafContext* graf = dComIfGp_getCurrentGrafPort();
-    meter->mpKanteraScreen->draw(0.0f, 0.0f, graf);
+    draw_combat_meter_screen(meter->mpKanteraScreen, graf,
+        style != CombatMeterStyle::FierceDeity, percentage);
 
     fillPicture->setBlackWhite(oldBlack, oldWhite);
     restore_pane(frameR);

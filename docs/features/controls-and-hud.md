@@ -45,6 +45,11 @@ combinations, see [Dawnlight Touch UI](../../COMPATIBILITY.md#dawnlight-touch-ui
 
 Open `Mod Manager -> Dawnlight -> Open Dawnlight Settings -> HUD`.
 
+**HUD Auto Fade**, at the top of the editor, is Off by default and independent
+of the layout preset. After Link stands still for 3 seconds, the game HUD fades
+out over 1 second. Movement or actions bring it back in 0.15 seconds. Menus,
+dialogue and scene transitions reset the idle timer.
+
 The HUD layout setting has five modes:
 
 - GameCube: vanilla-style HUD placement and backing.
@@ -62,6 +67,12 @@ Custom from the GameCube, X-Box, Wii-U, or Dawnlight presets.
 
 The `hud_layout_settings.json` format is compatible with the Dawnlight fork's
 HUD layout export where the same fields are available.
+
+Under **Custom Stamina Bar**, **Fade when full** hides the bar at full stamina;
+under **Custom Fierce Deity Bar**, **Fade when empty** hides it at zero charge.
+Both fade out smoothly and reappear when their condition no longer applies.
+Both are Off in every built-in preset and after copying/resetting a preset.
+Custom exports/imports preserve these two choices; they never change HUD Auto Fade.
 
 The editor also supports D-Pad arrows and shadows, single-row hearts, round
 X/Y buttons, and [Gale Counter](movement-and-abilities.md#gale-counter) offsets

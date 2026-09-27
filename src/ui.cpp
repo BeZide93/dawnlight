@@ -634,6 +634,12 @@ ModResult build_controls_tab(
 ModResult build_hud_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "HUD") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "HUD Auto Fade", hud_auto_fade_config_var(),
+            "Slowly fades the HUD after Link stands still for 3 seconds. Movement or actions "
+            "bring it back. Independent of HUD presets.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_select(ctx, left, "HUD Layout", hud_layout_config_var(), kHudLayoutOptions,
             std::size(kHudLayoutOptions),
             "GameCube keeps the original HUD. X-Box, Wii-U and Dawnlight apply fixed HUD layout "
@@ -793,8 +799,20 @@ ModResult build_hud_tab(
     {
         return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "Fade when full", hud_custom_stamina_fade_when_full_config_var(),
+            "Fades the Stamina Bar at full stamina and shows it again when stamina is spent.",
+            custom_hud_controls_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_custom_transform_controls(
             ctx, left, "Custom Fierce Deity Bar", HudElement::FierceDeityBar) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Fade when empty", hud_custom_fierce_deity_fade_when_empty_config_var(),
+            "Fades the Fierce Deity Bar when empty and shows it again when it gains charge.",
+            custom_hud_controls_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }

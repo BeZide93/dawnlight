@@ -366,7 +366,7 @@ void after_damage_check(ModContext*, void* args, void*, void*) {
 
 void draw_fierce_meter(dMeter2Draw_c* meter) {
     if (!fierce_deity_enabled() || !same_link(daAlink_getAlinkActorClass()) ||
-        s_state.meter <= 0.0f || menu_or_pause_active())
+        menu_or_pause_active())
     {
         return;
     }

@@ -80,6 +80,9 @@ ConfigVarHandle s_legacyWiiUHud = 0;
 ConfigVarHandle s_roundXYButtons = 0;
 ConfigVarHandle s_hudButtonBackingVisible = 0;
 ConfigVarHandle s_hudHealthBar = 0;
+ConfigVarHandle s_hudAutoFade = 0;
+ConfigVarHandle s_hudStaminaFadeWhenFull = 0;
+ConfigVarHandle s_hudFierceDeityFadeWhenEmpty = 0;
 ConfigVarHandle s_aimDefaultsMigrated = 0;
 ConfigVarHandle s_hudLayoutMigrated = 0;
 ConfigVarHandle s_hudLayoutMigratedV2 = 0;
@@ -506,7 +509,9 @@ bool set_custom_hud_from_defaults(const HudElementDefaultArray& elementDefaults,
         !set_bool(s_hudDpadHideShadows, false) ||
         !set_bool(s_roundXYButtons, roundXYButtons) ||
         !set_bool(s_hudButtonBackingVisible, buttonBackingVisible) ||
-        !set_bool(s_hudHealthBar, false))
+        !set_bool(s_hudHealthBar, false) ||
+        !set_bool(s_hudStaminaFadeWhenFull, false) ||
+        !set_bool(s_hudFierceDeityFadeWhenEmpty, false))
     {
         return false;
     }
@@ -823,6 +828,16 @@ bool apply_element_json(const std::string& elementsObject, HudElement element) {
         }
     }
 
+    if (element == HudElement::StaminaBar || element == HudElement::FierceDeityBar) {
+        const bool stamina = element == HudElement::StaminaBar;
+        bool fade = false;
+        if (read_json_bool(object, stamina ? "fadeWhenFull" : "fadeWhenEmpty", fade) &&
+            !set_bool(stamina ? s_hudStaminaFadeWhenFull : s_hudFierceDeityFadeWhenEmpty, fade))
+        {
+            return false;
+        }
+    }
+
     if (element == HudElement::Hearts) {
         bool healthBar = false;
         if (read_json_bool(object, "healthBar", healthBar) &&
@@ -963,6 +978,9 @@ ModResult register_config(ModError* error) {
         register_bool("hud-custom-button-backing-visible", false, s_hudButtonBackingVisible) !=
             MOD_OK ||
         register_bool("hud-custom-health-bar", false, s_hudHealthBar) != MOD_OK ||
+        register_bool("hud-auto-fade", false, s_hudAutoFade) != MOD_OK ||
+        register_bool("hud-custom-stamina-fade-when-full", false, s_hudStaminaFadeWhenFull) != MOD_OK ||
+        register_bool("hud-custom-fierce-deity-fade-when-empty", false, s_hudFierceDeityFadeWhenEmpty) != MOD_OK ||
         register_bool("aim-defaults-v2", false, s_aimDefaultsMigrated) != MOD_OK ||
         register_bool("hud-layout-migrated-v1", false, s_hudLayoutMigrated) != MOD_OK ||
         register_bool("hud-layout-migrated-v2", false, s_hudLayoutMigratedV2) != MOD_OK ||
@@ -1398,6 +1416,10 @@ bool hud_custom_button_backing_visible() {
     return get_bool(s_hudButtonBackingVisible, false);
 }
 
+bool hud_auto_fade_enabled() { return get_bool(s_hudAutoFade, false); }
+bool hud_custom_stamina_fade_when_full() { return get_bool(s_hudStaminaFadeWhenFull, false); }
+bool hud_custom_fierce_deity_fade_when_empty() { return get_bool(s_hudFierceDeityFadeWhenEmpty, false); }
+
 bool hud_custom_health_bar_enabled() {
     return get_bool(s_hudHealthBar, false);
 }
@@ -1658,6 +1680,10 @@ ConfigVarHandle hud_custom_button_backing_visible_config_var() {
     return s_hudButtonBackingVisible;
 }
 
+ConfigVarHandle hud_auto_fade_config_var() { return s_hudAutoFade; }
+ConfigVarHandle hud_custom_stamina_fade_when_full_config_var() { return s_hudStaminaFadeWhenFull; }
+ConfigVarHandle hud_custom_fierce_deity_fade_when_empty_config_var() { return s_hudFierceDeityFadeWhenEmpty; }
+
 ConfigVarHandle hud_custom_health_bar_config_var() {
     return s_hudHealthBar;
 }
@@ -1787,6 +1813,13 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
             write_json_bool(out, "hideShadows", hud_custom_dpad_hide_shadows(), true);
         }
 
+        if (element == HudElement::StaminaBar) {
+            write_json_bool(out, "fadeWhenFull", hud_custom_stamina_fade_when_full(), true);
+        }
+        if (element == HudElement::FierceDeityBar) {
+            write_json_bool(out, "fadeWhenEmpty", hud_custom_fierce_deity_fade_when_empty(), true);
+        }
+
         if (element == HudElement::Hearts) {
             write_json_bool(out, "healthBar", hud_custom_health_bar_enabled(), true);
         }
@@ -1797,7 +1830,7 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
     }
     out << "    },\n";
     out << "    \"roundXYButtons\": " << (round_xy_buttons_enabled() ? "true" : "false") << ",\n";
-    out << "    \"version\": 14\n";
+    out << "    \"version\": 15\n";
     out << "}\n";
 
     return out.good() ? HudSettingsIoResult::Ok : HudSettingsIoResult::WriteFailed;

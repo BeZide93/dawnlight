@@ -80,6 +80,12 @@ jobs:
           python3 tests/glide_stamina_test.py
           python3 tests/wolf_sprint_test.py
 
+      - name: Test HD HUD button glyph compatibility
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/hd_hud_glyph_test.py
+          python3 tests/round_button_overlays_test.py
+
       - name: Test HUD fades
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/hud_fade_test.py

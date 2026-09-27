@@ -222,6 +222,13 @@ remain enabled because it does not create another slot; it adapts the active
 third slot to Dawnlight's Android touch layout. Enable the separate Midna button
 under Controls → Touch Buttons to call her; Skip remains a cutscene-only button.
 
+Dawnlight hides HD HUD's obsolete separate A/B/X/Y letter pictures during gameplay
+HUD drawing. This prevents a second set of letters appearing when the button
+groups are moved far left in Dawnlight's editor. The replacement discs and action
+text remain visible; the adapter preserves the original visibility after drawing
+and leaves the vanilla HUD unchanged when HD HUD is disabled. This is independent
+of both mods' Z-slot settings and Dawnlight's Round X/Y Buttons option.
+
 Dawnlight's HUD Layout Editor is compatible with Twilight HD HUD's gameplay HUD
 for the supported elements. Twilight HD HUD owns its artwork and base layout;
 Dawnlight applies the saved Custom HUD positions and scales afterward. Use the

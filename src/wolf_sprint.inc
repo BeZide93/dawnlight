@@ -11,7 +11,7 @@ float wolf_dash_speed(daAlink_c* link) {
 bool wolf_sprint_requested(daAlink_c* link) {
     if (!link || !wolf_sprint_enabled() || !link->checkWolf() || !link->mpHIO ||
         !link->doButton() || !link->checkInputOnR() || !link->checkWolfDashMode() ||
-        !link->mLinkAcch.ChkGroundHit()) return false;
+        !link->mLinkAcch.ChkGroundHit() || !stamina_available_for_wolf_sprint()) return false;
     if (link->mProcID != daAlink_c::PROC_WOLF_WAIT &&
         link->mProcID != daAlink_c::PROC_WOLF_MOVE &&
         link->mProcID != daAlink_c::PROC_WOLF_DASH) return false;
@@ -38,6 +38,7 @@ HookAction before_wolf_sprint_movement(ModContext*, void* args, void*, void*) {
     link->field_0x30d0 = std::max<int>(link->field_0x30d0, 2);
     link->mMaxSpeed = wolf_dash_speed(link) * wolf_speed_multiplier();
     s_wolfSprintOwner = link;
+    mark_wolf_sprint_stamina_active();
     return HOOK_CONTINUE;
 }
 

@@ -47,9 +47,9 @@ falls. **Glide Item**, directly below the toggle, selects **Cucco** (default) or
 an original textured **Glider** with a wooden frame and leather grips. Both use
 native Cucco glide movement; landing puts the selected item away. The Glider
 hides and silences only its internally summoned Cucco, leaving world Cuccos alone.
-With **Stamina Bar** enabled, either Glide Item consumes 5 stamina per second
-while gliding. Empty stamina ends the glide; exhaustion blocks redeployment
-until stamina recovers to 50%. Disabling Stamina Bar removes the cost.
+With **Stamina Bar** enabled, either Glide Item consumes the configured Glide cost
+(default 5 stamina points per second). Empty stamina ends the glide; exhaustion blocks redeployment
+until stamina reaches the configured exhaustion threshold (default 50 points). Disabling Stamina Bar removes the cost.
 
 ### Glider model and textures
 
@@ -106,10 +106,58 @@ See [HUD editing](controls-and-hud.md#hud-editing) to reposition the counter.
 
 ## Shared stamina
 
-Bullet Time, Flurry Rush, Sprint, Glide and the Great Spin projectile share a
-stamina meter, including compatibility with Lazy Tweaks stamina actions. Emptying
-the meter causes exhaustion until it recovers to 50%. The Stamina Bar setting
-can disable both the meter and all Dawnlight stamina costs.
+Open **Dawnlight Settings -> Controls -> Stamina Settings**, directly below
+**Stamina Bar**. The button is enabled only while Stamina Bar is On. Turning
+Stamina Bar Off disables Dawnlight's stamina costs.
+
+Costs and recovery rates use **stamina points**, not percentages of the current
+capacity. Setting an action's cost to **0** makes it free, even during exhaustion.
+The exhaustion threshold also uses fixed points: a threshold of 50 ends exhaustion
+at 50 points even with a capacity of 200 or more.
+
+| Setting | Range | Default |
+| --- | --- | --- |
+| Stamina Amount | 50–500 | 100 |
+| Recovery speed | 1–100/sec | 5/sec |
+| Exhaust Threshold | 0–100 | 50 |
+| Exhaust Recovery speed | 1–100/sec | 5/sec |
+| Sprint | 0–20/sec | 5/sec |
+| Wolf Sprint | 0–20/sec | 5/sec |
+| Glide | 0–20/sec | 5/sec |
+| Bullet Time | 0–50/sec | 15/sec |
+| Flurry Rush | 0–100 | 50 |
+| Block | 0–100 | 10 |
+| Guard Break | 0–100 | 60 |
+| Great Spin Projectile | 0–100 | 40 |
+| Shield Attack | 0–50 | 20 |
+| Back Slice | 0–50 | 20 |
+| Helm Splitter | 0–50 | 20 |
+| Midna Attack | 0–100 | 50 |
+
+**Dawnlight Mode** applies and locks these defaults without overwriting your saved
+manual values. Turning it Off restores them, including after restarting the app.
+You can open the menu to view the locked values.
+
+**Progression System** adds 5 maximum stamina per complete heart above the three
+starting hearts. The bonus follows the loaded save's maximum hearts, including
+hearts already collected; incomplete heart pieces and current damage do not affect
+it. It is added after the base amount, including Dawnlight Mode's default:
+3 hearts = 100, 6 hearts = 115, 20 hearts = 185. Turning Progression Off removes
+the bonus. The meter displays current stamina relative to this effective maximum.
+
+Continuous costs run per real second; menus pause their accounting. Glide adds
+its cost to Bullet Time. Recovery runs when there is no continuous drain; exhausted
+recovery runs until the configured threshold is reached. A threshold of 0 resumes
+paid actions as soon as any stamina has regenerated. A threshold above the current
+maximum capacity is treated as that capacity, so full stamina always ends exhaustion.
+
+Block is charged once per shielded hit, including Dual Wield. Guard Break uses its
+own cost **instead of** Block. These defensive reactions retain native behavior
+and drain the remaining stamina if their cost exceeds it. Holding guard alone
+has no cost. Paid attack skills require enough stamina and charge on successful
+activation; Midna Attack charges when opening the wolf lock-on field. Shield
+Attack, Back Slice, Helm Splitter and Midna Attack work with these costs even
+without Lazy Tweaks. The existing Lazy Tweaks meter compatibility remains enabled.
 
 For Bullet Time, Flurry Rush and the Great Spin projectile, see
 [combat and aiming](combat-and-aiming.md).

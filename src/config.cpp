@@ -58,6 +58,7 @@ ConfigVarHandle s_galeCounterVisible = 0;
 ConfigVarHandle s_galeCounterCapacity = 0;
 ConfigVarHandle s_galeRecovery = 0;
 ConfigVarHandle s_stamina = 0;
+std::array<ConfigVarHandle, kStaminaSettings.size()> s_staminaSettings{};
 ConfigVarHandle s_sprint = 0;
 ConfigVarHandle s_wolfSprint = 0;
 ConfigVarHandle s_wolfSpeedPercent = 0;
@@ -896,6 +897,11 @@ ModResult register_custom_hud_config() {
 }  // namespace
 
 ModResult register_config(ModError* error) {
+    for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
+        const auto& desc = kStaminaSettings[i];
+        if (const auto result = register_int(desc.key, desc.standard, s_staminaSettings[i]); result != MOD_OK)
+            return mods::set_error(error, result, "failed to register stamina settings");
+    }
     if (const auto result = register_touch_button_config(error); result != MOD_OK) return result;
     if (register_bool("dawnlight-mode", false, s_dawnlightMode) != MOD_OK ||
         register_bool("progression-system", false, s_progressionSystem) != MOD_OK ||
@@ -1099,6 +1105,7 @@ bool progression_system_enabled() {
 
 ModeSetting mode_setting_for_config(ConfigVarHandle var) {
     if (!var) return ModeSetting::None;
+    for (auto handle : s_staminaSettings) if (var == handle) return ModeSetting::StaminaSettings;
     if (var == s_progressionSystem) return ModeSetting::Progression;
     if (var == s_sprint) return ModeSetting::Sprint;
     if (var == s_sprintSpeedPercent) return ModeSetting::SprintSpeed;
@@ -1133,6 +1140,13 @@ bool mode_config_override(ConfigVarHandle var, int64_t& value) {
     const auto setting = mode_setting_for_config(var);
     if (setting == ModeSetting::None) return false;
     const bool dawnlight = dawnlight_mode_enabled();
+    if (setting == ModeSetting::StaminaSettings) {
+        if (!dawnlight) return false;
+        for (size_t i = 0; i < s_staminaSettings.size(); ++i) {
+            if (s_staminaSettings[i] == var) { value = kStaminaSettings[i].standard; return true; }
+        }
+        return false;
+    }
     const bool progression = progression_system_enabled();
     if (!dawnlight && !progression) return false;
     return mode_override(setting, dawnlight, progression, progression_state(), value);
@@ -1243,6 +1257,15 @@ int gale_recovery_seconds() { return get_int(s_galeRecovery, 120, 1, 3600); }
 bool glide_enabled() { return get_bool(s_glide, false); }
 GlideItem glide_item() { return static_cast<GlideItem>(get_int(s_glideItem, 0, 0, 1)); }
 bool revalis_gale_enabled() { return get_bool(s_revalisGale, false); }
+
+ConfigVarHandle stamina_setting_config_var(StaminaSetting setting) {
+    return s_staminaSettings[static_cast<size_t>(setting)];
+}
+
+int stamina_setting(StaminaSetting setting) {
+    const auto& desc = kStaminaSettings[static_cast<size_t>(setting)];
+    return get_int(stamina_setting_config_var(setting), desc.standard, desc.min, desc.max);
+}
 
 bool stamina_enabled() {
     return get_bool(s_stamina, true);

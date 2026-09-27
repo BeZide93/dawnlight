@@ -66,6 +66,13 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/bossrush_hook_lifecycle_test.py
 
+      - name: Test configurable stamina and mode overrides
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/stamina_settings_test.py
+          python3 tests/glide_stamina_test.py
+          python3 tests/wolf_sprint_test.py
+
       - name: Read pinned Dusklight version
         id: dusklight
         shell: bash

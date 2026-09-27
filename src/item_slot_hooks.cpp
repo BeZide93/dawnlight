@@ -375,6 +375,11 @@ struct HudPaneVisibilityState {
 std::array<HudPaneVisibilityState, 4> s_dpadArrowVisibility;
 std::array<HudPaneVisibilityState, 4> s_dpadShadowVisibility;
 
+std::array<HudPaneVisibilityState, 4> s_hdHudGlyphVisibility;
+void* s_hdHudGlyphDraw = nullptr;
+ZSlotGetConfigVarFn s_hdHudGetConfigVar = nullptr;
+bool s_hdHudConfigLookupAttempted = false;
+
 struct RoundButtonOverlayState {
     J2DPicture* picture = nullptr;
     std::array<JUtility::TColor, 4> corners;
@@ -1268,6 +1273,8 @@ void clear_shared_hud_layout_cache() {
     s_hudTextBoxFlags = {};
     s_dpadArrowVisibility = {};
     s_dpadShadowVisibility = {};
+    s_hdHudGlyphVisibility = {};
+    s_hdHudGlyphDraw = nullptr;
     s_xyAmmoOriginalParams = {};
     s_xyAmmoOriginalValid = {};
     s_externalZAmmoDraw = {};
@@ -2967,6 +2974,62 @@ HookAction before_meter_draw_restore_hud(ModContext*, void* args, void*, void*) 
     return HOOK_CONTINUE;
 }
 
+bool twilight_hd_hud_active() {
+    if (!s_hdHudConfigLookupAttempted) {
+        s_hdHudConfigLookupAttempted = true;
+        void* address = nullptr;
+        if (svc_hook != nullptr && svc_hook->resolve != nullptr &&
+            svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) == MOD_OK)
+        {
+            s_hdHudGetConfigVar = reinterpret_cast<ZSlotGetConfigVarFn>(address);
+        }
+    }
+    // Look up the variable each draw; another mod can unregister/re-register it.
+    // HUD styling is independent of HD HUD's optional third-item-slot setting.
+    const auto* enabled = s_hdHudGetConfigVar ?
+        s_hdHudGetConfigVar("mod.org_twilight_hd__hud.enabled") : nullptr;
+    return enabled != nullptr &&
+        static_cast<const dusk::config::ConfigVar<bool>*>(enabled)->getValue();
+}
+
+HookAction before_hd_hud_glyph_draw(ModContext*, void* args, void*, void*) {
+    auto* screen = mods::arg<J2DScreen*>(args, 0);
+    if (s_hdHudGlyphDraw != nullptr || s_hudLayoutMeter == nullptr || screen == nullptr ||
+        screen != s_hudLayoutScreen || !twilight_hd_hud_active())
+    {
+        return HOOK_CONTINUE;
+    }
+
+    s_hdHudGlyphDraw = args;
+    // HD HUD's discs include their own letters. Its archive still contains the
+    // stock letter pictures, displaced to the right. Moving the complete button
+    // groups left brings these obsolete pictures back on screen unless hidden.
+    const std::array<CPaneMgr*, 4> glyphs = {s_hudLayoutMeter->mpBTextA,
+        s_hudLayoutMeter->mpBTextB, s_hudLayoutMeter->mpBTextXY[0],
+        s_hudLayoutMeter->mpBTextXY[1]};
+    for (std::size_t i = 0; i < glyphs.size(); ++i) {
+        auto* pane = pane_ptr(glyphs[i]);
+        if (pane == nullptr) continue;
+        s_hdHudGlyphVisibility[i] = {pane, pane->isVisible(), true};
+        pane->hide();
+    }
+    return HOOK_CONTINUE;
+}
+
+void after_hd_hud_glyph_draw(ModContext*, void* args, void*, void*) {
+    // Unrelated/nested draws (including draws skipped by another mod) cannot
+    // restore the outer HUD's letters early.
+    if (s_hdHudGlyphDraw == nullptr || s_hdHudGlyphDraw != args) return;
+    for (auto& state : s_hdHudGlyphVisibility) {
+        if (state.active) {
+            if (state.wasVisible) state.pane->show();
+            else state.pane->hide();
+        }
+        state = {};
+    }
+    s_hdHudGlyphDraw = nullptr;
+}
+
 void suppress_round_button_overlays(J2DPane* pane, J2DPicture* base, J2DPane* glyph) {
     if (pane == nullptr || pane == glyph) return;
 
@@ -3736,6 +3799,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     minimapPreOptions.priority = -100;
     HookOptions minimapPostOptions = HOOK_OPTIONS_INIT;
     minimapPostOptions.priority = 100;
+    HookOptions hdGlyphPreOptions = HOOK_OPTIONS_INIT;
+    hdGlyphPreOptions.priority = -101;
+    HookOptions hdGlyphPostOptions = HOOK_OPTIONS_INIT;
+    hdGlyphPostOptions.priority = 101;
     HookOptions finalGaugePreOptions = HOOK_OPTIONS_INIT;
     finalGaugePreOptions.priority = -100;
     HookOptions finalGaugePostOptions = HOOK_OPTIONS_INIT;
@@ -3808,6 +3875,14 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ScreenDrawHook>(
             svc_hook, before_round_xy_screen_draw, &sharedHudApplyOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ScreenDrawHook>(
+            svc_hook, before_hd_hud_glyph_draw, &hdGlyphPreOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ScreenDrawHook>(
+            svc_hook, after_hd_hud_glyph_draw, &hdGlyphPostOptions);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_post<ScreenDrawHook>(
@@ -3982,6 +4057,8 @@ ModResult install_item_slot_hooks(ModError* error) {
 }
 
 void shutdown_item_slot_hooks() {
+    s_hdHudGetConfigVar = nullptr;
+    s_hdHudConfigLookupAttempted = false;
     clear_ring_z_prompt_refs();
     clear_shared_hud_layout_cache();
     s_zItemSlotSessionEnabled = false;

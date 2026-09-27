@@ -57,6 +57,12 @@ struct Pose { Quat q;Vec p; };
 inline Pose compose(Pose a,Pose b) { return {multiply(a.q,b.q),a.p+rotate(a.q,b.p)}; }
 inline Pose inverse(Pose a) { Quat q=conjugate(a.q); return {q,rotate(q,a.p*-1)}; }
 inline Pose blend(Pose a,Pose b,float t) { return {blend(a.q,b.q,t),a.p*(1-t)+b.p*t}; }
+// Roll the private right-hand mesh, not its grip/IK target. Local +X is
+// the blade axis: a half turn corrects the cutting edge without reversing
+// the tip or twisting the wrist. Apply the same basis to the hip scabbard.
+inline Pose secondary_sword_model_pose(Pose grip) {
+    return compose(grip,Pose{{1,0,0,0},{}});
+}
 inline float smooth(float t) { t=std::clamp(t,0.0f,1.0f);return t*t*(3-2*t); }
 inline float approach(float value,float target,float step) {
     return value<target ? std::min(target,value+step) : std::max(target,value-step);

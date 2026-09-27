@@ -517,6 +517,31 @@ int main() {
     status_item_matrices(&link);
     assert(previewSword.base.p.x==151&&std::fabs(previewSheath.base.p.x-sheathBefore.x-50)<.001f);
     assert(s.rightSword.p.x==gameplay.p.x&&s.rightSword.p.z==gameplay.p.z);
+    // Same mesh roll in gameplay and Collection, with no wrist/IK mutation.
+    assert(dual::length(dual::rotate(previewSword.base.q,{0,1,0})-Vec{0,-1,0})<.001f);
+    const auto handsBefore=link.model.joints;
+    const Pose hipMount=local(-18.5f,.14f,12.2f,0,33.1f);
+    s.owner=&link;s.enabled=true;s.active=true;s.forcedBlade=false;
+    for(auto type:{SecondSword::Wooden,SecondSword::Ordon,SecondSword::Master}) {
+        s.swordType=type;s.sheath=type==SecondSword::Wooden?nullptr:&previewSheath;
+        for(const Pose grip:{Pose{{},{4,5,6}},dual::cross_guard_blade(true,0),
+                              dual::cross_guard_blade(true,1),Pose{dual::from_euler({.4f,.2f,1.1f}),{8,9,10}}}) {
+            s.rightSword=grip;s.hipSword=grip;
+            after_items(nullptr,&args,nullptr,nullptr);
+            assert(dual::length(previewSword.base.p-grip.p)<.001f);
+            assert(dual::length(dual::rotate(previewSword.base.q,{1,0,0})-dual::rotate(grip.q,{1,0,0}))<.001f);
+            assert(dual::length(dual::rotate(previewSword.base.q,{0,1,0})+dual::rotate(grip.q,{0,1,0}))<.001f);
+            if(s.sheath) {
+                const Pose inserted=dual::compose(previewSheath.base,hipMount);
+                assert(dual::length(inserted.p-previewSword.base.p)<.001f);
+                assert(dual::length(dual::rotate(inserted.q,{0,1,0})-dual::rotate(previewSword.base.q,{0,1,0}))<.001f);
+            }
+            for(int j=6;j<=15;++j) {
+                assert(dual::length(link.model.joints[j].p-handsBefore[j].p)<.001f);
+                assert(dual::length(dual::rotate(link.model.joints[j].q,{0,1,0})-dual::rotate(handsBefore[j].q,{0,1,0}))<.001f);
+            }
+        }
+    }
 }
 '''
 

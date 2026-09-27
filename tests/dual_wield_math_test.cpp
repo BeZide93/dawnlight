@@ -9,6 +9,21 @@ void lengths(const Arm& a) {
     assert(std::abs(length(a.hand.p-a.lower.p)-26.5f)<.003f);
 }
 int main() {
+    // Asymmetric sword artwork must receive exactly one half turn about X.
+    // Test arbitrary grip orientations: edge/flat reverse, origin/tip do not.
+    for(Vec angles:{Vec{},Vec{.3f,-.7f,1.8f},Vec{-2.1f,.9f,-.4f}}) {
+        const Pose grip{from_euler(angles),{7,32,-14}};
+        const Pose model=secondary_sword_model_pose(grip);
+        near(model.p,grip.p);
+        for(float tip:{100.f,120.f})
+            near(compose(model,Pose{{},{tip,0,0}}).p,compose(grip,Pose{{},{tip,0,0}}).p);
+        near(rotate(model.q,{0,1,0}),rotate(grip.q,{0,-1,0}));
+        near(rotate(model.q,{0,0,1}),rotate(grip.q,{0,0,-1}));
+        const Pose mount{from_euler({0,.5777f,0}),{-18.5f,.14f,12.2f}};
+        const Pose scabbard=compose(model,inverse(mount));
+        near(compose(scabbard,mount).p,model.p);
+        near(rotate(compose(scabbard,mount).q,{0,1,0}),rotate(model.q,{0,1,0}));
+    }
     // Antiparallel rotations and q/-q interpolation must not flip a blade.
     near(rotate(between({1,0,0},{-1,0,0}),{1,0,0}),{-1,0,0});
     Quat q=between({1,0,0},{0,1,0});

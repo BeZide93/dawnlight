@@ -610,11 +610,11 @@ void status_item_matrices(daAlink_c* link) {
     // Use the preview's evaluated joints, not cached gameplay blend transforms.
     Pose mount=dual::compose(dual::inverse(pose(model->getAnmMtx(9))),pose(model->getAnmMtx(10)));
     mount.q.x=-mount.q.x;mount.q.y=-mount.q.y;mount.p.z=-mount.p.z;
-    put(s.sword,dual::compose(pose(model->getAnmMtx(14)),mount));
+    put(s.sword,dual::secondary_sword_model_pose(dual::compose(pose(model->getAnmMtx(14)),mount)));
     Pose hip=dual::compose(pose(model->getAnmMtx(16)),local(-3,0,18,20));
     constexpr float halfTurn90=.70710678118f;
     hip=dual::compose(hip,Pose{{halfTurn90,0,0,halfTurn90},{}});
-    if(s.sheath) put(s.sheath,dual::compose(hip,dual::inverse(local(-18.5f,.14f,12.2f,0,33.1f))));
+    if(s.sheath) put(s.sheath,dual::compose(dual::secondary_sword_model_pose(hip),dual::inverse(local(-18.5f,.14f,12.2f,0,33.1f))));
 }
 void after_status_draw(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
@@ -635,11 +635,11 @@ void after_items(ModContext*,void* args,void*,void*) {
         s.forcedBlade=false;
     }
     if(!equipment_visible(link)) return;
-    put(s.sword,s.rightSword);
+    put(s.sword,dual::secondary_sword_model_pose(s.rightSword));
     // Native sword-in-sheath transform, inverted to place the scabbard
     // around the same hip-mounted blade rather than creating a second offset.
     const Pose mount=local(-18.5f,.14f,12.2f,0,33.1f);
-    if(s.sheath) put(s.sheath,dual::compose(s.hipSword,dual::inverse(mount)));
+    if(s.sheath) put(s.sheath,dual::compose(dual::secondary_sword_model_pose(s.hipSword),dual::inverse(mount)));
     if(active(link) && s.guard>0 && link->mEquipItem==dItemNo_NONE_e) {
         put(link->mSwordModel,sword_at_hand(link,false));
         show_guard_blade(link);
@@ -649,7 +649,7 @@ void after_items(ModContext*,void* args,void*,void*) {
 void after_sword_pos(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);if(!active(link)) return;
     if(s.mirror) {
-        const Pose blade=sword_at_hand(link,true);
+        const Pose blade=dual::secondary_sword_model_pose(sword_at_hand(link,true));
         const Vec tip=blade.p+dual::rotate(blade.q,{second_sword_assets(s.swordType).bladeLength,0,0});
         const bool reverse=link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_RIGHT;
         const Vec direction=dual::rotate(blade.q,{0,0,reverse ? -1.0f : 1.0f});

@@ -90,6 +90,10 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/hud_fade_test.py
 
+      - name: Test direct Flurry Rush hits
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/flurry_hit_effect_test.py
+
       - name: Read pinned Dusklight version
         id: dusklight
         shell: bash

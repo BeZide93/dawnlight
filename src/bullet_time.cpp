@@ -96,8 +96,6 @@ DEFINE_HOOK_SYMBOL(
 DEFINE_HOOK(&Z2CreatureLink::startLinkVoice, LinkVoiceStartHook);
 #endif
 DEFINE_HOOK(&cCcS::SetAtTgCommonHitInf, CommonAtTgHitHook);
-DEFINE_HOOK(&cc_at_check, AtCheckHook);
-DEFINE_HOOK(&at_power_check, FlurryAttackPowerHook);
 DEFINE_HOOK(&dMeter2Draw_c::getActionString, FlurryActionStringHook);
 DEFINE_HOOK(&J3DModel::calc, CombatModelCalcHook);
 DEFINE_HOOK(&J3DModel::viewCalc, CombatModelViewCalcHook);
@@ -135,17 +133,6 @@ struct LinkAnimationRateStep {
     std::array<float, 3> underRates{};
     std::array<float, 3> upperRates{};
     bool active = false;
-};
-
-struct DeferredFlurryDamage {
-    fopAc_ac_c* targetActor = nullptr;
-    fpc_ProcID targetActorId = fpcM_ERROR_PROCESS_ID_e;
-    cCcD_Obj* attackCollider = nullptr;
-    cCcD_Obj* targetCollider = nullptr;
-    cXyz hitPosition{};
-    std::uint64_t lastAttackSerial = 0;
-    bool setAttackHit = false;
-    bool pending = false;
 };
 
 using MatrixPose = std::array<float, 12>;
@@ -257,19 +244,9 @@ bool s_flurryLinkSlowed = false;
 bool s_flurryMeleePositioned = false;
 bool s_bulletTimeUsedForJump = false;
 bool s_bowBulletTimePending = false;
-std::uint64_t s_flurrySwordAttackSerial = 0;
-u16 s_flurryLastSwordProc = daAlink_c::PROC_WAIT;
-u8 s_flurryLastCutCount = 0;
-bool s_flurrySwordAttackWasActive = false;
 LinkPositionStep s_linkPositionStep{};
 LinkAnimationRateStep s_linkAnimationRateStep{};
-DeferredFlurryDamage s_deferredFlurryDamage{};
 std::array<ModelVisualState, 128> s_modelVisualStates{};
-cCcD_Obj* s_heldFlurryPowerCollider = nullptr;
-fopAc_ac_c* s_heldFlurryTarget = nullptr;
-std::uint32_t s_heldFlurryAttackCount = 0;
-thread_local bool s_flurryDamageCheckActive = false;
-thread_local bool s_flurryDamageScaled = false;
 slow_motion::Controller s_enemySlowMotion;
 slow_motion::Controller s_arrowSlowMotion;
 slow_motion::Controller s_flurryLinkSlowMotion;
@@ -541,61 +518,6 @@ void clear_combat_time_caches() {
     clear_model_visual_states();
 }
 
-void clear_deferred_flurry_damage() {
-    s_deferredFlurryDamage = {};
-}
-
-void clear_held_flurry_damage() {
-    s_heldFlurryPowerCollider = nullptr;
-    s_heldFlurryTarget = nullptr;
-    s_heldFlurryAttackCount = 0;
-}
-
-void release_deferred_flurry_damage() {
-    const DeferredFlurryDamage deferred = s_deferredFlurryDamage;
-    clear_deferred_flurry_damage();
-    if (!deferred.pending || s_flurrySwordAttackSerial == 0 ||
-        s_flurryRushOwner == nullptr ||
-        daAlink_getAlinkActorClass() != s_flurryRushOwner ||
-        fopAcM_SearchByID(deferred.targetActorId) != deferred.targetActor ||
-        deferred.attackCollider == nullptr || deferred.targetCollider == nullptr ||
-        deferred.attackCollider->GetAc() != s_flurryRushOwner ||
-        deferred.targetCollider->GetAc() != deferred.targetActor)
-    {
-        return;
-    }
-
-    cCcD_Stts* attackStatus = deferred.attackCollider->GetStts();
-    cCcD_Stts* targetStatus = deferred.targetCollider->GetStts();
-    auto* attackInfo = static_cast<dCcD_GObjInf*>(
-        deferred.attackCollider->GetGObjInf());
-    auto* targetInfo = static_cast<dCcD_GObjInf*>(
-        deferred.targetCollider->GetGObjInf());
-    if (attackStatus == nullptr || targetStatus == nullptr ||
-        attackInfo == nullptr || targetInfo == nullptr)
-    {
-        return;
-    }
-
-    clear_held_flurry_damage();
-    if (deferred.setAttackHit) {
-        deferred.attackCollider->SetAtHit(deferred.targetCollider);
-    }
-    deferred.targetCollider->SetTgHit(deferred.attackCollider);
-
-    cXyz hitPosition = deferred.hitPosition;
-    dComIfG_Ccsp()->SetAtTgGObjInf(
-        deferred.setAttackHit, true,
-        deferred.attackCollider, deferred.targetCollider,
-        attackInfo, targetInfo,
-        attackStatus, targetStatus,
-        attackStatus->GetGStts(), targetStatus->GetGStts(),
-        &hitPosition);
-    s_heldFlurryPowerCollider = deferred.attackCollider;
-    s_heldFlurryTarget = deferred.targetActor;
-    s_heldFlurryAttackCount = static_cast<std::uint32_t>(s_flurrySwordAttackSerial);
-}
-
 void stop_bullet_time() {
     if (!s_bulletTimeActive) {
         return;
@@ -616,19 +538,12 @@ void stop_bullet_time() {
     }
 }
 
-void stop_flurry_rush(bool releaseDamage = true) {
+void stop_flurry_rush() {
     if (!s_flurryRushActive) {
         s_flurryMeleePositioned = false;
-        clear_deferred_flurry_damage();
         return;
     }
 
-    if (releaseDamage) {
-        release_deferred_flurry_damage();
-    } else {
-        clear_deferred_flurry_damage();
-        clear_held_flurry_damage();
-    }
     if (s_flurryRushOwner != nullptr &&
         dComIfGp_getAStatus() == kFlurryRushActionStatus)
     {
@@ -639,10 +554,6 @@ void stop_flurry_rush(bool releaseDamage = true) {
     s_flurryRushTarget = nullptr;
     s_flurryLinkSlowed = false;
     s_flurryMeleePositioned = false;
-    s_flurrySwordAttackSerial = 0;
-    s_flurryLastSwordProc = daAlink_c::PROC_WAIT;
-    s_flurryLastCutCount = 0;
-    s_flurrySwordAttackWasActive = false;
     sync_slow_motion_controllers();
     if (!combat_slow_active()) {
         clear_combat_time_caches();
@@ -1496,11 +1407,6 @@ void try_start_flurry_rush(cCcD_Obj* attack) {
     s_flurryLinkSlowed = true;
     s_flurryMeleePositioned = false;
     s_dodgeTriggered = true;
-    s_flurrySwordAttackSerial = 0;
-    s_flurryLastSwordProc = link->mProcID;
-    s_flurryLastCutCount = link->getCutCount();
-    s_flurrySwordAttackWasActive = false;
-    clear_deferred_flurry_damage();
     disable_flurry_link_targets(link);
     sync_slow_motion_controllers();
 }
@@ -1524,35 +1430,6 @@ bool sword_attack_active(const daAlink_c* link) {
     default:
         return false;
     }
-}
-
-void track_flurry_sword_attack(daAlink_c* link) {
-    if (!s_flurryRushActive || link == nullptr || link != s_flurryRushOwner) {
-        return;
-    }
-
-    const bool attackActive = sword_attack_active(link);
-    const u8 cutCount = link->getCutCount();
-    const u16 swordProc = link->mProcID;
-    const bool newAttack = attackActive &&
-                           (!s_flurrySwordAttackWasActive ||
-                               cutCount != s_flurryLastCutCount ||
-                               swordProc != s_flurryLastSwordProc);
-    if (newAttack) {
-        const int attackPower = swordProc == daAlink_c::PROC_CUT_TURN
-                                    ? link->mAtSph.GetAtAtp()
-                                    : link->mAtCps[0].GetAtAtp();
-        if (attackPower > 0) {
-            ++s_flurrySwordAttackSerial;
-            if (s_flurrySwordAttackSerial == 0) {
-                ++s_flurrySwordAttackSerial;
-            }
-        }
-    }
-
-    s_flurrySwordAttackWasActive = attackActive;
-    s_flurryLastCutCount = cutCount;
-    s_flurryLastSwordProc = swordProc;
 }
 
 void move_link_to_flurry_target(daAlink_c* link) {
@@ -1730,9 +1607,6 @@ void after_actor_execute(ModContext*, void* args, void*, void*) {
     }
 
     auto* actor = static_cast<fopAc_ac_c*>(mods::arg<void*>(args, 0));
-    if (actor == s_flurryRushOwner) {
-        track_flurry_sword_attack(static_cast<daAlink_c*>(actor));
-    }
     update_flurry_link_attack(actor);
     update_flurry_link_landing(actor);
     if (s_flurryRushActive && actor == s_flurryRushOwner) {
@@ -1913,40 +1787,6 @@ HookAction before_arrow_hit(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
-HookAction before_at_check(ModContext*, void* args, void*, void*) {
-    auto* enemy = mods::arg<fopAc_ac_c*>(args, 0);
-    auto* atInfo = mods::arg<dCcU_AtInfo*>(args, 1);
-    s_flurryDamageCheckActive = atInfo != nullptr &&
-                                enemy == s_heldFlurryTarget &&
-                                atInfo->mpCollider == s_heldFlurryPowerCollider &&
-                                s_heldFlurryAttackCount > 0;
-    s_flurryDamageScaled = false;
-    return HOOK_CONTINUE;
-}
-
-void after_flurry_attack_power(ModContext*, void* args, void*, void*) {
-    auto* atInfo = mods::arg<dCcU_AtInfo*>(args, 0);
-    if (!s_flurryDamageCheckActive || s_flurryDamageScaled || atInfo == nullptr ||
-        atInfo->mpCollider != s_heldFlurryPowerCollider || atInfo->mAttackPower == 0)
-    {
-        return;
-    }
-
-    const u16 baseDamage = atInfo->mAttackPower;
-    atInfo->mAttackPower = static_cast<u16>(std::min<std::uint32_t>(
-        static_cast<std::uint32_t>(baseDamage) * s_heldFlurryAttackCount,
-        0xFFFFU));
-    s_flurryDamageScaled = true;
-}
-
-void after_at_check(ModContext*, void*, void*, void*) {
-    if (s_flurryDamageCheckActive) {
-        clear_held_flurry_damage();
-    }
-    s_flurryDamageCheckActive = false;
-    s_flurryDamageScaled = false;
-}
-
 bool is_flurry_sword_collider(cCcD_Obj* collider) {
     if (s_flurryRushOwner == nullptr || collider == nullptr) {
         return false;
@@ -1960,89 +1800,26 @@ bool is_flurry_sword_collider(cCcD_Obj* collider) {
     return collider == &s_flurryRushOwner->mAtSph;
 }
 
-void preserve_flurry_attack_hit(cCcD_Obj* attack, cCcD_Obj* target,
-                                cXyz* hitPosition) {
-    attack->SetAtHit(target);
-    auto* attackInfo = static_cast<dCcD_GObjInf*>(attack->GetGObjInf());
-    cCcD_Stts* targetStatus = target->GetStts();
-    if (attackInfo == nullptr || targetStatus == nullptr) {
-        return;
-    }
-
-    attackInfo->SetAtHitApid(targetStatus->GetApid());
-    attackInfo->SetAtHitPos(*hitPosition);
-}
-
-void show_flurry_hit_effect(cCcD_Obj* attack, cCcD_Obj* target, cXyz* hitPosition) {
-    auto* attackInfo = static_cast<dCcD_GObjInf*>(attack->GetGObjInf());
-    auto* targetInfo = static_cast<dCcD_GObjInf*>(target->GetGObjInf());
-    cCcD_Stts* attackStatus = attack->GetStts();
-    cCcD_Stts* targetStatus = target->GetStts();
-    if (attackInfo == nullptr || targetInfo == nullptr ||
-        attackStatus == nullptr || targetStatus == nullptr ||
-        attackStatus->GetGStts() == nullptr || targetStatus->GetGStts() == nullptr)
-    {
-        return;
-    }
-
-    auto* collision = dComIfG_Ccsp();
-    const bool shieldHit = collision->ChkShield(attack, target, attackInfo, targetInfo, hitPosition);
-    auto* actor = target->GetAc();
-    // A slowed actor can retain the native per-update hitmark flag across swings.
-    // The caller already deduplicates by sword attack, so allow this new impact.
-    const bool hadHitmark = fopAcM_CheckStatus(actor, fopAcStts_UNK_0x40000000_e);
-    fopAcM_OffStatus(actor, fopAcStts_UNK_0x40000000_e);
-    // Only create native particles: no target hit flags, callbacks or damage.
-    collision->ProcAtTgHitmark(true, true, attack, target, attackInfo, targetInfo,
-        attackStatus, targetStatus,
-        static_cast<dCcD_GStts*>(attackStatus->GetGStts()),
-        static_cast<dCcD_GStts*>(targetStatus->GetGStts()), hitPosition, shieldHit);
-    if (hadHitmark) {
-        fopAcM_OnStatus(actor, fopAcStts_UNK_0x40000000_e);
-    }
-}
-
+// Observe contacts without replacing native collision checks, callbacks, damage
+// or hit effects. Custom enemies can consume each hit using their own rules.
 HookAction before_common_at_tg_hit(ModContext*, void* args, void*, void*) {
-    if (!s_flurryRushActive || s_flurrySwordAttackSerial == 0) {
-        return HOOK_CONTINUE;
-    }
-
+    if (!s_flurryRushActive) return HOOK_CONTINUE;
     auto* attack = mods::arg<cCcD_Obj*>(args, 1);
     auto* target = mods::arg<cCcD_Obj*>(args, 2);
-    if (attack == nullptr || target == nullptr ||
-        attack->GetAc() != s_flurryRushOwner ||
-        !is_flurry_sword_collider(attack))
+    if (!attack || !target || attack->GetAc() != s_flurryRushOwner ||
+        !is_flurry_sword_collider(attack) || attack->GetAtAtp() == 0)
     {
         return HOOK_CONTINUE;
     }
-
-    fopAc_ac_c* targetActor = target->GetAc();
-    cXyz* hitPosition = mods::arg<cXyz*>(args, 3);
-    const u8 damage = attack->GetAtAtp();
-    if (targetActor == nullptr || targetActor != s_flurryRushTarget ||
-        !daAlink_c::checkEnemyGroup(targetActor) || hitPosition == nullptr || damage == 0)
-    {
-        return HOOK_CONTINUE;
+    auto* actor = target->GetAc();
+    if (actor && actor == s_flurryRushTarget && daAlink_c::checkEnemyGroup(actor)) {
+        // Generic slowed actors skip whole updates. Let the next update consume
+        // native hit flags before collision processing clears them. Do not reset
+        // the accumulator, change the slow-motion scale or execute an actor here.
+        auto* clock = find_actor_clock(actor, true);
+        clock->pendingTicks = std::max(clock->pendingTicks, 1);
     }
-
-    preserve_flurry_attack_hit(attack, target, hitPosition);
-    if (s_deferredFlurryDamage.pending &&
-        s_deferredFlurryDamage.lastAttackSerial == s_flurrySwordAttackSerial)
-    {
-        return HOOK_SKIP_ORIGINAL;
-    }
-
-    s_deferredFlurryDamage.targetActor = targetActor;
-    s_deferredFlurryDamage.targetActorId = fopAcM_GetID(targetActor);
-    s_deferredFlurryDamage.attackCollider = attack;
-    s_deferredFlurryDamage.targetCollider = target;
-    s_deferredFlurryDamage.hitPosition = *hitPosition;
-    s_deferredFlurryDamage.lastAttackSerial = s_flurrySwordAttackSerial;
-    s_deferredFlurryDamage.setAttackHit = true;
-    s_deferredFlurryDamage.pending = true;
-
-    show_flurry_hit_effect(attack, target, hitPosition);
-    return HOOK_SKIP_ORIGINAL;
+    return HOOK_CONTINUE;
 }
 
 bool manual_jump_is_airborne(daAlink_c* link) {
@@ -2202,16 +1979,6 @@ ModResult initialize_bullet_time(ModError* error) {
             svc_hook, before_common_at_tg_hit);
     }
     if (result == MOD_OK) {
-        result = mods::hook::add_pre<AtCheckHook>(svc_hook, before_at_check);
-    }
-    if (result == MOD_OK) {
-        result = mods::hook::add_post<AtCheckHook>(svc_hook, after_at_check);
-    }
-    if (result == MOD_OK) {
-        result = mods::hook::add_post<FlurryAttackPowerHook>(
-            svc_hook, after_flurry_attack_power);
-    }
-    if (result == MOD_OK) {
         result = mods::hook::add_post<FlurryActionStringHook>(
             svc_hook, after_flurry_action_string);
     }
@@ -2368,7 +2135,7 @@ void bullet_time_tick() {
 
 void shutdown_bullet_time() {
     reset_enemy_slow_motion();
-    stop_flurry_rush(false);
+    stop_flurry_rush();
     clear_manual_jump(nullptr);
     s_dodgeOwner = nullptr;
     s_dodgeProc = daAlink_c::PROC_WAIT;

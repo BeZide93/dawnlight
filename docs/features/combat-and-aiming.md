@@ -28,6 +28,14 @@ During Flurry Rush, each sword strike uses normal hit processing immediately,
 including native impact effects and the enemy's own damage rules. There is no
 combined damage hit at the end. Native blocking and invulnerability still apply.
 
+**PR #70 test build:** the slow-motion edge effect is disabled, including its
+fade-out and its use during Bullet Time, to isolate the Dark Link rendering
+crash. After an accepted sword contact, the target runs at normal speed for the
+rest of that rush so its native damage cooldown and teleport/recovery can finish.
+Other enemies remain slowed. This temporary recovery behavior also speeds up
+the target's movement and attacks; it does not force hits through a shield,
+an invulnerable phase, or a teleport out of reach.
+
 Bullet Time, Flurry Rush and the Great Spin projectile share the
 [stamina meter](movement-and-abilities.md#shared-stamina) with movement abilities.
 

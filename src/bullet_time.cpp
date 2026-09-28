@@ -72,6 +72,9 @@ constexpr auto kCollidersPerActor = std::size_t{64};
 constexpr auto kHitActorEntries = std::size_t{32};
 constexpr auto kArrowFlightEntries = std::size_t{8};
 constexpr std::uint64_t kHitExecuteGraceFrames = 6;
+// PR #70 diagnostic: exclude the extra GX geometry, including the fade-out,
+// while retaining the combat clocks, native impacts and enemy effects.
+constexpr bool kTestDisableSlowMotionEdges = true;
 
 #if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
 DEFINE_HOOK_SYMBOL("_ZL13fopAc_ExecutePv", int(void*), ActorExecuteHook);
@@ -212,6 +215,7 @@ Clock::time_point s_manualJumpStarted{};
 Clock::time_point s_bulletTimeStarted{};
 daAlink_c* s_flurryRushOwner = nullptr;
 fopAc_ac_c* s_flurryRushTarget = nullptr;
+fpc_ProcID s_flurryHitTargetId = fpcM_ERROR_PROCESS_ID_e;
 Clock::time_point s_flurryRushStarted{};
 daAlink_c* s_dodgeOwner = nullptr;
 u16 s_dodgeProc = daAlink_c::PROC_WAIT;
@@ -510,6 +514,7 @@ void clear_model_visual_states() {
 }
 
 void clear_combat_time_caches() {
+    s_flurryHitTargetId = fpcM_ERROR_PROCESS_ID_e;
     s_colliderCache = {};
     s_hitActors = {};
     s_flyingArrows = {};
@@ -539,6 +544,7 @@ void stop_bullet_time() {
 }
 
 void stop_flurry_rush() {
+    s_flurryHitTargetId = fpcM_ERROR_PROCESS_ID_e;
     if (!s_flurryRushActive) {
         s_flurryMeleePositioned = false;
         return;
@@ -759,6 +765,17 @@ void disable_flurry_link_targets(daAlink_c* link) {
 }
 
 bool actor_has_hit_grace(fopAc_ac_c* actor) {
+    // Test direct-hit recovery at native speed. At 0.1x, even a short damage
+    // cooldown can cover the remaining rush. Custom actors may also disable
+    // their colliders until a teleport/recovery animation has finished, so a
+    // single queued execute (or clearing generic collision flags) is not enough.
+    // Scope this to the accepted target and its lifetime; never force damage or
+    // overwrite an unknown enemy's timers/state.
+    if (s_flurryRushActive && actor != nullptr && actor == s_flurryRushTarget &&
+        s_flurryHitTargetId != fpcM_ERROR_PROCESS_ID_e &&
+        fopAcM_GetID(actor) == s_flurryHitTargetId) {
+        return true;
+    }
     for (const HitActorEntry& entry : s_hitActors) {
         if (entry.actor == actor && s_slowFrame - entry.frame <= kHitExecuteGraceFrames) {
             return true;
@@ -968,6 +985,7 @@ HookAction before_draw_iterater(ModContext*, void*, void*, void*) {
 }
 
 void draw_slow_motion_edges(ModContext*, const GfxStageContext*, void*) {
+    if (kTestDisableSlowMotionEdges) return;
     view_class* view = dComIfGd_getView();
     if (view != nullptr) {
         drawSlowMotionEdges(view, s_enemySlowMotion.edge_strength());
@@ -1822,6 +1840,23 @@ HookAction before_common_at_tg_hit(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
+void after_common_at_tg_hit(ModContext*, void* args, void*, void*) {
+    if (!s_flurryRushActive) return;
+    auto* attack = mods::arg<cCcD_Obj*>(args, 1);
+    auto* target = mods::arg<cCcD_Obj*>(args, 2);
+    if (!attack || !target || attack->GetAc() != s_flurryRushOwner ||
+        !is_flurry_sword_collider(attack) || attack->GetAtAtp() == 0 ||
+        !target->ChkTgHit() || target->GetTgHitObj() != attack) {
+        return;
+    }
+    auto* actor = target->GetAc();
+    auto* info = static_cast<dCcD_GObjInf*>(target->GetGObjInf());
+    if (actor && actor == s_flurryRushTarget && daAlink_c::checkEnemyGroup(actor) &&
+        info && !info->ChkTgShieldHit()) {
+        s_flurryHitTargetId = fopAcM_GetID(actor);
+    }
+}
+
 bool manual_jump_is_airborne(daAlink_c* link) {
     return link != nullptr && link->mProcID == daAlink_c::PROC_AUTO_JUMP &&
            !link->mLinkAcch.ChkGroundHit();
@@ -1979,6 +2014,10 @@ ModResult initialize_bullet_time(ModError* error) {
             svc_hook, before_common_at_tg_hit);
     }
     if (result == MOD_OK) {
+        result = mods::hook::add_post<CommonAtTgHitHook>(
+            svc_hook, after_common_at_tg_hit);
+    }
+    if (result == MOD_OK) {
         result = mods::hook::add_post<FlurryActionStringHook>(
             svc_hook, after_flurry_action_string);
     }
@@ -1992,6 +2031,7 @@ ModResult initialize_bullet_time(ModError* error) {
         return mods::set_error(error, result,
                                "failed to install Dawnlight Bullet Time hooks");
     }
+    svc_log->info(mod_ctx, "Dawnlight Flurry test #70: slow-motion edges disabled; native target recovery after hit");
     return MOD_OK;
 }
 

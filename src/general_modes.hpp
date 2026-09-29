@@ -40,13 +40,11 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
         case ModeSetting::BossHardMode:
         case ModeSetting::ManualShielding:
         case ModeSetting::ArrowModes:
-        case ModeSetting::GreatSpin:
-        case ModeSetting::NoNormalHitInvulnerability: value = 1; return true;
+        case ModeSetting::GreatSpin: value = 1; return true;
         case ModeSetting::SprintSpeed: value = 150; return true;
         case ModeSetting::WolfSpeed: value = 100; return true;
         case ModeSetting::JumpHeight: value = 110; return true;
         case ModeSetting::BulletTime: value = 2; return true; // BOTW
-        case ModeSetting::HealthScale: value = 300; return true;
         case ModeSetting::GaleRecovery: value = 60; return true;
         case ModeSetting::GaleHeight: value = 500; return true;
         default: break;

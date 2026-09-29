@@ -131,14 +131,34 @@ int main() {
     send_notifications();
     assert(std::abs(sprint_speed_multiplier() - 1.5f) < 0.001f);
     assert(std::abs(jump_height_multiplier() - 1.1f) < 0.001f);
-    assert(health_scale_percent() == 300 && gale_recovery_seconds() == 60);
+    assert(health_scale_percent() == 175 && gale_recovery_seconds() == 60);
+    auto healthScale = control(health_scale_config_var(), UI_CONTROL_NUMBER);
+    assert(!disabled(healthScale) && shown(healthScale).int_value == 175);
+    for (int manual : {100, 300, 245}) {
+        UiControlValue edit = UI_CONTROL_VALUE_INIT;
+        edit.int_value = manual;
+        healthScale.set(mod_ctx, healthScale.user_data, &edit);
+        assert(dawnlight_mode_enabled() && health_scale_percent() == manual);
+        assert(shown(healthScale).int_value == manual);
+    }
     assert(bullet_time_mode() == BulletTimeMode::Botw);
     assert(gale_height_bonus() == 5.0f && stamina_enabled());
     assert(disabled(galeHeight) && disabled(stamina));
     assert(shown(galeHeight).int_value == 500 && shown(stamina).bool_value);
     assert(flurry_rush_enabled() && enemy_hard_mode_enabled() && bossrush_hardmode_hazards_enabled());
     assert(manual_shielding_enabled() && arrow_modes_enabled() && great_spin_projectile_enabled());
-    assert(remove_normal_hit_invulnerability_enabled());
+    assert(!remove_normal_hit_invulnerability_enabled());
+    auto noInvulnerability = control(remove_normal_hit_invulnerability_config_var(), UI_CONTROL_TOGGLE);
+    assert(!disabled(noInvulnerability) && !shown(noInvulnerability).bool_value);
+    for (bool manual : {true, false, true}) {
+        UiControlValue edit = UI_CONTROL_VALUE_INIT;
+        edit.bool_value = manual;
+        noInvulnerability.set(mod_ctx, noInvulnerability.user_data, &edit);
+        assert(dawnlight_mode_enabled());
+        assert(remove_normal_hit_invulnerability_enabled() == manual);
+        assert(shown(noInvulnerability).bool_value == manual);
+        assert(disk.at("remove-normal-hit-invulnerability").value == manual);
+    }
     assert(!glide_enabled() && !revalis_gale_enabled() && !gale_counter_visible() && !fierce_deity_enabled());
     assert(glide_item() == GlideItem::Glider && gale_counter_capacity() == 1);
     assert(disabled(speed) && disabled(sprint) && disabled(progression));
@@ -162,17 +182,19 @@ int main() {
 
     // Restart: register from the same disk values with fresh handles.
     assert(register_config(nullptr) == MOD_OK);
-    assert(dawnlight_mode_enabled() && progression_system_enabled() && health_scale_percent() == 300);
+    assert(dawnlight_mode_enabled() && progression_system_enabled() && health_scale_percent() == 245);
     assert(notifications_enabled());
+    assert(remove_normal_hit_invulnerability_enabled());
     set_bool(nullptr, notifications_config_var(), false);
     send_notifications();
     assert(gale_height_bonus() == 5.0f && stamina_enabled());
     set_bool(nullptr, dawnlight_mode_config_var(), false);
     assert(!progression_system_enabled());
+    assert(remove_normal_hit_invulnerability_enabled());
     assert(!sprint_enabled() && glide_enabled() && fierce_deity_enabled());
     assert(std::abs(sprint_speed_multiplier() - 1.85f) < 0.001f);
     assert(std::abs(jump_height_multiplier() - 2.4f) < 0.001f);
-    assert(health_scale_percent() == 175 && gale_recovery_seconds() == 91);
+    assert(health_scale_percent() == 245 && gale_recovery_seconds() == 91);
     assert(bullet_time_mode() == BulletTimeMode::Off);
     assert(std::abs(gale_height_bonus() - 3.2f) < 0.001f && !stamina_enabled());
     galeHeight = control(gale_height_config_var(), UI_CONTROL_NUMBER);

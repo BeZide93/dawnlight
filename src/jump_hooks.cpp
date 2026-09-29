@@ -212,11 +212,14 @@ bool ground_movement_proc(daAlink_c* link) {
 bool ground_jump_context_ready(daAlink_c* link) {
     if (!link || !ground_movement_proc(link)) return false;
 
-    // Carrying keeps its upper-body animation when native locomotion changes
-    // from GRAB_WAIT to MOVE or a turn proc. The ground-proc allowlist above
-    // still excludes pickup, throw, put-down and rebound transitions.
-    const bool carrying = !link->checkWolf() && link->checkGrabAnime() &&
+    // Human and wolf carrying retain their upper animation across locomotion.
+    // Wolf mouth carrying uses the ordinary wolf wait/move/turn procs; the
+    // allowlist still excludes both forms' pickup, throw and put-down actions.
+    const bool humanCarrying = !link->checkWolf() && link->checkGrabAnime() &&
         link->mGrabItemAcKeep.getActor() != nullptr;
+    const bool wolfCarrying = link->checkWolf() && link->checkWolfGrabAnime() &&
+        link->mGrabItemAcKeep.getActor() != nullptr;
+    const bool carrying = humanCarrying || wolfCarrying;
     return link->mGndPolyAtt1 != 0xFF
         && !link->checkFlyAtnWait()
         && !link->checkModeFlg(0x70C12)
@@ -229,8 +232,8 @@ bool ground_jump_context_ready(daAlink_c* link) {
         && !link->checkMagneBootsFly()
         && !link->checkMagneBootsOn()
         && !link->checkNotJumpSinkLimit()
-        && (!link->checkGrabAnime() || carrying)
-        && !(link->checkWolf() && link->checkWolfGrabAnime())
+        && (!link->checkGrabAnime() || humanCarrying)
+        && (!link->checkWolf() || !link->checkWolfGrabAnime() || wolfCarrying)
         && (link->mGrabItemAcKeep.getActor() == nullptr || carrying)
         && link->mLinkAcch.ChkGroundHit()
         && !r_action_context_active(link);

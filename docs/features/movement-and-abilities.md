@@ -29,6 +29,8 @@ their height, and into ledge falls with **Disable Auto Jump** enabled.
 the same jump binding and **Jump Height** setting with native wolf jump physics.
 Human Link can also jump while standing or walking with a carried object, such as
 a pot or bomb, using the native jump while keeping the object in his hands.
+Wolf Link can jump with an object in his mouth while standing, moving or turning;
+the native wolf jump preserves the carried object and uses **Jump Height**.
 Picking up, throwing and putting down objects are not interrupted; normal action,
 ground and cutscene restrictions still apply.
 

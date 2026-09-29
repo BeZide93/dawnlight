@@ -25,7 +25,7 @@ struct daAlink_c {
  PROC_WOLF_WAIT_TURN,PROC_WOLF_ATN_AC_MOVE,PROC_DOOR_OPEN,PROC_WARP,PROC_WOLF_AUTO_JUMP,
  PROC_WOLF_HOWL,PROC_WOLF_DIG,PROC_WOLF_TAG_JUMP,PROC_GRAB_WAIT,
  PROC_GRAB_READY,PROC_GRAB_UP,PROC_GRAB_THROW,PROC_GRAB_PUT,PROC_GRAB_REBOUND,
- PROC_AUTO_JUMP};
+ PROC_AUTO_JUMP,PROC_WOLF_GRAB_UP,PROC_WOLF_GRAB_PUT,PROC_WOLF_GRAB_THROW};
  int mProcID=PROC_WOLF_WAIT,mGndPolyAtt1=0,mEquipItem=kSwordItem,mMoveAngle=99;
  bool wolf=true,input=false,demo=false,grab=false,success=true,jumpMode=false;
  bool humanGrab=false,boots=false,sink=false;int mode=0;
@@ -80,6 +80,50 @@ int main(){
  event=true;assert(!start_ground_jump(&link));event=false;
  link.success=false;assert(!start_ground_jump(&link)&&link.mLinkAcch.hit&&!link.jumpMode);
  assert(!start_ground_jump(nullptr));
+ // Native mouth carrying retains PICKUP_A (pots) or PICKUP_B (bones)
+ // as an upper animation across ordinary wolf locomotion, not a grab-idle proc.
+ int wolfPot=1,wolfBone=2;
+ const int wolfCarryProcs[]={daAlink_c::PROC_WOLF_WAIT,daAlink_c::PROC_WOLF_MOVE,
+   daAlink_c::PROC_WOLF_DASH,daAlink_c::PROC_WOLF_WAIT_TURN,daAlink_c::PROC_WOLF_ATN_AC_MOVE};
+ auto wolfCarrying=[](void* actor,int proc){daAlink_c c;c.grab=true;
+   c.mGrabItemAcKeep.actor=actor;c.mProcID=proc;
+   c.mode=proc==daAlink_c::PROC_WOLF_WAIT?0x1101:
+     proc==daAlink_c::PROC_WOLF_WAIT_TURN?0x1001:0x1100;return c;};
+ for(void* actor: {static_cast<void*>(&wolfPot),static_cast<void*>(&wolfBone)})
+ for(int proc: wolfCarryProcs) for(bool moving: {false,true}) for(float scale: {1.0f,4.0f}) {
+   auto c=wolfCarrying(actor,proc);c.input=moving;height=scale;
+   assert(start_ground_jump(&c));
+   assert(c.wolfCalls==1&&!c.humanCalls&&!c.cutCalls);
+   assert(c.mProcID==daAlink_c::PROC_WOLF_AUTO_JUMP&&c.speed.y==10*std::sqrt(scale));
+   assert(c.mGrabItemAcKeep.actor==actor&&c.grab);
+   assert(!c.mLinkAcch.hit&&c.jumpMode&&c.speedF==(moving?20:0));
+   assert(!s_manualJumpOwner&&!start_ground_jump(&c));
+ }
+ height=4;
+ for(int proc: {daAlink_c::PROC_WOLF_GRAB_UP,daAlink_c::PROC_WOLF_GRAB_PUT,
+               daAlink_c::PROC_WOLF_GRAB_THROW}) {
+   auto c=wolfCarrying(&wolfPot,proc);
+   assert(!start_ground_jump(&c)&&!c.wolfCalls&&c.mGrabItemAcKeep.actor==&wolfPot);
+ }
+ for(int proc: wolfCarryProcs) for(int i=0;i<13;++i) {
+   auto c=wolfCarrying(&wolfBone,proc);parent=pressed=true;blocked=event=false;gale=true;
+   if(i==0)c.mGrabItemAcKeep.actor=nullptr;
+   if(i==1)c.grab=false;
+   if(i==2)c.mLinkAcch.hit=false;
+   if(i==3)c.demo=true;
+   if(i==4)event=true;
+   if(i==5)blocked=true;
+   if(i==6)c.boots=true;
+   if(i==7)c.sink=true;
+   if(i==8)c.mode|=0x10;
+   if(i==9)parent=false; // Gale must not bypass disabled wolf R Jump
+   if(i==10)pressed=false;
+   if(i==11)c.success=false;
+   if(i==12)c.humanGrab=true; // a human carry animation is not wolf carrying
+   assert(!start_ground_jump(&c)&&!c.jumpMode&&!c.humanCalls&&!c.cutCalls);
+   assert(c.wolfCalls==(i==11?1:0));
+ }
+ parent=pressed=true;blocked=event=false;
  daAlink_c human;human.wolf=false;human.mProcID=daAlink_c::PROC_WAIT;b=false;
  parent=false;assert(start_ground_jump(&human)); // existing human Gale fallback
  assert(human.humanCalls==1&&human.wolfCalls==0&&human.speed.y==16&&marks==1);
@@ -153,4 +197,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Manual jump passed: wolf movement/dash, human carry, native launch, height, actor ownership, action/transition guards and disabled state')
+print('Manual jump passed: wolf movement/dash/mouth carry, human carry, native launch, height, actor ownership, action/transition guards and disabled state')

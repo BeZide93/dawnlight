@@ -21,9 +21,9 @@ int main() {
         ModeSetting::Progression, ModeSetting::Glide, ModeSetting::GlideItem,
         ModeSetting::Gale, ModeSetting::GaleCounter, ModeSetting::GaleCharges,
         ModeSetting::FierceDeity, ModeSetting::GaleHeight, ModeSetting::Stamina,
-        ModeSetting::WolfSprint, ModeSetting::WolfSpeed, ModeSetting::DisableAutoJump, ModeSetting::DualWield};
+        ModeSetting::WolfSprint, ModeSetting::WolfSpeed, ModeSetting::DualWield};
     constexpr std::array<int64_t, settings.size()> intended{
-        1, 150, 1, 110, 1, 2, 1, 1, 300, 1, 60, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1, 1, 100, 1, 0};
+        1, 150, 1, 110, 1, 2, 1, 1, 300, 1, 60, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1, 1, 100, 0};
     for (size_t i = 0; i < settings.size(); ++i) {
         int64_t value = 777;
         assert(!mode_override(settings[i], false, false, {}, value));
@@ -41,6 +41,16 @@ int main() {
         assert(mode_override(setting, false, true, completed, value) && value == 1);
         assert(mode_override(setting, true, false, completed, value) && value == 1);
         assert(mode_override(setting, true, false, {}, value) && value == 0);
+    }
+    // The manual auto-jump preference is never part of either mode's preset.
+    for (bool dawnlight : {false, true}) for (bool progression : {false, true}) {
+        for (int64_t personal : {0, 1}) {
+            int64_t value = personal;
+            assert(!mode_override(ModeSetting::DisableAutoJump, dawnlight, progression, {}, value));
+            assert(value == personal);
+            assert(!mode_override(ModeSetting::DisableAutoJump, dawnlight, progression, completed, value));
+            assert(value == personal);
+        }
     }
     int64_t value = 123;
     assert(!mode_override(ModeSetting::SprintSpeed, false, true, {}, value));

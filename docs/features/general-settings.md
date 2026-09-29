@@ -10,7 +10,6 @@ save slots are initialized.
 ## Dawnlight Mode
 
 **Dawnlight Mode** applies the intended preset: Sprint at 150%, Wolf Sprint On at 100%, R Jump at 110%,
-Disable Auto Jump On (human and wolf),
 Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode, 300% HP Scaling,
 Manual Shielding, 500% Gale Height, 60-second Gale recovery, Stamina Bar On with
 [default stamina settings](movement-and-abilities.md#shared-stamina),
@@ -20,6 +19,9 @@ Controlled settings display their effective values and are grayed out.
 Your personal Off-mode settings remain saved separately: switching Dawnlight Mode
 Off restores them, including your previous Progression System choice. This also
 works after restarting Dusklight. Settings outside the preset remain editable.
+**Disable Auto Jump** is independent of Dawnlight Mode: the preset neither enables
+nor locks it. Its saved toggle is used in both modes, subject to the existing
+**R Jump** requirement.
 
 Select a gray Dawnlight-controlled setting to open a warning before editing.
 **Cancel** or Back/Escape leaves the mode and your saved values unchanged.

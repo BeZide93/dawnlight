@@ -531,7 +531,7 @@ ModResult build_controls_tab(
     if (add_toggle(ctx, left, "Disable Auto Jump", disable_auto_jump_config_var(),
             "Stops human and wolf Link from automatically jumping when running off a ledge. "
             "Use the jump button to jump; walking off ledges keeps your forward momentum. Falling and ledge grabbing still work. "
-            "Turns off when R Jump is disabled.", auto_jump_setting_disabled) != MOD_OK)
+            "Independent of Dawnlight Mode. Turns off when R Jump is disabled.", auto_jump_setting_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }

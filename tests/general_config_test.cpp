@@ -13,6 +13,8 @@ const ConfigService* svc_config = nullptr;
 const UiService* svc_ui = nullptr;
 namespace dawnlight {
 bool g_configCheckForUpdatesEnabled = false;
+// Touch UI registration is outside this config/UI binding test.
+ModResult register_touch_button_config(ModError*) { return MOD_OK; }
 ProgressionState testProgress;
 ProgressionState progression_state() { return testProgress; }
 }
@@ -249,20 +251,29 @@ int main() {
         set_bool(nullptr, dawnlight_mode_config_var(), true);
         for (int restart = 0; restart < 2; ++restart) {
             if (restart) assert(register_config(nullptr) == MOD_OK);
-            assert(r_jump_enabled() && wolf_sprint_enabled() && disable_auto_jump_enabled());
+            assert(r_jump_enabled() && wolf_sprint_enabled());
+            assert(disable_auto_jump_enabled() == savedNoAutoJump);
             assert(std::abs(wolf_speed_multiplier() - 1.0f) < 0.001f);
             auto wolf = control(wolf_sprint_config_var(), UI_CONTROL_TOGGLE);
             auto speed = control(wolf_speed_config_var(), UI_CONTROL_NUMBER, wolf_speed_disabled);
             auto noAuto = control(disable_auto_jump_config_var(), UI_CONTROL_TOGGLE, auto_jump_setting_disabled);
             assert(disabled(wolf) && shown(wolf).bool_value);
             assert(disabled(speed) && shown(speed).int_value == 100);
-            assert(disabled(noAuto) && shown(noAuto).bool_value);
+            assert(!disabled(noAuto) && shown(noAuto).bool_value == savedNoAutoJump);
             UiControlValue attempt = UI_CONTROL_VALUE_INIT;
             attempt.bool_value = false;
             attempt.int_value = 300;
             wolf.set(mod_ctx, wolf.user_data, &attempt);
             speed.set(mod_ctx, speed.user_data, &attempt);
-            noAuto.set(mod_ctx, noAuto.user_data, &attempt);
+            // Editing this preference must not unlock/disable Dawnlight Mode.
+            for (bool manual : {true, false, savedNoAutoJump}) {
+                attempt.bool_value = manual;
+                noAuto.set(mod_ctx, noAuto.user_data, &attempt);
+                assert(dawnlight_mode_enabled());
+                assert(disable_auto_jump_enabled() == manual);
+                assert(shown(noAuto).bool_value == manual);
+                assert(disk.at("disable-auto-jump").value == manual);
+            }
             assert(disk.at("wolf-sprint").value == savedWolf);
             assert(disk.at("wolf-speed-percent").value == 235);
             assert(disk.at("disable-auto-jump").value == savedNoAutoJump);

@@ -188,7 +188,7 @@ bool r_action_context_active(daAlink_c* link) {
 bool ground_movement_proc(daAlink_c* link) {
     switch (link->mProcID) {
     case daAlink_c::PROC_GRAB_WAIT:
-        // Native standing/walking carry state; pickup/throw/put-down use other procs.
+        // Native carry idle state; moving and turning use the ordinary procs below.
         return !link->checkWolf() && link->checkGrabAnime() &&
             link->mGrabItemAcKeep.getActor() != nullptr;
     case daAlink_c::PROC_WAIT:
@@ -212,9 +212,11 @@ bool ground_movement_proc(daAlink_c* link) {
 bool ground_jump_context_ready(daAlink_c* link) {
     if (!link || !ground_movement_proc(link)) return false;
 
-    // Only the validated human carry state may keep its upper-body animation
-    // and actor through the native jump. Other grab states stay blocked.
-    const bool carrying = link->mProcID == daAlink_c::PROC_GRAB_WAIT;
+    // Carrying keeps its upper-body animation when native locomotion changes
+    // from GRAB_WAIT to MOVE or a turn proc. The ground-proc allowlist above
+    // still excludes pickup, throw, put-down and rebound transitions.
+    const bool carrying = !link->checkWolf() && link->checkGrabAnime() &&
+        link->mGrabItemAcKeep.getActor() != nullptr;
     return link->mGndPolyAtt1 != 0xFF
         && !link->checkFlyAtnWait()
         && !link->checkModeFlg(0x70C12)

@@ -91,9 +91,20 @@ int main(){
  auto carrying=[&](void* actor){daAlink_c c;c.wolf=false;c.humanGrab=true;
    c.mProcID=daAlink_c::PROC_GRAB_WAIT;c.mode=0x1105;
    c.mGrabItemAcKeep.actor=actor;return c;};
+ // checkNextAction switches carry idle to ordinary move/turn procedures.
+ // Changing only stick input while leaving PROC_GRAB_WAIT misses that transition.
+ const int carryProcs[]={daAlink_c::PROC_GRAB_WAIT,daAlink_c::PROC_WAIT,
+   daAlink_c::PROC_MOVE,daAlink_c::PROC_WAIT_TURN,daAlink_c::PROC_MOVE_TURN,
+   daAlink_c::PROC_ATN_MOVE};
+ auto setCarryProc=[](daAlink_c& c,int proc){c.mProcID=proc;
+   c.mode=proc==daAlink_c::PROC_GRAB_WAIT?0x1105:
+     proc==daAlink_c::PROC_WAIT?0x10001185:
+     proc==daAlink_c::PROC_WAIT_TURN?0x10001085:
+     proc==daAlink_c::PROC_MOVE_TURN?0x10001084:0x10001184;};
  for(void* actor: {static_cast<void*>(&pot),static_cast<void*>(&bomb)})
+ for(int proc: carryProcs)
  for(bool moving: {false,true}) for(bool swordPressed: {false,true}) {
-   auto c=carrying(actor);c.input=moving;b=swordPressed;
+   auto c=carrying(actor);setCarryProc(c,proc);c.input=moving;b=swordPressed;
    assert(start_ground_jump(&c));
    assert(c.humanCalls==1&&!c.wolfCalls&&!c.cutCalls&&c.speed.y==16);
    assert(c.mGrabItemAcKeep.actor==actor&&c.humanGrab&&s_manualJumpOwner==&c);
@@ -107,12 +118,13 @@ int main(){
    auto c=carrying(&pot);c.mProcID=proc;
    assert(!start_ground_jump(&c)&&!c.humanCalls&&c.mGrabItemAcKeep.actor==&pot);
  }
- for(int i=0;i<14;++i) {
-   auto c=carrying(&bomb);parent=true;pressed=true;blocked=event=false;
-   if(i==0)c.mGrabItemAcKeep.actor=nullptr;
+ for(int proc: carryProcs) for(int i=0;i<14;++i) {
+   auto c=carrying(&bomb);setCarryProc(c,proc);
+   parent=true;pressed=true;blocked=event=false;
+   if(i==0)c.mGrabItemAcKeep.actor=nullptr; // carry animation without an actor
    if(i==1)c.humanGrab=false;
    if(i==2)c.wolf=true;
-   if(i==3)c.mProcID=daAlink_c::PROC_WAIT; // inconsistent actor/animation state
+   if(i==3)c.mProcID=daAlink_c::PROC_AUTO_JUMP;
    if(i==4)c.mLinkAcch.hit=false;
    if(i==5)c.demo=true;
    if(i==6)event=true;

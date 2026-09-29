@@ -27,6 +27,10 @@ their height, and into ledge falls with **Disable Auto Jump** enabled.
 
 **R Jump** enables manual jumping. It also works as wolf Link while standing, moving or dashing, using
 the same jump binding and **Jump Height** setting with native wolf jump physics.
+Human Link can also jump while standing or walking with a carried object, such as
+a pot or bomb, using the native jump while keeping the object in his hands.
+Picking up, throwing and putting down objects are not interrupted; normal action,
+ground and cutscene restrictions still apply.
 
 **Jump Height** in Controls sets manual jump height
 from 100% (the original height and default) to 500%.

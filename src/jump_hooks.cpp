@@ -187,6 +187,10 @@ bool r_action_context_active(daAlink_c* link) {
 
 bool ground_movement_proc(daAlink_c* link) {
     switch (link->mProcID) {
+    case daAlink_c::PROC_GRAB_WAIT:
+        // Native standing/walking carry state; pickup/throw/put-down use other procs.
+        return !link->checkWolf() && link->checkGrabAnime() &&
+            link->mGrabItemAcKeep.getActor() != nullptr;
     case daAlink_c::PROC_WAIT:
     case daAlink_c::PROC_MOVE:
     case daAlink_c::PROC_ATN_MOVE:
@@ -208,6 +212,9 @@ bool ground_movement_proc(daAlink_c* link) {
 bool ground_jump_context_ready(daAlink_c* link) {
     if (!link || !ground_movement_proc(link)) return false;
 
+    // Only the validated human carry state may keep its upper-body animation
+    // and actor through the native jump. Other grab states stay blocked.
+    const bool carrying = link->mProcID == daAlink_c::PROC_GRAB_WAIT;
     return link->mGndPolyAtt1 != 0xFF
         && !link->checkFlyAtnWait()
         && !link->checkModeFlg(0x70C12)
@@ -220,9 +227,9 @@ bool ground_jump_context_ready(daAlink_c* link) {
         && !link->checkMagneBootsFly()
         && !link->checkMagneBootsOn()
         && !link->checkNotJumpSinkLimit()
-        && !link->checkGrabAnime()
+        && (!link->checkGrabAnime() || carrying)
         && !(link->checkWolf() && link->checkWolfGrabAnime())
-        && link->mGrabItemAcKeep.getActor() == nullptr
+        && (link->mGrabItemAcKeep.getActor() == nullptr || carrying)
         && link->mLinkAcch.ChkGroundHit()
         && !r_action_context_active(link);
 }
@@ -299,7 +306,8 @@ bool start_ground_jump(daAlink_c* link) {
     }
     const float sprintJumpMultiplier = sprint_jump_speed_multiplier(link);
 
-    if (link->mEquipItem == kSwordItem &&
+    if (link->mGrabItemAcKeep.getActor() == nullptr &&
+        link->mEquipItem == kSwordItem &&
         (mDoCPd_c::getHoldB(PAD_1) || mDoCPd_c::getTrigB(PAD_1)))
     {
         if (link->procCutJumpInit(FALSE)) {
@@ -326,7 +334,8 @@ bool start_air_jump_attack(daAlink_c* link) {
     if (!r_jump_enabled() || s_manualJumpOwner != link ||
         !jump_held(active_jump_binding()) ||
         !mDoCPd_c::getTrigB(PAD_1) ||
-        link->mEquipItem != kSwordItem)
+        link->mEquipItem != kSwordItem ||
+        link->mGrabItemAcKeep.getActor() != nullptr)
     {
         return false;
     }

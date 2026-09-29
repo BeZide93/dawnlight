@@ -35,7 +35,6 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
         case ModeSetting::Progression:
         case ModeSetting::Jump:
         case ModeSetting::WolfSprint:
-        case ModeSetting::DisableAutoJump:
         case ModeSetting::FlurryRush:
         case ModeSetting::EnemyHardMode:
         case ModeSetting::BossHardMode:

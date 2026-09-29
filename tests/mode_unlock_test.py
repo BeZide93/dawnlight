@@ -147,6 +147,18 @@ int main(){
         UiControlValue edit{};edit.bool_value=false;edit.int_value=1;mode_control_set(nullptr,&b,&edit);
         assert(configService.values.at(target)==(kind==UI_CONTROL_TOGGLE?0:1));
     }
+    // Auto-jump is directly editable, with no unlock dialog or preset adoption.
+    for (bool personal : {false,true}) {
+        reset();configService.values[s_disableAutoJump]=personal;
+        auto& independent=make(s_disableAutoJump,UI_CONTROL_TOGGLE,"Disable Auto Jump");
+        assert(uiService.controls.at(independent.control).visible);
+        assert(!uiService.controls.at(independent.unlock).visible);
+        assert(!mode_control_disabled(nullptr,&independent));
+        UiControlValue edit{};edit.bool_value=!personal;
+        mode_control_set(nullptr,&independent,&edit);
+        assert(configService.values.at(s_disableAutoJump)==!personal);
+        assert(dawnlight_mode_enabled()&&uiService.pushes==0);
+    }
     // Progression-only locks remain native; editing one through Dawnlight explicitly turns both modes off.
     reset();auto& gale=make(s_revalisGale,UI_CONTROL_TOGGLE,"Gale");open(gale);
     assert(uiService.body.find("Progression System will also be turned Off")!=std::string::npos);

@@ -32,6 +32,8 @@ the same jump binding and **Jump Height** setting with native wolf jump physics.
 from 100% (the original height and default) to 500%.
 
 **Disable Auto Jump**, directly below **R Jump** in Controls, is off by default.
+It remains independently editable while Dawnlight Mode is on; the preset does not
+automatically enable it.
 It prevents human and wolf Link's automatic running jump at ledges, requiring the manual
 jump button instead. Walking off a ledge carries the actual forward speed and
 direction into the fall, including sprint/dash speed, without an upward jump

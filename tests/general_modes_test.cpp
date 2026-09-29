@@ -16,14 +16,14 @@ int main() {
     constexpr std::array settings{ModeSetting::Sprint, ModeSetting::SprintSpeed,
         ModeSetting::Jump, ModeSetting::JumpHeight, ModeSetting::FlurryRush,
         ModeSetting::BulletTime, ModeSetting::EnemyHardMode, ModeSetting::BossHardMode,
-        ModeSetting::HealthScale, ModeSetting::ManualShielding, ModeSetting::GaleRecovery,
-        ModeSetting::ArrowModes, ModeSetting::GreatSpin, ModeSetting::NoNormalHitInvulnerability,
+        ModeSetting::ManualShielding, ModeSetting::GaleRecovery,
+        ModeSetting::ArrowModes, ModeSetting::GreatSpin,
         ModeSetting::Progression, ModeSetting::Glide, ModeSetting::GlideItem,
         ModeSetting::Gale, ModeSetting::GaleCounter, ModeSetting::GaleCharges,
         ModeSetting::FierceDeity, ModeSetting::GaleHeight, ModeSetting::Stamina,
         ModeSetting::WolfSprint, ModeSetting::WolfSpeed, ModeSetting::DualWield};
     constexpr std::array<int64_t, settings.size()> intended{
-        1, 150, 1, 110, 1, 2, 1, 1, 300, 1, 60, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1, 1, 100, 0};
+        1, 150, 1, 110, 1, 2, 1, 1, 1, 60, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1, 1, 100, 0};
     for (size_t i = 0; i < settings.size(); ++i) {
         int64_t value = 777;
         assert(!mode_override(settings[i], false, false, {}, value));
@@ -42,13 +42,21 @@ int main() {
         assert(mode_override(setting, true, false, completed, value) && value == 1);
         assert(mode_override(setting, true, false, {}, value) && value == 0);
     }
-    // The manual auto-jump preference is never part of either mode's preset.
+    // Independent preferences are never part of either mode's preset.
+    for (auto independent : {ModeSetting::DisableAutoJump, ModeSetting::NoNormalHitInvulnerability})
     for (bool dawnlight : {false, true}) for (bool progression : {false, true}) {
         for (int64_t personal : {0, 1}) {
             int64_t value = personal;
-            assert(!mode_override(ModeSetting::DisableAutoJump, dawnlight, progression, {}, value));
+            assert(!mode_override(independent, dawnlight, progression, {}, value));
             assert(value == personal);
-            assert(!mode_override(ModeSetting::DisableAutoJump, dawnlight, progression, completed, value));
+            assert(!mode_override(independent, dawnlight, progression, completed, value));
+            assert(value == personal);
+        }
+    }
+    for (bool dawnlight : {false, true}) for (bool progression : {false, true}) {
+        for (int64_t personal : {1, 100, 175, 300, 9999}) {
+            int64_t value = personal;
+            assert(!mode_override(ModeSetting::HealthScale, dawnlight, progression, completed, value));
             assert(value == personal);
         }
     }

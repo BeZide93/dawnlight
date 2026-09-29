@@ -900,7 +900,7 @@ ModResult build_hard_mode_tab(
     if (add_toggle(ctx, left, "No Normal-Hit Invulnerability",
             remove_normal_hit_invulnerability_config_var(),
             "Removes Link's invulnerability after normal hits. Knockdowns keep their full "
-            "invulnerability window.")
+            "invulnerability window. Independent of Dawnlight Mode.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -915,7 +915,7 @@ ModResult build_hard_mode_tab(
 
     if (add_section(ctx, left, "Enemy Scaling") != MOD_OK) return MOD_ERROR;
     if (add_number(ctx, left, "HP Scaling", health_scale_config_var(), 1, 9999, 10, "%",
-            "Scales enemy health when enemies spawn.")
+            "Scales enemy health when enemies spawn. Independent of Dawnlight Mode.")
         != MOD_OK)
     {
         return MOD_ERROR;

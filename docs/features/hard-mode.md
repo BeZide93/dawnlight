@@ -17,7 +17,8 @@ are independent and disabled by default:
   arena projectiles in Boss Rush.
 - `No Normal-Hit Invulnerability` removes Link's post-hit invulnerability after
   normal damage. Knockdowns, launches, wall impacts, and landing reactions keep
-  their normal invulnerability window.
+  their normal invulnerability window. This option defaults to Off and remains
+  independently editable while Dawnlight Mode is on.
 
 Enemy Hard Mode also adds selected enemy-specific mechanics: every second
 Bulblin bow shot becomes a three-arrow spread, every Fire Toadpoli shot and
@@ -27,6 +28,8 @@ Lizalfos, and Dynalfos only suffer knockdown from every second normal combo
 finisher.
 
 Enemy HP scaling and enemy damage scaling remain separate settings and can be
-combined freely with these options. See
+combined freely with these options. **HP Scaling** defaults to 100% and remains
+independently editable while Dawnlight Mode is on; enabling the mode does not
+force 300%. See
 [ENEMY_HARD_MODE.md](../../ENEMY_HARD_MODE.md) for the complete enemy and boss profile
 list, exact multipliers, exclusions, and implementation details.

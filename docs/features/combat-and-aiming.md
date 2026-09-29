@@ -6,6 +6,9 @@
 
 **Aim Movement** allows movement while aiming. **Aim Mode** offers Vanilla,
 3rd Person and Cinema options, with touch and gyro support for the modded modes.
+The Gale Boomerang can lock onto terrain in both custom camera modes, using its
+native lock-on range and target limit. Terrain targets follow the camera reticle,
+including the 3rd Person reticle offset, with Aim Movement either on or off.
 
 See [Arrow Modes](arrow-modes.md) for Bow ammunition modes and ZR controls.
 

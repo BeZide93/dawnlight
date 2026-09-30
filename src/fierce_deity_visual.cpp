@@ -130,17 +130,81 @@ const J3DTevOrder* eye_texture_order(J3DModelData* data, J3DMaterial* material) 
     return nullptr;
 }
 
-void append_stage(unsigned index, GXTexCoordID coord, GXTexMapID map,
-                  GXTevSwapSel identity, GXTevSwapSel textureSwap) {
-    const auto stage = static_cast<GXTevStageID>(index);
-    GXSetTevOrder(stage, coord, map, GX_COLOR1A1);
-    GXSetTevDirect(stage);
-    GXSetTevSwapMode(stage, identity, textureSwap);
-    GXSetTevColorOp(stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-    // Preserve the entire native alpha chain, including animated face/hair masks.
-    GXSetTevAlphaIn(stage, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
-    GXSetTevAlphaOp(stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-}
+// J3D material display lists update live registers without updating GX's CPU
+// shadow state. GXSetNumChans/GXSetNumTevStages would flush a stale GEN_MODE,
+// losing numTexGens (Aurora then sees GX_MAX_TEXGENSRC / "tcg src 21").
+// TREF and KSEL also pack fields belonging to existing stages. Emit a small
+// display list with BP masks against the *live* state, as J3D itself does.
+// No GX shadow-state setters or changes to shared material data are needed.
+class DarkDisplayList {
+    alignas(32) std::array<u8, 256> bytes{};
+    size_t size = 0;
+    bool valid = true;
+
+    void byte(u8 value) {
+        if (size < bytes.size()) bytes[size++] = value;
+        else valid = false;
+    }
+    void word(u32 value) {
+        byte(value >> 24); byte(value >> 16); byte(value >> 8); byte(value);
+    }
+    void bp(u8 reg, u32 value) {
+        byte(0x61); word((u32(reg) << 24) | (value & 0xFFFFFF));
+    }
+    void masked_bp(u8 reg, u32 mask, u32 value) {
+        bp(0xFE, mask); bp(reg, value);
+    }
+    void xf(u16 reg, u32 value) {
+        byte(0x10); word(reg); word(value); // one XF word, big-endian
+    }
+    static u32 rgba(GXColor color) {
+        return (u32(color.r) << 24) | (u32(color.g) << 16) |
+               (u32(color.b) << 8) | color.a;
+    }
+
+public:
+    void lighting(bool eye, u8 ambientAlpha, u8 materialAlpha) {
+        xf(0x1009, 2); // XF number of color channels
+        xf(0x100B, rgba({7, 7, 7, ambientAlpha}));
+        xf(0x100D, rgba(eye ? GXColor{230, 8, 5, materialAlpha}
+                           : GXColor{96, 104, 116, materialAlpha}));
+        // COLOR1 only: register sources, clamp diffuse, no attenuation, light0
+        // on the body; unlit eyes. Preserve the native ALPHA1 control.
+        xf(0x100F, (1u << 10) | (u32(GX_DF_CLAMP) << 7) |
+                     (eye ? 0u : (1u << 1) | (1u << 2)));
+    }
+    void swap(unsigned table, unsigned r, unsigned g, unsigned b, unsigned a) {
+        // KSEL's upper 20 bits belong to native stage konst selections.
+        masked_bp(0xF6 + 2 * table, 0xF, r | (g << 2));
+        masked_bp(0xF7 + 2 * table, 0xF, b | (a << 2));
+    }
+    void stage(unsigned index, GXTexCoordID coord, GXTexMapID map,
+               unsigned identity, unsigned textureSwap,
+               GXTevColorArg a, GXTevColorArg b, GXTevColorArg c, GXTevColorArg d,
+               GXTevOp op = GX_TEV_ADD, GXTevScale scale = GX_CS_SCALE_1) {
+        const unsigned shift = (index & 1) * 12;
+        const bool textured = coord != GX_TEXCOORD_NULL && map != GX_TEXMAP_NULL;
+        const u32 order = (1u << 7) | (textured ?
+            (u32(map) | (u32(coord) << 3) | (1u << 6)) : 0u); // COLOR1A1
+        // Preserve the other half, even when it is an animated native stage.
+        masked_bp(0x28 + index / 2, 0xFFFu << shift, order << shift);
+        bp(0x10 + index, 0); // direct TEV stage (no indirect lookup)
+        bp(0xC0 + 2 * index, u32(d) | (u32(c) << 4) | (u32(b) << 8) |
+            (u32(a) << 12) | (u32(op) << 18) | (1u << 19) | (u32(scale) << 20));
+        // Preserve the native alpha chain: (0 * (1 - 0) + 0 * 0) + APREV.
+        bp(0xC1 + 2 * index, identity | (textureSwap << 2) |
+            (u32(GX_CA_APREV) << 4) | (u32(GX_CA_ZERO) << 7) |
+            (u32(GX_CA_ZERO) << 10) | (u32(GX_CA_ZERO) << 13) | (1u << 19));
+    }
+    bool apply(unsigned stageCount) {
+        // Only chan/stage counts; preserve texgens, culling and indirect stages.
+        masked_bp(0x00, 0x3C70, (2u << 4) | ((stageCount - 1) << 10));
+        while (size % 32 != 0 && valid) byte(0); // GX NOP padding
+        if (!valid) return false;
+        GXCallDisplayList(bytes.data(), static_cast<u32>(size));
+        return true;
+    }
+};
 
 HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     if (s_drawDepth == 0 || s_drawDepth > s_drawScopes.size()) return HOOK_CONTINUE;
@@ -163,45 +227,35 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const auto* eyeOrder = eye_texture_order(model->getModelData(), material);
     const bool eye = eyeOrder != nullptr && count + 3 <= 16 && swaps.red >= 0 && swaps.blue >= 0;
 
-    scope.applied = true;
-    GXSetTevSwapModeTable(identity, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
-    GXSetNumChans(2);
-    // Leave ALPHA1 and the original stages intact. Only their final RGB is
-    // replaced. Native scene lighting provides shape definition on the body.
-    // Aurora writes the complete RGBA register even for GX_COLOR1. Carry the
-    // existing alpha through so original stages using ALPHA1 remain correct.
+    DarkDisplayList effect;
+    effect.swap(identity, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
+    // XF color registers contain RGBA. Retain alpha for the native stages.
     const auto* ambient = material->getColorBlock()->getAmbColor(1);
     const auto* color = material->getMatColor(1);
     const u8 ambientAlpha = ambient != nullptr ? ambient->a : 255;
     const u8 materialAlpha = color != nullptr ? color->a : 255;
-    GXSetChanAmbColor(GX_COLOR1, GXColor{7, 7, 7, ambientAlpha});
-    GXSetChanMatColor(GX_COLOR1, eye ? GXColor{230, 8, 5, materialAlpha}
-                                      : GXColor{96, 104, 116, materialAlpha});
-    GXSetChanCtrl(GX_COLOR1, eye ? GX_FALSE : GX_TRUE, GX_SRC_REG, GX_SRC_REG,
-                  eye ? GX_LIGHT_NULL : GX_LIGHT0, GX_DF_CLAMP, GX_AF_NONE);
+    effect.lighting(eye, ambientAlpha, materialAlpha);
 
     if (eye) {
         const auto red = static_cast<GXTevSwapSel>(swaps.red);
         const auto blue = static_cast<GXTevSwapSel>(swaps.blue);
-        GXSetTevSwapModeTable(red, GX_CH_RED, GX_CH_RED, GX_CH_RED, GX_CH_ALPHA);
-        GXSetTevSwapModeTable(blue, GX_CH_BLUE, GX_CH_BLUE, GX_CH_BLUE, GX_CH_ALPHA);
+        effect.swap(red, GX_CH_RED, GX_CH_RED, GX_CH_RED, GX_CH_ALPHA);
+        effect.swap(blue, GX_CH_BLUE, GX_CH_BLUE, GX_CH_BLUE, GX_CH_ALPHA);
         const auto coord = static_cast<GXTexCoordID>(eyeOrder->mTexCoord);
         const auto map = static_cast<GXTexMapID>(eyeOrder->getTexMap());
-        // Native eyeball texture channels separate the iris from the sclera.
-        // A red-minus-blue mask keeps the whites dark instead of painting the
-        // entire eye red, using its existing animated texture coordinates.
-        append_stage(count, coord, map, identity, red);
-        GXSetTevColorIn(static_cast<GXTevStageID>(count), GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC);
-        append_stage(count + 1, coord, map, identity, blue);
-        GXSetTevColorIn(static_cast<GXTevStageID>(count + 1), GX_CC_TEXC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
-        GXSetTevColorOp(static_cast<GXTevStageID>(count + 1), GX_TEV_SUB, GX_TB_ZERO, GX_CS_SCALE_2, GX_TRUE, GX_TEVPREV);
-        append_stage(count + 2, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity);
-        GXSetTevColorIn(static_cast<GXTevStageID>(count + 2), GX_CC_ZERO, GX_CC_RASC, GX_CC_CPREV, GX_CC_ZERO);
-        GXSetNumTevStages(count + 3);
+        // Red-minus-blue isolates the iris using the existing animated UVs.
+        effect.stage(count, coord, map, identity, red,
+                     GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC);
+        effect.stage(count + 1, coord, map, identity, blue,
+                     GX_CC_TEXC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV,
+                     GX_TEV_SUB, GX_CS_SCALE_2);
+        effect.stage(count + 2, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_ZERO, GX_CC_RASC, GX_CC_CPREV, GX_CC_ZERO);
+        scope.applied = effect.apply(count + 3);
     } else {
-        append_stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity);
-        GXSetTevColorIn(static_cast<GXTevStageID>(count), GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
-        GXSetNumTevStages(count + 1);
+        effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
+        scope.applied = effect.apply(count + 1);
     }
     return HOOK_CONTINUE;
 }

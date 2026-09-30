@@ -36,8 +36,28 @@ Bullet Time, Flurry Rush and the Great Spin projectile share the
 
 ## Fierce Deity
 
-**Fierce Deity** adds a charge meter, a temporary Magic Armor model swap and
-doubled sword damage.
+**Fierce Deity** adds a charge meter, a temporary transformation and doubled sword
+damage. **Fierce Deity Visual**, directly below its toggle, selects the appearance:
+
+| Visual | Appearance during the transformation |
+| --- | --- |
+| Magic Armor (default) | The existing Magic Armor model swap. |
+| Dark | The currently worn outfit/model with dark shading and red eyes. |
+| Dark Magic | The Magic Armor model with dark shading and red eyes. |
+
+The visual selector is disabled while Fierce Deity is unavailable/off, including
+its Progression lock. Its saved selection is retained. Changing it during a
+transformation applies when gameplay resumes, waits for any pending model load,
+and preserves the remaining meter. Dark keeps the current model without a clothes
+reload; the Magic variants restore the selected outfit when the transformation ends.
+
+The dark appearance affects Link's body, face, hair/hat, hands and worn boots.
+It uses the loaded models, including compatible model replacements, and preserves
+native texture transparency. Red eyes use the native `eyeballL`/`eyeballR` material
+and `eyeball` texture naming/masks. Unsupported custom eye layouts fall back to
+dark shading. Materials already using all 16 TEV stages are left unchanged.
+Equipment and held items retain their normal appearance. Rendering changes are
+scoped to the player's draw calls; shared model data and other actors are untouched.
 
 With [Progression System](general-settings.md) enabled, Fierce Deity unlocks
 after freeing Faron; it is available immediately in Boss Rush.

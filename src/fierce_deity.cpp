@@ -60,6 +60,7 @@ struct RuntimeState {
     fpc_ProcID linkId = fpcM_ERROR_PROCESS_ID_e;
     float meter = 0.0f;
     bool active = false;
+    FierceDeityVisual visual = FierceDeityVisual::MagicArmor;
     bool spinChargeArmed = false;
     bool equipmentOverridden = false;
     bool modelSwapped = false;
@@ -94,8 +95,7 @@ void restore_equipment_selection() {
 }
 
 void deactivate(daAlink_c* link, bool clearMeter) {
-    const bool restoreModel = s_state.active ||
-                              s_state.modelSwapState != ModelSwapState::None ||
+    const bool restoreModel = s_state.modelSwapState != ModelSwapState::None ||
                               s_state.modelSwapped;
     restore_equipment_selection();
     if (restoreModel && link != nullptr && !link->checkWolf() &&
@@ -168,12 +168,42 @@ void activate(daAlink_c* link) {
     s_state.meter = 100.0f;
     s_state.spinChargeArmed = false;
     s_state.lastDrainTime = Clock::now();
+    s_state.visual = fierce_deity_visual();
+    if (s_state.visual == FierceDeityVisual::Dark) {
+        return; // Keep the actual loaded outfit, including replacement models.
+    }
     s_state.originalClothes = dComIfGs_getSelectEquipClothes();
     s_state.equipmentOverridden = true;
     s_state.modelSwapped = false;
     s_state.modelSwapState = ModelSwapState::Activating;
     dComIfGs_setSelectEquipClothes(dItemNo_ARMOR_e);
     dComIfGp_setSelectEquipClothes(dItemNo_ARMOR_e);
+    link->setClothesChange(0);
+}
+
+// Model changes wait for the current asynchronous reload to finish. The meter
+// stays active while switching visuals; the saved equipment is never a setting.
+void update_visual_selection(daAlink_c* link) {
+    if (!s_state.active || s_state.modelSwapState != ModelSwapState::None ||
+        !can_transform(link)) {
+        return;
+    }
+    const FierceDeityVisual visual = fierce_deity_visual();
+    if (visual == s_state.visual) return;
+    const bool wasMagic = s_state.visual != FierceDeityVisual::Dark;
+    const bool useMagic = visual != FierceDeityVisual::Dark;
+    s_state.visual = visual;
+    if (wasMagic == useMagic) return;
+    if (useMagic) {
+        s_state.originalClothes = dComIfGs_getSelectEquipClothes();
+        s_state.equipmentOverridden = true;
+        dComIfGs_setSelectEquipClothes(dItemNo_ARMOR_e);
+        dComIfGp_setSelectEquipClothes(dItemNo_ARMOR_e);
+        s_state.modelSwapState = ModelSwapState::Activating;
+    } else {
+        restore_equipment_selection();
+        s_state.modelSwapState = ModelSwapState::Restoring;
+    }
     link->setClothesChange(0);
 }
 
@@ -305,6 +335,7 @@ HookAction before_player_execute(ModContext*, void* args, void* retval, void*) {
         deactivate(link, true);
     }
 
+    update_visual_selection(link);
     if (!service_model_swap(link)) {
         return HOOK_CONTINUE;
     }
@@ -330,7 +361,8 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
 
 HookAction before_magic_armor_ability(ModContext*, void*, void* retval, void*) {
     if (!same_link(daAlink_getAlinkActorClass()) ||
-        (!s_state.active && s_state.modelSwapState == ModelSwapState::None)) {
+        (!s_state.modelSwapped && s_state.modelSwapState == ModelSwapState::None &&
+         (!s_state.active || s_state.visual == FierceDeityVisual::Dark))) {
         return HOOK_CONTINUE;
     }
     *static_cast<BOOL*>(retval) = FALSE;
@@ -424,7 +456,7 @@ ModResult initialize_fierce_deity(ModError* error) {
     {
         return result;
     }
-    return MOD_OK;
+    return initialize_fierce_deity_visual(error);
 }
 
 void shutdown_fierce_deity() {
@@ -441,6 +473,14 @@ void shutdown_fierce_deity() {
 
 bool fierce_deity_active() {
     return s_state.active && same_link(daAlink_getAlinkActorClass());
+}
+
+bool fierce_deity_dark_visual_active() {
+    auto* link = daAlink_getAlinkActorClass();
+    return fierce_deity_enabled() && fierce_deity_active() &&
+        s_state.visual != FierceDeityVisual::MagicArmor &&
+        s_state.modelSwapState == ModelSwapState::None && !s_state.modelReloadFrame &&
+        !link->checkWolf() && link->mClothesChangeWaitTimer == 0;
 }
 
 bool fierce_deity_model_reload_active() {

@@ -60,6 +60,12 @@ jobs:
           python3 tests/dual_wield_test.py
           python3 tests/second_sword_test.py
 
+      - name: Test Fierce Deity visuals and lifecycle
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/fierce_deity_lifecycle_test.py
+          python3 tests/fierce_deity_visual_test.py
+
       - name: Test Collection Dual Wield
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/collection_dual_wield_test.py

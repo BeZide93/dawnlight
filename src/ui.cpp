@@ -28,6 +28,7 @@ constexpr const char* kAimModeOptions[] = {
 constexpr const char* kSecondSwordOptions[] = {"Wooden Sword", "Ordon Sword", "Master Sword"};
 constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
 constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
+constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic"};
 
 constexpr const char* kNewSaveModeOptions[] = {
     "Vanilla",
@@ -199,6 +200,10 @@ bool auto_jump_setting_disabled(ModContext*, void*) {
     // Normalize persisted state before displaying an unavailable child toggle.
     (void)disable_auto_jump_enabled();
     return !r_jump_enabled();
+}
+
+bool fierce_deity_visual_disabled(ModContext*, void*) {
+    return !fierce_deity_enabled();
 }
 
 bool wolf_speed_disabled(ModContext*, void*) {
@@ -863,6 +868,15 @@ ModResult build_gameplay_tab(
             "Builds power with damaging sword attacks. Use a charged Spin Attack at full power "
             "to transform, deal double sword damage, and consume the meter over time.")
         != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Fierce Deity Visual", fierce_deity_visual_config_var(),
+            kFierceDeityVisualOptions, std::size(kFierceDeityVisualOptions),
+            "Magic Armor keeps the original transformation. Dark applies a shadow appearance "
+            "and red eyes to your current outfit. Dark Magic combines Magic Armor with that effect. "
+            "Changes apply when gameplay resumes; requires Fierce Deity.",
+            fierce_deity_visual_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }

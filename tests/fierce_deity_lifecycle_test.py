@@ -28,7 +28,12 @@ fixture = r'''
 using u8 = uint8_t;
 using fpc_ProcID = uint32_t;
 constexpr fpc_ProcID fpcM_ERROR_PROCESS_ID_e = 0xffffffff;
-constexpr u8 dItemNo_NONE_e = 0xff;
+constexpr u8 dItemNo_NONE_e = 0xff, dItemNo_ARMOR_e = 0x31;
+using BOOL = int;
+constexpr BOOL FALSE = 0;
+enum class FierceDeityVisual : int { MagicArmor, Dark, DarkMagic };
+FierceDeityVisual selectedVisual = FierceDeityVisual::MagicArmor;
+FierceDeityVisual fierce_deity_visual() { return selectedVisual; }
 constexpr int fpcNm_ALINK_e = 1, fopAc_ENEMY_e = 2;
 constexpr float kMeterGainPerAttack = 5.0f;
 using Clock = std::chrono::steady_clock;
@@ -47,6 +52,16 @@ struct daAlink_c : fopAc_ac_c {
     uint16_t setID = 0;
     const process_method_class* sub_method = &playerMethods;
     int mClothesChangeWaitTimer = 0;
+    bool wolf = false, dead = false, sceneChange = false, event = false;
+    bool checkWolf() const { return wolf; }
+    bool checkDeadHP() const { return dead; }
+    bool checkSceneChangeAreaStart() const { return sceneChange; }
+    bool checkEventRun() const { return event; }
+    bool checkHorseRide() const { return false; }
+    bool checkCanoeRide() const { return false; }
+    bool checkBoardRide() const { return false; }
+    bool checkSpinnerRide() const { return false; }
+    int getSumouMode() const { return 0; }
     int reloadCalls = 0;
     void loadModelDVD() { ++reloadCalls; --mClothesChangeWaitTimer; }
     void setClothesChange(int) { mClothesChangeWaitTimer = 3; }
@@ -80,6 +95,7 @@ template <class T> T arg(void* args, int index) {
 }
 u8 savedClothes = 7, equippedClothes = 7;
 int equipmentWrites = 0;
+u8 dComIfGs_getSelectEquipClothes() { return savedClothes; }
 void dComIfGs_setSelectEquipClothes(u8 value) { savedClothes = value; ++equipmentWrites; }
 void dComIfGp_setSelectEquipClothes(u8 value) { equippedClothes = value; ++equipmentWrites; }
 '''
@@ -87,13 +103,13 @@ void dComIfGp_setSelectEquipClothes(u8 value) { equippedClothes = value; ++equip
 state = source[source.index("enum class ModelSwapState"):
                source.index("SaveObserverHandle s_saveObserver")]
 callbacks = "".join(function(name) for name in (
-    "is_sword_attack", "restore_equipment_selection", "reset_for_link", "same_link",
+    "is_sword_attack", "restore_equipment_selection", "deactivate", "can_transform",
+    "activate", "update_visual_selection", "reset_for_link", "same_link",
     "on_save_started", "before_player_delete", "after_damage_check",
-    "service_model_swap", "dispatched_player", "before_player_execute", "after_player_execute",
+    "service_model_swap", "before_magic_armor_ability", "dispatched_player", "before_player_execute", "after_player_execute",
 ))
 
 checks = r'''
-void deactivate(daAlink_c*, bool) { s_state.meter = 0; s_state.active = false; }
 void* dispatch_target(const process_method_class& methods) {
 #ifdef __APPLE__
     return reinterpret_cast<void*>(methods.execute_method);
@@ -251,6 +267,85 @@ int main() {
             assert(s_state.meter == 5.0f); // new session can charge immediately
         }
     }
+
+    // Each visual must keep gameplay active; only Magic variants reload clothes.
+    for (auto visual : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark,
+                        FierceDeityVisual::DarkMagic}) {
+        selectedVisual = visual;
+        reset_for_link(&link);
+        link.mClothesChangeWaitTimer = 0;
+        equipmentWrites = 0;
+        savedClothes = equippedClothes = 7;
+        activate(&link);
+        assert(s_state.active && s_state.meter == 100 && s_state.visual == visual);
+        const bool magic = visual != FierceDeityVisual::Dark;
+        assert(s_state.equipmentOverridden == magic);
+        assert((link.mClothesChangeWaitTimer != 0) == magic);
+        BOOL ability = 1;
+        assert((before_magic_armor_ability(nullptr, nullptr, &ability, nullptr) == HOOK_SKIP_ORIGINAL) == magic);
+        while (link.mClothesChangeWaitTimer) service_model_swap(&link);
+        assert(savedClothes == 7 && equippedClothes == 7);
+        assert(s_state.modelSwapped == magic);
+        deactivate(&link, true);
+        assert(!s_state.active && s_state.meter == 0);
+        assert((link.mClothesChangeWaitTimer != 0) == magic);
+        while (link.mClothesChangeWaitTimer) service_model_swap(&link);
+        assert(!s_state.modelSwapped);
+    }
+
+    // All nine live selections keep the gameplay state, including repeated
+    // selections and Magic Armor <-> Dark Magic without unnecessary reloading.
+    for (auto from : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark,
+                      FierceDeityVisual::DarkMagic}) {
+        for (auto to : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark,
+                        FierceDeityVisual::DarkMagic}) {
+            reset_for_link(&link);
+            selectedVisual = from;
+            activate(&link);
+            while (link.mClothesChangeWaitTimer) service_model_swap(&link);
+            s_state.meter = 42;
+            selectedVisual = to;
+            update_visual_selection(&link);
+            const bool changeModel = (from == FierceDeityVisual::Dark) !=
+                                     (to == FierceDeityVisual::Dark);
+            assert((link.mClothesChangeWaitTimer != 0) == changeModel);
+            while (link.mClothesChangeWaitTimer) service_model_swap(&link);
+            assert(s_state.visual == to && s_state.active && s_state.meter == 42);
+            assert(savedClothes == 7 && equippedClothes == 7);
+            deactivate(&link, true);
+            while (link.mClothesChangeWaitTimer) service_model_swap(&link);
+        }
+    }
+
+    // Live Dark -> Magic -> Dark Magic -> Dark keeps the meter and restores gear.
+    reset_for_link(&link);
+    selectedVisual = FierceDeityVisual::Dark;
+    activate(&link);
+    s_state.meter = 65;
+    selectedVisual = FierceDeityVisual::MagicArmor;
+    update_visual_selection(&link);
+    assert(s_state.modelSwapState == ModelSwapState::Activating);
+    selectedVisual = FierceDeityVisual::DarkMagic;
+    update_visual_selection(&link); // no reentry during model loading
+    assert(s_state.visual == FierceDeityVisual::MagicArmor);
+    while (link.mClothesChangeWaitTimer) service_model_swap(&link);
+    update_visual_selection(&link);
+    assert(s_state.visual == FierceDeityVisual::DarkMagic && link.mClothesChangeWaitTimer == 0);
+    selectedVisual = FierceDeityVisual::Dark;
+    update_visual_selection(&link);
+    while (link.mClothesChangeWaitTimer) service_model_swap(&link);
+    assert(s_state.active && s_state.meter == 65 && !s_state.modelSwapped);
+    assert(savedClothes == 7 && equippedClothes == 7);
+    // Disabling mid-activation must finish loading then restore, never keep armor.
+    selectedVisual = FierceDeityVisual::DarkMagic;
+    update_visual_selection(&link);
+    deactivate(&link, true);
+    assert(s_state.modelSwapState == ModelSwapState::RestoreRequested);
+    while (link.mClothesChangeWaitTimer) service_model_swap(&link);
+    assert(!s_state.active && !s_state.modelSwapped && savedClothes == 7);
+    reset_for_link(&link);
+    s_state.meter = 5;
+    equipmentWrites = 0;
 
     // Normal player teardown restores a temporary outfit before discarding it.
     s_state.equipmentOverridden = true;

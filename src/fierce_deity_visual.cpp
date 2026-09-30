@@ -18,16 +18,52 @@ namespace {
 // patch shared BMD materials: another actor (including Dark Link) can use them.
 // Apply GX state only after the native material/differed display lists, and replay
 // those lists immediately afterward, including between batched shared materials.
+DEFINE_HOOK(&J3DMatPacket::draw, FierceMaterialDrawHook);
 DEFINE_HOOK(&J3DShapePacket::draw, FierceShapePacketDrawHook);
 DEFINE_HOOK(&J3DShapePacket::drawFast, FierceShapePacketFastHook);
 DEFINE_HOOK(&J3DShape::drawFast, FierceShapeDrawHook);
 
 struct DrawScope {
     J3DShapePacket* packet = nullptr;
+    J3DMatPacket* materialPacket = nullptr;
     bool applied = false;
 };
 std::array<DrawScope, 16> s_drawScopes{};
 size_t s_drawDepth = 0;
+
+// Shadow image rendering also calls ShapePacket::drawFast, but deliberately
+// loads one untextured stage and zero texgens instead of the model's material.
+// Applying model TEV stages there activates stale texture references (tcg src
+// 21); replaying the model DL afterward also corrupts the remaining shadows.
+// Only shade packets in the current regular material draw's batch.
+std::array<J3DMatPacket*, 16> s_materialScopes{};
+size_t s_materialDepth = 0;
+
+HookAction before_material_draw(ModContext*, void* args, void*, void*) {
+    if (s_materialDepth < s_materialScopes.size()) {
+        s_materialScopes[s_materialDepth] = mods::arg<J3DMatPacket*>(args, 0);
+    }
+    ++s_materialDepth;
+    return HOOK_CONTINUE;
+}
+
+void after_material_draw(ModContext*, void*, void*, void*) {
+    if (s_materialDepth == 0) return;
+    --s_materialDepth;
+    if (s_materialDepth < s_materialScopes.size()) s_materialScopes[s_materialDepth] = nullptr;
+}
+
+J3DMatPacket* drawing_material(J3DShapePacket* packet) {
+    if (s_materialDepth == 0 || s_materialDepth > s_materialScopes.size()) return nullptr;
+    auto* material = s_materialScopes[s_materialDepth - 1];
+    if (material == nullptr) return nullptr;
+    // A material batch may contain several actors/models with shared materials.
+    for (auto* shape = material->getShapePacket(); shape != nullptr;
+         shape = static_cast<J3DShapePacket*>(shape->getNextPacket())) {
+        if (shape == packet) return material;
+    }
+    return nullptr;
+}
 
 bool player_model(daAlink_c* link, const J3DModel* model) {
     return model != nullptr && (model == link->mpLinkModel ||
@@ -45,7 +81,8 @@ HookAction before_packet_draw(ModContext*, void* args, void*, void*) {
         scope = {};
         if (fierce_deity_dark_visual_active() && packet != nullptr &&
             player_model(daAlink_getAlinkActorClass(), packet->getModel())) {
-            scope.packet = packet;
+            scope.materialPacket = drawing_material(packet);
+            if (scope.materialPacket != nullptr) scope.packet = packet;
         }
     }
     ++s_drawDepth;
@@ -55,9 +92,8 @@ HookAction before_packet_draw(ModContext*, void* args, void*, void*) {
 void restore_draw_state(DrawScope& scope) {
     if (!scope.applied) return;
     auto* packet = scope.packet;
-    auto* material = packet->getShape()->getMaterial();
-    auto* matPacket = packet->getModel()->getMatPacket(material->getIndex());
-    matPacket->callDL();
+    // Replay the actual batch material, which can belong to another model.
+    scope.materialPacket->callDL();
     if (packet->getDisplayListObj() != nullptr) packet->getDisplayListObj()->callDL();
     scope.applied = false;
 }
@@ -215,7 +251,7 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     auto* material = shape->getMaterial();
     auto* model = scope.packet->getModel();
     if (material == nullptr || material->getTevBlock() == nullptr) return HOOK_CONTINUE;
-    auto* matPacket = model->getMatPacket(material->getIndex());
+    auto* matPacket = scope.materialPacket;
     if (matPacket->getDisplayListObj() == nullptr) return HOOK_CONTINUE;
     auto* tev = material->getTevBlock();
     const unsigned count = tev->getTevStageNum();
@@ -270,7 +306,9 @@ void after_shape_draw(ModContext*, void*, void*, void*) {
 
 ModResult initialize_fierce_deity_visual(ModError* error) {
     ModResult result;
-    if ((result = mods::hook::add_pre<FierceShapePacketDrawHook>(svc_hook, before_packet_draw)) != MOD_OK ||
+    if ((result = mods::hook::add_pre<FierceMaterialDrawHook>(svc_hook, before_material_draw)) != MOD_OK ||
+        (result = mods::hook::add_post<FierceMaterialDrawHook>(svc_hook, after_material_draw)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceShapePacketDrawHook>(svc_hook, before_packet_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceShapePacketDrawHook>(svc_hook, after_packet_draw)) != MOD_OK ||
         (result = mods::hook::add_pre<FierceShapePacketFastHook>(svc_hook, before_packet_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceShapePacketFastHook>(svc_hook, after_packet_draw)) != MOD_OK ||

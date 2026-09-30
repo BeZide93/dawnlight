@@ -169,14 +169,16 @@ struct J3DMaterial {
     GXColor* getMatColor(int) {return &color.material;}
 };
 struct J3DShape { J3DMaterial* material; J3DMaterial* getMaterial() const {return material;} };
-struct DisplayList { void callDL() { ++restoreCalls; bp=nativeBP; xf=nativeXF; decode_state(); } };
-struct MatPacket { DisplayList list; DisplayList* getDisplayListObj() {return &list;} void callDL() {list.callDL();} };
+struct DisplayList { int calls=0; void callDL() { ++calls; ++restoreCalls; bp=nativeBP; xf=nativeXF; decode_state(); } };
+struct J3DShapePacket;
+struct J3DMatPacket { J3DShapePacket* shapes=nullptr; J3DShapePacket* getShapePacket() {return shapes;} DisplayList list; DisplayList* getDisplayListObj() {return &list;} void callDL() {list.callDL();} };
 struct J3DModel {
-    J3DModelData data; MatPacket packet;
-    J3DModelData* getModelData() {return &data;} MatPacket* getMatPacket(int) {return &packet;}
+    J3DModelData data; J3DMatPacket packet;
+    J3DModelData* getModelData() {return &data;} J3DMatPacket* getMatPacket(int) {return &packet;}
 };
 struct J3DShapePacket {
-    J3DModel* model; J3DShape* shape; DisplayList diff;
+    J3DModel* model; J3DShape* shape; DisplayList diff; J3DShapePacket* next=nullptr;
+    J3DShapePacket* getNextPacket() {return next;}
     J3DModel* getModel() {return model;} J3DShape* getShape() {return shape;}
     DisplayList* getDisplayListObj() {return &diff;}
 };
@@ -192,6 +194,9 @@ bool fierce_deity_dark_visual_active() {return darkActive;}
 '''
 checks = r'''
 void draw_begin(J3DShapePacket& p) {
+    p.model->packet.shapes=&p;
+    void* materialArgs[]={&p.model->packet};
+    before_material_draw(nullptr,materialArgs,nullptr,nullptr);
     load_native(p.shape->material->tev.count);
     void* args[]={&p}; before_packet_draw(nullptr,args,nullptr,nullptr);
     void* shape[]={p.shape}; before_shape_draw(nullptr,shape,nullptr,nullptr);
@@ -201,7 +206,28 @@ void draw_begin(J3DShapePacket& p) {
 void draw_end() {
     after_shape_draw(nullptr,nullptr,nullptr,nullptr);
     after_packet_draw(nullptr,nullptr,nullptr,nullptr);
-    assert(s_drawDepth==0);
+    after_material_draw(nullptr,nullptr,nullptr,nullptr);
+    assert(s_drawDepth==0 && s_materialDepth==0);
+}
+void draw_shadow(J3DShapePacket& p) {
+    // Real shadow image pass (dDlst_shadowControl_c / shadowReal_c):
+    // one untextured stage, zero texgens, then direct shapePacket->drawFast().
+    // Unused registers still contain previous textured material stages.
+    load_native(p.shape->material->tev.count);
+    bp[0]=0x004010; bp[0x28]=0x380000;
+    decode_state();
+    assert(shader_texgens_valid());
+    const auto shadowBP=bp; const auto shadowXF=xf;
+    const int shadowWrites=gxWrites, shadowRestores=restoreCalls;
+    void* shadowPacketArgs[]={&p}; void* shadowShapeArgs[]={p.shape};
+    before_packet_draw(nullptr,shadowPacketArgs,nullptr,nullptr);
+    before_shape_draw(nullptr,shadowShapeArgs,nullptr,nullptr);
+    assert(shader_texgens_valid()); // previously activated stale textured stages
+    after_shape_draw(nullptr,nullptr,nullptr,nullptr);
+    after_packet_draw(nullptr,nullptr,nullptr,nullptr);
+    assert(bp==shadowBP && xf==shadowXF);
+    assert(gxWrites==shadowWrites && restoreCalls==shadowRestores);
+
 }
 float eye_mask(int nativeCount, float r, float b) {
     float previous=0;
@@ -237,6 +263,7 @@ int main() {
     J3DMaterial mat; J3DShape shape{&mat}; J3DModel player, other;
     link.mpLinkModel=&player;
     J3DShapePacket p{&player,&shape,{}}, foreign{&other,&shape,{}};
+    draw_shadow(p);
     draw_begin(p);
     assert(gpuCount==4 && gpuMaterial.r==96);
     assert(gpuMaterial.a==93 && gpuAmbient.a==61); // Aurora's full RGBA writes
@@ -275,6 +302,46 @@ int main() {
             assert(bp==nativeBP && xf==nativeXF);
         }
     }
+    // Batched materials can be owned by a different model. Only the player
+    // receives the effect, and cleanup must replay the batch's actual base DL.
+    mat.tev.count=3;
+    player.data.materials.name="al_body";
+    other.packet.shapes=&foreign; foreign.next=&p;
+    void* batchArgs[]={&other.packet};
+    before_material_draw(nullptr,batchArgs,nullptr,nullptr);
+    load_native(3);
+    void* foreignArgs[]={&foreign}; void* playerArgs[]={&p}; void* bodyArgs[]={&shape};
+    writes=gxWrites;
+    before_packet_draw(nullptr,foreignArgs,nullptr,nullptr);
+    before_shape_draw(nullptr,bodyArgs,nullptr,nullptr);
+    after_shape_draw(nullptr,nullptr,nullptr,nullptr);
+    after_packet_draw(nullptr,nullptr,nullptr,nullptr);
+    assert(gxWrites==writes);
+    const int ownCalls=player.packet.list.calls, batchCalls=other.packet.list.calls;
+    before_packet_draw(nullptr,playerArgs,nullptr,nullptr);
+    before_shape_draw(nullptr,bodyArgs,nullptr,nullptr);
+    assert(gpuCount==4); assert_native_fields(3);
+    after_shape_draw(nullptr,nullptr,nullptr,nullptr);
+    after_packet_draw(nullptr,nullptr,nullptr,nullptr);
+    assert(player.packet.list.calls==ownCalls && other.packet.list.calls==batchCalls+1);
+    after_material_draw(nullptr,nullptr,nullptr,nullptr);
+    assert(s_materialDepth==0 && s_materialScopes[0]==nullptr);
+    foreign.next=nullptr;
+    draw_shadow(p); // a regular draw must not leave an active material scope
+
+    // An unrelated material draw on the stack does not authorize this packet.
+    before_material_draw(nullptr,batchArgs,nullptr,nullptr);
+    draw_shadow(p);
+    after_material_draw(nullptr,nullptr,nullptr,nullptr);
+    // Skipped originals and bounded recursion unwind without stale pointers.
+    player.packet.shapes=&p;
+    void* ownArgs[]={&player.packet};
+    for(int i=0;i<20;++i) before_material_draw(nullptr,ownArgs,nullptr,nullptr);
+    draw_shadow(p);
+    for(int i=0;i<20;++i) after_material_draw(nullptr,nullptr,nullptr,nullptr);
+    assert(s_materialDepth==0);
+    for(auto* material : s_materialScopes) assert(material==nullptr);
+
     // A malformed/future expanded effect must fail without submitting partial
     // commands or writing past the fixed command buffer.
     DarkDisplayList oversized;
@@ -300,6 +367,7 @@ int main() {
     draw_begin(foreign);
     after_shape_draw(nullptr,nullptr,nullptr,nullptr);
     after_packet_draw(nullptr,nullptr,nullptr,nullptr);
+    after_material_draw(nullptr,nullptr,nullptr,nullptr);
     assert(s_drawDepth==1);
     after_packet_draw(nullptr,nullptr,nullptr,nullptr);
     assert(s_drawDepth==0 && s_drawScopes[0].packet==nullptr);
@@ -318,4 +386,4 @@ with tempfile.TemporaryDirectory() as temp:
     subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Fierce Deity GX register preservation, crash regression, eye masks, alpha and cleanup: passed')
+print('Fierce Deity shadow-pass isolation, GX registers, eye masks, alpha and cleanup: passed')

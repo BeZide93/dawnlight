@@ -3,7 +3,7 @@
 [← Dawnlight overview](../../README.md)
 
 Open `Mod Manager -> Dawnlight -> Open Dawnlight Settings -> Hard Mode` to
-configure Dawnlight's combat difficulty options. The three Hard Mode switches
+configure Dawnlight's combat difficulty options. The Hard Mode switches
 are independent and disabled by default:
 
 - `Enemy Hard Mode` makes supported regular enemies more aggressive without
@@ -19,6 +19,51 @@ are independent and disabled by default:
   normal damage. Knockdowns, launches, wall impacts, and landing reactions keep
   their normal invulnerability window. This option defaults to Off and remains
   independently editable while Dawnlight Mode is on.
+
+### Cave of Ordeals Randomizer
+
+`Cave of Ordeals Randomizer` replaces each placed combat enemy in `D_SB01`
+with a random, different enemy type when the room's actors load. It is Off by
+default and independent of Enemy Hard Mode, Boss Hard Mode, and Dawnlight Mode.
+Reload the Cave after changing the option: actors already loaded, including
+preloaded adjacent rooms, are not changed in place. Reloading a room can roll a
+new layout.
+
+- One replacement per authored combat spawn: the original room, scene ownership,
+  and actor set ID are retained. No additional encounter enemies are spawned.
+- Ceiling and wall placements are projected onto the lowest valid floor beneath
+  the slot **in the same room**. Small horizontal offsets handle wall placements;
+  flying replacements start 200 units above that floor. Original ceiling flags,
+  paths, rotations, scales, and switches are replaced with standalone settings.
+- The main pool contains 32 entries: Bokoblins, Mini Freezards, Keese and Bubbles
+  (normal/fire/ice), Tektites, Gibdos, Chilfos, Stalchildren, Rats, club and bow
+  Bulblins, Aeralfos, Bomskits, ground Deku Babas, Helmasaurs, Helmasauruses,
+  Kargaroks, Puppets, Guays, Armos, Stalhounds, one shared Chu entry,
+  Lizalfos, Dodongos, Dynalfos, ground Skulltulas, Stalfos, and Darknuts.
+  Each eligible entry has equal probability; entries sharing the
+  original actor profile are excluded. There is no per-room Darknut limit.
+  Generators and bosses with arena scripts are not replacement types.
+- Armos have no defeated switch and a 1000-unit home radius. Randomized
+  Stalhounds detect Link within 2000 units and use the unrestricted native leash.
+  Their own updates temporarily see midnight, so daytime cannot keep them hidden
+  or make them burrow. The real time is restored immediately after each update;
+  native Stalhounds retain their normal day/night behavior.
+- If the Chu entry is selected, a second independent roll chooses red, blue,
+  yellow, purple, or black, with a 20% chance each. Green and rare Chus are not
+  selected. The five colors together have the weight of one main-pool entry.
+  Chus start as single, smallest-size ground enemies without ceiling respawns.
+  Native merging and subsequent splitting remain enabled. Beamos are not in
+  the pool.
+- NPCs, Great Fairies, doors, chests, items, and room-clear logic stay native.
+  Projectiles and runtime children are not rerolled. Invisible Wolfos pack
+  coordinators and their type-dependent children stay native to preserve their
+  enemy count and prevent invalid child casts; directly placed wolves are rerolled.
+- Enemy creation waits for room collision. If no safe floor is found within
+  120 creation attempts, that slot keeps its original enemy and parameters.
+  This fallback neither removes the enemy nor stalls room loading indefinitely.
+
+Poes are combat enemies too; a randomized replacement does not award a Poe soul.
+Use the native Cave layout when collecting those souls.
 
 Enemy Hard Mode also adds selected enemy-specific mechanics: every second
 Bulblin bow shot becomes a three-arrow spread, every Fire Toadpoli shot and

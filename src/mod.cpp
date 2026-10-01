@@ -2,6 +2,7 @@
 #include "bow_modes.hpp"
 #include "bullet_time.hpp"
 #include "boss_hard_mode.hpp"
+#include "cave_randomizer.hpp"
 #include "config.hpp"
 #include "dual_wield.hpp"
 #include "collection_dual_wield.hpp"
@@ -149,6 +150,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     {
         return result;
     }
+    if (const ModResult result = dawnlight::install_cave_randomizer(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::install_boss_hard_mode_hooks(error);
         result != MOD_OK)
     {
@@ -174,6 +178,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
         }
         s_itemSlotHooksInstalled = true;
     }
+    dawnlight::update_cave_randomizer();
     dawnlight::update_new_save_modes();
     dawnlight::update_progression();
     dawnlight::bullet_time_tick();
@@ -183,6 +188,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
     s_itemSlotHooksInstalled = false;
+    dawnlight::shutdown_cave_randomizer();
     dawnlight::shutdown_collection_dual_wield();
     dawnlight::shutdown_dual_wield();
     dawnlight::shutdown_touch_buttons();

@@ -67,6 +67,7 @@ ModResult install_item_slot_hooks(ModError*) {
     touchInstalled = true;
     return MOD_OK;
 }
+void update_cave_randomizer() {}
 void update_new_save_modes() { ++otherUpdates; }
 void update_progression() {}
 void bullet_time_tick() {}

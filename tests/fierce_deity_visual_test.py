@@ -557,8 +557,15 @@ int main() {
         palette=tint;
         J3DShapePacket gear{model,&shape,{}};
         assert(!player_model(&link,model) && player_equipment(&link,model));
-        draw_begin(gear);assert(gpuCount==(tint==FierceDeityTint::White?6:5));
+        draw_begin(gear);assert(gpuCount==(tint==FierceDeityTint::White?4:5));
         assert(gpuMaterial.r==(tint==FierceDeityTint::White?240:tint==FierceDeityTint::Gold?255:100));
+        if(tint==FierceDeityTint::White) {
+            assert(gpuMaterial.r==gpuMaterial.g && gpuMaterial.g==gpuMaterial.b);
+            assert((gpuStages[3].color==std::array<int,4>{GX_CC_ZERO,GX_CC_ZERO,GX_CC_ZERO,GX_CC_RASC}));
+            assert(((bp[0x29]>>12)&(1u<<6))==0); // no texture RGB can turn white areas black
+            assert(!(xf[0x100F]&2)); // uniform white in every lighting condition
+            for(int alpha : {0,93,255})assert(warp_alpha(3,alpha,0)==alpha);
+        }
         draw_end();assert(bp==nativeBP && xf==nativeXF);
         draw_shadow(gear);
         darkActive=false;

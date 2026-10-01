@@ -76,14 +76,15 @@ Dark, Dark Magic, White and Gold affect Link's body, face, hair/hat, hands,
 worn boots, equipped sword, shield and scabbard, including Dual Wield's second
 sword/scabbard, held or stowed. Magic Armor alone retains native equipment colors.
 These appearances use the loaded models, including compatible replacements,
-and preserve native texture transparency.
+and preserve native texture transparency. In White, swords, shields and scabbards
+(including Dual Wield) are uniformly white; their texture colors are not inverted.
 
 Dark/Dark Magic eyes glow fully red; Gold eyes glow fully white. White uses
 orange-yellow emission for the iris and pupil and turns the sclera black.
 Eye recognition uses `eyeballL`/`eyeballR` material names. Eyelids, blinking and
 cutout alpha remain native; unknown eye material names use body shading.
 
-White classifies the raw diffuse texture before scene lighting: near-white means
+On Link's body and eyes, White classifies the raw diffuse texture before scene lighting: near-white means
 all three RGB components are at least 224/255 (192/255 on eyes to include shaded
 sclera). Those texels become black; black, gray and colored texels become white,
 or amber on eyes. This is a deliberate monochrome recolor, not RGB inversion.

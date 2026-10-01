@@ -434,7 +434,10 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         if (scope.warpCoord < 0 || count + warpStages + (scope.tint != FierceDeityTint::None ? 1 : 0) > 16)
             return HOOK_CONTINUE;
     }
-    const bool eye = eye_material(model->getModelData(), material);
+    // White equipment is a solid tint, independent of its texture colors.
+    const bool solidWhiteEquipment = scope.tint == FierceDeityTint::White &&
+        player_equipment(daAlink_getAlinkActorClass(), model);
+    const bool eye = !solidWhiteEquipment && eye_material(model->getModelData(), material);
 
     DarkDisplayList effect;
     effect.swap(identity, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
@@ -465,7 +468,7 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         effect.lighting(scope.tint, eye, ambientAlpha, materialAlpha);
     }
 
-    const auto* surface = scope.tint == FierceDeityTint::White ?
+    const auto* surface = scope.tint == FierceDeityTint::White && !solidWhiteEquipment ?
         surface_texture_order(model->getModelData(), material, eye) : nullptr;
     if (surface != nullptr && count + warpStages + 3 <= 16) {
         next = effect.monochrome(count, surface, identity, eye);

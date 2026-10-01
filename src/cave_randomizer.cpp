@@ -6,6 +6,7 @@
 #include "SSystem/SComponent/c_math.h"
 #include "SSystem/SComponent/c_phase.h"
 #include "d/d_com_inf_game.h"
+#include "d/actor/d_a_e_sh.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_create_req.h"
 #include "mods/svc/hook.hpp"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Public symbol, but no SDK declaration. Only the create_request base (the
@@ -27,6 +29,7 @@ DEFINE_HOOK(&dStage_dt_c_roomReLoader, RoomActorsHook);
 DEFINE_HOOK(&fpcSCtRq_Request, RequestHook);
 DEFINE_HOOK(&fpcSCtRq_phase_Load, LoadHook);
 DEFINE_HOOK(&fpcBs_Create, AllocateHook);
+DEFINE_HOOK_SYMBOL("d_a_e_sh.cpp#daE_SH_Execute", int(e_sh_class*), StalhoundExecuteHook);
 
 struct Enemy {
     s16 profile;
@@ -63,6 +66,8 @@ constexpr Enemy kEnemies[] = {
     {fpcNm_E_KR_e, 0xffffff00, 200.0f, -1, 0xff}, // Flying Kargarok, no path/switch
     {fpcNm_E_FS_e, 0x00000000, 0.0f},   // Standalone Puppet
     {fpcNm_E_GE_e, 0x00ffff01, 200.0f}, // Flying Guay, no defeated switch/group
+    {fpcNm_E_AI_e, 0x00ff000a, 0.0f},  // Armos, no defeated switch, 1000-unit home radius
+    {fpcNm_E_SH_e, 0x0014ff00, 0.0f},  // Stalhound, 2000-unit detection, unrestricted leash
     {fpcNm_E_SM2_e, 0xffff0010, 0.0f},  // One small Chu entry; color rolled separately
     {fpcNm_E_DN_e, 0xff000000, 0.0f},   // Lizalfos
     {fpcNm_E_DD_e, 0xffff0000, 0.0f},   // Dodongo
@@ -107,10 +112,42 @@ struct PendingEnemy {
 };
 std::vector<RoomLoad> s_roomLoads;
 std::unordered_map<fpc_ProcID, PendingEnemy> s_pending;
+std::unordered_set<fpc_ProcID> s_stalhounds;
+
+struct StalhoundTimeFrame {
+    void* args;
+    float daytime;
+};
+std::vector<StalhoundTimeFrame> s_stalhoundTimeFrames;
 
 bool in_cave() {
     const char* stage = dComIfGp_getStartStageName();
     return stage != nullptr && std::strcmp(stage, "D_SB01") == 0;
+}
+
+HookAction before_stalhound_execute(ModContext*, void* args, void*, void*) {
+    const auto* actor = mods::arg<e_sh_class*>(args, 0);
+    const bool owned = actor != nullptr && in_cave() &&
+        s_stalhounds.contains(fopAcM_GetID(&actor->enemy));
+    if (!owned && s_stalhoundTimeFrames.empty()) return HOOK_CONTINUE;
+
+    auto& daytime = dKy_getEnvlight()->daytime;
+    // Native AI checks daytime both when emerging and when deciding to burrow;
+    // its effects also use it. Scope midnight to this actor's synchronous update
+    // and restore immediately, preserving native animations/AI and the real clock.
+    // A nested native Stalhound must see the outermost original time instead.
+    const float actorTime = owned ? 0.0f : s_stalhoundTimeFrames.front().daytime;
+    s_stalhoundTimeFrames.push_back({args, daytime});
+    daytime = actorTime;
+    return HOOK_CONTINUE;
+}
+
+void after_stalhound_execute(ModContext*, void* args, void*, void*) {
+    // Post hooks can run even if another mod skipped before our pre hook.
+    if (!s_stalhoundTimeFrames.empty() && s_stalhoundTimeFrames.back().args == args) {
+        dKy_getEnvlight()->daytime = s_stalhoundTimeFrames.back().daytime;
+        s_stalhoundTimeFrames.pop_back();
+    }
 }
 
 bool is_enemy_profile(s16 name) {
@@ -220,6 +257,9 @@ HookAction before_allocate(ModContext*, void* args, void*, void*) {
     append->base.angle = csXyz(0, oldAngle.y, replacement.angleZ);
     append->scale = {10, 10, 10};
     append->argument = replacement.argument;
+    if (replacement.profile == fpcNm_E_SH_e) {
+        s_stalhounds.insert(mods::arg<fpc_ProcID>(args, 1));
+    }
     // Preserve setID, parent, room and the original creation request/layer.
     // The native cleared-room gate therefore still sees one enemy per slot.
     return HOOK_CONTINUE;
@@ -231,15 +271,26 @@ void update_cave_randomizer() {
         if (!in_cave() || !fpcM_IsCreating(it->first)) it = s_pending.erase(it);
         else ++it;
     }
+    for (auto it = s_stalhounds.begin(); it != s_stalhounds.end();) {
+        if (!in_cave() || (!fpcM_IsCreating(*it) && fopAcM_SearchByID(*it) == nullptr)) {
+            it = s_stalhounds.erase(it);
+        } else ++it;
+    }
 }
 
 void shutdown_cave_randomizer() {
+    mods::hook::uninstall<StalhoundExecuteHook>(svc_hook);
+    if (!s_stalhoundTimeFrames.empty()) {
+        dKy_getEnvlight()->daytime = s_stalhoundTimeFrames.front().daytime;
+        s_stalhoundTimeFrames.clear();
+    }
     mods::hook::uninstall<AllocateHook>(svc_hook);
     mods::hook::uninstall<LoadHook>(svc_hook);
     mods::hook::uninstall<RequestHook>(svc_hook);
     mods::hook::uninstall<RoomActorsHook>(svc_hook);
     s_pending.clear();
     s_roomLoads.clear();
+    s_stalhounds.clear();
 }
 
 ModResult install_cave_randomizer(ModError* error) {
@@ -248,6 +299,8 @@ ModResult install_cave_randomizer(ModError* error) {
     if (result == MOD_OK) result = mods::hook::add_post<RequestHook>(svc_hook, after_request);
     if (result == MOD_OK) result = mods::hook::add_pre<LoadHook>(svc_hook, before_load);
     if (result == MOD_OK) result = mods::hook::add_pre<AllocateHook>(svc_hook, before_allocate);
+    if (result == MOD_OK) result = mods::hook::add_pre<StalhoundExecuteHook>(svc_hook, before_stalhound_execute);
+    if (result == MOD_OK) result = mods::hook::add_post<StalhoundExecuteHook>(svc_hook, after_stalhound_execute);
     if (result != MOD_OK) {
         shutdown_cave_randomizer();
         return mods::set_error(error, result, "failed to install Cave of Ordeals randomizer");

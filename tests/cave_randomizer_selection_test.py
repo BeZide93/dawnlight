@@ -28,13 +28,13 @@ stubs += "enum { " + ", ".join(profiles) + " };\n"
 tests = r'''
 int main() {
     // Enumerate every first-roll bucket: all five colors must occupy only
-    // ONE of the 30 main-pool buckets, not five separately weighted entries.
+    // ONE of the 32 main-pool buckets, not five separately weighted entries.
     unsigned chuBuckets = 0;
     unsigned chuBucket = 0;
-    for (unsigned bucket = 0; bucket < 30; ++bucket) {
+    for (unsigned bucket = 0; bucket < 32; ++bucket) {
         draws = {bucket + 0.5f, 0.5f}; bounds.clear();
         auto enemy = choose_enemy(-1);
-        assert(bounds[0] == 30.0f);
+        assert(bounds[0] == 32.0f);
         if (enemy.profile == fpcNm_E_SM2_e) {
             ++chuBuckets; chuBucket = bucket;
             assert(bounds.size() == 2 && bounds[1] == 5.0f);
@@ -76,8 +76,8 @@ int main() {
     }
 
     // Guard the RNG upper endpoint on both draws.
-    draws = {30.0f}; bounds.clear();
-    assert(choose_enemy(-1).profile == kEnemies[29].profile);
+    draws = {32.0f}; bounds.clear();
+    assert(choose_enemy(-1).profile == kEnemies[31].profile);
     draws = {chuBucket + 0.5f, 5.0f}; bounds.clear();
     assert(((choose_enemy(-1).parameters >> 4) & 15) == 6);
 }

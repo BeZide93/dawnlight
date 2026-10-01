@@ -52,6 +52,7 @@ jobs:
           c++ -std=c++20 -Wall -Wextra -Werror tests/cave_randomizer_ground_test.cpp -o /tmp/cave-ground-test
           /tmp/cave-ground-test
           python3 tests/cave_randomizer_selection_test.py
+          python3 tests/cave_randomizer_stalhound_test.py
 
       - name: Test Z item provider guards
         if: matrix.platform == 'linux-x86_64'

@@ -35,14 +35,19 @@ new layout.
   the slot **in the same room**. Small horizontal offsets handle wall placements;
   flying replacements start 200 units above that floor. Original ceiling flags,
   paths, rotations, scales, and switches are replaced with standalone settings.
-- The main pool contains 30 entries: Bokoblins, Mini Freezards, Keese and Bubbles
+- The main pool contains 32 entries: Bokoblins, Mini Freezards, Keese and Bubbles
   (normal/fire/ice), Tektites, Gibdos, Chilfos, Stalchildren, Rats, club and bow
   Bulblins, Aeralfos, Bomskits, ground Deku Babas, Helmasaurs, Helmasauruses,
-  Kargaroks, Puppets, Guays, one shared Chu entry,
+  Kargaroks, Puppets, Guays, Armos, Stalhounds, one shared Chu entry,
   Lizalfos, Dodongos, Dynalfos, ground Skulltulas, Stalfos, and Darknuts.
   Each eligible entry has equal probability; entries sharing the
   original actor profile are excluded. There is no per-room Darknut limit.
   Generators and bosses with arena scripts are not replacement types.
+- Armos have no defeated switch and a 1000-unit home radius. Randomized
+  Stalhounds detect Link within 2000 units and use the unrestricted native leash.
+  Their own updates temporarily see midnight, so daytime cannot keep them hidden
+  or make them burrow. The real time is restored immediately after each update;
+  native Stalhounds retain their normal day/night behavior.
 - If the Chu entry is selected, a second independent roll chooses red, blue,
   yellow, purple, or black, with a 20% chance each. Green and rare Chus are not
   selected. The five colors together have the weight of one main-pool entry.

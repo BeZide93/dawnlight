@@ -25,12 +25,69 @@ struct WarpTransition {
     unsigned queuedModels = 0;
     unsigned maskedShapes = 0;
     unsigned projectedGroups = 0;
+    u32 particleKey = 0;
+    bool particleFailureReported = false;
     FierceWarpWipe wipe;
 };
 WarpTransition s_transition;
+bool s_extraWarpParticleStep = false;
 
 void warp_log(const char* message) {
     if (svc_log != nullptr) svc_log->info(mod_ctx, message);
+}
+
+JPABaseEmitter* warp_particle_emitter() {
+    if (s_transition.particleKey == 0 || g_dComIfG_gameInfo.play.getParticle() == nullptr ||
+        dPa_control_c::getEmitterManager() == nullptr) return nullptr;
+    return dComIfGp_particle_getEmitter(s_transition.particleKey);
+}
+
+void stop_warp_particles() {
+    if (auto* emitter = warp_particle_emitter()) {
+        // The level-emitter table owns this emitter. Stop drawing/creating and
+        // return live particles now; its normal cleanup releases the emitter.
+        // Never free it behind that table or touch Link's native warp handles.
+        emitter->stopCreateParticle();
+        emitter->stopDrawParticle();
+        emitter->deleteAllParticle();
+    }
+    s_transition.particleKey = 0;
+}
+
+void update_warp_particles(daAlink_c* link) {
+    if (g_dComIfG_gameInfo.play.getParticle() == nullptr ||
+        dPa_control_c::getEmitterManager() == nullptr) return;
+    // These are Link's COMMON warp resources, not a scene/boss archive.
+    // The descending boundary dissolves the outgoing outfit; the ascending
+    // boundary uses the native assembly effect, which is authored at the feet.
+    cXyz position = link->current.pos;
+    const u16 effect = s_transition.wipe.entering ?
+        ID_ZI_J_LK_WARP_DISAPP_A : ID_ZI_J_LK_WARP_APP_A;
+    if (s_transition.wipe.entering) {
+        position.y += (s_transition.wipe.height() - FierceWarpWipe::low) * 30.0f;
+    }
+    auto* emitter = link->setEmitter(&s_transition.particleKey, effect,
+                                     &position, &link->shape_angle);
+    if (emitter == nullptr && !s_transition.particleFailureReported) {
+        warp_log("Fierce Deity warp: native flying-particle emitter unavailable");
+        s_transition.particleFailureReported = true;
+    }
+}
+
+void after_warp_particle_calc(ModContext*, void* args, void* retval, void*) {
+    if (s_extraWarpParticleStep || !s_transition.committed || retval == nullptr ||
+        *static_cast<bool*>(retval)) return;
+    auto* emitter = mods::arg<JPABaseEmitter*>(args, 2);
+    if (emitter == nullptr || emitter != warp_particle_emitter() ||
+        emitter->checkStatus(JPAEmtrStts_StopCalc)) return;
+    auto* resource = mods::arg<JPAResource*>(args, 0);
+    auto* work = mods::arg<JPAEmitterWorkData*>(args, 1);
+    // Advance only our emitter by one additional native step. This doubles
+    // particle motion, lifetimes and all resource keyframes together, instead
+    // of just doubling launch speed. The manager retains deletion ownership.
+    s_extraWarpParticleStep = true;
+    *static_cast<bool*>(retval) = resource->calc(work, emitter);
+    s_extraWarpParticleStep = false;
 }
 
 bool transition_owner(daAlink_c* link) {
@@ -111,6 +168,7 @@ void restore_archive_heap(daAlink_c* link) {
 }
 
 void discard_transition(daAlink_c* link) {
+    stop_warp_particles();
     if (s_transition.committed) {
         char message[192];
         std::snprintf(message, sizeof(message),

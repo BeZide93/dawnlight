@@ -101,7 +101,7 @@ fixture = r'''
 #include <vector>
 #include "fierce_deity_wipe.hpp"
 using dawnlight::FierceWarpWipe;
-using u8=unsigned char; using fpc_ProcID=unsigned;
+using u8=unsigned char; using u32=unsigned; using fpc_ProcID=unsigned;
 constexpr unsigned fpcM_ERROR_PROCESS_ID_e=~0u;
 struct Heap {
     virtual ~Heap() = default;
@@ -114,6 +114,7 @@ std::vector<std::unique_ptr<Heap>> heaps;
 bool failModels=false, failScratch=false, failPin=false, compatible=true;
 unsigned scratchRequested=0;
 void warp_log(const char*) {}
+void stop_warp_particles() {}
 struct JKRSolidHeap : Heap {
     static JKRSolidHeap* create(unsigned,Heap*,bool) {
         if(failModels) return nullptr;
@@ -153,6 +154,7 @@ int dComIfG_deleteObjectResMain(const char* arc) {
     assert(refs[arc]>0); --refs[arc]; return 1;
 }
 daAlink_c* current=nullptr;
+void update_warp_particles(daAlink_c*) {}
 daAlink_c* daAlink_getAlinkActorClass() {return current;}
 unsigned fopAcM_GetID(daAlink_c* p) {return p->id;}
 using OutfitModels=std::array<J3DModel*,6>;

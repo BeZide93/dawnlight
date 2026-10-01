@@ -66,6 +66,7 @@ jobs:
           python3 tests/fierce_deity_lifecycle_test.py
           python3 tests/fierce_deity_visual_test.py
           python3 tests/fierce_deity_transition_test.py
+          python3 tests/fierce_deity_particles_test.py
 
       - name: Test Collection Dual Wield
         if: matrix.platform == 'linux-x86_64'

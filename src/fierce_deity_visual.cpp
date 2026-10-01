@@ -10,7 +10,10 @@
 #include "JSystem/J3DGraphAnimator/J3DMtxBuffer.h"
 #include "JSystem/JKernel/JKRExpHeap.h"
 #include "JSystem/JKernel/JKRSolidHeap.h"
+#include "JSystem/JParticle/JPAEmitter.h"
+#include "JSystem/JParticle/JPAResource.h"
 #include "d/d_com_inf_game.h"
+#include "d/d_particle_name.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_op/f_op_camera_mng.h"
 #include "f_pc/f_pc_leaf.h"
@@ -35,6 +38,7 @@ DEFINE_HOOK(&J3DShapePacket::draw, FierceShapePacketDrawHook);
 DEFINE_HOOK(&J3DShapePacket::drawFast, FierceShapePacketFastHook);
 DEFINE_HOOK(&J3DShape::drawFast, FierceShapeDrawHook);
 DEFINE_HOOK(&J3DShapeDraw::draw, FiercePrimitiveDrawHook);
+DEFINE_HOOK(&JPAResource::calc, FierceWarpParticleCalcHook);
 #if defined(__APPLE__)
 DEFINE_HOOK(&fpcMtd_Method, FiercePlayerDrawHook);
 #else
@@ -513,12 +517,17 @@ void fierce_deity_transition_commit(daAlink_c* link) {
     }
     s_transition.committed = true;
     warp_log("Fierce Deity warp: started (50 ticks, native material)");
+    update_warp_particles(link);
 }
 
 void fierce_deity_transition_tick(daAlink_c* link) {
     if (!transition_owner(link) || !s_transition.committed) return;
     if (link->checkWolf() || link->checkDeadHP() || link->checkSceneChangeAreaStart() ||
-        link->checkEventRun() || s_transition.wipe.advance()) discard_transition(link);
+        link->checkEventRun() || s_transition.wipe.advance()) {
+        discard_transition(link);
+    } else {
+        update_warp_particles(link);
+    }
 }
 
 void fierce_deity_transition_cancel(daAlink_c* link) {
@@ -540,6 +549,7 @@ ModResult initialize_fierce_deity_visual(ModError* error) {
         (result = mods::hook::add_pre<FierceShapeDrawHook>(svc_hook, before_shape_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceShapeDrawHook>(svc_hook, after_shape_draw)) != MOD_OK ||
         (result = mods::hook::add_pre<FiercePrimitiveDrawHook>(svc_hook, before_primitive_draw)) != MOD_OK ||
+        (result = mods::hook::add_post<FierceWarpParticleCalcHook>(svc_hook, after_warp_particle_calc)) != MOD_OK ||
         (result = mods::hook::add_post<FiercePlayerDrawHook>(svc_hook, after_player_draw)) != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Fierce Deity visual hooks");
     }

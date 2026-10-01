@@ -7,6 +7,9 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'src/fierce_deity_visual.cpp').read_text()
 callbacks = source[source.index('struct DrawScope'):source.index('void after_player_draw')]
 callbacks = callbacks.replace('#include "fierce_deity_transition.inc"', '')
+dual_source = (root / 'src/dual_wield.cpp').read_text()
+dual_start = dual_source.index('bool dual_wield_owns_model(')
+dual_owner = dual_source[dual_start:dual_source.index('\n}', dual_start) + 2]
 fixture = r'''
 #include <array>
 #include <cassert>
@@ -23,10 +26,11 @@ constexpr int GX_COLOR1=1, GX_COLOR1A1=5, GX_TRUE=1, GX_FALSE=0;
 constexpr int GX_SRC_REG=0, GX_LIGHT_NULL=0, GX_LIGHT0=1, GX_DF_CLAMP=2, GX_AF_NONE=2;
 constexpr int GX_TEV_ADD=0, GX_TEV_SUB=1, GX_TB_ZERO=0, GX_CS_SCALE_1=0,
               GX_CS_SCALE_2=1, GX_TEVPREV=0, GX_TEXCOORD_NULL=255, GX_TEXMAP_NULL=255;
-constexpr int GX_CC_ZERO=15, GX_CC_TEXC=8, GX_CC_CPREV=0, GX_CC_RASC=10;
+constexpr int GX_CC_ZERO=15, GX_CC_TEXC=8, GX_CC_CPREV=0, GX_CC_RASC=10,
+              GX_CC_C0=2, GX_CC_C1=4, GX_TEVREG0=1, GX_TEVREG1=2;
 constexpr int GX_CA_ZERO=7, GX_CA_APREV=0, GX_TEXMAP3=3;
 struct GXColor { u8 r, g, b, a; };
-struct RecordedStage { std::array<int,4> color{}, alpha{}; int op=0, scale=0, swap=0; };
+struct RecordedStage { std::array<int,4> color{}, alpha{}; int op=0, scale=0, swap=0, dest=0; };
 std::array<RecordedStage,16> gpuStages{};
 std::array<std::array<int,4>,4> gpuSwaps{};
 int gpuCount=3, gxWrites=0, restoreCalls=0;
@@ -52,6 +56,7 @@ void decode_state() {
         gpuStages[i].alpha={int((a>>13)&7),int((a>>10)&7),int((a>>7)&7),int((a>>4)&7)};
         gpuStages[i].op=(c>>18)&1; gpuStages[i].scale=(c>>20)&3;
         gpuStages[i].swap=(a>>2)&3;
+        gpuStages[i].dest=(c>>22)&3;
     }
     for(unsigned i=0;i<4;++i) {
         const u32 rg=bp[0xF6+2*i], ba=bp[0xF7+2*i];
@@ -208,9 +213,11 @@ struct J3DShapePacket {
 struct daAlink_c {
     J3DModel *mpLinkModel=nullptr,*mpLinkFaceModel=nullptr,*mpLinkHatModel=nullptr,
     *mpLinkHandModel=nullptr,*mpDemoFCBlendModel=nullptr,*mpDemoFCTongueModel=nullptr,
-    *mpDemoHLTmpModel=nullptr,*mpDemoHRTmpModel=nullptr,*mpLinkBootModels[2]{};
+    *mpDemoHLTmpModel=nullptr,*mpDemoHRTmpModel=nullptr,*mpLinkBootModels[2]{},
+    *mSwordModel=nullptr,*mSheathModel=nullptr,*mShieldModel=nullptr;
 };
 daAlink_c link;
+struct { const daAlink_c* owner=nullptr; J3DModel* sword=nullptr; J3DModel* sheath=nullptr; } s;
 bool darkActive=true;
 daAlink_c* daAlink_getAlinkActorClass() {return &link;}
 bool fierce_deity_dark_visual_active() {return darkActive;}
@@ -264,20 +271,21 @@ void draw_shadow(J3DShapePacket& p) {
 
 }
 float eye_mask(int nativeCount, float r, float b) {
-    float previous=0;
-    for(int i=nativeCount;i<gpuCount;++i) {
+    std::array<float,4> regs{};
+    for(int i=nativeCount;i<nativeCount+5;++i) {
         const auto& s=gpuStages[i];
         const float tex=gpuSwaps[s.swap][0]==GX_CH_RED ? r : b;
         auto value=[&](int v) {switch(v) {
             case GX_CC_ZERO:return 0.0f; case GX_CC_TEXC:return tex;
-            case GX_CC_CPREV:return previous; case GX_CC_RASC:return 1.0f;
+            case GX_CC_CPREV:return regs[0]; case GX_CC_RASC:return 1.0f;
+            case GX_CC_C0:return regs[1]; case GX_CC_C1:return regs[2];
         } assert(false); return 0.0f;};
         const auto& c=s.color;
         const float mix=value(c[0])*(1-value(c[2]))+value(c[1])*value(c[2]);
-        previous=std::clamp((value(c[3])+(s.op==GX_TEV_SUB ? -mix:mix))*(s.scale?2:1),0.0f,1.0f);
+        regs[s.dest]=std::clamp((value(c[3])+(s.op==GX_TEV_SUB ? -mix:mix))*(s.scale?2:1),0.0f,1.0f);
         assert((s.alpha==std::array<int,4>{GX_CA_ZERO,GX_CA_ZERO,GX_CA_ZERO,GX_CA_APREV}));
     }
-    return previous;
+    return regs[0];
 }
 float xf_float_value(unsigned reg) {
     float result; u32 bits=xf[reg]; std::memcpy(&result,&bits,sizeof(result)); return result;
@@ -375,16 +383,21 @@ int main() {
     draw_end(); mat.color.alpha.enabled=false;
 
     // Alpha-tested geometry preserves alpha at every appended stage. Eye masks
-    // must reject white sclera and retain red-channel iris at moving UVs.
+    // must reject white sclera and retain blue AND red irises at moving UVs.
     for(const char* name : {"al_eyeballL_m","bl_eyeballR_m","ml_eyeballL_m","zl_eyeballR_m"}) {
         player.data.materials.name=name;
         draw_begin(p);
-        assert(gpuCount==6 && gpuMaterial.r==230 && gpuMaterial.g==8);
+        assert(gpuCount==8 && gpuMaterial.r==230 && gpuMaterial.g==8);
         for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
         assert(eye_mask(3,1,1)==0); // sclera
         assert(eye_mask(3,1,0)==1); // iris
+        assert(eye_mask(3,0,1)==1); // native blue iris (old R-B mask gave zero)
         assert(eye_mask(3,0,0)==0); // pupil
         assert(eye_mask(3,0.6f,0.4f)>0.39f && eye_mask(3,0.6f,0.4f)<0.41f);
+        // Full 8-bit domain, both directions, including neutral antialiasing.
+        for(int r=0;r<256;++r) for(int b=0;b<256;++b)
+            assert(std::abs(eye_mask(3,r/255.f,b/255.f)-
+                std::min(1.f,2.f*std::abs(r-b)/255.f))<0.00001f);
         draw_end();
     }
     // Cover both halves of packed TREF registers and every legal stage count.
@@ -395,7 +408,7 @@ int main() {
         for(const char* name : {"al_body", "al_eyeballL_m"}) {
             player.data.materials.name=name;
             draw_begin(p);
-            assert(gpuCount==count+(count<=13 && std::strstr(name,"eyeball") ? 3 : count<=14 ? 2 : 1));
+            assert(gpuCount==count+(count<=11 && std::strstr(name,"eyeball") ? 5 : count<=14 ? 2 : 1));
             draw_end();
             assert(bp==nativeBP && xf==nativeXF);
         }
@@ -473,6 +486,46 @@ int main() {
     draw_shadow(p); // a transition still never enters the shadow-image pass
     warpTest=false;
 
+    // Eye RGB register writes must not interfere with warp alpha registers.
+    player.data.materials.name="al_eyeballL_m";
+    warpTest=warpDark=true;
+    for(bool invert : {false,true}) {
+        warpInverse=invert;
+        draw_begin(p);
+        assert(gpuCount==8+(invert ? 3 : 1));
+        assert(eye_mask(3,0,1)==1 && eye_mask(3,1,0)==1);
+        for(int alpha : {0,93,255}) for(int mask=0;mask<256;++mask)
+            assert(warp_alpha(3,alpha,mask)==((invert ? mask!=255 : mask==255) ? alpha : 0));
+        draw_end();assert(bp==nativeBP && xf==nativeXF);
+    }
+    warpTest=false;
+    player.data.materials.name="al_body";
+
+    // Every held/stowed equipment instance gets the same body shading, even
+    // when its material is shared with an unrelated actor. No retained warp
+    // layer exists for equipment, and shadow draws must remain native.
+    J3DModel sword, sheath, shield, second, secondSheath;
+    link.mSwordModel=&sword;link.mSheathModel=&sheath;link.mShieldModel=&shield;
+    s.owner=&link;s.sword=&second;s.sheath=&secondSheath;
+    for(auto* model : {&sword,&sheath,&shield,&second,&secondSheath}) {
+        J3DShapePacket gear{model,&shape,{}};
+        assert(!player_model(&link,model) && player_equipment(&link,model));
+        draw_begin(gear);assert(gpuCount==5 && gpuMaterial.r==100);
+        draw_end();assert(bp==nativeBP && xf==nativeXF);
+        draw_shadow(gear);
+        darkActive=false;
+        writes=gxWrites;draw_begin(gear);draw_end();assert(gxWrites==writes);
+        darkActive=true;
+    }
+    assert(!player_equipment(nullptr,&sword) && !player_equipment(&link,nullptr));
+    assert(!player_equipment(&link,&other));
+    daAlink_c otherLink;s.owner=&otherLink;
+    assert(!player_equipment(&link,&second));
+    s.owner=&link;s.sword=nullptr;s.sheath=nullptr; // released Dual Wield models
+    assert(!player_equipment(&link,&second) && !player_equipment(&link,&secondSheath));
+    link.mSwordModel=nullptr;link.mSheathModel=nullptr;link.mShieldModel=nullptr;
+    assert(!player_equipment(&link,&sword) && !player_equipment(&link,&shield));
+
     // Different native materials use different dormant generator slots. Every
     // coefficient, including the changing vertical translation, must reach the
     // selected post matrix as a complete block without touching its neighbors.
@@ -535,7 +588,7 @@ int main() {
 with tempfile.TemporaryDirectory() as temp:
     cpp = Path(temp) / 'visual.cpp'
     exe = Path(temp) / 'visual'
-    cpp.write_text(fixture + callbacks + checks)
+    cpp.write_text(fixture + dual_owner + callbacks + checks)
     subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)

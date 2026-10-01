@@ -697,6 +697,10 @@ HookAction before_delete(ModContext*,void* args,void*,void*) {
     if(mods::arg<void*>(args,0)==s.owner) release();return HOOK_CONTINUE;
 }
 } // namespace
+bool dual_wield_owns_model(const daAlink_c* link, const J3DModel* model) {
+    return link != nullptr && s.owner == link && model != nullptr &&
+        (model == s.sword || model == s.sheath);
+}
 ModResult install_dual_wield_hooks(ModError* error) {
     void* address=nullptr;
     if(svc_hook->resolve && svc_hook->resolve(mod_ctx,"J3DModel::forgetMtx",&address,nullptr)==MOD_OK)

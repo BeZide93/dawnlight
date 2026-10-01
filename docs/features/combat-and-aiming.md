@@ -69,12 +69,16 @@ transformation applies when gameplay resumes, waits for any pending model load,
 and preserves the remaining meter. Dark keeps the current model without a clothes
 reload; the Magic variants restore the selected outfit when the transformation ends.
 
-The dark appearance affects Link's body, face, hair/hat, hands and worn boots.
+The dark appearance affects Link's body, face, hair/hat, hands, worn boots,
+equipped sword, shield and scabbard, including the second sword/scabbard from
+Dual Wield. Equipment uses the same dark shading and specular highlights while
+held or stowed; the Magic Armor visual alone keeps its normal equipment colors.
 It uses the loaded models, including compatible model replacements, and preserves
 native texture transparency. Red eyes use the native `eyeballL`/`eyeballR` material
-and `eyeball` texture naming/masks. Unsupported custom eye layouts fall back to
+and `eyeball` texture naming/masks, accepting both blue and red/brown irises while
+keeping neutral sclera and pupils dark. Unsupported custom eye layouts fall back to
 dark shading. Materials already using all 16 TEV stages are left unchanged.
-Equipment and held items retain their normal appearance. Rendering changes are
+Other held items retain their normal appearance. Rendering changes are
 scoped to the player's draw calls; shared model data and other actors are untouched.
 
 With [Progression System](general-settings.md) enabled, Dark Link unlocks

@@ -1,4 +1,5 @@
 #include "fierce_deity.hpp"
+#include "dual_wield.hpp"
 #include "service_imports.hpp"
 #include "fierce_deity_wipe.hpp"
 
@@ -93,12 +94,20 @@ J3DMatPacket* drawing_material(J3DShapePacket* packet) {
 }
 
 bool player_model(daAlink_c* link, const J3DModel* model) {
-    return model != nullptr && (model == link->mpLinkModel ||
+    return link != nullptr && model != nullptr && (model == link->mpLinkModel ||
         model == link->mpLinkFaceModel || model == link->mpLinkHatModel ||
         model == link->mpLinkHandModel || model == link->mpDemoFCBlendModel ||
         model == link->mpDemoFCTongueModel || model == link->mpDemoHLTmpModel ||
         model == link->mpDemoHRTmpModel || model == link->mpLinkBootModels[0] ||
         model == link->mpLinkBootModels[1]);
+}
+
+bool player_equipment(daAlink_c* link, const J3DModel* model) {
+    // Compare live instances, never shared model data or material names. Keep
+    // equipment separate from player_model: it has no retained outgoing layer.
+    return link != nullptr && model != nullptr &&
+        (model == link->mSwordModel || model == link->mSheathModel ||
+         model == link->mShieldModel || dual_wield_owns_model(link, model));
 }
 
 #include "fierce_deity_transition.inc"
@@ -109,10 +118,12 @@ HookAction before_packet_draw(ModContext*, void* args, void*, void*) {
         auto& scope = s_drawScopes[s_drawDepth];
         scope = {};
         if (packet != nullptr) {
+            auto* link = daAlink_getAlinkActorClass();
             const auto layer = warp_layer(packet->getModel());
             const bool dark = layer.active ? layer.dark :
                 (fierce_deity_dark_visual_active() &&
-                 player_model(daAlink_getAlinkActorClass(), packet->getModel()));
+                 (player_model(link, packet->getModel()) ||
+                  player_equipment(link, packet->getModel())));
             if (layer.active || dark) {
                 scope.materialPacket = drawing_material(packet);
                 if (scope.materialPacket != nullptr) {
@@ -288,7 +299,7 @@ public:
                unsigned identity, unsigned textureSwap,
                GXTevColorArg a, GXTevColorArg b, GXTevColorArg c, GXTevColorArg d,
                GXTevOp op = GX_TEV_ADD, GXTevScale scale = GX_CS_SCALE_1,
-               unsigned rasterChannel = 1) {
+               unsigned rasterChannel = 1, unsigned colorDest = GX_TEVPREV) {
         const unsigned shift = (index & 1) * 12;
         const bool textured = coord != GX_TEXCOORD_NULL && map != GX_TEXMAP_NULL;
         const u32 order = (rasterChannel << 7) | (textured ?
@@ -297,7 +308,8 @@ public:
         masked_bp(0x28 + index / 2, 0xFFFu << shift, order << shift);
         bp(0x10 + index, 0); // direct TEV stage (no indirect lookup)
         bp(0xC0 + 2 * index, u32(d) | (u32(c) << 4) | (u32(b) << 8) |
-            (u32(a) << 12) | (u32(op) << 18) | (1u << 19) | (u32(scale) << 20));
+            (u32(a) << 12) | (u32(op) << 18) | (1u << 19) | (u32(scale) << 20) |
+            (colorDest << 22));
         // Preserve the native alpha chain: (0 * (1 - 0) + 0 * 0) + APREV.
         bp(0xC1 + 2 * index, identity | (textureSwap << 2) |
             (u32(GX_CA_APREV) << 4) | (u32(GX_CA_ZERO) << 7) |
@@ -392,11 +404,12 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const unsigned warpStages = scope.warp ? (scope.inverse ? 3 : 1) : 0;
     if (scope.warp) {
         scope.warpCoord = native_warp_coord(model, material, daAlink_getAlinkActorClass());
-        if (scope.warpCoord < 0 || count + warpStages + (scope.dark ? 3 : 0) > 16)
+        if (scope.warpCoord < 0 || count + warpStages + (scope.dark ? 1 : 0) > 16)
             return HOOK_CONTINUE;
     }
     const auto* eyeOrder = eye_texture_order(model->getModelData(), material);
-    const bool eye = eyeOrder != nullptr && count + 3 <= 16 && swaps.red >= 0 && swaps.blue >= 0;
+    const bool eye = eyeOrder != nullptr && count + warpStages + 5 <= 16 &&
+        swaps.red >= 0 && swaps.blue >= 0;
 
     DarkDisplayList effect;
     effect.swap(identity, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
@@ -415,7 +428,7 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const bool alphaUsesLight0 =
         (alpha0 != nullptr && alpha0->getEnable() && (alpha0->getLightMask() & 1)) ||
         (alpha1 != nullptr && alpha1->getEnable() && (alpha1->getLightMask() & 1));
-    const bool glossy = !alphaUsesLight0 && !eye && count + 2 <= 16 && batchMaterial != nullptr &&
+    const bool glossy = !alphaUsesLight0 && !eye && count + warpStages + 2 <= 16 && batchMaterial != nullptr &&
         batchMaterial->getColorBlock() != nullptr &&
         batchMaterial->getColorBlock()->getLight(0) != nullptr;
     if (glossy) {
@@ -434,15 +447,25 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         effect.swap(blue, GX_CH_BLUE, GX_CH_BLUE, GX_CH_BLUE, GX_CH_ALPHA);
         const auto coord = static_cast<GXTexCoordID>(eyeOrder->mTexCoord);
         const auto map = static_cast<GXTexMapID>(eyeOrder->getTexMap());
-        // Red-minus-blue isolates the iris using the existing animated UVs.
+        // 2 * abs(R - B) accepts blue native irises as well as red/brown custom
+        // irises. White/gray sclera and black pupils cancel in either direction.
+        // Use clamped differences: signed TEV values cannot safely be used as
+        // interpolation factors. Borrow RGB REG0/REG1 only; keep all alpha.
         effect.stage(count, coord, map, identity, red,
-                     GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC);
+                     GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC,
+                     GX_TEV_ADD, GX_CS_SCALE_1, 1, GX_TEVREG0);
         effect.stage(count + 1, coord, map, identity, blue,
-                     GX_CC_TEXC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV,
-                     GX_TEV_SUB, GX_CS_SCALE_2);
-        effect.stage(count + 2, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_C0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC,
+                     GX_TEV_SUB, GX_CS_SCALE_1, 1, GX_TEVREG1);
+        effect.stage(count + 2, coord, map, identity, blue,
+                     GX_CC_TEXC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_C0,
+                     GX_TEV_SUB);
+        effect.stage(count + 3, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_C1, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV,
+                     GX_TEV_ADD, GX_CS_SCALE_2);
+        effect.stage(count + 4, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_RASC, GX_CC_CPREV, GX_CC_ZERO);
-        next = count + 3;
+        next = count + 5;
     } else if (glossy) {
         effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC,

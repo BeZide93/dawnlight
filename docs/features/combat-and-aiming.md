@@ -53,7 +53,9 @@ works during that jump. Keep holding R and press Z or A again to end early. The
 remaining charge stops draining immediately and damaging sword hits can refill
 it; the next activation requires full power again. Holding the combination does
 not toggle repeatedly. Holding Z/A first and then pressing R does not activate it.
-Only the Z/A press is consumed. A pending Gale charge is cancelled when the
+Only Z/A is consumed until release; R and its manual jump remain available.
+On Android, touch presses are captured directly so short Z taps and the HD HUD
+Z mapping can also trigger the shortcut. A pending Gale charge is cancelled when the
 shortcut fires, while the jump already in progress continues normally.
 
 Entry and exit use the native flying warp particles at twice the normal speed:

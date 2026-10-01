@@ -68,6 +68,8 @@ jobs:
           python3 tests/fierce_deity_transition_test.py
           python3 tests/fierce_deity_particles_test.py
           python3 tests/fierce_deity_activation_test.py
+          python3 tests/fierce_deity_movement_test.py
+          python3 tests/touch_midna_test.py
           python3 tests/jump_abilities_test.py
 
       - name: Test Collection Dual Wield

@@ -17,6 +17,7 @@
 #include "f_pc/f_pc_leaf.h"
 #include "f_pc/f_pc_method.h"
 #include "m_Do/m_Do_controller_pad.h"
+#include "m_Do/m_Do_mtx.h"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
@@ -46,6 +47,7 @@ DEFINE_HOOK(&cc_at_check, FierceDamageCheckHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, FierceMeterDrawHook);
 DEFINE_HOOK(&fpcLf_Delete, FiercePlayerDeleteHook);
 DEFINE_HOOK_SYMBOL("dusk::processGameCombos", void(), FierceGameCombosHook);
+DEFINE_HOOK(&daAlink_c::midnaTalkTrigger, FierceMidnaTriggerHook);
 
 constexpr float kMeterGainPerAttack = 5.0f;
 constexpr float kMeterDrainPerSecond = 5.0f;
@@ -66,6 +68,10 @@ struct RuntimeState {
     FierceDeityVisual visual = FierceDeityVisual::MagicArmor;
     bool spinChargeArmed = false;
     bool activationInputConsumed = false;
+    u32 consumedPartner = 0;
+    u32 touchHeld = 0;
+    u32 touchPressed = 0;
+    bool refreshFootBaseline = false;
     bool equipmentOverridden = false;
     bool modelSwapped = false;
     bool displayedDark = false;
@@ -306,6 +312,7 @@ bool service_model_swap(daAlink_c* link) {
     restore_equipment_selection();
     s_state.displayedDark = s_state.swapDark;
     fierce_deity_transition_commit(link);
+    s_state.refreshFootBaseline = true;
     release_preload(); // Link's native phase now owns its own resource reference.
 
     // Run the ORIGINAL execute in this SAME frame. It updates movement,
@@ -347,23 +354,59 @@ HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
     if (!same_link(link)) reset_for_link(link);
     s_state.activationInputConsumed = false;
     auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
+    // Touch Z can be removed/reassigned by the touch UI or HD HUD after pad
+    // sampling. Its latched UI edge is still the same user button press.
+    const u32 held = pad.mButtonFlags | s_state.touchHeld;
+    const u32 pressed = pad.mPressedButtonFlags | s_state.touchPressed;
+    s_state.touchPressed = 0; // discard blocked/menu presses too
+    s_state.consumedPartner &= held;
     const auto binding = fierce_deity_activation();
     const u32 partner = binding == FierceDeityActivation::RA ? PAD_BUTTON_A : PAD_TRIGGER_Z;
-    const bool rHeld = (pad.mButtonFlags & PAD_TRIGGER_R) != 0 || pad.mHoldLockR != 0;
-    if (binding == FierceDeityActivation::SpinAttack || !rHeld ||
-        (pad.mPressedButtonFlags & partner) == 0 ||
+    const bool rHeld = (held & PAD_TRIGGER_R) != 0 || pad.mHoldLockR != 0;
+    if (binding == FierceDeityActivation::SpinAttack ||
         !fierce_deity_enabled() || menu_or_pause_active() || !can_transform(link)) {
+        s_state.consumedPartner = 0;
         return HOOK_CONTINUE;
     }
-    if (s_state.active) deactivate(link, false);
-    else if (s_state.meter >= 100.0f) activate(link);
+    if (rHeld && (pressed & partner) != 0) {
+        if (s_state.active) deactivate(link, false);
+        else if (s_state.meter >= 100.0f) activate(link);
+        s_state.consumedPartner |= partner;
+        s_state.activationInputConsumed = true;
+    }
 
-    // Like the host shortcut, consume only the partner on its trigger tick.
-    // The jump module cancels any pending Gale for this R hold, not the jump.
-    pad.mButtonFlags &= ~partner;
-    pad.mPressedButtonFlags &= ~partner;
-    s_state.activationInputConsumed = true;
+    // Leave R/jump untouched. Hold the consumed A/Z out until finger release,
+    // so native held actions (including R+A Moon Jump) cannot leak on tick 2.
+    pad.mButtonFlags &= ~s_state.consumedPartner;
+    pad.mPressedButtonFlags &= ~s_state.consumedPartner;
     return HOOK_CONTINUE;
+}
+
+void after_fierce_midna_trigger(ModContext*, void*, void* retval, void*) {
+    // HD HUD can remember touch-Midna separately from the pad bit. Suppress
+    // that result only while this Z press belongs to the Fierce Deity shortcut.
+    if (retval != nullptr && same_link(daAlink_getAlinkActorClass()) &&
+        (s_state.consumedPartner & PAD_TRIGGER_Z) != 0) {
+        *static_cast<BOOL*>(retval) = FALSE;
+    }
+}
+
+void refresh_foot_baseline(daAlink_c* link) {
+    if (!s_state.refreshFootBaseline || link->mpLinkModel == nullptr) return;
+    // changeLink(1) clears OldFrameFlg. setFootSpeed then stores current.pos
+    // (WORLD space) as its fallback. The next tick compares LOCAL foot joints
+    // against those world coordinates and adds the huge delta to forward speed.
+    // Rebase after the original execute has posed the replacement model.
+    const u16 joints[] = {link->field_0x30bc, link->field_0x30be};
+    for (int i = 0; i < 2; ++i) {
+        if (joints[i] >= link->mpLinkModel->getModelData()->getJointNum()) return;
+    }
+    for (int i = 0; i < 2; ++i) {
+        Mtx local;
+        MTXConcat(link->mInvMtx, link->mpLinkModel->getAnmMtx(joints[i]), local);
+        link->field_0x37b0[i].set(local[0][3], local[1][3], local[2][3]);
+    }
+    s_state.refreshFootBaseline = false;
 }
 
 void update_drain(daAlink_c* link) {
@@ -458,6 +501,7 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
         return;
     }
     if (!same_link(link)) return;
+    if (!s_state.modelReloadFrame) refresh_foot_baseline(link);
     if (!s_state.modelReloadFrame && !menu_or_pause_active()) {
         fierce_deity_transition_tick(link);
     }
@@ -550,6 +594,8 @@ ModResult initialize_fierce_deity(ModError* error) {
         return mods::set_error(error, result,
             "failed to install Dawnlight Fierce Deity input hook");
     }
+    if ((result = add_post<FierceMidnaTriggerHook>(error, after_fierce_midna_trigger,
+            "failed to install Dawnlight Fierce Deity touch Midna guard")) != MOD_OK) return result;
     if ((result = add_post<FiercePlayerExecuteHook>(error, after_player_execute,
              "failed to install Dawnlight Fierce Deity player hook")) != MOD_OK ||
         (result = add_post<FierceAttackPowerHook>(error, after_attack_power_check,
@@ -601,6 +647,17 @@ bool fierce_deity_active() {
 bool fierce_deity_input_consumed() {
     return same_link(daAlink_getAlinkActorClass()) &&
         s_state.activationInputConsumed;
+}
+
+void fierce_deity_touch_button(uint32_t button, bool pressed) {
+    auto* link = daAlink_getAlinkActorClass();
+    if (!same_link(link)) reset_for_link(link);
+    if (pressed) {
+        s_state.touchPressed |= button & ~s_state.touchHeld;
+        s_state.touchHeld |= button;
+    } else {
+        s_state.touchHeld &= ~button;
+    }
 }
 
 bool fierce_deity_dark_visual_active() {

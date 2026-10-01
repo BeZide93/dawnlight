@@ -26,7 +26,8 @@ FierceDeityActivation binding=FierceDeityActivation::RZ;
 FierceDeityActivation fierce_deity_activation() { return binding; }
 '''
 production = callbacks + ''.join(function(n) for n in (
-    'before_fierce_game_combos', 'update_spin_activation', 'update_drain', 'fierce_deity_input_consumed'))
+    'before_fierce_game_combos', 'update_spin_activation', 'update_drain', 'fierce_deity_input_consumed',
+    'fierce_deity_touch_button', 'after_fierce_midna_trigger'))
 checks = r'''
 void input(u32 held, u32 pressed=0, bool analog=false) {
     pad={held,pressed,(held&PAD_TRIGGER_R)!=0,(pressed&PAD_TRIGGER_R)!=0,1.0f};
@@ -78,7 +79,7 @@ int main() {
             assert(s_state.meter==100.0f);
             input(chord,0,analog); assert(!s_state.active); // filling while held is not a new press
             input(0); input(chord,chord,analog); assert(s_state.active);
-            input(partner); assert(pad.mButtonFlags&partner); // no persistent input masking
+            input(partner); assert(!(pad.mButtonFlags&partner)); // partner is owned until release
             input(0); assert(!fierce_deity_input_consumed());
             input(PAD_TRIGGER_R,PAD_TRIGGER_R,analog); assert(pad.mHoldLockR); // ordinary R works again
         }
@@ -113,6 +114,39 @@ int main() {
         link.mProcID=daAlink_c::PROC_CUT_TURN; link.cut=true; update_spin_activation(&link);
         assert(!s_state.active);
     }
+    // Touch-only path: simulate HD HUD removing Z/R after pad read. Repeated
+    // visual sync callbacks and release before sampling must not erase a tap.
+    binding=FierceDeityActivation::RZ; fresh(link);
+    fierce_deity_touch_button(PAD_TRIGGER_R,true); input(0);
+    assert(!s_state.active);
+    fierce_deity_touch_button(PAD_TRIGGER_Z,true);
+    fierce_deity_touch_button(PAD_TRIGGER_Z,true); // duplicate UI notification
+    fierce_deity_touch_button(PAD_TRIGGER_Z,false); // quick tap between sim ticks
+    input(0); assert(s_state.active && fierce_deity_input_consumed());
+    BOOL midna=1; after_fierce_midna_trigger(nullptr,nullptr,&midna,nullptr); assert(midna==0);
+    input(0); assert(s_state.active && !fierce_deity_input_consumed());
+    midna=1; after_fierce_midna_trigger(nullptr,nullptr,&midna,nullptr); assert(midna==1);
+    s_state.meter=41;
+    fierce_deity_touch_button(PAD_TRIGGER_Z,true); input(0);
+    assert(!s_state.active && s_state.meter==41);
+    for(int i=0;i<5;++i) { fierce_deity_touch_button(PAD_TRIGGER_Z,true); input(0); }
+    assert(!s_state.active); // held touch never becomes repeat presses
+    fierce_deity_touch_button(PAD_TRIGGER_Z,false);
+    fierce_deity_touch_button(PAD_TRIGGER_R,false); input(0);
+    s_state.meter=100; paused=true;
+    fierce_deity_touch_button(PAD_TRIGGER_R,true);
+    fierce_deity_touch_button(PAD_TRIGGER_Z,true); input(0);
+    paused=false; input(0); assert(!s_state.active); // menu tap not deferred
+    // R+A must remain consumed on later held ticks too (native Moon Jump).
+    binding=FierceDeityActivation::RA; fresh(link);
+    fierce_deity_touch_button(PAD_TRIGGER_R,true);
+    fierce_deity_touch_button(PAD_BUTTON_A,true);
+    for(int i=0;i<5;++i) {
+        input(PAD_TRIGGER_R|PAD_BUTTON_A,i==0?PAD_BUTTON_A:0);
+        assert(s_state.active && !(pad.mButtonFlags&PAD_BUTTON_A) && pad.mHoldLockR);
+    }
+    fierce_deity_touch_button(PAD_BUTTON_A,false);
+    input(PAD_TRIGGER_R); assert(!fierce_deity_input_consumed());
     binding=FierceDeityActivation::SpinAttack; fresh(link);
     input(PAD_TRIGGER_R|PAD_TRIGGER_Z|PAD_BUTTON_A,PAD_TRIGGER_R|PAD_TRIGGER_Z|PAD_BUTTON_A);
     assert(!s_state.active && pad.mHoldLockR && pad.mButtonFlags);

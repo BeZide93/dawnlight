@@ -49,7 +49,10 @@ struct daAlink_c {};
 bool zActive=false,touchActive=true,s_dpadLeftTrig=false,s_touchZItemHeld=false,s_touchZItemTrig=false;
 bool z_item_slot_active(){return zActive;}
 bool dawnlight_touch_ui_active(){return touchActive;}
-namespace dusk::ui {enum class Control {Z,SKIP,A};}
+namespace dusk::ui {enum class Control {Z,SKIP,A,R};}
+constexpr unsigned PAD_TRIGGER_R=0x20,PAD_TRIGGER_Z=0x10,PAD_BUTTON_A=0x100;
+unsigned observedButton=0;bool observedPressed=false;
+void fierce_deity_touch_button(unsigned button,bool pressed){observedButton=button;observedPressed=pressed;}
 // GAME
 bool talk(){
  daAlink_c link;const auto* p=&link;void* args[]={&p};BOOL result=FALSE;
@@ -87,6 +90,18 @@ int main(){
  control=dusk::ui::Control::Z;
  assert(before_touch_set_control_pressed(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
  assert(s_touchZItemHeld&&s_touchZItemTrig&&!talk());
+ assert(observedButton==PAD_TRIGGER_Z&&observedPressed);
+ before_touch_set_control_pressed(nullptr,args,nullptr,nullptr); // repeated true
+ assert(s_touchZItemTrig);
+ pressed=false;before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
+ assert(!s_touchZItemHeld&&s_touchZItemTrig); // quick release retains sampled edge
+ assert(observedButton==PAD_TRIGGER_Z&&!observedPressed);
+ control=dusk::ui::Control::R;pressed=true;
+ before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
+ assert(observedButton==PAD_TRIGGER_R&&observedPressed);
+ control=dusk::ui::Control::A;
+ before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
+ assert(observedButton==PAD_BUTTON_A&&observedPressed);
  down(11);assert(talk());up(11);s_touchZItemHeld=false;
  zActive=true;down(12);assert(talk()&&!talk());up(12);
  s_dpadLeftTrig=true;assert(talk());s_dpadLeftTrig=false;assert(!talk());
@@ -108,3 +123,4 @@ with tempfile.TemporaryDirectory() as tmp:
                     '-I' + str(root / 'src'), str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 print('Midna touch passed: tap/hold/multitouch/cancel, availability, toggle, native Skip, Z and D-pad coexistence')
+

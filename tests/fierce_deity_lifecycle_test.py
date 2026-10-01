@@ -157,6 +157,7 @@ void fierce_deity_transition_cancel(daAlink_c*) {}
 int spinUpdates = 0, drainUpdates = 0;
 void update_spin_activation(daAlink_c*) { ++spinUpdates; }
 void update_drain(daAlink_c*) { ++drainUpdates; }
+void refresh_foot_baseline(daAlink_c*) {}
 constexpr unsigned AT_TYPE_NORMAL_SWORD = 2, AT_TYPE_MASTER_SWORD = 0x04000000;
 constexpr unsigned HIT_TYPE_LINK_NORMAL_ATTACK = 1;
 struct Collider {

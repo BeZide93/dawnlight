@@ -199,4 +199,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{github.token}}
-        run: gh release create "$GITHUB_REF_NAME" combined/*.dusk --verify-tag --generate-notes
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            # Preserve the existing release notes and refresh the build asset.
+            gh release upload "$GITHUB_REF_NAME" combined/*.dusk --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" combined/*.dusk --verify-tag --generate-notes
+          fi

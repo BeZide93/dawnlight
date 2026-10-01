@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "fierce_deity.hpp"
 #include "touch_buttons.hpp"
 #include "hud_layout.hpp"
 #include "save_state.hpp"
@@ -2908,10 +2909,10 @@ void after_pad_read(ModContext*, void*, void*, void*) {
 
     interface_of_controller_pad& pad = mDoCPd_c::getCpadInfo(PAD_1);
 
-    if (touchUiActive && s_touchZItemHeld && dComIfGp_getLinkPlayer() != nullptr &&
+    if (touchUiActive && (s_touchZItemHeld || s_touchZItemTrig) && dComIfGp_getLinkPlayer() != nullptr &&
         daAlink_getAlinkActorClass() != nullptr)
     {
-        pad.mButtonFlags |= PAD_TRIGGER_Z;
+        if (s_touchZItemHeld) pad.mButtonFlags |= PAD_TRIGGER_Z;
         if (s_touchZItemTrig) {
             pad.mPressedButtonFlags |= PAD_TRIGGER_Z;
         }
@@ -3746,8 +3747,11 @@ HookAction before_rml_set_class(ModContext*, void* args, void*, void*) {
 HookAction before_touch_set_control_pressed(ModContext*, void* args, void*, void*) {
     const auto control = mods::arg<dusk::ui::Control>(args, 1);
     const bool pressed = mods::arg<bool>(args, 2);
+    if (control == dusk::ui::Control::R) fierce_deity_touch_button(PAD_TRIGGER_R, pressed);
+    if (control == dusk::ui::Control::A) fierce_deity_touch_button(PAD_BUTTON_A, pressed);
     if (control == dusk::ui::Control::Z) {
-        s_touchZItemTrig = pressed && !s_touchZItemHeld;
+        fierce_deity_touch_button(PAD_TRIGGER_Z, pressed);
+        s_touchZItemTrig |= pressed && !s_touchZItemHeld;
         s_touchZItemHeld = pressed;
         return HOOK_CONTINUE;
     }
@@ -4038,7 +4042,9 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook::install<UpdateMidnaIconTextureHook>(svc_hook);
     }
-    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+    if (result == MOD_OK) {
+        // Fierce Deity shortcuts also need native touch input when our custom
+        // touch layout is off. This observer never changes the host UI input.
         result = mods::hook_add_pre<TouchSetControlPressedHook>(
             svc_hook, before_touch_set_control_pressed);
     }

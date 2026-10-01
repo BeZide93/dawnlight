@@ -28,6 +28,8 @@ constexpr const char* kAimModeOptions[] = {
 constexpr const char* kSecondSwordOptions[] = {"Wooden Sword", "Ordon Sword", "Master Sword"};
 constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
 constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
+constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic", "White", "Gold"};
+constexpr const char* kFierceDeityActivationOptions[] = {"Spin Attack", "R+Z", "R+A"};
 
 constexpr const char* kNewSaveModeOptions[] = {
     "Vanilla",
@@ -199,6 +201,10 @@ bool auto_jump_setting_disabled(ModContext*, void*) {
     // Normalize persisted state before displaying an unavailable child toggle.
     (void)disable_auto_jump_enabled();
     return !r_jump_enabled();
+}
+
+bool fierce_deity_visual_disabled(ModContext*, void*) {
+    return !fierce_deity_enabled();
 }
 
 bool wolf_speed_disabled(ModContext*, void*) {
@@ -417,7 +423,7 @@ ModResult build_general_tab(
         != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Progression System", progression_system_config_var(),
             "Sprint is available from the start. Give Talo the Wooden Sword to unlock the Glider, "
-            "free Ordona for Revali's Gale, and free Faron for Fierce Deity. Gale gains one charge "
+            "free Ordona for Revali's Gale, and free Faron for Dark Link. Gale gains one charge "
             "per three full heart containers. Each complete heart above the starting three adds 5 maximum stamina. Controlled settings are locked while On.")
         != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Notifications", notifications_config_var(),
@@ -809,12 +815,12 @@ ModResult build_hud_tab(
         return MOD_ERROR;
     }
     if (add_custom_transform_controls(
-            ctx, left, "Custom Fierce Deity Bar", HudElement::FierceDeityBar) != MOD_OK)
+            ctx, left, "Custom Dark Link Bar", HudElement::FierceDeityBar) != MOD_OK)
     {
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Fade when empty", hud_custom_fierce_deity_fade_when_empty_config_var(),
-            "Fades the Fierce Deity Bar when empty and shows it again when it gains charge.",
+            "Fades the Dark Link Bar when empty and shows it again when it gains charge.",
             custom_hud_controls_disabled) != MOD_OK)
     {
         return MOD_ERROR;
@@ -859,10 +865,30 @@ ModResult build_gameplay_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "Fierce Deity", fierce_deity_config_var(),
-            "Builds power with damaging sword attacks. Use a charged Spin Attack at full power "
+    if (add_toggle(ctx, left, "Dark Link", fierce_deity_config_var(),
+            "Builds power with damaging sword attacks. Use the selected activation at full power "
             "to transform, deal double sword damage, and consume the meter over time.")
         != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Dark Link Visual", fierce_deity_visual_config_var(),
+            kFierceDeityVisualOptions, std::size(kFierceDeityVisualOptions),
+            "Magic Armor uses the armor model. Dark (default) applies a shadow appearance "
+            "and red eyes to your current outfit. Dark Magic combines Magic Armor with that effect. "
+            "White inverts white surfaces to black and other colors to white, with amber eyes. "
+            "Gold uses a golden appearance with white eyes. Both keep your current outfit. "
+            "Changes apply when gameplay resumes; requires Dark Link.",
+            fierce_deity_visual_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Dark Link Activation", fierce_deity_activation_config_var(),
+            kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
+            "Activate at full power with a charged Spin Attack, R+Z, or R+A (default). "
+            "Hold R, then press Z or A; the initial R jump remains available. Press Z or A again "
+            "while holding R to end early and preserve power for refilling. Requires Dark Link.",
+            fierce_deity_visual_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }
@@ -1083,7 +1109,7 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
     if (add_text(ctx, panel, "Aim Movement, Aim Modes, and Bullet Time") != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Flurry Rush, Fierce Deity, and Great Spin Projectile") != MOD_OK) {
+    if (add_text(ctx, panel, "Flurry Rush, Dark Link, and Great Spin Projectile") != MOD_OK) {
         return MOD_ERROR;
     }
     if (add_text(ctx, panel, "Shared Stamina and Lazy Tweaks compatibility") != MOD_OK) {

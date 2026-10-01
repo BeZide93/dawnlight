@@ -1,6 +1,12 @@
-"""Run the actual lifecycle callbacks with a small fake game environment."""
+"""Exercise real lifecycle callbacks with asynchronous archives and native timer phases.
 
+The fake native loader retires the old model at timer 2 and creates an unposed
+replacement at completion. Each simulated draw requires a live, posed model;
+movement is compared with an uninterrupted jumping/falling player. This is a
+lifecycle regression harness, not a full game/renderer simulation.
+"""
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 
@@ -11,8 +17,7 @@ source = (root / "src/fierce_deity.cpp").read_text()
 def function(name):
     start = source.rfind("\n", 0, source.index(f" {name}(")) + 1
     opening = source.index("{", start)
-    depth = 1
-    end = opening + 1
+    depth, end = 1, opening + 1
     while depth:
         depth += (source[end] == "{") - (source[end] == "}")
         end += 1
@@ -24,33 +29,136 @@ fixture = r'''
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <initializer_list>
+#include <cstring>
+#include <map>
+#include <string>
 using u8 = uint8_t;
+using u32 = uint32_t;
 using fpc_ProcID = uint32_t;
 constexpr fpc_ProcID fpcM_ERROR_PROCESS_ID_e = 0xffffffff;
-constexpr u8 dItemNo_NONE_e = 0xff;
-constexpr int fpcNm_ALINK_e = 1, fopAc_ENEMY_e = 2;
-constexpr float kMeterGainPerAttack = 5.0f;
+constexpr u8 dItemNo_NONE_e = 0xff, dItemNo_ARMOR_e = 0x31;
+constexpr u8 dItemNo_WEAR_CASUAL_e = 0x2e, dItemNo_WEAR_ZORA_e = 0x30;
+constexpr u8 tunic = 0x2f;
+using BOOL = int;
+constexpr BOOL FALSE = 0;
 using Clock = std::chrono::steady_clock;
+constexpr float kMeterGainPerAttack = 5.0f;
+enum class FierceDeityVisual : int { MagicArmor, Dark, DarkMagic, White, Gold };
+enum class FierceDeityTint { None, Dark, White, Gold };
+FierceDeityVisual selectedVisual = FierceDeityVisual::MagicArmor;
+FierceDeityVisual fierce_deity_visual() { return selectedVisual; }
 struct ModContext {};
 enum HookAction { HOOK_CONTINUE, HOOK_SKIP_ORIGINAL };
 using process_method_func = int(*)(void*);
 struct process_method_class { process_method_func execute_method; };
 int vanillaExecute(void*) { return 1; }
 int outerExecute(void*) { return 1; }
-process_method_class playerMethods{vanillaExecute};
-process_method_class outerMethods{outerExecute};
+process_method_class playerMethods{vanillaExecute}, outerMethods{outerExecute};
+constexpr int fpcNm_ALINK_e = 1, fopAc_ENEMY_e = 2;
 struct leafdraw_class { int name = fpcNm_ALINK_e; };
 struct fopAc_ac_c : leafdraw_class { int group = fopAc_ENEMY_e; };
+struct daPy_py_c { enum { FLG2_UNK_280000 = 0x280000 }; };
+int frame = 0, loadDelay = 4, loads = 0, equipmentWrites = 0;
+bool failStart = false, failSync = false, enabled = true, paused = false;
+bool interfereWithNativeLoad = false;
+u8 savedClothes = tunic, equippedClothes = tunic;
+struct Resource { int refs = 0, readyAt = 0; bool failed = false; };
+std::map<std::string, Resource> resources;
+const char* outfit_archive(u8);
+int dComIfG_setObjectRes(const char* name, u8, void* heap) {
+    assert(heap == nullptr); // must not preload into the live player's heap
+    ++loads;
+    if (failStart) return 0;
+    auto& r = resources[name];
+    if (r.refs++ == 0) { r.readyAt = frame + loadDelay; r.failed = failSync; }
+    return 1;
+}
+int dComIfG_syncObjectRes(const char* name) {
+    auto& r = resources.at(name);
+    assert(r.refs > 0);
+    return frame < r.readyAt ? 1 : (r.failed ? -1 : 0);
+}
+int dComIfG_deleteObjectResMain(const char* name) {
+    auto& r = resources.at(name);
+    assert(r.refs > 0 && frame >= r.readyAt); // no destruction of in-flight I/O
+    --r.refs;
+    return 1;
+}
+u8 dComIfGs_getSelectEquipClothes() { return savedClothes; }
+void dComIfGs_setSelectEquipClothes(u8 value) { savedClothes = value; ++equipmentWrites; }
+void dComIfGp_setSelectEquipClothes(u8 value) { equippedClothes = value; ++equipmentWrites; }
 struct daAlink_c : fopAc_ac_c {
     fpc_ProcID id = 1;
-    uint16_t setID = 0;
     const process_method_class* sub_method = &playerMethods;
-    int mClothesChangeWaitTimer = 0;
-    int reloadCalls = 0;
-    void loadModelDVD() { ++reloadCalls; --mClothesChangeWaitTimer; }
-    void setClothesChange(int) { mClothesChangeWaitTimer = 3; }
+    const char* mArcName = "Kmdl";
+    int mClothesChangeWaitTimer = 0, reloadCalls = 0, replacements = 0, updates = 0;
+    bool wolf = false, dead = false, sceneChange = false, event = false, special = false;
+    bool riding = false, modelAlive = true, posed = true;
+    int x = 1000, y = 800, vy = 15, modelX = 1000, modelY = 800;
+    bool checkWolf() const { return wolf; }
+    bool checkDeadHP() const { return dead; }
+    bool checkSceneChangeAreaStart() const { return sceneChange; }
+    bool checkEventRun() const { return event; }
+    bool checkHorseRide() const { return riding; }
+    bool checkCanoeRide() const { return false; }
+    bool checkBoardRide() const { return false; }
+    bool checkSpinnerRide() const { return false; }
+    bool checkNoResetFlg2(int) const { return special; }
+    int getSumouMode() const { return 0; }
+    void setClothesChange(int) { mClothesChangeWaitTimer = 4; }
+    void loadModelDVD() {
+        if (mClothesChangeWaitTimer == 0) return;
+        ++reloadCalls;
+        --mClothesChangeWaitTimer;
+        if (mClothesChangeWaitTimer == 2) {
+            dComIfG_deleteObjectResMain(mArcName);
+            modelAlive = posed = false;
+            mArcName = outfit_archive(savedClothes);
+        } else if (mClothesChangeWaitTimer == 1) {
+            if (interfereWithNativeLoad) { mClothesChangeWaitTimer = 2; return; }
+            auto& r = resources.at(mArcName);
+            assert(r.refs > 0 && dComIfG_syncObjectRes(mArcName) == 0);
+            ++r.refs; // native resLoad acquires Link's reference
+            mClothesChangeWaitTimer = 0;
+            modelAlive = true;
+            posed = false;
+            modelX = modelY = 0; // freshly allocated model has no world pose
+            ++replacements;
+        }
+    }
+    void execute() {
+        loadModelDVD();
+        assert(modelAlive && mClothesChangeWaitTimer == 0);
+        ++updates;
+        x += 3; y += vy; --vy;
+        modelX = x; modelY = y; posed = true;
+    }
+    void draw() {
+        assert(mClothesChangeWaitTimer == 0); // no invisible frame
+        assert(modelAlive && posed && modelX == x && modelY == y);
+    }
 };
+daAlink_c* currentLink = nullptr;
+daAlink_c* daAlink_getAlinkActorClass() { return currentLink; }
+fpc_ProcID fopAcM_GetID(daAlink_c* link) { return link->id; }
+int fpcM_GetName(leafdraw_class* p) { return p->name; }
+int fopAcM_GetGroup(fopAc_ac_c* p) { return p->group; }
+bool fierce_deity_enabled() { return enabled; }
+bool menu_or_pause_active() { return paused; }
+namespace mods {
+template <class T> T arg(void* args, int index) {
+    return reinterpret_cast<T>(static_cast<void**>(args)[index]);
+}
+}
+bool fierce_deity_transition_busy() { return false; }
+void fierce_deity_transition_prepare(daAlink_c*, FierceDeityTint, FierceDeityTint, bool) {}
+void fierce_deity_transition_commit(daAlink_c*) {}
+void fierce_deity_transition_tick(daAlink_c*) {}
+void fierce_deity_transition_cancel(daAlink_c*) {}
+int spinUpdates = 0, drainUpdates = 0;
+void update_spin_activation(daAlink_c*) { ++spinUpdates; }
+void update_drain(daAlink_c*) { ++drainUpdates; }
+void refresh_foot_baseline(daAlink_c*) {}
 constexpr unsigned AT_TYPE_NORMAL_SWORD = 2, AT_TYPE_MASTER_SWORD = 0x04000000;
 constexpr unsigned HIT_TYPE_LINK_NORMAL_ATTACK = 1;
 struct Collider {
@@ -62,38 +170,23 @@ struct dCcU_AtInfo {
     Collider* mpCollider;
     unsigned mHitType = HIT_TYPE_LINK_NORMAL_ATTACK;
 };
-int spinUpdates = 0, drainUpdates = 0;
-void update_spin_activation(daAlink_c*) { ++spinUpdates; }
-void update_drain(daAlink_c*) { ++drainUpdates; }
-void deactivate(daAlink_c*, bool);
-bool enabled = true;
-daAlink_c* currentLink = nullptr;
-daAlink_c* daAlink_getAlinkActorClass() { return currentLink; }
-fpc_ProcID fopAcM_GetID(daAlink_c* link) { return link->id; }
-int fpcM_GetName(leafdraw_class* process) { return process->name; }
-int fopAcM_GetGroup(fopAc_ac_c* actor) { return actor->group; }
-bool fierce_deity_enabled() { return enabled; }
-namespace mods {
-template <class T> T arg(void* args, int index) {
-    return reinterpret_cast<T>(static_cast<void**>(args)[index]);
-}
-}
-u8 savedClothes = 7, equippedClothes = 7;
-int equipmentWrites = 0;
-void dComIfGs_setSelectEquipClothes(u8 value) { savedClothes = value; ++equipmentWrites; }
-void dComIfGp_setSelectEquipClothes(u8 value) { equippedClothes = value; ++equipmentWrites; }
 '''
 
 state = source[source.index("enum class ModelSwapState"):
                source.index("SaveObserverHandle s_saveObserver")]
+preload_state = source[source.index("struct OutfitPreload"):
+                       source.index("bool same_archive")]
 callbacks = "".join(function(name) for name in (
-    "is_sword_attack", "restore_equipment_selection", "reset_for_link", "same_link",
-    "on_save_started", "before_player_delete", "after_damage_check",
-    "service_model_swap", "dispatched_player", "before_player_execute", "after_player_execute",
+    "same_archive", "release_preload", "poll_preload", "cancel_preload",
+    "outfit_archive", "prepare_outfit", "is_sword_attack", "restore_equipment_selection",
+    "deactivate", "can_transform", "activate", "update_visual_selection",
+    "reset_for_link", "same_link", "on_save_started", "before_player_delete",
+    "after_damage_check", "visual_uses_magic", "visual_tint", "service_model_swap", "before_magic_armor_ability",
+    "dispatched_player", "before_player_execute", "after_player_execute",
+    "fierce_deity_active", "fierce_deity_dark_visual_active", "fierce_deity_displayed_tint", "fierce_deity_model_reload_active",
 ))
 
 checks = r'''
-void deactivate(daAlink_c*, bool) { s_state.meter = 0; s_state.active = false; }
 void* dispatch_target(const process_method_class& methods) {
 #ifdef __APPLE__
     return reinterpret_cast<void*>(methods.execute_method);
@@ -101,179 +194,186 @@ void* dispatch_target(const process_method_class& methods) {
     return const_cast<process_method_class*>(&methods);
 #endif
 }
-int run_dispatch(void* target, void* actor) {
-    void* args[] = {target, actor};
+HookAction dispatch(void* actor, const process_method_class& methods = playerMethods) {
+    void* args[] = {dispatch_target(methods), actor};
     int result = 0;
-    bool skipped = before_player_execute(nullptr, args, &result, nullptr) == HOOK_SKIP_ORIGINAL;
-    after_player_execute(nullptr, args, &result, nullptr);
-    if (skipped) assert(result == 1);
-    return skipped;
+    HookAction action = before_player_execute(nullptr, args, &result, nullptr);
+    if (action == HOOK_SKIP_ORIGINAL) assert(result == 1);
+    return action;
 }
-
+void tick(daAlink_c& link) {
+    ++frame;
+    int expectedX = link.x + 3, expectedY = link.y + link.vy;
+    int updates = link.updates;
+    assert(dispatch(&link) == HOOK_CONTINUE);
+    assert(!fierce_deity_model_reload_active());
+    link.execute();
+    void* args[] = {dispatch_target(playerMethods), &link};
+    after_player_execute(nullptr, args, nullptr, nullptr);
+    link.draw();
+    assert(link.x == expectedX && link.y == expectedY && link.updates == updates + 1);
+    assert(savedClothes == equippedClothes && !s_state.equipmentOverridden);
+}
+void ticks(daAlink_c& link, int count = 10) { while (count--) tick(link); }
+void start(daAlink_c& link, u8 clothes = tunic) {
+    // Previous scenario must not leave in-flight I/O behind.
+    assert(!s_preload.archive);
+    resources.clear();
+    s_state = {}; s_preload = {};
+    link = {}; currentLink = &link;
+    savedClothes = equippedClothes = clothes;
+    link.mArcName = outfit_archive(clothes);
+    resources[link.mArcName] = {1, frame, false};
+    enabled = true; paused = failStart = failSync = false;
+    interfereWithNativeLoad = false;
+    selectedVisual = FierceDeityVisual::MagicArmor;
+    loadDelay = 4; loads = equipmentWrites = spinUpdates = drainUpdates = 0;
+    tick(link);
+}
+void finish(daAlink_c& link) {
+    deactivate(&link, true);
+    ticks(link);
+    assert(!s_preload.archive && !s_state.modelSwapped && !s_state.active);
+    assert(same_archive(link.mArcName, outfit_archive(savedClothes)));
+    int refs = 0;
+    for (auto& [name, r] : resources) refs += r.refs;
+    assert(refs == 1); // only the live player's archive remains
+}
 int main() {
     daAlink_c link;
-    currentLink = &link;
+    start(link);
     fopAc_ac_c enemy;
+    assert(dispatch(&enemy) == HOOK_CONTINUE);
+    assert(dispatch(&link, outerMethods) == HOOK_CONTINUE);
+    assert(spinUpdates == 1 && drainUpdates == 1);
     Collider collider;
     dCcU_AtInfo attack{&link, &collider};
     void* hit[] = {&enemy, &attack};
-    void* deletion[] = {static_cast<leafdraw_class*>(&link)};
-
-    // Save loaded, owner absent, then actual actor dispatch
-    // without ever calling daAlink_c::execute's entry hook. Only the innermost
-    // Link execute dispatch may bind the owner or advance the state machine.
-    on_save_started(nullptr, 0, nullptr);
-    assert(s_state.link == nullptr);
-    void* target = dispatch_target(playerMethods);
-    void* outer = dispatch_target(outerMethods);
-    assert(run_dispatch(target, &enemy) == 0);
-    assert(run_dispatch(outer, &link) == 0);
-    assert(s_state.link == nullptr && spinUpdates == 0 && drainUpdates == 0);
-    link.sub_method = nullptr;
-    assert(run_dispatch(target, &link) == 0 && s_state.link == nullptr);
-    link.sub_method = &playerMethods;
-    currentLink = nullptr;
-    assert(run_dispatch(target, &link) == 0 && s_state.link == nullptr);
-    currentLink = &link;
-    assert(run_dispatch(target, &link) == 0);
-    assert(same_link(&link) && spinUpdates == 1 && drainUpdates == 1);
     for (int i = 0; i < 6; ++i) after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 30.0f); // six valid sword hits
-    assert(run_dispatch(outer, &link) == 0);
-    assert(spinUpdates == 1 && drainUpdates == 1); // no duplicate post tick
+    assert(s_state.meter == 30);
+    attack.mHitType = 0; after_damage_check(nullptr, hit, nullptr, nullptr);
+    assert(s_state.meter == 30);
 
-    // Critical model frames must still skip the actual player callback, even
-    // if its member-function hook is bypassed. Exercise the real swap service.
-    s_state.modelSwapState = ModelSwapState::Activating;
-    link.mClothesChangeWaitTimer = 3;
-    for (int remaining = 2; remaining >= 0; --remaining) {
-        assert(run_dispatch(outer, &link) == 0);
-        assert(run_dispatch(target, &enemy) == 0);
-        assert(run_dispatch(target, &link) == 1);
-        assert(link.mClothesChangeWaitTimer == remaining);
-        assert(spinUpdates == 1);
+    // Every outfit / visual transition, in a trajectory that passes from ascent
+    // to falling. Neither archive I/O nor the commit may consume a player tick.
+    for (u8 outfit : {tunic, dItemNo_WEAR_CASUAL_e, dItemNo_WEAR_ZORA_e, dItemNo_ARMOR_e}) {
+        for (auto from : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark, FierceDeityVisual::DarkMagic, FierceDeityVisual::White, FierceDeityVisual::Gold}) {
+            for (auto to : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark, FierceDeityVisual::DarkMagic, FierceDeityVisual::White, FierceDeityVisual::Gold}) {
+                start(link, outfit);
+                selectedVisual = from; activate(&link);
+                assert(savedClothes == outfit && link.mClothesChangeWaitTimer == 0);
+                ticks(link);
+                const char* expected = visual_uses_magic(from) ? "Mmdl" : outfit_archive(outfit);
+                assert(same_archive(link.mArcName, expected));
+                int before = link.replacements;
+                selectedVisual = to; ticks(link);
+                assert(savedClothes == outfit && s_state.meter == 100);
+                expected = visual_uses_magic(to) ? "Mmdl" : outfit_archive(outfit);
+                assert(same_archive(link.mArcName, expected));
+                if (visual_uses_magic(from) && visual_uses_magic(to))
+                    assert(link.replacements == before);
+                assert(fierce_deity_dark_visual_active() == (to != FierceDeityVisual::MagicArmor));
+                assert(fierce_deity_displayed_tint() == visual_tint(to));
+                BOOL result = 1;
+                auto action = before_magic_armor_ability(nullptr, nullptr, &result, nullptr);
+                assert((action == HOOK_CONTINUE) == (!visual_uses_magic(to)));
+                finish(link);
+            }
+        }
     }
-    assert(link.reloadCalls == 3 && s_state.modelSwapped);
-    assert(s_state.modelSwapState == ModelSwapState::None);
-    assert(run_dispatch(target, &link) == 0);
-    assert(!s_state.modelReloadFrame && spinUpdates == 2);
+
+    // Loading leaves the live outfit/save state intact; abort before completion.
+    start(link); activate(&link); tick(link);
+    assert(s_preload.archive && link.replacements == 0 && equipmentWrites == 0);
+    selectedVisual = FierceDeityVisual::Dark; tick(link);
+    assert(s_preload.archive && s_preload.cancelled);
+    ticks(link);
+    assert(!s_preload.archive && s_state.displayedTint == FierceDeityTint::Dark);
+    finish(link);
+
+    // Disable in both loading and installed states, including a delayed restore.
+    for (int delay : {1, 10}) {
+        start(link); activate(&link); ticks(link, delay);
+        enabled = false; ticks(link, 12);
+        assert(same_archive(link.mArcName, "Kmdl") && !s_state.modelSwapped);
+        finish(link);
+    }
+
+    // Retarget an in-progress restore back to armor, without destroying its I/O.
+    start(link); activate(&link); ticks(link);
+    selectedVisual = FierceDeityVisual::Dark; tick(link);
+    assert(s_preload.archive);
+    selectedVisual = FierceDeityVisual::DarkMagic; ticks(link);
+    assert(same_archive(link.mArcName, "Mmdl") && !s_preload.archive);
+    finish(link);
+
+    // Restore whichever outfit is currently selected, including changes while
+    // a previous restore archive was still loading.
+    start(link); activate(&link); ticks(link);
+    selectedVisual = FierceDeityVisual::Dark; tick(link);
+    savedClothes = equippedClothes = dItemNo_WEAR_ZORA_e;
+    ticks(link, 16);
+    assert(same_archive(link.mArcName, "Zmdl"));
+    finish(link);
+
+    // Load failure must keep the existing model and suppress repeated retries.
+    for (bool atRegistration : {false, true}) {
+        start(link); failStart = atRegistration; failSync = !atRegistration;
+        activate(&link); ticks(link);
+        assert(link.replacements == 0 && loads == 1 && !s_preload.archive);
+        failStart = failSync = false;
+        deactivate(&link, true); activate(&link); ticks(link);
+        assert(same_archive(link.mArcName, "Mmdl"));
+        finish(link);
+    }
+
+    // Unsafe native contexts defer the cosmetic transaction without pausing Link.
+    for (bool* flag : {&link.event, &link.special, &link.riding, &paused}) {
+        start(link); activate(&link); *flag = true;
+        ticks(link); assert(loads == 0 && link.replacements == 0);
+        *flag = false; ticks(link); assert(link.replacements == 1);
+        finish(link);
+    }
+
+    // Actor deletion and save notification may precede I/O completion. Drain the
+    // old request without writing the old outfit into the new save or actor.
+    start(link); activate(&link); tick(link);
+    void* deletion[] = {static_cast<leafdraw_class*>(&link)};
+    before_player_delete(nullptr, deletion, nullptr, nullptr);
+    currentLink = nullptr;
+    savedClothes = equippedClothes = dItemNo_WEAR_ZORA_e;
+    int writes = equipmentWrites;
     on_save_started(nullptr, 0, nullptr);
-    assert(run_dispatch(target, &link) == 0);
-    assert(same_link(&link) && s_state.meter == 0);
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 5.0f);
+    for (int i = 0; i < 8; ++i) { ++frame; dispatch(&enemy); }
+    assert(!s_preload.archive && equipmentWrites == writes);
+    // Simulate vanilla releasing the old player, then binding a new one.
+    dComIfG_deleteObjectResMain(link.mArcName);
+    link = {}; link.id = 2; link.mArcName = "Zmdl"; currentLink = &link;
+    resources["Zmdl"] = {1, frame, false};
+    tick(link);
+    assert(same_link(&link) && !s_state.active && s_state.meter == 0);
+    finish(link);
 
-    // Exercise the actual sword predicate. Ordon
-    // and wooden swords use NORMAL only; the Master Sword adds MASTER.
-    for (unsigned sword : {AT_TYPE_NORMAL_SWORD,
-                           AT_TYPE_NORMAL_SWORD | AT_TYPE_MASTER_SWORD}) {
-        reset_for_link(&link);
-        collider.type = sword;
-        for (int hitIndex = 0; hitIndex < 25; ++hitIndex) {
-            after_damage_check(nullptr, hit, nullptr, nullptr);
-            assert(s_state.meter == std::min(100.0f, (hitIndex + 1) * 5.0f));
-        }
-    }
-    reset_for_link(&link);
-    collider.type = 0x20; // non-sword attacks do not charge
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 0);
-    collider.type = AT_TYPE_NORMAL_SWORD;
-    attack.mHitType = 16; // stun classification is deliberately rejected
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 0);
-    attack.mHitType = HIT_TYPE_LINK_NORMAL_ATTACK;
-    attack.mpCollider = nullptr;
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 0);
-    attack.mpCollider = &collider;
-    enabled = false;
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 0);
-    enabled = true;
-    s_state.active = true;
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 0);
-    s_state.active = false;
-    enemy.group = 0;
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 0);
-    enemy.group = fopAc_ENEMY_e;
-    daAlink_c otherLink;
-    attack.mpActor = &otherLink;
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 0);
-    attack.mpActor = &link;
-
-    // Both the address and stage placement ID can survive a new player spawn.
-    reset_for_link(&link);
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 5.0f);
-    ++link.id;
-    assert(!same_link(&link));
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 5.0f); // do not charge the departing player
-    reset_for_link(&link);
-    after_damage_check(nullptr, hit, nullptr, nullptr);
-    assert(s_state.meter == 5.0f);
-    ++link.setID;
-    assert(same_link(&link)); // placement ID is not the actor identity
-
-    // Save notifications also occur for same-slot reloads and new games. They
-    // must clear all pending model phases without writing into the loaded save.
-    for (auto phase : {ModelSwapState::None, ModelSwapState::Activating,
-                       ModelSwapState::RestoreRequested, ModelSwapState::Restoring}) {
-        for (uint32_t slot : {0, 0, 1, 2}) {
-            s_state.meter = 85;
-            s_state.active = true;
-            s_state.spinChargeArmed = true;
-            s_state.equipmentOverridden = true;
-            s_state.originalClothes = 3;
-            s_state.modelSwapped = true;
-            s_state.modelReloadFrame = true;
-            s_state.modelSwapState = phase;
-            s_state.lastDrainTime = Clock::now();
-            savedClothes = equippedClothes = 7;
-            equipmentWrites = 0;
-            on_save_started(nullptr, slot, nullptr);
-            assert(!same_link(&link) && s_state.link == nullptr);
-            assert(s_state.meter == 0 && !s_state.active && !s_state.spinChargeArmed);
-            assert(!s_state.modelSwapped && !s_state.modelReloadFrame);
-            assert(s_state.modelSwapState == ModelSwapState::None);
-            assert(!s_state.equipmentOverridden && s_state.originalClothes == dItemNo_NONE_e);
-            assert(s_state.lastDrainTime == Clock::time_point{});
-            assert(equipmentWrites == 0 && savedClothes == 7 && equippedClothes == 7);
-            // A late delete of the old actor must not restore its old outfit.
-            before_player_delete(nullptr, deletion, nullptr, nullptr);
-            assert(equipmentWrites == 0);
-            assert(run_dispatch(target, &link) == 0);
-            after_damage_check(nullptr, hit, nullptr, nullptr);
-            assert(s_state.meter == 5.0f); // new session can charge immediately
-        }
-    }
-
-    // Normal player teardown restores a temporary outfit before discarding it.
-    s_state.equipmentOverridden = true;
-    s_state.originalClothes = 3;
-    leafdraw_class unrelated;
-    unrelated.name = 99;
-    void* otherDeletion[] = {&unrelated};
-    before_player_delete(nullptr, otherDeletion, nullptr, nullptr);
-    assert(s_state.meter == 5.0f && equipmentWrites == 0);
-    before_player_delete(nullptr, deletion, nullptr, nullptr);
-    assert(equipmentWrites == 2 && savedClothes == 3 && equippedClothes == 3);
-    assert(s_state.meter == 0 && s_state.link == nullptr);
-    before_player_delete(nullptr, deletion, nullptr, nullptr);
-    assert(equipmentWrites == 2); // repeated teardown is harmless
+    // Defensive path for a third-party loader that unexpectedly remains busy:
+    // never run execute on freed model memory; resume ON the completion frame.
+    start(link); loadDelay = 0; activate(&link);
+    interfereWithNativeLoad = true;
+    assert(dispatch(&link) == HOOK_SKIP_ORIGINAL && !link.modelAlive);
+    assert(fierce_deity_model_reload_active());
+    interfereWithNativeLoad = false;
+    tick(link);
+    assert(link.modelAlive && !s_preload.archive);
+    finish(link);
 }
 '''
 
-with tempfile.TemporaryDirectory() as tmp:
-    cpp = Path(tmp) / "fierce_lifecycle.cpp"
-    exe = Path(tmp) / "fierce_lifecycle"
-    cpp.write_text(fixture + state + callbacks + checks)
-    for defines in ([], ["-D__APPLE__"]):
-        subprocess.run(["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror",
-                        *defines, str(cpp), "-o", str(exe)], check=True)
-        subprocess.run([str(exe)], check=True)
-print("Fierce Deity dispatch (Execute + Apple Method), model reload, save lifecycle and charging: passed")
+if __name__ == "__main__":
+    with tempfile.TemporaryDirectory(prefix="dawnlight-fierce-lifecycle-") as directory:
+        cpp = Path(directory) / "test.cpp"
+        cpp.write_text(fixture + state + preload_state + callbacks + checks)
+        for platform in ([], ["-D__APPLE__"]):
+            exe = Path(directory) / ("apple" if platform else "execute")
+            subprocess.run([os.environ.get("CXX", "c++"), "-std=c++20", "-Wall", "-Wextra",
+                            "-Werror", *platform, str(cpp), "-o", str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+    print("Fierce Deity seamless lifecycle tests passed (Execute and Apple Method dispatch)")

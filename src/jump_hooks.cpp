@@ -1,5 +1,6 @@
 #include "bullet_time.hpp"
 #include "config.hpp"
+#include "fierce_deity.hpp"
 #include "gale_counter.hpp"
 #include "glider_visual.hpp"
 #include "glider_bmd.hpp"

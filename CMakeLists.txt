@@ -95,6 +95,7 @@ add_mod(dawnlight_mod
         src/enemy_scaling.cpp
         src/eye_movement.cpp
         src/fierce_deity.cpp
+        src/fierce_deity_visual.cpp
         src/great_spin_projectile.cpp
         src/item_integrity.cpp
         src/item_slot_hooks.cpp

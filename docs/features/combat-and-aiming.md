@@ -34,12 +34,67 @@ deferred until the rush ends.
 Bullet Time, Flurry Rush and the Great Spin projectile share the
 [stamina meter](movement-and-abilities.md#shared-stamina) with movement abilities.
 
-## Fierce Deity
+## Dark Link
 
-**Fierce Deity** adds a charge meter, a temporary Magic Armor model swap and
-doubled sword damage.
+**Dark Link** adds a charge meter, a temporary transformation and doubled sword
+damage. **Dark Link Visual**, directly below its toggle, selects the appearance:
 
-With [Progression System](general-settings.md) enabled, Fierce Deity unlocks
+| Visual | Appearance during the transformation |
+| --- | --- |
+| Magic Armor | The existing Magic Armor model swap. |
+| Dark (default) | The currently worn outfit/model with dark shading and red eyes. |
+| Dark Magic | The Magic Armor model with dark shading and red eyes. |
+| White | Current outfit: white texels become black; black and colored texels become white. Amber iris/pupils and black sclera. |
+| Gold | Current outfit with warm golden shading/specular highlights and fully white glowing eyes. |
+
+**Dark Link Activation**, below the visual selector, offers **Spin Attack**
+(charged), **R+Z**, or **R+A** (default). Activation requires a full meter. With
+either button shortcut, hold R and then press Z or A, just like native R+Y Quick
+Transform. The initial R press can still trigger a manual jump; the shortcut also
+works during that jump. Keep holding R and press Z or A again to end early. The
+remaining charge stops draining immediately and damaging sword hits can refill
+it; the next activation requires full power again. Holding the combination does
+not toggle repeatedly. Holding Z/A first and then pressing R does not activate it.
+Only Z/A is consumed until release; R and its manual jump remain available.
+On Android, touch presses are captured directly so short Z taps and the HD HUD
+Z mapping can also trigger the shortcut. A pending Gale charge is cancelled when the
+shortcut fires, while the jump already in progress continues normally.
+
+Entry and exit use the native flying warp particles at twice the normal speed:
+the appearance effect and sound on entry, and the disappearance effect and sound
+on exit. Each sound plays once when its visual transition starts. The material
+continues to build from top to bottom and recede from bottom to top.
+
+Both selectors are disabled while Dark Link is unavailable/off, including
+its Progression lock. Its saved selection is retained. Changing it during a
+transformation applies when gameplay resumes, waits for any pending model load,
+and preserves the remaining meter. Dark, White and Gold retain the selected outfit;
+the Magic variants restore it when the transformation ends. Each warp layer retains
+its own appearance when changing visuals during a transformation.
+
+Dark, Dark Magic, White and Gold affect Link's body, face, hair/hat, hands,
+worn boots, equipped sword, shield and scabbard, including Dual Wield's second
+sword/scabbard, held or stowed. Magic Armor alone retains native equipment colors.
+These appearances use the loaded models, including compatible replacements,
+and preserve native texture transparency. In White, swords, shields and scabbards
+(including Dual Wield) are uniformly white; their texture colors are not inverted.
+
+Dark/Dark Magic eyes glow fully red; Gold eyes glow fully white. White uses
+orange-yellow emission for the iris and pupil and turns the sclera black.
+Eye recognition uses `eyeballL`/`eyeballR` material names. Eyelids, blinking and
+cutout alpha remain native; unknown eye material names use body shading.
+
+On Link's body and eyes, White classifies the raw diffuse texture before scene lighting: near-white means
+all three RGB components are at least 224/255 (192/255 on eyes to include shaded
+sclera). Those texels become black; black, gray and colored texels become white,
+or amber on eyes. This is a deliberate monochrome recolor, not RGB inversion.
+Materials without an identifiable diffuse texture or three spare TEV stages use
+uniform white/amber; those with no spare stage remain native. Gold and Dark use
+specular lighting when the native batch can safely restore the borrowed light.
+Other held items retain their normal appearance. Rendering changes are
+scoped to the player's draw calls; shared model data and other actors are untouched.
+
+With [Progression System](general-settings.md) enabled, Dark Link unlocks
 after freeing Faron; it is available immediately in Boss Rush.
 
 ## Shielding and Dual Wield
@@ -49,3 +104,4 @@ Manual Shielding provides optional manual guard controls.
 uses a crossed-sword guard and Shield Attack.
 
 For enemy and boss difficulty settings, see [Hard Mode](hard-mode.md).
+

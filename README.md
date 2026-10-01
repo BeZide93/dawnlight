@@ -54,6 +54,7 @@ On Android, use the folder selected in Dusklight's **Change Data Folder** settin
 
 ## Developer notes
 
+- [Fierce Deity HUD replacement API](docs/fierce-deity-hud-api.md)
 - [Enemy and boss Hard Mode profiles](ENEMY_HARD_MODE.md)
 - [Enemy Spawner: scene ownership and adding enemies](docs/darknut-arena-spawner.md)
 - [Hero's Shade encounter](docs/heroes-shade-arena.md)

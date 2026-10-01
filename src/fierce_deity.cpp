@@ -1,6 +1,7 @@
 #include "fierce_deity.hpp"
 
 #include "combat_meter.hpp"
+#include "fierce_deity_hud.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
@@ -652,6 +653,14 @@ void shutdown_fierce_deity() {
     fierce_deity_transition_cancel(link);
     if (same_link(link)) restore_equipment_selection();
     s_state = {};
+}
+
+DawnlightFierceDeityHudState fierce_deity_hud_state() {
+    const bool hasPlayer = same_link(daAlink_getAlinkActorClass());
+    const bool enabled = fierce_deity_enabled();
+    return {sizeof(DawnlightFierceDeityHudState), enabled,
+        enabled && hasPlayer && !menu_or_pause_active(),
+        hasPlayer && s_state.active, hasPlayer ? std::clamp(s_state.meter, 0.0f, 100.0f) : 0.0f};
 }
 
 bool fierce_deity_active() {

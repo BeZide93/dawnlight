@@ -1,6 +1,7 @@
 #include "hud_fade.hpp"
 
 #include "combat_meter.hpp"
+#include "fierce_deity_hud.hpp"
 #include "config.hpp"
 #include "hud_fade_state.hpp"
 #include "service_imports.hpp"
@@ -145,13 +146,28 @@ HookAction before_meter_delete(ModContext*, void*, void*, void*) {
 }
 } // namespace
 
-void draw_combat_meter_screen(J2DScreen* screen, J2DGrafContext* graf, bool stamina, float percentage) {
+void draw_combat_meter_screen(J2DScreen* screen, J2DGrafContext* graf, bool stamina, float percentage,
+    const DawnlightFierceDeityHudFrame* replacement) {
     const bool enabled = custom_hud_layout_enabled() && (stamina ?
         hud_custom_stamina_fade_when_full() : hud_custom_fierce_deity_fade_when_empty());
     auto& fade = stamina ? s_stamina : s_fierceDeity;
     const float previous = s_barAlpha;
     s_barAlpha = fade.update(seconds(), stamina ? percentage >= 100.0f : percentage <= 0.0f, enabled);
-    screen->draw(0.0f, 0.0f, graf);
+    bool handled = false;
+    if (!stamina && replacement) {
+        auto frame = *replacement;
+        frame.alpha *= s_barAlpha * (s_hudDepth ? s_hudAlpha : 1.0f);
+        // The consumer receives final opacity. Suspend our automatic hooks to
+        // avoid fading its own J2D screens/pictures a second time.
+        const unsigned depth = s_hudDepth;
+        const float barAlpha = s_barAlpha;
+        s_hudDepth = 0;
+        s_barAlpha = 1.0f;
+        handled = draw_external_fierce_deity_hud(frame);
+        s_hudDepth = depth;
+        s_barAlpha = barAlpha;
+    }
+    if (!handled) screen->draw(0.0f, 0.0f, graf);
     s_barAlpha = previous;
 }
 

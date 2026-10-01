@@ -101,6 +101,7 @@ fixture = r'''
 #include <vector>
 #include "fierce_deity_wipe.hpp"
 using dawnlight::FierceWarpWipe;
+enum class FierceDeityTint { None, Dark, White, Gold };
 using u8=unsigned char; using u32=unsigned; using fpc_ProcID=unsigned;
 constexpr unsigned fpcM_ERROR_PROCESS_ID_e=~0u;
 struct Heap {
@@ -162,10 +163,11 @@ daAlink_c* daAlink_getAlinkActorClass() {return current;}
 unsigned fopAcM_GetID(daAlink_c* p) {return p->id;}
 using OutfitModels=std::array<J3DModel*,6>;
 bool warp_compatible(const OutfitModels&,daAlink_c*) {return compatible;}
+bool player_model(daAlink_c* link, J3DModel* model) {return model && model==link->mpLinkModel;}
 '''
 state = transition[transition.index('struct WarpLayer'):transition.index('void warp_log')]
 callbacks = ''.join(function(transition, name) for name in (
-    'outfit_models', 'transition_owner', 'restore_archive_heap', 'discard_transition', 'prepare_transition'))
+    'outfit_models', 'transition_owner', 'restore_archive_heap', 'discard_transition', 'prepare_transition', 'warp_layer'))
 callbacks += ''.join(function(visual, name) for name in (
     'fierce_deity_transition_busy', 'fierce_deity_transition_prepare', 'fierce_deity_transition_commit',
     'fierce_deity_transition_tick', 'fierce_deity_transition_cancel'))
@@ -212,7 +214,7 @@ int main() {
             setup();
             auto* archiveHeap=link.mpArcHeap;
             auto* modelHeap=link.mAnmHeap3.mAnimeHeap;
-            fierce_deity_transition_prepare(&link,false,true,entering);
+            fierce_deity_transition_prepare(&link,FierceDeityTint::None,FierceDeityTint::Dark,entering);
             assert(fierce_deity_transition_busy() && refs["Kmdl"]==2);
             assert(scratchRequested<=0x1000); // preloaded resource needs no duplicate archive storage
             auto* newHeap=link.mAnmHeap3.mAnimeHeap;
@@ -239,7 +241,7 @@ int main() {
         setup();
         failModels=fail==0; failScratch=fail==1; failPin=fail==2; compatible=fail!=3;
         auto* arc=link.mpArcHeap; auto* model=link.mAnmHeap3.mAnimeHeap;
-        fierce_deity_transition_prepare(&link,false,true,true);
+        fierce_deity_transition_prepare(&link,FierceDeityTint::None,FierceDeityTint::Dark,true);
         assert(!fierce_deity_transition_busy() && refs["Kmdl"]==1);
         fierce_deity_transition_commit(&link);
         assert(link.soundCalls==0); // no sound without a visual transition
@@ -251,7 +253,7 @@ int main() {
     // before the game can clear Link's original archive heap.
     for(int reason=0;reason<4;++reason) {
         setup();
-        fierce_deity_transition_prepare(&link,false,true,true);
+        fierce_deity_transition_prepare(&link,FierceDeityTint::None,FierceDeityTint::Dark,true);
         auto* old=s_transition.modelHeap;
         nativeSwap("Mmdl");
         if(reason==0) fierce_deity_transition_cancel(&link);
@@ -266,7 +268,18 @@ int main() {
     }
     // Unsupported incoming geometry still rebinds collision and frees only
     // retained outgoing data; the already-built target remains fully usable.
-    setup(); fierce_deity_transition_prepare(&link,false,true,true);
+    // Both layers retain their exact palette, including same-outfit changes.
+    for(auto from : {FierceDeityTint::None,FierceDeityTint::Dark,FierceDeityTint::White,FierceDeityTint::Gold})
+    for(auto to : {FierceDeityTint::None,FierceDeityTint::Dark,FierceDeityTint::White,FierceDeityTint::Gold}) {
+        setup(); auto* old=link.mpLinkModel; J3DModel incoming;
+        fierce_deity_transition_prepare(&link,from,to,true);
+        link.mpLinkModel=&incoming; fierce_deity_transition_commit(&link);
+        assert(warp_layer(old).tint==from && warp_layer(old).active);
+        assert(warp_layer(&incoming).tint==to && warp_layer(&incoming).active);
+        assert(warp_layer(old).inverse!=warp_layer(&incoming).inverse);
+        fierce_deity_transition_cancel(&link);
+    }
+    setup(); fierce_deity_transition_prepare(&link,FierceDeityTint::None,FierceDeityTint::Dark,true);
     auto* old=s_transition.modelHeap;
     compatible=false; nativeSwap("Mmdl");
     assert(!old->alive && !fierce_deity_transition_busy() && refs["Mmdl"]==1);

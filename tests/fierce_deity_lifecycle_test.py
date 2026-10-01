@@ -43,7 +43,8 @@ using BOOL = int;
 constexpr BOOL FALSE = 0;
 using Clock = std::chrono::steady_clock;
 constexpr float kMeterGainPerAttack = 5.0f;
-enum class FierceDeityVisual : int { MagicArmor, Dark, DarkMagic };
+enum class FierceDeityVisual : int { MagicArmor, Dark, DarkMagic, White, Gold };
+enum class FierceDeityTint { None, Dark, White, Gold };
 FierceDeityVisual selectedVisual = FierceDeityVisual::MagicArmor;
 FierceDeityVisual fierce_deity_visual() { return selectedVisual; }
 struct ModContext {};
@@ -150,7 +151,7 @@ template <class T> T arg(void* args, int index) {
 }
 }
 bool fierce_deity_transition_busy() { return false; }
-void fierce_deity_transition_prepare(daAlink_c*, bool, bool, bool) {}
+void fierce_deity_transition_prepare(daAlink_c*, FierceDeityTint, FierceDeityTint, bool) {}
 void fierce_deity_transition_commit(daAlink_c*) {}
 void fierce_deity_transition_tick(daAlink_c*) {}
 void fierce_deity_transition_cancel(daAlink_c*) {}
@@ -180,9 +181,9 @@ callbacks = "".join(function(name) for name in (
     "outfit_archive", "prepare_outfit", "is_sword_attack", "restore_equipment_selection",
     "deactivate", "can_transform", "activate", "update_visual_selection",
     "reset_for_link", "same_link", "on_save_started", "before_player_delete",
-    "after_damage_check", "service_model_swap", "before_magic_armor_ability",
+    "after_damage_check", "visual_uses_magic", "visual_tint", "service_model_swap", "before_magic_armor_ability",
     "dispatched_player", "before_player_execute", "after_player_execute",
-    "fierce_deity_active", "fierce_deity_dark_visual_active", "fierce_deity_model_reload_active",
+    "fierce_deity_active", "fierce_deity_dark_visual_active", "fierce_deity_displayed_tint", "fierce_deity_model_reload_active",
 ))
 
 checks = r'''
@@ -256,25 +257,26 @@ int main() {
     // Every outfit / visual transition, in a trajectory that passes from ascent
     // to falling. Neither archive I/O nor the commit may consume a player tick.
     for (u8 outfit : {tunic, dItemNo_WEAR_CASUAL_e, dItemNo_WEAR_ZORA_e, dItemNo_ARMOR_e}) {
-        for (auto from : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark, FierceDeityVisual::DarkMagic}) {
-            for (auto to : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark, FierceDeityVisual::DarkMagic}) {
+        for (auto from : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark, FierceDeityVisual::DarkMagic, FierceDeityVisual::White, FierceDeityVisual::Gold}) {
+            for (auto to : {FierceDeityVisual::MagicArmor, FierceDeityVisual::Dark, FierceDeityVisual::DarkMagic, FierceDeityVisual::White, FierceDeityVisual::Gold}) {
                 start(link, outfit);
                 selectedVisual = from; activate(&link);
                 assert(savedClothes == outfit && link.mClothesChangeWaitTimer == 0);
                 ticks(link);
-                const char* expected = from == FierceDeityVisual::Dark ? outfit_archive(outfit) : "Mmdl";
+                const char* expected = visual_uses_magic(from) ? "Mmdl" : outfit_archive(outfit);
                 assert(same_archive(link.mArcName, expected));
                 int before = link.replacements;
                 selectedVisual = to; ticks(link);
                 assert(savedClothes == outfit && s_state.meter == 100);
-                expected = to == FierceDeityVisual::Dark ? outfit_archive(outfit) : "Mmdl";
+                expected = visual_uses_magic(to) ? "Mmdl" : outfit_archive(outfit);
                 assert(same_archive(link.mArcName, expected));
-                if (from != FierceDeityVisual::Dark && to != FierceDeityVisual::Dark)
+                if (visual_uses_magic(from) && visual_uses_magic(to))
                     assert(link.replacements == before);
                 assert(fierce_deity_dark_visual_active() == (to != FierceDeityVisual::MagicArmor));
+                assert(fierce_deity_displayed_tint() == visual_tint(to));
                 BOOL result = 1;
                 auto action = before_magic_armor_ability(nullptr, nullptr, &result, nullptr);
-                assert((action == HOOK_CONTINUE) == (to == FierceDeityVisual::Dark));
+                assert((action == HOOK_CONTINUE) == (!visual_uses_magic(to)));
                 finish(link);
             }
         }
@@ -286,7 +288,7 @@ int main() {
     selectedVisual = FierceDeityVisual::Dark; tick(link);
     assert(s_preload.archive && s_preload.cancelled);
     ticks(link);
-    assert(!s_preload.archive && s_state.displayedDark);
+    assert(!s_preload.archive && s_state.displayedTint == FierceDeityTint::Dark);
     finish(link);
 
     // Disable in both loading and installed states, including a delayed restore.

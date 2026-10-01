@@ -51,7 +51,7 @@ struct DrawScope {
     J3DShapePacket* packet = nullptr;
     J3DMatPacket* materialPacket = nullptr;
     bool applied = false;
-    bool dark = false;
+    FierceDeityTint tint = FierceDeityTint::None;
     bool warp = false;
     bool inverse = false;
     int warpCoord = -1;
@@ -120,15 +120,15 @@ HookAction before_packet_draw(ModContext*, void* args, void*, void*) {
         if (packet != nullptr) {
             auto* link = daAlink_getAlinkActorClass();
             const auto layer = warp_layer(packet->getModel());
-            const bool dark = layer.active ? layer.dark :
-                (fierce_deity_dark_visual_active() &&
-                 (player_model(link, packet->getModel()) ||
-                  player_equipment(link, packet->getModel())));
-            if (layer.active || dark) {
+            const auto tint = layer.active ? layer.tint :
+                ((player_model(link, packet->getModel()) ||
+                  player_equipment(link, packet->getModel())) ?
+                 fierce_deity_displayed_tint() : FierceDeityTint::None);
+            if (layer.active || tint != FierceDeityTint::None) {
                 scope.materialPacket = drawing_material(packet);
                 if (scope.materialPacket != nullptr) {
                     scope.packet = packet;
-                    scope.dark = dark;
+                    scope.tint = tint;
                     scope.warp = layer.active;
                     scope.inverse = layer.inverse;
                 }
@@ -199,6 +199,27 @@ bool eye_material(J3DModelData* data, J3DMaterial* material) {
                                std::strstr(name, "eyeballR") != nullptr);
 }
 
+// Sample the material's live diffuse UVs before lighting. Eye textures may
+// use another slot; prefer their named order over the body slot-zero fallback.
+const J3DTevOrder* surface_texture_order(J3DModelData* data, J3DMaterial* material, bool eye) {
+    auto* tev = material->getTevBlock();
+    const auto* names = data->getTextureName();
+    const auto* texture = data->getTexture();
+    const J3DTevOrder* diffuse = nullptr;
+    if (texture == nullptr) return nullptr;
+    for (unsigned i = 0; i < tev->getTevStageNum(); ++i) {
+        const auto* order = tev->getTevOrder(i);
+        if (order == nullptr || order->mTexCoord >= 8 || order->getTexMap() >= 8 ||
+            order->getTexMap() == 3) continue; // never classify the warp mask
+        const auto texNo = tev->getTexNo(order->getTexMap());
+        if (texNo >= texture->getNum()) continue;
+        const char* name = names != nullptr ? names->getName(texNo) : nullptr;
+        if (eye && name != nullptr && std::strstr(name, "eyeball") != nullptr) return order;
+        if (order->getTexMap() == 0 && diffuse == nullptr) diffuse = order;
+    }
+    return diffuse;
+}
+
 // J3D material display lists update live registers without updating GX's CPU
 // shadow state. GXSetNumChans/GXSetNumTevStages would flush a stale GEN_MODE,
 // losing numTexGens (Aurora then sees GX_MAX_TEXGENSRC / "tcg src 21").
@@ -237,27 +258,32 @@ class DarkDisplayList {
     }
 
 public:
-    void lighting(bool eye, u8 ambientAlpha, u8 materialAlpha) {
+    void lighting(FierceDeityTint tint, bool eye, u8 ambientAlpha, u8 materialAlpha) {
         xf(0x1009, 2); // XF number of color channels
         xf(0x100B, rgba({64, 64, 64, ambientAlpha}));
-        xf(0x100D, rgba(eye ? GXColor{255, 28, 20, materialAlpha}
-                           : GXColor{32, 36, 42, materialAlpha}));
+        const GXColor eyeColor = tint == FierceDeityTint::Gold ? GXColor{255,255,255,materialAlpha} :
+            tint == FierceDeityTint::White ? GXColor{255,176,24,materialAlpha} : GXColor{255,28,20,materialAlpha};
+        const GXColor bodyColor = tint == FierceDeityTint::Gold ? GXColor{210,145,24,materialAlpha} :
+            tint == FierceDeityTint::White ? GXColor{240,240,240,materialAlpha} : GXColor{32,36,42,materialAlpha};
+        xf(0x100D, rgba(eye ? eyeColor : bodyColor));
         // COLOR1 only: register sources, clamp diffuse, no attenuation, light0
-        // on the body; bright self-lit red eyes, independent of room lighting.
+        // on the body; self-lit eyes and monochrome surfaces ignore room lighting.
         // Preserve the native ALPHA1 control and cutout transparency.
         xf(0x100F, (1u << 10) | (u32(GX_DF_CLAMP) << 7) |
-                     (eye ? 0u : (1u << 1) | (1u << 2)));
+                     ((eye || tint == FierceDeityTint::White) ? 0u : (1u << 1) | (1u << 2)));
     }
-    void specular_lighting(u8 ambientAlpha0, u8 materialAlpha0,
+    void specular_lighting(FierceDeityTint tint, u8 ambientAlpha0, u8 materialAlpha0,
                            u8 ambientAlpha1, u8 materialAlpha1) {
         xf(0x1009, 2);
         // Dark diffuse base on COLOR0; preserve both native alpha channels.
         xf(0x100A, rgba({64, 64, 64, ambientAlpha0}));
-        xf(0x100C, rgba({32, 36, 42, materialAlpha0}));
+        xf(0x100C, rgba(tint == FierceDeityTint::Gold ? GXColor{190,115,18,materialAlpha0} :
+                        GXColor{32,36,42,materialAlpha0}));
         xf(0x100E, (1u << 10) | (u32(GX_DF_CLAMP) << 7) | (1u << 1) | (1u << 2));
         // COLOR1 uses GX_AF_SPEC: attenuation enabled, diffuse disabled.
         xf(0x100B, rgba({0, 0, 0, ambientAlpha1}));
-        xf(0x100D, rgba({100, 112, 128, materialAlpha1}));
+        xf(0x100D, rgba(tint == FierceDeityTint::Gold ? GXColor{255,221,120,materialAlpha1} :
+                        GXColor{100,112,128,materialAlpha1}));
         xf(0x100F, (1u << 9) | (1u << 1) | (1u << 2));
 
         // A soft camera-space key light keeps the black surface readable in
@@ -291,12 +317,31 @@ public:
         // Preserve the other half, even when it is an animated native stage.
         masked_bp(0x28 + index / 2, 0xFFFu << shift, order << shift);
         bp(0x10 + index, 0); // direct TEV stage (no indirect lookup)
+        const u32 operation = op < 2 ? (u32(op) << 18) :
+            (3u << 16) | ((u32(op) & 1u) << 18) | (((u32(op) >> 1) & 3u) << 20);
         bp(0xC0 + 2 * index, u32(d) | (u32(c) << 4) | (u32(b) << 8) |
-            (u32(a) << 12) | (u32(op) << 18) | (1u << 19) | (u32(scale) << 20));
+            (u32(a) << 12) | operation | (1u << 19) | (op < 2 ? u32(scale) << 20 : 0));
         // Preserve the native alpha chain: (0 * (1 - 0) + 0 * 0) + APREV.
         bp(0xC1 + 2 * index, identity | (textureSwap << 2) |
             (u32(GX_CA_APREV) << 4) | (u32(GX_CA_ZERO) << 7) |
             (u32(GX_CA_ZERO) << 10) | (u32(GX_CA_ZERO) << 13) | (1u << 19));
+    }
+    unsigned monochrome(unsigned count, const J3DTevOrder* order, unsigned identity, bool eye) {
+        // Classify raw RGB, not shaded brightness: all three components must
+        // exceed the white threshold. RGB8 compare produces per-channel flags;
+        // packed BGR24 equality reduces them to one neutral black/white mask.
+        const unsigned shift = (count & 1) ? 14 : 4;
+        masked_bp(0xF6 + count / 2, 0x1Fu << shift,
+                  u32(eye ? GX_TEV_KCSEL_3_4 : GX_TEV_KCSEL_7_8) << shift);
+        stage(count++, static_cast<GXTexCoordID>(order->mTexCoord),
+              static_cast<GXTexMapID>(order->getTexMap()), identity, identity,
+              GX_CC_TEXC, GX_CC_KONST, GX_CC_ONE, GX_CC_ZERO, GX_TEV_COMP_RGB8_GT);
+        stage(count++, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+              GX_CC_CPREV, GX_CC_ONE, GX_CC_ONE, GX_CC_ZERO, GX_TEV_COMP_BGR24_EQ);
+        // White -> black; black and every other color -> white/amber.
+        stage(count++, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+              GX_CC_RASC, GX_CC_ZERO, GX_CC_CPREV, GX_CC_ZERO);
+        return count;
     }
     void alpha(unsigned index, unsigned swap, unsigned a, unsigned b,
                unsigned c, unsigned d, unsigned op = 0, unsigned dest = 0) {
@@ -387,14 +432,14 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const unsigned warpStages = scope.warp ? (scope.inverse ? 3 : 1) : 0;
     if (scope.warp) {
         scope.warpCoord = native_warp_coord(model, material, daAlink_getAlinkActorClass());
-        if (scope.warpCoord < 0 || count + warpStages + (scope.dark ? 1 : 0) > 16)
+        if (scope.warpCoord < 0 || count + warpStages + (scope.tint != FierceDeityTint::None ? 1 : 0) > 16)
             return HOOK_CONTINUE;
     }
     const bool eye = eye_material(model->getModelData(), material);
 
     DarkDisplayList effect;
     effect.swap(identity, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
-    if (scope.dark) {
+    if (scope.tint != FierceDeityTint::None) {
     // XF color registers contain RGBA. Retain alpha for the native stages.
     const auto* ambient = material->getColorBlock()->getAmbColor(1);
     const auto* color = material->getMatColor(1);
@@ -409,19 +454,23 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const bool alphaUsesLight0 =
         (alpha0 != nullptr && alpha0->getEnable() && (alpha0->getLightMask() & 1)) ||
         (alpha1 != nullptr && alpha1->getEnable() && (alpha1->getLightMask() & 1));
-    const bool glossy = !alphaUsesLight0 && !eye && count + warpStages + 2 <= 16 && batchMaterial != nullptr &&
+    const bool glossy = scope.tint != FierceDeityTint::White && !alphaUsesLight0 && !eye && count + warpStages + 2 <= 16 && batchMaterial != nullptr &&
         batchMaterial->getColorBlock() != nullptr &&
         batchMaterial->getColorBlock()->getLight(0) != nullptr;
     if (glossy) {
         const auto* ambient0 = material->getColorBlock()->getAmbColor(0);
         const auto* color0 = material->getMatColor(0);
-        effect.specular_lighting(ambient0 != nullptr ? ambient0->a : 255,
+        effect.specular_lighting(scope.tint, ambient0 != nullptr ? ambient0->a : 255,
             color0 != nullptr ? color0->a : 255, ambientAlpha, materialAlpha);
     } else {
-        effect.lighting(eye, ambientAlpha, materialAlpha);
+        effect.lighting(scope.tint, eye, ambientAlpha, materialAlpha);
     }
 
-    if (glossy) {
+    const auto* surface = scope.tint == FierceDeityTint::White ?
+        surface_texture_order(model->getModelData(), material, eye) : nullptr;
+    if (surface != nullptr && count + warpStages + 3 <= 16) {
+        next = effect.monochrome(count, surface, identity, eye);
+    } else if (glossy) {
         effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC,
                      GX_TEV_ADD, GX_CS_SCALE_1, 0);
@@ -441,7 +490,7 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         auto* image = model->getModelData()->getTexture()->getResTIMG(tev->getTexNo(3));
         next = effect.warp(next, scope.warpCoord, identity, scope.inverse, image->width, image->height);
     }
-    scope.applied = effect.apply(next, scope.dark);
+    scope.applied = effect.apply(next, scope.tint != FierceDeityTint::None);
     if (scope.applied && scope.warp) ++s_transition.maskedShapes;
     return HOOK_CONTINUE;
 }
@@ -482,8 +531,8 @@ void after_player_draw(ModContext*, void* args, void*, void*) {
 
 bool fierce_deity_transition_busy() { return s_transition.owner != nullptr; }
 
-void fierce_deity_transition_prepare(daAlink_c* link, bool fromDark, bool toDark, bool entering) {
-    prepare_transition(link, fromDark, toDark, entering);
+void fierce_deity_transition_prepare(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
+    prepare_transition(link, fromTint, toTint, entering);
 }
 
 void fierce_deity_transition_commit(daAlink_c* link) {

@@ -74,8 +74,8 @@ struct RuntimeState {
     bool refreshFootBaseline = false;
     bool equipmentOverridden = false;
     bool modelSwapped = false;
-    bool displayedDark = false;
-    bool swapDark = false;
+    FierceDeityTint displayedTint = FierceDeityTint::None;
+    FierceDeityTint swapTint = FierceDeityTint::None;
     bool modelReloadFrame = false;
     ModelSwapState modelSwapState = ModelSwapState::None;
     u8 originalClothes = dItemNo_NONE_e;
@@ -245,15 +245,29 @@ void update_visual_selection(daAlink_c*) {
     if (s_state.active) s_state.visual = fierce_deity_visual();
 }
 
+bool visual_uses_magic(FierceDeityVisual visual) {
+    return visual == FierceDeityVisual::MagicArmor || visual == FierceDeityVisual::DarkMagic;
+}
+
+FierceDeityTint visual_tint(FierceDeityVisual visual) {
+    switch (visual) {
+    case FierceDeityVisual::White: return FierceDeityTint::White;
+    case FierceDeityVisual::Gold: return FierceDeityTint::Gold;
+    case FierceDeityVisual::Dark:
+    case FierceDeityVisual::DarkMagic: return FierceDeityTint::Dark;
+    default: return FierceDeityTint::None;
+    }
+}
+
 bool service_model_swap(daAlink_c* link) {
     s_state.modelReloadFrame = false;
     if (link == nullptr) return false;
 
     if (s_state.modelSwapState == ModelSwapState::None) {
         if (fierce_deity_transition_busy()) return false;
-        const bool useMagic = s_state.active && s_state.visual != FierceDeityVisual::Dark;
-        const bool useDark = s_state.active && s_state.visual != FierceDeityVisual::MagicArmor;
-        if (!useMagic && !s_state.modelSwapped && !s_state.displayedDark && !useDark) {
+        const bool useMagic = s_state.active && visual_uses_magic(s_state.visual);
+        const auto useTint = s_state.active ? visual_tint(s_state.visual) : FierceDeityTint::None;
+        if (!useMagic && !s_state.modelSwapped && s_state.displayedTint == FierceDeityTint::None && useTint == FierceDeityTint::None) {
             cancel_preload();
             return false;
         }
@@ -266,7 +280,7 @@ bool service_model_swap(daAlink_c* link) {
         const u8 selected = dComIfGs_getSelectEquipClothes();
         const u8 targetClothes = useMagic ? u8(dItemNo_ARMOR_e) : selected;
         const char* targetArchive = outfit_archive(targetClothes);
-        if (same_archive(link->mArcName, targetArchive) && s_state.displayedDark == useDark) {
+        if (same_archive(link->mArcName, targetArchive) && s_state.displayedTint == useTint) {
             cancel_preload();
             s_state.modelSwapped = useMagic;
             s_state.failedArchive = nullptr;
@@ -276,17 +290,17 @@ bool service_model_swap(daAlink_c* link) {
 
         // All disk I/O is complete and our reference pins the replacement.
         // Only this synchronous native transaction sees the temporary outfit.
-        fierce_deity_transition_prepare(link, s_state.displayedDark, useDark, s_state.active);
+        fierce_deity_transition_prepare(link, s_state.displayedTint, useTint, s_state.active);
         if (!fierce_deity_transition_busy() && same_archive(link->mArcName, targetArchive)) {
             // A foreign model without native warp attributes (or allocation
             // failure) uses an immediate material change. Reloading its OWN
             // archive heap would invalidate the pinned same-archive resource.
-            s_state.displayedDark = useDark;
+            s_state.displayedTint = useTint;
             s_state.modelSwapped = useMagic;
             release_preload();
             return false;
         }
-        s_state.swapDark = useDark;
+        s_state.swapTint = useTint;
         s_state.originalClothes = selected;
         s_state.equipmentOverridden = true;
         dComIfGs_setSelectEquipClothes(targetClothes);
@@ -310,7 +324,7 @@ bool service_model_swap(daAlink_c* link) {
     s_state.modelSwapped = s_state.modelSwapState == ModelSwapState::Activating;
     s_state.modelSwapState = ModelSwapState::None;
     restore_equipment_selection();
-    s_state.displayedDark = s_state.swapDark;
+    s_state.displayedTint = s_state.swapTint;
     fierce_deity_transition_commit(link);
     s_state.refreshFootBaseline = true;
     release_preload(); // Link's native phase now owns its own resource reference.
@@ -515,7 +529,7 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
 HookAction before_magic_armor_ability(ModContext*, void*, void* retval, void*) {
     if (!same_link(daAlink_getAlinkActorClass()) ||
         (!s_state.modelSwapped && s_state.modelSwapState == ModelSwapState::None &&
-         (!s_state.active || s_state.visual == FierceDeityVisual::Dark))) {
+         (!s_state.active || !visual_uses_magic(s_state.visual)))) {
         return HOOK_CONTINUE;
     }
     *static_cast<BOOL*>(retval) = FALSE;
@@ -662,9 +676,13 @@ void fierce_deity_touch_button(uint32_t button, bool pressed) {
 
 bool fierce_deity_dark_visual_active() {
     auto* link = daAlink_getAlinkActorClass();
-    return same_link(link) && s_state.displayedDark &&
+    return same_link(link) && s_state.displayedTint != FierceDeityTint::None &&
         s_state.modelSwapState == ModelSwapState::None && !s_state.modelReloadFrame &&
         !link->checkWolf() && link->mClothesChangeWaitTimer == 0;
+}
+
+FierceDeityTint fierce_deity_displayed_tint() {
+    return fierce_deity_dark_visual_active() ? s_state.displayedTint : FierceDeityTint::None;
 }
 
 bool fierce_deity_model_reload_active() {

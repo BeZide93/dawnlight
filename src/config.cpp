@@ -1294,7 +1294,7 @@ bool fierce_deity_enabled() {
 }
 
 FierceDeityVisual fierce_deity_visual() {
-    return static_cast<FierceDeityVisual>(get_int(s_fierceDeityVisual, 1, 0, 2));
+    return static_cast<FierceDeityVisual>(get_int(s_fierceDeityVisual, 1, 0, 4));
 }
 
 ConfigVarHandle fierce_deity_visual_config_var() { return s_fierceDeityVisual; }

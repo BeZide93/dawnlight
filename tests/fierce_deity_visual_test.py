@@ -17,6 +17,7 @@ fixture = r'''
 #include <cstdint>
 #include <algorithm>
 #include <cmath>
+enum class FierceDeityTint { None, Dark, White, Gold };
 using Mtx = float[3][4];
 using u8 = uint8_t; using u16 = uint16_t; using u32 = uint32_t;
 using GXTexCoordID = int; using GXTexMapID = int; using GXTevSwapSel = int;
@@ -28,6 +29,8 @@ constexpr int GX_TEV_ADD=0, GX_TEV_SUB=1, GX_TB_ZERO=0, GX_CS_SCALE_1=0,
               GX_CS_SCALE_2=1, GX_TEVPREV=0, GX_TEXCOORD_NULL=255, GX_TEXMAP_NULL=255;
 constexpr int GX_CC_ZERO=15, GX_CC_TEXC=8, GX_CC_CPREV=0, GX_CC_RASC=10,
               GX_CC_C0=2, GX_CC_C1=4, GX_TEVREG0=1, GX_TEVREG1=2;
+constexpr int GX_CC_ONE=12, GX_CC_KONST=14, GX_TEV_COMP_RGB8_GT=14, GX_TEV_COMP_BGR24_EQ=13;
+constexpr int GX_TEV_KCSEL_3_4=2, GX_TEV_KCSEL_7_8=1;
 constexpr int GX_CA_ZERO=7, GX_CA_APREV=0, GX_TEXMAP3=3;
 struct GXColor { u8 r, g, b, a; };
 struct RecordedStage { std::array<int,4> color{}, alpha{}; int op=0, scale=0, swap=0, dest=0; };
@@ -134,8 +137,9 @@ void assert_native_fields(unsigned count) {
         assert(bp[0xC1+2*i]==nativeBP[0xC1+2*i]);
         assert(bp[0x10+i]==nativeBP[0x10+i]);
     }
-    for(unsigned i=0xF6;i<=0xFD;++i) {
-        assert((bp[i]&0xFFFFF0)==(nativeBP[i]&0xFFFFF0)); // native konst selectors
+    for(unsigned i=0;i<count;++i) {
+        const unsigned shift=(i&1)?14:4;
+        assert(((bp[0xF6+i/2]^nativeBP[0xF6+i/2]) & (0x3ffu<<shift))==0);
     }
     for(unsigned i=0;i<xf.size();++i) {
         if(!(i>=0x603 && i<=0x60F) && !(i>=0x1009 && i<=0x100F)) assert(xf[i]==nativeXF[i]);
@@ -220,12 +224,13 @@ daAlink_c link;
 struct { const daAlink_c* owner=nullptr; J3DModel* sword=nullptr; J3DModel* sheath=nullptr; } s;
 bool darkActive=true;
 daAlink_c* daAlink_getAlinkActorClass() {return &link;}
-bool fierce_deity_dark_visual_active() {return darkActive;}
-struct WarpLayer { bool active=false, dark=false, inverse=false; };
+FierceDeityTint palette=FierceDeityTint::Dark;
+FierceDeityTint fierce_deity_displayed_tint() {return darkActive ? palette : FierceDeityTint::None;}
+struct WarpLayer { bool active=false; FierceDeityTint tint=FierceDeityTint::None; bool inverse=false; };
 bool warpTest = false, warpDark = false, warpInverse = false;
 struct { unsigned maskedShapes=0, projectedGroups=0; } s_transition;
 WarpLayer warp_layer(J3DModel* model) {
-    return model == link.mpLinkModel ? WarpLayer{warpTest,warpDark,warpInverse} : WarpLayer{};
+    return model == link.mpLinkModel ? WarpLayer{warpTest,warpDark ? palette : FierceDeityTint::None,warpInverse} : WarpLayer{};
 }
 int native_warp_coord(J3DModel*, J3DMaterial*, daAlink_c*) {return warpTest ? 3 : -1;}
 void warp_texture_matrix(Mtx matrix) {
@@ -286,6 +291,42 @@ float eye_coverage(int nativeCount, float r, float b) {
         assert((s.alpha==std::array<int,4>{GX_CA_ZERO,GX_CA_ZERO,GX_CA_ZERO,GX_CA_APREV}));
     }
     return regs[0];
+}
+// Execute the emitted color commands, including Aurora's rounded RGB8
+// comparisons and packed BGR24 equality. RGB comes from the raw sampled texture.
+std::array<float,3> monochrome_color(int start, std::array<float,3> tex) {
+    using RGB=std::array<float,3>;
+    RGB previous{0.01f,0.02f,0.03f}; // deliberately unrelated native shaded output
+    for(int i=start;i<start+3;++i) {
+        const auto& stage=gpuStages[i];
+        const u32 word=bp[0xC0+2*i];
+        const unsigned op=((word>>16)&3)==3 ? 8+((word>>18)&1)+2*((word>>20)&3) : (word>>18)&1;
+        const unsigned k=(bp[0xF6+i/2]>>((i&1)?14:4))&31;
+        auto arg=[&](int a)->RGB {
+            if(a==GX_CC_ZERO)return {0,0,0};
+            if(a==GX_CC_ONE)return {1,1,1};
+            if(a==GX_CC_CPREV)return previous;
+            if(a==GX_CC_TEXC)return tex;
+            if(a==GX_CC_RASC)return {gpuMaterial.r/255.f,gpuMaterial.g/255.f,gpuMaterial.b/255.f};
+            assert(a==GX_CC_KONST && (k==1 || k==2));
+            const float value=(8-k)/8.f;return {value,value,value};
+        };
+        const auto a=arg(stage.color[0]),b=arg(stage.color[1]),c=arg(stage.color[2]),d=arg(stage.color[3]);
+        RGB result{};
+        for(int ch=0;ch<3;++ch) {
+            if(op==GX_TEV_COMP_RGB8_GT)result[ch]=d[ch]+(std::round(a[ch]*255)>std::round(b[ch]*255)?c[ch]:0);
+            else if(op==GX_TEV_COMP_BGR24_EQ) {
+                auto packed=[](RGB v){return std::round(255*(v[0]+256*v[1]+65536*v[2]));};
+                result[ch]=d[ch]+(packed(a)==packed(b)?c[ch]:0);
+            } else {
+                assert(op==GX_TEV_ADD);
+                result[ch]=d[ch]+a[ch]*(1-c[ch])+b[ch]*c[ch];
+            }
+            result[ch]=std::clamp(result[ch],0.f,1.f);
+        }
+        previous=result;
+    }
+    return previous;
 }
 float xf_float_value(unsigned reg) {
     float result; u32 bits=xf[reg]; std::memcpy(&result,&bits,sizeof(result)); return result;
@@ -512,16 +553,20 @@ int main() {
     J3DModel sword, sheath, shield, second, secondSheath;
     link.mSwordModel=&sword;link.mSheathModel=&sheath;link.mShieldModel=&shield;
     s.owner=&link;s.sword=&second;s.sheath=&secondSheath;
+    for(auto tint : {FierceDeityTint::Dark,FierceDeityTint::White,FierceDeityTint::Gold})
     for(auto* model : {&sword,&sheath,&shield,&second,&secondSheath}) {
+        palette=tint;
         J3DShapePacket gear{model,&shape,{}};
         assert(!player_model(&link,model) && player_equipment(&link,model));
-        draw_begin(gear);assert(gpuCount==5 && gpuMaterial.r==100);
+        draw_begin(gear);assert(gpuCount==(tint==FierceDeityTint::White?6:5));
+        assert(gpuMaterial.r==(tint==FierceDeityTint::White?240:tint==FierceDeityTint::Gold?255:100));
         draw_end();assert(bp==nativeBP && xf==nativeXF);
         draw_shadow(gear);
         darkActive=false;
         writes=gxWrites;draw_begin(gear);draw_end();assert(gxWrites==writes);
         darkActive=true;
     }
+    palette=FierceDeityTint::Dark;
     assert(!player_equipment(nullptr,&sword) && !player_equipment(&link,nullptr));
     assert(!player_equipment(&link,&other));
     daAlink_c otherLink;s.owner=&otherLink;
@@ -530,6 +575,61 @@ int main() {
     assert(!player_equipment(&link,&second) && !player_equipment(&link,&secondSheath));
     link.mSwordModel=nullptr;link.mSheathModel=nullptr;link.mShieldModel=nullptr;
     assert(!player_equipment(&link,&sword) && !player_equipment(&link,&shield));
+
+    // White classifies texture color BEFORE lighting, using all RGB channels.
+    // Saturated yellow/magenta/cyan must not be mistaken for white.
+    palette=FierceDeityTint::White;
+    for(bool eye : {false,true}) {
+        player.data.materials.name=eye ? "al_eyeballL_m" : "al_body";
+        draw_begin(p);assert(gpuCount==6 && !(xf[0x100F]&2));
+        const std::array<float,3> glow{gpuMaterial.r/255.f,gpuMaterial.g/255.f,gpuMaterial.b/255.f};
+        assert((eye && gpuMaterial.r==255 && gpuMaterial.g==176 && gpuMaterial.b==24) ||
+               (!eye && gpuMaterial.r==240 && gpuMaterial.g==240 && gpuMaterial.b==240));
+        assert((monochrome_color(3,{1,1,1})==std::array<float,3>{0,0,0}));
+        for(auto color : {std::array<float,3>{0,0,0},{1,0,0},{0,1,0},{0,0,1},{1,1,0},{1,0,1},{0,1,1},{.5f,.5f,.5f}})
+            assert(monochrome_color(3,color)==glow);
+        // Native white/gray boundary, including each independent RGB channel.
+        const int threshold=eye?191:223;
+        for(int component=0;component<3;++component) for(int value=0;value<256;++value) {
+            std::array<float,3> color{1,1,1};color[component]=value/255.f;
+            assert(monochrome_color(3,color)==(value>threshold ? std::array<float,3>{0,0,0}:glow));
+        }
+        for(int alpha : {0,93,255})assert(warp_alpha(3,alpha,0)==alpha);
+        draw_end();assert(bp==nativeBP && xf==nativeXF);
+        // Both wipe directions preserve the same classification/alpha.
+        warpTest=warpDark=true;
+        for(bool inverse : {false,true}) {
+            warpInverse=inverse;draw_begin(p);
+            assert(gpuCount==6+(inverse?3:1));
+            assert((monochrome_color(3,{1,1,1})==std::array<float,3>{0,0,0}));
+            assert(monochrome_color(3,{0,0,0})==glow);
+            for(int alpha : {0,93,255})for(int mask=0;mask<256;++mask)
+                assert(warp_alpha(3,alpha,mask)==((inverse?mask!=255:mask==255)?alpha:0));
+            draw_end();assert(bp==nativeBP && xf==nativeXF);
+        }
+        warpTest=false;
+    }
+    // White eyes must reuse their actual animated UV/map, not assume slot 0.
+    mat.tev.orders[0]={2,2};
+    draw_begin(p);
+    assert(((bp[0x29]>>12)&0x7f)==(2u|(2u<<3)|(1u<<6)));
+    draw_end();mat.tev.orders[0]={0,0};
+    // Gold uses warm normal-dependent highlights and full white emissive eyes.
+    palette=FierceDeityTint::Gold;player.data.materials.name="al_body";
+    draw_begin(p);assert(gpuCount==5 && gpuMaterial.r==255 && gpuMaterial.g==221 && gpuMaterial.b==120);
+    assert((xf[0x100C]>>8)==((190u<<16)|(115u<<8)|18u));
+    assert(highlight(-0.212703f,0.265879f,0.940248f)>highlight(0,0,1));
+    draw_end();assert(bp==nativeBP && xf==nativeXF);
+    player.data.materials.name="al_eyeballR_m";
+    draw_begin(p);assert(gpuCount==4 && gpuMaterial.r==255 && gpuMaterial.g==255 && gpuMaterial.b==255);
+    assert(!(xf[0x100F]&2) && eye_coverage(3,0,0)==1);draw_end();
+    // White's three-stage path fits through stage 16, then safely falls back.
+    palette=FierceDeityTint::White;
+    for(int count=1;count<=15;++count) {
+        mat.tev.count=count;draw_begin(p);
+        assert(gpuCount==count+(count<=13?3:1));draw_end();
+    }
+    mat.tev.count=3;palette=FierceDeityTint::Dark;player.data.materials.name="al_body";
 
     // Different native materials use different dormant generator slots. Every
     // coefficient, including the changing vertical translation, must reach the
@@ -597,4 +697,4 @@ with tempfile.TemporaryDirectory() as temp:
     subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Fierce Deity warp masks, late depth, specular response, shadow isolation, self-lit whole eyes, equipment and alpha: passed')
+print('Fierce Deity warp masks, late depth, specular response, shadow isolation, Dark/White/Gold palettes, eyes, equipment and alpha: passed')

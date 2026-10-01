@@ -44,6 +44,8 @@ damage. **Dark Link Visual**, directly below its toggle, selects the appearance:
 | Magic Armor | The existing Magic Armor model swap. |
 | Dark (default) | The currently worn outfit/model with dark shading and red eyes. |
 | Dark Magic | The Magic Armor model with dark shading and red eyes. |
+| White | Current outfit: white texels become black; black and colored texels become white. Amber iris/pupils and black sclera. |
+| Gold | Current outfit with warm golden shading/specular highlights and fully white glowing eyes. |
 
 **Dark Link Activation**, below the visual selector, offers **Spin Attack**
 (charged), **R+Z**, or **R+A** (default). Activation requires a full meter. With
@@ -66,20 +68,28 @@ continues to build from top to bottom and recede from bottom to top.
 Both selectors are disabled while Dark Link is unavailable/off, including
 its Progression lock. Its saved selection is retained. Changing it during a
 transformation applies when gameplay resumes, waits for any pending model load,
-and preserves the remaining meter. Dark keeps the current model without a clothes
-reload; the Magic variants restore the selected outfit when the transformation ends.
+and preserves the remaining meter. Dark, White and Gold retain the selected outfit;
+the Magic variants restore it when the transformation ends. Each warp layer retains
+its own appearance when changing visuals during a transformation.
 
-The dark appearance affects Link's body, face, hair/hat, hands, worn boots,
-equipped sword, shield and scabbard, including the second sword/scabbard from
-Dual Wield. Equipment uses the same dark shading and specular highlights while
-held or stowed; the Magic Armor visual alone keeps its normal equipment colors.
-It uses the loaded models, including compatible model replacements, and preserves
-native texture transparency. The entire visible eye surface (including iris,
-pupil and sclera) uses bright, self-lit red that stays luminous in dark rooms.
-Eye recognition uses `eyeballL`/`eyeballR` material names, independently of texture
-colors or names. Eyelids, blinking and cutout alpha remain native. Unsupported
-custom eye material names fall back to dark shading. Materials already using
-all 16 TEV stages are left unchanged.
+Dark, Dark Magic, White and Gold affect Link's body, face, hair/hat, hands,
+worn boots, equipped sword, shield and scabbard, including Dual Wield's second
+sword/scabbard, held or stowed. Magic Armor alone retains native equipment colors.
+These appearances use the loaded models, including compatible replacements,
+and preserve native texture transparency.
+
+Dark/Dark Magic eyes glow fully red; Gold eyes glow fully white. White uses
+orange-yellow emission for the iris and pupil and turns the sclera black.
+Eye recognition uses `eyeballL`/`eyeballR` material names. Eyelids, blinking and
+cutout alpha remain native; unknown eye material names use body shading.
+
+White classifies the raw diffuse texture before scene lighting: near-white means
+all three RGB components are at least 224/255 (192/255 on eyes to include shaded
+sclera). Those texels become black; black, gray and colored texels become white,
+or amber on eyes. This is a deliberate monochrome recolor, not RGB inversion.
+Materials without an identifiable diffuse texture or three spare TEV stages use
+uniform white/amber; those with no spare stage remain native. Gold and Dark use
+specular lighting when the native batch can safely restore the borrowed light.
 Other held items retain their normal appearance. Rendering changes are
 scoped to the player's draw calls; shared model data and other actors are untouched.
 

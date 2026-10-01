@@ -7,7 +7,7 @@ OutfitModels outfit_models(daAlink_c* link) {
 
 struct WarpLayer {
     bool active = false;
-    bool dark = false;
+    FierceDeityTint tint = FierceDeityTint::None;
     bool inverse = false;
 };
 
@@ -19,8 +19,8 @@ struct WarpTransition {
     JKRExpHeap* archiveHeap = nullptr;
     JKRExpHeap* scratchArchiveHeap = nullptr;
     const char* archive = nullptr;
-    bool fromDark = false;
-    bool toDark = false;
+    FierceDeityTint fromTint = FierceDeityTint::None;
+    FierceDeityTint toTint = FierceDeityTint::None;
     bool committed = false;
     unsigned queuedModels = 0;
     unsigned maskedShapes = 0;
@@ -186,7 +186,7 @@ void discard_transition(daAlink_c* link) {
     s_transition = {};
 }
 
-void prepare_transition(daAlink_c* link, bool fromDark, bool toDark, bool entering) {
+void prepare_transition(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
     if (s_transition.owner != nullptr) return;
     const auto models = outfit_models(link);
     if (!warp_compatible(models, link)) return;
@@ -227,8 +227,8 @@ void prepare_transition(daAlink_c* link, bool fromDark, bool toDark, bool enteri
     s_transition.archiveHeap = oldArchive;
     s_transition.scratchArchiveHeap = scratch;
     s_transition.archive = link->mArcName;
-    s_transition.fromDark = fromDark;
-    s_transition.toDark = toDark;
+    s_transition.fromTint = fromTint;
+    s_transition.toTint = toTint;
     s_transition.wipe.entering = entering;
     link->mAnmHeap3.mAnimeHeap = newModels;
     link->mpArcHeap = scratch;
@@ -238,9 +238,9 @@ WarpLayer warp_layer(J3DModel* model) {
     auto* link = daAlink_getAlinkActorClass();
     if (!s_transition.committed || !transition_owner(link)) return {};
     for (auto* outgoing : s_transition.outgoing) {
-        if (model == outgoing) return {true, s_transition.fromDark, s_transition.wipe.inverse(false)};
+        if (model == outgoing) return {true, s_transition.fromTint, s_transition.wipe.inverse(false)};
     }
-    if (player_model(link, model)) return {true, s_transition.toDark, s_transition.wipe.inverse(true)};
+    if (player_model(link, model)) return {true, s_transition.toTint, s_transition.wipe.inverse(true)};
     return {};
 }
 

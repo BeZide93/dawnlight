@@ -112,7 +112,7 @@ int third_person_reticle_offset_y();
 BulletTimeMode bullet_time_mode();
 bool bullet_time_enabled();
 bool flurry_rush_enabled();
-enum class FierceDeityVisual : int { MagicArmor = 0, Dark = 1, DarkMagic = 2 };
+enum class FierceDeityVisual : int { MagicArmor = 0, Dark = 1, DarkMagic = 2, White = 3, Gold = 4 };
 bool fierce_deity_enabled();
 FierceDeityVisual fierce_deity_visual();
 ConfigVarHandle fierce_deity_visual_config_var();

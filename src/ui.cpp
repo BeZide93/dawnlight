@@ -28,7 +28,7 @@ constexpr const char* kAimModeOptions[] = {
 constexpr const char* kSecondSwordOptions[] = {"Wooden Sword", "Ordon Sword", "Master Sword"};
 constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
 constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
-constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic"};
+constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic", "White", "Gold"};
 constexpr const char* kFierceDeityActivationOptions[] = {"Spin Attack", "R+Z", "R+A"};
 
 constexpr const char* kNewSaveModeOptions[] = {
@@ -876,6 +876,8 @@ ModResult build_gameplay_tab(
             kFierceDeityVisualOptions, std::size(kFierceDeityVisualOptions),
             "Magic Armor uses the armor model. Dark (default) applies a shadow appearance "
             "and red eyes to your current outfit. Dark Magic combines Magic Armor with that effect. "
+            "White inverts white surfaces to black and other colors to white, with amber eyes. "
+            "Gold uses a golden appearance with white eyes. Both keep your current outfit. "
             "Changes apply when gameplay resumes; requires Dark Link.",
             fierce_deity_visual_disabled) != MOD_OK)
     {

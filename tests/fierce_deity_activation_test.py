@@ -166,8 +166,10 @@ ui = (root/'src/ui.cpp').read_text()
 assert 'register_int("fierce-deity-activation", 2, s_fierceDeityActivation)' in config
 assert 'get_int(s_fierceDeityActivation, 2, 0, 2)' in config
 assert 'register_int("fierce-deity-visual", 1, s_fierceDeityVisual)' in config
-assert 'get_int(s_fierceDeityVisual, 1, 0, 2)' in config
+assert 'get_int(s_fierceDeityVisual, 1, 0, 4)' in config
 assert '{"Spin Attack", "R+Z", "R+A"}' in ui
+assert '{"Magic Armor", "Dark", "Dark Magic", "White", "Gold"}' in ui
+assert 'White = 3, Gold = 4' in (root/"src/config.hpp").read_text()
 assert ui.index('"Dark Link Visual",') < ui.index('"Dark Link Activation",') < ui.index('"Great Spin Projectile",')
 assert 'fierce_deity_visual_disabled' in ui[ui.index('"Dark Link Activation",'):ui.index('"Great Spin Projectile",')]
 with tempfile.TemporaryDirectory(prefix='dawnlight-fierce-input-') as directory:

@@ -35,10 +35,12 @@ new layout.
   the slot **in the same room**. Small horizontal offsets handle wall placements;
   flying replacements start 200 units above that floor. Original ceiling flags,
   paths, rotations, scales, and switches are replaced with standalone settings.
-- Replacement types include Bokoblins, Mini Freezards, Keese and Bubbles
-  (normal/fire/ice), Tektites, Gibdos, Chilfos, Stalchildren, Rats, club Bulblins,
-  Lizalfos, Dodongos, Dynalfos, ground Skulltulas, Stalfos, and Darknuts. At most
-  two replacement Darknuts are selected per room load to limit resource demand.
+- The pool contains 28 variants: Bokoblins, Mini Freezards, Keese and Bubbles
+  (normal/fire/ice), Tektites, Gibdos, Chilfos, Stalchildren, Rats, club and bow
+  Bulblins, Aeralfos, Bomskits, ground Deku Babas, Helmasaurs, Helmasauruses,
+  Kargaroks, Puppets, Lizalfos, Dodongos, Dynalfos, ground Skulltulas, Stalfos,
+  and Darknuts. Each eligible entry has equal probability; entries sharing the
+  original actor profile are excluded. There is no per-room Darknut limit.
   Splitters, generators, and bosses with arena scripts are not replacement types.
 - NPCs, Great Fairies, doors, chests, items, and room-clear logic stay native.
   Projectiles and runtime children are not rerolled. Invisible Wolfos pack

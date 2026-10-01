@@ -32,11 +32,12 @@ struct Enemy {
     s16 profile;
     u32 parameters;
     float height;
+    s8 argument = -1;
+    s16 angleZ = 0;
 };
 
 // Standalone variants only: no paths, appearance/death switches, opening demos,
-// ceiling anchors, splitters or enemy generators. Darknuts are capped per load
-// so a room of small enemies cannot become dozens of heavyweight actors.
+// ceiling anchors, splitters or enemy generators.
 constexpr Enemy kEnemies[] = {
     {fpcNm_E_OC_e, 0x00ff0000, 0.0f},   // Bokoblin
     {fpcNm_E_FZ_e, 0x00000000, 0.0f},   // Mini Freezard
@@ -52,11 +53,19 @@ constexpr Enemy kEnemies[] = {
     {fpcNm_E_BU_e, 0xffff2f00, 200.0f}, // Ice Bubble
     {fpcNm_E_MS_e, 0xffff0000, 0.0f},   // Rat
     {fpcNm_E_RD_e, 0xff000100, 0.0f},   // Club Bulblin
+    {fpcNm_E_RD_e, 0xff000200, 0.0f},   // Bow Bulblin
+    {fpcNm_B_GG_e, 0xffff0002, 200.0f}, // Regular Aeralfos without boss demo
+    {fpcNm_E_CR_e, 0x00000000, 0.0f},   // Bomskit
+    {fpcNm_E_DB_e, 0xff000000, 0.0f},   // Ground Deku Baba
+    {fpcNm_E_MM_e, 0x0000ff00, 0.0f},   // Helmasaur
+    {fpcNm_E_MM_e, 0x0000ff00, 0.0f, 1}, // Helmasaurus (actor argument variant)
+    {fpcNm_E_KR_e, 0xffffff00, 200.0f, -1, 0xff}, // Flying Kargarok, no path/switch
+    {fpcNm_E_FS_e, 0x00000000, 0.0f},   // Standalone Puppet
     {fpcNm_E_DN_e, 0xff000000, 0.0f},   // Lizalfos
     {fpcNm_E_DD_e, 0xffff0000, 0.0f},   // Dodongo
     {fpcNm_E_MF_e, 0xff000000, 0.0f},   // Dynalfos
     {fpcNm_E_ST_e, 0xff000002, 0.0f},   // Ground Skulltula
-    {fpcNm_E_SF_e, 0x0000ff00, 0.0f},   // Standing Stalfos (switch in angle.z)
+    {fpcNm_E_SF_e, 0x0000ff00, 0.0f, -1, 0xff}, // Standing Stalfos, no switch
     {fpcNm_B_TN_e, 0x000001ff, 0.0f},   // Darknut without intro
 };
 
@@ -75,7 +84,6 @@ struct PendingEnemy {
 };
 std::vector<RoomLoad> s_roomLoads;
 std::unordered_map<fpc_ProcID, PendingEnemy> s_pending;
-std::array<unsigned, 64> s_darknuts{};
 
 bool in_cave() {
     const char* stage = dComIfGp_getStartStageName();
@@ -95,7 +103,6 @@ HookAction before_room(ModContext*, void* args, void*, void*) {
     const int room = mods::arg<int>(args, 2);
     const bool enabled = in_cave() && cave_randomizer_enabled() && room >= 0 && room < 64;
     s_roomLoads.push_back({args, room, enabled});
-    if (enabled) s_darknuts[room] = 0;
     return HOOK_CONTINUE;
 }
 
@@ -179,13 +186,11 @@ HookAction before_allocate(ModContext*, void* args, void*, void*) {
     unsigned count = 0;
     for (unsigned i = 0; i < std::size(kEnemies); ++i) {
         if (kEnemies[i].profile == enemy.profile) continue;
-        if (kEnemies[i].profile == fpcNm_B_TN_e && s_darknuts[enemy.room] >= 2) continue;
         choices[count++] = i;
     }
     unsigned pick = static_cast<unsigned>(cM_rndF(static_cast<float>(count)));
     if (pick >= count) pick = count - 1;
     const auto& replacement = kEnemies[choices[pick]];
-    if (replacement.profile == fpcNm_B_TN_e) ++s_darknuts[enemy.room];
 
     // Change the profile BEFORE allocation, never reinterpret an existing
     // enemy as a different-sized actor. Dusklight's TARGET_PC module loader is
@@ -196,10 +201,10 @@ HookAction before_allocate(ModContext*, void* args, void*, void*) {
     position.y += replacement.height;
     append->base.position = position;
     const csXyz oldAngle = append->base.angle;
-    append->base.angle = csXyz(0, oldAngle.y,
-        replacement.profile == fpcNm_E_SF_e ? 0xff : 0);
+    // Stalfos and Kargarok encode a switch in Z; Helmasaurus uses argument 1.
+    append->base.angle = csXyz(0, oldAngle.y, replacement.angleZ);
     append->scale = {10, 10, 10};
-    append->argument = -1;
+    append->argument = replacement.argument;
     // Preserve setID, parent, room and the original creation request/layer.
     // The native cleared-room gate therefore still sees one enemy per slot.
     return HOOK_CONTINUE;
@@ -220,7 +225,6 @@ void shutdown_cave_randomizer() {
     mods::hook::uninstall<RoomActorsHook>(svc_hook);
     s_pending.clear();
     s_roomLoads.clear();
-    s_darknuts.fill(0);
 }
 
 ModResult install_cave_randomizer(ModError* error) {

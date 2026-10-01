@@ -1548,7 +1548,7 @@ bool heroes_shade_timer_active() {
 bool heroes_shade_timer_anchor(cXyz& position) {
     if (!arena()) return false;
     auto* actor = actor_by_id(sPedestal);
-    if (!actor) return false;
+    if (!actor || !clear_timer_near(actor->current.pos)) return false;
     position = actor->current.pos + cXyz(0, 230, 0);
     return true;
 }

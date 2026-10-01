@@ -159,6 +159,14 @@ HookAction before_meter_delete(ModContext*, void*, void*, void*) {
 }
 }
 
+bool clear_timer_near(const cXyz& interactionPosition) {
+    auto* player = dComIfGp_getPlayer(0);
+    // Measure from the approach point on the ground, not the floating text.
+    // Show the record shortly before the 150-unit portal interaction radius.
+    return player && player->current.pos.absXZ(interactionPosition) <= 350.0f &&
+        std::abs(player->current.pos.y - interactionPosition.y) <= 200.0f;
+}
+
 void begin_clear_timer(int target) {
     s_attempt = {};
     if (!clear_timer_enabled() || !save_state_boss_rush_active()) return;

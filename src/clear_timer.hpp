@@ -12,6 +12,7 @@ struct ClearTimerContext {
 };
 ClearTimerContext clear_timer_context();
 bool clear_timer_anchor(unsigned index, cXyz& position);
+bool clear_timer_near(const cXyz& interactionPosition);
 bool heroes_shade_timer_anchor(cXyz& position);
 bool heroes_shade_timer_active();
 ModResult initialize_clear_timer(ModError* error);

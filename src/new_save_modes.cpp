@@ -4603,6 +4603,7 @@ bool clear_timer_anchor(unsigned index, cXyz& position) {
     if (index == timing::shade) return heroes_shade_timer_anchor(position);
     if (index >= kBossRushHubPortalCount || !is_bossrush_hub_active() ||
         sHubPortalIds[index] == fpcM_ERROR_PROCESS_ID_e) return false;
+    if (!clear_timer_near(hub_portal_prompt_position(static_cast<u8>(index)))) return false;
     if (index < kBossRushEntryCount) {
         BossPortalSymbolSurface surface;
         if (!boss_portal_mirror_surface(sHubPortalIds[index], surface)) return false;

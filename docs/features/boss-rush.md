@@ -23,7 +23,9 @@ encounter or entering a run portal:
 - A bottom-center timer uses the game's native minigame number textures.
 - The last successful clear time floats above each boss mirror, the complete-run
   portal, the Cave of Ordeals portal and Hero's Shade's Master Sword. An encounter
-  without a recorded time displays `--:--.--`.
+  without a recorded time displays `--:--.--`. These floating records appear only
+  within 350 world units of the interaction point (and 200 units vertically),
+  including the Master Sword; moving away hides them.
 - Individual boss replays and Hero's Shade stop at victory. A complete Boss Rush
   records each boss as well as the total, including the horseback leg in the total.
 - The Cave timer spans all floors and stops when the native door unlocks after the

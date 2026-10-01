@@ -65,8 +65,7 @@ struct RuntimeState {
     bool active = false;
     FierceDeityVisual visual = FierceDeityVisual::MagicArmor;
     bool spinChargeArmed = false;
-    bool activationChordHeld = false;
-    u32 consumedButtons = 0;
+    bool activationInputConsumed = false;
     bool equipmentOverridden = false;
     bool modelSwapped = false;
     bool displayedDark = false;
@@ -341,41 +340,29 @@ void update_spin_activation(daAlink_c* link) {
 }
 
 // Run immediately after the host reads the pad, before native combos and Link.
-// Track the physical chord before consuming it so holding it cannot toggle twice.
+// Match the native R+Y shortcut: hold R, then freshly press the partner button.
+// R itself stays untouched so its initial manual jump can run normally.
 HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
     auto* link = daAlink_getAlinkActorClass();
     if (!same_link(link)) reset_for_link(link);
+    s_state.activationInputConsumed = false;
     auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
-    const u32 held = pad.mButtonFlags | (pad.mHoldLockR ? PAD_TRIGGER_R : 0);
-    const u32 pressed = pad.mPressedButtonFlags | (pad.mTrigLockR ? PAD_TRIGGER_R : 0);
     const auto binding = fierce_deity_activation();
     const u32 partner = binding == FierceDeityActivation::RA ? PAD_BUTTON_A : PAD_TRIGGER_Z;
-    const u32 chord = PAD_TRIGGER_R | partner;
-    const bool chordHeld = binding != FierceDeityActivation::SpinAttack &&
-        (held & chord) == chord;
-    const bool chordPressed = chordHeld && !s_state.activationChordHeld && (pressed & chord) != 0;
-    s_state.activationChordHeld = chordHeld;
-    s_state.consumedButtons &= held;
-    if (!fierce_deity_enabled() || menu_or_pause_active() || !can_transform(link)) {
-        s_state.consumedButtons = 0;
+    const bool rHeld = (pad.mButtonFlags & PAD_TRIGGER_R) != 0 || pad.mHoldLockR != 0;
+    if (binding == FierceDeityActivation::SpinAttack || !rHeld ||
+        (pad.mPressedButtonFlags & partner) == 0 ||
+        !fierce_deity_enabled() || menu_or_pause_active() || !can_transform(link)) {
         return HOOK_CONTINUE;
     }
-    if (chordHeld) {
-        // Reserve the configured chord even below full power. Keep its remaining
-        // held buttons consumed until release, avoiding a delayed jump/A action.
-        s_state.consumedButtons |= chord;
-        if (chordPressed) {
-            if (s_state.active) deactivate(link, false);
-            else if (s_state.meter >= 100.0f) activate(link);
-        }
-    }
-    pad.mButtonFlags &= ~s_state.consumedButtons;
-    pad.mPressedButtonFlags &= ~s_state.consumedButtons;
-    if (s_state.consumedButtons & PAD_TRIGGER_R) {
-        pad.mHoldLockR = 0;
-        pad.mTrigLockR = 0;
-        pad.mTriggerRight = 0.0f;
-    }
+    if (s_state.active) deactivate(link, false);
+    else if (s_state.meter >= 100.0f) activate(link);
+
+    // Like the host shortcut, consume only the partner on its trigger tick.
+    // The jump module cancels any pending Gale for this R hold, not the jump.
+    pad.mButtonFlags &= ~partner;
+    pad.mPressedButtonFlags &= ~partner;
+    s_state.activationInputConsumed = true;
     return HOOK_CONTINUE;
 }
 
@@ -613,7 +600,7 @@ bool fierce_deity_active() {
 
 bool fierce_deity_input_consumed() {
     return same_link(daAlink_getAlinkActorClass()) &&
-        (s_state.consumedButtons & PAD_TRIGGER_R) != 0;
+        s_state.activationInputConsumed;
 }
 
 bool fierce_deity_dark_visual_active() {

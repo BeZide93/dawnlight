@@ -48,10 +48,17 @@ int main() {
         const u32 partner=mode==FierceDeityActivation::RA?PAD_BUTTON_A:PAD_TRIGGER_Z;
         const u32 chord=PAD_TRIGGER_R|partner;
         for(bool analog:{false,true}) {
-            fresh(link); input(chord,chord,analog);
+            fresh(link);
+            input(PAD_TRIGGER_R,PAD_TRIGGER_R,analog);
+            assert(!s_state.active && !fierce_deity_input_consumed());
+            assert(pad.mHoldLockR && pad.mTrigLockR && pad.mTriggerRight==1);
+            // Simulate the initial R jump moving Link before Z/A is pressed.
+            link.execute(); const int jumpY=link.y, jumpVY=link.vy;
+            input(chord,partner,analog);
+            assert(link.y==jumpY && link.vy==jumpVY);
             assert(s_state.active && s_state.meter==100 && fierce_deity_input_consumed());
-            assert((pad.mButtonFlags&chord)==0 && (pad.mPressedButtonFlags&chord)==0);
-            assert(!pad.mHoldLockR && !pad.mTrigLockR && pad.mTriggerRight==0);
+            assert((pad.mButtonFlags&partner)==0 && (pad.mPressedButtonFlags&partner)==0);
+            assert(pad.mHoldLockR && !pad.mTrigLockR && pad.mTriggerRight==1);
             for(int i=0;i<60;++i) input(chord,0,analog);
             assert(s_state.active); // a held chord must never toggle repeatedly
             s_state.lastDrainTime=Clock::now()-std::chrono::milliseconds(200);
@@ -59,7 +66,7 @@ int main() {
             s_state.meter=47.0f;
             hit(link); assert(s_state.meter==47.0f); // no recharge while active
             input(PAD_TRIGGER_R,0,analog); // R may stay down; partner can be pressed again
-            assert(fierce_deity_input_consumed() && !pad.mHoldLockR);
+            assert(!fierce_deity_input_consumed() && pad.mHoldLockR);
             input(chord,partner,analog);
             assert(!s_state.active && s_state.meter==47.0f);
             s_state.lastDrainTime=Clock::now()-std::chrono::seconds(5);
@@ -71,13 +78,21 @@ int main() {
             assert(s_state.meter==100.0f);
             input(chord,0,analog); assert(!s_state.active); // filling while held is not a new press
             input(0); input(chord,chord,analog); assert(s_state.active);
-            input(partner); assert(!(pad.mButtonFlags&partner)); // no delayed A/Z action
+            input(partner); assert(pad.mButtonFlags&partner); // no persistent input masking
             input(0); assert(!fierce_deity_input_consumed());
             input(PAD_TRIGGER_R,PAD_TRIGGER_R,analog); assert(pad.mHoldLockR); // ordinary R works again
         }
-        // Either press order works; an unrelated input is untouched.
+        // Z/A held first followed by a fresh R press must NOT trigger the shortcut.
         fresh(link); input(partner,partner); assert(!s_state.active);
-        input(chord|PAD_BUTTON_B,PAD_TRIGGER_R); assert(s_state.active && (pad.mButtonFlags&PAD_BUTTON_B));
+        input(chord|PAD_BUTTON_B,PAD_TRIGGER_R);
+        assert(!s_state.active && !fierce_deity_input_consumed());
+        assert(pad.mTrigLockR && (pad.mButtonFlags&partner));
+        input(PAD_TRIGGER_R);
+        input(chord|PAD_BUTTON_B,partner);
+        assert(s_state.active && (pad.mButtonFlags&PAD_BUTTON_B));
+        // Native shortcuts also accept R and a fresh partner in the same tick.
+        fresh(link); input(chord,chord);
+        assert(s_state.active && pad.mTrigLockR && pad.mHoldLockR);
         // Native menus/cutscenes/restricted forms never toggle or steal the chord.
         for(int blocked=0;blocked<6;++blocked) {
             fresh(link);
@@ -107,7 +122,7 @@ int main() {
     assert(s_state.active);
     s_state.meter=0.1f; s_state.lastDrainTime=Clock::now()-std::chrono::seconds(1);
     update_drain(&link); assert(!s_state.active && s_state.meter==0);
-    // Save replacement/deletion still clears partial charge and the input latch.
+    // Save replacement/deletion still clears partial charge and input ownership.
     s_state.meter=40; on_save_started(nullptr,0,nullptr); assert(s_state.meter==0 && !s_state.link);
     currentLink=nullptr; input(0); assert(!fierce_deity_input_consumed());
 }

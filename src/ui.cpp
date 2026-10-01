@@ -884,8 +884,8 @@ ModResult build_gameplay_tab(
     if (add_select(ctx, left, "Fierce Deity Activation", fierce_deity_activation_config_var(),
             kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
             "Activate at full power with a charged Spin Attack, R+Z (default), or R+A. "
-            "Press the selected button combination again to end early, preserve the remaining "
-            "power, and refill it with sword hits. Requires Fierce Deity.",
+            "Hold R, then press Z or A; the initial R jump remains available. Press Z or A again "
+            "while holding R to end early and preserve power for refilling. Requires Fierce Deity.",
             fierce_deity_visual_disabled) != MOD_OK)
     {
         return MOD_ERROR;

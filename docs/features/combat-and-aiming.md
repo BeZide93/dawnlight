@@ -47,10 +47,14 @@ damage. **Fierce Deity Visual**, directly below its toggle, selects the appearan
 
 **Fierce Deity Activation**, below the visual selector, offers **Spin Attack**
 (charged), **R+Z** (default), or **R+A**. Activation requires a full meter. With
-either button combination, press it again to end the transformation early. The
+either button shortcut, hold R and then press Z or A, just like native R+Y Quick
+Transform. The initial R press can still trigger a manual jump; the shortcut also
+works during that jump. Keep holding R and press Z or A again to end early. The
 remaining charge stops draining immediately and damaging sword hits can refill
 it; the next activation requires full power again. Holding the combination does
-not toggle repeatedly. It takes priority over R jump/Gale and the A/Z action.
+not toggle repeatedly. Holding Z/A first and then pressing R does not activate it.
+Only the Z/A press is consumed. A pending Gale charge is cancelled when the
+shortcut fires, while the jump already in progress continues normally.
 
 Entry and exit use the native flying warp particles at twice the normal speed:
 the appearance effect on entry and the disappearance effect on exit. The material

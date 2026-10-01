@@ -143,15 +143,16 @@ int main(){
   close(jump_height_multiplier(),h);l.mNormalSpeed=12;
   apply_manual_jump_height(&l,jump_height_multiplier());close(l.speed.y*l.speed.y,625*h);close(l.mNormalSpeed,12);close(l.gravity,-3.4f);
  }
- // A Fierce Deity chord consumes R before this hook. It must cancel Gale,
- // not launch it as though R had been released, including an already ready crouch.
+ // Fierce Deity consumes only Z/A and leaves R held. A prior manual jump
+ // continues; pending Gale is cancelled until R is released, including a ready crouch.
  for(bool ready:{false,true}){
   setup(l);gale=true;assert(tick(l,true,true));
   if(ready){land(l);hold_crouch(l,35);}
-  fierceInput=true;assert(!tick(l,false,false));
+  fierceInput=true;assert(!tick(l,false,true));
   assert(s_jumpAbilities.charge==GaleCharge::Idle&&charges==3&&l.launches==1);
   assert(s_galeInputCancelled&&s_galeChargeCancelledThisTick&&!s_galeVisual.ready);
-  for(int i=0;i<40;++i)assert(!tick(l,false,false));
+  fierceInput=false; // the shortcut consumes only its trigger tick
+  for(int i=0;i<40;++i)assert(!tick(l,false,true));
   assert(l.launches==1&&charges==3);
   fierceInput=false;tick(l,false,false);
   assert(!s_galeInputCancelled);

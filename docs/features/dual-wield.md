@@ -37,6 +37,10 @@ primary sword keeps its normal equipment slot. The Wooden Sword, including
 Twilit Essentials' additional starter-equipment slot, can also be used as the
 primary weapon.
 
+Deploying Glide stows the second sword immediately and skips its right-arm
+sheathing animation. Both hands retain the native carrying pose for the Glider
+or glide Cucco; normal sword drawing and sheathing resume after gliding.
+
 Ordinary sword strikes and their combo finishers alternate hands. The active
 blade supplies the hit positions and sword trail. Guarding crosses both swords;
 Shield Attack pushes the crossed blades forward and retains the native stun,

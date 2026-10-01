@@ -111,6 +111,8 @@ struct State {
 struct Borrow {mDoExt_AnmRatioPack* pack=nullptr;J3DAnmTransform* original=nullptr;std::optional<DualWieldAnimation> wrapper;};
 std::array<Borrow,6> s_borrow;bool s_calculating=false,setting=true;
 bool dual_wield_equipped(){return setting;}
+daAlink_c* glidingOwner=nullptr;
+bool glide_active_for(daAlink_c* link){return link==glidingOwner;}
 bool human(daAlink_c* l){return l->human;}
 bool active(daAlink_c* l){return s.owner==l && s.active;}
 bool equipment_visible(daAlink_c* l){return s.owner==l && s.enabled;} // material/model gating tested below
@@ -368,6 +370,34 @@ int main() {
     link.model.joints[13]={{},{-32,105,0}};
     link.model.joints[14]={{},{-24,93,22}};
     const auto nativeJoints=link.model.joints;
+    // Deploying Glide from drawn swords must immediately free both arms,
+    // even with guard held or a draw/stow/release transition already running.
+    for(bool drawing:{false,true}) for(bool guardHeld:{false,true}) {
+        link.mEquipItem=dItemNo_NONE_e;link.guard=guardHeld;glidingOwner=&link;
+        s.stow.active=true;s.stow.drawing=drawing;s.stow.release=1;
+        s.draw=1;s.guard=1;s.sheathTilt=1;s.haveGuardBody=true;
+        s.forcedBlade=true;
+        for(int frame=0;frame<3;++frame) {
+            link.model.joints=nativeJoints;
+            ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+            assert(s.enabled&&!s.active&&!s.mirror&&!s.haveGuardBody);
+            assert(!s.stow.active&&s.stow.release==0&&s.draw==0&&s.guard==0&&s.sheathTilt==0);
+            after_arms(nullptr,&args,nullptr,nullptr);after_items(nullptr,&args,nullptr,nullptr);
+            assert(!s.forcedBlade&&s.shieldTick==~0u);
+            for(int joint=0;joint<35;++joint) {
+                const auto& a=link.model.joints[joint];const auto& b=nativeJoints[joint];
+                assert(a.p.x==b.p.x&&a.p.y==b.p.y&&a.p.z==b.p.z);
+                assert(a.q.x==b.q.x&&a.q.y==b.q.y&&a.q.z==b.q.z&&a.q.w==b.q.w);
+            }
+            assert(dual::length(s.rightSword.p-s.hipSword.p)<0.001f);
+        }
+        glidingOwner=nullptr;link.guard=false;
+        ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+        assert(s.active&&!s.stow.active&&s.stow.release==0&&s.draw==0);
+        link.mEquipItem=0x103;
+        ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+        assert(s.stow.active&&s.stow.drawing); // normal drawing resumes after Glide
+    }
     for(int item:{dItemNo_PACHINKO_e,dItemNo_BOW_e,dItemNo_BOMB_ARROW_e,dItemNo_HAWK_ARROW_e,
                   dItemNo_HOOKSHOT_e,dItemNo_W_HOOKSHOT_e,dItemNo_COPY_ROD_e,dItemNo_COPY_ROD_2_e,
                   dItemNo_BOOMERANG_e,dItemNo_KANTERA_e,dItemNo_KANTERA2_e}) {

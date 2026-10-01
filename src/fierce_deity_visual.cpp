@@ -14,7 +14,7 @@
 namespace dawnlight {
 namespace {
 
-// Independent implementation of the dark silhouette/red-eye appearance. Do not
+// Independent implementation of the dark glossy/red-eye appearance. Do not
 // patch shared BMD materials: another actor (including Dark Link) can use them.
 // Apply GX state only after the native material/differed display lists, and replay
 // those lists immediately afterward, including between batched shared materials.
@@ -173,7 +173,7 @@ const J3DTevOrder* eye_texture_order(J3DModelData* data, J3DMaterial* material) 
 // display list with BP masks against the *live* state, as J3D itself does.
 // No GX shadow-state setters or changes to shared material data are needed.
 class DarkDisplayList {
-    alignas(32) std::array<u8, 256> bytes{};
+    alignas(32) std::array<u8, 512> bytes{};
     size_t size = 0;
     bool valid = true;
 
@@ -193,6 +193,11 @@ class DarkDisplayList {
     void xf(u16 reg, u32 value) {
         byte(0x10); word(reg); word(value); // one XF word, big-endian
     }
+    void xf_float(u16 reg, float value) {
+        u32 bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        xf(reg, bits);
+    }
     static u32 rgba(GXColor color) {
         return (u32(color.r) << 24) | (u32(color.g) << 16) |
                (u32(color.b) << 8) | color.a;
@@ -201,13 +206,39 @@ class DarkDisplayList {
 public:
     void lighting(bool eye, u8 ambientAlpha, u8 materialAlpha) {
         xf(0x1009, 2); // XF number of color channels
-        xf(0x100B, rgba({7, 7, 7, ambientAlpha}));
+        xf(0x100B, rgba({64, 64, 64, ambientAlpha}));
         xf(0x100D, rgba(eye ? GXColor{230, 8, 5, materialAlpha}
-                           : GXColor{96, 104, 116, materialAlpha}));
+                           : GXColor{32, 36, 42, materialAlpha}));
         // COLOR1 only: register sources, clamp diffuse, no attenuation, light0
         // on the body; unlit eyes. Preserve the native ALPHA1 control.
         xf(0x100F, (1u << 10) | (u32(GX_DF_CLAMP) << 7) |
                      (eye ? 0u : (1u << 1) | (1u << 2)));
+    }
+    void specular_lighting(u8 ambientAlpha0, u8 materialAlpha0,
+                           u8 ambientAlpha1, u8 materialAlpha1) {
+        xf(0x1009, 2);
+        // Dark diffuse base on COLOR0; preserve both native alpha channels.
+        xf(0x100A, rgba({64, 64, 64, ambientAlpha0}));
+        xf(0x100C, rgba({32, 36, 42, materialAlpha0}));
+        xf(0x100E, (1u << 10) | (u32(GX_DF_CLAMP) << 7) | (1u << 1) | (1u << 2));
+        // COLOR1 uses GX_AF_SPEC: attenuation enabled, diffuse disabled.
+        xf(0x100B, rgba({0, 0, 0, ambientAlpha1}));
+        xf(0x100D, rgba({100, 112, 128, materialAlpha1}));
+        xf(0x100F, (1u << 9) | (1u << 1) | (1u << 2));
+
+        // A soft camera-space key light keeps the black surface readable in
+        // dark rooms. Both channels use light0, with different attenuation.
+        // L = (-0.4, 0.5, sqrt(0.59)); H = normalize(L + view direction).
+        // Use Aurora's finite distance to avoid overflow on mobile GPUs.
+        xf(0x0603, rgba({255, 255, 255, 255}));
+        xf_float(0x0604, 0.0f); xf_float(0x0605, 0.0f); xf_float(0x0606, 1.0f);
+        xf_float(0x0607, 16.0f); xf_float(0x0608, 0.0f); xf_float(0x0609, -15.0f);
+        xf_float(0x060A, -419430.4f);
+        xf_float(0x060B, 524288.0f);
+        xf_float(0x060C, 805414.91f);
+        xf_float(0x060D, -0.212703f);
+        xf_float(0x060E, 0.265879f);
+        xf_float(0x060F, 0.940248f);
     }
     void swap(unsigned table, unsigned r, unsigned g, unsigned b, unsigned a) {
         // KSEL's upper 20 bits belong to native stage konst selections.
@@ -217,11 +248,12 @@ public:
     void stage(unsigned index, GXTexCoordID coord, GXTexMapID map,
                unsigned identity, unsigned textureSwap,
                GXTevColorArg a, GXTevColorArg b, GXTevColorArg c, GXTevColorArg d,
-               GXTevOp op = GX_TEV_ADD, GXTevScale scale = GX_CS_SCALE_1) {
+               GXTevOp op = GX_TEV_ADD, GXTevScale scale = GX_CS_SCALE_1,
+               unsigned rasterChannel = 1) {
         const unsigned shift = (index & 1) * 12;
         const bool textured = coord != GX_TEXCOORD_NULL && map != GX_TEXMAP_NULL;
-        const u32 order = (1u << 7) | (textured ?
-            (u32(map) | (u32(coord) << 3) | (1u << 6)) : 0u); // COLOR1A1
+        const u32 order = (rasterChannel << 7) | (textured ?
+            (u32(map) | (u32(coord) << 3) | (1u << 6)) : 0u); // COLOR0A0 or COLOR1A1
         // Preserve the other half, even when it is an animated native stage.
         masked_bp(0x28 + index / 2, 0xFFFu << shift, order << shift);
         bp(0x10 + index, 0); // direct TEV stage (no indirect lookup)
@@ -250,7 +282,8 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         scope.packet->getShape() != shape) return HOOK_CONTINUE;
     auto* material = shape->getMaterial();
     auto* model = scope.packet->getModel();
-    if (material == nullptr || material->getTevBlock() == nullptr) return HOOK_CONTINUE;
+    if (material == nullptr || material->getTevBlock() == nullptr ||
+        material->getColorBlock() == nullptr) return HOOK_CONTINUE;
     auto* matPacket = scope.materialPacket;
     if (matPacket->getDisplayListObj() == nullptr) return HOOK_CONTINUE;
     auto* tev = material->getTevBlock();
@@ -270,7 +303,26 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const auto* color = material->getMatColor(1);
     const u8 ambientAlpha = ambient != nullptr ? ambient->a : 255;
     const u8 materialAlpha = color != nullptr ? color->a : 255;
-    effect.lighting(eye, ambientAlpha, materialAlpha);
+    // Only borrow light0 when the actual batch material reloads it in its DL.
+    // Replaying that DL in restore_draw_state restores the light as well as
+    // both color channels. Materials without a restorable light use diffuse.
+    auto* batchMaterial = matPacket->getMaterial();
+    const auto* alpha0 = material->getColorBlock()->getColorChan(1);
+    const auto* alpha1 = material->getColorBlock()->getColorChan(3);
+    const bool alphaUsesLight0 =
+        (alpha0 != nullptr && alpha0->getEnable() && (alpha0->getLightMask() & 1)) ||
+        (alpha1 != nullptr && alpha1->getEnable() && (alpha1->getLightMask() & 1));
+    const bool glossy = !alphaUsesLight0 && !eye && count + 2 <= 16 && batchMaterial != nullptr &&
+        batchMaterial->getColorBlock() != nullptr &&
+        batchMaterial->getColorBlock()->getLight(0) != nullptr;
+    if (glossy) {
+        const auto* ambient0 = material->getColorBlock()->getAmbColor(0);
+        const auto* color0 = material->getMatColor(0);
+        effect.specular_lighting(ambient0 != nullptr ? ambient0->a : 255,
+            color0 != nullptr ? color0->a : 255, ambientAlpha, materialAlpha);
+    } else {
+        effect.lighting(eye, ambientAlpha, materialAlpha);
+    }
 
     if (eye) {
         const auto red = static_cast<GXTevSwapSel>(swaps.red);
@@ -288,6 +340,14 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         effect.stage(count + 2, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_RASC, GX_CC_CPREV, GX_CC_ZERO);
         scope.applied = effect.apply(count + 3);
+    } else if (glossy) {
+        effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC,
+                     GX_TEV_ADD, GX_CS_SCALE_1, 0);
+        // Add COLOR1's highlight to the diffuse color already in PREV.
+        effect.stage(count + 1, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_RASC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+        scope.applied = effect.apply(count + 2);
     } else {
         effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);

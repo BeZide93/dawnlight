@@ -12,6 +12,7 @@ fixture = r'''
 #include <cstring>
 #include <cstdint>
 #include <algorithm>
+#include <cmath>
 using u8 = uint8_t; using u16 = uint16_t; using u32 = uint32_t;
 using GXTexCoordID = int; using GXTexMapID = int; using GXTevSwapSel = int;
 using GXTevStageID = int; using GXTevColorArg = int; using GXTevOp = int; using GXTevScale = int;
@@ -121,7 +122,7 @@ void assert_native_fields(unsigned count) {
         assert((bp[i]&0xFFFFF0)==(nativeBP[i]&0xFFFFF0)); // native konst selectors
     }
     for(unsigned i=0;i<xf.size();++i) {
-        if(i!=0x1009 && i!=0x100B && i!=0x100D && i!=0x100F) assert(xf[i]==nativeXF[i]);
+        if(!(i>=0x603 && i<=0x60F) && !(i>=0x1009 && i<=0x100F)) assert(xf[i]==nativeXF[i]);
     }
     for(unsigned i=count;i<static_cast<unsigned>(gpuCount);++i) {
         assert(bp[0x10+i]==0); // no indirect sampling from appended stages
@@ -158,7 +159,16 @@ struct J3DModelData {
     Names* getMaterialName() {return &materials;} Names* getTextureName() {return &textures;}
     Texture* getTexture() {return &texture;}
 };
+struct ColorChan {
+    bool enabled = false;
+    u8 getEnable() const { return enabled; }
+    u8 getLightMask() const { return 1; }
+};
 struct ColorBlock {
+    ColorChan alpha;
+    ColorChan* getColorChan(int) { return &alpha; }
+    bool hasLight = true;
+    void* getLight(int) { return hasLight ? this : nullptr; }
     GXColor ambient{10,20,30,61}, material{40,50,60,93};
     GXColor* getAmbColor(int) {return &ambient;}
 };
@@ -171,7 +181,7 @@ struct J3DMaterial {
 struct J3DShape { J3DMaterial* material; J3DMaterial* getMaterial() const {return material;} };
 struct DisplayList { int calls=0; void callDL() { ++calls; ++restoreCalls; bp=nativeBP; xf=nativeXF; decode_state(); } };
 struct J3DShapePacket;
-struct J3DMatPacket { J3DShapePacket* shapes=nullptr; J3DShapePacket* getShapePacket() {return shapes;} DisplayList list; DisplayList* getDisplayListObj() {return &list;} void callDL() {list.callDL();} };
+struct J3DMatPacket { J3DMaterial* material=nullptr; J3DMaterial* getMaterial() {return material;} J3DShapePacket* shapes=nullptr; J3DShapePacket* getShapePacket() {return shapes;} DisplayList list; DisplayList* getDisplayListObj() {return &list;} void callDL() {list.callDL();} };
 struct J3DModel {
     J3DModelData data; J3DMatPacket packet;
     J3DModelData* getModelData() {return &data;} J3DMatPacket* getMatPacket(int) {return &packet;}
@@ -195,6 +205,7 @@ bool fierce_deity_dark_visual_active() {return darkActive;}
 checks = r'''
 void draw_begin(J3DShapePacket& p) {
     p.model->packet.shapes=&p;
+    p.model->packet.material=p.shape->material;
     void* materialArgs[]={&p.model->packet};
     before_material_draw(nullptr,materialArgs,nullptr,nullptr);
     load_native(p.shape->material->tev.count);
@@ -245,6 +256,18 @@ float eye_mask(int nativeCount, float r, float b) {
     }
     return previous;
 }
+float xf_float_value(unsigned reg) {
+    float result; u32 bits=xf[reg]; std::memcpy(&result,&bits,sizeof(result)); return result;
+}
+// Evaluate the same specular attenuation as Aurora from the emitted registers.
+float highlight(float nx, float ny, float nz) {
+    const float facing=nx*xf_float_value(0x60A)+ny*xf_float_value(0x60B)+nz*xf_float_value(0x60C);
+    const float t=facing>=0 ? std::max(0.0f,nx*xf_float_value(0x60D)+ny*xf_float_value(0x60E)+nz*xf_float_value(0x60F)) : 0;
+    const float a=xf_float_value(0x604)+xf_float_value(0x605)*t+xf_float_value(0x606)*t*t;
+    const float k=xf_float_value(0x607)+xf_float_value(0x608)*t+xf_float_value(0x609)*t*t;
+    assert(k>0 && std::isfinite(a/k));
+    return std::max(0.0f,a/k);
+}
 int main() {
     // Negative control: a GX setter flushing GEN_MODE from a stale shadow
     // (one texgen) recreates the log's invalid generator with this native model.
@@ -265,9 +288,23 @@ int main() {
     J3DShapePacket p{&player,&shape,{}}, foreign{&other,&shape,{}};
     draw_shadow(p);
     draw_begin(p);
-    assert(gpuCount==4 && gpuMaterial.r==96);
+    assert(gpuCount==5 && gpuMaterial.r==100);
     assert(gpuMaterial.a==93 && gpuAmbient.a==61); // Aurora's full RGBA writes
+    // Check actual SPEC bits, independent channels, additive composition,
+    // and normal-dependent highlights rather than a constant gray silhouette.
+    assert(xf[0x100F]==((1u<<9)|(1u<<1)|(1u<<2)));
+    assert(((xf[0x100E]>>7)&3)==GX_DF_CLAMP);
+    assert(((bp[0x29]>>19)&7)==0); // stage3: COLOR0 diffuse
+    assert(((bp[0x2A]>>7)&7)==1); // stage4: COLOR1 specular
+    assert((gpuStages[4].color==std::array<int,4>{GX_CC_RASC,GX_CC_ZERO,GX_CC_ZERO,GX_CC_CPREV}));
+    const float hx=xf_float_value(0x60D), hy=xf_float_value(0x60E), hz=xf_float_value(0x60F);
+    assert(highlight(hx,hy,hz)>0.98f);
+    assert(highlight(0,0,1)>0.1f && highlight(0,0,1)<0.5f);
+    assert(highlight(1,0,0)==0);
+    assert((xf[0x100A]&255)==61 && (xf[0x100C]&255)==93);
+    assert(xf[0x1010]==nativeXF[0x1010] && xf[0x1011]==nativeXF[0x1011]);
     draw_end();
+    assert(bp==nativeBP && xf==nativeXF); // includes light registers
     assert(gpuCount==3 && restoreCalls==2); // base + per-instance animation DL
     int writes=gxWrites;
     draw_begin(foreign); draw_end(); // same material pointer, different actor
@@ -277,12 +314,23 @@ int main() {
     assert(gxWrites==writes);
     darkActive=true;
 
+    // A material without a light in its own DL must not overwrite global lights.
+    mat.color.hasLight=false;
+    draw_begin(p); assert(gpuCount==4 && gpuMaterial.r==32);
+    for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
+    draw_end(); mat.color.hasLight=true;
+    mat.color.alpha.enabled=true;
+    draw_begin(p); assert(gpuCount==4);
+    for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
+    draw_end(); mat.color.alpha.enabled=false;
+
     // Alpha-tested geometry preserves alpha at every appended stage. Eye masks
     // must reject white sclera and retain red-channel iris at moving UVs.
     for(const char* name : {"al_eyeballL_m","bl_eyeballR_m","ml_eyeballL_m","zl_eyeballR_m"}) {
         player.data.materials.name=name;
         draw_begin(p);
         assert(gpuCount==6 && gpuMaterial.r==230 && gpuMaterial.g==8);
+        for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
         assert(eye_mask(3,1,1)==0); // sclera
         assert(eye_mask(3,1,0)==1); // iris
         assert(eye_mask(3,0,0)==0); // pupil
@@ -297,7 +345,7 @@ int main() {
         for(const char* name : {"al_body", "al_eyeballL_m"}) {
             player.data.materials.name=name;
             draw_begin(p);
-            assert(gpuCount==count+(count<=13 && std::strstr(name,"eyeball") ? 3 : 1));
+            assert(gpuCount==count+(count<=13 && std::strstr(name,"eyeball") ? 3 : count<=14 ? 2 : 1));
             draw_end();
             assert(bp==nativeBP && xf==nativeXF);
         }
@@ -306,6 +354,7 @@ int main() {
     // receives the effect, and cleanup must replay the batch's actual base DL.
     mat.tev.count=3;
     player.data.materials.name="al_body";
+    other.packet.material=&mat;
     other.packet.shapes=&foreign; foreign.next=&p;
     void* batchArgs[]={&other.packet};
     before_material_draw(nullptr,batchArgs,nullptr,nullptr);
@@ -320,7 +369,7 @@ int main() {
     const int ownCalls=player.packet.list.calls, batchCalls=other.packet.list.calls;
     before_packet_draw(nullptr,playerArgs,nullptr,nullptr);
     before_shape_draw(nullptr,bodyArgs,nullptr,nullptr);
-    assert(gpuCount==4); assert_native_fields(3);
+    assert(gpuCount==5); assert_native_fields(3);
     after_shape_draw(nullptr,nullptr,nullptr,nullptr);
     after_packet_draw(nullptr,nullptr,nullptr,nullptr);
     assert(player.packet.list.calls==ownCalls && other.packet.list.calls==batchCalls+1);
@@ -345,22 +394,22 @@ int main() {
     // A malformed/future expanded effect must fail without submitting partial
     // commands or writing past the fixed command buffer.
     DarkDisplayList oversized;
-    for(int i=0;i<20;++i) oversized.swap(0,0,1,2,3);
+    for(int i=0;i<40;++i) oversized.swap(0,0,1,2,3);
     writes=gxWrites; assert(!oversized.apply(4)); assert(gxWrites==writes);
 
     // Capacity limits and foreign layouts never overflow the 16-stage pipeline.
     mat.tev.count=16;
     writes=gxWrites; draw_begin(p); draw_end(); assert(gxWrites==writes);
     mat.tev.count=14;
-    draw_begin(p); assert(gpuCount==15); draw_end(); // body fallback
+    draw_begin(p); assert(gpuCount==16); draw_end(); // two body stages fit
     mat.tev.count=3;
     player.data.textures.name="custom_without_native_mask";
-    draw_begin(p); assert(gpuCount==4 && gpuMaterial.r==96); draw_end();
+    draw_begin(p); assert(gpuCount==5 && gpuMaterial.r==100); draw_end();
     player.data.textures.name="al_eyeball";
     mat.tev.stages[0].mTevSwapModeInfo=0;
     mat.tev.stages[1].mTevSwapModeInfo=5;
     mat.tev.stages[2].mTevSwapModeInfo=14; // all swap tables in use
-    draw_begin(p); assert(gpuCount==4); draw_end();
+    draw_begin(p); assert(gpuCount==5); draw_end();
     // Nested unrelated packets must not inherit the player's effect; cancellation
     // before the shape draw must not leave any state or pointers behind.
     void* args[]={&p}; before_packet_draw(nullptr,args,nullptr,nullptr);
@@ -386,4 +435,4 @@ with tempfile.TemporaryDirectory() as temp:
     subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Fierce Deity shadow-pass isolation, GX registers, eye masks, alpha and cleanup: passed')
+print('Fierce Deity specular response, light restoration, shadow isolation, eyes and alpha: passed')

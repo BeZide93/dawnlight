@@ -67,6 +67,15 @@ jobs:
           python3 tests/cave_randomizer_selection_test.py
           python3 tests/cave_randomizer_stalhound_test.py
 
+      - name: Test Cave enemy slow motion and spawner
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/cave_enemy_slow_test.py
+          python3 tests/cave_enemy_spawner_test.py
+          python3 tests/enemy_spawner_scene_test.py
+          c++ -std=c++20 -Wall -Wextra -Werror tests/enemy_slow_motion_timing.cpp -o /tmp/enemy-slow-test
+          /tmp/enemy-slow-test
+
       - name: Test Z item provider guards
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/z_item_provider_guard_test.py

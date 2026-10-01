@@ -21,7 +21,7 @@ using s8=int8_t;using s16=int16_t;using u32=uint32_t;using ProfileName=short;usi
 enum ModResult{MOD_OK,MOD_UNAVAILABLE,MOD_INVALID_ARGUMENT};
 struct cXyz{float x,y,z;};struct csXyz{s16 x,y,z;};
 struct daAlink_c{csXyz shape_angle{};struct{cXyz pos{};}current;};
-struct ActorSpawnParams{u32 parameters;int argument;int room_num;cXyz position;csXyz angle;cXyz scale;void* create_function;};
+struct ActorSpawnParams{u32 parameters;s8 argument;int room_num;cXyz position;csXyz angle;cXyz scale;void* create_function;};
 void available(){}
 struct Service{void (*create_actor)()=&available;}service;Service* svc_actor=&service;
 daAlink_c player;daAlink_c* link=&player;

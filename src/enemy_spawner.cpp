@@ -323,7 +323,7 @@ ModResult spawn_enemy_for_testing(int profileIndex) {
     const csXyz angle{0, static_cast<s16>(facing + 0x8000), angleZ};
     const ActorSpawnParams params{
         .parameters = kEnemySpawnerParameters[static_cast<std::size_t>(profileIndex)],
-        .argument = profileIndex == kHelmasaurusIndex ? 1 : -1,
+        .argument = static_cast<s8>(profileIndex == kHelmasaurusIndex ? 1 : -1),
         .room_num = fopAcM_GetRoomNo(link),
         .position = {position.x, position.y, position.z},
         .angle = {angle.x, angle.y, angle.z},

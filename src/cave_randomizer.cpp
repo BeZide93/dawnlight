@@ -37,7 +37,8 @@ struct Enemy {
 };
 
 // Standalone variants only: no paths, appearance/death switches, opening demos,
-// ceiling anchors, splitters or enemy generators.
+// ceiling anchors or enemy generators. Chus start at the smallest size; native
+// merging and subsequent splitting remain part of their combat behavior.
 constexpr Enemy kEnemies[] = {
     {fpcNm_E_OC_e, 0x00ff0000, 0.0f},   // Bokoblin
     {fpcNm_E_FZ_e, 0x00000000, 0.0f},   // Mini Freezard
@@ -61,6 +62,14 @@ constexpr Enemy kEnemies[] = {
     {fpcNm_E_MM_e, 0x0000ff00, 0.0f, 1}, // Helmasaurus (actor argument variant)
     {fpcNm_E_KR_e, 0xffffff00, 200.0f, -1, 0xff}, // Flying Kargarok, no path/switch
     {fpcNm_E_FS_e, 0x00000000, 0.0f},   // Standalone Puppet
+    {fpcNm_E_GE_e, 0x00ffff01, 200.0f}, // Flying Guay, no defeated switch/group
+    {fpcNm_E_SM2_e, 0xffff0000, 0.0f},  // Small green Chu (requires Magic Armor)
+    {fpcNm_E_SM2_e, 0xffff0010, 0.0f},  // Small red Chu
+    {fpcNm_E_SM2_e, 0xffff0020, 0.0f},  // Small blue Chu
+    {fpcNm_E_SM2_e, 0xffff0030, 0.0f},  // Small yellow Chu
+    {fpcNm_E_SM2_e, 0xffff0040, 0.0f},  // Small purple Chu
+    {fpcNm_E_SM2_e, 0xffff0050, 0.0f},  // Small rare Chu (native bottle restriction)
+    {fpcNm_E_SM2_e, 0xffff0060, 0.0f},  // Small black Chu
     {fpcNm_E_DN_e, 0xff000000, 0.0f},   // Lizalfos
     {fpcNm_E_DD_e, 0xffff0000, 0.0f},   // Dodongo
     {fpcNm_E_MF_e, 0xff000000, 0.0f},   // Dynalfos
@@ -186,6 +195,11 @@ HookAction before_allocate(ModContext*, void* args, void*, void*) {
     unsigned count = 0;
     for (unsigned i = 0; i < std::size(kEnemies); ++i) {
         if (kEnemies[i].profile == enemy.profile) continue;
+        // Native green Chu creation fails before Magic Armor has been obtained.
+        // Omit that choice instead of silently losing an authored enemy slot.
+        if (kEnemies[i].profile == fpcNm_E_SM2_e &&
+            (kEnemies[i].parameters & 0xf0) == 0 &&
+            !dComIfGs_isItemFirstBit(dItemNo_ARMOR_e)) continue;
         choices[count++] = i;
     }
     unsigned pick = static_cast<unsigned>(cM_rndF(static_cast<float>(count)));

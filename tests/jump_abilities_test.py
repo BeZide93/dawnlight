@@ -253,10 +253,16 @@ int main(){
  for(auto proc:{daAlink_c::PROC_AUTO_JUMP,daAlink_c::PROC_FALL})for(float velocity:{25.0f,-60.0f}){
   setup(l);glide=true;l.mProcID=proc;l.mLinkAcch.ground=false;l.speed.y=velocity;l.mNormalSpeed=12;
   assert(tick(l,true,true));assert(creating);update_glide(&l);assert(!s_jumpAbilities.attached&&!staminaGliding);
+  assert(!glide_active_for(&l));
   creating=false;live=true;update_glide(&l);assert(s_jumpAbilities.attached);assert(l.mGrabItemAcKeep.actor==&cucco);
+  assert(glide_active_for(&l));assert(!glide_active_for(nullptr));
+  daAlink_c other;assert(!glide_active_for(&other));
+  l.mGrabItemAcKeep.actor=nullptr;assert(!glide_active_for(&l));l.mGrabItemAcKeep.actor=&cucco;
+  s_jumpAbilities.retiring=true;assert(!glide_active_for(&l));s_jumpAbilities.retiring=false;
   assert(staminaGliding);assert(l.mProcID==daAlink_c::PROC_AUTO_JUMP&&l.launches==0);close(l.speed.y,std::max(velocity,-7.0f));close(l.mNormalSpeed,12);close(l.gravity,-1);
   l.mLinkAcch.ground=true;update_glide(&l);assert(!live&&!l.mGrabItemAcKeep.actor&&l.frees==1);assert(s_jumpAbilities.cucco==kNoGlideActor);close(l.gravity,-3.4f);
   assert(!staminaGliding);
+  assert(!glide_active_for(&l));
  }
  // Exhaustion blocks deployment and cancels pending or attached carriers.
  setup(l);glide=true;glideStamina=false;l.mProcID=daAlink_c::PROC_FALL;l.mLinkAcch.ground=false;
@@ -290,6 +296,7 @@ int main(){
 '''
 height = function('float gale_height_bonus', config) + '\n' + function('float jump_height_multiplier', config) + '\n' + function('void apply_manual_jump_height', hooks)
 production = abilities[:abilities.index('HookAction before_jump_abilities_execute')].replace('#include "jump_gale_visual.inc"', '').replace('#include "glide_presentation.inc"', '')
+production += '\n' + function('bool glide_active_for', hooks)
 fixture = fixture.replace('// HEIGHT', height).replace('// ABILITIES', production)
 fixture = fixture.replace('// START_JUMP', function('bool jump_state_ready', hooks) + '\n' + function('bool start_ground_jump', hooks))
 assert 'register_int("jump-height-percent", 100, s_jumpHeight)' in config
@@ -303,4 +310,3 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 print('Jump ability regression passed: height, charging, cancellation, gliding, actor ownership and cleanup')
-

@@ -3,6 +3,7 @@
 #include "dual_wield_math.hpp"
 #include "dual_wield_animation.hpp"
 #include "config.hpp"
+#include "jump_abilities.hpp"
 #include "service_imports.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
@@ -394,7 +395,15 @@ void after_matrix(ModContext*,void* args,void*,void*) {
         if(human(link)) link->field_0x2060->initOldFrameMorf(6,1,16);
     }
     s.enabled=enabled;
-    s.active=enabled && !link->checkEventRun();
+    const bool gliding=glide_active_for(link);
+    s.active=enabled && !link->checkEventRun() && !gliding;
+    if(gliding) {
+        // Glide deployment already skips the native sword's unequip animation.
+        // Stow the offhand immediately too, with no remaining arm/release blend.
+        // Keep the equipment visible at the hip while the native grab pose owns
+        // both arms, including when guard is still held during deployment.
+        s.stow={};s.guard=0;s.draw=0;s.sheathTilt=0;
+    }
     if(!s.active || !sword_guard_equipment(link) || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) s.haveGuardBody=false;
     const bool mirror=s.active && ordinary(link) && s.attacks.right;
     if(mirror!=s.mirror) s.seedBlade=true;

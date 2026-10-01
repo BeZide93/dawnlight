@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "fierce_deity.hpp"
 #include "gale_counter.hpp"
+#include "jump_abilities.hpp"
 #include "glider_visual.hpp"
 #include "glider_bmd.hpp"
 #include "service_imports.hpp"
@@ -532,6 +533,13 @@ HookAction before_set_body_angle_x_ready_anime(ModContext*, void* args, void*, v
 bool gale_shortcut_priority_active(const daAlink_c* link) {
     return link != nullptr && link == s_jumpAbilities.owner &&
         s_galeChargeCancelledThisTick;
+}
+
+bool glide_active_for(daAlink_c* link) {
+    if (!owns_jump_abilities(link) || !s_jumpAbilities.attached || s_jumpAbilities.retiring)
+        return false;
+    auto* actor = glide_actor();
+    return actor != nullptr && link->mGrabItemAcKeep.getActor() == actor;
 }
 
 ModResult install_jump_hooks(ModError* error) {

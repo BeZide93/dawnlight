@@ -3597,7 +3597,7 @@ void update_bossrush() {
     }
 
     if (boss_rush_state() == kBossRushStateCaveOfOrdeals) {
-        if (is_current_stage_name(kCaveOfOrdealsStage)) {
+        if (clear_timer_enabled() && is_current_stage_name(kCaveOfOrdealsStage)) {
             const int room = dComIfGp_roomControl_getStayNo();
             // Room 48 is the final combat floor; room 49 is the Great Fairy.
             // Use the native door's completed clear switch (including its spawn grace period).
@@ -4572,7 +4572,8 @@ ClearTimerContext clear_timer_context() {
                      can_update_bossrush_gameplay() && !is_reset_to_opening_transition();
     if (!context.active) return context;
     auto* player = daAlink_getAlinkActorClass();
-    context.dead = !player || player->checkDeadHP() || dMeter2Info_getGameOverType() != 0;
+    // GameOverType 1 is also the inter-boss save prompt, not a player death.
+    context.dead = !player || player->checkDeadHP();
     const auto state = boss_rush_state();
     if (state == kBossRushStateCaveOfOrdeals && is_current_stage_name(kCaveOfOrdealsStage))
         context.encounter = timing::cave;
@@ -4588,7 +4589,8 @@ ClearTimerContext clear_timer_context() {
             else if (is_current_stage_name("D_MN09B")) context.encounter = timing::run; // horseback leg, total only
         }
     }
-    context.counting = context.encounter >= 0 && !context.dead && !sAdvancePending &&
+    context.counting = context.encounter >= 0 && !context.dead && dMeter2Info_getGameOverType() == 0 &&
+        !sAdvancePending &&
         !sBossRushWarpPending && !sBossRushWarpInFlight && !sHubArrivalWarpPending &&
         !sCaveArrivalWarpPending && !sBossRushArrivalAnimating &&
         !dComIfGp_isEnableNextStage() && !fopOvlpM_IsPeek() &&

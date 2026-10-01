@@ -177,8 +177,12 @@ void cancel_clear_timer(int target) {
     if (target < 0 || s_attempt.target == target) s_attempt = {};
 }
 void update_clear_timer() {
+    if (!clear_timer_enabled() || !save_state_boss_rush_active()) {
+        cancel_clear_timer();
+        return;
+    }
     const auto context = clear_timer_context();
-    if (!clear_timer_enabled() || !save_state_boss_rush_active() || context.dead) {
+    if (context.dead) {
         cancel_clear_timer();
         return;
     }

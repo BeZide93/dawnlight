@@ -19,6 +19,7 @@ def function(name, result="HookAction"):
 
 fixture = r'''
 #include "heroes_shade_battle.hpp"
+#include "clear_timer_state.hpp"
 #include "heroes_shade_cinema.hpp"
 #include "heroes_shade_stride.hpp"
 #include <array>
@@ -28,6 +29,9 @@ fixture = r'''
 #include <cmath>
 using s16 = std::int16_t;
 namespace shade = dawnlight::shade;
+namespace timing = dawnlight::timing;
+int clearTimerFinishes=0;
+void finish_clear_timer(int target) { assert(target==timing::shade); ++clearTimerFinishes; }
 struct ModContext {};
 enum HookAction { HOOK_CONTINUE, HOOK_SKIP_ORIGINAL };
 namespace mods {
@@ -985,10 +989,10 @@ int main() {
         boss.mNoDraw=true;boss.field_0x16f4.set(0,0,0);
         boss.field_0x170c=1;boss.field_0x170d=14;boss.field_0x15bd=2;
         boss.mActionMode=phase==6 ? 17 : 23;
-        companionRemovals=musicStops=cinemaTicks=0;
+        companionRemovals=musicStops=cinemaTicks=clearTimerFinishes=0;
         int result=0;
         paused=true;before_execute(nullptr,&boss,&result,nullptr);
-        assert(!sCinema.active() && sBattle.recovery==45);
+        assert(!sCinema.active() && sBattle.recovery==45 && clearTimerFinishes==0);
         paused=false;before_execute(nullptr,&boss,&result,nullptr);
         assert(sBattle.dying && !sBattle.recovery && !sBattle.advance);
         assert(sCinema.victory && sCinema.shot==shade::Shot::Request && cinemaTicks==1);
@@ -1001,7 +1005,7 @@ int main() {
         accepted=true;before_execute(nullptr,&boss,&result,nullptr);
         assert(sCinema.shot==shade::Shot::Recover);
         for(int i=0;i<10;++i) before_execute(nullptr,&boss,&result,nullptr);
-        assert(companionRemovals==1 && musicStops==1 && cinemaTicks==12);
+        assert(companionRemovals==1 && musicStops==1 && cinemaTicks==12 && clearTimerFinishes==1);
         assert(!boss.entry.deleting && !boss.warps && !boss.jumpWarps);
     }
     sBattle={};sCinema={};accepted=paused=false;

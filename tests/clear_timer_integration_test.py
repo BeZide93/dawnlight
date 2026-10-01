@@ -98,7 +98,8 @@ int main(){
         *guard=true;assert(!clear_timer_context().counting);*guard=false;
     }
     player.dead=true;assert(clear_timer_context().dead && !clear_timer_context().counting);player.dead=false;
-    gameOver=1;assert(clear_timer_context().dead);gameOver=0;
+    // Boss Rush uses GameOverType 1 for its save prompt after every victory.
+    gameOver=1;assert(!clear_timer_context().dead && !clear_timer_context().counting);gameOver=0;
     active=false;assert(!clear_timer_context().active);active=true;
     save=false;assert(!clear_timer_context().active);save=true;
     resetting=true;assert(!clear_timer_context().active);resetting=false;

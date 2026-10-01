@@ -76,8 +76,17 @@ void GXCallDisplayList(const void* data, u32 size) {
         case 0x61: write_bp(word()); break;
         case 0x10: {
             const u32 header=word(), reg=header&0xFFFF;
-            assert((header>>16)==0 && reg<xf.size());
-            xf[reg]=word(); ++gxWrites; break;
+            const unsigned count=(header>>16)+1;
+            assert(reg+count<=xf.size());
+            if(reg>=0x500 && reg<0x5F0) {
+                // Aurora copy_xf_data supports complete post matrices only.
+                // In release builds its CHECK is compiled out and partial
+                // writes overwrite element zero, ignoring the word offset.
+                assert((reg-0x500)%12==0 && count==12 &&
+                       "Aurora does not support partial post-matrix uploads");
+            }
+            for(unsigned i=0;i<count;++i) { xf[reg+i]=word(); ++gxWrites; }
+            break;
         }
         default: assert(false && "unexpected GX command");
         }
@@ -448,7 +457,8 @@ int main() {
                 assert((bp[0x36]&0x3ffff)==31 && (bp[0x37]&0x3ffff)==63);
                 assert((bp[0x43]&(1u<<6))==0); // no hidden-half depth writes
                 before_primitive_draw(nullptr,nullptr,nullptr,nullptr);
-                assert(xf_float_value(0x500+36+11)==11.0f);
+                for(unsigned element=0;element<12;++element)
+                    assert(xf_float_value(0x500+36+element)==float(element));
                 for(int mask=0;mask<256;++mask)
                     (invert?inverse:normal)[mask]=warp_alpha(3,alpha,mask);
                 draw_end();
@@ -462,6 +472,28 @@ int main() {
     }
     draw_shadow(p); // a transition still never enters the shadow-image pass
     warpTest=false;
+
+    // Different native materials use different dormant generator slots. Every
+    // coefficient, including the changing vertical translation, must reach the
+    // selected post matrix as a complete block without touching its neighbors.
+    for(unsigned coord=0;coord<4;++coord) {
+        for(unsigned frame=0;frame<50;++frame) {
+            Mtx matrix;
+            for(unsigned row=0;row<3;++row) for(unsigned col=0;col<4;++col)
+                matrix[row][col]=float(row*4+col)+float(frame)*0.12f;
+            const auto previous=xf;
+            DarkDisplayList upload;
+            upload.post_matrix(coord,matrix);
+            assert(upload.submit());
+            const unsigned base=0x500+coord*12;
+            for(unsigned reg=0;reg<xf.size();++reg) {
+                if(reg>=base && reg<base+12) {
+                    const unsigned element=reg-base;
+                    assert(xf_float_value(reg)==matrix[element/4][element%4]);
+                } else assert(xf[reg]==previous[reg]);
+            }
+        }
+    }
 
     // A malformed/future expanded effect must fail without submitting partial
     // commands or writing past the fixed command buffer.

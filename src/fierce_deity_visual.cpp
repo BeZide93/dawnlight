@@ -337,9 +337,16 @@ public:
         return count;
     }
     void post_matrix(unsigned coord, const Mtx matrix) {
+        // Aurora's copy_xf_data only supports a full, aligned post matrix.
+        // Twelve single-word XF commands silently overwrite element zero in
+        // release builds instead of updating their respective matrix elements.
+        byte(0x10);
+        word((11u << 16) | (0x500 + coord * 12));
         for (unsigned row = 0; row < 3; ++row) {
             for (unsigned col = 0; col < 4; ++col) {
-                xf_float(0x500 + coord * 12 + row * 4 + col, matrix[row][col]);
+                u32 bits;
+                std::memcpy(&bits, &matrix[row][col], sizeof(bits));
+                word(bits);
             }
         }
     }

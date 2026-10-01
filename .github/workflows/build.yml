@@ -200,8 +200,14 @@ jobs:
         env:
           GH_TOKEN: ${{github.token}}
         run: |
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            # Preserve the existing release notes and refresh the build asset.
+          if notes=$(gh release view "$GITHUB_REF_NAME" --json body --jq '.body'); then
+            # Fill an empty release body using the same GitHub-generated
+            # format as --generate-notes, preserving existing written notes.
+            if [[ -z "${notes//[[:space:]]/}" ]]; then
+              gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+                -f tag_name="$GITHUB_REF_NAME" --jq '.body' > "$RUNNER_TEMP/release-notes.md"
+              gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+            fi
             gh release upload "$GITHUB_REF_NAME" combined/*.dusk --clobber
           else
             gh release create "$GITHUB_REF_NAME" combined/*.dusk --verify-tag --generate-notes

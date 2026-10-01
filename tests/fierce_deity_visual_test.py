@@ -5,7 +5,8 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'src/fierce_deity_visual.cpp').read_text()
-callbacks = source[source.index('struct DrawScope'):source.index('} // namespace')]
+callbacks = source[source.index('struct DrawScope'):source.index('void after_player_draw')]
+callbacks = callbacks.replace('#include "fierce_deity_transition.inc"', '')
 fixture = r'''
 #include <array>
 #include <cassert>
@@ -13,6 +14,7 @@ fixture = r'''
 #include <cstdint>
 #include <algorithm>
 #include <cmath>
+using Mtx = float[3][4];
 using u8 = uint8_t; using u16 = uint16_t; using u32 = uint32_t;
 using GXTexCoordID = int; using GXTexMapID = int; using GXTevSwapSel = int;
 using GXTevStageID = int; using GXTevColorArg = int; using GXTevOp = int; using GXTevScale = int;
@@ -22,7 +24,7 @@ constexpr int GX_SRC_REG=0, GX_LIGHT_NULL=0, GX_LIGHT0=1, GX_DF_CLAMP=2, GX_AF_N
 constexpr int GX_TEV_ADD=0, GX_TEV_SUB=1, GX_TB_ZERO=0, GX_CS_SCALE_1=0,
               GX_CS_SCALE_2=1, GX_TEVPREV=0, GX_TEXCOORD_NULL=255, GX_TEXMAP_NULL=255;
 constexpr int GX_CC_ZERO=15, GX_CC_TEXC=8, GX_CC_CPREV=0, GX_CC_RASC=10;
-constexpr int GX_CA_ZERO=7, GX_CA_APREV=0;
+constexpr int GX_CA_ZERO=7, GX_CA_APREV=0, GX_TEXMAP3=3;
 struct GXColor { u8 r, g, b, a; };
 struct RecordedStage { std::array<int,4> color{}, alpha{}; int op=0, scale=0, swap=0; };
 std::array<RecordedStage,16> gpuStages{};
@@ -33,7 +35,7 @@ GXColor gpuAmbient{}, gpuMaterial{};
 // Keeping live registers separate from CPU material objects is essential: J3D
 // display lists (including animations) do not refresh the GX setter shadows.
 std::array<u32,256> bp{}, nativeBP{};
-std::array<u32,0x1040> xf{}, nativeXF{};
+std::array<u32,0x1080> xf{}, nativeXF{};
 u32 bpMask=0xFFFFFF;
 void write_bp(u32 word) {
     const unsigned reg=word>>24;
@@ -153,7 +155,9 @@ struct J3DTevBlock {
     u16 getTexNo(unsigned i) {assert(i<8); return 0;}
 };
 struct Names { const char* name; const char* getName(int) const {return name;} };
-struct Texture { int getNum() const {return 1;} };
+struct ResTIMG { u16 width=32, height=64; };
+struct Texture { ResTIMG image; int getNum() const {return 1;}
+    ResTIMG* getResTIMG(int) {return &image;} };
 struct J3DModelData {
     Names materials{"al_body"}, textures{"al_eyeball"}; Texture texture;
     Names* getMaterialName() {return &materials;} Names* getTextureName() {return &textures;}
@@ -201,6 +205,15 @@ daAlink_c link;
 bool darkActive=true;
 daAlink_c* daAlink_getAlinkActorClass() {return &link;}
 bool fierce_deity_dark_visual_active() {return darkActive;}
+struct WarpLayer { bool active=false, dark=false, inverse=false; };
+bool warpTest = false, warpDark = false, warpInverse = false;
+WarpLayer warp_layer(J3DModel* model) {
+    return model == link.mpLinkModel ? WarpLayer{warpTest,warpDark,warpInverse} : WarpLayer{};
+}
+int native_warp_coord(J3DModel*, J3DMaterial*, daAlink_c*) {return warpTest ? 3 : -1;}
+void warp_texture_matrix(Mtx matrix) {
+    for(int i=0;i<3;++i) for(int j=0;j<4;++j) matrix[i][j] = float(i*4+j);
+}
 '''
 checks = r'''
 void draw_begin(J3DShapePacket& p) {
@@ -211,7 +224,7 @@ void draw_begin(J3DShapePacket& p) {
     load_native(p.shape->material->tev.count);
     void* args[]={&p}; before_packet_draw(nullptr,args,nullptr,nullptr);
     void* shape[]={p.shape}; before_shape_draw(nullptr,shape,nullptr,nullptr);
-    if(s_drawDepth<=s_drawScopes.size() && s_drawScopes[s_drawDepth-1].applied)
+    if(!warpTest && s_drawDepth<=s_drawScopes.size() && s_drawScopes[s_drawDepth-1].applied)
         assert_native_fields(p.shape->material->tev.count);
 }
 void draw_end() {
@@ -267,6 +280,33 @@ float highlight(float nx, float ny, float nz) {
     const float k=xf_float_value(0x607)+xf_float_value(0x608)*t+xf_float_value(0x609)*t*t;
     assert(k>0 && std::isfinite(a/k));
     return std::max(0.0f,a/k);
+}
+// Evaluate the emitted alpha pipeline, including GX A8_EQ and register writes.
+int warp_alpha(unsigned start, int nativeAlpha, int texAlpha) {
+    int regs[4] = {nativeAlpha, 0, 0, 0};
+    auto input = [&](unsigned arg) {
+        if(arg <= 3) return regs[arg];
+        if(arg == 4) return texAlpha;
+        if(arg == 6) return 255;
+        assert(arg == 7); return 0;
+    };
+    for(unsigned i=start;i<unsigned(gpuCount);++i) {
+        const u32 word=bp[0xC1+2*i];
+        const int a=input((word>>13)&7), b=input((word>>10)&7);
+        const int c=input((word>>7)&7), d=input((word>>4)&7);
+        int out;
+        if(((word>>16)&3)==3) {
+            assert(((word>>20)&3)==3 && ((word>>18)&1)==1);
+            const unsigned shift=(i&1)?19:9;
+            assert(((bp[0xF6+i/2]>>shift)&31)==0);
+            out=d+(a==b?c:0);
+        } else {
+            const int value=(a*(255-c)+b*c)/255;
+            out=d+(((word>>18)&1)?-value:value);
+        }
+        regs[(word>>22)&3]=std::clamp(out,0,255);
+    }
+    return regs[0];
 }
 int main() {
     // Negative control: a GX setter flushing GEN_MODE from a stale shadow
@@ -391,10 +431,41 @@ int main() {
     assert(s_materialDepth==0);
     for(auto* material : s_materialScopes) assert(material==nullptr);
 
+    // Warp-only and dark+warp passes use the same native generator slot. Check
+    // complements for EVERY mask byte: no gap at the threshold, no double draw,
+    // and native cutout/translucent alpha remains unchanged on its chosen side.
+    warpTest=true;
+    for(bool dark : {false,true}) {
+        warpDark=dark;
+        std::array<int,256> normal{}, inverse{};
+        for(int alpha : {0,93,255}) {
+            for(bool invert : {false,true}) {
+                warpInverse=invert;
+                draw_begin(p);
+                assert((bp[0]&15)==4 && xf[0x103F]==4 && xf[0x1043]==6);
+                assert(xf[0x1053]==9 && shader_texgens_valid());
+                assert((bp[0x36]&0x3ffff)==31 && (bp[0x37]&0x3ffff)==63);
+                assert((bp[0x43]&(1u<<6))==0); // no hidden-half depth writes
+                before_primitive_draw(nullptr,nullptr,nullptr,nullptr);
+                assert(xf_float_value(0x500+36+11)==11.0f);
+                for(int mask=0;mask<256;++mask)
+                    (invert?inverse:normal)[mask]=warp_alpha(3,alpha,mask);
+                draw_end();
+                assert(bp==nativeBP && xf==nativeXF);
+            }
+            for(int mask=0;mask<256;++mask) {
+                assert(normal[mask]+inverse[mask]==alpha);
+                assert(normal[mask]==0 || inverse[mask]==0);
+            }
+        }
+    }
+    draw_shadow(p); // a transition still never enters the shadow-image pass
+    warpTest=false;
+
     // A malformed/future expanded effect must fail without submitting partial
     // commands or writing past the fixed command buffer.
     DarkDisplayList oversized;
-    for(int i=0;i<40;++i) oversized.swap(0,0,1,2,3);
+    for(int i=0;i<80;++i) oversized.swap(0,0,1,2,3);
     writes=gxWrites; assert(!oversized.apply(4)); assert(gxWrites==writes);
 
     // Capacity limits and foreign layouts never overflow the 16-stage pipeline.
@@ -435,4 +506,4 @@ with tempfile.TemporaryDirectory() as temp:
     subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Fierce Deity specular response, light restoration, shadow isolation, eyes and alpha: passed')
+print('Fierce Deity warp masks, late depth, specular response, shadow isolation, eyes and alpha: passed')

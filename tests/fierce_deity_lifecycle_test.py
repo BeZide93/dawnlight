@@ -148,6 +148,11 @@ template <class T> T arg(void* args, int index) {
     return reinterpret_cast<T>(static_cast<void**>(args)[index]);
 }
 }
+bool fierce_deity_transition_busy() { return false; }
+void fierce_deity_transition_prepare(daAlink_c*, bool, bool, bool) {}
+void fierce_deity_transition_commit(daAlink_c*) {}
+void fierce_deity_transition_tick(daAlink_c*) {}
+void fierce_deity_transition_cancel(daAlink_c*) {}
 int spinUpdates = 0, drainUpdates = 0;
 void update_spin_activation(daAlink_c*) { ++spinUpdates; }
 void update_drain(daAlink_c*) { ++drainUpdates; }
@@ -279,7 +284,7 @@ int main() {
     selectedVisual = FierceDeityVisual::Dark; tick(link);
     assert(s_preload.archive && s_preload.cancelled);
     ticks(link);
-    assert(!s_preload.archive && link.replacements == 0);
+    assert(!s_preload.archive && s_state.displayedDark);
     finish(link);
 
     // Disable in both loading and installed states, including a delayed restore.

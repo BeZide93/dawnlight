@@ -65,6 +65,8 @@ struct RuntimeState {
     bool spinChargeArmed = false;
     bool equipmentOverridden = false;
     bool modelSwapped = false;
+    bool displayedDark = false;
+    bool swapDark = false;
     bool modelReloadFrame = false;
     ModelSwapState modelSwapState = ModelSwapState::None;
     u8 originalClothes = dItemNo_NONE_e;
@@ -176,6 +178,7 @@ void deactivate(daAlink_c*, bool clearMeter) {
 void reset_for_link(daAlink_c* link) {
     // The previous player may belong to another save. Never restore its clothes
     // into the current save; equipment restoration belongs to its deletion hook.
+    fierce_deity_transition_cancel(nullptr);
     cancel_preload();
     s_state = {};
     s_state.link = link;
@@ -201,6 +204,7 @@ HookAction before_player_delete(ModContext*, void* args, void*, void*) {
     if (same_link(link)) {
         // Restore while the departing player's save is still current. Do not
         // start a model reload on an actor that is about to be destroyed.
+        fierce_deity_transition_cancel(link);
         restore_equipment_selection();
         reset_for_link(nullptr);
     }
@@ -237,8 +241,10 @@ bool service_model_swap(daAlink_c* link) {
     if (link == nullptr) return false;
 
     if (s_state.modelSwapState == ModelSwapState::None) {
+        if (fierce_deity_transition_busy()) return false;
         const bool useMagic = s_state.active && s_state.visual != FierceDeityVisual::Dark;
-        if (!useMagic && !s_state.modelSwapped) {
+        const bool useDark = s_state.active && s_state.visual != FierceDeityVisual::MagicArmor;
+        if (!useMagic && !s_state.modelSwapped && !s_state.displayedDark && !useDark) {
             cancel_preload();
             return false;
         }
@@ -251,7 +257,7 @@ bool service_model_swap(daAlink_c* link) {
         const u8 selected = dComIfGs_getSelectEquipClothes();
         const u8 targetClothes = useMagic ? u8(dItemNo_ARMOR_e) : selected;
         const char* targetArchive = outfit_archive(targetClothes);
-        if (same_archive(link->mArcName, targetArchive)) {
+        if (same_archive(link->mArcName, targetArchive) && s_state.displayedDark == useDark) {
             cancel_preload();
             s_state.modelSwapped = useMagic;
             s_state.failedArchive = nullptr;
@@ -261,6 +267,17 @@ bool service_model_swap(daAlink_c* link) {
 
         // All disk I/O is complete and our reference pins the replacement.
         // Only this synchronous native transaction sees the temporary outfit.
+        fierce_deity_transition_prepare(link, s_state.displayedDark, useDark, s_state.active);
+        if (!fierce_deity_transition_busy() && same_archive(link->mArcName, targetArchive)) {
+            // A foreign model without native warp attributes (or allocation
+            // failure) uses an immediate material change. Reloading its OWN
+            // archive heap would invalidate the pinned same-archive resource.
+            s_state.displayedDark = useDark;
+            s_state.modelSwapped = useMagic;
+            release_preload();
+            return false;
+        }
+        s_state.swapDark = useDark;
         s_state.originalClothes = selected;
         s_state.equipmentOverridden = true;
         dComIfGs_setSelectEquipClothes(targetClothes);
@@ -284,6 +301,8 @@ bool service_model_swap(daAlink_c* link) {
     s_state.modelSwapped = s_state.modelSwapState == ModelSwapState::Activating;
     s_state.modelSwapState = ModelSwapState::None;
     restore_equipment_selection();
+    s_state.displayedDark = s_state.swapDark;
+    fierce_deity_transition_commit(link);
     release_preload(); // Link's native phase now owns its own resource reference.
 
     // Run the ORIGINAL execute in this SAME frame. It updates movement,
@@ -388,6 +407,10 @@ HookAction before_player_execute(ModContext*, void* args, void* retval, void*) {
         deactivate(link, true);
     }
 
+    if (s_state.modelSwapState == ModelSwapState::None &&
+        (link->mClothesChangeWaitTimer != 0 || !can_transform(link))) {
+        fierce_deity_transition_cancel(link);
+    }
     update_visual_selection(link);
     if (!service_model_swap(link)) {
         return HOOK_CONTINUE;
@@ -403,9 +426,11 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
     if (link == nullptr) {
         return;
     }
-    if (!same_link(link) || !fierce_deity_enabled()) {
-        return;
+    if (!same_link(link)) return;
+    if (!s_state.modelReloadFrame && !menu_or_pause_active()) {
+        fierce_deity_transition_tick(link);
     }
+    if (!fierce_deity_enabled()) return;
     if (!s_state.modelReloadFrame) {
         update_spin_activation(link);
     }
@@ -528,6 +553,7 @@ void shutdown_fierce_deity() {
         std::this_thread::yield();
     }
     release_preload();
+    fierce_deity_transition_cancel(link);
     if (same_link(link)) restore_equipment_selection();
     s_state = {};
 }
@@ -538,8 +564,7 @@ bool fierce_deity_active() {
 
 bool fierce_deity_dark_visual_active() {
     auto* link = daAlink_getAlinkActorClass();
-    return fierce_deity_enabled() && fierce_deity_active() &&
-        s_state.visual != FierceDeityVisual::MagicArmor &&
+    return same_link(link) && s_state.displayedDark &&
         s_state.modelSwapState == ModelSwapState::None && !s_state.modelReloadFrame &&
         !link->checkWolf() && link->mClothesChangeWaitTimer == 0;
 }

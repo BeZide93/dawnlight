@@ -1,10 +1,21 @@
 #include "fierce_deity.hpp"
 #include "service_imports.hpp"
+#include "fierce_deity_wipe.hpp"
 
 #include "d/actor/d_a_alink.h"
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "JSystem/J3DGraphBase/J3DSys.h"
+#include "JSystem/J3DGraphBase/J3DShapeDraw.h"
+#include "JSystem/J3DGraphAnimator/J3DMtxBuffer.h"
+#include "JSystem/JKernel/JKRExpHeap.h"
+#include "JSystem/JKernel/JKRSolidHeap.h"
+#include "d/d_com_inf_game.h"
+#include "f_op/f_op_actor_mng.h"
+#include "f_op/f_op_camera_mng.h"
+#include "f_pc/f_pc_leaf.h"
+#include "m_Do/m_Do_ext.h"
+#include "m_Do/m_Do_mtx.h"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 
@@ -22,11 +33,21 @@ DEFINE_HOOK(&J3DMatPacket::draw, FierceMaterialDrawHook);
 DEFINE_HOOK(&J3DShapePacket::draw, FierceShapePacketDrawHook);
 DEFINE_HOOK(&J3DShapePacket::drawFast, FierceShapePacketFastHook);
 DEFINE_HOOK(&J3DShape::drawFast, FierceShapeDrawHook);
+DEFINE_HOOK(&J3DShapeDraw::draw, FiercePrimitiveDrawHook);
+#if defined(__APPLE__)
+DEFINE_HOOK(&fpcMtd_Method, FiercePlayerDrawHook);
+#else
+DEFINE_HOOK(&fpcLf_DrawMethod, FiercePlayerDrawHook);
+#endif
 
 struct DrawScope {
     J3DShapePacket* packet = nullptr;
     J3DMatPacket* materialPacket = nullptr;
     bool applied = false;
+    bool dark = false;
+    bool warp = false;
+    bool inverse = false;
+    int warpCoord = -1;
 };
 std::array<DrawScope, 16> s_drawScopes{};
 size_t s_drawDepth = 0;
@@ -74,15 +95,27 @@ bool player_model(daAlink_c* link, const J3DModel* model) {
         model == link->mpLinkBootModels[1]);
 }
 
+#include "fierce_deity_transition.inc"
+
 HookAction before_packet_draw(ModContext*, void* args, void*, void*) {
     auto* packet = mods::arg<J3DShapePacket*>(args, 0);
     if (s_drawDepth < s_drawScopes.size()) {
         auto& scope = s_drawScopes[s_drawDepth];
         scope = {};
-        if (fierce_deity_dark_visual_active() && packet != nullptr &&
-            player_model(daAlink_getAlinkActorClass(), packet->getModel())) {
-            scope.materialPacket = drawing_material(packet);
-            if (scope.materialPacket != nullptr) scope.packet = packet;
+        if (packet != nullptr) {
+            const auto layer = warp_layer(packet->getModel());
+            const bool dark = layer.active ? layer.dark :
+                (fierce_deity_dark_visual_active() &&
+                 player_model(daAlink_getAlinkActorClass(), packet->getModel()));
+            if (layer.active || dark) {
+                scope.materialPacket = drawing_material(packet);
+                if (scope.materialPacket != nullptr) {
+                    scope.packet = packet;
+                    scope.dark = dark;
+                    scope.warp = layer.active;
+                    scope.inverse = layer.inverse;
+                }
+            }
         }
     }
     ++s_drawDepth;
@@ -173,7 +206,7 @@ const J3DTevOrder* eye_texture_order(J3DModelData* data, J3DMaterial* material) 
 // display list with BP masks against the *live* state, as J3D itself does.
 // No GX shadow-state setters or changes to shared material data are needed.
 class DarkDisplayList {
-    alignas(32) std::array<u8, 512> bytes{};
+    alignas(32) std::array<u8, 1024> bytes{};
     size_t size = 0;
     bool valid = true;
 
@@ -264,13 +297,62 @@ public:
             (u32(GX_CA_APREV) << 4) | (u32(GX_CA_ZERO) << 7) |
             (u32(GX_CA_ZERO) << 10) | (u32(GX_CA_ZERO) << 13) | (1u << 19));
     }
-    bool apply(unsigned stageCount) {
-        // Only chan/stage counts; preserve texgens, culling and indirect stages.
-        masked_bp(0x00, 0x3C70, (2u << 4) | ((stageCount - 1) << 10));
-        while (size % 32 != 0 && valid) byte(0); // GX NOP padding
+    void alpha(unsigned index, unsigned swap, unsigned a, unsigned b,
+               unsigned c, unsigned d, unsigned op = 0, unsigned dest = 0) {
+        const u32 operation = op < 2 ? (op << 18) :
+            (3u << 16) | ((op & 1u) << 18) | (((op >> 1) & 3u) << 20);
+        bp(0xC1 + 2 * index, swap | (swap << 2) | (d << 4) | (c << 7) |
+            (b << 10) | (a << 13) | operation | (1u << 19) | (dest << 22));
+    }
+    unsigned warp(unsigned count, unsigned coord, unsigned swap, bool inverse,
+                  unsigned width, unsigned height) {
+        masked_bp(0x00, 0xF, coord + 1);
+        xf(0x103F, coord + 1);
+        xf(0x1040 + coord, (1u << 1) | (1u << 2)); // MTX3x4, POS, ABC1
+        xf(0x1050 + coord, coord * 3); // native post-matrix slot, no normalization
+        masked_bp(0x30 + coord * 2, 0x3FFFF, width - 1);
+        masked_bp(0x31 + coord * 2, 0x3FFFF, height - 1);
+        masked_bp(0x43, 1u << 6, 0); // late depth test: clipped pixels write no depth
+        // Save native alpha before building the complementary half of the mask.
+        if (inverse) {
+            stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, swap, swap,
+                  GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+            alpha(count++, swap, 7, 7, 7, 0, 0, 3); // A2 = APREV
+        }
+        stage(count, static_cast<GXTexCoordID>(coord), GX_TEXMAP3, swap, swap,
+              GX_CC_ZERO, inverse ? GX_CC_ZERO : GX_CC_TEXC,
+              inverse ? GX_CC_ZERO : GX_CC_CPREV,
+              inverse ? GX_CC_CPREV : GX_CC_ZERO);
+        const unsigned shift = (count & 1) ? 19 : 9;
+        masked_bp(0xF6 + count / 2, 0x1Fu << shift, 0u); // K alpha = 1 (255)
+        // Native warp's alpha test requires exactly 255. Keep that boundary,
+        // then subtract EXACTLY the same mask for the complementary layer.
+        alpha(count++, swap, 4, 6, 0, 7, 15); // A8_EQ, TEXA/KONST/APREV/ZERO
+        if (inverse) {
+            stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, swap, swap,
+                  GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+            alpha(count++, swap, 0, 7, 7, 3, 1); // APREV = A2 - APREV
+        }
+        return count;
+    }
+    void post_matrix(unsigned coord, const Mtx matrix) {
+        for (unsigned row = 0; row < 3; ++row) {
+            for (unsigned col = 0; col < 4; ++col) {
+                xf_float(0x500 + coord * 12 + row * 4 + col, matrix[row][col]);
+            }
+        }
+    }
+    bool submit() {
+        while (size % 32 != 0 && valid) byte(0);
         if (!valid) return false;
         GXCallDisplayList(bytes.data(), static_cast<u32>(size));
         return true;
+    }
+    bool apply(unsigned stageCount, bool darkChannels = true) {
+        // Warp-only passes preserve native lighting/channel counts as well.
+        masked_bp(0x00, darkChannels ? 0x3C70 : 0x3C00,
+                  (darkChannels ? 2u << 4 : 0) | ((stageCount - 1) << 10));
+        return submit();
     }
 };
 
@@ -293,11 +375,19 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const auto swaps = find_swap_tables(tev, count);
     if (swaps.identity < 0) return HOOK_CONTINUE;
     const auto identity = static_cast<GXTevSwapSel>(swaps.identity);
+    unsigned next = count;
+    const unsigned warpStages = scope.warp ? (scope.inverse ? 3 : 1) : 0;
+    if (scope.warp) {
+        scope.warpCoord = native_warp_coord(model, material, daAlink_getAlinkActorClass());
+        if (scope.warpCoord < 0 || count + warpStages + (scope.dark ? 3 : 0) > 16)
+            return HOOK_CONTINUE;
+    }
     const auto* eyeOrder = eye_texture_order(model->getModelData(), material);
     const bool eye = eyeOrder != nullptr && count + 3 <= 16 && swaps.red >= 0 && swaps.blue >= 0;
 
     DarkDisplayList effect;
     effect.swap(identity, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
+    if (scope.dark) {
     // XF color registers contain RGBA. Retain alpha for the native stages.
     const auto* ambient = material->getColorBlock()->getAmbColor(1);
     const auto* color = material->getMatColor(1);
@@ -339,7 +429,7 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
                      GX_TEV_SUB, GX_CS_SCALE_2);
         effect.stage(count + 2, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_RASC, GX_CC_CPREV, GX_CC_ZERO);
-        scope.applied = effect.apply(count + 3);
+        next = count + 3;
     } else if (glossy) {
         effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC,
@@ -347,12 +437,18 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         // Add COLOR1's highlight to the diffuse color already in PREV.
         effect.stage(count + 1, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_RASC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
-        scope.applied = effect.apply(count + 2);
+        next = count + 2;
     } else {
         effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
-        scope.applied = effect.apply(count + 1);
+        next = count + 1;
     }
+    }
+    if (scope.warp) {
+        auto* image = model->getModelData()->getTexture()->getResTIMG(tev->getTexNo(3));
+        next = effect.warp(next, scope.warpCoord, identity, scope.inverse, image->width, image->height);
+    }
+    scope.applied = effect.apply(next, scope.dark);
     return HOOK_CONTINUE;
 }
 
@@ -362,7 +458,66 @@ void after_shape_draw(ModContext*, void*, void*, void*) {
     }
 }
 
+HookAction before_primitive_draw(ModContext*, void*, void*, void*) {
+    if (s_drawDepth == 0 || s_drawDepth > s_drawScopes.size()) return HOOK_CONTINUE;
+    const auto& scope = s_drawScopes[s_drawDepth - 1];
+    if (!scope.applied || scope.warpCoord < 0) return HOOK_CONTINUE;
+    // Skinning loads position/texture matrices inside drawFast, after our
+    // material hook. Install the warp projection AFTER those per-group loads.
+    Mtx matrix;
+    warp_texture_matrix(matrix);
+    DarkDisplayList projection;
+    projection.post_matrix(scope.warpCoord, matrix);
+    projection.submit();
+    return HOOK_CONTINUE;
+}
+
+void after_player_draw(ModContext*, void* args, void*, void*) {
+    auto* link = daAlink_getAlinkActorClass();
+    if (link == nullptr || mods::arg<void*>(args, 1) != link || link->sub_method == nullptr) return;
+    const auto* methods = reinterpret_cast<const leafdraw_method_class*>(link->sub_method);
+#if defined(__APPLE__)
+    if (mods::arg<process_method_func>(args, 0) != methods->draw_method) return;
+#else
+    if (mods::arg<const leafdraw_method_class*>(args, 0) != methods) return;
+#endif
+    draw_outgoing(link);
+}
+
 } // namespace
+
+bool fierce_deity_transition_busy() { return s_transition.owner != nullptr; }
+
+void fierce_deity_transition_prepare(daAlink_c* link, bool fromDark, bool toDark, bool entering) {
+    prepare_transition(link, fromDark, toDark, entering);
+}
+
+void fierce_deity_transition_commit(daAlink_c* link) {
+    if (!transition_owner(link)) return;
+    restore_archive_heap(link);
+    // Native clothes changes reuse the same model heap/address. Our retained
+    // outgoing instances require rebinding the skeletal collision explicitly.
+    link->field_0x2e44.mModel = link->mpLinkModel;
+    if (!warp_compatible(outfit_models(link), link)) {
+        discard_transition(link);
+        return;
+    }
+    s_transition.committed = true;
+}
+
+void fierce_deity_transition_tick(daAlink_c* link) {
+    if (!transition_owner(link) || !s_transition.committed) return;
+    if (link->checkWolf() || link->checkDeadHP() || link->checkSceneChangeAreaStart() ||
+        link->checkEventRun() || s_transition.wipe.advance()) discard_transition(link);
+}
+
+void fierce_deity_transition_cancel(daAlink_c* link) {
+    if (s_transition.owner == nullptr) return;
+    // reset_for_link can run after the old actor is gone; only touch a live owner.
+    if (link == nullptr && transition_owner(daAlink_getAlinkActorClass()))
+        link = daAlink_getAlinkActorClass();
+    discard_transition(link);
+}
 
 ModResult initialize_fierce_deity_visual(ModError* error) {
     ModResult result;
@@ -373,7 +528,9 @@ ModResult initialize_fierce_deity_visual(ModError* error) {
         (result = mods::hook::add_pre<FierceShapePacketFastHook>(svc_hook, before_packet_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceShapePacketFastHook>(svc_hook, after_packet_draw)) != MOD_OK ||
         (result = mods::hook::add_pre<FierceShapeDrawHook>(svc_hook, before_shape_draw)) != MOD_OK ||
-        (result = mods::hook::add_post<FierceShapeDrawHook>(svc_hook, after_shape_draw)) != MOD_OK) {
+        (result = mods::hook::add_post<FierceShapeDrawHook>(svc_hook, after_shape_draw)) != MOD_OK ||
+        (result = mods::hook::add_pre<FiercePrimitiveDrawHook>(svc_hook, before_primitive_draw)) != MOD_OK ||
+        (result = mods::hook::add_post<FiercePlayerDrawHook>(svc_hook, after_player_draw)) != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Fierce Deity visual hooks");
     }
     return MOD_OK;

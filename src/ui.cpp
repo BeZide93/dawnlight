@@ -59,6 +59,7 @@ constexpr const char* kHudItemAnchorOptions[] = {
 constexpr const char* kHudTextAnchorOptions[] = {
     "Left",
     "Right",
+    "Original",
 };
 
 constexpr const char* kMinimapSlideOptions[] = {

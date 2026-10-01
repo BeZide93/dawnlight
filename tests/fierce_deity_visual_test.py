@@ -270,9 +270,9 @@ void draw_shadow(J3DShapePacket& p) {
     assert(gxWrites==shadowWrites && restoreCalls==shadowRestores);
 
 }
-float eye_mask(int nativeCount, float r, float b) {
-    std::array<float,4> regs{};
-    for(int i=nativeCount;i<nativeCount+5;++i) {
+float eye_coverage(int nativeCount, float r, float b) {
+    std::array<float,4> regs{r,b,0,0};
+    for(int i=nativeCount;i<nativeCount+1;++i) {
         const auto& s=gpuStages[i];
         const float tex=gpuSwaps[s.swap][0]==GX_CH_RED ? r : b;
         auto value=[&](int v) {switch(v) {
@@ -382,24 +382,29 @@ int main() {
     for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
     draw_end(); mat.color.alpha.enabled=false;
 
-    // Alpha-tested geometry preserves alpha at every appended stage. Eye masks
-    // must reject white sclera and retain blue AND red irises at moving UVs.
+    // Entire eyes are self-lit red, independent of original iris/pupil/sclera
+    // RGB and lighting. Alpha/eyelid cutouts still use the native chain.
     for(const char* name : {"al_eyeballL_m","bl_eyeballR_m","ml_eyeballL_m","zl_eyeballR_m"}) {
         player.data.materials.name=name;
         draw_begin(p);
-        assert(gpuCount==8 && gpuMaterial.r==230 && gpuMaterial.g==8);
+        assert(gpuCount==4 && gpuMaterial.r==255 && gpuMaterial.g==28 && gpuMaterial.b==20);
+        assert((xf[0x100F] & 2)==0); // COLOR1 lighting disabled: emissive in dark rooms
+        assert(gpuMaterial.a==93 && gpuAmbient.a==61);
         for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
-        assert(eye_mask(3,1,1)==0); // sclera
-        assert(eye_mask(3,1,0)==1); // iris
-        assert(eye_mask(3,0,1)==1); // native blue iris (old R-B mask gave zero)
-        assert(eye_mask(3,0,0)==0); // pupil
-        assert(eye_mask(3,0.6f,0.4f)>0.39f && eye_mask(3,0.6f,0.4f)<0.41f);
-        // Full 8-bit domain, both directions, including neutral antialiasing.
-        for(int r=0;r<256;++r) for(int b=0;b<256;++b)
-            assert(std::abs(eye_mask(3,r/255.f,b/255.f)-
-                std::min(1.f,2.f*std::abs(r-b)/255.f))<0.00001f);
-        draw_end();
+        for(float r : {0.f,0.4f,0.6f,1.f}) for(float b : {0.f,0.4f,0.6f,1.f})
+            assert(eye_coverage(3,r,b)==1); // white, black, blue and red all emit
+        for(int alpha : {0,93,255}) assert(warp_alpha(3,alpha,0)==alpha);
+        draw_end(); assert(bp==nativeBP && xf==nativeXF);
     }
+    // Named replacement eyes no longer depend on native texture names or
+    // spare red/blue swap tables; the full surface uses only one extra stage.
+    player.data.textures.name="custom_eye_texture";
+    mat.tev.stages[0].mTevSwapModeInfo=0;
+    mat.tev.stages[1].mTevSwapModeInfo=5;
+    mat.tev.stages[2].mTevSwapModeInfo=14;
+    draw_begin(p);assert(gpuCount==4 && gpuMaterial.r==255);draw_end();
+    for(auto& stage : mat.tev.stages) stage.mTevSwapModeInfo=0;
+    player.data.textures.name="al_eyeball";
     // Cover both halves of packed TREF registers and every legal stage count.
     // Baseline live TREF values intentionally differ from the CPU material's
     // orders (as they can after per-instance material animation).
@@ -408,7 +413,7 @@ int main() {
         for(const char* name : {"al_body", "al_eyeballL_m"}) {
             player.data.materials.name=name;
             draw_begin(p);
-            assert(gpuCount==count+(count<=11 && std::strstr(name,"eyeball") ? 5 : count<=14 ? 2 : 1));
+            assert(gpuCount==count+(std::strstr(name,"eyeball") ? 1 : count<=14 ? 2 : 1));
             draw_end();
             assert(bp==nativeBP && xf==nativeXF);
         }
@@ -486,14 +491,14 @@ int main() {
     draw_shadow(p); // a transition still never enters the shadow-image pass
     warpTest=false;
 
-    // Eye RGB register writes must not interfere with warp alpha registers.
+    // Whole-eye emission must preserve complementary warp alpha and transparency.
     player.data.materials.name="al_eyeballL_m";
     warpTest=warpDark=true;
     for(bool invert : {false,true}) {
         warpInverse=invert;
         draw_begin(p);
-        assert(gpuCount==8+(invert ? 3 : 1));
-        assert(eye_mask(3,0,1)==1 && eye_mask(3,1,0)==1);
+        assert(gpuCount==4+(invert ? 3 : 1));
+        assert(eye_coverage(3,0,0)==1 && eye_coverage(3,1,1)==1);
         for(int alpha : {0,93,255}) for(int mask=0;mask<256;++mask)
             assert(warp_alpha(3,alpha,mask)==((invert ? mask!=255 : mask==255) ? alpha : 0));
         draw_end();assert(bp==nativeBP && xf==nativeXF);
@@ -592,4 +597,4 @@ with tempfile.TemporaryDirectory() as temp:
     subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Fierce Deity warp masks, late depth, specular response, shadow isolation, eyes and alpha: passed')
+print('Fierce Deity warp masks, late depth, specular response, shadow isolation, self-lit whole eyes, equipment and alpha: passed')

@@ -161,8 +161,6 @@ void after_packet_draw(ModContext*, void*, void*, void*) {
 // the original stages still compute texture alpha (hair, eyelashes, cutouts).
 struct SwapTables {
     int identity = -1;
-    int red = -1;
-    int blue = -1;
 };
 
 SwapTables find_swap_tables(J3DTevBlock* tev, unsigned count) {
@@ -186,34 +184,19 @@ SwapTables find_swap_tables(J3DTevBlock* tev, unsigned count) {
     for (int i = 0; i < 4; ++i) {
         if (used[i] || i == result.identity) continue;
         if (result.identity < 0) result.identity = i;
-        else if (result.red < 0) result.red = i;
-        else if (result.blue < 0) result.blue = i;
     }
     return result;
 }
 
-const J3DTevOrder* eye_texture_order(J3DModelData* data, J3DMaterial* material) {
+bool eye_material(J3DModelData* data, J3DMaterial* material) {
     const auto* names = data->getMaterialName();
-    if (names == nullptr) return nullptr;
+    if (names == nullptr) return false;
     const char* name = names->getName(material->getIndex());
-    // The al/bl/ml/zl outfits and compatible replacements use these suffixes.
-    if (name == nullptr || (std::strstr(name, "eyeballL") == nullptr &&
-                            std::strstr(name, "eyeballR") == nullptr)) return nullptr;
-    const auto* textureNames = data->getTextureName();
-    const auto* texture = data->getTexture();
-    if (textureNames == nullptr || texture == nullptr) return nullptr;
-    auto* tev = material->getTevBlock();
-    for (unsigned i = 0; i < tev->getTevStageNum(); ++i) {
-        const auto* order = tev->getTevOrder(i);
-        if (order == nullptr || order->mTexCoord >= 8 || order->getTexMap() >= 8) continue;
-        // Tev blocks have different texture-slot capacities. Only query a map
-        // used by an existing stage, never an arbitrary assumed slot.
-        const u16 texNo = tev->getTexNo(order->getTexMap());
-        if (texNo >= texture->getNum()) continue;
-        const char* texName = textureNames->getName(texNo);
-        if (texName != nullptr && std::strstr(texName, "eyeball") != nullptr) return order;
-    }
-    return nullptr;
+    // Color the entire visible eyeball, including sclera and pupil. Native
+    // alpha/geometry still determines the eye boundary and blinking; no iris
+    // texture/color mask is needed for al/bl/ml/zl or named replacements.
+    return name != nullptr && (std::strstr(name, "eyeballL") != nullptr ||
+                               std::strstr(name, "eyeballR") != nullptr);
 }
 
 // J3D material display lists update live registers without updating GX's CPU
@@ -257,10 +240,11 @@ public:
     void lighting(bool eye, u8 ambientAlpha, u8 materialAlpha) {
         xf(0x1009, 2); // XF number of color channels
         xf(0x100B, rgba({64, 64, 64, ambientAlpha}));
-        xf(0x100D, rgba(eye ? GXColor{230, 8, 5, materialAlpha}
+        xf(0x100D, rgba(eye ? GXColor{255, 28, 20, materialAlpha}
                            : GXColor{32, 36, 42, materialAlpha}));
         // COLOR1 only: register sources, clamp diffuse, no attenuation, light0
-        // on the body; unlit eyes. Preserve the native ALPHA1 control.
+        // on the body; bright self-lit red eyes, independent of room lighting.
+        // Preserve the native ALPHA1 control and cutout transparency.
         xf(0x100F, (1u << 10) | (u32(GX_DF_CLAMP) << 7) |
                      (eye ? 0u : (1u << 1) | (1u << 2)));
     }
@@ -299,7 +283,7 @@ public:
                unsigned identity, unsigned textureSwap,
                GXTevColorArg a, GXTevColorArg b, GXTevColorArg c, GXTevColorArg d,
                GXTevOp op = GX_TEV_ADD, GXTevScale scale = GX_CS_SCALE_1,
-               unsigned rasterChannel = 1, unsigned colorDest = GX_TEVPREV) {
+               unsigned rasterChannel = 1) {
         const unsigned shift = (index & 1) * 12;
         const bool textured = coord != GX_TEXCOORD_NULL && map != GX_TEXMAP_NULL;
         const u32 order = (rasterChannel << 7) | (textured ?
@@ -308,8 +292,7 @@ public:
         masked_bp(0x28 + index / 2, 0xFFFu << shift, order << shift);
         bp(0x10 + index, 0); // direct TEV stage (no indirect lookup)
         bp(0xC0 + 2 * index, u32(d) | (u32(c) << 4) | (u32(b) << 8) |
-            (u32(a) << 12) | (u32(op) << 18) | (1u << 19) | (u32(scale) << 20) |
-            (colorDest << 22));
+            (u32(a) << 12) | (u32(op) << 18) | (1u << 19) | (u32(scale) << 20));
         // Preserve the native alpha chain: (0 * (1 - 0) + 0 * 0) + APREV.
         bp(0xC1 + 2 * index, identity | (textureSwap << 2) |
             (u32(GX_CA_APREV) << 4) | (u32(GX_CA_ZERO) << 7) |
@@ -407,9 +390,7 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         if (scope.warpCoord < 0 || count + warpStages + (scope.dark ? 1 : 0) > 16)
             return HOOK_CONTINUE;
     }
-    const auto* eyeOrder = eye_texture_order(model->getModelData(), material);
-    const bool eye = eyeOrder != nullptr && count + warpStages + 5 <= 16 &&
-        swaps.red >= 0 && swaps.blue >= 0;
+    const bool eye = eye_material(model->getModelData(), material);
 
     DarkDisplayList effect;
     effect.swap(identity, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
@@ -440,33 +421,7 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         effect.lighting(eye, ambientAlpha, materialAlpha);
     }
 
-    if (eye) {
-        const auto red = static_cast<GXTevSwapSel>(swaps.red);
-        const auto blue = static_cast<GXTevSwapSel>(swaps.blue);
-        effect.swap(red, GX_CH_RED, GX_CH_RED, GX_CH_RED, GX_CH_ALPHA);
-        effect.swap(blue, GX_CH_BLUE, GX_CH_BLUE, GX_CH_BLUE, GX_CH_ALPHA);
-        const auto coord = static_cast<GXTexCoordID>(eyeOrder->mTexCoord);
-        const auto map = static_cast<GXTexMapID>(eyeOrder->getTexMap());
-        // 2 * abs(R - B) accepts blue native irises as well as red/brown custom
-        // irises. White/gray sclera and black pupils cancel in either direction.
-        // Use clamped differences: signed TEV values cannot safely be used as
-        // interpolation factors. Borrow RGB REG0/REG1 only; keep all alpha.
-        effect.stage(count, coord, map, identity, red,
-                     GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC,
-                     GX_TEV_ADD, GX_CS_SCALE_1, 1, GX_TEVREG0);
-        effect.stage(count + 1, coord, map, identity, blue,
-                     GX_CC_C0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC,
-                     GX_TEV_SUB, GX_CS_SCALE_1, 1, GX_TEVREG1);
-        effect.stage(count + 2, coord, map, identity, blue,
-                     GX_CC_TEXC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_C0,
-                     GX_TEV_SUB);
-        effect.stage(count + 3, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
-                     GX_CC_C1, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV,
-                     GX_TEV_ADD, GX_CS_SCALE_2);
-        effect.stage(count + 4, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
-                     GX_CC_ZERO, GX_CC_RASC, GX_CC_CPREV, GX_CC_ZERO);
-        next = count + 5;
-    } else if (glossy) {
+    if (glossy) {
         effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC,
                      GX_TEV_ADD, GX_CS_SCALE_1, 0);
@@ -475,6 +430,8 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
                      GX_CC_RASC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
         next = count + 2;
     } else {
+        // Eyes use the full self-lit COLOR1, without sampling iris RGB. Native
+        // alpha remains in APREV, so eyelids/cutouts and warp masks still work.
         effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
                      GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
         next = count + 1;

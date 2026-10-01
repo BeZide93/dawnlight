@@ -20,5 +20,7 @@ void shutdown_clear_timer();
 void update_clear_timer();
 void begin_clear_timer(int target);
 void finish_clear_timer(int target);
+void begin_cave_boss_timer(int boss);
+void end_cave_boss_timer();
 void cancel_clear_timer(int target = -1);
 }

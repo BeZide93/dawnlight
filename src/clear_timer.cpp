@@ -24,6 +24,16 @@ DEFINE_HOOK(&dMeter2_c::_delete, ClearTimerMeterDelete);
 constexpr char kBlob[] = "bossrush-clear-times-v1";
 timing::Records s_records;
 timing::Attempt s_attempt;
+timing::Attempt s_caveAttempt;
+unsigned variant_for(int target) {
+    const unsigned hard = bossrush_hardmode_hazards_enabled() ? 1 : 0;
+    return target == timing::cave ? hard | (cave_randomizer_enabled() ? 2 : 0) : hard;
+}
+JUtility::TColor timer_color(unsigned variant, bool gradient = false) {
+    if (variant == 3) return gradient ? JUtility::TColor(125, 35, 195, 255) : JUtility::TColor(205, 110, 255, 255);
+    if (variant) return gradient ? JUtility::TColor(190, 20, 20, 255) : JUtility::TColor(255, 65, 55, 255);
+    return gradient ? JUtility::TColor(220, 195, 140, 255) : JUtility::TColor(255, 239, 190, 255);
+}
 SaveObserverHandle s_observer = 0;
 bool s_loaded = false;
 
@@ -63,6 +73,7 @@ struct Digits {
 void reset_save(ModContext*, uint32_t, void*) {
     s_records = {};
     s_attempt = {};
+    s_caveAttempt = {};
     s_loaded = false;
 }
 void load_save(ModContext*, uint32_t slot, void* data) {
@@ -84,27 +95,27 @@ void format_time(uint32_t ms, char (&text)[32]) {
     std::snprintf(text, sizeof(text), "%02u:%02u.%02u", ms / 60000,
                   (ms / 1000) % 60, (ms / 10) % 100);
 }
-void text_at(const char* text, float x, float y, float size) {
+void text_at(const char* text, float x, float y, float size, unsigned variant = 0) {
     auto* font = mDoExt_getMesgFont();
     if (!font) return;
     J2DPrint shadow(font, JUtility::TColor(0, 0, 0, 230), JUtility::TColor(0, 0, 0, 230));
     shadow.setFontSize(size, size);
     shadow.printReturn(text, 400, size + 8, HBIND_CENTER,
                        VBIND_TOP, x - 199, y + 1, 255);
-    J2DPrint label(font, JUtility::TColor(255, 239, 190, 255), JUtility::TColor(220, 195, 140, 255));
+    J2DPrint label(font, timer_color(variant), timer_color(variant, true));
     label.setFontSize(size, size);
     label.printReturn(text, 400, size + 8, HBIND_CENTER,
                       VBIND_TOP, x - 200, y, 255);
 }
-void draw_hud(uint32_t ms) {
+void draw_hud(uint32_t ms, unsigned variant) {
     char text[32];
     // Zero is a valid running display; only unplayed records use dashes.
     std::snprintf(text, sizeof(text), "%02u:%02u.%02u", ms / 60000,
                   (ms / 1000) % 60, (ms / 10) % 100);
     const float center = mDoGph_gInf_c::getMinXF() + mDoGph_gInf_c::getWidthF() * 0.5f;
     const float y = mDoGph_gInf_c::getHeightF() - 58;
-    text_at("Clear Time", center, y - 19, 15);
-    if (!s_digits.prepare()) { text_at(text, center, y, 25); return; }
+    text_at("Clear Time", center, y - 19, 15, variant);
+    if (!s_digits.prepare()) { text_at(text, center, y, 25, variant); return; }
     float width = 0;
     for (char c : text) { if (!c) break; width += c >= '0' && c <= '9' ? 21 : 10; }
     float x = center - width * 0.5f;
@@ -112,11 +123,13 @@ void draw_hud(uint32_t ms) {
         if (!c) break;
         if (c >= '0' && c <= '9') {
             // The same number textures used by dDlst_TimerScrnDraw_c/minigames.
+            s_digits.pictures[c - '0']->setWhite(variant ? timer_color(variant) :
+                                                       JUtility::TColor(255, 255, 255, 255));
             s_digits.pictures[c - '0']->draw(x, y, 21, 28, false, false, false);
             x += 21;
         } else {
             char separator[2]{c, 0};
-            text_at(separator, x + 5, y + 1, 23);
+            text_at(separator, x + 5, y + 1, 23, variant);
             x += 10;
         }
     }
@@ -133,7 +146,7 @@ void after_draw(ModContext*, void*, void*, void*) {
     graf->setup2D();
     load_records();
     if (s_attempt.target >= 0 && context.encounter >= 0)
-        draw_hud(timing::milliseconds(s_attempt.elapsed));
+        draw_hud(timing::milliseconds(s_attempt.elapsed), s_attempt.variant);
     for (unsigned i = 0; i < timing::count; ++i) {
         cXyz world;
         if (!clear_timer_anchor(i, world)) continue;
@@ -147,14 +160,16 @@ void after_draw(ModContext*, void*, void*, void*) {
             screen.x < mDoGph_gInf_c::getMinXF() || screen.x > mDoGph_gInf_c::getMaxXF() ||
             screen.y < 0 || screen.y > mDoGph_gInf_c::getHeightF()) continue;
         char text[32];
-        format_time(s_records.values[i], text);
-        text_at(text, screen.x, screen.y, std::clamp(18000.0f / w, 12.0f, 22.0f));
+        const unsigned variant = variant_for(i);
+        format_time(s_records.values[i + variant * timing::count], text);
+        text_at(text, screen.x, screen.y, std::clamp(18000.0f / w, 12.0f, 22.0f), variant);
     }
 }
 HookAction before_meter_delete(ModContext*, void*, void*, void*) {
     s_digits.release();
     // Keep run totals over scene changes, but exclude the entire load interval.
     s_attempt.wasCounting = false;
+    s_caveAttempt.wasCounting = false;
     return HOOK_CONTINUE;
 }
 }
@@ -168,14 +183,27 @@ bool clear_timer_near(const cXyz& interactionPosition) {
 }
 
 void begin_clear_timer(int target) {
+    s_caveAttempt = {};
     s_attempt = {};
     if (!clear_timer_enabled() || !save_state_boss_rush_active()) return;
     load_records();
-    s_attempt.begin(target);
+    s_attempt.begin(target, variant_for(target));
+}
+void begin_cave_boss_timer(int boss) {
+    const auto cave = s_attempt;
+    begin_clear_timer(boss);
+    if (cave.target == timing::cave && !cave.completed) s_caveAttempt = cave;
+    s_caveAttempt.wasCounting = false;
+}
+void end_cave_boss_timer() {
+    s_attempt = s_caveAttempt;
+    s_attempt.wasCounting = false;
+    s_caveAttempt = {};
 }
 void finish_clear_timer(int target) {
     if (!clear_timer_enabled() || !save_state_boss_rush_active()) return;
     load_records();
+    if (s_attempt.variant != variant_for(s_attempt.target)) { cancel_clear_timer(); return; }
     if (!s_attempt.finish(target, s_records)) return;
     const auto bytes = s_records.encode();
     if (svc_save->set_blob(mod_ctx, kBlob, bytes.data(), bytes.size()) != MOD_OK)
@@ -183,6 +211,7 @@ void finish_clear_timer(int target) {
 }
 void cancel_clear_timer(int target) {
     if (target < 0 || s_attempt.target == target) s_attempt = {};
+    if (target < 0 || s_caveAttempt.target == target) s_caveAttempt = {};
 }
 void update_clear_timer() {
     if (!clear_timer_enabled() || !save_state_boss_rush_active()) {
@@ -190,7 +219,8 @@ void update_clear_timer() {
         return;
     }
     const auto context = clear_timer_context();
-    if (context.dead) {
+    if (context.dead || (s_attempt.target >= 0 && s_attempt.variant != variant_for(s_attempt.target)) ||
+        (s_caveAttempt.target >= 0 && s_caveAttempt.variant != variant_for(timing::cave))) {
         cancel_clear_timer();
         return;
     }
@@ -200,6 +230,8 @@ void update_clear_timer() {
         ? context.encounter >= 0 && context.encounter <= timing::run
         : context.encounter == s_attempt.target;
     s_attempt.tick(now, context.active && context.counting && matching, context.encounter);
+    // An optional fairy-room boss remains part of the enclosing Cave run.
+    s_caveAttempt.tick(now, context.active && context.counting, context.encounter);
 }
 ModResult initialize_clear_timer(ModError* error) {
     auto result = svc_save->observe_saves(mod_ctx, reset_save, load_save, nullptr, nullptr, &s_observer);
@@ -214,6 +246,7 @@ void shutdown_clear_timer() {
     s_observer = 0;
     s_digits.release();
     s_attempt = {};
+    s_caveAttempt = {};
     s_records = {};
     s_loaded = false;
     mods::hook_uninstall<ClearTimerDraw>(svc_hook);

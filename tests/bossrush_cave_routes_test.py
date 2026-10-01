@@ -26,6 +26,7 @@ stubs = r'''
 #include <iostream>
 #include <any>
 using s8 = signed char; using s16 = short; using s32 = int; using BOOL = int;
+using u8 = unsigned char;
 constexpr int TRUE=1, FALSE=0;
 #include <unordered_set>
 #include <vector>
@@ -81,6 +82,7 @@ bool sHubArrivalWarpPending=false, sBossRushArrivalReady=true;
 int state=3, bossIndex=0, stay=0;
 unsigned restartParam=0;
 void cancel_clear_timer() {}
+void reset_cave_boss_visits() {}
 void dComIfGs_setRestartRoomParam(unsigned value) { restartParam=value; }
 std::string current="D_SB01";
 bool is_bossrush_game_mode_active() { return active; }
@@ -105,6 +107,24 @@ void clear_hub_confirm_state() {}
 void reset_hub_actor_ids() {}
 void reset_direct_final_boss_state() {}
 void reset_bossrush_hazards() {}
+constexpr int kBossRushStateReplay=2, kBossRushEntryCount=18;
+bool ready=true, next=false, sBossRushWarpInFlight=false, sBossRushWarpPending=false;
+bool sCaveArrivalWarpPending=false, sBossRushArrivalAnimating=false;
+bool can_update_bossrush_gameplay(){return ready;}
+bool dComIfGp_isEnableNextStage(){return next;}
+int bossWarps=0;
+void set_bossrush_next_stage(){++bossWarps;}
+void dComIfGp_event_reset(){}
+struct cXyz {float x,y,z; bool operator==(const cXyz&) const = default;};
+cXyz restartPosition{};
+short restartYaw=0; signed char restartRoom=-1;
+void dComIfGs_setRestartRoom(const cXyz& p,short yaw,signed char room){restartPosition=p;restartYaw=yaw;restartRoom=room;}
+std::any nextArgs[6];
+HookAction on_set_next_stage_pre(ModContext*,void*,void*,void*);
+void dComIfGp_setNextStage(const char* stage,s16 point,s8 room,s8 layer){
+    nextArgs[0]=stage;nextArgs[1]=point;nextArgs[2]=room;nextArgs[3]=layer;
+    on_set_next_stage_pre(nullptr,nextArgs,nullptr,nullptr);
+}
 '''
 
 # Read the real destination point so the test catches accidental restart spawns.
@@ -123,6 +143,7 @@ functions += "\n".join(function(name) for name in (
     "on_bossrush_area_switch_pre", "on_bossrush_area_actor_name_post",
     "prepare_darknut_area_entry", "prepare_cave_entrance_return",
     "prepare_hub_return_from_cave", "set_next_stage_args", "on_cave_gameover_close_pre", "on_set_next_stage_pre",
+    "cave_boss_warp_available", "warp_to_cave_boss", "warp_back_to_cave",
 ))
 
 cases = r'''
@@ -143,6 +164,23 @@ void route(const char* requested, const char* expected, int expectedState, int e
     assert(mods::arg<float>(args,4)==7.5 && mods::arg<unsigned>(args,5)==9);
 }
 int main() {
+    // Fairy detours switch to replay state before the normal Cave-exit hook.
+    reset("D_SB01",19);
+    assert(!warp_to_cave_boss(18) && bossWarps==0);
+    for(bool* busy:{&sBossRushWarpInFlight,&sBossRushWarpPending,&next,&sCaveArrivalWarpPending,&sBossRushArrivalAnimating}){
+        *busy=true;assert(!warp_to_cave_boss(5));*busy=false;
+    }
+    ready=false;assert(!warp_to_cave_boss(5));ready=true;
+    assert(warp_to_cave_boss(5) && state==2 && bossIndex==5 && bossWarps==1);
+    route("D_MN06B","D_MN06B",2,12,42,2);
+    current="D_MN06B";
+    const cXyz saved{12,34,56};
+    warp_back_to_cave(saved,-123,s8(19));
+    assert(state==3 && bossIndex==0 && restartPosition==saved && restartYaw==-123 && restartRoom==19);
+    assert(restartParam==0 && sCaveArrivalWarpPending && sBossRushWarpInFlight && !sBossRushArrivalReady);
+    assert(std::strcmp(mods::arg<const char*>(nextArgs,0),"D_SB01")==0);
+    assert(mods::arg<s16>(nextArgs,1)==-1 && mods::arg<s8>(nextArgs,2)==19 && mods::arg<s8>(nextArgs,3)==-1);
+    sCaveArrivalWarpPending=sBossRushWarpInFlight=false;
     // Entrance exit goes to the private, empty Darknut room in hub state.
     reset(); route("F_SP124","D_DLBR0",0,51,0,0);
     assert(!sHubArrivalWarpPending);

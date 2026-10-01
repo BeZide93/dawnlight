@@ -81,5 +81,35 @@ int main() {
     timer.tick(1.0e10, true, shade);
     assert(timer.finish(shade, records));
     assert(records.values[shade] == max_ms); // saturates instead of overflowing
+
+    // All four Cave rule sets coexist, including the purple combined record.
+    records = {};
+    for (unsigned bank = 0; bank < variants; ++bank) {
+        timer.begin(cave, bank);
+        timer.tick(0, true, cave);
+        timer.tick(bank + 1, true, cave);
+        assert(timer.finish(cave, records));
+    }
+    assert(loaded.decode(records.encode()));
+    for (unsigned bank = 0; bank < variants; ++bank)
+        assert(loaded.values[cave + bank * count] == (bank + 1) * 1000);
+    timer.begin(run, 1);
+    second(timer, 0, 4);
+    assert(timer.finish(4, records) && timer.finish(run, records));
+    assert(records.values[4] == 0 && records.values[run] == 0);
+    assert(records.values[4 + count] == 1000 && records.values[run + count] == 1000);
+
+    // Version-one saves remain normal-mode records; no hard records are invented.
+    std::array<uint8_t, 1 + count * 4> legacy{};
+    legacy[0] = 1;
+    legacy[1 + cave * 4] = 0x78;
+    legacy[2 + cave * 4] = 0x56;
+    legacy[3 + cave * 4] = 0x34;
+    legacy[4 + cave * 4] = 0x12;
+    assert(loaded.decode(legacy));
+    assert(loaded.values[cave] == 0x12345678);
+    for (int i = count; i < count * variants; ++i) assert(loaded.values[i] == 0);
+    assert(!loaded.decode({}));
+    assert(loaded.values == Records{}.values);
     std::cout << "Clear timer state tests passed\n";
 }

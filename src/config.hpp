@@ -150,6 +150,8 @@ bool check_for_updates_enabled();
 bool enemy_hard_mode_enabled();
 bool boss_rush_enabled();
 bool clear_timer_enabled();
+bool cave_boss_visits_enabled();
+ConfigVarHandle cave_boss_visits_config_var();
 ConfigVarHandle boss_rush_config_var();
 ConfigVarHandle clear_timer_config_var();
 bool cave_randomizer_enabled();

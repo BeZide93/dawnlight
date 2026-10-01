@@ -921,11 +921,19 @@ ModResult build_boss_rush_tab(
             "Enable the Boss Rush game mode. Turning it off while active returns to the "
             "mode selection; save your progress first. Existing saves are kept.") != MOD_OK)
         return MOD_ERROR;
+    if (add_toggle(ctx, left, "Cave Fairy Boss Warps", cave_boss_visits_config_var(),
+            "In Boss Rush's Cave of Ordeals, fairy mist sends you to a random boss instead "
+            "of summoning the fairy. Defeat it to return to the same room and open the way "
+            "onward. One boss per fairy room, without repeats during the run.") != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Clear Timer", clear_timer_config_var(),
             "Time new boss fights, complete Boss Rush runs and Cave of Ordeals runs. "
             "The last clear time floats above each mirror, portal or Hero's Shade sword. "
             "Pauses, loading and cutscenes do not count. Save the game to keep records "
-            "after restarting. Switching this off cancels the current timed attempt.") != MOD_OK)
+            "after restarting. Normal and Hard Mode records are separate; challenge records "
+            "are red, with a separate purple Cave record when both Boss Hard Mode and "
+            "the Cave Randomizer are enabled. Changing the difficulty or "
+            "switching this off cancels the current timed attempt.") != MOD_OK)
         return MOD_ERROR;
     return MOD_OK;
 }

@@ -52,8 +52,12 @@ jobs:
           c++ -std=c++20 -Wall -Wextra -Werror tests/clear_timer_state_test.cpp -o /tmp/clear-timer-test
           /tmp/clear-timer-test
           python3 tests/clear_timer_integration_test.py
+          python3 tests/clear_timer_variants_test.py
           python3 tests/heroes_shade_native_hooks_test.py
           python3 tests/bossrush_cave_routes_test.py
+          c++ -std=c++20 -Wall -Wextra -Werror tests/cave_boss_pool_test.cpp -o /tmp/cave-boss-pool-test
+          /tmp/cave-boss-pool-test
+          python3 tests/cave_boss_visits_test.py
 
       - name: Test Cave of Ordeals placement and selection
         if: matrix.platform == 'linux-x86_64'

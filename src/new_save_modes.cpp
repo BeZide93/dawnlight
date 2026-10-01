@@ -6,6 +6,7 @@
 #include "save_compat.hpp"
 #include "save_state.hpp"
 #include "clear_timer.hpp"
+#include "cave_boss_visits.hpp"
 #include "d/d_door_param2.h"
 #include "service_imports.hpp"
 
@@ -1956,6 +1957,7 @@ void unregister_bossrush_hub_music_overlay() {
 }
 
 void prepare_midna_hub_warp_item() {
+    reset_cave_boss_visits();
     cancel_clear_timer();
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
@@ -1996,6 +1998,7 @@ void warp_to_bossrush_hub_from_midna(daMidna_c* midna) {
 }
 
 void prepare_darknut_area_entry() {
+    reset_cave_boss_visits();
     cancel_clear_timer();
     // A positive spawn can still inherit a previous warp/demo mode unless
     // the restart override is cleared before dStage_playerInit runs.
@@ -2011,6 +2014,7 @@ void prepare_darknut_area_entry() {
 }
 
 void prepare_cave_entrance_return() {
+    reset_cave_boss_visits();
     cancel_clear_timer();
     set_boss_rush_state(kBossRushStateCaveOfOrdeals);
     set_boss_rush_index(0);
@@ -2021,6 +2025,7 @@ void prepare_cave_entrance_return() {
 }
 
 void prepare_hub_return_from_cave() {
+    reset_cave_boss_visits();
     cancel_clear_timer();
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
@@ -2048,6 +2053,7 @@ const char* bossrush_portal_name(int portal) {
 }
 
 void start_cave_of_ordeals_warp() {
+    reset_cave_boss_visits();
     begin_clear_timer(timing::cave);
     reset_direct_final_boss_state();
     delete_hub_actors();
@@ -3601,7 +3607,8 @@ void update_bossrush() {
             const int room = dComIfGp_roomControl_getStayNo();
             // Room 48 is the final combat floor; room 49 is the Great Fairy.
             // Use the native door's completed clear switch (including its spawn grace period).
-            if (room == 49 || (room == 48 && fpcM_Search(cleared_final_cave_door, nullptr)))
+            if ((!cave_boss_visits_enabled() || cave_boss_final_cleared()) &&
+                (room == 49 || (room == 48 && fpcM_Search(cleared_final_cave_door, nullptr))))
                 finish_clear_timer(timing::cave);
         }
         reset_hub_runtime_when_away();
@@ -3619,6 +3626,7 @@ void update_bossrush() {
     update_bossrush_hazards();
 
     if (bossrush_should_return_to_hub_after_death()) {
+        reset_cave_boss_visits();
         set_boss_rush_state(kBossRushStateHub);
         set_boss_rush_index(0);
         set_bossrush_return_place();
@@ -3645,6 +3653,7 @@ void update_bossrush() {
         mark_bossrush_entry_defeated(entry);
         if (boss_rush_state() == kBossRushStateReplay) {
             clear_boss_flags(entry);
+            if (return_from_cave_boss()) return;
             set_boss_rush_state(kBossRushStateHub);
             set_boss_rush_index(0);
             return_to_hub_after_replay_victory();
@@ -3956,6 +3965,7 @@ bool redirect_replay_to_hub(const BossRushEntry& entry) {
 
     mark_bossrush_entry_defeated(entry);
     clear_boss_flags(entry);
+    if (return_from_cave_boss()) return true;
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
     dComIfGp_event_reset();
@@ -4194,6 +4204,7 @@ HookAction on_ganondorf_barrier_execute_pre(ModContext*, void* args, void*, void
 }
 
 void reset_bossrush_runtime_state(bool deleteActors) {
+    reset_cave_boss_visits();
     cancel_clear_timer();
     stop_bossrush_hub_music();
     sAdvancePending = false;
@@ -4566,6 +4577,34 @@ bool get_boss_portal_symbol(unsigned index, BossPortalSymbolSurface& surface, bo
     return true;
 }
 
+bool cave_boss_warp_available() {
+    return is_bossrush_game_mode_active() && is_boss_rush() &&
+        boss_rush_state() == kBossRushStateCaveOfOrdeals && is_current_stage_name(kCaveOfOrdealsStage) &&
+        can_update_bossrush_gameplay() && !sBossRushWarpInFlight && !sBossRushWarpPending &&
+        !dComIfGp_isEnableNextStage() && !sCaveArrivalWarpPending && !sBossRushArrivalAnimating;
+}
+bool warp_to_cave_boss(unsigned boss) {
+    if (boss >= kBossRushEntryCount || !cave_boss_warp_available()) return false;
+    reset_direct_final_boss_state();
+    set_boss_rush_state(kBossRushStateReplay);
+    set_boss_rush_index(static_cast<u8>(boss));
+    set_bossrush_next_stage();
+    return true;
+}
+void warp_back_to_cave(const cXyz& position, short yaw, signed char room) {
+    set_boss_rush_state(kBossRushStateCaveOfOrdeals);
+    set_boss_rush_index(0);
+    reset_direct_final_boss_state();
+    reset_bossrush_hazards();
+    dComIfGp_event_reset();
+    dComIfGs_setRestartRoom(position, yaw, room);
+    dComIfGs_setRestartRoomParam(0);
+    sCaveArrivalWarpPending = true;
+    sBossRushArrivalReady = false;
+    sBossRushWarpInFlight = true;
+    dComIfGp_setNextStage(kCaveOfOrdealsStage, -1, room, kCaveOfOrdealsLayer);
+}
+
 ClearTimerContext clear_timer_context() {
     ClearTimerContext context;
     context.active = is_bossrush_game_mode_active() && is_boss_rush() &&
@@ -4682,6 +4721,8 @@ ModResult register_new_save_modes(ModError* error) {
     }
     result = initialize_clear_timer(error);
     if (result != MOD_OK) return result;
+    result = initialize_cave_boss_visits(error);
+    if (result != MOD_OK) return result;
 
     result = initialize_boss_portal_mirrors(error);
     if (result != MOD_OK) return result;
@@ -4708,6 +4749,7 @@ void update_new_save_modes() {
 }
 
 void shutdown_new_save_modes() {
+    shutdown_cave_boss_visits();
     shutdown_clear_timer();
     shutdown_heroes_shade_encounter();
     shutdown_boss_portal_symbols();

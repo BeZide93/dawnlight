@@ -6,9 +6,9 @@
 #include "SSystem/SComponent/c_math.h"
 #include "SSystem/SComponent/c_phase.h"
 #include "d/d_com_inf_game.h"
-#include "d/actor/d_a_e_sh.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_create_req.h"
+#include "f_pc/f_pc_method.h"
 #include "mods/svc/hook.hpp"
 
 #include <array>
@@ -29,7 +29,7 @@ DEFINE_HOOK(&dStage_dt_c_roomReLoader, RoomActorsHook);
 DEFINE_HOOK(&fpcSCtRq_Request, RequestHook);
 DEFINE_HOOK(&fpcSCtRq_phase_Load, LoadHook);
 DEFINE_HOOK(&fpcBs_Create, AllocateHook);
-DEFINE_HOOK_SYMBOL("d_a_e_sh.cpp#daE_SH_Execute", int(e_sh_class*), StalhoundExecuteHook);
+DEFINE_HOOK(&fpcMtd_Method, StalhoundProcessHook);
 
 struct Enemy {
     s16 profile;
@@ -125,24 +125,34 @@ bool in_cave() {
     return stage != nullptr && std::strcmp(stage, "D_SB01") == 0;
 }
 
-HookAction before_stalhound_execute(ModContext*, void* args, void*, void*) {
-    const auto* actor = mods::arg<e_sh_class*>(args, 0);
-    const bool owned = actor != nullptr && in_cave() &&
-        s_stalhounds.contains(fopAcM_GetID(&actor->enemy));
+HookAction before_stalhound_process(ModContext*, void* args, void*, void*) {
+    auto* process = mods::arg<void*>(args, 1);
+    bool owned = false;
+    if (process != nullptr && fopAcM_IsActor(process) && in_cave()) {
+        auto* actor = static_cast<fopAc_ac_c*>(process);
+        if (fopAcM_GetName(actor) == fpcNm_E_SH_e &&
+            s_stalhounds.contains(fopAcM_GetID(actor))) {
+            const auto* methods = reinterpret_cast<const process_method_class*>(actor->sub_method);
+            // Use the profile's actual execute pointer. A private static symbol
+            // alias is not available in every Dusklight platform manifest.
+            owned = methods != nullptr &&
+                mods::arg<process_method_func>(args, 0) == methods->execute_method;
+        }
+    }
     if (!owned && s_stalhoundTimeFrames.empty()) return HOOK_CONTINUE;
 
     auto& daytime = dKy_getEnvlight()->daytime;
     // Native AI checks daytime both when emerging and when deciding to burrow;
     // its effects also use it. Scope midnight to this actor's synchronous update
     // and restore immediately, preserving native animations/AI and the real clock.
-    // A nested native Stalhound must see the outermost original time instead.
+    // A nested unrelated process must see the outermost original time instead.
     const float actorTime = owned ? 0.0f : s_stalhoundTimeFrames.front().daytime;
     s_stalhoundTimeFrames.push_back({args, daytime});
     daytime = actorTime;
     return HOOK_CONTINUE;
 }
 
-void after_stalhound_execute(ModContext*, void* args, void*, void*) {
+void after_stalhound_process(ModContext*, void* args, void*, void*) {
     // Post hooks can run even if another mod skipped before our pre hook.
     if (!s_stalhoundTimeFrames.empty() && s_stalhoundTimeFrames.back().args == args) {
         dKy_getEnvlight()->daytime = s_stalhoundTimeFrames.back().daytime;
@@ -279,7 +289,7 @@ void update_cave_randomizer() {
 }
 
 void shutdown_cave_randomizer() {
-    mods::hook::uninstall<StalhoundExecuteHook>(svc_hook);
+    mods::hook::uninstall<StalhoundProcessHook>(svc_hook);
     if (!s_stalhoundTimeFrames.empty()) {
         dKy_getEnvlight()->daytime = s_stalhoundTimeFrames.front().daytime;
         s_stalhoundTimeFrames.clear();
@@ -299,8 +309,8 @@ ModResult install_cave_randomizer(ModError* error) {
     if (result == MOD_OK) result = mods::hook::add_post<RequestHook>(svc_hook, after_request);
     if (result == MOD_OK) result = mods::hook::add_pre<LoadHook>(svc_hook, before_load);
     if (result == MOD_OK) result = mods::hook::add_pre<AllocateHook>(svc_hook, before_allocate);
-    if (result == MOD_OK) result = mods::hook::add_pre<StalhoundExecuteHook>(svc_hook, before_stalhound_execute);
-    if (result == MOD_OK) result = mods::hook::add_post<StalhoundExecuteHook>(svc_hook, after_stalhound_execute);
+    if (result == MOD_OK) result = mods::hook::add_pre<StalhoundProcessHook>(svc_hook, before_stalhound_process);
+    if (result == MOD_OK) result = mods::hook::add_post<StalhoundProcessHook>(svc_hook, after_stalhound_process);
     if (result != MOD_OK) {
         shutdown_cave_randomizer();
         return mods::set_error(error, result, "failed to install Cave of Ordeals randomizer");

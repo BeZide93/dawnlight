@@ -35,19 +35,20 @@ new layout.
   the slot **in the same room**. Small horizontal offsets handle wall placements;
   flying replacements start 200 units above that floor. Original ceiling flags,
   paths, rotations, scales, and switches are replaced with standalone settings.
-- The pool contains 36 variants: Bokoblins, Mini Freezards, Keese and Bubbles
+- The main pool contains 30 entries: Bokoblins, Mini Freezards, Keese and Bubbles
   (normal/fire/ice), Tektites, Gibdos, Chilfos, Stalchildren, Rats, club and bow
   Bulblins, Aeralfos, Bomskits, ground Deku Babas, Helmasaurs, Helmasauruses,
-  Kargaroks, Puppets, Guays, Chus (green/red/blue/yellow/purple/rare/black),
+  Kargaroks, Puppets, Guays, one shared Chu entry,
   Lizalfos, Dodongos, Dynalfos, ground Skulltulas, Stalfos, and Darknuts.
   Each eligible entry has equal probability; entries sharing the
   original actor profile are excluded. There is no per-room Darknut limit.
   Generators and bosses with arena scripts are not replacement types.
-- Chus start as single, smallest-size ground enemies without ceiling respawns.
-  Native merging and subsequent splitting remain enabled. Green Chus are only
-  eligible after obtaining Magic Armor, as native creation otherwise fails.
-  If rare Chu jelly is already carried, the game converts a rare Chu to red or
-  blue. Beamos are not in the pool.
+- If the Chu entry is selected, a second independent roll chooses red, blue,
+  yellow, purple, or black, with a 20% chance each. Green and rare Chus are not
+  selected. The five colors together have the weight of one main-pool entry.
+  Chus start as single, smallest-size ground enemies without ceiling respawns.
+  Native merging and subsequent splitting remain enabled. Beamos are not in
+  the pool.
 - NPCs, Great Fairies, doors, chests, items, and room-clear logic stay native.
   Projectiles and runtime children are not rerolled. Invisible Wolfos pack
   coordinators and their type-dependent children stay native to preserve their

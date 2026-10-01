@@ -63,13 +63,7 @@ constexpr Enemy kEnemies[] = {
     {fpcNm_E_KR_e, 0xffffff00, 200.0f, -1, 0xff}, // Flying Kargarok, no path/switch
     {fpcNm_E_FS_e, 0x00000000, 0.0f},   // Standalone Puppet
     {fpcNm_E_GE_e, 0x00ffff01, 200.0f}, // Flying Guay, no defeated switch/group
-    {fpcNm_E_SM2_e, 0xffff0000, 0.0f},  // Small green Chu (requires Magic Armor)
-    {fpcNm_E_SM2_e, 0xffff0010, 0.0f},  // Small red Chu
-    {fpcNm_E_SM2_e, 0xffff0020, 0.0f},  // Small blue Chu
-    {fpcNm_E_SM2_e, 0xffff0030, 0.0f},  // Small yellow Chu
-    {fpcNm_E_SM2_e, 0xffff0040, 0.0f},  // Small purple Chu
-    {fpcNm_E_SM2_e, 0xffff0050, 0.0f},  // Small rare Chu (native bottle restriction)
-    {fpcNm_E_SM2_e, 0xffff0060, 0.0f},  // Small black Chu
+    {fpcNm_E_SM2_e, 0xffff0010, 0.0f},  // One small Chu entry; color rolled separately
     {fpcNm_E_DN_e, 0xff000000, 0.0f},   // Lizalfos
     {fpcNm_E_DD_e, 0xffff0000, 0.0f},   // Dodongo
     {fpcNm_E_MF_e, 0xff000000, 0.0f},   // Dynalfos
@@ -77,6 +71,26 @@ constexpr Enemy kEnemies[] = {
     {fpcNm_E_SF_e, 0x0000ff00, 0.0f, -1, 0xff}, // Standing Stalfos, no switch
     {fpcNm_B_TN_e, 0x000001ff, 0.0f},   // Darknut without intro
 };
+
+Enemy choose_enemy(s16 originalProfile) {
+    std::array<unsigned, std::size(kEnemies)> choices{};
+    unsigned count = 0;
+    for (unsigned i = 0; i < std::size(kEnemies); ++i) {
+        if (kEnemies[i].profile != originalProfile) choices[count++] = i;
+    }
+    unsigned pick = static_cast<unsigned>(cM_rndF(static_cast<float>(count)));
+    if (pick >= count) pick = count - 1;
+    Enemy replacement = kEnemies[choices[pick]];
+    if (replacement.profile == fpcNm_E_SM2_e) {
+        // Red, blue, yellow, purple, black: one equal-weight Chu slot in the
+        // main pool, then an independent color roll. Never green or rare.
+        constexpr u32 colors[] = {1, 2, 3, 4, 6};
+        unsigned color = static_cast<unsigned>(cM_rndF(static_cast<float>(std::size(colors))));
+        if (color >= std::size(colors)) color = std::size(colors) - 1;
+        replacement.parameters = (replacement.parameters & ~0xf0u) | (colors[color] << 4);
+    }
+    return replacement;
+}
 
 struct RoomLoad {
     void* args;
@@ -191,20 +205,7 @@ HookAction before_allocate(ModContext*, void* args, void*, void*) {
     if (!enemy.ready || !in_cave() || append == nullptr ||
         mods::arg<s16>(args, 0) != enemy.profile || append->room_no != enemy.room) return HOOK_CONTINUE;
 
-    std::array<unsigned, std::size(kEnemies)> choices{};
-    unsigned count = 0;
-    for (unsigned i = 0; i < std::size(kEnemies); ++i) {
-        if (kEnemies[i].profile == enemy.profile) continue;
-        // Native green Chu creation fails before Magic Armor has been obtained.
-        // Omit that choice instead of silently losing an authored enemy slot.
-        if (kEnemies[i].profile == fpcNm_E_SM2_e &&
-            (kEnemies[i].parameters & 0xf0) == 0 &&
-            !dComIfGs_isItemFirstBit(dItemNo_ARMOR_e)) continue;
-        choices[count++] = i;
-    }
-    unsigned pick = static_cast<unsigned>(cM_rndF(static_cast<float>(count)));
-    if (pick >= count) pick = count - 1;
-    const auto& replacement = kEnemies[choices[pick]];
+    const auto replacement = choose_enemy(enemy.profile);
 
     // Change the profile BEFORE allocation, never reinterpret an existing
     // enemy as a different-sized actor. Dusklight's TARGET_PC module loader is

@@ -940,6 +940,15 @@ ModResult build_hard_mode_tab(
         return MOD_ERROR;
     }
 
+    if (add_toggle(ctx, left, "Cave of Ordeals Randomizer", cave_randomizer_config_var(),
+            "Randomizes Cave of Ordeals enemy spawns while preserving the number of placed enemies. "
+            "Ceiling spawns are moved to safe ground. Applies when a room loads; reload the Cave "
+            "after changing this option. Independent of Enemy Hard Mode and Dawnlight Mode.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+
     if (add_section(ctx, left, "Enemy Scaling") != MOD_OK) return MOD_ERROR;
     if (add_number(ctx, left, "HP Scaling", health_scale_config_var(), 1, 9999, 10, "%",
             "Scales enemy health when enemies spawn. Independent of Dawnlight Mode.")

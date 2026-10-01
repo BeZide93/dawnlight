@@ -74,6 +74,7 @@ ConfigVarHandle s_zItemSlot = 0;
 ConfigVarHandle s_dawnlightTouchUi = 0;
 ConfigVarHandle s_checkForUpdates = 0;
 ConfigVarHandle s_enemyHardMode = 0;
+ConfigVarHandle s_caveRandomizer = 0;
 ConfigVarHandle s_removeNormalHitInvulnerability = 0;
 ConfigVarHandle s_bossrushHardmodeHazards = 0;
 ConfigVarHandle s_hideShield = 0;
@@ -972,6 +973,7 @@ ModResult register_config(ModError* error) {
         register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
         register_bool("check-for-updates", true, s_checkForUpdates) != MOD_OK ||
         register_bool("enemy-hard-mode", false, s_enemyHardMode) != MOD_OK ||
+        register_bool("cave-of-ordeals-randomizer", false, s_caveRandomizer) != MOD_OK ||
         register_bool("remove-normal-hit-invulnerability", false,
             s_removeNormalHitInvulnerability) != MOD_OK ||
         register_bool("bossrush-hardmode-hazards", false, s_bossrushHardmodeHazards) != MOD_OK ||
@@ -1388,6 +1390,10 @@ bool check_for_updates_enabled() {
     return kDawnlightUpdateCheckerAvailable && get_bool(s_checkForUpdates, true);
 }
 
+bool cave_randomizer_enabled() {
+    return get_bool(s_caveRandomizer, false);
+}
+
 bool enemy_hard_mode_enabled() {
     return get_bool(s_enemyHardMode, false);
 }
@@ -1662,6 +1668,10 @@ ConfigVarHandle dawnlight_touch_ui_config_var() {
 
 ConfigVarHandle check_for_updates_config_var() {
     return s_checkForUpdates;
+}
+
+ConfigVarHandle cave_randomizer_config_var() {
+    return s_caveRandomizer;
 }
 
 ConfigVarHandle enemy_hard_mode_config_var() {

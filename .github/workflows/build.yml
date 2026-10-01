@@ -46,6 +46,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Test Cave of Ordeals spawn placement
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror tests/cave_randomizer_ground_test.cpp -o /tmp/cave-ground-test
+          /tmp/cave-ground-test
+
       - name: Test Z item provider guards
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/z_item_provider_guard_test.py

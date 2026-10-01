@@ -606,10 +606,10 @@ ModResult initialize_fierce_deity(ModError* error) {
     result = mods::hook::add_pre<FierceGameCombosHook>(svc_hook, before_fierce_game_combos);
     if (result != MOD_OK) {
         return mods::set_error(error, result,
-            "failed to install Dawnlight Fierce Deity input hook");
+            "failed to install Dawnlight Dark Link input hook");
     }
     if ((result = add_post<FierceMidnaTriggerHook>(error, after_fierce_midna_trigger,
-            "failed to install Dawnlight Fierce Deity touch Midna guard")) != MOD_OK) return result;
+            "failed to install Dawnlight Dark Link touch Midna guard")) != MOD_OK) return result;
     if ((result = add_post<FiercePlayerExecuteHook>(error, after_player_execute,
              "failed to install Dawnlight Fierce Deity player hook")) != MOD_OK ||
         (result = add_post<FierceAttackPowerHook>(error, after_attack_power_check,

@@ -114,7 +114,7 @@ struct Heap {
 std::vector<std::unique_ptr<Heap>> heaps;
 bool failModels=false, failScratch=false, failPin=false, compatible=true;
 unsigned scratchRequested=0;
-void warp_log(const char*) {}
+void warp_warning(const char*) {}
 void stop_warp_particles() {}
 struct JKRSolidHeap : Heap {
     static JKRSolidHeap* create(unsigned,Heap*,bool) {
@@ -165,7 +165,7 @@ using OutfitModels=std::array<J3DModel*,6>;
 bool warp_compatible(const OutfitModels&,daAlink_c*) {return compatible;}
 bool player_model(daAlink_c* link, J3DModel* model) {return model && model==link->mpLinkModel;}
 '''
-state = transition[transition.index('struct WarpLayer'):transition.index('void warp_log')]
+state = transition[transition.index('struct WarpLayer'):transition.index('void warp_warning')]
 callbacks = ''.join(function(transition, name) for name in (
     'outfit_models', 'transition_owner', 'restore_archive_heap', 'discard_transition', 'prepare_transition', 'warp_layer'))
 callbacks += ''.join(function(visual, name) for name in (

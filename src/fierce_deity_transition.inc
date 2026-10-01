@@ -22,9 +22,6 @@ struct WarpTransition {
     FierceDeityTint fromTint = FierceDeityTint::None;
     FierceDeityTint toTint = FierceDeityTint::None;
     bool committed = false;
-    unsigned queuedModels = 0;
-    unsigned maskedShapes = 0;
-    unsigned projectedGroups = 0;
     u32 particleKey = 0;
     bool particleFailureReported = false;
     FierceWarpWipe wipe;
@@ -32,8 +29,8 @@ struct WarpTransition {
 WarpTransition s_transition;
 bool s_extraWarpParticleStep = false;
 
-void warp_log(const char* message) {
-    if (svc_log != nullptr) svc_log->info(mod_ctx, message);
+void warp_warning(const char* message) {
+    if (svc_log != nullptr) svc_log->warn(mod_ctx, message);
 }
 
 JPABaseEmitter* warp_particle_emitter() {
@@ -58,7 +55,7 @@ void update_warp_particles(daAlink_c* link) {
     if (g_dComIfG_gameInfo.play.getParticle() == nullptr ||
         dPa_control_c::getEmitterManager() == nullptr) return;
     // These are Link's COMMON warp resources, not a scene/boss archive.
-    // Assemble the Fierce Deity appearance on entry, dissolve it on exit.
+    // Assemble the selected appearance on entry, dissolve it on exit.
     // APP is authored at the feet; DISAPP is anchored to the moving boundary.
     cXyz position = link->current.pos;
     const u16 effect = s_transition.wipe.entering ?
@@ -69,7 +66,7 @@ void update_warp_particles(daAlink_c* link) {
     auto* emitter = link->setEmitter(&s_transition.particleKey, effect,
                                      &position, &link->shape_angle);
     if (emitter == nullptr && !s_transition.particleFailureReported) {
-        warp_log("Fierce Deity warp: native flying-particle emitter unavailable");
+        warp_warning("Dark Link warp: native flying-particle emitter unavailable");
         s_transition.particleFailureReported = true;
     }
 }
@@ -126,34 +123,12 @@ bool warp_compatible(const OutfitModels& models, daAlink_c* link) {
         if (model == nullptr) continue;
         // CPU-deformed vertex buffers cannot be retargeted by joint matrices.
         if (model->getSkinDeform() != nullptr || model->mDeformData != nullptr) {
-            warp_log("Fierce Deity warp: skipped (CPU-deformed model)");
             return false;
         }
         auto* data = model->getModelData();
         for (u16 i = 0; i < data->getMaterialNum(); ++i) {
             auto* material = data->getMaterialNodePointer(i);
-            if (native_warp_coord(model, material, link) < 0) {
-                auto* tev = material->getTevBlock();
-                auto* gen = material->getTexGenBlock();
-                const u32 type = tev != nullptr ? tev->getType() : 0;
-                const bool slot3 = type == 'TVB4' || type == 'TVPT' || type == 'TV16';
-                const u16 texNo = slot3 ? tev->getTexNo(3) : 0xFFFF;
-                auto* texture = data->getTexture();
-                const unsigned coord = gen != nullptr ? gen->getTexGenNum() : 8;
-                auto* matrix = gen != nullptr && coord < 4 ? gen->getTexMtx(coord) : nullptr;
-                auto* tc = gen != nullptr && coord < 4 ? gen->getTexCoord(coord) : nullptr;
-                const bool warpTexture = texture != nullptr && texNo < texture->getNum() &&
-                    texture->getImgDataPtr(texNo) == link->mpWarpTexData;
-                char message[320];
-                std::snprintf(message, sizeof(message),
-                    "Fierce Deity warp: skipped %s part=%u material=%u (block=%08x stages=%u coord=%u tex3=%u warp=%u src=%u matrix=%u)",
-                    link->mArcName, part, unsigned(i), unsigned(type),
-                    tev != nullptr ? unsigned(tev->getTevStageNum()) : 0, coord, unsigned(texNo),
-                    unsigned(warpTexture), tc != nullptr ? unsigned(tc->getTexGenSrc()) : 255,
-                    matrix != nullptr ? unsigned(matrix->getTexMtxInfo().mInfo) : 255);
-                warp_log(message);
-                return false;
-            }
+            if (native_warp_coord(model, material, link) < 0) return false;
         }
     }
     return models[0] != nullptr;
@@ -169,14 +144,6 @@ void restore_archive_heap(daAlink_c* link) {
 
 void discard_transition(daAlink_c* link) {
     stop_warp_particles();
-    if (s_transition.committed) {
-        char message[192];
-        std::snprintf(message, sizeof(message),
-            "Fierce Deity warp: ended ticks=%u queued=%u masked=%u projected=%u",
-            s_transition.wipe.ticks, s_transition.queuedModels,
-            s_transition.maskedShapes, s_transition.projectedGroups);
-        warp_log(message);
-    }
     restore_archive_heap(link);
     // The replacement model heap belongs to Link. Only dispose the OUTGOING
     // instances, then their archive reference. Link keeps its original archive
@@ -193,7 +160,7 @@ void prepare_transition(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTi
     auto* oldModels = link->mAnmHeap3.mAnimeHeap;
     auto* oldArchive = link->mpArcHeap;
     if (oldModels == nullptr || oldArchive == nullptr) {
-        warp_log("Fierce Deity warp: skipped (player heaps unavailable)");
+        warp_warning("Dark Link warp: skipped (player heaps unavailable)");
         return;
     }
 
@@ -204,7 +171,7 @@ void prepare_transition(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTi
     auto* newModels = JKRSolidHeap::create(oldModels->getHeapSize() + 0x100,
                                          oldModels->getParent(), false);
     if (newModels == nullptr) {
-        warp_log("Fierce Deity warp: skipped (model heap allocation failed)");
+        warp_warning("Dark Link warp: skipped (model heap allocation failed)");
         return;
     }
     // The pinned target is already loaded: resLoad only acquires its reference.
@@ -213,11 +180,11 @@ void prepare_transition(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTi
     auto* scratch = JKRExpHeap::create(0x1000,
                                       oldArchive->getParent(), false);
     if (scratch == nullptr) {
-        warp_log("Fierce Deity warp: skipped (scratch heap allocation failed)");
+        warp_warning("Dark Link warp: skipped (scratch heap allocation failed)");
         newModels->destroy(); return;
     }
     if (!dComIfG_setObjectRes(link->mArcName, u8{0}, nullptr)) {
-        warp_log("Fierce Deity warp: skipped (outgoing archive reference failed)");
+        warp_warning("Dark Link warp: skipped (outgoing archive reference failed)");
         scratch->destroy(); newModels->destroy(); return;
     }
     s_transition.owner = link;
@@ -288,7 +255,6 @@ void draw_outgoing(daAlink_c* link) {
         copy_outgoing_pose(model, incoming[i]);
         g_env_light.setLightTevColorType_MAJI(model, &link->tevStr);
         mDoExt_modelEntryDL(model);
-        ++s_transition.queuedModels;
     }
 }
 

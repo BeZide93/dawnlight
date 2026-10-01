@@ -25,13 +25,12 @@
 #include "mods/service.hpp"
 
 #include <array>
-#include <cstdio>
 #include <cstring>
 
 namespace dawnlight {
 namespace {
 
-// Independent implementation of the dark glossy/red-eye appearance. Do not
+// Draw-local implementation of the selectable body and eye appearances. Do not
 // patch shared BMD materials: another actor (including Dark Link) can use them.
 // Apply GX state only after the native material/differed display lists, and replay
 // those lists immediately afterward, including between batched shared materials.
@@ -491,7 +490,6 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         next = effect.warp(next, scope.warpCoord, identity, scope.inverse, image->width, image->height);
     }
     scope.applied = effect.apply(next, scope.tint != FierceDeityTint::None);
-    if (scope.applied && scope.warp) ++s_transition.maskedShapes;
     return HOOK_CONTINUE;
 }
 
@@ -511,7 +509,7 @@ HookAction before_primitive_draw(ModContext*, void*, void*, void*) {
     warp_texture_matrix(matrix);
     DarkDisplayList projection;
     projection.post_matrix(scope.warpCoord, matrix);
-    if (projection.submit()) ++s_transition.projectedGroups;
+    projection.submit();
     return HOOK_CONTINUE;
 }
 
@@ -550,7 +548,6 @@ void fierce_deity_transition_commit(daAlink_c* link) {
     // OUT is the native appearance sound; IN_TATE is vertical disappearance.
     link->seStartOnlyReverb(s_transition.wipe.entering ?
         Z2SE_AL_WARP_OUT : Z2SE_AL_WARP_IN_TATE);
-    warp_log("Fierce Deity warp: started (50 ticks, native material)");
     update_warp_particles(link);
 }
 
@@ -585,7 +582,7 @@ ModResult initialize_fierce_deity_visual(ModError* error) {
         (result = mods::hook::add_pre<FiercePrimitiveDrawHook>(svc_hook, before_primitive_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceWarpParticleCalcHook>(svc_hook, after_warp_particle_calc)) != MOD_OK ||
         (result = mods::hook::add_post<FiercePlayerDrawHook>(svc_hook, after_player_draw)) != MOD_OK) {
-        return mods::set_error(error, result, "failed to install Dawnlight Fierce Deity visual hooks");
+        return mods::set_error(error, result, "failed to install Dawnlight Dark Link visual hooks");
     }
     return MOD_OK;
 }

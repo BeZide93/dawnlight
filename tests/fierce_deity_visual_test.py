@@ -228,7 +228,6 @@ FierceDeityTint palette=FierceDeityTint::Dark;
 FierceDeityTint fierce_deity_displayed_tint() {return darkActive ? palette : FierceDeityTint::None;}
 struct WarpLayer { bool active=false; FierceDeityTint tint=FierceDeityTint::None; bool inverse=false; };
 bool warpTest = false, warpDark = false, warpInverse = false;
-struct { unsigned maskedShapes=0, projectedGroups=0; } s_transition;
 WarpLayer warp_layer(J3DModel* model) {
     return model == link.mpLinkModel ? WarpLayer{warpTest,warpDark ? palette : FierceDeityTint::None,warpInverse} : WarpLayer{};
 }

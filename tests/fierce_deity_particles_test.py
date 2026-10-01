@@ -47,7 +47,7 @@ struct {
     FierceWarpWipe wipe;
 } s_transition;
 bool s_extraWarpParticleStep=false;
-void warp_log(const char*) {++warnings;}
+void warp_warning(const char*) {++warnings;}
 struct { struct { void* getParticle() {return controllerAlive?this:nullptr;} } play; } g_dComIfG_gameInfo;
 struct dPa_control_c {static void* getEmitterManager() {return managerAlive?&own:nullptr;} };
 JPABaseEmitter* dComIfGp_particle_getEmitter(u32 key) {

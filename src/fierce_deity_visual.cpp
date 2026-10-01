@@ -14,6 +14,7 @@
 #include "JSystem/JParticle/JPAResource.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_particle_name.h"
+#include "Z2AudioLib/Z2SeMgr.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_op/f_op_camera_mng.h"
 #include "f_pc/f_pc_leaf.h"
@@ -506,7 +507,7 @@ void fierce_deity_transition_prepare(daAlink_c* link, bool fromDark, bool toDark
 }
 
 void fierce_deity_transition_commit(daAlink_c* link) {
-    if (!transition_owner(link)) return;
+    if (!transition_owner(link) || s_transition.committed) return;
     restore_archive_heap(link);
     // Native clothes changes reuse the same model heap/address. Our retained
     // outgoing instances require rebinding the skeletal collision explicitly.
@@ -516,6 +517,10 @@ void fierce_deity_transition_commit(daAlink_c* link) {
         return;
     }
     s_transition.committed = true;
+    // Match procCoWarpInit's human sounds to our APP / DISAPP particles.
+    // OUT is the native appearance sound; IN_TATE is vertical disappearance.
+    link->seStartOnlyReverb(s_transition.wipe.entering ?
+        Z2SE_AL_WARP_OUT : Z2SE_AL_WARP_IN_TATE);
     warp_log("Fierce Deity warp: started (50 ticks, native material)");
     update_warp_particles(link);
 }

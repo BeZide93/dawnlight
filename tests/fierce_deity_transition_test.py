@@ -130,8 +130,11 @@ struct JKRExpHeap : Heap {
         heaps.push_back(std::move(p)); return result;
     }
 };
+constexpr u32 Z2SE_AL_WARP_OUT=0x20098, Z2SE_AL_WARP_IN_TATE=0x20096;
 struct J3DModel {};
 struct daAlink_c {
+    unsigned soundCalls=0; u32 lastSound=0;
+    void seStartOnlyReverb(u32 sound) {++soundCalls;lastSound=sound;}
     unsigned id=1;
     const char* mArcName="Kmdl";
     JKRExpHeap* mpArcHeap=nullptr;
@@ -216,6 +219,10 @@ int main() {
             auto* scratch=link.mpArcHeap;
             nativeSwap(target);
             assert(!scratch->alive && link.mpArcHeap==archiveHeap);
+            assert(link.soundCalls==1);
+            assert(link.lastSound==(entering?Z2SE_AL_WARP_OUT:Z2SE_AL_WARP_IN_TATE));
+            fierce_deity_transition_commit(&link); // repeated commit cannot replay sound
+            assert(link.soundCalls==1);
             for(int i=0;i<49;++i) {
                 fierce_deity_transition_tick(&link);
                 assert(modelHeap->alive && archiveHeap->alive && newHeap->alive);
@@ -223,6 +230,7 @@ int main() {
             fierce_deity_transition_tick(&link);
             assert(!fierce_deity_transition_busy() && !modelHeap->alive);
             assert(archiveHeap->alive && newHeap->alive && refs[target]==1);
+            assert(link.soundCalls==1); // no per-tick or completion replay
             assert(refs["Kmdl"]==(std::strcmp(target,"Kmdl")==0?1:0));
         }
     }
@@ -233,6 +241,8 @@ int main() {
         auto* arc=link.mpArcHeap; auto* model=link.mAnmHeap3.mAnimeHeap;
         fierce_deity_transition_prepare(&link,false,true,true);
         assert(!fierce_deity_transition_busy() && refs["Kmdl"]==1);
+        fierce_deity_transition_commit(&link);
+        assert(link.soundCalls==0); // no sound without a visual transition
         assert(link.mpArcHeap==arc && link.mAnmHeap3.mAnimeHeap==model);
         for(const auto& heap:heaps)
             if(heap.get()!=arc && heap.get()!=model) assert(!heap->alive);

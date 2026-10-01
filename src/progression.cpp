@@ -80,7 +80,7 @@ void update_progression() {
         queue_glider_reward();
     }
     if (unlocked & 2) notify("Revali's Gale unlocked! The Gale counter is now available.");
-    if (unlocked & 4) notify("Fierce Deity unlocked!");
+    if (unlocked & 4) notify("Dark Link unlocked!");
     if (unlocked & 16) notify("Dual Wield unlocked! Select the Ordon Sword beside the shields in Collection.");
     if (unlocked & 8) {
         char message[96];

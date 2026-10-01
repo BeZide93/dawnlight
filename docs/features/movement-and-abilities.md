@@ -105,7 +105,7 @@ and scene transitions. The state lasts for the session, without save-file data.
 ### Gale Counter
 
 **Gale Counter** toggles only the display: native Epona sprint icons beneath
-the Fierce Deity bar, with full and spent charges aligned at the bars' left
+the Dark Link bar, with full and spent charges aligned at the bars' left
 anchor. **Custom Gale Counter** in
 the HUD Editor adjusts X/Y offsets and scale relative to that default anchor.
 Empty charges block Gale, while the initial normal ZR jump remains available.

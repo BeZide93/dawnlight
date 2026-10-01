@@ -47,18 +47,18 @@ currently loaded save's story flags:
 | Give Talo the Wooden Sword in Ordon | Glide, with Glider selected |
 | Obtain the Ordon Sword | Dual Wield option in Collection |
 | Free Ordona | Revali's Gale and its counter |
-| Free Faron | Fierce Deity |
+| Free Faron | Dark Link |
 | Each complete heart above the starting three | +5 maximum stamina, including on top of Dawnlight Mode's 100-point base |
 | Each three full heart containers | One Gale charge: 3 hearts = 1, 6 = 2, 9 = 3, etc. |
 
 In Boss Rush, all progression-controlled abilities are available immediately,
-including Glide/Glider, Revali's Gale, Fierce Deity and Dual Wield. Gale charge capacity still
+including Glide/Glider, Revali's Gale, Dark Link and Dual Wield. Gale charge capacity still
 follows the current maximum heart containers. Story flags remain unchanged.
 
 Charge capacity uses maximum heart containers, not current health; damage and
 partial heart containers do not lower or prematurely increase it. Progression
 controls Sprint, Glide, Glide Item, Revali's Gale, Gale Counter, Gale Charges,
-Fierce Deity and Dual Wield, locking these settings until progression is disabled.
+Dark Link and Dual Wield, locking these settings until progression is disabled.
 Disabling progression restores the previous personal settings. Dual Wield is
 equipped by selecting its Ordon Sword icon beside the shields in Collection. A short
 Dusklight toast announces newly reached unlocks and charge-capacity increases

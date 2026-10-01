@@ -34,19 +34,19 @@ deferred until the rush ends.
 Bullet Time, Flurry Rush and the Great Spin projectile share the
 [stamina meter](movement-and-abilities.md#shared-stamina) with movement abilities.
 
-## Fierce Deity
+## Dark Link
 
-**Fierce Deity** adds a charge meter, a temporary transformation and doubled sword
-damage. **Fierce Deity Visual**, directly below its toggle, selects the appearance:
+**Dark Link** adds a charge meter, a temporary transformation and doubled sword
+damage. **Dark Link Visual**, directly below its toggle, selects the appearance:
 
 | Visual | Appearance during the transformation |
 | --- | --- |
-| Magic Armor (default) | The existing Magic Armor model swap. |
-| Dark | The currently worn outfit/model with dark shading and red eyes. |
+| Magic Armor | The existing Magic Armor model swap. |
+| Dark (default) | The currently worn outfit/model with dark shading and red eyes. |
 | Dark Magic | The Magic Armor model with dark shading and red eyes. |
 
-**Fierce Deity Activation**, below the visual selector, offers **Spin Attack**
-(charged), **R+Z** (default), or **R+A**. Activation requires a full meter. With
+**Dark Link Activation**, below the visual selector, offers **Spin Attack**
+(charged), **R+Z**, or **R+A** (default). Activation requires a full meter. With
 either button shortcut, hold R and then press Z or A, just like native R+Y Quick
 Transform. The initial R press can still trigger a manual jump; the shortcut also
 works during that jump. Keep holding R and press Z or A again to end early. The
@@ -59,10 +59,11 @@ Z mapping can also trigger the shortcut. A pending Gale charge is cancelled when
 shortcut fires, while the jump already in progress continues normally.
 
 Entry and exit use the native flying warp particles at twice the normal speed:
-the appearance effect on entry and the disappearance effect on exit. The material
+the appearance effect and sound on entry, and the disappearance effect and sound
+on exit. Each sound plays once when its visual transition starts. The material
 continues to build from top to bottom and recede from bottom to top.
 
-Both selectors are disabled while Fierce Deity is unavailable/off, including
+Both selectors are disabled while Dark Link is unavailable/off, including
 its Progression lock. Its saved selection is retained. Changing it during a
 transformation applies when gameplay resumes, waits for any pending model load,
 and preserves the remaining meter. Dark keeps the current model without a clothes
@@ -76,7 +77,7 @@ dark shading. Materials already using all 16 TEV stages are left unchanged.
 Equipment and held items retain their normal appearance. Rendering changes are
 scoped to the player's draw calls; shared model data and other actors are untouched.
 
-With [Progression System](general-settings.md) enabled, Fierce Deity unlocks
+With [Progression System](general-settings.md) enabled, Dark Link unlocks
 after freeing Faron; it is available immediately in Boss Rush.
 
 ## Shielding and Dual Wield

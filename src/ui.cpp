@@ -423,7 +423,7 @@ ModResult build_general_tab(
         != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Progression System", progression_system_config_var(),
             "Sprint is available from the start. Give Talo the Wooden Sword to unlock the Glider, "
-            "free Ordona for Revali's Gale, and free Faron for Fierce Deity. Gale gains one charge "
+            "free Ordona for Revali's Gale, and free Faron for Dark Link. Gale gains one charge "
             "per three full heart containers. Each complete heart above the starting three adds 5 maximum stamina. Controlled settings are locked while On.")
         != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Notifications", notifications_config_var(),
@@ -815,12 +815,12 @@ ModResult build_hud_tab(
         return MOD_ERROR;
     }
     if (add_custom_transform_controls(
-            ctx, left, "Custom Fierce Deity Bar", HudElement::FierceDeityBar) != MOD_OK)
+            ctx, left, "Custom Dark Link Bar", HudElement::FierceDeityBar) != MOD_OK)
     {
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Fade when empty", hud_custom_fierce_deity_fade_when_empty_config_var(),
-            "Fades the Fierce Deity Bar when empty and shows it again when it gains charge.",
+            "Fades the Dark Link Bar when empty and shows it again when it gains charge.",
             custom_hud_controls_disabled) != MOD_OK)
     {
         return MOD_ERROR;
@@ -865,27 +865,27 @@ ModResult build_gameplay_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "Fierce Deity", fierce_deity_config_var(),
+    if (add_toggle(ctx, left, "Dark Link", fierce_deity_config_var(),
             "Builds power with damaging sword attacks. Use the selected activation at full power "
             "to transform, deal double sword damage, and consume the meter over time.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
-    if (add_select(ctx, left, "Fierce Deity Visual", fierce_deity_visual_config_var(),
+    if (add_select(ctx, left, "Dark Link Visual", fierce_deity_visual_config_var(),
             kFierceDeityVisualOptions, std::size(kFierceDeityVisualOptions),
-            "Magic Armor keeps the original transformation. Dark applies a shadow appearance "
+            "Magic Armor uses the armor model. Dark (default) applies a shadow appearance "
             "and red eyes to your current outfit. Dark Magic combines Magic Armor with that effect. "
-            "Changes apply when gameplay resumes; requires Fierce Deity.",
+            "Changes apply when gameplay resumes; requires Dark Link.",
             fierce_deity_visual_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }
-    if (add_select(ctx, left, "Fierce Deity Activation", fierce_deity_activation_config_var(),
+    if (add_select(ctx, left, "Dark Link Activation", fierce_deity_activation_config_var(),
             kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
-            "Activate at full power with a charged Spin Attack, R+Z (default), or R+A. "
+            "Activate at full power with a charged Spin Attack, R+Z, or R+A (default). "
             "Hold R, then press Z or A; the initial R jump remains available. Press Z or A again "
-            "while holding R to end early and preserve power for refilling. Requires Fierce Deity.",
+            "while holding R to end early and preserve power for refilling. Requires Dark Link.",
             fierce_deity_visual_disabled) != MOD_OK)
     {
         return MOD_ERROR;
@@ -1107,7 +1107,7 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
     if (add_text(ctx, panel, "Aim Movement, Aim Modes, and Bullet Time") != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Flurry Rush, Fierce Deity, and Great Spin Projectile") != MOD_OK) {
+    if (add_text(ctx, panel, "Flurry Rush, Dark Link, and Great Spin Projectile") != MOD_OK) {
         return MOD_ERROR;
     }
     if (add_text(ctx, panel, "Shared Stamina and Lazy Tweaks compatibility") != MOD_OK) {

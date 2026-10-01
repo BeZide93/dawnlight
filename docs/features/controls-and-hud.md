@@ -73,7 +73,7 @@ The `hud_layout_settings.json` format is compatible with the Dawnlight fork's
 HUD layout export where the same fields are available.
 
 Under **Custom Stamina Bar**, **Fade when full** hides the bar at full stamina;
-under **Custom Fierce Deity Bar**, **Fade when empty** hides it at zero charge.
+under **Custom Dark Link Bar**, **Fade when empty** hides it at zero charge.
 Both fade out smoothly and reappear when their condition no longer applies.
 Both are Off in every built-in preset and after copying/resetting a preset.
 Custom exports/imports preserve these two choices; they never change HUD Auto Fade.

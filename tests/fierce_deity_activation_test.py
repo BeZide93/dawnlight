@@ -163,11 +163,13 @@ int main() {
 '''
 config = (root/'src/config.cpp').read_text()
 ui = (root/'src/ui.cpp').read_text()
-assert 'register_int("fierce-deity-activation", 1, s_fierceDeityActivation)' in config
-assert 'get_int(s_fierceDeityActivation, 1, 0, 2)' in config
+assert 'register_int("fierce-deity-activation", 2, s_fierceDeityActivation)' in config
+assert 'get_int(s_fierceDeityActivation, 2, 0, 2)' in config
+assert 'register_int("fierce-deity-visual", 1, s_fierceDeityVisual)' in config
+assert 'get_int(s_fierceDeityVisual, 1, 0, 2)' in config
 assert '{"Spin Attack", "R+Z", "R+A"}' in ui
-assert ui.index('"Fierce Deity Visual",') < ui.index('"Fierce Deity Activation",') < ui.index('"Great Spin Projectile",')
-assert 'fierce_deity_visual_disabled' in ui[ui.index('"Fierce Deity Activation",'):ui.index('"Great Spin Projectile",')]
+assert ui.index('"Dark Link Visual",') < ui.index('"Dark Link Activation",') < ui.index('"Great Spin Projectile",')
+assert 'fierce_deity_visual_disabled' in ui[ui.index('"Dark Link Activation",'):ui.index('"Great Spin Projectile",')]
 with tempfile.TemporaryDirectory(prefix='dawnlight-fierce-input-') as directory:
     cpp, exe = Path(directory)/'test.cpp', Path(directory)/'test'
     cpp.write_text(fixture+state+preload_state+production+checks)

@@ -338,7 +338,7 @@ constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
     "D-Pad Items Text",
     "D-Pad Map Text",
     "Stamina Bar",
-    "Fierce Deity Bar",
+    "Dark Link Bar",
     "Gale Counter",
 }};
 
@@ -945,8 +945,8 @@ ModResult register_config(ModError* error) {
         register_int("bullet-time-mode", -1, s_bulletTimeMode) != MOD_OK ||
         register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
-        register_int("fierce-deity-visual", 0, s_fierceDeityVisual) != MOD_OK ||
-        register_int("fierce-deity-activation", 1, s_fierceDeityActivation) != MOD_OK ||
+        register_int("fierce-deity-visual", 1, s_fierceDeityVisual) != MOD_OK ||
+        register_int("fierce-deity-activation", 2, s_fierceDeityActivation) != MOD_OK ||
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
         register_bool("arrow-modes", true, s_arrowModes) != MOD_OK ||
         register_bool("dual-wield", false, s_dualWield) != MOD_OK ||
@@ -1294,13 +1294,13 @@ bool fierce_deity_enabled() {
 }
 
 FierceDeityVisual fierce_deity_visual() {
-    return static_cast<FierceDeityVisual>(get_int(s_fierceDeityVisual, 0, 0, 2));
+    return static_cast<FierceDeityVisual>(get_int(s_fierceDeityVisual, 1, 0, 2));
 }
 
 ConfigVarHandle fierce_deity_visual_config_var() { return s_fierceDeityVisual; }
 
 FierceDeityActivation fierce_deity_activation() {
-    return static_cast<FierceDeityActivation>(get_int(s_fierceDeityActivation, 1, 0, 2));
+    return static_cast<FierceDeityActivation>(get_int(s_fierceDeityActivation, 2, 0, 2));
 }
 
 ConfigVarHandle fierce_deity_activation_config_var() { return s_fierceDeityActivation; }

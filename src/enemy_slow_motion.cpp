@@ -22,9 +22,10 @@ DEFINE_HOOK(&cLib_chaseF, ChaseLinearHook);
 DEFINE_HOOK(&cLib_addCalcAngleS2, ChaseAngleHook);
 DEFINE_HOOK(&cLib_addCalcAngleS, ChaseAngleMinHook);
 DEFINE_HOOK(&cLib_chaseS, ChaseShortHook);
+DEFINE_HOOK(&cLib_chaseAngleS, ChaseAngleLinearHook);
 DEFINE_HOOK(&J3DFrameCtrl::update, ControllerUpdateHook);
 
-const std::array<const EnemySlowProfile*, 29> s_profiles{
+const std::array<const EnemySlowProfile*, 35> s_profiles{
     &darknut_slow_profile(), &bokoblin_slow_profile(), &mini_freezard_slow_profile(),
     &keese_slow_profile(), &tektite_slow_profile(), &gibdo_slow_profile(),
     &goron_slow_profile(), &staltroop_slow_profile(), &aeralfos_slow_profile(), &chilfos_slow_profile(),
@@ -35,7 +36,8 @@ const std::array<const EnemySlowProfile*, 29> s_profiles{
     &dodongo_slow_profile(),
     &dynalfos_slow_profile(), &skulltula_slow_profile(),
     &baba_serpent_slow_profile(), &big_baba_slow_profile(), &deku_baba_slow_profile(),
-    &stalfos_slow_profile()
+    &stalfos_slow_profile(), &helmasaur_slow_profile(), &helmasaur_armor_slow_profile(),
+    &kargarok_slow_profile(), &guay_slow_profile(), &armos_slow_profile(), &chu_slow_profile()
 };
 
 const EnemySlowProfile* find_profile(fopAc_ac_c* actor) {
@@ -438,6 +440,7 @@ ModResult initialize_enemy_slow_motion() {
     if (result == MOD_OK) result = mods::hook::add_pre<ChaseAngleHook>(svc_hook, before_chase_angle);
     if (result == MOD_OK) result = mods::hook::add_pre<ChaseAngleMinHook>(svc_hook, before_chase_angle_min);
     if (result == MOD_OK) result = mods::hook::add_pre<ChaseShortHook>(svc_hook, before_chase_short);
+    if (result == MOD_OK) result = mods::hook::add_pre<ChaseAngleLinearHook>(svc_hook, before_chase_short);
     if (result == MOD_OK) result = mods::hook::add_pre<ControllerUpdateHook>(svc_hook, before_controller_update);
     if (result == MOD_OK) result = mods::hook::add_post<ControllerUpdateHook>(svc_hook, after_controller_update);
     if (result == MOD_OK) result = mods::hook::add_post<MoveHook>(svc_hook, after_move);

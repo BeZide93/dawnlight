@@ -124,4 +124,10 @@ const EnemySlowProfile& baba_serpent_slow_profile();
 const EnemySlowProfile& big_baba_slow_profile();
 const EnemySlowProfile& deku_baba_slow_profile();
 const EnemySlowProfile& stalfos_slow_profile();
+const EnemySlowProfile& helmasaur_slow_profile();
+const EnemySlowProfile& helmasaur_armor_slow_profile();
+const EnemySlowProfile& kargarok_slow_profile();
+const EnemySlowProfile& guay_slow_profile();
+const EnemySlowProfile& armos_slow_profile();
+const EnemySlowProfile& chu_slow_profile();
 }

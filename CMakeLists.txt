@@ -87,6 +87,11 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/big_baba.cpp
         src/enemy_slow_motion/deku_baba.cpp
         src/enemy_slow_motion/stalfos.cpp
+        src/enemy_slow_motion/helmasaur.cpp
+        src/enemy_slow_motion/kargarok.cpp
+        src/enemy_slow_motion/guay.cpp
+        src/enemy_slow_motion/armos.cpp
+        src/enemy_slow_motion/chu.cpp
         src/hud_fade.cpp
         src/combat_meter.cpp
         src/gale_counter.cpp

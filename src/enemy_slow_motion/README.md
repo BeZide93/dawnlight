@@ -30,24 +30,44 @@ interpolation. All other actors retain their previous behavior.
 | Water Toadpoli (`E_TK`) | Animation, swimming movement, turning, timers, and one water-ball creation/release per attack | Native water-surface anchoring and projectile movement path |
 | Fire Toadpoli (`E_TK2`) | Animation, turning, timers, one fireball creation/release per attack | Lava anchoring remains native; fireball actor still uses its existing movement path |
 | Stalfos (`E_SF`) | Body animation, movement, gravity, steering, head motion, timers and single sword-swing sound per animation frame | Scripted demos and seated intro |
+| Bulblin, Lizalfos, Dodongo, Dynalfos, Skulltula, Baba Serpent, Big Baba, Deku Baba | Existing actor-specific animation, movement, timers and combat profiles | Actor-specific demos, attachments and ownership transitions; see each eligibility predicate |
+| Helmasaur, Helmasaurus (`E_MM`, attached `E_MM_MT`) | Both sizes, animation, movement, gravity, steering, timers, frame sounds; attached shell follows the live parent joints | Detached/carried shell |
+| Kargarok (`E_KR`) | Ordinary flight/combat, live model/collider movement, hover phase, steering, gravity, timers and voice events | Paths, escort/bomb/mounted variants, death and Ending Blow |
+| Guay (`E_GE`) | Flight, orbit, dive, returning/perched movement, damage spin, animation and timers | Active boomerang attachment |
+| Armos (`E_AI`) | Animation/BRK, jumps, turning, damage rotation, squash/paralysis phase, timers and single impact events | None beyond the shared combat-slow gate |
+| Chus (`E_SM2`) | All colors, body animation/deformation, split pieces, movement, gravity, turning and merge/timer cadence | Ceiling placement and bottle-catch ownership |
+
 The user tested the core with Darknut, Bokoblin and Mini Freezard before commit
 `ad4536d`. Profiles added after that commit are compile-tested only and still
 need in-game tests. This is not yet the entire requested enemy list.
 
 ## Remaining Requested Profiles
 
-Armos, Baba Serpent, Baby Gohma, Big Baba, Bulblin, Chu Worm,
-Deku Baba, Dodongo, Dynalfos, Guay, Imp Poe, Kargarok,
-Lizalfos, Phantom Rider, Poe, Skulltula,
-Young Gohma, Zant Mask and Zant's Hand still use the previous
-slow-motion path. Dangoro (`E_GOB`) also remains pending, independently of
-normal adult Gorons. Goron children/elders/shopkeepers use other NPC actors.
+Baby Gohma, Chu Worm, Imp Poe, Phantom Rider, Poe, Young Gohma,
+Zant Mask and Zant's Hand still use the previous slow-motion path.
+Dangoro (`E_GOB`) also remains pending, independently of normal adult Gorons.
+Goron children/elders/shopkeepers use other NPC actors. Chu Worm is distinct
+from the Chus (`E_SM2`) covered above.
 
-Known audit points for continuing: Armos' squash/paralysis counters and
-timer-equality events; Bulblin's mounted/shared state; Chu Worm's separate core
-and bubble bodies; Gohma's shared core ownership; Zant Mask's procedural hover;
-Zant's Hand's orb attachment; Dangoro's player grabs and shifted collision
-origin. Do not register these with a generic timer list alone.
+Known audit points for continuing: Chu Worm's separate core and bubble bodies;
+Gohma's shared core ownership; Zant Mask's procedural hover; Zant's Hand's orb
+attachment; Dangoro's player grabs and shifted collision origin. Do not register
+these with a generic timer list alone.
+
+## Cave Enemy Validation
+
+`python3 tests/cave_enemy_slow_test.py` executes the production Helmasaur,
+Kargarok, Guay, Armos and Chu callbacks with asset-free native-shaped fixtures.
+It checks jump impulses, collision correction order, event repetition, orbit/dive
+motion, shell ownership, merge cooldowns and split/reset guards.
+`python3 tests/cave_enemy_spawner_test.py` executes the production spawn selector
+for both Helmasaur sizes, Kargarok, Guay, Armos and the five Cave Chu colors.
+Existing saved selection indices are preserved by appending the ten entries.
+
+These tests and the native SDK build do not replace an in-game check: spawn each
+entry with slow motion off/on, test damage/death and slow-mode transitions, pull
+a Helmasaur shell, catch/release a Guay with the boomerang, and split/merge Chus.
+Also check a randomized Cave run and coexistence with unsupported enemies.
 
 ## Adding a Profile
 

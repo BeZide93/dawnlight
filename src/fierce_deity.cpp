@@ -16,6 +16,7 @@
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_leaf.h"
 #include "f_pc/f_pc_method.h"
+#include "m_Do/m_Do_controller_pad.h"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
@@ -44,6 +45,7 @@ DEFINE_HOOK(&at_power_check, FierceAttackPowerHook);
 DEFINE_HOOK(&cc_at_check, FierceDamageCheckHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, FierceMeterDrawHook);
 DEFINE_HOOK(&fpcLf_Delete, FiercePlayerDeleteHook);
+DEFINE_HOOK_SYMBOL("dusk::processGameCombos", void(), FierceGameCombosHook);
 
 constexpr float kMeterGainPerAttack = 5.0f;
 constexpr float kMeterDrainPerSecond = 5.0f;
@@ -63,6 +65,8 @@ struct RuntimeState {
     bool active = false;
     FierceDeityVisual visual = FierceDeityVisual::MagicArmor;
     bool spinChargeArmed = false;
+    bool activationChordHeld = false;
+    u32 consumedButtons = 0;
     bool equipmentOverridden = false;
     bool modelSwapped = false;
     bool displayedDark = false;
@@ -311,7 +315,8 @@ bool service_model_swap(daAlink_c* link) {
 }
 
 void update_spin_activation(daAlink_c* link) {
-    if (s_state.active || s_state.meter < 100.0f) {
+    if (fierce_deity_activation() != FierceDeityActivation::SpinAttack ||
+        menu_or_pause_active() || s_state.active || s_state.meter < 100.0f) {
         s_state.spinChargeArmed = false;
         return;
     }
@@ -333,6 +338,45 @@ void update_spin_activation(daAlink_c* link) {
     if (link->mProcID != daAlink_c::PROC_CUT_TURN) {
         s_state.spinChargeArmed = false;
     }
+}
+
+// Run immediately after the host reads the pad, before native combos and Link.
+// Track the physical chord before consuming it so holding it cannot toggle twice.
+HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
+    auto* link = daAlink_getAlinkActorClass();
+    if (!same_link(link)) reset_for_link(link);
+    auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
+    const u32 held = pad.mButtonFlags | (pad.mHoldLockR ? PAD_TRIGGER_R : 0);
+    const u32 pressed = pad.mPressedButtonFlags | (pad.mTrigLockR ? PAD_TRIGGER_R : 0);
+    const auto binding = fierce_deity_activation();
+    const u32 partner = binding == FierceDeityActivation::RA ? PAD_BUTTON_A : PAD_TRIGGER_Z;
+    const u32 chord = PAD_TRIGGER_R | partner;
+    const bool chordHeld = binding != FierceDeityActivation::SpinAttack &&
+        (held & chord) == chord;
+    const bool chordPressed = chordHeld && !s_state.activationChordHeld && (pressed & chord) != 0;
+    s_state.activationChordHeld = chordHeld;
+    s_state.consumedButtons &= held;
+    if (!fierce_deity_enabled() || menu_or_pause_active() || !can_transform(link)) {
+        s_state.consumedButtons = 0;
+        return HOOK_CONTINUE;
+    }
+    if (chordHeld) {
+        // Reserve the configured chord even below full power. Keep its remaining
+        // held buttons consumed until release, avoiding a delayed jump/A action.
+        s_state.consumedButtons |= chord;
+        if (chordPressed) {
+            if (s_state.active) deactivate(link, false);
+            else if (s_state.meter >= 100.0f) activate(link);
+        }
+    }
+    pad.mButtonFlags &= ~s_state.consumedButtons;
+    pad.mPressedButtonFlags &= ~s_state.consumedButtons;
+    if (s_state.consumedButtons & PAD_TRIGGER_R) {
+        pad.mHoldLockR = 0;
+        pad.mTrigLockR = 0;
+        pad.mTriggerRight = 0.0f;
+    }
+    return HOOK_CONTINUE;
 }
 
 void update_drain(daAlink_c* link) {
@@ -514,6 +558,11 @@ ModResult initialize_fierce_deity(ModError* error) {
         return mods::set_error(error, result,
             "failed to install Dawnlight Fierce Deity player pre-hook");
     }
+    result = mods::hook::add_pre<FierceGameCombosHook>(svc_hook, before_fierce_game_combos);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result,
+            "failed to install Dawnlight Fierce Deity input hook");
+    }
     if ((result = add_post<FiercePlayerExecuteHook>(error, after_player_execute,
              "failed to install Dawnlight Fierce Deity player hook")) != MOD_OK ||
         (result = add_post<FierceAttackPowerHook>(error, after_attack_power_check,
@@ -560,6 +609,11 @@ void shutdown_fierce_deity() {
 
 bool fierce_deity_active() {
     return s_state.active && same_link(daAlink_getAlinkActorClass());
+}
+
+bool fierce_deity_input_consumed() {
+    return same_link(daAlink_getAlinkActorClass()) &&
+        (s_state.consumedButtons & PAD_TRIGGER_R) != 0;
 }
 
 bool fierce_deity_dark_visual_active() {

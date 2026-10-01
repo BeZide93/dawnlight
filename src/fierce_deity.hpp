@@ -9,6 +9,8 @@ namespace dawnlight {
 ModResult initialize_fierce_deity(ModError* error);
 void shutdown_fierce_deity();
 bool fierce_deity_active();
+// Also cancels an already charged Gale when its R hold is used for this combo.
+bool fierce_deity_input_consumed();
 bool fierce_deity_dark_visual_active();
 ModResult initialize_fierce_deity_visual(ModError* error);
 bool fierce_deity_model_reload_active();

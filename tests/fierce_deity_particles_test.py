@@ -82,18 +82,23 @@ int main() {
     daAlink_c link; link.current.pos={12,100,34};
     s_transition.committed=true;
     update_warp_particles(&link);
-    assert(selected==ID_ZI_J_LK_WARP_DISAPP_A && selected<0x8000);
+    assert(selected==ID_ZI_J_LK_WARP_APP_A && selected<0x8000);
     assert(s_transition.particleKey==activeKey);
-    assert(lastPosition.x==12 && lastPosition.y==280 && lastPosition.z==34);
-    const float firstHeight=lastPosition.y;
+    assert(lastPosition.x==12 && lastPosition.y==100 && lastPosition.z==34);
+    // Assembly is authored at the feet and follows moving Link.
     s_transition.wipe.advance(); link.current.pos.x+=10; link.current.pos.y+=5;
     update_warp_particles(&link);
-    assert(lastPosition.x==22 && std::fabs(lastPosition.y-(firstHeight+5-3.6f))<0.0001f);
+    assert(lastPosition.x==22 && lastPosition.y==105);
     assert(s_transition.particleKey==activeKey); // refresh the same emitter, no per-frame bursts
     s_transition.wipe.entering=false;
     update_warp_particles(&link);
-    assert(selected==ID_ZI_J_LK_WARP_APP_A && selected<0x8000);
-    assert(lastPosition.y==link.current.pos.y); // native assembly resource is authored at the feet
+    assert(selected==ID_ZI_J_LK_WARP_DISAPP_A && selected<0x8000);
+    assert(std::fabs(lastPosition.y-(link.current.pos.y +
+        (s_transition.wipe.height()-FierceWarpWipe::low)*30.0f))<0.0001f);
+    const float firstHeight=lastPosition.y;
+    s_transition.wipe.advance(); link.current.pos.y+=5;
+    update_warp_particles(&link);
+    assert(std::fabs(lastPosition.y-(firstHeight+5+3.6f))<0.0001f);
 
     JPAResource resource; JPAEmitterWorkData work;
     assert(!resource.calc(&work,&own));

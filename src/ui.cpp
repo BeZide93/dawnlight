@@ -29,6 +29,7 @@ constexpr const char* kSecondSwordOptions[] = {"Wooden Sword", "Ordon Sword", "M
 constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
 constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
 constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic"};
+constexpr const char* kFierceDeityActivationOptions[] = {"Spin Attack", "R+Z", "R+A"};
 
 constexpr const char* kNewSaveModeOptions[] = {
     "Vanilla",
@@ -865,7 +866,7 @@ ModResult build_gameplay_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Fierce Deity", fierce_deity_config_var(),
-            "Builds power with damaging sword attacks. Use a charged Spin Attack at full power "
+            "Builds power with damaging sword attacks. Use the selected activation at full power "
             "to transform, deal double sword damage, and consume the meter over time.")
         != MOD_OK)
     {
@@ -876,6 +877,15 @@ ModResult build_gameplay_tab(
             "Magic Armor keeps the original transformation. Dark applies a shadow appearance "
             "and red eyes to your current outfit. Dark Magic combines Magic Armor with that effect. "
             "Changes apply when gameplay resumes; requires Fierce Deity.",
+            fierce_deity_visual_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Fierce Deity Activation", fierce_deity_activation_config_var(),
+            kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
+            "Activate at full power with a charged Spin Attack, R+Z (default), or R+A. "
+            "Press the selected button combination again to end early, preserve the remaining "
+            "power, and refill it with sword hits. Requires Fierce Deity.",
             fierce_deity_visual_disabled) != MOD_OK)
     {
         return MOD_ERROR;

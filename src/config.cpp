@@ -47,6 +47,7 @@ ConfigVarHandle s_bulletTimeMode = 0;
 ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_fierceDeityVisual = 0;
+ConfigVarHandle s_fierceDeityActivation = 0;
 ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_arrowModes = 0;
 ConfigVarHandle s_dualWield = 0;
@@ -945,6 +946,7 @@ ModResult register_config(ModError* error) {
         register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
         register_int("fierce-deity-visual", 0, s_fierceDeityVisual) != MOD_OK ||
+        register_int("fierce-deity-activation", 1, s_fierceDeityActivation) != MOD_OK ||
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
         register_bool("arrow-modes", true, s_arrowModes) != MOD_OK ||
         register_bool("dual-wield", false, s_dualWield) != MOD_OK ||
@@ -1296,6 +1298,12 @@ FierceDeityVisual fierce_deity_visual() {
 }
 
 ConfigVarHandle fierce_deity_visual_config_var() { return s_fierceDeityVisual; }
+
+FierceDeityActivation fierce_deity_activation() {
+    return static_cast<FierceDeityActivation>(get_int(s_fierceDeityActivation, 1, 0, 2));
+}
+
+ConfigVarHandle fierce_deity_activation_config_var() { return s_fierceDeityActivation; }
 
 bool great_spin_projectile_enabled() {
     return get_bool(s_greatSpinProjectile, true);

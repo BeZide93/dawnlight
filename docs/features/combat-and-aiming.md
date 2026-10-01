@@ -45,7 +45,18 @@ damage. **Fierce Deity Visual**, directly below its toggle, selects the appearan
 | Dark | The currently worn outfit/model with dark shading and red eyes. |
 | Dark Magic | The Magic Armor model with dark shading and red eyes. |
 
-The visual selector is disabled while Fierce Deity is unavailable/off, including
+**Fierce Deity Activation**, below the visual selector, offers **Spin Attack**
+(charged), **R+Z** (default), or **R+A**. Activation requires a full meter. With
+either button combination, press it again to end the transformation early. The
+remaining charge stops draining immediately and damaging sword hits can refill
+it; the next activation requires full power again. Holding the combination does
+not toggle repeatedly. It takes priority over R jump/Gale and the A/Z action.
+
+Entry and exit use the native flying warp particles at twice the normal speed:
+the appearance effect on entry and the disappearance effect on exit. The material
+continues to build from top to bottom and recede from bottom to top.
+
+Both selectors are disabled while Fierce Deity is unavailable/off, including
 its Progression lock. Its saved selection is retained. Changing it during a
 transformation applies when gameplay resumes, waits for any pending model load,
 and preserves the remaining meter. Dark keeps the current model without a clothes
@@ -69,3 +80,4 @@ Manual Shielding provides optional manual guard controls.
 uses a crossed-sword guard and Shield Attack.
 
 For enemy and boss difficulty settings, see [Hard Mode](hard-mode.md).
+

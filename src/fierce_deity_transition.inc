@@ -58,12 +58,12 @@ void update_warp_particles(daAlink_c* link) {
     if (g_dComIfG_gameInfo.play.getParticle() == nullptr ||
         dPa_control_c::getEmitterManager() == nullptr) return;
     // These are Link's COMMON warp resources, not a scene/boss archive.
-    // The descending boundary dissolves the outgoing outfit; the ascending
-    // boundary uses the native assembly effect, which is authored at the feet.
+    // Assemble the Fierce Deity appearance on entry, dissolve it on exit.
+    // APP is authored at the feet; DISAPP is anchored to the moving boundary.
     cXyz position = link->current.pos;
     const u16 effect = s_transition.wipe.entering ?
-        ID_ZI_J_LK_WARP_DISAPP_A : ID_ZI_J_LK_WARP_APP_A;
-    if (s_transition.wipe.entering) {
+        ID_ZI_J_LK_WARP_APP_A : ID_ZI_J_LK_WARP_DISAPP_A;
+    if (!s_transition.wipe.entering) {
         position.y += (s_transition.wipe.height() - FierceWarpWipe::low) * 30.0f;
     }
     auto* emitter = link->setEmitter(&s_transition.particleKey, effect,

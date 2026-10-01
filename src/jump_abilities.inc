@@ -172,8 +172,9 @@ void reset_jump_abilities(daAlink_c* link) {
 
 void cancel_gale_for_face_input(daAlink_c* link) {
     constexpr u32 faceButtons = PAD_BUTTON_A | PAD_BUTTON_B | PAD_BUTTON_X | PAD_BUTTON_Y;
-    if (owns_jump_abilities(link) && s_jumpAbilities.charge != GaleCharge::Idle &&
-        (mDoCPd_c::getTrig(PAD_1) & faceButtons) != 0)
+    if (owns_jump_abilities(link) &&
+        (fierce_deity_input_consumed() || (s_jumpAbilities.charge != GaleCharge::Idle &&
+            (mDoCPd_c::getTrig(PAD_1) & faceButtons) != 0)))
     {
         // Keep every button bit intact for native actions and R+X/R+Y combos.
         // Do not allow this same R hold/release to re-arm or launch Gale.

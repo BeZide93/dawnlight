@@ -22,6 +22,8 @@ fixture = r'''
 #include <cmath>
 using ActorId=int;using s16=short;using u16=unsigned short;using u32=unsigned int;
 constexpr u32 PAD_BUTTON_A=0x100,PAD_BUTTON_B=0x200,PAD_BUTTON_X=0x400,PAD_BUTTON_Y=0x800;
+bool fierceInput=false;
+bool fierce_deity_input_consumed(){return fierceInput;}
 u32 facePressed=0;bool s_galeInputCancelled=false,s_galeChargeCancelledThisTick=false;
 struct ModContext {}; enum HookAction {HOOK_CONTINUE};
 constexpr int kSwordItem=0x103;
@@ -123,7 +125,7 @@ bool daAlink_c::procCrouchInit(){if(!initSucceeds)return false;jump_abilities_pr
 bool daAlink_c::procAutoJumpInit(int){if(!initSucceeds)return false;++launches;jump_abilities_proc_change(this,PROC_AUTO_JUMP);mProcID=PROC_AUTO_JUMP;speed.y=25;mNormalSpeed=20;speedF=26;mMaxSpeed=26;return true;}
 void close(float a,float b){assert(std::fabs(a-b)<0.001f);}
 void setup(daAlink_c& l){
- facePressed=0;s_galeInputCancelled=false;currentLink=&l;
+ fierceInput=false;facePressed=0;s_galeInputCancelled=false;currentLink=&l;
  charges=3;l=daAlink_c{};l.id=1;s_jumpAbilities=JumpAbilities{};s_jumpAbilities.owner=&l;s_jumpAbilities.ownerId=l.id;
  glide=gale=event=stage=pressed=held=bPressed=creating=live=busy=false;
  glideStamina=true;staminaGliding=false;s_galeVisual=Visual{};
@@ -140,6 +142,19 @@ int main(){
   setup(l);heightPercent=percent;float h=std::clamp(percent,100,500)/100.0f;
   close(jump_height_multiplier(),h);l.mNormalSpeed=12;
   apply_manual_jump_height(&l,jump_height_multiplier());close(l.speed.y*l.speed.y,625*h);close(l.mNormalSpeed,12);close(l.gravity,-3.4f);
+ }
+ // A Fierce Deity chord consumes R before this hook. It must cancel Gale,
+ // not launch it as though R had been released, including an already ready crouch.
+ for(bool ready:{false,true}){
+  setup(l);gale=true;assert(tick(l,true,true));
+  if(ready){land(l);hold_crouch(l,35);}
+  fierceInput=true;assert(!tick(l,false,false));
+  assert(s_jumpAbilities.charge==GaleCharge::Idle&&charges==3&&l.launches==1);
+  assert(s_galeInputCancelled&&s_galeChargeCancelledThisTick&&!s_galeVisual.ready);
+  for(int i=0;i<40;++i)assert(!tick(l,false,false));
+  assert(l.launches==1&&charges==3);
+  fierceInput=false;tick(l,false,false);
+  assert(!s_galeInputCancelled);
  }
  // Face buttons cancel both the setup jump and crouch without consuming input.
  for(u32 button:{PAD_BUTTON_A,PAD_BUTTON_B,PAD_BUTTON_X,PAD_BUTTON_Y}){
@@ -287,3 +302,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 print('Jump ability regression passed: height, charging, cancellation, gliding, actor ownership and cleanup')
+

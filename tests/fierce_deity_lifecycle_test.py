@@ -33,6 +33,7 @@ fixture = r'''
 #include <map>
 #include <string>
 using u8 = uint8_t;
+using u32 = uint32_t;
 using fpc_ProcID = uint32_t;
 constexpr fpc_ProcID fpcM_ERROR_PROCESS_ID_e = 0xffffffff;
 constexpr u8 dItemNo_NONE_e = 0xff, dItemNo_ARMOR_e = 0x31;
@@ -363,12 +364,13 @@ int main() {
 }
 '''
 
-with tempfile.TemporaryDirectory(prefix="dawnlight-fierce-lifecycle-") as directory:
-    cpp = Path(directory) / "test.cpp"
-    cpp.write_text(fixture + state + preload_state + callbacks + checks)
-    for platform in ([], ["-D__APPLE__"]):
-        exe = Path(directory) / ("apple" if platform else "execute")
-        subprocess.run([os.environ.get("CXX", "c++"), "-std=c++20", "-Wall", "-Wextra",
-                        "-Werror", *platform, str(cpp), "-o", str(exe)], check=True)
-        subprocess.run([str(exe)], check=True)
-print("Fierce Deity seamless lifecycle tests passed (Execute and Apple Method dispatch)")
+if __name__ == "__main__":
+    with tempfile.TemporaryDirectory(prefix="dawnlight-fierce-lifecycle-") as directory:
+        cpp = Path(directory) / "test.cpp"
+        cpp.write_text(fixture + state + preload_state + callbacks + checks)
+        for platform in ([], ["-D__APPLE__"]):
+            exe = Path(directory) / ("apple" if platform else "execute")
+            subprocess.run([os.environ.get("CXX", "c++"), "-std=c++20", "-Wall", "-Wextra",
+                            "-Werror", *platform, str(cpp), "-o", str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+    print("Fierce Deity seamless lifecycle tests passed (Execute and Apple Method dispatch)")

@@ -18,7 +18,7 @@ controls, and a Boss Rush mode. Dawnlight is a mod for
 | [Dual Wield](docs/features/dual-wield.md) | A choice of second sword, alternating attacks and a crossed-sword guard. |
 | [Arrow Modes](docs/features/arrow-modes.md) | Normal arrows, fire arrows and triple shots, switched while aiming. |
 | [Hard Mode](docs/features/hard-mode.md) | Enemy and boss behavior changes, HP/damage scaling and optional invulnerability changes. |
-| [Boss Rush](docs/features/boss-rush.md) | Garden of Twilight hub, boss portals, complete runs, save/resume and custom hub music. |
+| [Boss Rush](docs/features/boss-rush.md) | Game-mode toggle, Garden of Twilight hub, boss portals, complete runs, saved Clear Timers and custom hub music. |
 | [Controls & HUD](docs/features/controls-and-hud.md) | Third item slot, Android touch buttons, HUD presets/editor and custom model support. |
 
 Each guide covers the relevant settings, controls and details. Intro Skip and

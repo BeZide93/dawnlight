@@ -8,9 +8,37 @@ Boss Rush Game Mode with the Garden of Twilight hub, individual boss portals,
 a complete-run portal, Cave of Ordeals access, hardmode arena hazards, save
 and resume support, and a Return to Hub Midna option.
 
-Choose the Boss Rush **New Save Mode** in [General settings](general-settings.md)
-when initializing an empty save slot. Progression-controlled abilities are
-available immediately in Boss Rush; Gale capacity still follows maximum hearts.
+Select **Boss Rush** in Dusklight's game-mode menu, then create or load its
+separate save file. **Dawnlight Settings → Boss Rush → Boss Rush** controls
+whether the mode is available (default: on). Turning it off while active
+returns to the mode selection; save first. Disabling it does not delete saves.
+Progression-controlled abilities are available immediately in Boss Rush;
+Gale capacity still follows maximum hearts.
+
+### Clear Timer
+
+**Boss Rush → Clear Timer** is off by default. Enable it before starting an
+encounter or entering a run portal:
+
+- A bottom-center timer uses the game's native minigame number textures.
+- The last successful clear time floats above each boss mirror, the complete-run
+  portal, the Cave of Ordeals portal and Hero's Shade's Master Sword. An encounter
+  without a recorded time displays `--:--.--`.
+- Individual boss replays and Hero's Shade stop at victory. A complete Boss Rush
+  records each boss as well as the total, including the horseback leg in the total.
+- The Cave timer spans all floors and stops when the native door unlocks after the
+  last combat floor (49), before the Great Fairy floor (50).
+- Loading, menus, pauses and cutscenes are excluded. Time follows real seconds,
+  independent of frame rate. Long runs retain minutes beyond 99.
+- Death, a manual return, disabling the timer, or loading another save cancels the
+  attempt without replacing previous records. Enabling the option mid-fight does
+  not record a partial clear. After loading a saved run, start a new run from its
+  portal to obtain a complete-run time.
+
+Records belong to the Boss Rush save slot and use Dusklight's mod save storage.
+They are updated on victory and **written to disk when the game is saved**, just
+like the other Boss Rush progress. Save before quitting or disabling the mode.
+This records the latest clear, not a personal best.
 
 The optional Hero's Shade encounter is described in the
 [arena guide](../heroes-shade-arena.md). For enemy and boss difficulty options,

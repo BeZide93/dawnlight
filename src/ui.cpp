@@ -914,6 +914,22 @@ ModResult build_gameplay_tab(
     return MOD_OK;
 }
 
+ModResult build_boss_rush_tab(
+    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
+    if (add_section(ctx, left, "Boss Rush") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Boss Rush", boss_rush_config_var(),
+            "Enable the Boss Rush game mode. Turning it off while active returns to the "
+            "mode selection; save your progress first. Existing saves are kept.") != MOD_OK)
+        return MOD_ERROR;
+    if (add_toggle(ctx, left, "Clear Timer", clear_timer_config_var(),
+            "Time new boss fights, complete Boss Rush runs and Cave of Ordeals runs. "
+            "The last clear time floats above each mirror, portal or Hero's Shade sword. "
+            "Pauses, loading and cutscenes do not count. Save the game to keep records "
+            "after restarting. Switching this off cancels the current timed attempt.") != MOD_OK)
+        return MOD_ERROR;
+    return MOD_OK;
+}
+
 ModResult build_hard_mode_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "Hard Mode") != MOD_OK) return MOD_ERROR;
@@ -1077,7 +1093,7 @@ void open_settings(ModContext* ctx, void*) {
         return;
     }
 
-    std::array<UiTabDesc, 7> tabs{};
+    std::array<UiTabDesc, 8> tabs{};
     for (auto& tab : tabs) {
         tab = UI_TAB_DESC_INIT;
     }
@@ -1095,6 +1111,8 @@ void open_settings(ModContext* ctx, void*) {
     tabs[5].build = build_hard_mode_tab;
     tabs[6].title = "Models";
     tabs[6].build = build_models_tab;
+    tabs[7].title = "Boss Rush";
+    tabs[7].build = build_boss_rush_tab;
 
     UiWindowDesc desc = UI_WINDOW_DESC_INIT;
     desc.tabs = tabs.data();

@@ -80,6 +80,7 @@ bool active=true, resetting=false;
 bool sHubArrivalWarpPending=false, sBossRushArrivalReady=true;
 int state=3, bossIndex=0, stay=0;
 unsigned restartParam=0;
+void cancel_clear_timer() {}
 void dComIfGs_setRestartRoomParam(unsigned value) { restartParam=value; }
 std::string current="D_SB01";
 bool is_bossrush_game_mode_active() { return active; }

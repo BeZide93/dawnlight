@@ -109,6 +109,7 @@ add_mod(dawnlight_mod
         src/mod.cpp
         src/model_overlays.cpp
         src/new_save_modes.cpp
+        src/clear_timer.cpp
         src/boss_portal_symbols.cpp
         src/boss_portal_mirrors.cpp
         src/heroes_shade_encounter.cpp

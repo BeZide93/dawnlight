@@ -1,4 +1,5 @@
 #include "heroes_shade_encounter.hpp"
+#include "clear_timer.hpp"
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
 #include "heroes_shade_stride_animation.hpp"
@@ -447,6 +448,7 @@ void tick_cinema(daNpc_Kn_c* actor,Fighter& entry) {
     if (sCinemaRuntime.ownsEvent) cinema_camera(actor);
 }
 void begin_victory(daNpc_Kn_c* actor,Fighter& entry) {
+    finish_clear_timer(timing::shade);
     // Latch the final hit before recovery/phase logic can resume a lesson's
     // group warp. The cinematic owns landing/get-up from this point onward.
     sBattle.dying=true;
@@ -1392,6 +1394,7 @@ int create_pedestal(void* ptr) {
     return cPhs_COMPLEATE_e;
 }
 int delete_pedestal(void* ptr) {
+    cancel_clear_timer(timing::shade);
     sStopping=true;
     stop_shade_music();
     release_cinema();
@@ -1449,6 +1452,7 @@ int execute_pedestal(void* ptr) {
     if (spawn(fpcNm_NPC_KN_e,pos,cLib_targetAngleY(&pos,&player->current.pos),kShadeParams,sFighters[0].id)==MOD_OK) {
         sShadeWolf.clear();
         sShadeWolf.prepare(pos,cLib_targetAngleY(&pos,&player->current.pos));
+        begin_clear_timer(timing::shade);
         sCinema.begin(false);
         mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags &= ~PAD_BUTTON_A;
     }
@@ -1537,6 +1541,16 @@ void update_heroes_shade_audio() {
     }
     // Preload the next phase during normal combat, before its opening cue.
     sTrialWaves.prepare(sBattle.audio_trial());
+}
+bool heroes_shade_timer_active() {
+    return arena() && !sStopping && pending_or_live(sFighters[0].id) && !sCinema.active();
+}
+bool heroes_shade_timer_anchor(cXyz& position) {
+    if (!arena()) return false;
+    auto* actor = actor_by_id(sPedestal);
+    if (!actor) return false;
+    position = actor->current.pos + cXyz(0, 230, 0);
+    return true;
 }
 void update_heroes_shade_arena() {
     if (sRegistration==0 || !arena() || dComIfGp_isEnableNextStage()) return;

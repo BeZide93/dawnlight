@@ -38,6 +38,9 @@ ConfigVarHandle s_automaticHealthScale = 0;
 ConfigVarHandle s_saveCompatibility = 0;
 ConfigVarHandle s_itemIntegrity = 0;
 ConfigVarHandle s_newSaveMode = 0;
+ConfigVarHandle s_bossRushEnabled = 0;
+ConfigVarHandle s_clearTimer = 0;
+ConfigVarHandle s_caveBossVisits = 0;
 ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
@@ -938,6 +941,9 @@ ModResult register_config(ModError* error) {
         register_bool("save-compatibility", true, s_saveCompatibility) != MOD_OK ||
         register_bool("item-integrity-fixes", true, s_itemIntegrity) != MOD_OK ||
         register_int("new-save-mode", 0, s_newSaveMode) != MOD_OK ||
+        register_bool("boss-rush-enabled", true, s_bossRushEnabled) != MOD_OK ||
+        register_bool("boss-rush-clear-timer", false, s_clearTimer) != MOD_OK ||
+        register_bool("cave-fairy-boss-warps", false, s_caveBossVisits) != MOD_OK ||
         register_int("aim-mode", 2, s_aimMode) != MOD_OK ||
         register_bool("aim-movement", true, s_aimMovement) != MOD_OK ||
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
@@ -1389,6 +1395,13 @@ bool dawnlight_touch_ui_enabled() {
 bool check_for_updates_enabled() {
     return kDawnlightUpdateCheckerAvailable && get_bool(s_checkForUpdates, true);
 }
+
+bool boss_rush_enabled() { return get_bool(s_bossRushEnabled, true); }
+bool cave_boss_visits_enabled() { return get_bool(s_caveBossVisits, false); }
+ConfigVarHandle cave_boss_visits_config_var() { return s_caveBossVisits; }
+bool clear_timer_enabled() { return get_bool(s_clearTimer, false); }
+ConfigVarHandle boss_rush_config_var() { return s_bossRushEnabled; }
+ConfigVarHandle clear_timer_config_var() { return s_clearTimer; }
 
 bool cave_randomizer_enabled() {
     return get_bool(s_caveRandomizer, false);

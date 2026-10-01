@@ -20,6 +20,7 @@
 #include "mods/service.hpp"
 
 #include <array>
+#include <cstdio>
 #include <cstring>
 
 namespace dawnlight {
@@ -449,6 +450,7 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
         next = effect.warp(next, scope.warpCoord, identity, scope.inverse, image->width, image->height);
     }
     scope.applied = effect.apply(next, scope.dark);
+    if (scope.applied && scope.warp) ++s_transition.maskedShapes;
     return HOOK_CONTINUE;
 }
 
@@ -468,7 +470,7 @@ HookAction before_primitive_draw(ModContext*, void*, void*, void*) {
     warp_texture_matrix(matrix);
     DarkDisplayList projection;
     projection.post_matrix(scope.warpCoord, matrix);
-    projection.submit();
+    if (projection.submit()) ++s_transition.projectedGroups;
     return HOOK_CONTINUE;
 }
 
@@ -503,6 +505,7 @@ void fierce_deity_transition_commit(daAlink_c* link) {
         return;
     }
     s_transition.committed = true;
+    warp_log("Fierce Deity warp: started (50 ticks, native material)");
 }
 
 void fierce_deity_transition_tick(daAlink_c* link) {

@@ -207,6 +207,7 @@ daAlink_c* daAlink_getAlinkActorClass() {return &link;}
 bool fierce_deity_dark_visual_active() {return darkActive;}
 struct WarpLayer { bool active=false, dark=false, inverse=false; };
 bool warpTest = false, warpDark = false, warpInverse = false;
+struct { unsigned maskedShapes=0, projectedGroups=0; } s_transition;
 WarpLayer warp_layer(J3DModel* model) {
     return model == link.mpLinkModel ? WarpLayer{warpTest,warpDark,warpInverse} : WarpLayer{};
 }

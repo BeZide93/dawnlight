@@ -18,11 +18,83 @@ def function(source, name):
     return source[start:end] + '\n'
 
 
+gate_fixture = r'''
+#include <cassert>
+#include <cstdint>
+using u32=uint32_t; using u16=uint16_t;
+constexpr unsigned GX_TG_POS=0;
+struct Texture {
+    void* image=nullptr;
+    unsigned getNum() { return 1; }
+    void* getImgDataPtr(unsigned i) { assert(i==0); return image; }
+};
+struct Tev {
+    unsigned type='TVB4', count=1, texNo=0;
+    unsigned getType() { return type; }
+    unsigned getTevStageNum() { return count; }
+    unsigned getTexNo(unsigned i) {
+        assert(i==3 && (type=='TVB4'||type=='TVPT'||type=='TV16'));
+        return texNo;
+    }
+};
+struct Matrix { struct { unsigned mInfo=8; } info;
+    auto& getTexMtxInfo() { return info; }
+};
+struct Coord { unsigned src=GX_TG_POS;
+    unsigned getTexGenSrc() { return src; }
+};
+struct Gen {
+    unsigned count=1; Matrix matrix; Coord coord;
+    unsigned getTexGenNum() { return count; }
+    Matrix* getTexMtx(unsigned i) { assert(i==count && i<4); return &matrix; }
+    Coord* getTexCoord(unsigned i) { assert(i==count && i<4); return &coord; }
+};
+struct J3DMaterial {
+    Tev tev; Gen gen;
+    Tev* getTevBlock() { return &tev; }
+    Gen* getTexGenBlock() { return &gen; }
+};
+struct Data { Texture tex; Texture* getTexture() { return &tex; } };
+struct J3DModel { Data data; Data* getModelData() { return &data; } };
+struct daAlink_c { void* mpWarpTexData=nullptr; };
+'''
+gate_checks = r'''
+int main() {
+    int warpImage, foreignImage;
+    daAlink_c link{&warpImage}; J3DModel model; J3DMaterial material;
+    model.data.tex.image=&warpImage;
+    // BMWR's dormant slot follows the active generators/stages, including
+    // the three-stage eye materials in the current Ichigo face replacements.
+    for(unsigned type : {unsigned('TVB4'),unsigned('TVPT'),unsigned('TV16')}) {
+        material.tev.type=type;
+        for(unsigned count=1;count<=3;++count) {
+            material.tev.count=material.gen.count=count;
+            assert(native_warp_coord(&model,&material,&link)==int(count));
+            material.gen.matrix.info.mInfo=0x88; // native Maya SRT flag
+            assert(native_warp_coord(&model,&material,&link)==int(count));
+        }
+    }
+    material.tev.type='TVB1'; // must reject BEFORE indexing slot 3
+    assert(native_warp_coord(&model,&material,&link)<0);
+    material.tev.type='TVB4'; material.tev.texNo=0xFFFF;
+    assert(native_warp_coord(&model,&material,&link)<0);
+    material.tev.texNo=0; model.data.tex.image=&foreignImage;
+    assert(native_warp_coord(&model,&material,&link)<0);
+    model.data.tex.image=&warpImage; material.gen.count=4;
+    assert(native_warp_coord(&model,&material,&link)<0);
+    material.gen.count=3; material.gen.coord.src=4;
+    assert(native_warp_coord(&model,&material,&link)<0);
+    material.gen.coord.src=0; material.gen.matrix.info.mInfo=0;
+    assert(native_warp_coord(&model,&material,&link)<0);
+}
+'''
+
 fixture = r'''
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <string>
@@ -40,6 +112,8 @@ struct Heap {
 };
 std::vector<std::unique_ptr<Heap>> heaps;
 bool failModels=false, failScratch=false, failPin=false, compatible=true;
+unsigned scratchRequested=0;
+void warp_log(const char*) {}
 struct JKRSolidHeap : Heap {
     static JKRSolidHeap* create(unsigned,Heap*,bool) {
         if(failModels) return nullptr;
@@ -48,7 +122,8 @@ struct JKRSolidHeap : Heap {
     }
 };
 struct JKRExpHeap : Heap {
-    static JKRExpHeap* create(unsigned,Heap*,bool) {
+    static JKRExpHeap* create(unsigned size,Heap*,bool) {
+        scratchRequested=size;
         if(failScratch) return nullptr;
         auto p=std::make_unique<JKRExpHeap>(); auto* result=p.get();
         heaps.push_back(std::move(p)); return result;
@@ -83,7 +158,7 @@ unsigned fopAcM_GetID(daAlink_c* p) {return p->id;}
 using OutfitModels=std::array<J3DModel*,6>;
 bool warp_compatible(const OutfitModels&,daAlink_c*) {return compatible;}
 '''
-state = transition[transition.index('struct WarpLayer'):transition.index('bool transition_owner')]
+state = transition[transition.index('struct WarpLayer'):transition.index('void warp_log')]
 callbacks = ''.join(function(transition, name) for name in (
     'outfit_models', 'transition_owner', 'restore_archive_heap', 'discard_transition', 'prepare_transition'))
 callbacks += ''.join(function(visual, name) for name in (
@@ -134,6 +209,7 @@ int main() {
             auto* modelHeap=link.mAnmHeap3.mAnimeHeap;
             fierce_deity_transition_prepare(&link,false,true,entering);
             assert(fierce_deity_transition_busy() && refs["Kmdl"]==2);
+            assert(scratchRequested<=0x1000); // preloaded resource needs no duplicate archive storage
             auto* newHeap=link.mAnmHeap3.mAnimeHeap;
             auto* scratch=link.mpArcHeap;
             nativeSwap(target);
@@ -190,4 +266,9 @@ with tempfile.TemporaryDirectory(prefix='dawnlight-warp-') as temp:
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-I'+str(root/'src'), str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Fierce Deity warp timing, heap/reference lifetime, cancellation and collision rebinding: passed')
+    cpp.write_text('#include <initializer_list>\n' + gate_fixture +
+                   function(transition, 'native_warp_coord') + gate_checks)
+    subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', '-Wno-multichar',
+                    str(cpp), '-o', str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
+print('Fierce Deity warp layout detection, timing, heap/reference lifetime and collision rebinding: passed')

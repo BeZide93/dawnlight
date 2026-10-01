@@ -37,6 +37,7 @@ constexpr int kHudItemAnchorTop = 2;
 constexpr int kHudItemAnchorBottom = 3;
 constexpr int kHudTextAnchorLeft = 0;
 constexpr int kHudTextAnchorRight = 1;
+constexpr int kHudTextAnchorOriginal = 2;
 constexpr int kHudParentIndependent = 1;
 constexpr int kHudSlideLeftToRight = 1;
 constexpr int kHudSlideRightToLeft = 2;

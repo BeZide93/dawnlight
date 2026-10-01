@@ -1325,9 +1325,11 @@ void apply_hud_text_box_binding(const HudPaneSlot slot, const std::size_t index,
         return;
     }
 
-    if (!enabled) {
+    // GameCube copies keep the native/HD HUD alignment, including centered
+    // HD action labels. Position and scale edits still apply independently.
+    if (!enabled || textAnchor == kHudTextAnchorOriginal) {
         if (state.active && state.textBox == textBox) {
-            textBox->mFlags = state.originalFlags;
+            textBox->mFlags = (textBox->mFlags & ~0x0C) | (state.originalFlags & 0x0C);
         }
         state = {};
         return;
@@ -1342,6 +1344,18 @@ void apply_hud_text_box_binding(const HudPaneSlot slot, const std::size_t index,
     }
 
     set_text_box_h_binding(textBox, hud_text_anchor_binding(textAnchor));
+}
+
+void restore_hud_text_box_bindings() {
+    for (auto& group : s_hudTextBoxFlags) {
+        for (auto& state : group) {
+            if (state.active && state.textBox != nullptr) {
+                state.textBox->mFlags = (state.textBox->mFlags & ~0x0C) |
+                    (state.originalFlags & 0x0C);
+            }
+            state = {};
+        }
+    }
 }
 
 void apply_hud_text_box_group_binding(const HudPaneSlot slot, CPaneMgr* const* panes,
@@ -2971,6 +2985,9 @@ HookAction before_meter_draw_restore_hud(ModContext*, void* args, void*, void*) 
         return HOOK_CONTINUE;
     }
 
+    // Restore before native/HD presentation snapshots the next frame. This
+    // also lets Original follow live HUD changes after an explicit anchor.
+    restore_hud_text_box_bindings();
     restore_hud_layout_base();
     return HOOK_CONTINUE;
 }

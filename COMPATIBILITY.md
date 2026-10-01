@@ -233,6 +233,10 @@ Dawnlight's HUD Layout Editor is compatible with Twilight HD HUD's gameplay HUD
 for the supported elements. Twilight HD HUD owns its artwork and base layout;
 Dawnlight applies the saved Custom HUD positions and scales afterward. Use the
 HUD Editor's copy action to initialize a Custom layout before editing it.
+Copying GameCube to Custom uses the `Original` text anchor for button labels,
+retaining the active HUD's text alignment instead of forcing vanilla alignment.
+Custom text offsets/scales and explicit Left/Right anchors remain editable;
+`Original` is also preserved when exporting/importing HUD settings.
 
 Ammo offsets and scales also compose with Twilight HD HUD: X/Y counts receive
 the editor transform after the HD layout, and its third-slot count uses the

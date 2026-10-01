@@ -223,11 +223,11 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
 }};
 
 constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
-    {"a", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 0},
-    {"b", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 0},
-    {"x", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 0},
-    {"y", 0, 0, 100, 0, 0, 100, 0, 0, 100, 0, 0},
-    {"z", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 0},
+    {"a", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
+    {"b", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
+    {"x", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
+    {"y", 0, 0, 100, 0, 0, 100, 0, 0, 100, 0, 2},
+    {"z", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
 }};
 
 constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults = {{
@@ -352,7 +352,7 @@ constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{
 
 constexpr const char* kHudSettingsFileName = "hud_layout_settings.json";
 constexpr const char* kItemAnchorNames[] = {"Left", "Right", "Top", "Bottom"};
-constexpr const char* kTextAnchorNames[] = {"Left", "Right"};
+constexpr const char* kTextAnchorNames[] = {"Left", "Right", "Original"};
 constexpr const char* kSlideDirectionNames[] = {"Left -> Right", "Right -> Left"};
 
 size_t hud_element_index(HudElement element) {
@@ -436,7 +436,7 @@ const char* item_anchor_name(int anchor) {
 }
 
 const char* text_anchor_name(int anchor) {
-    return kTextAnchorNames[std::clamp(anchor, 0, 1)];
+    return kTextAnchorNames[std::clamp(anchor, 0, 2)];
 }
 
 std::filesystem::path hud_settings_file_path() {
@@ -1542,7 +1542,7 @@ int hud_custom_button_item_anchor(HudButton button) {
 
 int hud_custom_button_text_anchor(HudButton button) {
     const size_t index = hud_button_index(button);
-    return get_int(s_hudButtonTextAnchor[index], kHudButtonDefaults[index].textAnchor, 0, 1);
+    return get_int(s_hudButtonTextAnchor[index], kHudButtonDefaults[index].textAnchor, 0, 2);
 }
 
 bool hud_custom_dpad_follows_minimap() {

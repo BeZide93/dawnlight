@@ -171,6 +171,10 @@ jobs:
           fi
           cmake -B build "${args[@]}"
 
+      - name: Test Armos death particle fallback against native code
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/armos_death_fallback_test.py --dusklight-dir dusklight
+
       - name: Test Touch Editor and Quick Access compatibility
         if: matrix.platform == 'linux-x86_64'
         run: |

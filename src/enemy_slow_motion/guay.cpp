@@ -6,7 +6,15 @@ namespace {
 DEFINE_HOOK(&daE_GE_c::executeFly, FlyHook);
 DEFINE_HOOK(&daE_GE_c::executeAttack, AttackHook);
 DEFINE_HOOK(&daE_GE_c::executeBack, BackHook);
-DEFINE_HOOK(&daE_GE_c::calcCircleFly, CircleHook);
+// Do not hook calcCircleFly: it returns cXyz by value. On the Microsoft ABI,
+// the member function takes `this` before the hidden return buffer, while the
+// SDK's free-function trampoline puts that buffer first. Even an inactive
+// callback would forward the wrong actor pointer and corrupt memory.
+DEFINE_HOOK(&daE_GE_c::checkCircleSpeedAdd, OrbitCheckHook);
+// References use the pointer ABI; spelling them as pointers also avoids the
+// pinned SDK's invalid const-reference-to-void* argument marshalling.
+DEFINE_HOOK_SYMBOL("daE_GE_c::setAddCalcSpeed",
+    void(daE_GE_c*, cXyz*, const cXyz*, float, float, float, float), SpeedHook);
 DEFINE_HOOK(&daE_GE_c::mtx_set, MatrixHook);
 constexpr int kFly = 1, kAttack = 2, kBack = 3, kDown = 4, kWind = 7;
 bool attached(const daE_GE_c& a) { return a.mActionMode == kWind && a.mMode < 2; }
@@ -24,7 +32,7 @@ void prepare(EnemySlowStep& step, bool tick) {
     step.chaseAngles = {&a.current.angle.y, &a.shape_angle.x, &a.shape_angle.y,
         &a.shape_angle.z, &a.field_0xb8a};
     step.values[0] = a.field_0xb8c;
-    step.values[1] = 0; // vertical-speed checkpoint from calcCircleFly
+    step.values[1] = 0; // vertical-speed checkpoint from setAddCalcSpeed
     if (!tick) {
         for (auto& timer : a.field_0xb8e) hold_enemy_timer(timer);
         hold_enemy_timer(a.mDamageCooldownTimer);
@@ -52,20 +60,20 @@ HookAction before_flight(ModContext*, void* args, void*, void*) {
     }
     return HOOK_CONTINUE;
 }
-HookAction before_circle(ModContext*, void* args, void*, void*) {
+void after_orbit_check(ModContext*, void* args, void* result, void*) {
     auto* step = current_enemy_slow_step();
     auto* a = mods::arg<daE_GE_c*>(args, 0);
-    if (!step || step->actor != a) return HOOK_CONTINUE;
-    auto& angle = mods::arg_ref<s16>(args, 3);
-    const auto old = static_cast<s16>(step->values[0]);
-    // Only an actual orbit increment, never a new target/home bearing.
-    if (angle == a->field_0xb8c && static_cast<s16>(angle - old) == a->field_0xb8a &&
-        (a->mActionMode == kFly || (a->mActionMode == kAttack && a->mMode == 1))) {
-        angle = a->field_0xb8c = slow_enemy_angle(old, angle, step->scale);
-    }
-    return HOOK_CONTINUE;
+    if (!step || step->actor != a || !result || !*static_cast<bool*>(result)) return;
+    if (!((a->mActionMode == kFly && (a->mMode == 1 || a->mMode == 2)) ||
+          (a->mActionMode == kAttack && a->mMode == 1))) return;
+    // Each native caller immediately adds field_0xb8a after a successful check.
+    // Remove the unused fraction now, without changing the check's input or
+    // return value, the persistent angular speed, or any target/home bearing.
+    const s16 next = static_cast<s16>(a->field_0xb8c + a->field_0xb8a);
+    a->field_0xb8c = static_cast<s16>(
+        slow_enemy_angle(a->field_0xb8c, next, step->scale) - a->field_0xb8a);
 }
-void after_circle(ModContext*, void* args, void*, void*) {
+void after_speed(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
     auto* a = mods::arg<daE_GE_c*>(args, 0);
     if (step && step->actor == a) { step->values[1] = 1; step->values[2] = a->speed.y; }
@@ -73,7 +81,7 @@ void after_circle(ModContext*, void* args, void*, void*) {
 void after_attack(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
     auto* a = mods::arg<daE_GE_c*>(args, 0);
-    // calcCircleFly has already slowed chase acceleration. Only scale the
+    // setAddCalcSpeed has already slowed chase acceleration. Only scale the
     // additional raw dive acceleration after that call, without doing it twice.
     if (step && step->actor == a && step->values[1] != 0)
         a->speed.y = step->values[2] + (a->speed.y - step->values[2]) * step->scale;
@@ -103,8 +111,8 @@ ModResult install() {
     if (result == MOD_OK) result = mods::hook::add_pre<BackHook>(svc_hook, before_back);
     if (result == MOD_OK) result = mods::hook::add_pre<AttackHook>(svc_hook, before_flight);
     if (result == MOD_OK) result = mods::hook::add_post<AttackHook>(svc_hook, after_attack);
-    if (result == MOD_OK) result = mods::hook::add_pre<CircleHook>(svc_hook, before_circle);
-    if (result == MOD_OK) result = mods::hook::add_post<CircleHook>(svc_hook, after_circle);
+    if (result == MOD_OK) result = mods::hook::add_post<OrbitCheckHook>(svc_hook, after_orbit_check);
+    if (result == MOD_OK) result = mods::hook::add_post<SpeedHook>(svc_hook, after_speed);
     if (result == MOD_OK) result = mods::hook::add_pre<MatrixHook>(svc_hook, before_matrix);
     return result;
 }

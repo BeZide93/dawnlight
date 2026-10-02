@@ -8,6 +8,8 @@
 #include <iostream>
 #include <limits>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 using s8=int8_t;using u8=uint8_t;using s16=int16_t;using u16=uint16_t;using u32=uint32_t;
 using JAISoundID=u32;
 struct cXyz {
@@ -27,6 +29,7 @@ struct fopAc_ac_c {
     float speedF=0,gravity=-3;
     int health=4,profile=0,parentActorID=0;
     Event eventInfo;
+    int tevStr=0;
 };
 struct dBgS_Acch {bool ground=false;bool ChkGroundHit(){return ground;}};
 struct J3DFrameCtrl{};
@@ -39,7 +42,9 @@ struct mDoExt_McaMorfSO:mDoExt_morf_c {
     Model* getModel(){return &model;}
 };
 struct mDoExt_brkAnm {J3DFrameCtrl ctrl;J3DFrameCtrl* getFrameCtrl(){return &ctrl;}};
-struct Z2CreatureEnemy{};struct Z2SoundHandlePool{};
+struct Z2CreatureEnemy{void startCreatureSound(JAISoundID,u32,s8){}};struct Z2SoundHandlePool{};
+struct JPABaseEmitter {void becomeImmortalEmitter(){}};
+JPABaseEmitter* dComIfGp_particle_set(u16,const cXyz*,const int*,const csXyz*,const cXyz*){return nullptr;}
 struct e_mm_class {
     fopAc_ac_c enemy;mDoExt_McaMorfSO* modelMorf=nullptr;dBgS_Acch acch;
     Z2CreatureEnemy sound;float field_0x6a8=0;s16 timers[4]{},field_0x6a4=0;
@@ -54,8 +59,13 @@ struct e_ai_class:fopAc_ac_c {
     int m_action=0,m_mode=0,field_0x692=0;
     s16 m_lifetime=0,m_timers[4]{},m_invulnerabilityTimer=0,field_0x6bc=0,field_0x6ba=0,field_0x6a8=0;
     float field_0x6c0=0;
+    Z2CreatureEnemy m_sound;JPABaseEmitter* mpEmitter=nullptr;
 };
 struct daE_GE_c:fopAc_ac_c {
+    void executeFly();void executeAttack();void executeBack();void mtx_set();
+    bool checkCircleSpeedAdd(cXyz*,cXyz*);
+    void setAddCalcSpeed(cXyz&,const cXyz&,float,float,float,float);
+    cXyz calcCircleFly(cXyz*,cXyz*,s16,float,s16,float);
     mDoExt_McaMorfSO* mpMorfSO=nullptr;dBgS_Acch mObjAcch;
     int mActionMode=0,mMode=0,mSubMode=0;
     float field_0xb58=0,field_0xb5c=0;
@@ -111,6 +121,18 @@ enum ModResult{MOD_OK,MOD_ERROR};
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 #define DEFINE_HOOK(target, name) struct name{}
 #define DEFINE_HOOK_SYMBOL(symbol, signature, name) struct name{}
+// Unlike the generic asset-free fixtures, keep Guay hook return types visible:
+// the pinned SDK cannot safely turn a struct-returning MSVC member into a
+// free-function trampoline, even when every callback is a no-op.
+template<class Signature>struct GuayHookSignature;
+template<class C,class R,class... A>struct GuayHookSignature<R(C::*)(A...)> {
+    static_assert(std::is_void_v<R> || std::is_scalar_v<R>,
+        "Guay hooks must not use the SDK's unsafe aggregate-return trampoline");
+};
+template<class R,class... A>struct GuayHookSignature<R(A...)> {
+    static_assert(std::is_void_v<R> || std::is_scalar_v<R>,
+        "Guay hooks must not use the SDK's unsafe aggregate-return trampoline");
+};
 void* svc_hook=nullptr;
 namespace mods {
 template<class T>T arg(void* p,int i){return std::any_cast<T>(static_cast<std::any*>(p)[i]);}

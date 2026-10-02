@@ -67,9 +67,13 @@ public HUD API takes precedence and clears the KH2 report to prevent two bars.
 Disabled features, hidden/menu HUD state, player/save resets and shutdown clear
 Dawnlight's persistent KH2 report. No gameplay or charge values are modified.
 
-Enable KH2 HUD's **Drive → Drive gauge** option. Version 1.0 of the supplied API
-has no query for that checkbox or actual rendering: if KH2 accepts a report but
-its own gauge is switched off, Dawnlight cannot detect that and its own bar is
-still suppressed. KH2 controls this gauge's artwork, position and fading; its
-API does not accept Dawnlight's layout or alpha. No example mod or KH2 assets are
-included in Dawnlight.
+Dawnlight reads KH2 HUD's **Drive → Drive gauge** switch from the live boolean
+ConfigVar `mod.com_kite_kh2hud.drive_gauge` (mod ID `com.kite.kh2hud`, name
+`drive_gauge`). Switching it off clears Dawnlight's KH2 report and restores the
+normal bar immediately; switching it on resumes DRIVE/FORM reporting. There is
+no config.json file polling. A missing variable uses KH2's documented default
+of **on**; if the host config lookup cannot be resolved, Dawnlight keeps its bar.
+Only the host lookup function is cached, never a provider-owned variable pointer.
+
+KH2 controls this gauge's artwork, position and fading; its API does not accept
+Dawnlight's layout or alpha. No example mod or KH2 assets are included in Dawnlight.

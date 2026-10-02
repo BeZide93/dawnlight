@@ -1,13 +1,32 @@
 #include "kh2_hud_compat.hpp"
 #include "fierce_deity_hud.hpp"
 #include "dawnlight/kh2_hud_drive.h"
+#include "mods/svc/hook.h"
+#include "dusk/config_var.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 namespace dawnlight {
 namespace {
 bool s_reported = false;
+using GetConfigVarFn = dusk::config::ConfigVarBase* (*)(std::string_view);
+GetConfigVarFn s_getConfigVar = nullptr;
+
+bool kh2_drive_enabled() {
+    if (!s_getConfigVar) {
+        void* address = nullptr;
+        if (!svc_hook || !svc_hook->resolve ||
+            svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) != MOD_OK ||
+            !address) return false; // unknown state: retain Dawnlight's bar
+        s_getConfigVar = reinterpret_cast<GetConfigVarFn>(address);
+    }
+    // Read the effective live value, including unsaved UI changes. Never cache
+    // the CVar pointer: KH2 can unregister/recreate it on disable or reload.
+    const auto* value = s_getConfigVar("mod.com_kite_kh2hud.drive_gauge");
+    return !value || static_cast<const dusk::config::ConfigVar<bool>*>(value)->getValue();
+}
 }
 
 void clear_kh2_drive() {
@@ -25,7 +44,7 @@ bool update_kh2_drive() {
     // An explicitly registered replacement owns the bar. Do not also leave a
     // persistent KH2 gauge behind when a consumer of our public API takes over.
     const auto state = fierce_deity_hud_state();
-    if (fierce_deity_hud_renderer_registered() || !state.enabled || !state.visible ||
+    if (!kh2_drive_enabled() || fierce_deity_hud_renderer_registered() || !state.enabled || !state.visible ||
         !std::isfinite(state.percentage)) {
         clear_kh2_drive();
         return false;

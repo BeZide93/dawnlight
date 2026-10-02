@@ -59,6 +59,7 @@ add_mod(dawnlight_mod
         src/cave_randomizer.cpp
         src/player_hard_mode.cpp
         src/enemy_spawner.cpp
+        src/enemy_slow_motion/boss.cpp
         src/enemy_slow_motion/darknut.cpp
         src/enemy_slow_motion/bokoblin.cpp
         src/enemy_slow_motion/mini_freezard.cpp
@@ -92,6 +93,35 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/guay.cpp
         src/enemy_slow_motion/armos.cpp
         src/enemy_slow_motion/chu.cpp
+        src/enemy_slow_motion/baby_gohma.cpp
+        src/enemy_slow_motion/young_gohma.cpp
+        src/enemy_slow_motion/diababa_head.cpp
+        src/enemy_slow_motion/blizzeta_ice.cpp
+        src/enemy_slow_motion/zant_magic.cpp
+        src/enemy_slow_motion/zant_mobile.cpp
+        src/enemy_slow_motion/darkhammer_ball.cpp
+        src/enemy_slow_motion/morpheel.cpp
+        src/enemy_slow_motion/heroes_shade.cpp
+        src/enemy_slow_motion/argorok.cpp
+        src/enemy_slow_motion/stallord.cpp
+        src/enemy_slow_motion/fyrus.cpp
+        src/enemy_slow_motion/diababa.cpp
+        src/enemy_slow_motion/armogohma.cpp
+        src/enemy_slow_motion/puppet_zelda.cpp
+        src/enemy_slow_motion/ganondorf.cpp
+        src/enemy_slow_motion/king_bulblin.cpp
+        src/enemy_slow_motion/ook_boomerang.cpp
+        src/enemy_slow_motion/ook.cpp
+        src/enemy_slow_motion/phantom_zant.cpp
+        src/enemy_slow_motion/death_sword.cpp
+        src/enemy_slow_motion/blizzeta.cpp
+        src/enemy_slow_motion/beast_ganon.cpp
+        src/enemy_slow_motion/zant.cpp
+        src/enemy_slow_motion/skull_kid.cpp
+        src/enemy_slow_motion/deku_toad.cpp
+        src/enemy_slow_motion/toado.cpp
+        src/enemy_slow_motion/darkhammer.cpp
+        src/enemy_slow_motion/dangoro.cpp
         src/hud_fade.cpp
         src/combat_meter.cpp
         src/gale_counter.cpp

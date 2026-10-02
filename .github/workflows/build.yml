@@ -71,6 +71,7 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: |
           python3 tests/cave_enemy_slow_test.py
+          python3 tests/boss_enemy_slow_test.py
           python3 tests/cave_enemy_spawner_test.py
           python3 tests/enemy_spawner_scene_test.py
           c++ -std=c++20 -Wall -Wextra -Werror tests/enemy_slow_motion_timing.cpp -o /tmp/enemy-slow-test

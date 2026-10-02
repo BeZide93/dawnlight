@@ -1,6 +1,7 @@
 #include "enemy_slow_motion.hpp"
 #include "enemy_hard_mode.hpp"
 #include "enemy_slow_motion/profile.hpp"
+#include "enemy_slow_motion/boss.hpp"
 #include "enemy_slow_motion/scope.hpp"
 #include "enemy_slow_motion/timing.hpp"
 #include "m_Do/m_Do_ext.h"
@@ -11,12 +12,20 @@
 namespace dawnlight {
 namespace {
 DEFINE_HOOK(&fopAcM_posMoveF, MoveHook);
+DEFINE_HOOK(&fopAcM_posMove, DirectMoveHook);
 DEFINE_HOOK(&mDoExt_morf_c::frameUpdate, AnimationHook);
 DEFINE_HOOK(&J3DFrameCtrl::checkPass, AnimationEventHook);
 DEFINE_HOOK(&fpcMtd_Method, ProcessMethodHook);
 // MSVC cannot emit the SDK's constinit metadata for this virtual member pointer.
 DEFINE_HOOK_SYMBOL("dBgS_Acch::CrrPos", void(dBgS_Acch*, dBgS&), CollisionHook);
 DEFINE_HOOK(&cLib_addCalc2, ChaseTargetHook);
+DEFINE_HOOK(&cLib_addCalc, ChaseTargetMinHook);
+DEFINE_HOOK_SYMBOL("cLib_addCalcPos", float(cXyz*, const cXyz*, float, float, float), ChasePositionMinHook);
+DEFINE_HOOK_SYMBOL("cLib_addCalcPosXZ", float(cXyz*, const cXyz*, float, float, float), ChasePositionXZMinHook);
+DEFINE_HOOK_SYMBOL("cLib_addCalcPos2", void(cXyz*, const cXyz*, float, float), ChasePositionHook);
+DEFINE_HOOK_SYMBOL("cLib_addCalcPosXZ2", void(cXyz*, const cXyz*, float, float), ChasePositionXZHook);
+DEFINE_HOOK_SYMBOL("cLib_chasePos", int(cXyz*, const cXyz*, float), ChasePositionLinearHook);
+DEFINE_HOOK_SYMBOL("cLib_chasePosXZ", int(cXyz*, const cXyz*, float), ChasePositionXZLinearHook);
 DEFINE_HOOK(&cLib_addCalc0, ChaseZeroHook);
 DEFINE_HOOK(&cLib_chaseF, ChaseLinearHook);
 DEFINE_HOOK(&cLib_addCalcAngleS2, ChaseAngleHook);
@@ -25,7 +34,7 @@ DEFINE_HOOK(&cLib_chaseS, ChaseShortHook);
 DEFINE_HOOK(&cLib_chaseAngleS, ChaseAngleLinearHook);
 DEFINE_HOOK(&J3DFrameCtrl::update, ControllerUpdateHook);
 
-const std::array<const EnemySlowProfile*, 35> s_profiles{
+const std::array<const EnemySlowProfile*, 64> s_profiles{
     &darknut_slow_profile(), &bokoblin_slow_profile(), &mini_freezard_slow_profile(),
     &keese_slow_profile(), &tektite_slow_profile(), &gibdo_slow_profile(),
     &goron_slow_profile(), &staltroop_slow_profile(), &aeralfos_slow_profile(), &chilfos_slow_profile(),
@@ -37,7 +46,13 @@ const std::array<const EnemySlowProfile*, 35> s_profiles{
     &dynalfos_slow_profile(), &skulltula_slow_profile(),
     &baba_serpent_slow_profile(), &big_baba_slow_profile(), &deku_baba_slow_profile(),
     &stalfos_slow_profile(), &helmasaur_slow_profile(), &helmasaur_armor_slow_profile(),
-    &kargarok_slow_profile(), &guay_slow_profile(), &armos_slow_profile(), &chu_slow_profile()
+    &kargarok_slow_profile(), &guay_slow_profile(), &armos_slow_profile(), &chu_slow_profile(),
+    &baby_gohma_slow_profile(), &young_gohma_slow_profile(), &diababa_head_slow_profile(), &blizzeta_ice_slow_profile(), &zant_magic_slow_profile(), &zant_mobile_slow_profile(), &darkhammer_ball_slow_profile(),
+    &morpheel_slow_profile(), &heroes_shade_slow_profile(),
+    &argorok_slow_profile(), &stallord_slow_profile(),
+    &fyrus_slow_profile(), &diababa_slow_profile(), &armogohma_slow_profile(), &puppet_zelda_slow_profile(), &ganondorf_slow_profile(), &king_bulblin_slow_profile(), &ook_slow_profile(), &ook_boomerang_slow_profile(),
+    &phantom_zant_slow_profile(), &death_sword_slow_profile(), &blizzeta_slow_profile(), &beast_ganon_slow_profile(), &zant_slow_profile(), &skull_kid_slow_profile(),
+    &deku_toad_slow_profile(), &toado_slow_profile(), &darkhammer_slow_profile(), &dangoro_slow_profile()
 };
 
 const EnemySlowProfile* find_profile(fopAc_ac_c* actor) {
@@ -99,6 +114,8 @@ HookAction before_move(ModContext*, void* args, void*, void*) {
 
 HookAction before_collision(ModContext*, void* args, void*, void*) {
     auto* step = current_enemy_slow_step();
+    if (step && step->profile->beforeAnyCollision)
+        step->profile->beforeAnyCollision(*step, mods::arg<dBgS_Acch*>(args, 0));
     if (step == nullptr || step->actor == nullptr || step->directCollision == nullptr ||
         mods::arg<dBgS_Acch*>(args, 0) != step->directCollision) return HOOK_CONTINUE;
     if (step->profile->beforeCollision != nullptr) step->profile->beforeCollision(*step);
@@ -129,6 +146,40 @@ HookAction before_chase_target(ModContext*, void* args, void*, void*) {
         mods::arg_ref<float>(args, 2) *= step->scale * hardScale;
         mods::arg_ref<float>(args, 3) *= step->scale * hardScale;
     }
+    return HOOK_CONTINUE;
+}
+
+HookAction before_chase_target_min(ModContext* ctx, void* args, void* result, void* user) {
+    auto* step = current_enemy_slow_step();
+    if (owns_chase_float(step, mods::arg<float*>(args, 0)))
+        mods::arg_ref<float>(args, 4) *= step->scale *
+            enemy_hard_mode_chase_scale(*step, mods::arg<float*>(args, 0));
+    return before_chase_target(ctx, args, result, user);
+}
+
+bool owns_chase_position(const EnemySlowStep* step, const cXyz* value) {
+    if (!step) return false;
+    for (auto* owned : step->chasePositions) if (owned == value) return true;
+    return false;
+}
+HookAction before_chase_position(ModContext*, void* args, void*, void*) {
+    const auto* step = current_enemy_slow_step();
+    if (owns_chase_position(step, mods::arg<cXyz*>(args, 0))) {
+        mods::arg_ref<float>(args, 2) *= step->scale;
+        mods::arg_ref<float>(args, 3) *= step->scale;
+    }
+    return HOOK_CONTINUE;
+}
+HookAction before_chase_position_min(ModContext* ctx, void* args, void* result, void* user) {
+    const auto* step = current_enemy_slow_step();
+    if (owns_chase_position(step, mods::arg<cXyz*>(args, 0)))
+        mods::arg_ref<float>(args, 4) *= step->scale;
+    return before_chase_position(ctx, args, result, user);
+}
+HookAction before_chase_position_linear(ModContext*, void* args, void*, void*) {
+    const auto* step = current_enemy_slow_step();
+    if (owns_chase_position(step, mods::arg<cXyz*>(args, 0)))
+        mods::arg_ref<float>(args, 2) *= step->scale;
     return HOOK_CONTINUE;
 }
 
@@ -255,6 +306,21 @@ void after_move(ModContext*, void* args, void*, void*) {
     step->moving = false;
     // Vanilla performs mAcch.CrrPos next, against the slowed position.
 }
+HookAction before_direct_move(ModContext* ctx, void* args, void* result, void* user) {
+    auto* step = current_enemy_slow_step();
+    if (!step || !step->slowDirectMove || step->moving || mods::arg<fopAc_ac_c*>(args, 0) != step->actor)
+        return HOOK_CONTINUE;
+    step->directMoving = true;
+    before_move(ctx, args, result, user);
+    return HOOK_CONTINUE;
+}
+void after_direct_move(ModContext* ctx, void* args, void* result, void* user) {
+    auto* step = current_enemy_slow_step();
+    if (!step || !step->directMoving || mods::arg<fopAc_ac_c*>(args, 0) != step->actor) return;
+    after_move(ctx, args, result, user);
+    step->directMoving = false;
+}
+
 
 
 bool owns_animation(const EnemySlowStep* step, const mDoExt_morf_c* animation) {
@@ -424,17 +490,27 @@ void after_enemy_slow_execute(ModContext*, void*, void*, void*) {
 }
 
 ModResult initialize_enemy_slow_motion() {
+    install_boss_conditional_timers();
     for (const auto* profile : s_profiles) {
         if (profile->install == nullptr) continue;
         const ModResult result = profile->install();
         if (result != MOD_OK) return result;
     }
     ModResult result = install_enemy_hard_mode_hooks();
+    if (result == MOD_OK) result = mods::hook::add_pre<DirectMoveHook>(svc_hook, before_direct_move);
+    if (result == MOD_OK) result = mods::hook::add_post<DirectMoveHook>(svc_hook, after_direct_move);
     if (result == MOD_OK) result = mods::hook::add_pre<MoveHook>(svc_hook, before_move);
     if (result == MOD_OK) result = mods::hook::add_pre<ProcessMethodHook>(svc_hook, before_process_method);
     if (result == MOD_OK) result = mods::hook::add_post<ProcessMethodHook>(svc_hook, after_process_method);
     if (result == MOD_OK) result = mods::hook::add_pre<CollisionHook>(svc_hook, before_collision);
     if (result == MOD_OK) result = mods::hook::add_pre<ChaseTargetHook>(svc_hook, before_chase_target);
+    if (result == MOD_OK) result = mods::hook::add_pre<ChaseTargetMinHook>(svc_hook, before_chase_target_min);
+    if (result == MOD_OK) result = mods::hook::add_pre<ChasePositionHook>(svc_hook, before_chase_position);
+    if (result == MOD_OK) result = mods::hook::add_pre<ChasePositionXZHook>(svc_hook, before_chase_position);
+    if (result == MOD_OK) result = mods::hook::add_pre<ChasePositionMinHook>(svc_hook, before_chase_position_min);
+    if (result == MOD_OK) result = mods::hook::add_pre<ChasePositionXZMinHook>(svc_hook, before_chase_position_min);
+    if (result == MOD_OK) result = mods::hook::add_pre<ChasePositionLinearHook>(svc_hook, before_chase_position_linear);
+    if (result == MOD_OK) result = mods::hook::add_pre<ChasePositionXZLinearHook>(svc_hook, before_chase_position_linear);
     if (result == MOD_OK) result = mods::hook::add_pre<ChaseZeroHook>(svc_hook, before_chase_zero);
     if (result == MOD_OK) result = mods::hook::add_pre<ChaseLinearHook>(svc_hook, before_chase_linear);
     if (result == MOD_OK) result = mods::hook::add_pre<ChaseAngleHook>(svc_hook, before_chase_angle);

@@ -1,12 +1,33 @@
 #include "integration.hpp"
-class JPABaseEmitter;
+#include "JSystem/JParticle/JPAEmitter.h"
 #include "d/actor/d_a_e_ai.h"
+#include "d/d_com_inf_game.h"
 #include "d/d_s_play.h"
 
 namespace dawnlight {
 namespace {
 DEFINE_HOOK(&e_ai_class::e_ai_attack, AttackHook);
 DEFINE_HOOK(&e_ai_class::action, ActionHook);
+DEFINE_HOOK(&e_ai_class::e_ai_damage, DamageHook);
+
+HookAction before_damage(ModContext*, void* args, void*, void*) {
+    auto* a = mods::arg<e_ai_class*>(args, 0);
+    if (a->field_0x692 != 0 || a->m_mode != 1 || a->m_timers[1] != 0)
+        return HOOK_CONTINUE;
+
+    // Native e_ai_damage unconditionally dereferences the emitter returned for
+    // this scene-specific flash. It may be absent in a spawner/randomizer room,
+    // or allocation may fail. Start the same flash/countdown safely, then let
+    // native movement, emitter tracking, explosion, switch and deletion run.
+    // This safety hook deliberately does not depend on an active slow step.
+    a->m_sound.startCreatureSound(Z2SE_EN_AI_FLASH, 0, -1);
+    a->mpEmitter = dComIfGp_particle_set(0x81ED, &a->current.pos, &a->tevStr,
+                                       &a->shape_angle, nullptr);
+    if (a->mpEmitter) a->mpEmitter->becomeImmortalEmitter();
+    a->m_timers[1] = 1000; // Bypass only the unsafe native flash-start block.
+    a->m_timers[2] = 56;
+    return HOOK_CONTINUE;
+}
 bool eligible(fopAc_ac_c* base) {
     const auto& a = *static_cast<e_ai_class*>(base);
     return a.m_modelMorf && a.m_brk;
@@ -85,6 +106,7 @@ ModResult install() {
     auto result = mods::hook::add_pre<AttackHook>(svc_hook, before_attack);
     if (result == MOD_OK) result = mods::hook::add_post<AttackHook>(svc_hook, after_attack);
     if (result == MOD_OK) result = mods::hook::add_post<ActionHook>(svc_hook, after_action);
+    if (result == MOD_OK) result = mods::hook::add_pre<DamageHook>(svc_hook, before_damage);
     return result;
 }
 }

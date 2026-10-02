@@ -29,6 +29,7 @@ struct fopAc_ac_c {
     float speedF=0,gravity=-3;
     int health=4,profile=0,parentActorID=0;
     Event eventInfo;
+    int tevStr=0;
 };
 struct dBgS_Acch {bool ground=false;bool ChkGroundHit(){return ground;}};
 struct J3DFrameCtrl{};
@@ -41,7 +42,9 @@ struct mDoExt_McaMorfSO:mDoExt_morf_c {
     Model* getModel(){return &model;}
 };
 struct mDoExt_brkAnm {J3DFrameCtrl ctrl;J3DFrameCtrl* getFrameCtrl(){return &ctrl;}};
-struct Z2CreatureEnemy{};struct Z2SoundHandlePool{};
+struct Z2CreatureEnemy{void startCreatureSound(JAISoundID,u32,s8){}};struct Z2SoundHandlePool{};
+struct JPABaseEmitter {void becomeImmortalEmitter(){}};
+JPABaseEmitter* dComIfGp_particle_set(u16,const cXyz*,const int*,const csXyz*,const cXyz*){return nullptr;}
 struct e_mm_class {
     fopAc_ac_c enemy;mDoExt_McaMorfSO* modelMorf=nullptr;dBgS_Acch acch;
     Z2CreatureEnemy sound;float field_0x6a8=0;s16 timers[4]{},field_0x6a4=0;
@@ -56,6 +59,7 @@ struct e_ai_class:fopAc_ac_c {
     int m_action=0,m_mode=0,field_0x692=0;
     s16 m_lifetime=0,m_timers[4]{},m_invulnerabilityTimer=0,field_0x6bc=0,field_0x6ba=0,field_0x6a8=0;
     float field_0x6c0=0;
+    Z2CreatureEnemy m_sound;JPABaseEmitter* mpEmitter=nullptr;
 };
 struct daE_GE_c:fopAc_ac_c {
     void executeFly();void executeAttack();void executeBack();void mtx_set();

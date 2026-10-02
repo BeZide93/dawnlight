@@ -57,6 +57,8 @@ void shutdown_fierce_deity_hud() {
     if (s_lifecycle && svc_host) svc_host->unwatch_mod_lifecycle(mod_ctx, s_lifecycle);
     s_lifecycle = 0;
 }
+bool fierce_deity_hud_renderer_registered() { return s_ready && s_renderer.draw; }
+
 bool draw_external_fierce_deity_hud(const DawnlightFierceDeityHudFrame& frame) {
     if (!s_ready || !s_renderer.draw || s_drawing || !frame.state.visible) return false;
     const auto renderer = s_renderer; // callback may unregister/replace itself

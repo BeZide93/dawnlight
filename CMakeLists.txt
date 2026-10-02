@@ -102,6 +102,7 @@ add_mod(dawnlight_mod
         src/eye_movement.cpp
         src/fierce_deity.cpp
         src/fierce_deity_hud.cpp
+        src/kh2_hud_compat.cpp
         src/fierce_deity_visual.cpp
         src/great_spin_projectile.cpp
         src/item_integrity.cpp

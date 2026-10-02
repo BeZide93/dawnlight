@@ -49,3 +49,27 @@ means zero charge and no active/visible state. Polling does not advance gameplay
   the host lifecycle notification. No stale mod code is called afterward.
 
 For J2D rendering, build your own mod with `add_mod(... FEATURES game ...)`.
+
+## KH2 HUD integration
+
+Dawnlight also optionally imports Kite's `com.kite.kh2hud.drive` service 1.0,
+using the supplied ABI in `include/dawnlight/kh2_hud_drive.h`. KH2 HUD does not
+need to implement Dawnlight's renderer service for this integration:
+
+- Charging: DRIVE, one level; 100% becomes level 1 / MAX.
+- Transformed: FORM, with the current percentage as time out of 100 and one bar.
+- Transformation ends: return to DRIVE.
+
+Dawnlight reports during its frame update and refreshes before drawing its bar.
+Only an accepted `set_drive` suppresses Dawnlight's own bar. Missing services and
+rejected reports retain the normal renderer. A registered consumer of Dawnlight's
+public HUD API takes precedence and clears the KH2 report to prevent two bars.
+Disabled features, hidden/menu HUD state, player/save resets and shutdown clear
+Dawnlight's persistent KH2 report. No gameplay or charge values are modified.
+
+Enable KH2 HUD's **Drive → Drive gauge** option. Version 1.0 of the supplied API
+has no query for that checkbox or actual rendering: if KH2 accepts a report but
+its own gauge is switched off, Dawnlight cannot detect that and its own bar is
+still suppressed. KH2 controls this gauge's artwork, position and fading; its
+API does not accept Dawnlight's layout or alpha. No example mod or KH2 assets are
+included in Dawnlight.

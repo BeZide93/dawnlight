@@ -2,6 +2,7 @@
 
 #include "combat_meter.hpp"
 #include "fierce_deity_hud.hpp"
+#include "kh2_hud_compat.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
@@ -186,6 +187,7 @@ void deactivate(daAlink_c*, bool clearMeter) {
 }
 
 void reset_for_link(daAlink_c* link) {
+    clear_kh2_drive();
     // The previous player may belong to another save. Never restore its clothes
     // into the current save; equipment restoration belongs to its deletion hook.
     fierce_deity_transition_cancel(nullptr);
@@ -575,6 +577,7 @@ void draw_fierce_meter(dMeter2Draw_c* meter) {
 }
 
 void after_meter_draw(ModContext*, void* args, void*, void*) {
+    if (update_kh2_drive()) return;
     draw_fierce_meter(mods::arg<dMeter2Draw_c*>(args, 0));
 }
 
@@ -635,6 +638,7 @@ ModResult initialize_fierce_deity(ModError* error) {
 }
 
 void shutdown_fierce_deity() {
+    clear_kh2_drive();
     if (s_saveObserver != 0 && svc_save != nullptr) {
         svc_save->unobserve_saves(mod_ctx, s_saveObserver);
     }

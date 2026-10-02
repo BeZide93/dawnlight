@@ -8,6 +8,8 @@
 #include "collection_dual_wield.hpp"
 #include "fierce_deity.hpp"
 #include "fierce_deity_hud.hpp"
+#include "kh2_hud_compat.hpp"
+#include "dawnlight/kh2_hud_drive.h"
 #include "gale_counter.hpp"
 #include "hud_fade.hpp"
 #include "great_spin_projectile.hpp"
@@ -37,6 +39,7 @@
 
 DEFINE_MOD();
 IMPORT_SERVICE(ActorService, svc_actor);
+IMPORT_OPTIONAL_SERVICE(Kh2HudDriveService, svc_kh2hud_drive);
 IMPORT_SERVICE(ConfigService, svc_config);
 IMPORT_SERVICE(FlowService, svc_flow);
 IMPORT_SERVICE(GameModeService, svc_game_mode);
@@ -186,6 +189,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
     dawnlight::update_new_save_modes();
     dawnlight::update_progression();
     dawnlight::bullet_time_tick();
+    dawnlight::update_kh2_drive();
     dawnlight::update_update_service(svc_log, mod_ctx, svc_ui);
     return MOD_OK;
 }

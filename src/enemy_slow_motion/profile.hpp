@@ -28,6 +28,8 @@ struct EnemySlowStep {
     cXyz position{};
     float gravity = 0.0f;
     bool moving = false;
+    bool directMoving = false;
+    bool slowDirectMove = false;
     bool timerTick = false;
     float timerFraction = 0.0f;
     bool freshAnimationFrame = false;
@@ -38,11 +40,14 @@ struct EnemySlowStep {
     cXyz originalSpeed{};
     std::array<float, 16> values{};
     std::array<cXyz, 18> points{};
-    std::array<float*, 32> chaseFloats{};
+    std::array<float*, 64> chaseFloats{};
+    std::array<cXyz*, 24> chasePositions{};
+    std::array<int*, 24> conditionalIntTimers{};
+    std::array<u8*, 8> conditionalByteTimers{};
     std::array<s16*, 96> chaseAngles{};
     dBgS_Acch* directCollision = nullptr;
-    std::array<mDoExt_morf_c*, 4> animations{};
-    std::array<J3DFrameCtrl*, 8> controllers{};
+    std::array<mDoExt_morf_c*, 104> animations{};
+    std::array<J3DFrameCtrl*, 48> controllers{};
     Z2CreatureEnemy* sound = nullptr;
     std::array<u32, 20> frameSounds{};
 };
@@ -60,6 +65,7 @@ struct EnemySlowProfile {
     bool processExecute = false;
     void (*beforeFloatChase)(EnemySlowStep&, float*) = nullptr;
     void (*beforeAngleChase)(EnemySlowStep&, s16*) = nullptr;
+    void (*beforeAnyCollision)(EnemySlowStep&, dBgS_Acch*) = nullptr;
 };
 
 // Returns only an active actor/profile pair, never an empty stack placeholder.
@@ -130,4 +136,32 @@ const EnemySlowProfile& kargarok_slow_profile();
 const EnemySlowProfile& guay_slow_profile();
 const EnemySlowProfile& armos_slow_profile();
 const EnemySlowProfile& chu_slow_profile();
+const EnemySlowProfile& deku_toad_slow_profile();
+const EnemySlowProfile& toado_slow_profile();
+const EnemySlowProfile& darkhammer_slow_profile();
+const EnemySlowProfile& dangoro_slow_profile();
+const EnemySlowProfile& phantom_zant_slow_profile();
+const EnemySlowProfile& death_sword_slow_profile();
+const EnemySlowProfile& blizzeta_slow_profile();
+const EnemySlowProfile& beast_ganon_slow_profile();
+const EnemySlowProfile& zant_slow_profile();
+const EnemySlowProfile& skull_kid_slow_profile();
+const EnemySlowProfile& fyrus_slow_profile();
+const EnemySlowProfile& diababa_slow_profile();
+const EnemySlowProfile& armogohma_slow_profile();
+const EnemySlowProfile& puppet_zelda_slow_profile();
+const EnemySlowProfile& ganondorf_slow_profile();
+const EnemySlowProfile& king_bulblin_slow_profile();
+const EnemySlowProfile& ook_slow_profile();
+const EnemySlowProfile& argorok_slow_profile();
+const EnemySlowProfile& stallord_slow_profile();
+const EnemySlowProfile& morpheel_slow_profile();
+const EnemySlowProfile& heroes_shade_slow_profile();
+const EnemySlowProfile& baby_gohma_slow_profile();
+const EnemySlowProfile& young_gohma_slow_profile();
+const EnemySlowProfile& diababa_head_slow_profile();
+const EnemySlowProfile& blizzeta_ice_slow_profile();
+const EnemySlowProfile& zant_magic_slow_profile();
+const EnemySlowProfile& zant_mobile_slow_profile();
+const EnemySlowProfile& darkhammer_ball_slow_profile();
 }

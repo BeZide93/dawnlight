@@ -2,6 +2,7 @@
 
 #include "hud_layout.hpp"
 #include "hud_fade.hpp"
+#include "fierce_deity_hud.hpp"
 
 #include "JSystem/J2DGraph/J2DGrafContext.h"
 #include "JSystem/J2DGraph/J2DPicture.h"
@@ -288,11 +289,19 @@ void draw_combat_meter(
     meter->mpMagicBase->resize(
         meter->mpMagicBase->getInitSizeX(), meter->mpMagicBase->getInitSizeY());
 
-    position_combat_meter(meter, row, combat_meter_transform(style));
+    const ScreenBounds bounds = position_combat_meter(meter, row, combat_meter_transform(style));
 
     J2DGrafContext* graf = dComIfGp_getCurrentGrafPort();
+    DawnlightFierceDeityHudFrame replacement{};
+    const bool external = style == CombatMeterStyle::FierceDeity && bounds.valid;
+    if (external) {
+        replacement = {sizeof(replacement), fierce_deity_hud_state(),
+            bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top,
+            std::abs(meter->mpMagicParent->getScaleX()), std::abs(meter->mpMagicParent->getScaleY()),
+            combat_meter_screen_alpha(meter), graf};
+    }
     draw_combat_meter_screen(meter->mpKanteraScreen, graf,
-        style != CombatMeterStyle::FierceDeity, percentage);
+        style != CombatMeterStyle::FierceDeity, percentage, external ? &replacement : nullptr);
 
     fillPicture->setBlackWhite(oldBlack, oldWhite);
     restore_pane(frameR);

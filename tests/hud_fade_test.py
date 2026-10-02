@@ -57,6 +57,11 @@ struct J2DPane {
     J2DPane* getNextChildPane(){return next;}
 };
 struct J2DGrafContext {};
+struct DawnlightFierceDeityHudFrame {float alpha=1;};
+bool replacementHandled=false;float replacementAlpha=-1;int replacementCalls=0;
+bool draw_external_fierce_deity_hud(const DawnlightFierceDeityHudFrame&);
+void draw_combat_meter_screen(struct J2DScreen*,J2DGrafContext*,bool,float,
+    const DawnlightFierceDeityHudFrame* = nullptr);
 struct J2DScreen:J2DPane {float rendered=1;void draw(float,float,J2DGrafContext*);};
 struct J2DPicture:J2DPane {};
 namespace mods {template<class T>T arg(void* a,int){return static_cast<T>(a);}}
@@ -73,6 +78,10 @@ int meterDraws=0;
 void draw_combat_meter(dMeter2Draw_c*,float,CombatMeterStyle,int){++meterDraws;}
 // STATE
 // FUNCTIONS
+bool draw_external_fierce_deity_hud(const DawnlightFierceDeityHudFrame& frame) {
+    assert(s_hudDepth==0 && s_barAlpha==1); // final alpha must not get applied twice
+    replacementAlpha=frame.alpha;++replacementCalls;return replacementHandled;
+}
 void J2DScreen::draw(float,float,J2DGrafContext*) {
     before_screen(nullptr,this,nullptr,nullptr);
     rendered=alpha/255.0f;
@@ -199,6 +208,24 @@ int main(){
     draw_combat_meter_screen(&screen,nullptr,true,100);near(screen.rendered,1);
     custom=true;staminaFade=false;
     draw_combat_meter_screen(&screen,nullptr,true,100);near(screen.rendered,1);
+    shutdown_hud_fade();
+    s_hudDepth=1;s_hudAlpha=0.5f;
+    DawnlightFierceDeityHudFrame replacement{0.4f};
+    screen.rendered=-1;replacementHandled=true;
+    draw_combat_meter_screen(&screen,nullptr,false,50,&replacement);
+    near(replacementAlpha,0.2f);near(screen.rendered,-1);assert(replacementCalls==1);
+    assert(s_hudDepth==1 && s_barAlpha==1);
+    replacementHandled=false;
+    draw_combat_meter_screen(&screen,nullptr,false,50,&replacement);
+    near(screen.rendered,0.5f);assert(replacementCalls==2);
+    replacementHandled=true;
+    for(int i=0;i<=60;++i){now+=1.0/60;draw_combat_meter_screen(&screen,nullptr,false,0,&replacement);}
+    near(replacementAlpha,0); // empty-bar fade keeps ticking while the built-in draw is suppressed
+    now+=0.15;draw_combat_meter_screen(&screen,nullptr,false,1,&replacement);
+    near(replacementAlpha,0.2f);
+    const int callsBeforeStamina=replacementCalls;
+    // Even with a replacement argument, Stamina is never offered to the consumer.
+    draw_combat_meter_screen(&screen,nullptr,true,50,&replacement);assert(replacementCalls==callsBeforeStamina);
     shutdown_hud_fade();assert(s_player==nullptr&&s_hudDepth==0);near(s_hudAlpha,1);
 }
 '''

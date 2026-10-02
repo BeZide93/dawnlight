@@ -101,6 +101,8 @@ add_mod(dawnlight_mod
         src/enemy_scaling.cpp
         src/eye_movement.cpp
         src/fierce_deity.cpp
+        src/fierce_deity_hud.cpp
+        src/kh2_hud_compat.cpp
         src/fierce_deity_visual.cpp
         src/great_spin_projectile.cpp
         src/item_integrity.cpp
@@ -135,9 +137,9 @@ target_include_directories(dawnlight_mod PRIVATE
 
 target_compile_definitions(dawnlight_mod PRIVATE DAWNLIGHT_VERSION="${DAWNLIGHT_VER}")
 
-# ConfigVar access for the cross-mod Z-slot guard is needed on every platform.
-# Limit the private host include path to this source on non-touch builds.
-set_property(SOURCE src/item_slot_hooks.cpp APPEND PROPERTY
+# Cross-mod Z-slot and KH2 gauge guards read live ConfigVars on every platform.
+# Keep private host headers scoped to these sources on non-touch builds.
+set_property(SOURCE src/item_slot_hooks.cpp src/kh2_hud_compat.cpp APPEND PROPERTY
     INCLUDE_DIRECTORIES "${DUSKLIGHT_DIR}/src")
 
 if(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS)

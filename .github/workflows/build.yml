@@ -180,6 +180,12 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/hud_fade_config_test.py build
 
+      - name: Test Fierce Deity HUD service
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/fierce_deity_hud_test.py dusklight
+          python3 tests/kh2_hud_compat_test.py dusklight
+
       - name: Build
         run: cmake --build build --parallel
 

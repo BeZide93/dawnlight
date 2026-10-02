@@ -155,6 +155,7 @@ void fierce_deity_transition_prepare(daAlink_c*, FierceDeityTint, FierceDeityTin
 void fierce_deity_transition_commit(daAlink_c*) {}
 void fierce_deity_transition_tick(daAlink_c*) {}
 void fierce_deity_transition_cancel(daAlink_c*) {}
+void clear_kh2_drive() {}
 int spinUpdates = 0, drainUpdates = 0;
 void update_spin_activation(daAlink_c*) { ++spinUpdates; }
 void update_drain(daAlink_c*) { ++drainUpdates; }

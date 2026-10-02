@@ -57,7 +57,7 @@ bool savedToggle = true;
 bool z_item_slot_enabled() { return savedToggle; }
 // GUARD
 bool s_itemSlotHooksInstalled = false, selected = false, touchInstalled = false;
-int installs = 0, otherUpdates = 0;
+int installs = 0, otherUpdates = 0, kh2Updates = 0;
 bool failInstall = false;
 namespace dawnlight {
 ModResult install_item_slot_hooks(ModError*) {
@@ -71,6 +71,8 @@ void update_cave_randomizer() {}
 void update_new_save_modes() { ++otherUpdates; }
 void update_progression() {}
 void bullet_time_tick() {}
+// KH2 behavior is covered by kh2_hud_compat_test.py; track the frame dispatch here.
+bool update_kh2_drive() { ++kh2Updates; return false; }
 void update_update_service(Log*, ModContext*, void*) {}
 }
 #define MOD_EXPORT
@@ -114,16 +116,18 @@ int main() {
             if (earlier) registerProvider();
             assert(installs == 0);
             if (!earlier) registerProvider();
+            const int previousKh2 = kh2Updates;
             assert(mod_update(nullptr) == MOD_OK);
             assert(selected == !enabled && touchInstalled && installs == 1);
             assert(mod_update(nullptr) == MOD_OK && installs == 1);
+            assert(kh2Updates == previousKh2 + 2);
         }
     }
     // Hook errors propagate through mod_update without falsely marking success.
     s_itemSlotHooksInstalled = false; failInstall = true;
-    int previous = otherUpdates;
+    int previous = otherUpdates, previousKh2 = kh2Updates;
     assert(mod_update(nullptr) == MOD_ERROR && !s_itemSlotHooksInstalled);
-    assert(otherUpdates == previous);
+    assert(otherUpdates == previous && kh2Updates == previousKh2);
 }
 '''
 fixture = fixture.replace('// GUARD', guard).replace('// UPDATE', update)

@@ -19,7 +19,13 @@ fixture += '\nenum { ' + ', '.join(ids) + ' };\n'
 fixture += re.sub(r'^#(?:include|pragma).*\n', '', (root/'src/enemy_slow_motion/integration.hpp').read_text(), flags=re.M)
 for name, source in zip(names, sources):
     source = re.sub(r'^#include.*\n', '', source, flags=re.M)
+    if name == 'guay':
+        fixture += '\n#undef DEFINE_HOOK\n#define DEFINE_HOOK(target, name) struct name:GuayHookSignature<decltype(target)>{}\n'
+        fixture += '#undef DEFINE_HOOK_SYMBOL\n#define DEFINE_HOOK_SYMBOL(symbol, signature, name) struct name:GuayHookSignature<signature>{}\n'
     fixture += source.replace('namespace dawnlight {', f'namespace dawnlight::test_{name} {{', 1)
+    if name == 'guay':
+        fixture += '\n#undef DEFINE_HOOK\n#define DEFINE_HOOK(target, name) struct name{}\n'
+        fixture += '#undef DEFINE_HOOK_SYMBOL\n#define DEFINE_HOOK_SYMBOL(symbol, signature, name) struct name{}\n'
 fixture += (root/'tests/cave_enemy_slow_cases.hpp').read_text()
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp)/'profiles.cpp'

@@ -46,16 +46,55 @@ int main(){
     }
     {
         daE_GE_c a;a.mpMorfSO=&morph;a.mActionMode=1;a.mMode=1;a.field_0xb8c=100;
-        auto step=begin(a,test_guay::guay_slow_profile());live=&step;std::any args[]{&a,0,0,s16(300)};
+        auto step=begin(a,test_guay::guay_slow_profile());live=&step;std::any args[]{&a};
         test_guay::before_flight(nullptr,args,nullptr,nullptr);a.field_0xb5c+=4;near(a.field_0xb5c,1);
-        a.field_0xb8a=200;a.field_0xb8c=300;
-        test_guay::before_circle(nullptr,args,nullptr,nullptr);assert(a.field_0xb8c==150);assert(std::any_cast<s16>(args[3])==150);
-        args[3]=s16(900);test_guay::before_circle(nullptr,args,nullptr,nullptr);assert(std::any_cast<s16>(args[3])==900);
-        a.speed.y=8;test_guay::after_circle(nullptr,args,nullptr,nullptr);a.speed.y=4;
+        a.speed.y=8;test_guay::after_speed(nullptr,args,nullptr,nullptr);a.speed.y=4;
         test_guay::after_attack(nullptr,args,nullptr,nullptr);near(a.speed.y,7);
         a.mActionMode=7;a.mMode=0;assert(!step.profile->eligible(&a));
         a.current.pos.x=80;collision(step);near(a.current.pos.x,80); // absolute boomerang ownership
         a.mMode=2;assert(step.profile->eligible(&a));
+    }
+    // The native orbit check is followed immediately by the full angular
+    // increment. Verify the resulting bearing, including both wrap directions.
+    for(float scale:{1.f,.5f,.25f}) for(s16 increment:{s16(200),s16(-200)})
+    for(s16 bearing:{s16(100),s16(32760),s16(-32760)})
+    for(auto state:{std::pair{1,1},std::pair{1,2},std::pair{2,1}}) {
+        daE_GE_c a;a.mpMorfSO=&morph;a.mActionMode=state.first;a.mMode=state.second;
+        a.field_0xb8c=bearing;a.field_0xb8a=increment;
+        auto step=begin(a,test_guay::guay_slow_profile(),scale);live=&step;
+        std::any args[]{&a};bool advances=false;
+        test_guay::after_orbit_check(nullptr,args,&advances,nullptr);
+        assert(a.field_0xb8c==bearing&&!advances);
+        advances=true;
+        test_guay::after_orbit_check(nullptr,args,&advances,nullptr);
+        assert(advances&&a.field_0xb8a==increment);
+        a.field_0xb8c+=a.field_0xb8a;
+        assert(a.field_0xb8c==static_cast<s16>(bearing+std::lround(increment*scale)));
+    }
+    {
+        daE_GE_c a,other;a.mpMorfSO=&morph;a.field_0xb8c=900;a.field_0xb8a=200;
+        auto step=begin(a,test_guay::guay_slow_profile());live=&step;
+        std::any args[]{&a};bool advances=true;
+        // Return-home and committed dive bearings must remain absolute.
+        for(auto state:{std::pair{3,1},std::pair{2,2},std::pair{2,3}}) {
+            a.mActionMode=state.first;a.mMode=state.second;
+            test_guay::after_orbit_check(nullptr,args,&advances,nullptr);
+            assert(a.field_0xb8c==900);
+        }
+        a.mActionMode=1;a.mMode=1;
+        step.actor=&other;
+        test_guay::after_orbit_check(nullptr,args,&advances,nullptr);
+        a.speed.y=8;test_guay::after_speed(nullptr,args,nullptr,nullptr);
+        assert(a.field_0xb8c==900&&step.values[1]==0);
+        // Installed hooks must be transparent with no active slow-motion step.
+        live=nullptr;
+        test_guay::after_orbit_check(nullptr,args,&advances,nullptr);
+        test_guay::after_speed(nullptr,args,nullptr,nullptr);
+        test_guay::after_attack(nullptr,args,nullptr,nullptr);
+        assert(a.field_0xb8c==900);near(a.speed.y,8);
+        live=&step;step.actor=&a;
+        // An attack that returns before computing flight speed has no checkpoint.
+        test_guay::after_attack(nullptr,args,nullptr,nullptr);near(a.speed.y,8);
     }
     {
         e_kr_class a;a.mpMorf=&morph;a.mCurAction=3;a.field_0x672=4;a.field_0x69c[0]=32;

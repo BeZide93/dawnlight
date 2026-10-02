@@ -8,6 +8,8 @@
 #include <iostream>
 #include <limits>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 using s8=int8_t;using u8=uint8_t;using s16=int16_t;using u16=uint16_t;using u32=uint32_t;
 using JAISoundID=u32;
 struct cXyz {
@@ -56,6 +58,10 @@ struct e_ai_class:fopAc_ac_c {
     float field_0x6c0=0;
 };
 struct daE_GE_c:fopAc_ac_c {
+    void executeFly();void executeAttack();void executeBack();void mtx_set();
+    bool checkCircleSpeedAdd(cXyz*,cXyz*);
+    void setAddCalcSpeed(cXyz&,const cXyz&,float,float,float,float);
+    cXyz calcCircleFly(cXyz*,cXyz*,s16,float,s16,float);
     mDoExt_McaMorfSO* mpMorfSO=nullptr;dBgS_Acch mObjAcch;
     int mActionMode=0,mMode=0,mSubMode=0;
     float field_0xb58=0,field_0xb5c=0;
@@ -111,6 +117,18 @@ enum ModResult{MOD_OK,MOD_ERROR};
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 #define DEFINE_HOOK(target, name) struct name{}
 #define DEFINE_HOOK_SYMBOL(symbol, signature, name) struct name{}
+// Unlike the generic asset-free fixtures, keep Guay hook return types visible:
+// the pinned SDK cannot safely turn a struct-returning MSVC member into a
+// free-function trampoline, even when every callback is a no-op.
+template<class Signature>struct GuayHookSignature;
+template<class C,class R,class... A>struct GuayHookSignature<R(C::*)(A...)> {
+    static_assert(std::is_void_v<R> || std::is_scalar_v<R>,
+        "Guay hooks must not use the SDK's unsafe aggregate-return trampoline");
+};
+template<class R,class... A>struct GuayHookSignature<R(A...)> {
+    static_assert(std::is_void_v<R> || std::is_scalar_v<R>,
+        "Guay hooks must not use the SDK's unsafe aggregate-return trampoline");
+};
 void* svc_hook=nullptr;
 namespace mods {
 template<class T>T arg(void* p,int i){return std::any_cast<T>(static_cast<std::any*>(p)[i]);}

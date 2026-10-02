@@ -56,6 +56,21 @@ these with a generic timer list alone.
 
 ## Cave Enemy Validation
 
+Armos also installs a death-flash safety hook independently of active slow motion.
+It requests the normal scene effect `0x81ED` and checks the returned emitter before
+making it immortal. If the resource is unavailable or the emitter pool is full,
+only the flash is omitted; the native 56-tick explosion countdown, defeated switch
+and actor deletion still run. This covers ordinary, spawner and randomized Armos.
+The flash-start block runs at death-function entry so native code can continue
+without reaching its unchecked emitter dereference.
+
+`python3 tests/armos_death_fallback_test.py --dusklight-dir dusklight` runs the
+production guard with the pinned host's actual `e_ai_damage` implementation and
+asset-free services. It checks successful/failed particle creation, countdown
+cadence, native movement, switches, deletion and independent actors. CI runs it
+after CMake has fetched the host sources. In-game Android/Windows testing is still
+needed, including a room with the effect and a spawner room without it.
+
 `python3 tests/cave_enemy_slow_test.py` executes the production Helmasaur,
 Kargarok, Guay, Armos and Chu callbacks with asset-free native-shaped fixtures.
 It checks jump impulses, collision correction order, event repetition, orbit/dive

@@ -153,6 +153,7 @@ const EnemySlowProfile& puppet_zelda_slow_profile();
 const EnemySlowProfile& ganondorf_slow_profile();
 const EnemySlowProfile& king_bulblin_slow_profile();
 const EnemySlowProfile& ook_slow_profile();
+const EnemySlowProfile& ook_boomerang_slow_profile();
 const EnemySlowProfile& argorok_slow_profile();
 const EnemySlowProfile& stallord_slow_profile();
 const EnemySlowProfile& morpheel_slow_profile();

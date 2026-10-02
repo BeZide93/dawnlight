@@ -110,6 +110,7 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/puppet_zelda.cpp
         src/enemy_slow_motion/ganondorf.cpp
         src/enemy_slow_motion/king_bulblin.cpp
+        src/enemy_slow_motion/ook_boomerang.cpp
         src/enemy_slow_motion/ook.cpp
         src/enemy_slow_motion/phantom_zant.cpp
         src/enemy_slow_motion/death_sword.cpp

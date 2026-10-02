@@ -52,6 +52,7 @@ change the game's global clock or Link's update frequency.
 | Profiles | Special handling |
 | --- | --- |
 | Ook | Jump impulse and boomerang-release event guards; airborne translation before model/collider updates |
+| Ook's boomerang (`E_MK_BO`) | Outbound/return flight, room-four orbit, spin, sound cadence, hit cooldowns and pillar bounces; the Boss Hard Mode speed bonus is scaled once before distance checks; hidden/deleting actors and item/cutscene sequences retain the previous path |
 | Diababa and its heads | Separate animation, movement and timer ownership |
 | Dangoro | Gravity and shifted rolling collision origin; player grabs and the shared platform-slam action retain tick skipping |
 | Fyrus | Body, eye/material, attack-effect and chain-anchor animation clocks |
@@ -75,7 +76,7 @@ change the game's global clock or Link's update frequency.
 Cutscenes, scripted placement and player-owned interactions are deliberately
 excluded by each profile's eligibility predicate. They still use the existing
 fallback where the combat-slow gate permits it. Mounted King Bulblin/Bullbo and
-unregistered child actors (including Ook's boomerang and Morpheel's tentacles)
+unregistered child actors (including Morpheel's tentacles)
 also retain the previous path; this is not a continuous conversion of every
 actor involved in every boss sequence.
 
@@ -90,13 +91,17 @@ translation-unit aliases instead of platform-specific mangled names.
 asset-free fixtures: direct movement versus nested `posMoveF`, owned/foreign
 chase parameters, conditional timer calls, ice deletion, projectile spawn
 origins, triangle event edges, and Morpheel's history with nested actors and
-index wrap. CI runs it alongside the existing Cave and shared timing tests.
+index wrap. It also checks Ook's boomerang with the production Boss Hard Mode
+speed bonus, return flight, impact impulses, timer/sound cadence, room-four
+turning, pillar bounces, and inactive/foreign-actor guards. CI runs it alongside
+the existing Cave and shared timing tests.
 These tests verify the callbacks, not the host's runtime hook resolution.
 
 Before merging, test each Boss Rush entry with Bullet Time and Flurry Rush,
 including slow-mode entry/exit, damage, defeat and phase changes. Repeat with
 Boss Hard Mode; test mirrors, a full rush and Cave randomizer returns. Check
-Morpheel's body length, reflected Zelda balls, Dangoro's platform, Blizzeta's
+Morpheel's body length, reflected Zelda balls, Ook's outgoing/returning
+boomerang and pillar bounces (normal/hard), Dangoro's platform, Blizzeta's
 ice deletion, Zant's room changes and Hero's Shade clones/hazards. Verify the
 three conditional-timer profiles on both Windows and Linux hosts. No game
 runtime or Windows build has been exercised by the asset-free tests.

@@ -34,7 +34,7 @@ DEFINE_HOOK(&cLib_chaseS, ChaseShortHook);
 DEFINE_HOOK(&cLib_chaseAngleS, ChaseAngleLinearHook);
 DEFINE_HOOK(&J3DFrameCtrl::update, ControllerUpdateHook);
 
-const std::array<const EnemySlowProfile*, 63> s_profiles{
+const std::array<const EnemySlowProfile*, 64> s_profiles{
     &darknut_slow_profile(), &bokoblin_slow_profile(), &mini_freezard_slow_profile(),
     &keese_slow_profile(), &tektite_slow_profile(), &gibdo_slow_profile(),
     &goron_slow_profile(), &staltroop_slow_profile(), &aeralfos_slow_profile(), &chilfos_slow_profile(),
@@ -50,7 +50,7 @@ const std::array<const EnemySlowProfile*, 63> s_profiles{
     &baby_gohma_slow_profile(), &young_gohma_slow_profile(), &diababa_head_slow_profile(), &blizzeta_ice_slow_profile(), &zant_magic_slow_profile(), &zant_mobile_slow_profile(), &darkhammer_ball_slow_profile(),
     &morpheel_slow_profile(), &heroes_shade_slow_profile(),
     &argorok_slow_profile(), &stallord_slow_profile(),
-    &fyrus_slow_profile(), &diababa_slow_profile(), &armogohma_slow_profile(), &puppet_zelda_slow_profile(), &ganondorf_slow_profile(), &king_bulblin_slow_profile(), &ook_slow_profile(),
+    &fyrus_slow_profile(), &diababa_slow_profile(), &armogohma_slow_profile(), &puppet_zelda_slow_profile(), &ganondorf_slow_profile(), &king_bulblin_slow_profile(), &ook_slow_profile(), &ook_boomerang_slow_profile(),
     &phantom_zant_slow_profile(), &death_sword_slow_profile(), &blizzeta_slow_profile(), &beast_ganon_slow_profile(), &zant_slow_profile(), &skull_kid_slow_profile(),
     &deku_toad_slow_profile(), &toado_slow_profile(), &darkhammer_slow_profile(), &dangoro_slow_profile()
 };

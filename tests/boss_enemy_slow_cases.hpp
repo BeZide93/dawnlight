@@ -1,4 +1,5 @@
 int main() {
+    test_ook_boomerang_slow();
     using namespace dawnlight;
     const EnemySlowProfile profile{99,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr};
     fopAc_ac_c actor, foreign;

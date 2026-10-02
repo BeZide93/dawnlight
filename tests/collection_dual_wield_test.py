@@ -90,9 +90,34 @@ struct Player {
     void setShieldChange(){++changes;}
 } player;
 auto* daAlink_getAlinkActorClass(){return &player;}
-int shield=42,vibrations=0;
+constexpr u8 COLLECT_SHIELD=0,COLLECT_WOODEN_SHIELD=0,COLLECT_ORDON_SHIELD=1,COLLECT_HYLIAN_SHIELD=2;
+constexpr u8 dItemNo_WOOD_SHIELD_e=42,dItemNo_SHIELD_e=44,dItemNo_HYLIA_SHIELD_e=43;
+int shield=42,liveShield=42,vibrations=0;
+bool collected[3]{},firstItem[256]{};
+bool dComIfGs_isCollectShield(u8 id){return collected[id];}
+void dComIfGs_setCollectShield(u8 id){collected[id]=true;}
+void dComIfGs_offCollectShield(u8 id){collected[id]=false;}
+bool dComIfGs_isItemFirstBit(u8 id){return firstItem[id];}
+void dComIfGs_onItemFirstBit(u8 id){firstItem[id]=true;}
+void dComIfGs_offItemFirstBit(u8 id){firstItem[id]=false;}
+struct Status {
+    void setSelectEquip(int slot,u8 id){assert(slot==COLLECT_SHIELD);shield=id;}
+};
+struct SavedPlayer {Status status;Status& getPlayerStatusA(){return status;}};
+struct Info {SavedPlayer player;SavedPlayer& getPlayer(){return player;}};
+struct Play {
+    void setSelectEquip(int slot,u8 id){assert(slot==COLLECT_SHIELD);liveShield=id;}
+};
+struct GameInfo {Info info;Play play;} g_dComIfG_gameInfo;
 u8 dComIfGs_getSelectEquipShield(){return shield;}
-void dMeter2Info_setShield(u8 id,bool remove){assert(!remove);shield=id;}
+void dMeter2Info_setShield(u8 id,bool remove){
+    if(remove&&shield!=dItemNo_NONE_e)firstItem[shield]=false;
+    // Model the host setter's hidden ownership side effect, not just equip.
+    if(id==dItemNo_WOOD_SHIELD_e)collected[0]=true;
+    if(id==dItemNo_SHIELD_e)collected[1]=true;
+    if(id==dItemNo_HYLIA_SHIELD_e)collected[2]=true;
+    shield=liveShield=id;
+}
 void dMeter2Info_set2DVibration(){++vibrations;}
 constexpr int Z2SE_SY_CURSOR_ITEM=1,Z2SE_SY_CURSOR_OPTION=2,Z2SE_SY_ITEM_SET_X=3,Z2SE_SY_ITEM_COMBINE_OFF=4;
 std::vector<int> sounds;
@@ -156,30 +181,38 @@ struct Pointer {
 void draw_icon();
 // PRODUCTION
 int shieldChanges=0,customShield=-1,savedCustomShield=-1,customSword=5,customTunic=7;
-bool essentials=false;
+bool essentials=false,mutateOwnership=false,rejectHandoff=false;
 void dMenu_Collect2D_c::changeShield(){
     ++shieldChanges;
     assert(mCursorX==3&&mCursorY==1); // explicit native cleanup, never custom neighbor
     before_shield(nullptr,this,nullptr,nullptr);
+    if(rejectHandoff)return;
     if(essentials){
         // Essentials' changeShield hook clears and saves its custom shield,
         // then selects/toggles the native backing item and plays a sound.
         const bool wasCustom=customShield>=0;
         customShield=savedCustomShield=-1;
-        shield=(!wasCustom&&shield==42)?dItemNo_NONE_e:42;
+        dMeter2Info_setShield((!wasCustom&&shield==42)?dItemNo_NONE_e:42,false);
         mDoAud_seStart(shield==dItemNo_NONE_e?Z2SE_SY_ITEM_COMBINE_OFF:Z2SE_SY_ITEM_SET_X,nullptr,0,0);
     }else{
-        shield=42;
+        dMeter2Info_setShield(42,false);
         mDoAud_seStart(Z2SE_SY_ITEM_SET_X,nullptr,0,0);
     }
     player.setShieldChange();
+    if(mutateOwnership){
+        // A future/custom hook can both grant and revoke ownership, even
+        // without using the native equip API. Unrelated state must survive.
+        for(auto& flag:collected)flag=!flag;
+        for(int item:{42,43,44})firstItem[item]=!firstItem[item];
+        firstItem[99]=true;
+    }
     mEquippedShield=shield;highlightedShield=42;ordonOrnaments=true;
     after_shield_choice(nullptr,this,nullptr,nullptr);
 }
 void equip_shield(dMenu_Collect2D_c& menu,int target,bool toggle=false){
     // Both host policies: vanilla same-item no-op, Essentials same-item toggle.
     if(shield==target&&!toggle)return;
-    shield=shield==target?dItemNo_NONE_e:target;
+    dMeter2Info_setShield(shield==target?dItemNo_NONE_e:target,false);
     menu.mEquippedShield=shield;highlightedShield=shield;ordonOrnaments=shield==42;
     mDoAud_seStart(shield==dItemNo_NONE_e?Z2SE_SY_ITEM_COMBINE_OFF:Z2SE_SY_ITEM_SET_X,nullptr,0,0);
 }
@@ -404,6 +437,43 @@ int main(){
     before_click(nullptr,&menu,nullptr,nullptr);customShield=savedCustomShield=9;
     equip_shield(menu,42);after_shield_choice(nullptr,&menu,nullptr,nullptr);
     assert(!dual_wield_equipped()&&customShield==9&&savedCustomShield==9&&shield==42);
+    // Preserve every combination of the three collection and first-item bits,
+    // including early custom backing items that are not actually owned.
+    for(int mask=0;mask<64;++mask)for(int backing:{42,43,44})for(bool reject:{false,true}){
+        const int items[]={42,44,43};
+        for(int i=0;i<3;++i){collected[i]=(mask&(1<<i))!=0;firstItem[items[i]]=(mask&(1<<(i+3)))!=0;}
+        firstItem[99]=false;
+        shield=liveShield=backing;s_selection.chosen=false;s_menu.focused=true;
+        customShield=savedCustomShield=9;essentials=true;mutateOwnership=true;rejectHandoff=reject;
+        activate(&menu);
+        assert(dual_wield_equipped()&&shield==backing&&liveShield==backing&&!s_changingToSword);
+        for(int i=0;i<3;++i){
+            assert(collected[i]==((mask&(1<<i))!=0));
+            assert(firstItem[items[i]]==((mask&(1<<(i+3)))!=0));
+        }
+        assert(firstItem[99]==!reject);
+        assert(customShield==(reject?9:-1)&&savedCustomShield==customShield);
+        // A rejected real shield click restores its backing without granting
+        // ownership. The second completion callback must be harmless.
+        s_menu.focused=false;begin_shield_choice(&menu);
+        assert(shield==dItemNo_NONE_e&&liveShield==dItemNo_NONE_e);
+        finish_shield_choice(&menu);finish_shield_choice(&menu);
+        assert(dual_wield_equipped()&&shield==backing&&liveShield==backing);
+        for(int i=0;i<3;++i){
+            assert(collected[i]==((mask&(1<<i))!=0));
+            assert(firstItem[items[i]]==((mask&(1<<(i+3)))!=0));
+        }
+    }
+    mutateOwnership=rejectHandoff=false;
+    // Genuine selection/acquisition outside the synthetic handoff is not
+    // rolled back. This also verifies the boundary when leaving Dual Wield.
+    std::fill(std::begin(collected),std::end(collected),false);
+    std::fill(std::begin(firstItem),std::end(firstItem),false);
+    begin_shield_choice(&menu);
+    equip_shield(menu,dItemNo_WOOD_SHIELD_e);after_shield_choice(nullptr,&menu,nullptr,nullptr);
+    assert(!dual_wield_equipped()&&collected[0]&&!collected[1]&&!collected[2]);
+    dComIfGs_onItemFirstBit(dItemNo_WOOD_SHIELD_e);
+    assert(firstItem[dItemNo_WOOD_SHIELD_e]);
     // Only the internal equip/unequip feedback is suppressed, never other SFX.
     s_changingToSword=true;JAISoundID unrelated{99};bool played=true;
     assert(before_equip_sound(nullptr,&unrelated,&played,nullptr)==HOOK_CONTINUE&&played);
@@ -447,7 +517,8 @@ names = ["restore_name", "blob_name", "load_selection", "select_sword", "setting
          "dual_wield_equipped", "own_focus", "focus", "can_equip", "begin_shield_choice", "finish_shield_choice",
          "clear_previous_shield", "activate", "before_shield", "after_shield_choice", "before_equip_sound",
          "before_wait", "after_wait", "before_navigate", "before_pointer", "before_click", "before_cursor_screen_draw"]
-fixture = fixture.replace("// PRODUCTION", "\n".join(function(name) for name in names))
+ownership = source[source.index("void set_backing_shield("):source.index("struct ShieldChoice {")]
+fixture = fixture.replace("// PRODUCTION", ownership + "\n".join(function(name) for name in names))
 # Run the registration block itself so callback-only tests cannot conceal a
 # priority tie. Only unrelated callbacks are stubbed; navigation and final
 # screen presentation use their production callbacks above.
@@ -506,7 +577,7 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["c++", "-std=c++20", "-Wall", "-Wextra", "-I" + str(root / "src"),
                     str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("Collection Dual Wield passed: layouts, input, pointer, pages, save isolation, exclusive shield handoff and equip sound")
+print("Collection Dual Wield passed: layouts, input, pointer, pages, save isolation, shield ownership preservation, exclusive handoff and equip sound")
 
 # Exercise render-only tint ownership separately from input. The screen's
 # original colors must be restored for foreign equip/unequip handlers.

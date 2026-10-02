@@ -251,6 +251,40 @@ void restore_visuals(dMenu_Collect2D_c* menu,const EquipmentVisuals& saved) {
         if(old.pane->getTypeID()==18) static_cast<J2DPicture*>(old.pane)->setBlackWhite(old.black,old.white);
     }
 }
+// Only for temporary backing-item changes: the regular equip setters also
+// grant collection ownership, even when dMeter2Info_setShield gets false.
+void set_backing_shield(u8 shield) {
+    g_dComIfG_gameInfo.info.getPlayer().getPlayerStatusA().setSelectEquip(COLLECT_SHIELD,shield);
+    g_dComIfG_gameInfo.play.setSelectEquip(COLLECT_SHIELD,shield);
+}
+struct ShieldOwnershipGuard {
+    struct State {u8 collection,item;bool collected=false,first=false;};
+    State shields[3]={
+        {COLLECT_WOODEN_SHIELD,dItemNo_WOOD_SHIELD_e},
+        {COLLECT_ORDON_SHIELD,dItemNo_SHIELD_e},
+        {COLLECT_HYLIAN_SHIELD,dItemNo_HYLIA_SHIELD_e},
+    };
+    ShieldOwnershipGuard() {
+        for(auto& shield:shields) {
+            shield.collected=dComIfGs_isCollectShield(shield.collection)!=0;
+            shield.first=dComIfGs_isItemFirstBit(shield.item)!=0;
+        }
+    }
+    ShieldOwnershipGuard(const ShieldOwnershipGuard&)=delete;
+    ShieldOwnershipGuard& operator=(const ShieldOwnershipGuard&)=delete;
+    ~ShieldOwnershipGuard() {
+        for(const auto& shield:shields) {
+            if((dComIfGs_isCollectShield(shield.collection)!=0)!=shield.collected) {
+                if(shield.collected) dComIfGs_setCollectShield(shield.collection);
+                else dComIfGs_offCollectShield(shield.collection);
+            }
+            if((dComIfGs_isItemFirstBit(shield.item)!=0)!=shield.first) {
+                if(shield.first) dComIfGs_onItemFirstBit(shield.item);
+                else dComIfGs_offItemFirstBit(shield.item);
+            }
+        }
+    }
+};
 struct ShieldChoice {
     dMenu_Collect2D_c* menu=nullptr;
     u8 backing=0xff;
@@ -263,14 +297,14 @@ void begin_shield_choice(dMenu_Collect2D_c* menu) {
     // Dual Wield is the equipped choice. Its backing shield must not make a
     // real shield click look like a no-op (vanilla) or an unequip (Essentials).
     // Keep our saved selection until the downstream action actually succeeds.
-    dMeter2Info_setShield(dItemNo_NONE_e,false);
+    set_backing_shield(dItemNo_NONE_e);
 }
 void finish_shield_choice(dMenu_Collect2D_c* menu) {
     if(!menu || s_shieldChoice.menu!=menu) return;
     if(dComIfGs_getSelectEquipShield()==dItemNo_NONE_e) {
         // A debounce/unlock check rejected the action. Restore the complete
         // previous state instead of silently losing Dual Wield or its backing.
-        dMeter2Info_setShield(s_shieldChoice.backing,false);
+        set_backing_shield(s_shieldChoice.backing);
         restore_visuals(menu,s_shieldChoice.visuals);
     } else {
         select_sword(false);
@@ -279,6 +313,10 @@ void finish_shield_choice(dMenu_Collect2D_c* menu) {
     s_shieldChoice={};
 }
 void clear_previous_shield(dMenu_Collect2D_c* menu) {
+    // This synchronous handoff may run foreign hooks, but must never acquire
+    // or revoke a shield. Restore only shield ownership, after Restore below;
+    // foreign custom-equipment selection changes must remain in effect.
+    ShieldOwnershipGuard ownership;
     // Custom-equipment mods keep their own selected shield in addition to the
     // game's backing item. Go through their changeShield hooks to clear it.
     // Column 3 is the native wooden-shield action, not the virtual cell's
@@ -291,7 +329,7 @@ void clear_previous_shield(dMenu_Collect2D_c* menu) {
             menu->mCursorX=x;menu->mCursorY=y;
             // Some mods toggle the backing shield off when selecting it again.
             // Dual Wield still needs that backing item for shield combat logic.
-            if(dComIfGs_getSelectEquipShield()!=shield) dMeter2Info_setShield(shield,false);
+            set_backing_shield(shield);
             // changeShield also touches cached equipment, frame tints and
             // foreign ornaments. Restoring only the item ID leaves a ghost
             // Ordon-shield highlight that HD HUD later treats as equipped.

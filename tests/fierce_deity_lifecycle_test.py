@@ -33,6 +33,7 @@ fixture = r'''
 #include <map>
 #include <string>
 using u8 = uint8_t;
+using u16 = uint16_t;
 using u32 = uint32_t;
 using fpc_ProcID = uint32_t;
 constexpr fpc_ProcID fpcM_ERROR_PROCESS_ID_e = 0xffffffff;
@@ -170,6 +171,7 @@ struct dCcU_AtInfo {
     daAlink_c* mpActor;
     Collider* mpCollider;
     unsigned mHitType = HIT_TYPE_LINK_NORMAL_ATTACK;
+    u16 mAttackPower = 10;
 };
 '''
 
@@ -182,7 +184,7 @@ callbacks = "".join(function(name) for name in (
     "outfit_archive", "prepare_outfit", "is_sword_attack", "restore_equipment_selection",
     "deactivate", "can_transform", "activate", "update_visual_selection",
     "reset_for_link", "same_link", "on_save_started", "before_player_delete",
-    "after_damage_check", "visual_uses_magic", "visual_tint", "service_model_swap", "before_magic_armor_ability",
+    "after_damage_check", "after_attack_power_check", "visual_uses_magic", "visual_tint", "service_model_swap", "before_magic_armor_ability",
     "dispatched_player", "before_player_execute", "after_player_execute",
     "fierce_deity_active", "fierce_deity_dark_visual_active", "fierce_deity_displayed_tint", "fierce_deity_model_reload_active",
 ))
@@ -254,6 +256,19 @@ int main() {
     assert(s_state.meter == 30);
     attack.mHitType = 0; after_damage_check(nullptr, hit, nullptr, nullptr);
     assert(s_state.meter == 30);
+
+    // Revoking progression between actor updates must immediately remove the
+    // active API state and damage bonus, and block direct activation.
+    start(link); enabled=false; activate(&link); assert(!s_state.active);
+    enabled=true; activate(&link); assert(fierce_deity_active());
+    attack.mHitType=HIT_TYPE_LINK_NORMAL_ATTACK;attack.mAttackPower=10;
+    void* power[]={&attack};
+    after_attack_power_check(nullptr,power,nullptr,nullptr);assert(attack.mAttackPower==20);
+    enabled=false;assert(!fierce_deity_active());
+    attack.mAttackPower=10;after_attack_power_check(nullptr,power,nullptr,nullptr);
+    assert(attack.mAttackPower==10);
+    tick(link);assert(!s_state.active&&s_state.meter==0);
+    enabled=true;
 
     // Every outfit / visual transition, in a trajectory that passes from ascent
     // to falling. Neither archive I/O nor the commit may consume a player tick.

@@ -63,7 +63,7 @@ int main(){
     assert(state.enabled&&state.visible&&!state.active&&state.percentage==25);
     hidden=true;s_state.active=true;s_service.get_state(&owner,&state);
     assert(!state.visible&&state.active);hidden=false;
-    setting=false;s_service.get_state(&owner,&state);assert(!state.enabled&&!state.visible);
+    setting=false;s_service.get_state(&owner,&state);assert(!state.enabled&&!state.visible&&!state.active&&state.percentage==0);
     setting=true;player=false;s_service.get_state(&owner,&state);
     assert(!state.visible&&!state.active&&state.percentage==0);player=true;
     s_state.meter=101;s_service.get_state(&owner,&state);assert(state.percentage==100);

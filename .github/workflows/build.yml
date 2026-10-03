@@ -118,6 +118,7 @@ jobs:
       - name: Test configurable stamina and mode overrides
         if: matrix.platform == 'linux-x86_64'
         run: |
+          python3 tests/progression_bossrush_test.py
           python3 tests/stamina_settings_test.py
           python3 tests/mode_unlock_test.py
           python3 tests/glide_stamina_test.py

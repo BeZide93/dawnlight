@@ -233,7 +233,7 @@ bool can_transform(daAlink_c* link) {
 }
 
 void activate(daAlink_c* link) {
-    if (!can_transform(link)) return;
+    if (!fierce_deity_enabled() || !can_transform(link)) return;
     s_state.active = true;
     s_state.meter = 100.0f;
     s_state.spinChargeArmed = false;
@@ -541,7 +541,7 @@ HookAction before_magic_armor_ability(ModContext*, void*, void* retval, void*) {
 
 void after_attack_power_check(ModContext*, void* args, void*, void*) {
     auto* attack = mods::arg<dCcU_AtInfo*>(args, 0);
-    if (!s_state.active || !same_link(daAlink_getAlinkActorClass()) ||
+    if (!fierce_deity_enabled() || !s_state.active || !same_link(daAlink_getAlinkActorClass()) ||
         !is_sword_attack(attack) || attack->mpActor != s_state.link ||
         attack->mAttackPower == 0)
     {
@@ -664,11 +664,13 @@ DawnlightFierceDeityHudState fierce_deity_hud_state() {
     const bool enabled = fierce_deity_enabled();
     return {sizeof(DawnlightFierceDeityHudState), enabled,
         enabled && hasPlayer && !menu_or_pause_active(),
-        hasPlayer && s_state.active, hasPlayer ? std::clamp(s_state.meter, 0.0f, 100.0f) : 0.0f};
+        enabled && hasPlayer && s_state.active,
+        enabled && hasPlayer ? std::clamp(s_state.meter, 0.0f, 100.0f) : 0.0f};
 }
 
 bool fierce_deity_active() {
-    return s_state.active && same_link(daAlink_getAlinkActorClass());
+    // Progression/config changes can precede the next player execute hook.
+    return fierce_deity_enabled() && s_state.active && same_link(daAlink_getAlinkActorClass());
 }
 
 bool fierce_deity_input_consumed() {

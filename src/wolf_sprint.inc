@@ -9,6 +9,7 @@ float wolf_dash_speed(daAlink_c* link) {
 }
 
 bool wolf_sprint_requested(daAlink_c* link) {
+    if (twilit_sprint_enabled(true)) return false;
     if (!link || !wolf_sprint_enabled() || !link->checkWolf() || !link->mpHIO ||
         !link->doButton() || !link->checkInputOnR() || !link->checkWolfDashMode() ||
         !link->mLinkAcch.ChkGroundHit() || !stamina_available_for_wolf_sprint()) return false;

@@ -11,10 +11,15 @@ ui = (root / 'src/ui.cpp').read_text()
 def function(source, name):
     match = re.search(r'^\w[^\n]*\b' + name + r'\([^;{}]*\)\s*\{', source, re.M)
     start = match.start()
-    return source[start:source.index('\n}', start) + 2]
+    body = source.index('{', start)
+    depth, end = 1, body + 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    return source[start:end]
 
 mapping = function(config, 'mode_setting_for_config')
-variables = sorted((set(re.findall(r'\bs_\w+', mapping)) | {'s_dawnlightMode'}) - {'s_staminaSettings'})
+variables = sorted((set(re.findall(r'\bs_\w+', mapping)) | {'s_dawnlightMode','s_zItemSlot'}) - {'s_staminaSettings'})
 fixture = r'''
 #include <cassert>
 #include <cstdint>
@@ -23,7 +28,15 @@ fixture = r'''
 #include <vector>
 #include "general_modes.hpp"
 #include "stamina_settings.hpp"
+#include "twilit_stamina.hpp"
 using namespace dawnlight;
+namespace dawnlight {bool teActive=false;bool twilit_stamina_active(){return teActive;}}
+namespace dawnlight {
+bool teHumanSprint=false,teWolfSprint=false;
+bool twilit_sprint_enabled(bool wolf){return wolf?teWolfSprint:teHumanSprint;}
+const char* zProvider=nullptr;
+const char* z_item_slot_provider_notice(){return zProvider;}
+}
 using ConfigVarHandle = unsigned;
 using UiElementHandle = uint64_t;
 struct ModContext {};
@@ -91,17 +104,32 @@ int main(){
     assert(stamina_capacity(stamina_setting(StaminaSetting::Amount),progression_system_enabled(),100)==185);
     service.values[s_dawnlightMode]=0;service.values[s_progressionSystem]=0;
     assert(stamina_settings_disabled(nullptr,nullptr));
+    teActive=true;
+    assert(!stamina_settings_disabled(nullptr,nullptr)); // TE works with local bar off.
+    for(size_t i=0;i<s_staminaSettings.size();++i){
+        const auto setting=static_cast<StaminaSetting>(i);
+        ModeControlBinding control{s_staminaSettings[i],UI_CONTROL_NUMBER,stamina_settings_disabled};
+        assert(mode_control_disabled(nullptr,&control)==twilit_owns_stamina_setting(setting));
+        if(twilit_owns_stamina_setting(setting)){
+            const auto saved=service.values;
+            UiControlValue edit{};edit.int_value=123;
+            mode_control_set(nullptr,&control,&edit);
+            assert(service.values==saved);
+        }
+    }
+    teActive=false;assert(stamina_settings_disabled(nullptr,nullptr));
 }
 '''
 production = '\n'.join(f'ConfigVarHandle {name}={i+1};' for i, name in enumerate(variables))
 for name in ('dawnlight_mode_enabled', 'progression_system_enabled', 'mode_setting_for_config',
              'mode_config_override', 'get_bool', 'get_int', 'stamina_setting_config_var',
-             'stamina_setting', 'stamina_enabled'):
+             'stamina_setting', 'stamina_enabled', 'stamina_config_var'):
     production += '\n' + function(config, name)
+for name in ('sprint_config_var','sprint_speed_config_var','wolf_sprint_config_var','wolf_speed_config_var','z_item_slot_config_var'):
+    production += '\n' + function(config,name)
+production += '\n' + function(ui, 'twilit_owns_stamina_control') + '\n' + function(ui, 'external_owns_control')
 production += '\n' + ui[ui.index('struct ModeControlBinding {'):ui.index('void bind_mode_control(')]
-# This predicate is intentionally one line; bracket extraction above expects multiline functions.
-production += '\n' + re.search(r'^bool stamina_settings_disabled[^\n]+', ui, re.M).group() + '\n'
-assert 'bool stamina_settings_disabled(ModContext*, void*) { return !stamina_enabled(); }' in ui
+production += '\n' + function(ui, 'stamina_settings_disabled') + '\n'
 assert ui.index('"Stamina Bar",') < ui.index('"Stamina Settings", open_stamina_settings') < ui.index('"Sprint", sprint_config_var()')
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / 'test.cpp', Path(tmp) / 'test'

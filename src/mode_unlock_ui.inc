@@ -7,6 +7,12 @@ bool sync_mode_control(ModContext* ctx, ModeControlBinding& binding) {
     int64_t value = 0;
     const bool locked = dawnlight_mode_enabled() && mode_config_override(binding.var, value);
     if (!binding.control || !binding.unlock) return locked;
+    if (external_owns_control(binding.var)) {
+        svc_ui->elem_set_visible(ctx, binding.control, false);
+        svc_ui->elem_set_visible(ctx, binding.unlock, false);
+        binding.initialized = false;
+        return true;
+    }
     if (!binding.initialized || binding.shownLocked != locked) {
         binding.initialized = true;
         binding.shownLocked = locked;
@@ -40,6 +46,12 @@ void cancel_mode_unlock(ModContext*, UiDialogHandle, void*) {
 
 void confirm_mode_unlock(ModContext* ctx, UiDialogHandle dialog, void* data) {
     auto& binding = *static_cast<ModeControlBinding*>(data);
+    if (external_owns_control(binding.var)) {
+        svc_ui->dialog_close(ctx, dialog);
+        s_modeUnlockDialog = 0;
+        sync_mode_control(ctx, binding);
+        return;
+    }
     const auto result = leave_dawnlight_mode_for_edit(binding.var);
     if (result != MOD_OK) {
         svc_ui->dialog_set_body(ctx, dialog,
@@ -55,7 +67,7 @@ void confirm_mode_unlock(ModContext* ctx, UiDialogHandle dialog, void* data) {
 void request_mode_unlock(ModContext* ctx, void* data) {
     auto& binding = *static_cast<ModeControlBinding*>(data);
     int64_t value = 0;
-    if (s_modeUnlockDialog || !dawnlight_mode_enabled() || !mode_config_override(binding.var, value)) return;
+    if (external_owns_control(binding.var) || s_modeUnlockDialog || !dawnlight_mode_enabled() || !mode_config_override(binding.var, value)) return;
     std::string body = "Editing this setting will turn <b>Dawnlight Mode Off</b>. "
         "The current Dawnlight values will <b>replace your previously saved manual settings</b>. "
         "Any changes you make afterwards will be saved as your new manual settings.";
@@ -81,7 +93,8 @@ void request_mode_unlock(ModContext* ctx, void* data) {
 }
 
 ModResult add_mode_control(ModContext* ctx, UiElementHandle pane, UiControlDesc& desc) {
-    if (mode_setting_for_config(desc.config_var) == ModeSetting::None)
+    if (mode_setting_for_config(desc.config_var) == ModeSetting::None &&
+        desc.config_var != z_item_slot_config_var())
         return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
     auto& binding = s_modeControls.at(desc.config_var);
     binding.label = desc.label;

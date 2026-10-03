@@ -154,6 +154,7 @@ add_mod(dawnlight_mod
         src/save_compat.cpp
         src/save_state.cpp
         src/stamina.cpp
+        src/twilit_stamina.cpp
         src/touch_buttons.cpp
         src/ui.cpp
         src/update_service.cpp
@@ -167,9 +168,9 @@ target_include_directories(dawnlight_mod PRIVATE
 
 target_compile_definitions(dawnlight_mod PRIVATE DAWNLIGHT_VERSION="${DAWNLIGHT_VER}")
 
-# Cross-mod Z-slot and KH2 gauge guards read live ConfigVars on every platform.
+# Cross-mod Z-slot, KH2 gauge and TE stamina guards read live ConfigVars on every platform.
 # Keep private host headers scoped to these sources on non-touch builds.
-set_property(SOURCE src/item_slot_hooks.cpp src/kh2_hud_compat.cpp APPEND PROPERTY
+set_property(SOURCE src/item_slot_hooks.cpp src/kh2_hud_compat.cpp src/twilit_stamina.cpp APPEND PROPERTY
     INCLUDE_DIRECTORIES "${DUSKLIGHT_DIR}/src")
 
 if(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS)

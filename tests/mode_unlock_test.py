@@ -8,9 +8,13 @@ config=(root/'src/config.cpp').read_text()
 ui=(root/'src/ui.cpp').read_text()
 def function(source,name):
     start=re.search(r'^\w[^\n]*\b'+name+r'\([^;{}]*\)\s*\{',source,re.M).start()
-    return source[start:source.index('\n}',start)+2]
+    body=source.index('{',start)
+    depth=1;end=body+1
+    while depth:
+        depth+=(source[end]=='{')-(source[end]=='}');end+=1
+    return source[start:end]
 mapping=function(config,'mode_setting_for_config')
-variables=sorted((set(re.findall(r'\bs_\w+',mapping))|{'s_dawnlightMode'})-{'s_staminaSettings'})
+variables=sorted((set(re.findall(r'\bs_\w+',mapping))|{'s_dawnlightMode','s_zItemSlot'})-{'s_staminaSettings'})
 fixture=r'''
 #include <cassert>
 #include <cstdint>
@@ -19,10 +23,19 @@ fixture=r'''
 #include <vector>
 #include "general_modes.hpp"
 #include "stamina_settings.hpp"
+#include "twilit_stamina.hpp"
 using namespace dawnlight;
+namespace dawnlight { bool teActive=false;bool twilit_stamina_active(){return teActive;} }
+namespace dawnlight {
+bool teHumanSprint=false,teWolfSprint=false;
+bool twilit_sprint_enabled(bool wolf){return wolf?teWolfSprint:teHumanSprint;}
+const char* zProvider=nullptr;
+const char* z_item_slot_provider_notice(){return zProvider;}
+}
 using ConfigVarHandle=uint64_t;
 using UiElementHandle=uint64_t;
 using UiDialogHandle=uint64_t;
+using UiWindowHandle=uint64_t;
 struct ModContext {};
 ModContext* mod_ctx=nullptr;
 enum ModResult {MOD_OK,MOD_ERROR,MOD_INVALID_ARGUMENT,MOD_UNAVAILABLE};
@@ -83,6 +96,10 @@ struct UiService {
     ModResult pane_add_control(ModContext*,UiElementHandle,const UiControlDesc* desc,UiElementHandle* out){
         auto h=next++;controls[h]={*desc,desc->label,true,false};if(out)*out=h;return MOD_OK;
     }
+    ModResult pane_add_text(ModContext* ctx,UiElementHandle pane,const char* text,UiElementHandle* out){
+        UiControlDesc desc{};desc.label=text;return pane_add_control(ctx,pane,&desc,out);
+    }
+    ModResult elem_set_text(ModContext*,UiElementHandle h,const char* text){controls.at(h).label=text;return MOD_OK;}
     ModResult elem_set_visible(ModContext*,UiElementHandle h,bool visible){controls.at(h).visible=visible;return MOD_OK;}
     ModResult control_set_label(ModContext*,UiElementHandle h,const char* label){controls.at(h).label=label;return MOD_OK;}
     ModResult elem_set_class(ModContext*,UiElementHandle h,const char*,bool active){controls.at(h).gray=active;return MOD_OK;}
@@ -114,7 +131,8 @@ void open(ModeControlBinding& b){
     control.desc.on_pressed(nullptr,control.desc.user_data);
 }
 void reset(){
-    configService={};uiService={};s_configTypes.clear();s_modeControls.clear();s_modeUnlockDialog=0;
+    teActive=teHumanSprint=teWolfSprint=false;zProvider=nullptr;configService={};uiService={};s_configTypes.clear();s_modeControls.clear();s_modeUnlockDialog=0;
+    s_teStaminaNote=s_teStaminaSettingsNote=s_localStaminaHelp=s_teSprintNote=s_teWolfSprintNote=s_zItemsNote=0;
     // TYPES
     for(size_t i=0;i<s_staminaSettings.size();++i){s_staminaSettings[i]=1000+i;s_configTypes[1000+i]=CONFIG_VAR_INT;}
     for(const auto& [h,t]:s_configTypes){configService.types[h]=t;configService.values[h]=t==CONFIG_VAR_BOOL?0:237;}
@@ -122,6 +140,90 @@ void reset(){
     configService.types[9000]=CONFIG_VAR_INT;configService.values[9000]=876; // unrelated preference
 }
 int main(){
+    // Exercise the production live UI updater, including independent windows.
+    reset();configService.values[s_dawnlightMode]=0;
+    for(auto var:{s_stamina,s_sprint,s_wolfSprint,s_zItemSlot})make(var,UI_CONTROL_TOGGLE,"Toggle");
+    for(auto var:{s_sprintSpeedPercent,s_wolfSpeedPercent})make(var,UI_CONTROL_NUMBER,"Speed");
+    for(auto var:s_staminaSettings)make(var,UI_CONTROL_NUMBER,"Cost");
+    for(auto* handle:{&s_teStaminaNote,&s_teStaminaSettingsNote,&s_localStaminaHelp,&s_teSprintNote,&s_teWolfSprintNote,&s_zItemsNote})
+        svc_ui->pane_add_text(nullptr,1,"Notice",handle);
+    const auto stored=configService.values;
+    teActive=teHumanSprint=teWolfSprint=true;zProvider="Z Items: Twilit Essentials.";
+    update_stamina_ui();
+    assert(uiService.controls.at(s_teStaminaNote).visible&&uiService.controls.at(s_teStaminaSettingsNote).visible);
+    assert(!uiService.controls.at(s_localStaminaHelp).visible);
+    assert(uiService.controls.at(s_teSprintNote).visible&&uiService.controls.at(s_teWolfSprintNote).visible);
+    assert(uiService.controls.at(s_zItemsNote).visible&&uiService.controls.at(s_zItemsNote).label==zProvider);
+    for(auto& [var,b]:s_modeControls){
+        assert(uiService.controls.at(b.control).visible==!external_owns_control(var));
+        assert(!uiService.controls.at(b.unlock).visible);
+    }
+    zProvider="Z Items: Twilight HD HUD.";teHumanSprint=false;update_stamina_ui();
+    assert(uiService.controls.at(s_zItemsNote).label==zProvider);
+    assert(!uiService.controls.at(s_teSprintNote).visible&&uiService.controls.at(s_teWolfSprintNote).visible);
+    teActive=teWolfSprint=false;zProvider=nullptr;update_stamina_ui();
+    assert(!uiService.controls.at(s_teStaminaNote).visible&&!uiService.controls.at(s_teStaminaSettingsNote).visible);
+    assert(uiService.controls.at(s_localStaminaHelp).visible&&!uiService.controls.at(s_zItemsNote).visible);
+    for(auto& [var,b]:s_modeControls)assert(uiService.controls.at(b.control).visible);
+    assert(configService.values==stored);
+    stamina_window_closed(nullptr,0,nullptr);settings_closed(nullptr,0,nullptr);
+    uiService.controls.clear();teActive=true;update_stamina_ui(); // No stale UI handles after close.
+
+    // TE hides both editable controls and preset-unlock proxies without writes.
+    for(bool preset:{false,true}) {
+        reset();configService.values[s_dawnlightMode]=preset;
+        std::vector<ConfigVarHandle> shared{s_stamina};
+        for(size_t i=0;i<kStaminaSettings.size();++i)
+            if(twilit_owns_stamina_setting(static_cast<StaminaSetting>(i)))shared.push_back(s_staminaSettings[i]);
+        for(auto var:shared) {
+            auto& b=make(var,var==s_stamina?UI_CONTROL_TOGGLE:UI_CONTROL_NUMBER,"Stamina");
+            auto saved=configService.values;teActive=true;
+            sync_mode_control(nullptr,b);
+            assert(!uiService.controls.at(b.control).visible&&!uiService.controls.at(b.unlock).visible);
+            assert(mode_control_disabled(nullptr,&b));
+            UiControlValue edit{};edit.bool_value=false;edit.int_value=1;mode_control_set(nullptr,&b,&edit);
+            assert(configService.values==saved);
+            teActive=false;sync_mode_control(nullptr,b);
+            assert(uiService.controls.at(preset?b.unlock:b.control).visible);
+        }
+        teActive=true;
+        for(auto setting:{StaminaSetting::Glide,StaminaSetting::FlurryRush,StaminaSetting::GreatSpin,StaminaSetting::MidnaAttack})
+            assert(!twilit_owns_stamina_control(s_staminaSettings[static_cast<size_t>(setting)]));
+    }
+    // External providers hide toggles, speed sliders and preset proxies,
+    // reject stale writes, and restore the saved local settings independently.
+    for(bool preset:{false,true}) for(int owner=0;owner<3;++owner){
+        reset();configService.values[s_dawnlightMode]=preset;
+        const auto toggle=owner==0?s_sprint:owner==1?s_wolfSprint:s_zItemSlot;
+        auto& b=make(toggle,UI_CONTROL_TOGGLE,"External setting");
+        const auto speed=owner==0?s_sprintSpeedPercent:s_wolfSpeedPercent;
+        if(owner<2)make(speed,UI_CONTROL_NUMBER,"Speed");
+        auto saved=configService.values;
+        teHumanSprint=owner==0;teWolfSprint=owner==1;
+        zProvider=owner==2?"Z Items: Twilit Essentials.":nullptr;
+        assert(!teActive); // Feature ownership works with the TE meter off.
+        sync_mode_control(nullptr,b);
+        assert(!uiService.controls.at(b.control).visible&&!uiService.controls.at(b.unlock).visible);
+        assert(mode_control_disabled(nullptr,&b));
+        UiControlValue edit{};edit.bool_value=true;mode_control_set(nullptr,&b,&edit);
+        request_mode_unlock(nullptr,&b);
+        assert(configService.values==saved&&uiService.pushes==0);
+        if(owner<2){
+            auto& rate=s_modeControls.at(speed);sync_mode_control(nullptr,rate);
+            assert(!uiService.controls.at(rate.control).visible&&!uiService.controls.at(rate.unlock).visible);
+            assert(mode_control_disabled(nullptr,&rate));
+            assert(!external_owns_control(owner==0?s_wolfSprint:s_sprint));
+        }
+        teHumanSprint=teWolfSprint=false;zProvider=nullptr;sync_mode_control(nullptr,b);
+        assert(uiService.controls.at(preset&&owner<2?b.unlock:b.control).visible);
+        assert(configService.values==saved);
+    }
+    // A provider enabled while a preset-unlock dialog is open blocks adoption.
+    reset();auto& pending=make(s_sprint,UI_CONTROL_TOGGLE,"Sprint");open(pending);
+    auto savedBeforeProvider=configService.values;teHumanSprint=true;
+    auto confirmExternal=uiService.actions[1];
+    confirmExternal.on_pressed(nullptr,uiService.dialog,confirmExternal.user_data);
+    assert(configService.values==savedBeforeProvider&&!s_modeUnlockDialog);
     reset();ConfigVarHandle extra=0;
     assert(register_bool("extra-bool",true,extra)==MOD_OK&&s_configTypes[extra]==CONFIG_VAR_BOOL);
     assert(register_int("extra-int",42,extra)==MOD_OK&&s_configTypes[extra]==CONFIG_VAR_INT);
@@ -210,8 +312,15 @@ production='\n'.join(f'ConfigVarHandle {name}={i+1};' for i,name in enumerate(va
 for name in ('register_bool','register_int','dawnlight_mode_enabled','progression_system_enabled',
              'mode_setting_for_config','mode_config_override','edit_requires_progression_off','leave_dawnlight_mode_for_edit'):
     production+='\n'+function(config,name)
+production+='\n'+function(config,'stamina_config_var')+'\n'+function(config,'stamina_setting_config_var')
+for name in ('sprint_config_var','sprint_speed_config_var','wolf_sprint_config_var','wolf_speed_config_var','z_item_slot_config_var'):
+    production+='\n'+function(config,name)
+production+='\n'+function(ui,'twilit_owns_stamina_control')+'\n'+function(ui,'external_owns_control')
 production+='\n'+ui[ui.index('struct ModeControlBinding {'):ui.index('#include "mode_unlock_ui.inc"')]
 production+='\n'+(root/'src/mode_unlock_ui.inc').read_text()
+production+='\n'+ui[ui.index('UiWindowHandle s_staminaWindow'):ui.index('UiMenuTabHandle s_menuTab')]
+for name in ('update_stamina_ui','stamina_window_closed','settings_closed'):
+    production+='\n'+function(ui,name)
 bool_vars=set(re.findall(r'register_bool\([^\n]*?\b(s_\w+)\)',config))
 # Multi-line registration of the invulnerability toggle.
 bool_vars.add('s_removeNormalHitInvulnerability')

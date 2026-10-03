@@ -54,6 +54,8 @@ bool r_action_context_active(daAlink_c*){return blocked;}
 bool jump_held(int){return true;}
 float sprint_jump_speed_multiplier(daAlink_c*){++sprintCalls;return 1;}
 void apply_sprint_jump_speed(daAlink_c*,float){}
+float twilit_sprint_jump_speed(daAlink_c*){return 0;}
+void apply_twilit_sprint_jump_speed(daAlink_c*,float){}
 void mark_manual_jump_started(daAlink_c*){++marks;}
 void clear_manual_jump(daAlink_c*){++clears;}
 // FUNCTIONS

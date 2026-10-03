@@ -5,6 +5,7 @@
 #include "enemy_slow_motion.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+#include "twilit_stamina.hpp"
 
 #include "global.h"
 #include "dusk/audio/MusicRateBuffer.h"
@@ -679,7 +680,7 @@ bool bullet_time_height_allowed(daAlink_c* link) {
 }
 
 void start_bullet_time(daAlink_c* link) {
-    if (s_bulletTimeActive || s_bulletTimeUsedForJump || link == nullptr ||
+    if (twilit_bullet_time_enabled() || s_bulletTimeActive || s_bulletTimeUsedForJump || link == nullptr ||
         !stamina_available_for_bullet_time() || !bullet_time_height_allowed(link))
     {
         return;
@@ -2357,6 +2358,7 @@ void bullet_time_tick() {
         }
     }
 
+    if (s_bulletTimeActive && twilit_bullet_time_enabled()) stop_bullet_time();
     if (!update_stamina(s_bulletTimeActive) && s_bulletTimeActive) {
         stop_bullet_time();
     }

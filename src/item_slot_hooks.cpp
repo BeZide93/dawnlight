@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "item_slot_compat.hpp"
 #include "fierce_deity.hpp"
 #include "touch_buttons.hpp"
 #include "hud_layout.hpp"
@@ -233,39 +234,27 @@ bool z_slot_provider_enabled(ZSlotGetConfigVarFn getVar,
     return readBool(enabledKey, false) && readBool(slotKey, true);
 }
 
-bool select_dawnlight_z_slot() {
-    if (!z_item_slot_enabled()) {
-        return false;
-    }
+const char* z_slot_provider_notice() {
     void* address = nullptr;
     if (svc_hook == nullptr || svc_hook->resolve == nullptr ||
         svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) != MOD_OK ||
         address == nullptr)
-    {
-        if (svc_log != nullptr) {
-            svc_log->warn(mod_ctx,
-                "Dawnlight Z Items skipped: unable to check other item-slot providers");
-        }
-        return false;
-    }
+        return "Z Items unavailable: provider check failed.";
     const auto getVar = reinterpret_cast<ZSlotGetConfigVarFn>(address);
     if (z_slot_provider_enabled(getVar,
             "mod.org_twilight_hd__hud.enabled", "mod.org_twilight_hd__hud.third-item-slot"))
-    {
-        if (svc_log != nullptr) {
-            svc_log->info(mod_ctx, "Dawnlight Z Items skipped: Twilight HD HUD Z Items active");
-        }
-        return false;
-    }
+        return "Z Items: Twilight HD HUD.";
     if (z_slot_provider_enabled(getVar, "mod.com_dusklight_twilit__essentials.enabled",
             "mod.com_dusklight_twilit__essentials.customZButtonEnabled"))
-    {
-        if (svc_log != nullptr) {
-            svc_log->info(mod_ctx, "Dawnlight Z Items skipped: Twilit Essentials Custom Z Button active");
-        }
-        return false;
-    }
-    return true;
+        return "Z Items: Twilit Essentials.";
+    return nullptr;
+}
+
+bool select_dawnlight_z_slot() {
+    if (!z_item_slot_enabled()) return false;
+    const char* notice = z_slot_provider_notice();
+    if (notice && svc_log) svc_log->info(mod_ctx, notice);
+    return notice == nullptr;
 }
 
 bool z_item_slot_active() {
@@ -3794,6 +3783,8 @@ ModResult add_hook(ModResult result, ModError* error) {
 }
 
 }  // namespace
+
+const char* z_item_slot_provider_notice() { return z_slot_provider_notice(); }
 
 bool midna_touch_button_available() { return midna_touch_button_ready(); }
 std::string midna_touch_button_icon() {

@@ -52,6 +52,8 @@ bool s_bulletTimeActive=false,s_bulletTimeUsedForJump=false,stamina=true,s_previ
 float s_previousGravity=0,s_previousMaxFallSpeed=0;
 Clock::time_point s_bulletTimeStarted{};
 bool stamina_available_for_bullet_time(){return stamina;}
+bool teBullet=false;
+bool twilit_bullet_time_enabled(){return teBullet;}
 void stop_flurry_rush(){}void clear_combat_time_caches(){}
 void sync_bullet_time_gyro_keep_alive(){}void sync_slow_motion_controllers(){}
 // HEIGHT
@@ -96,6 +98,7 @@ int main(){
  s_bulletTimeActive=s_bulletTimeUsedForJump=false;setting=1;start_bullet_time(&link);assert(s_bulletTimeActive);
  s_bulletTimeActive=s_bulletTimeUsedForJump=false;setting=0;start_bullet_time(&link);assert(!s_bulletTimeActive);
  setting=2;link.current.pos.y=apex(6);stamina=false;start_bullet_time(&link);assert(!s_bulletTimeActive);
+ stamina=true;teBullet=true;start_bullet_time(&link);assert(!s_bulletTimeActive);
 }
 '''
 fixture = fixture.replace('// MIGRATION', migration)

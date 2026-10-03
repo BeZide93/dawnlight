@@ -117,6 +117,8 @@ bool r_jump_enabled(){return rjump;}
 void set_manual_jump_direction(daAlink_c* l){if(l->input)l->shape_angle.y=l->mMoveAngle;l->current.angle.y=l->shape_angle.y;}
 float sprint_jump_speed_multiplier(daAlink_c*){return 1;}
 void apply_sprint_jump_speed(daAlink_c*,float){}
+float twilit_sprint_jump_speed(daAlink_c*){return 0;}
+void apply_twilit_sprint_jump_speed(daAlink_c*,float){}
 void clear_manual_jump(daAlink_c*){}
 // START_JUMP
 // ABILITIES

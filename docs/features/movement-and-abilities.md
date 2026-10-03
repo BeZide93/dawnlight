@@ -57,7 +57,7 @@ native Cucco glide movement; landing puts the selected item away. The Glider
 hides and silences only its internally summoned Cucco, leaving world Cuccos alone.
 With **Stamina Bar** enabled, either Glide Item consumes the configured Glide cost
 (default 5 stamina points per second). Empty stamina ends the glide; exhaustion blocks redeployment
-until stamina reaches the configured exhaustion threshold (default 50 points). Disabling Stamina Bar removes the cost.
+until stamina reaches the configured exhaustion threshold (default 50 points). Disabling Stamina Bar removes the cost unless Twilit Essentials stamina is active.
 
 ### Glider model and textures
 
@@ -115,8 +115,45 @@ See [HUD editing](controls-and-hud.md#hud-editing) to reposition the counter.
 ## Shared stamina
 
 Open **Dawnlight Settings -> Controls -> Stamina Settings**, directly below
-**Stamina Bar**. The button is enabled only while Stamina Bar is On. Turning
-Stamina Bar Off disables Dawnlight's stamina costs.
+**Stamina Bar**. The button is enabled while Dawnlight or Twilit Essentials stamina
+is active. Turning Stamina Bar Off disables Dawnlight's stamina costs only when
+Twilit Essentials is not supplying stamina.
+
+### Twilit Essentials integration
+
+When the optional Twilit Essentials stamina service reports stamina enabled,
+Dawnlight automatically uses its pool and hides its own meter. The saved Dawnlight
+toggle is preserved. In Controls, its toggle is replaced with **Using the stamina
+bar from Twilit Essentials.** This also takes precedence over Dawnlight Mode.
+
+TE owns capacity, regeneration, recovery lockout, and the shared activity settings.
+Their Dawnlight controls and preset-unlock buttons are replaced in place with
+**controlled by Twilit Essentials stamina settings** notices. This covers Stamina
+Amount, Recovery speed, Exhaust Threshold, Exhaust Recovery speed, Sprint, Wolf
+Sprint, Bullet Time, Block, Guard Break, Shield Attack, Back Slice and Helm Splitter.
+TE applies the native combat costs; Dawnlight does not add a second charge.
+
+Glide, Flurry Rush, Great Spin Projectile and Midna Attack retain their Dawnlight
+cost settings, paid from the TE pool. Glide and Bullet Time drain per real gameplay
+second, including during slow motion; Flurry Rush pays once on activation and is
+blocked when the shared pool cannot cover its cost. TE's normal attack costs still
+apply during Flurry Rush. Pauses/events do not accumulate deferred drain.
+
+For Dawnlight Sprint/Wolf Sprint and Bullet Time, TE's source toggles and cost
+multipliers take priority over Dawnlight's saved sliders. The adapter uses TE's
+base rates of 27 points/sec for sprint and 10.5 points/sec for Bullet Time at 100%.
+TE's optional speed-based sprint drain also applies to Dawnlight sprint.
+If TE's own Sprint, Wolf Sprint or Bullet Time implementation is enabled, it takes
+ownership of that ability so that movement, time scaling and costs are not applied
+twice. Disable the corresponding TE ability to use Dawnlight's implementation
+with the shared TE stamina pool.
+
+Disabling TE stamina or removing its service restores Dawnlight's saved settings
+and meter automatically. An exhausted pool or a temporary service error never
+switches an ability to a second pool. The integration targets TE's v1.3 service;
+older v1.0 services use the base rates without source-setting queries.
+
+### Dawnlight's local stamina settings
 
 Costs and recovery rates use **stamina points**, not percentages of the current
 capacity. Setting an action's cost to **0** makes it free, even during exhaustion.

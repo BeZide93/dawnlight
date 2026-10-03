@@ -18,5 +18,6 @@ void set_glide_stamina_active(bool active);
 bool consume_flurry_rush_stamina();
 bool consume_great_spin_stamina();
 bool update_stamina(bool bulletTimeActive);
+void update_stamina_ui();
 
 }  // namespace dawnlight

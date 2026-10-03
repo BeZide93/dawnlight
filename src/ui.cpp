@@ -1,5 +1,8 @@
 #include "touch_buttons.hpp"
 #include "config.hpp"
+#include "item_slot_compat.hpp"
+#include "stamina.hpp"
+#include "twilit_stamina.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
 #include "update_service.hpp"
@@ -16,6 +19,9 @@ namespace dawnlight {
 namespace {
 
 UiWindowHandle s_staminaWindow = 0;
+UiElementHandle s_teStaminaNote = 0;
+UiElementHandle s_teStaminaSettingsNote = 0, s_localStaminaHelp = 0;
+UiElementHandle s_teSprintNote = 0, s_teWolfSprintNote = 0, s_zItemsNote = 0;
 UiWindowHandle s_settingsWindow = 0;
 UiMenuTabHandle s_menuTab = 0;
 
@@ -93,6 +99,23 @@ void push_toast(const char* title, const char* body, const char* type = nullptr)
     svc_ui->push_toast(mod_ctx, &toast);
 }
 
+bool twilit_owns_stamina_control(ConfigVarHandle var) {
+    if (!twilit_stamina_active()) return false;
+    if (var == stamina_config_var()) return true;
+    for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
+        const auto setting = static_cast<StaminaSetting>(i);
+        if (var == stamina_setting_config_var(setting)) return twilit_owns_stamina_setting(setting);
+    }
+    return false;
+}
+
+bool external_owns_control(ConfigVarHandle var) {
+    if (var == sprint_config_var() || var == sprint_speed_config_var()) return twilit_sprint_enabled();
+    if (var == wolf_sprint_config_var() || var == wolf_speed_config_var()) return twilit_sprint_enabled(true);
+    if (var == z_item_slot_config_var()) return z_item_slot_provider_notice() != nullptr;
+    return twilit_owns_stamina_control(var);
+}
+
 // Stable callback data survives tab rebuilds. Managed controls display the
 // effective value, while writes in Off mode still use ConfigService persistence.
 struct ModeControlBinding {
@@ -111,6 +134,7 @@ std::map<ConfigVarHandle, ModeControlBinding> s_modeControls;
 bool mode_control_disabled(ModContext* ctx, void* data) {
     const auto& binding = *static_cast<ModeControlBinding*>(data);
     int64_t value = 0;
+    if (external_owns_control(binding.var)) return true;
     return mode_config_override(binding.var, value) ||
         (binding.disabled && binding.disabled(ctx, nullptr));
 }
@@ -139,7 +163,8 @@ void mode_control_set(ModContext* ctx, void* data, const UiControlValue* value) 
 }
 
 void bind_mode_control(UiControlDesc& desc) {
-    if (mode_setting_for_config(desc.config_var) == ModeSetting::None) return;
+    if (mode_setting_for_config(desc.config_var) == ModeSetting::None &&
+        desc.config_var != z_item_slot_config_var()) return;
     auto& binding = s_modeControls[desc.config_var];
     binding = {desc.config_var, desc.kind, desc.is_disabled};
     desc.binding = UI_BINDING_CALLBACKS;
@@ -488,26 +513,42 @@ ModResult build_aiming_tab(
     return MOD_OK;
 }
 
-bool stamina_settings_disabled(ModContext*, void*) { return !stamina_enabled(); }
+bool stamina_settings_disabled(ModContext*, void*) {
+    return !twilit_stamina_active() && !stamina_enabled();
+}
+bool stamina_local_settings_disabled(ModContext*, void*) {
+    return twilit_stamina_active() || !stamina_enabled();
+}
 
 ModResult build_stamina_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
     UiElementHandle, void*, ModError*) {
-    if (add_text(ctx, left, "Costs, recovery and Exhaust Threshold use stamina points. The threshold does not scale with maximum stamina. "
-            "Progression adds 5 maximum stamina per complete heart above the starting three.") != MOD_OK) return MOD_ERROR;
+    s_teStaminaSettingsNote = s_localStaminaHelp = 0;
+    if (svc_ui->pane_add_text(ctx, left,
+            "Twilit Essentials manages stamina and shared costs. Dawnlight costs below.",
+            &s_teStaminaSettingsNote) != MOD_OK) return MOD_ERROR;
+    if (svc_ui->pane_add_text(ctx, left,
+            "Values use stamina points; Exhaust Threshold does not scale with capacity. Progression adds 5 capacity per heart above three.",
+            &s_localStaminaHelp) != MOD_OK) return MOD_ERROR;
     for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
         const auto& desc = kStaminaSettings[i];
+        const auto setting = static_cast<StaminaSetting>(i);
+        const bool shared = !twilit_owns_stamina_setting(setting);
         if (add_number(ctx, left, desc.label,
                 stamina_setting_config_var(static_cast<StaminaSetting>(i)),
-                desc.min, desc.max, 1, desc.suffix, nullptr, stamina_settings_disabled) != MOD_OK)
+                desc.min, desc.max, 1, desc.suffix, nullptr, shared ? stamina_settings_disabled : stamina_local_settings_disabled) != MOD_OK)
             return MOD_ERROR;
     }
+    update_stamina_ui();
     return MOD_OK;
 }
 
-void stamina_window_closed(ModContext*, UiWindowHandle, void*) { s_staminaWindow = 0; }
+void stamina_window_closed(ModContext*, UiWindowHandle, void*) {
+    s_staminaWindow = 0;
+    s_teStaminaSettingsNote = s_localStaminaHelp = 0;
+}
 
 void open_stamina_settings(ModContext* ctx, void*) {
-    if (s_staminaWindow || !stamina_enabled()) return;
+    if (s_staminaWindow || stamina_settings_disabled(ctx, nullptr)) return;
     UiTabDesc tab = UI_TAB_DESC_INIT;
     tab.title = "Stamina Settings";
     tab.build = build_stamina_tab;
@@ -581,6 +622,8 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (svc_ui->pane_add_text(ctx, left, "Stamina: Twilit Essentials.", &s_teStaminaNote) != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Stamina Bar", stamina_config_var(),
             "Enables shared stamina costs and the stamina meter. When disabled, Dawnlight moves "
             "do not consume stamina.")
@@ -589,6 +632,8 @@ ModResult build_controls_tab(
         return MOD_ERROR;
     }
     if (add_button(ctx, left, "Stamina Settings", open_stamina_settings, stamina_settings_disabled) != MOD_OK) return MOD_ERROR;
+    if (svc_ui->pane_add_text(ctx, left, "Sprint: Twilit Essentials.", &s_teSprintNote) != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Sprint", sprint_config_var(),
             "Hold the Roll button while running to sprint at the configured speed. "
             "Stamina cost is configurable in Stamina Settings (default 5 points/sec).")
@@ -596,6 +641,8 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (svc_ui->pane_add_text(ctx, left, "Wolf Sprint: Twilit Essentials.", &s_teWolfSprintNote) != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Wolf Sprint", wolf_sprint_config_var(),
             "Hold the Dash button (B in the Dawnlight layout) while moving as wolf Link to keep dash speed. "
             "Uses the assigned Dash action for controller and touch input. Stamina cost defaults to 5 points/sec.") != MOD_OK)
@@ -618,6 +665,8 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (svc_ui->pane_add_text(ctx, left, "Z Items: external provider.", &s_zItemsNote) != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Z Item Slot", z_item_slot_config_var(),
             "Adds an item slot on Z and moves Midna off the Z button. "
             "Automatically skipped when Twilight HD HUD Z Items or "
@@ -627,6 +676,7 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    update_stamina_ui();
     if (add_toggle(ctx, left, "Dawnlight Touch UI", dawnlight_touch_ui_config_var(),
             "Shows the third item on the touch Z button. Enable a separate Midna button "
             "under Touch Buttons. Keeps the L touch button available on the map. "
@@ -1093,6 +1143,7 @@ ModResult build_models_tab(
 }
 
 void settings_closed(ModContext*, UiWindowHandle, void*) {
+    s_teStaminaNote = s_teSprintNote = s_teWolfSprintNote = s_zItemsNote = 0;
     s_settingsWindow = 0;
 }
 
@@ -1169,6 +1220,42 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
 }
 
 }  // namespace
+
+void update_stamina_ui() {
+    if (!s_teStaminaNote && !s_teStaminaSettingsNote && !s_teSprintNote &&
+        !s_teWolfSprintNote && !s_zItemsNote) return;
+    const bool external = twilit_stamina_active();
+    const auto sync = [](ConfigVarHandle var) {
+        const auto entry = s_modeControls.find(var);
+        if (entry != s_modeControls.end()) sync_mode_control(mod_ctx, entry->second);
+    };
+    if (s_teStaminaNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teStaminaNote, external);
+        sync(stamina_config_var());
+    }
+    if (s_teSprintNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teSprintNote, twilit_sprint_enabled());
+        sync(sprint_config_var());
+        sync(sprint_speed_config_var());
+    }
+    if (s_teWolfSprintNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teWolfSprintNote, twilit_sprint_enabled(true));
+        sync(wolf_sprint_config_var());
+        sync(wolf_speed_config_var());
+    }
+    if (s_zItemsNote) {
+        const char* notice = z_item_slot_provider_notice();
+        if (notice) svc_ui->elem_set_text(mod_ctx, s_zItemsNote, notice);
+        svc_ui->elem_set_visible(mod_ctx, s_zItemsNote, notice != nullptr);
+        sync(z_item_slot_config_var());
+    }
+    if (s_teStaminaSettingsNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teStaminaSettingsNote, external);
+        svc_ui->elem_set_visible(mod_ctx, s_localStaminaHelp, !external);
+        for (size_t i = 0; i < kStaminaSettings.size(); ++i)
+            sync(stamina_setting_config_var(static_cast<StaminaSetting>(i)));
+    }
+}
 
 ModResult register_ui(ModError* error) {
     UiStyleHandle style = 0;

@@ -7,6 +7,7 @@
 #include "glider_bmd.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+#include "twilit_stamina.hpp"
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"
@@ -97,6 +98,7 @@ bool jump_held(JumpBinding binding) {
 }
 
 bool sprint_requested(daAlink_c* link) {
+    if (twilit_sprint_enabled()) return false;
     if (link == nullptr || !sprint_enabled() || !link->doButton()) {
         return false;
     }
@@ -276,6 +278,31 @@ float sprint_jump_speed_multiplier(daAlink_c* link) {
     return std::clamp(link->mNormalSpeed / runSpeed, 1.0f, sprint_speed_multiplier());
 }
 
+float twilit_sprint_jump_speed(daAlink_c* link) {
+    if (!link || !link->mpHIO || !twilit_sprint_enabled() ||
+        link->mProcID != daAlink_c::PROC_MOVE || !link->checkInputOnR() ||
+        !link->mLinkAcch.ChkGroundHit() || link->checkWolf() ||
+        link->checkEventRun() || dComIfGp_event_runCheck() ||
+        link->checkMagneBootsOn() || link->getSumouMode() ||
+        link->mGrabItemAcKeep.getActor() != nullptr) return 0.0f;
+
+    const float base = link->mpHIO->mMove.m.mMaxSpeed;
+    // TE has its own input binding and masks the native Roll button. Carry
+    // actual ground momentum, independently of Dawnlight's toggle/speed cap.
+    return std::isfinite(base) && base > 0.0f &&
+        std::isfinite(link->mNormalSpeed) && link->mNormalSpeed > base
+        ? link->mNormalSpeed : 0.0f;
+}
+
+void apply_twilit_sprint_jump_speed(daAlink_c* link, float speed) {
+    // TE's auto-jump hook may already have applied its jump-distance setting.
+    // Keep the greater horizontal speed; never multiply the two bonuses.
+    if (speed <= 0.0f) return;
+    link->mNormalSpeed = std::max(link->mNormalSpeed, speed);
+    link->speedF = std::max(link->speedF, speed);
+    link->mMaxSpeed = std::max(link->mMaxSpeed, link->mNormalSpeed);
+}
+
 void apply_sprint_jump_speed(daAlink_c* link, const float multiplier) {
     // The native initializer has already calculated vertical speed/gravity.
     // Scale horizontal motion once, then leave airborne steering and collision
@@ -312,6 +339,7 @@ bool start_ground_jump(daAlink_c* link) {
         return true;
     }
     const float sprintJumpMultiplier = sprint_jump_speed_multiplier(link);
+    const float twilitSprintSpeed = twilit_sprint_jump_speed(link);
 
     if (link->mGrabItemAcKeep.getActor() == nullptr &&
         link->mEquipItem == kSwordItem &&
@@ -329,6 +357,7 @@ bool start_ground_jump(daAlink_c* link) {
     if (link->procAutoJumpInit(1)) {
         apply_manual_jump_movement(link);
         apply_sprint_jump_speed(link, sprintJumpMultiplier);
+        apply_twilit_sprint_jump_speed(link, twilitSprintSpeed);
         apply_manual_jump_height(link, jump_height_multiplier());
         s_manualJumpOwner = link;
         mark_manual_jump_started(link);

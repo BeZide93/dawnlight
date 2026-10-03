@@ -35,6 +35,8 @@ struct daAlink_c {
  bool checkNotJumpSinkLimit(){return sink;}bool checkWolfGrabAnime(){return grab;}
 };
 bool ground_movement_proc(daAlink_c* link){return link->mProcID==daAlink_c::PROC_WOLF_MOVE||link->mProcID==daAlink_c::PROC_WOLF_DASH;}
+bool teSprint=false;
+bool twilit_sprint_enabled(bool){return teSprint;}
 // HOOKS
 int main(){
  daAlink_c link;auto* owner=&link;void* args[]={&owner};
@@ -92,6 +94,7 @@ int main(){
   after_wolf_sprint_jump(nullptr,args,&result,nullptr);assert(link.mNormalSpeed==20);
   enabled=true;link.mProcID=daAlink_c::PROC_WOLF_MOVE;
  }
+ teSprint=true;assert(!wolf_sprint_requested(&link));
  assert(s_wolfJumpMomentum.empty());
 }
 '''

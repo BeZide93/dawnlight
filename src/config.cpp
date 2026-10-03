@@ -57,6 +57,7 @@ ConfigVarHandle s_dualWield = 0;
 ConfigVarHandle s_secondSword = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
+ConfigVarHandle s_jumpButton = 0;
 ConfigVarHandle s_disableAutoJump = 0;
 ConfigVarHandle s_jumpHeight = 0;
 ConfigVarHandle s_glide = 0;
@@ -960,6 +961,7 @@ ModResult register_config(ModError* error) {
         register_int("dual-wield-second-sword", static_cast<int>(SecondSword::Ordon), s_secondSword) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
+        register_int("jump-button", 0, s_jumpButton) != MOD_OK ||
         register_bool("disable-auto-jump", false, s_disableAutoJump) != MOD_OK ||
         register_int("jump-height-percent", 100, s_jumpHeight) != MOD_OK ||
         register_bool("glide", false, s_glide) != MOD_OK ||
@@ -1336,6 +1338,12 @@ bool disable_auto_jump_enabled() {
     enforce_auto_jump_dependency();
     return r_jump_enabled() && get_bool(s_disableAutoJump, false);
 }
+
+JumpButton jump_button() {
+    return static_cast<JumpButton>(get_int(s_jumpButton, 0, 0, 4));
+}
+
+ConfigVarHandle jump_button_config_var() { return s_jumpButton; }
 
 bool r_jump_enabled() {
     return get_bool(s_rJump, true);

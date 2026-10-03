@@ -112,7 +112,7 @@ fixture=fixture.replace('// CONFIG','\n'.join(function(config,s) for s in (
 fixture=fixture.replace('// JUMP',jump[jump.index('struct AutoJumpFlagScope'):jump.index('HookAction before_proc_auto_jump')])
 assert 'register_bool("disable-auto-jump", false, s_disableAutoJump)' in config
 assert 'hook_add_post<CheckAutoJumpAction>(svc_hook, after_check_auto_jump)' in jump
-assert ui.index('"R Jump"')<ui.index('"Disable Auto Jump"')<ui.index('"Jump Height"')
+assert ui.index('"Manual Jump"')<ui.index('"Disable Auto Jump"')<ui.index('"Jump Height"')
 with tempfile.TemporaryDirectory() as tmp:
     cpp,exe=Path(tmp)/'test.cpp',Path(tmp)/'test';cpp.write_text(fixture)
     subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)

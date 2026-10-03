@@ -61,6 +61,14 @@ int main() {
         }
     }
     int64_t value = 123;
+    for (const auto state : {ProgressionState{}, completed}) {
+        for (int64_t saved : {0, 1}) {
+            value = saved;
+            assert(!mode_override(ModeSetting::Sprint, false, true, state, value));
+            assert(value == saved);
+            assert(mode_override(ModeSetting::Sprint, true, true, state, value) && value == 1);
+        }
+    }
     assert(!mode_override(ModeSetting::SprintSpeed, false, true, {}, value));
     assert(!mode_override(ModeSetting::JumpHeight, false, true, {}, value));
     assert(!mode_override(ModeSetting::GaleHeight, false, true, {}, value));

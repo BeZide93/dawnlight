@@ -211,7 +211,11 @@ int main() {
     assert(progression_system_enabled()); // Restore independent progression On.
     assert(!disabled(galeHeight) && !disabled(stamina));
     assert(std::abs(gale_height_bonus() - 3.2f) < 0.001f && !stamina_enabled());
-    assert(sprint_enabled() && std::abs(sprint_speed_multiplier() - 2.05f) < 0.001f);
+    assert(!sprint_enabled() && std::abs(sprint_speed_multiplier() - 2.05f) < 0.001f);
+    assert(!disabled(sprint));
+    attempt.bool_value = true;
+    sprint.set(mod_ctx, sprint.user_data, &attempt);
+    assert(sprint_enabled() && progression_system_enabled());
     testProgress = {}; // A new save immediately gates features again.
     assert(!glide_enabled() && !revalis_gale_enabled() && !fierce_deity_enabled());
     assert(gale_counter_capacity() == 1);

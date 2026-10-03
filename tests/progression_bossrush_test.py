@@ -30,7 +30,7 @@ int main(){
         assert(state.charges==hearts/3);
         for(bool dawnlight:{false,true}){
             int64_t value=0;
-            for(auto setting:{ModeSetting::Sprint,ModeSetting::Glide,ModeSetting::GlideItem,
+            for(auto setting:{ModeSetting::Glide,ModeSetting::GlideItem,
                     ModeSetting::Gale,ModeSetting::GaleCounter,ModeSetting::FierceDeity,ModeSetting::DualWield})
                 assert(mode_override(setting,dawnlight,true,state,value)&&value==1);
             assert(mode_override(ModeSetting::GaleCharges,dawnlight,true,state,value)&&value==hearts/3);

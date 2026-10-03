@@ -33,6 +33,7 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
         switch (setting) {
         case ModeSetting::Stamina:
         case ModeSetting::Progression:
+        case ModeSetting::Sprint:
         case ModeSetting::Jump:
         case ModeSetting::WolfSprint:
         case ModeSetting::FlurryRush:
@@ -52,7 +53,6 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
     }
     if (dawnlight || progression) {
         switch (setting) {
-        case ModeSetting::Sprint: value = 1; return true;
         case ModeSetting::Glide: value = state.glide; return true;
         case ModeSetting::GlideItem: value = 1; return true; // Glider
         case ModeSetting::Gale:

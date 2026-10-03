@@ -7,6 +7,7 @@
 #include "glider_bmd.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+#include "twilit_stamina.hpp"
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"
@@ -97,6 +98,7 @@ bool jump_held(JumpBinding binding) {
 }
 
 bool sprint_requested(daAlink_c* link) {
+    if (twilit_sprint_enabled()) return false;
     if (link == nullptr || !sprint_enabled() || !link->doButton()) {
         return false;
     }

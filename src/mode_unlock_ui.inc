@@ -7,6 +7,12 @@ bool sync_mode_control(ModContext* ctx, ModeControlBinding& binding) {
     int64_t value = 0;
     const bool locked = dawnlight_mode_enabled() && mode_config_override(binding.var, value);
     if (!binding.control || !binding.unlock) return locked;
+    if (twilit_owns_stamina_control(binding.var)) {
+        svc_ui->elem_set_visible(ctx, binding.control, false);
+        svc_ui->elem_set_visible(ctx, binding.unlock, false);
+        binding.initialized = false;
+        return true;
+    }
     if (!binding.initialized || binding.shownLocked != locked) {
         binding.initialized = true;
         binding.shownLocked = locked;

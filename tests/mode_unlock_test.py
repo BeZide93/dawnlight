@@ -19,7 +19,9 @@ fixture=r'''
 #include <vector>
 #include "general_modes.hpp"
 #include "stamina_settings.hpp"
+#include "twilit_stamina.hpp"
 using namespace dawnlight;
+namespace dawnlight { bool teActive=false;bool twilit_stamina_active(){return teActive;} }
 using ConfigVarHandle=uint64_t;
 using UiElementHandle=uint64_t;
 using UiDialogHandle=uint64_t;
@@ -114,7 +116,7 @@ void open(ModeControlBinding& b){
     control.desc.on_pressed(nullptr,control.desc.user_data);
 }
 void reset(){
-    configService={};uiService={};s_configTypes.clear();s_modeControls.clear();s_modeUnlockDialog=0;
+    teActive=false;configService={};uiService={};s_configTypes.clear();s_modeControls.clear();s_modeUnlockDialog=0;
     // TYPES
     for(size_t i=0;i<s_staminaSettings.size();++i){s_staminaSettings[i]=1000+i;s_configTypes[1000+i]=CONFIG_VAR_INT;}
     for(const auto& [h,t]:s_configTypes){configService.types[h]=t;configService.values[h]=t==CONFIG_VAR_BOOL?0:237;}
@@ -122,6 +124,27 @@ void reset(){
     configService.types[9000]=CONFIG_VAR_INT;configService.values[9000]=876; // unrelated preference
 }
 int main(){
+    // TE hides both editable controls and preset-unlock proxies without writes.
+    for(bool preset:{false,true}) {
+        reset();configService.values[s_dawnlightMode]=preset;
+        std::vector<ConfigVarHandle> shared{s_stamina};
+        for(size_t i=0;i<kStaminaSettings.size();++i)
+            if(twilit_owns_stamina_setting(static_cast<StaminaSetting>(i)))shared.push_back(s_staminaSettings[i]);
+        for(auto var:shared) {
+            auto& b=make(var,var==s_stamina?UI_CONTROL_TOGGLE:UI_CONTROL_NUMBER,"Stamina");
+            auto saved=configService.values;teActive=true;
+            sync_mode_control(nullptr,b);
+            assert(!uiService.controls.at(b.control).visible&&!uiService.controls.at(b.unlock).visible);
+            assert(mode_control_disabled(nullptr,&b));
+            UiControlValue edit{};edit.bool_value=false;edit.int_value=1;mode_control_set(nullptr,&b,&edit);
+            assert(configService.values==saved);
+            teActive=false;sync_mode_control(nullptr,b);
+            assert(uiService.controls.at(preset?b.unlock:b.control).visible);
+        }
+        teActive=true;
+        for(auto setting:{StaminaSetting::Glide,StaminaSetting::FlurryRush,StaminaSetting::GreatSpin,StaminaSetting::MidnaAttack})
+            assert(!twilit_owns_stamina_control(s_staminaSettings[static_cast<size_t>(setting)]));
+    }
     reset();ConfigVarHandle extra=0;
     assert(register_bool("extra-bool",true,extra)==MOD_OK&&s_configTypes[extra]==CONFIG_VAR_BOOL);
     assert(register_int("extra-int",42,extra)==MOD_OK&&s_configTypes[extra]==CONFIG_VAR_INT);
@@ -210,6 +233,8 @@ production='\n'.join(f'ConfigVarHandle {name}={i+1};' for i,name in enumerate(va
 for name in ('register_bool','register_int','dawnlight_mode_enabled','progression_system_enabled',
              'mode_setting_for_config','mode_config_override','edit_requires_progression_off','leave_dawnlight_mode_for_edit'):
     production+='\n'+function(config,name)
+production+='\n'+function(config,'stamina_config_var')+'\n'+function(config,'stamina_setting_config_var')
+production+='\n'+function(ui,'twilit_owns_stamina_control')
 production+='\n'+ui[ui.index('struct ModeControlBinding {'):ui.index('#include "mode_unlock_ui.inc"')]
 production+='\n'+(root/'src/mode_unlock_ui.inc').read_text()
 bool_vars=set(re.findall(r'register_bool\([^\n]*?\b(s_\w+)\)',config))

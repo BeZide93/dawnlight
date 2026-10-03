@@ -36,6 +36,7 @@ bool enabled=true,stamina=true,event=false,jumpReady=true,bPressed=false;
 int staminaMarks=0,manualMarks=0,manualClears=0;
 bool sprint_enabled(){return enabled;}
 bool stamina_available_for_sprint(){return stamina;}
+bool teSprint=false;bool twilit_sprint_enabled(){return teSprint;}
 void mark_sprint_stamina_active(){++staminaMarks;}
 bool dComIfGp_event_runCheck(){return event;}
 namespace mDoCPd_c {
@@ -49,7 +50,7 @@ struct Hio {
     struct Move {struct Values {f32 mMaxSpeed=23;} m;} mMove;
 } hio;
 struct daAlink_c {
-    enum daAlink_PROC {PROC_MOVE,PROC_WAIT,PROC_AUTO_JUMP,PROC_CUT_JUMP,PROC_DAMAGE};
+    enum daAlink_PROC {PROC_MOVE,PROC_WAIT,PROC_AUTO_JUMP,PROC_CUT_JUMP,PROC_DAMAGE,PROC_WOLF_MOVE,PROC_WOLF_DASH,PROC_WOLF_WAIT};
     enum daAlink_ANM {ANM_RUN,ANM_RUN_B,ANM_WALK,ANM_WAIT,ANM_ATTACK};
     daAlink_PROC mProcID=PROC_MOVE;
     struct Acch {bool ground=true;bool ChkGroundHit(){return ground;}void ClrGroundHit(){ground=false;}} mLinkAcch;
@@ -73,10 +74,12 @@ struct daAlink_c {
     f32 getMoveGroundAngleSpeedRate(){return std::fabs(mNormalSpeed*groundProjection/mMaxSpeed);}
     void setJumpMode(){jumpMode=true;}
     bool procAutoJumpInit(int);
+    bool procWolfAutoJumpInit(int value){return procAutoJumpInit(value);}
     bool procCutJumpInit(bool);
 };
 const daAlink_c* s_manualJumpOwner=nullptr;
 daAlink_c* s_sprintOwner=nullptr;
+daAlink_c* s_wolfSprintOwner=nullptr;
 float jump_height_multiplier(){return 1;}
 void jump_abilities_proc_change(daAlink_c*,daAlink_c::daAlink_PROC){}
 bool jump_state_ready(daAlink_c* link){return link&&jumpReady;}
@@ -108,6 +111,7 @@ std::array<float,2> animate(daAlink_c* link,daAlink_c::daAlink_ANM a,daAlink_c::
 }
 void begin_sprint(daAlink_c* link){void* args[]={&link};before_proc_move_sprint(nullptr,args,nullptr,nullptr);}
 int main(){
+    {daAlink_c link;teSprint=true;assert(!sprint_requested(&link));teSprint=false;}
     // Existing configs retain 150%; invalid file values are bounded too.
     hasConfig=false;configPercent=999;close(sprint_speed_multiplier(),1.5f);
     hasConfig=true;

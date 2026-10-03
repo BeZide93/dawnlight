@@ -20,6 +20,7 @@
 #include "progression.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+#include "twilit_essentials/stamina.h"
 #include "update_service.hpp"
 
 #include "mods/service.hpp"
@@ -40,6 +41,7 @@
 DEFINE_MOD();
 IMPORT_SERVICE(ActorService, svc_actor);
 IMPORT_OPTIONAL_SERVICE(Kh2HudDriveService, svc_kh2hud_drive);
+IMPORT_OPTIONAL_SERVICE_VERSION(TwilitEssentialsStaminaService, svc_te_stamina, 0);
 IMPORT_SERVICE(ConfigService, svc_config);
 IMPORT_SERVICE(FlowService, svc_flow);
 IMPORT_SERVICE(GameModeService, svc_game_mode);
@@ -189,6 +191,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
     dawnlight::update_new_save_modes();
     dawnlight::update_progression();
     dawnlight::bullet_time_tick();
+    dawnlight::update_stamina_ui();
     dawnlight::update_kh2_drive();
     dawnlight::update_update_service(svc_log, mod_ctx, svc_ui);
     return MOD_OK;

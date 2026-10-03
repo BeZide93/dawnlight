@@ -1,5 +1,7 @@
 #include "touch_buttons.hpp"
 #include "config.hpp"
+#include "stamina.hpp"
+#include "twilit_stamina.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
 #include "update_service.hpp"
@@ -16,6 +18,8 @@ namespace dawnlight {
 namespace {
 
 UiWindowHandle s_staminaWindow = 0;
+UiElementHandle s_teStaminaNote = 0;
+std::vector<UiElementHandle> s_teStaminaSettingNotes;
 UiWindowHandle s_settingsWindow = 0;
 UiMenuTabHandle s_menuTab = 0;
 
@@ -93,6 +97,16 @@ void push_toast(const char* title, const char* body, const char* type = nullptr)
     svc_ui->push_toast(mod_ctx, &toast);
 }
 
+bool twilit_owns_stamina_control(ConfigVarHandle var) {
+    if (!twilit_stamina_active()) return false;
+    if (var == stamina_config_var()) return true;
+    for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
+        const auto setting = static_cast<StaminaSetting>(i);
+        if (var == stamina_setting_config_var(setting)) return twilit_owns_stamina_setting(setting);
+    }
+    return false;
+}
+
 // Stable callback data survives tab rebuilds. Managed controls display the
 // effective value, while writes in Off mode still use ConfigService persistence.
 struct ModeControlBinding {
@@ -111,6 +125,7 @@ std::map<ConfigVarHandle, ModeControlBinding> s_modeControls;
 bool mode_control_disabled(ModContext* ctx, void* data) {
     const auto& binding = *static_cast<ModeControlBinding*>(data);
     int64_t value = 0;
+    if (twilit_owns_stamina_control(binding.var)) return true;
     return mode_config_override(binding.var, value) ||
         (binding.disabled && binding.disabled(ctx, nullptr));
 }
@@ -488,26 +503,47 @@ ModResult build_aiming_tab(
     return MOD_OK;
 }
 
-bool stamina_settings_disabled(ModContext*, void*) { return !stamina_enabled(); }
+bool stamina_settings_disabled(ModContext*, void*) {
+    return !twilit_stamina_active() && !stamina_enabled();
+}
+bool stamina_local_settings_disabled(ModContext*, void*) {
+    return twilit_stamina_active() || !stamina_enabled();
+}
 
 ModResult build_stamina_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
     UiElementHandle, void*, ModError*) {
+    s_teStaminaSettingNotes.clear();
+    if (add_text(ctx, left, "When Twilit Essentials stamina is enabled, it supplies the shared bar, capacity and recovery. "
+            "Only Dawnlight-specific costs remain editable. Shared costs use TE source toggles and cost multipliers. "
+            "TE owns native combat costs. If TE Sprint is enabled, its speed and cost settings apply.") != MOD_OK) return MOD_ERROR;
     if (add_text(ctx, left, "Costs, recovery and Exhaust Threshold use stamina points. The threshold does not scale with maximum stamina. "
-            "Progression adds 5 maximum stamina per complete heart above the starting three.") != MOD_OK) return MOD_ERROR;
+            "Dawnlight capacity and recovery settings apply only while TE stamina is disabled; Progression adds 5 points per complete heart above the starting three.") != MOD_OK) return MOD_ERROR;
     for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
         const auto& desc = kStaminaSettings[i];
+        const auto setting = static_cast<StaminaSetting>(i);
+        const bool shared = !twilit_owns_stamina_setting(setting);
+        if (!shared) {
+            UiElementHandle note = 0;
+            const std::string text = std::string(desc.label) + ": controlled by Twilit Essentials stamina settings.";
+            if (svc_ui->pane_add_text(ctx, left, text.c_str(), &note) != MOD_OK) return MOD_ERROR;
+            s_teStaminaSettingNotes.push_back(note);
+        }
         if (add_number(ctx, left, desc.label,
                 stamina_setting_config_var(static_cast<StaminaSetting>(i)),
-                desc.min, desc.max, 1, desc.suffix, nullptr, stamina_settings_disabled) != MOD_OK)
+                desc.min, desc.max, 1, desc.suffix, nullptr, shared ? stamina_settings_disabled : stamina_local_settings_disabled) != MOD_OK)
             return MOD_ERROR;
     }
+    update_stamina_ui();
     return MOD_OK;
 }
 
-void stamina_window_closed(ModContext*, UiWindowHandle, void*) { s_staminaWindow = 0; }
+void stamina_window_closed(ModContext*, UiWindowHandle, void*) {
+    s_staminaWindow = 0;
+    s_teStaminaSettingNotes.clear();
+}
 
 void open_stamina_settings(ModContext* ctx, void*) {
-    if (s_staminaWindow || !stamina_enabled()) return;
+    if (s_staminaWindow || stamina_settings_disabled(ctx, nullptr)) return;
     UiTabDesc tab = UI_TAB_DESC_INIT;
     tab.title = "Stamina Settings";
     tab.build = build_stamina_tab;
@@ -581,6 +617,8 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (svc_ui->pane_add_text(ctx, left, "Using the stamina bar from Twilit Essentials.", &s_teStaminaNote) != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Stamina Bar", stamina_config_var(),
             "Enables shared stamina costs and the stamina meter. When disabled, Dawnlight moves "
             "do not consume stamina.")
@@ -588,6 +626,7 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    update_stamina_ui();
     if (add_button(ctx, left, "Stamina Settings", open_stamina_settings, stamina_settings_disabled) != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Sprint", sprint_config_var(),
             "Hold the Roll button while running to sprint at the configured speed. "
@@ -1093,6 +1132,7 @@ ModResult build_models_tab(
 }
 
 void settings_closed(ModContext*, UiWindowHandle, void*) {
+    s_teStaminaNote = 0;
     s_settingsWindow = 0;
 }
 
@@ -1169,6 +1209,24 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
 }
 
 }  // namespace
+
+void update_stamina_ui() {
+    if (!s_teStaminaNote && s_teStaminaSettingNotes.empty()) return;
+    const bool external = twilit_stamina_active();
+    if (s_teStaminaNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teStaminaNote, external);
+        const auto entry = s_modeControls.find(stamina_config_var());
+        if (entry != s_modeControls.end()) sync_mode_control(mod_ctx, entry->second);
+    }
+    for (const auto note : s_teStaminaSettingNotes)
+        svc_ui->elem_set_visible(mod_ctx, note, external);
+    if (!s_teStaminaSettingNotes.empty()) {
+        for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
+            const auto entry = s_modeControls.find(stamina_setting_config_var(static_cast<StaminaSetting>(i)));
+            if (entry != s_modeControls.end()) sync_mode_control(mod_ctx, entry->second);
+        }
+    }
+}
 
 ModResult register_ui(ModError* error) {
     UiStyleHandle style = 0;

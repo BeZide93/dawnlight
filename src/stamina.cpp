@@ -1,4 +1,5 @@
 #include "stamina.hpp"
+#include "twilit_stamina.hpp"
 
 #include "combat_meter.hpp"
 #include "config.hpp"
@@ -48,6 +49,8 @@ struct RuntimeState {
     bool glideActive = false;
     bool wolfSprintActive = false;
     bool exhausted = false;
+    bool externalStamina = false;
+    float sprintDrainMultiplier = 1.0f;
 };
 
 RuntimeState s_state;
@@ -66,6 +69,8 @@ void reset_for_link(daAlink_c* link) {
     s_state.glideActive = false;
     s_state.wolfSprintActive = false;
     s_state.exhausted = false;
+    s_state.externalStamina = twilit_stamina_active();
+    s_state.sprintDrainMultiplier = 1.0f;
 }
 
 daAlink_c* current_link() {
@@ -82,6 +87,7 @@ bool menu_or_pause_active() {
 }
 
 bool try_consume(float amount) {
+    if (twilit_stamina_active()) return twilit_stamina_consume(amount);
     if (!stamina_enabled() || amount <= 0.0f) {
         return true;
     }
@@ -100,6 +106,7 @@ bool try_consume(float amount) {
 }
 
 bool can_consume(float amount) {
+    if (twilit_stamina_active()) return twilit_stamina_available(amount);
     if (!stamina_enabled() || amount <= 0.0f) {
         return true;
     }
@@ -110,18 +117,20 @@ bool can_consume(float amount) {
 }
 
 bool lazy_stamina_bridge_active() {
-    return s_lazyTweaksDetected && stamina_meter_visible();
+    return s_lazyTweaksDetected && (stamina_meter_visible() || twilit_stamina_active());
 }
 
 // Skill costs apply with or without Lazy Tweaks; the bridge only hides its
 // duplicate meter. Failed initializers never spend stamina.
 HookAction before_skill(void* retval, StaminaSetting setting) {
+    if (twilit_stamina_active()) return HOOK_CONTINUE; // TE owns native skill costs.
     if (can_consume(stamina_setting(setting))) return HOOK_CONTINUE;
     if (retval) *static_cast<int*>(retval) = 0;
     return HOOK_SKIP_ORIGINAL;
 }
 
 void after_skill(void* retval, StaminaSetting setting) {
+    if (twilit_stamina_active()) return;
     if (retval && *static_cast<int*>(retval)) try_consume(stamina_setting(setting));
 }
 
@@ -150,6 +159,7 @@ HookAction before_midna_charge(ModContext*, void*, void*, void*) {
 // Defensive reactions must still run if the remaining stamina cannot cover
 // their cost. Spend the remainder, rather than making low-stamina blocks free.
 void consume_defense(StaminaSetting setting) {
+    if (twilit_stamina_active()) return; // TE owns native block/guard-break costs.
     if (!stamina_enabled()) return;
     auto* link = current_link();
     if (!link || link->checkDeadHP() || link->checkSceneChangeAreaStart()) return;
@@ -285,6 +295,7 @@ ModResult initialize_stamina(ModError* error) {
 }
 
 void shutdown_stamina() {
+    shutdown_twilit_stamina();
     s_state = {};
     s_lazyTweaksDetected = false;
     s_guardEvents.clear();
@@ -292,28 +303,48 @@ void shutdown_stamina() {
 
 bool stamina_meter_visible() {
     // Blocking and native combat skills use stamina even if movement toggles are off.
-    return stamina_enabled();
+    return !twilit_stamina_active() && stamina_enabled();
+}
+
+bool stamina_ability_available(StaminaSetting setting) {
+    const bool external = twilit_stamina_active();
+    const float cost = external ? twilit_stamina_cost(setting) : stamina_setting(setting);
+    if (cost < 0) return false;
+    return can_consume(cost == 0 ? 0 : 0.0001f);
 }
 
 bool stamina_available_for_bullet_time() {
-    return can_consume(stamina_setting(StaminaSetting::BulletTime) == 0 ? 0 : 0.0001f);
+    return stamina_ability_available(StaminaSetting::BulletTime);
 }
 
 bool stamina_available_for_sprint() {
-    return can_consume(stamina_setting(StaminaSetting::Sprint) == 0 ? 0 : 0.0001f);
+    return stamina_ability_available(StaminaSetting::Sprint);
 }
 
 bool stamina_available_for_wolf_sprint() {
-    return can_consume(stamina_setting(StaminaSetting::WolfSprint) == 0 ? 0 : 0.0001f);
+    return stamina_ability_available(StaminaSetting::WolfSprint);
 }
 
 void mark_wolf_sprint_stamina_active() {
-    if (stamina_enabled()) s_state.wolfSprintActive = true;
+    if (twilit_stamina_active() || stamina_enabled()) {
+        auto* link = current_link();
+        s_state.wolfSprintActive = true;
+        if (link && link->mpHIO) {
+            const auto& move = link->mpHIO->mWolf.mWlMove.m;
+            const float base = link->checkWolfSlowDash() ? move.mADashMaxSpeedSlow :
+                (link->field_0x2fc7 == 2 ? move.mADashMaxSpeedSlow2 : move.mADashMaxSpeed);
+            s_state.sprintDrainMultiplier = twilit_sprint_drain_multiplier(link->mNormalSpeed, base);
+        }
+    }
 }
 
 void mark_sprint_stamina_active() {
-    if (stamina_enabled()) {
+    if (twilit_stamina_active() || stamina_enabled()) {
+        auto* link = current_link();
         s_state.sprintActive = true;
+        if (link && link->mpHIO)
+            s_state.sprintDrainMultiplier = twilit_sprint_drain_multiplier(
+                link->mNormalSpeed, link->mpHIO->mMove.m.mMaxSpeed);
     }
 }
 
@@ -322,7 +353,7 @@ bool consume_flurry_rush_stamina() {
 }
 
 bool stamina_available_for_glide() {
-    return can_consume(stamina_setting(StaminaSetting::Glide) == 0 ? 0 : 0.0001f);
+    return stamina_ability_available(StaminaSetting::Glide);
 }
 
 void set_glide_stamina_active(bool active) {
@@ -346,6 +377,37 @@ bool update_stamina(bool bulletTimeActive) {
     const bool sprintActive = s_state.sprintActive;
     const bool wolfSprintActive = s_state.wolfSprintActive;
     s_state.sprintActive = s_state.wolfSprintActive = false;
+    const bool external = twilit_stamina_active();
+    if (external != s_state.externalStamina) {
+        s_state.externalStamina = external;
+        s_state.lastUpdate = now;
+    }
+    if (external) {
+        // Never regenerate or spend the dormant Dawnlight pool. TE owns its
+        // capacity, recovery, exhaustion and HUD, even if our saved toggle is off.
+        const float elapsed = std::clamp(
+            std::chrono::duration<float>(now - s_state.lastUpdate).count(), 0.0f, 0.25f);
+        s_state.lastUpdate = now;
+        if (link->checkDeadHP() || link->checkSceneChangeAreaStart()) {
+            reset_for_link(link);
+            return false;
+        }
+        if (menu_or_pause_active() || !twilit_stamina_gameplay()) return false;
+        float rate = 0;
+        const auto addRate = [&](StaminaSetting setting) {
+            const float cost = twilit_stamina_cost(setting);
+            if (cost < 0) return false;
+            rate += cost * ((setting == StaminaSetting::Sprint || setting == StaminaSetting::WolfSprint) ?
+                s_state.sprintDrainMultiplier : 1.0f);
+            return true;
+        };
+        if (bulletTimeActive && !addRate(StaminaSetting::BulletTime)) return false;
+        if (sprintActive && !twilit_sprint_enabled() && !addRate(StaminaSetting::Sprint)) return false;
+        if (wolfSprintActive && !twilit_sprint_enabled(true) && !addRate(StaminaSetting::WolfSprint)) return false;
+        if (s_state.glideActive && glide_enabled() && !addRate(StaminaSetting::Glide)) return false;
+        if (rate > 0 && elapsed > 0 && !twilit_stamina_drain(rate * elapsed)) return false;
+        return rate >= 0 && stamina_available_for_bullet_time();
+    }
     if (!stamina_enabled()) {
         const bool wasExhausted = s_state.exhausted;
         s_state.stamina = maximum_stamina();

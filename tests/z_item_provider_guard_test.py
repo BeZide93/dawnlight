@@ -6,11 +6,15 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 items = (root / 'src/item_slot_hooks.cpp').read_text()
 mod = (root / 'src/mod.cpp').read_text()
+te = (root / 'src/twilit_stamina.cpp').read_text()
+te_features = te[te.index('static bool twilit_feature_enabled('):te.index('void shutdown_twilit_stamina(')]
 guard = items[items.index('using ZSlotGetConfigVarFn'):items.index('bool z_item_slot_active()')]
 start = mod.index('MOD_EXPORT ModResult mod_update(')
 update = mod[start:mod.index('\n}', start) + 2]
 fixture = r'''
 #include <cassert>
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <string>
 #include <string_view>
@@ -56,6 +60,13 @@ void* svc_ui = nullptr;
 bool savedToggle = true;
 bool z_item_slot_enabled() { return savedToggle; }
 // GUARD
+namespace te_fixture {
+using GetConfigVarFn = ZSlotGetConfigVarFn;
+GetConfigVarFn s_getConfigVar = nullptr;
+bool active = true;
+bool twilit_stamina_active() { return active; }
+// TE FEATURES
+}
 bool s_itemSlotHooksInstalled = false, selected = false, touchInstalled = false;
 int installs = 0, otherUpdates = 0, kh2Updates = 0;
 bool failInstall = false;
@@ -71,6 +82,8 @@ void update_cave_randomizer() {}
 void update_new_save_modes() { ++otherUpdates; }
 void update_progression() {}
 void bullet_time_tick() {}
+// Stamina ownership/UI behavior is covered by the stamina and mode fixtures.
+void update_stamina_ui() {}
 // KH2 behavior is covered by kh2_hud_compat_test.py; track the frame dispatch here.
 bool update_kh2_drive() { ++kh2Updates; return false; }
 void update_update_service(Log*, ModContext*, void*) {}
@@ -78,6 +91,30 @@ void update_update_service(Log*, ModContext*, void*) {}
 #define MOD_EXPORT
 // UPDATE
 int main() {
+    // The actual TE feature reader must use the host's escaped mod ID:
+    // dots become '_', while the literal underscore in twilit_essentials becomes '__'.
+    const char* sprint = "mod.com_dusklight_twilit__essentials.staminaSprint";
+    const char* wolf = "mod.com_dusklight_twilit__essentials.staminaWolfSprint";
+    const char* bullet = "mod.com_dusklight_twilit__essentials.bulletTimeEnabled";
+    const char* speedDrain = "mod.com_dusklight_twilit__essentials.staminaSprintDrainBySpeed";
+    for (int mask = 0; mask < 8; ++mask) {
+        vars.clear();set(sprint,mask & 1);set(wolf,mask & 2);set(bullet,mask & 4);
+        assert(te_fixture::twilit_sprint_enabled(false) == bool(mask & 1));
+        assert(te_fixture::twilit_sprint_enabled(true) == bool(mask & 2));
+        assert(te_fixture::twilit_bullet_time_enabled() == bool(mask & 4));
+    }
+    vars.clear();assert(!te_fixture::twilit_sprint_enabled(false));
+    set(sprint,true);assert(te_fixture::twilit_sprint_enabled(false));
+    set(sprint,false);assert(!te_fixture::twilit_sprint_enabled(false));
+    set(sprint,true);te_fixture::active=false;assert(!te_fixture::twilit_sprint_enabled(false));
+    te_fixture::active=true;
+    assert(te_fixture::twilit_sprint_drain_multiplier(31,20)==1);
+    set(speedDrain,true);
+    assert(te_fixture::twilit_sprint_drain_multiplier(31,20)==1);
+    assert(te_fixture::twilit_sprint_drain_multiplier(0,20)==.25f);
+    assert(te_fixture::twilit_sprint_drain_multiplier(100,20)==2);
+    assert(te_fixture::twilit_sprint_drain_multiplier(100,0)==1);
+    vars.clear();
     const char* hd = "mod.org_twilight_hd__hud.enabled";
     const char* hdSlot = "mod.org_twilight_hd__hud.third-item-slot";
     const char* te = "mod.com_dusklight_twilit__essentials.enabled";
@@ -130,7 +167,7 @@ int main() {
     assert(otherUpdates == previous && kh2Updates == previousKh2);
 }
 '''
-fixture = fixture.replace('// GUARD', guard).replace('// UPDATE', update)
+fixture = fixture.replace('// GUARD', guard).replace('// UPDATE', update).replace('// TE FEATURES', te_features)
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / 'test.cpp', Path(tmp) / 'test'
     cpp.write_text(fixture)

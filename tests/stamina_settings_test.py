@@ -23,7 +23,9 @@ fixture = r'''
 #include <vector>
 #include "general_modes.hpp"
 #include "stamina_settings.hpp"
+#include "twilit_stamina.hpp"
 using namespace dawnlight;
+namespace dawnlight {bool teActive=false;bool twilit_stamina_active(){return teActive;}}
 using ConfigVarHandle = unsigned;
 using UiElementHandle = uint64_t;
 struct ModContext {};
@@ -91,17 +93,30 @@ int main(){
     assert(stamina_capacity(stamina_setting(StaminaSetting::Amount),progression_system_enabled(),100)==185);
     service.values[s_dawnlightMode]=0;service.values[s_progressionSystem]=0;
     assert(stamina_settings_disabled(nullptr,nullptr));
+    teActive=true;
+    assert(!stamina_settings_disabled(nullptr,nullptr)); // TE works with local bar off.
+    for(size_t i=0;i<s_staminaSettings.size();++i){
+        const auto setting=static_cast<StaminaSetting>(i);
+        ModeControlBinding control{s_staminaSettings[i],UI_CONTROL_NUMBER,stamina_settings_disabled};
+        assert(mode_control_disabled(nullptr,&control)==twilit_owns_stamina_setting(setting));
+        if(twilit_owns_stamina_setting(setting)){
+            const auto saved=service.values;
+            UiControlValue edit{};edit.int_value=123;
+            mode_control_set(nullptr,&control,&edit);
+            assert(service.values==saved);
+        }
+    }
+    teActive=false;assert(stamina_settings_disabled(nullptr,nullptr));
 }
 '''
 production = '\n'.join(f'ConfigVarHandle {name}={i+1};' for i, name in enumerate(variables))
 for name in ('dawnlight_mode_enabled', 'progression_system_enabled', 'mode_setting_for_config',
              'mode_config_override', 'get_bool', 'get_int', 'stamina_setting_config_var',
-             'stamina_setting', 'stamina_enabled'):
+             'stamina_setting', 'stamina_enabled', 'stamina_config_var'):
     production += '\n' + function(config, name)
+production += '\n' + function(ui, 'twilit_owns_stamina_control')
 production += '\n' + ui[ui.index('struct ModeControlBinding {'):ui.index('void bind_mode_control(')]
-# This predicate is intentionally one line; bracket extraction above expects multiline functions.
-production += '\n' + re.search(r'^bool stamina_settings_disabled[^\n]+', ui, re.M).group() + '\n'
-assert 'bool stamina_settings_disabled(ModContext*, void*) { return !stamina_enabled(); }' in ui
+production += '\n' + function(ui, 'stamina_settings_disabled') + '\n'
 assert ui.index('"Stamina Bar",') < ui.index('"Stamina Settings", open_stamina_settings') < ui.index('"Sprint", sprint_config_var()')
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / 'test.cpp', Path(tmp) / 'test'

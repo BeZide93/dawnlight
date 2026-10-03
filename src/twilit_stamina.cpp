@@ -96,7 +96,8 @@ bool twilit_stamina_drain(float amount) {
 
 static bool twilit_feature_enabled(const char* key) {
     if (!twilit_stamina_active()) return false;
-    // Resolve the live feature switches without caching provider-owned CVars.
+    // Resolve live feature switches without retaining provider-owned CVars.
+    // Dusklight escapes dots to underscores and literal underscores to doubles.
     if (!s_getConfigVar) {
         void* address = nullptr;
         if (!svc_hook || !svc_hook->resolve ||
@@ -110,16 +111,16 @@ static bool twilit_feature_enabled(const char* key) {
 
 bool twilit_sprint_enabled(bool wolf) {
     return twilit_feature_enabled(wolf ?
-        "mod.com_dusklight_twilit_essentials.staminaWolfSprint" :
-        "mod.com_dusklight_twilit_essentials.staminaSprint");
+        "mod.com_dusklight_twilit__essentials.staminaWolfSprint" :
+        "mod.com_dusklight_twilit__essentials.staminaSprint");
 }
 
 bool twilit_bullet_time_enabled() {
-    return twilit_feature_enabled("mod.com_dusklight_twilit_essentials.bulletTimeEnabled");
+    return twilit_feature_enabled("mod.com_dusklight_twilit__essentials.bulletTimeEnabled");
 }
 
 float twilit_sprint_drain_multiplier(float speed, float baseSpeed) {
-    if (!twilit_feature_enabled("mod.com_dusklight_twilit_essentials.staminaSprintDrainBySpeed") ||
+    if (!twilit_feature_enabled("mod.com_dusklight_twilit__essentials.staminaSprintDrainBySpeed") ||
         !std::isfinite(speed) || !std::isfinite(baseSpeed) || baseSpeed <= 0) return 1;
     return std::clamp(speed / (baseSpeed * 1.55f), 0.25f, 2.0f);
 }

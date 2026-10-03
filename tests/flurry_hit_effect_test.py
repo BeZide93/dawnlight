@@ -1,4 +1,4 @@
-"""Exercise the production deferred-hit hook without running enemy damage logic."""
+"""Exercise production Flurry contact, recovery, end and edge-render hooks."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,121 +13,184 @@ def function(signature):
 
 
 fixture = r'''
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
-using u8 = unsigned char;
 struct ModContext {};
 enum HookAction { HOOK_CONTINUE, HOOK_SKIP_ORIGINAL };
-struct cXyz { float x, y, z; };
-struct fopAc_ac_c { int id; bool enemy; unsigned status = 0; };
-constexpr unsigned fopAcStts_UNK_0x40000000_e = 0x40000000;
-bool fopAcM_CheckStatus(fopAc_ac_c* a, unsigned f) { return (a->status & f) != 0; }
-void fopAcM_OffStatus(fopAc_ac_c* a, unsigned f) { a->status &= ~f; }
-void fopAcM_OnStatus(fopAc_ac_c* a, unsigned f) { a->status |= f; }
-int fopAcM_GetID(fopAc_ac_c* a) { return a->id; }
-struct daAlink_c { static bool checkEnemyGroup(fopAc_ac_c* a) { return a->enemy; } };
-struct cCcD_GStts {};
-struct dCcD_GStts : cCcD_GStts {};
-struct cCcD_Stts {
-    dCcD_GStts global;
-    bool valid = true;
-    cCcD_GStts* GetGStts() { return valid ? &global : nullptr; }
+using fpc_ProcID = unsigned;
+constexpr auto fpcM_ERROR_PROCESS_ID_e = ~0U;
+constexpr int fpcNm_ALINK_e = 1, fpcNm_ARROW_e = 2;
+struct fopAc_ac_c { bool enemy; unsigned id; int name = 0; };
+unsigned fopAcM_GetID(fopAc_ac_c* a) { return a->id; }
+int fopAcM_GetName(fopAc_ac_c* a) { return a->name; }
+struct daAlink_c : fopAc_ac_c {
+    static bool checkEnemyGroup(fopAc_ac_c* a) { return a->enemy; }
+    void setBStatus(int) {}
 };
-struct dCcD_GObjInf { bool shield = false, noHitmark = false; };
+struct daArrow_c : fopAc_ac_c {};
+bool arrow_flight_was_initialized(daArrow_c*) { return true; }
+void reset_actor_clock(fopAc_ac_c*, bool) {}
+bool actor_is_exempt(fopAc_ac_c* a) { return !a || !a->enemy; }
+bool enemy_uses_continuous_slow(fopAc_ac_c*) { return false; }
+struct dCcD_GObjInf {
+    bool shield = false;
+    bool ChkTgShieldHit() { return shield; }
+};
 struct cCcD_Obj {
     fopAc_ac_c* actor;
-    dCcD_GObjInf info;
-    cCcD_Stts status;
-    u8 power = 1;
+    int power = 1;
     bool sword = true;
+    cCcD_Obj* hit = nullptr;
+    dCcD_GObjInf info{};
     fopAc_ac_c* GetAc() { return actor; }
+    int GetAtAtp() { return power; }
+    bool ChkTgHit() { return hit != nullptr; }
+    cCcD_Obj* GetTgHitObj() { return hit; }
     dCcD_GObjInf* GetGObjInf() { return &info; }
-    cCcD_Stts* GetStts() { return &status; }
-    u8 GetAtAtp() { return power; }
 };
-struct Collision {
-    int effects = 0;
-    bool lastShield = false;
-    cXyz lastPosition{};
-    bool ChkShield(cCcD_Obj*, cCcD_Obj*, dCcD_GObjInf*, dCcD_GObjInf* t, cXyz*) {
-        return t->shield;
-    }
-    void ProcAtTgHitmark(bool, bool, cCcD_Obj*, cCcD_Obj* t,
-        dCcD_GObjInf* aInfo, dCcD_GObjInf* tInfo, cCcD_Stts*, cCcD_Stts*,
-        dCcD_GStts*, dCcD_GStts*, cXyz* p, bool shield) {
-        if (aInfo->noHitmark || tInfo->noHitmark) return;
-        if (fopAcM_CheckStatus(t->actor, fopAcStts_UNK_0x40000000_e)) return;
-        fopAcM_OnStatus(t->actor, fopAcStts_UNK_0x40000000_e);
-        ++effects; lastShield = shield; lastPosition = *p;
-    }
-} collision;
-Collision* dComIfG_Ccsp() { return &collision; }
+struct SlowActorClockEntry { int pendingTicks = 0; } clock;
+fopAc_ac_c* scheduledActor = nullptr;
+SlowActorClockEntry* find_actor_clock(fopAc_ac_c* a, bool) {
+    scheduledActor = a;
+    return &clock;
+}
+bool consume_actor_tick(fopAc_ac_c*) {
+    if (clock.pendingTicks == 0) return false;
+    --clock.pendingTicks;
+    return true;
+}
 namespace mods {
 template<class T> T arg(void* args, int i) { return static_cast<T>(static_cast<void**>(args)[i]); }
 }
-bool s_flurryRushActive = true;
-std::uint64_t s_flurrySwordAttackSerial = 1;
-fopAc_ac_c* s_flurryRushOwner;
-fopAc_ac_c* s_flurryRushTarget;
-// STATE
-DeferredFlurryDamage s_deferredFlurryDamage{};
 bool is_flurry_sword_collider(cCcD_Obj* a) { return a->sword; }
-int attackHits = 0;
-void preserve_flurry_attack_hit(cCcD_Obj*, cCcD_Obj*, cXyz*) { ++attackHits; }
+bool s_flurryRushActive = true, s_flurryMeleePositioned = true, s_flurryLinkSlowed = false;
+bool s_bulletTimeActive = false;
+daAlink_c* s_flurryRushOwner = nullptr;
+fopAc_ac_c* s_flurryRushTarget = nullptr;
+fpc_ProcID s_flurryHitTargetId = fpcM_ERROR_PROCESS_ID_e;
+struct HitActorEntry { fopAc_ac_c* actor = nullptr; std::uint64_t frame = 0; };
+std::array<HitActorEntry, 2> s_hitActors{};
+std::uint64_t s_slowFrame = 0;
+constexpr std::uint64_t kHitExecuteGraceFrames = 6;
+constexpr int kFlurryRushActionStatus = 1, BUTTON_STATUS_NONE = 0;
+int dComIfGp_getAStatus() { return 0; }
+void sync_slow_motion_controllers() {}
+bool combat_slow_active() { return s_flurryRushActive || s_bulletTimeActive; }
+void clear_combat_time_caches() { clock = {}; s_hitActors = {}; }
+struct Controller {
+    float strength = 1.0f;
+    float time_scale() { return 0.1f; }
+    float edge_strength() { return strength; }
+} s_enemySlowMotion;
+struct GfxStageContext {};
+struct view_class {} view;
+view_class* dComIfGd_getView() { return &view; }
+int edgeDraws = 0;
+void drawSlowMotionEdges(view_class*, float) { ++edgeDraws; }
+// EDGE_FLAG
 // FUNCTIONS
 int main() {
-    fopAc_ac_c link{1, false}, enemy{2, true}, other{3, true};
+    daAlink_c link; link.enemy = false; link.id = 1; link.name = fpcNm_ALINK_e;
+    fopAc_ac_c enemy{true, 2}, other{true, 3};
+    cCcD_Obj sword{&link}, target{&enemy};
     s_flurryRushOwner = &link; s_flurryRushTarget = &enemy;
-    cCcD_Obj sword{&link}, secondSwordCollider{&link}, target{&enemy};
-    cXyz impact{12, 34, 56};
-    void* args[]{nullptr, &sword, &target, &impact};
-    auto hit = [&] { return before_common_at_tg_hit(nullptr, args, nullptr, nullptr); };
-    assert(hit() == HOOK_SKIP_ORIGINAL);
-    assert(collision.effects == 1 && !collision.lastShield);
-    assert(collision.lastPosition.x == 12 && collision.lastPosition.y == 34);
-    assert(s_deferredFlurryDamage.pending && s_deferredFlurryDamage.targetActor == &enemy);
-    assert(s_deferredFlurryDamage.lastAttackSerial == 1 && attackHits == 1);
-    // Repeated contact and multiple sword capsules must not duplicate the flash.
-    for (int i = 0; i < 10; ++i) assert(hit() == HOOK_SKIP_ORIGINAL);
-    args[1] = &secondSwordCollider;
-    assert(hit() == HOOK_SKIP_ORIGINAL && collision.effects == 1);
-    // A new swing must flash even if the slowed enemy has not cleared its flag.
-    ++s_flurrySwordAttackSerial; target.info.shield = true; impact.z = 78;
-    assert(hit() == HOOK_SKIP_ORIGINAL && collision.effects == 2);
-    assert(collision.lastShield && collision.lastPosition.z == 78);
-    assert(fopAcM_CheckStatus(&enemy, fopAcStts_UNK_0x40000000_e));
-    assert(s_deferredFlurryDamage.lastAttackSerial == 2);
-    // Keep native particle suppression; recording deferred damage is independent.
-    ++s_flurrySwordAttackSerial; target.info.noHitmark = true;
-    assert(hit() == HOOK_SKIP_ORIGINAL && collision.effects == 2);
-    assert(s_deferredFlurryDamage.lastAttackSerial == 3);
-    target.info.noHitmark = false; target.status.valid = false;
-    ++s_flurrySwordAttackSerial;
-    assert(hit() == HOOK_SKIP_ORIGINAL && collision.effects == 2);
-    target.status.valid = true;
-    // Everything outside an eligible deferred sword contact keeps vanilla handling.
-    ++s_flurrySwordAttackSerial; s_flurryRushActive = false;
-    assert(hit() == HOOK_CONTINUE);
-    s_flurryRushActive = true; target.actor = &other; assert(hit() == HOOK_CONTINUE);
-    target.actor = &enemy; args[3] = nullptr; assert(hit() == HOOK_CONTINUE);
-    args[3] = &impact; args[1] = &sword; sword.power = 0; assert(hit() == HOOK_CONTINUE);
-    sword.power = 1; sword.sword = false; assert(hit() == HOOK_CONTINUE);
-    assert(collision.effects == 2 && s_deferredFlurryDamage.lastAttackSerial == 4);
+    void* args[]{nullptr, &sword, &target};
+    int hp = 20, effects = 0, callbackCalls = 0, cooldown = 0;
+    bool blocked = false;
+    auto contact = [&] {
+        target.hit = nullptr; target.info.shield = blocked;
+        auto action = before_common_at_tg_hit(nullptr, args, nullptr, nullptr);
+        // Native collision/actor damage stand-in: a shield can register contact
+        // without damage; post-hit invulnerability lasts ten native updates.
+        if (action == HOOK_CONTINUE && cooldown == 0) {
+            target.hit = &sword;
+            if (!blocked) { hp -= 2; ++effects; ++callbackCalls; cooldown = 10; }
+        }
+        after_common_at_tg_hit(nullptr, args, nullptr, nullptr);
+        return action;
+    };
+    assert(should_skip_actor(&enemy));
+    // Blocked first contact must not release the target from slow motion.
+    blocked = true;
+    assert(contact() == HOOK_CONTINUE && hp == 20);
+    assert(!actor_has_hit_grace(&enemy));
+    blocked = false;
+    for (int i = 0; i < 4; ++i) {
+        clock.pendingTicks = 0;
+        sword.power = (i + 1) * 10;
+        assert(contact() == HOOK_CONTINUE);
+        assert(hp == 18 - 2 * i && effects == i + 1 && callbackCalls == i + 1);
+        assert(clock.pendingTicks == 1 && scheduledActor == &enemy);
+        assert(actor_has_hit_grace(&enemy));
+        assert(enemy_slow_motion_scale(&enemy) == 1.0f);
+        assert(!actor_uses_visual_slowdown(&enemy));
+        // Duplicate contacts in the same swing do not bypass native immunity.
+        contact(); assert(hp == 18 - 2 * i);
+        for (int frame = 0; frame < 12; ++frame) {
+            ++s_slowFrame;
+            clock.pendingTicks = frame % 10 == 0 ? 1 : 0;
+            if (!should_skip_actor(&enemy) && cooldown > 0) --cooldown;
+        }
+        assert(cooldown == 0); // Recovery must not stretch to 100 frames.
+        clock.pendingTicks = 0;
+        assert(should_skip_actor(&other));
+        assert(enemy_slow_motion_scale(&other) == 0.1f);
+        assert(actor_uses_visual_slowdown(&other));
+    }
+    clock.pendingTicks = 3; blocked = true; contact();
+    assert(clock.pendingTicks == 3 && hp == 12);
+    // Reused addresses must not inherit the accepted target's recovery.
+    ++enemy.id; assert(!actor_has_hit_grace(&enemy)); --enemy.id;
+    auto unchanged = [&] {
+        s_flurryHitTargetId = fpcM_ERROR_PROCESS_ID_e;
+        target.hit = &sword; target.info.shield = false;
+        scheduledActor = nullptr; clock.pendingTicks = 0;
+        assert(before_common_at_tg_hit(nullptr, args, nullptr, nullptr) == HOOK_CONTINUE);
+        after_common_at_tg_hit(nullptr, args, nullptr, nullptr);
+        assert(scheduledActor == nullptr && clock.pendingTicks == 0);
+        assert(s_flurryHitTargetId == fpcM_ERROR_PROCESS_ID_e);
+    };
+    target.actor = &other; unchanged(); target.actor = &enemy;
+    sword.sword = false; unchanged(); sword.sword = true;
+    sword.power = 0; unchanged(); sword.power = 1;
+    sword.actor = &other; unchanged(); sword.actor = &link;
+    args[1] = nullptr; unchanged(); args[1] = &sword;
+    args[2] = nullptr; unchanged(); args[2] = &target;
+    target.hit = nullptr;
+    after_common_at_tg_hit(nullptr, args, nullptr, nullptr);
+    assert(s_flurryHitTargetId == fpcM_ERROR_PROCESS_ID_e);
+    // No edge geometry during the rush, the fade-out or standalone Bullet Time.
+    draw_slow_motion_edges(nullptr, nullptr, nullptr);
+    s_flurryHitTargetId = enemy.id;
+    stop_flurry_rush();
+    assert(!s_flurryRushActive && !s_flurryRushOwner && !s_flurryRushTarget);
+    assert(s_flurryHitTargetId == fpcM_ERROR_PROCESS_ID_e);
+    assert(hp == 12 && effects == 4 && callbackCalls == 4);
+    s_enemySlowMotion.strength = 0.5f;
+    draw_slow_motion_edges(nullptr, nullptr, nullptr);
+    s_bulletTimeActive = true;
+    draw_slow_motion_edges(nullptr, nullptr, nullptr);
+    assert(edgeDraws == 0);
+    assert(enemy_slow_motion_scale(&enemy) == 0.1f);
+    unchanged(); stop_flurry_rush();
 }
 '''
-start = source.index('struct DeferredFlurryDamage {')
-fixture = fixture.replace('// STATE', source[start:source.index('\n};', start) + 3])
-fixture = fixture.replace('// FUNCTIONS', function('void show_flurry_hit_effect') + '\n' +
-                          function('HookAction before_common_at_tg_hit'))
-# The fixture deliberately provides no target-hit, damage or hit-callback API.
-fixture = fixture.replace('using u8 = unsigned char;',
-                          'using u8 = unsigned char; using fpc_ProcID = int;\n'
-                          'constexpr int fpcM_ERROR_PROCESS_ID_e = -1;')
+flag = next(line for line in source.splitlines()
+            if line.startswith('constexpr bool kTestDisableSlowMotionEdges'))
+fixture = fixture.replace('// EDGE_FLAG', flag)
+fixture = fixture.replace('// FUNCTIONS', '\n'.join(function(signature) for signature in [
+    'bool actor_has_hit_grace', 'float enemy_slow_motion_scale',
+    'bool actor_uses_visual_slowdown', 'bool should_skip_actor',
+    'HookAction before_common_at_tg_hit', 'void after_common_at_tg_hit',
+    'void stop_flurry_rush', 'void draw_slow_motion_edges',
+]))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / 'test.cpp', Path(tmp) / 'test'
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
-                    '-Wno-missing-field-initializers', str(cpp), '-o', str(exe)], check=True)
+                    str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Flurry hit effects passed: contact position, per-swing deduplication, slow actor flags, '
-      'shield effects, native suppression and deferred-hit isolation')
+print('Flurry diagnostic passed: successive native hits after recovery, shield/immunity '
+      'preserved, target-only recovery, lifetime/reset safety and no edge geometry')

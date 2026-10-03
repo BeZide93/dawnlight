@@ -27,9 +27,17 @@ cancellation work as before. Existing On/Off configurations migrate to Always/Of
 **Flurry Rush** rewards a perfectly timed evade. The optional **Great Spin
 Projectile** adds a ranged attack to the Great Spin.
 
-During Flurry Rush, each sword strike that connects shows the native impact
-effect at the contact point. Damage and the enemy's hit reaction are still
-deferred until the rush ends.
+During Flurry Rush, each sword strike uses normal hit processing immediately,
+including native impact effects and the enemy's own damage rules. There is no
+combined damage hit at the end. Native blocking and invulnerability still apply.
+
+**PR #70 test build:** the slow-motion edge effect is disabled, including its
+fade-out and its use during Bullet Time, to isolate the Dark Link rendering
+crash. After an accepted sword contact, the target runs at normal speed for the
+rest of that rush so its native damage cooldown and teleport/recovery can finish.
+Other enemies remain slowed. This temporary recovery behavior also speeds up
+the target's movement and attacks; it does not force hits through a shield,
+an invulnerable phase, or a teleport out of reach.
 
 Bullet Time, Flurry Rush and the Great Spin projectile share the
 [stamina meter](movement-and-abilities.md#shared-stamina) with movement abilities.

@@ -21,6 +21,7 @@ fixture = r'''
 #include <cassert>
 #include <cmath>
 #include <array>
+#include <limits>
 using f32=float;
 using u16=unsigned short;
 constexpr int PAD_1=0;
@@ -36,7 +37,7 @@ bool enabled=true,stamina=true,event=false,jumpReady=true,bPressed=false;
 int staminaMarks=0,manualMarks=0,manualClears=0;
 bool sprint_enabled(){return enabled;}
 bool stamina_available_for_sprint(){return stamina;}
-bool teSprint=false;bool twilit_sprint_enabled(){return teSprint;}
+bool teSprint=false;float teJumpDistance=1;bool twilit_sprint_enabled(){return teSprint;}
 void mark_sprint_stamina_active(){++staminaMarks;}
 bool dComIfGp_event_runCheck(){return event;}
 namespace mDoCPd_c {
@@ -94,6 +95,8 @@ bool daAlink_c::procAutoJumpInit(int){
     if(!initSucceeds)return false;
     transition(this,PROC_AUTO_JUMP);
     mMaxSpeed=26;speedF=26;mNormalSpeed=20;speed.y=25;gravity=-3.4f;
+    // Model TE's procAutoJumpInit post-hook, which runs before Dawnlight resumes.
+    if(teSprint && teJumpDistance>1){mNormalSpeed*=teJumpDistance;mMaxSpeed=mNormalSpeed;}
     return true;
 }
 bool daAlink_c::procCutJumpInit(bool){
@@ -209,6 +212,52 @@ int main(){
     }
     enabled=stamina=true;link=daAlink_c{};link.mNormalSpeed=69;link.initSucceeds=false;
     assert(!start_ground_jump(&link));close(link.mNormalSpeed,69);close(link.mMaxSpeed,23);
+    // TE momentum does not depend on Dawnlight's Sprint toggle, configured cap,
+    // Roll input (masked/remapped by TE), or Dawnlight's local stamina gate.
+    teSprint=true;stamina=false;
+    for(bool ownSprint:{false,true}) for(int percent:{100,300})
+    for(float groundSpeed:{0.0f,11.5f,23.0f,27.6f,35.65f,46.0f})
+    for(float distance:{1.0f,1.2f,3.0f}){
+        enabled=ownSprint;configPercent=percent;teJumpDistance=distance;
+        link=daAlink_c{};link.rollHeld=false;link.mNormalSpeed=groundSpeed;
+        const int payments=staminaMarks;
+        const float momentum=groundSpeed>23?groundSpeed:0;
+        assert(start_ground_jump(&link));
+        close(link.mNormalSpeed,std::max(20*distance,momentum));
+        close(link.speedF,std::max(26.0f,momentum));
+        close(link.mMaxSpeed,std::max(distance>1?20*distance:26,momentum));
+        close(link.speed.y,25);close(link.gravity,-3.4f);
+        assert(staminaMarks==payments);
+        transition(&link,daAlink_c::PROC_WAIT);
+    }
+    teJumpDistance=1;enabled=false;
+    close(twilit_sprint_jump_speed(nullptr),0);
+    for(int scenario=0;scenario<14;++scenario){
+        link=daAlink_c{};link.mNormalSpeed=46;event=false;
+        switch(scenario){
+        case 0:link.mpHIO=nullptr;break;
+        case 1:link.mProcID=daAlink_c::PROC_WAIT;break;
+        case 2:link.input=false;break;
+        case 3:link.mLinkAcch.ground=false;break;
+        case 4:link.wolf=true;break;
+        case 5:link.cutscene=true;break;
+        case 6:event=true;break;
+        case 7:link.boots=true;break;
+        case 8:link.sumo=true;break;
+        case 9:link.mGrabItemAcKeep.actor=&other;break;
+        case 10:link.mNormalSpeed=std::numeric_limits<float>::quiet_NaN();break;
+        case 11:link.mNormalSpeed=std::numeric_limits<float>::infinity();break;
+        case 12:hio.mMove.m.mMaxSpeed=0;break;
+        case 13:hio.mMove.m.mMaxSpeed=std::numeric_limits<float>::quiet_NaN();break;
+        }
+        close(twilit_sprint_jump_speed(&link),0);
+        hio.mMove.m.mMaxSpeed=23;
+    }
+    event=false;link=daAlink_c{};link.mNormalSpeed=46;link.initSucceeds=false;
+    assert(!start_ground_jump(&link));close(link.mNormalSpeed,46);close(link.speedF,23);
+    teSprint=false;link=daAlink_c{};link.mNormalSpeed=46;
+    assert(start_ground_jump(&link));close(link.mNormalSpeed,20);
+    enabled=stamina=true;
     // Ordinary auto-jumps and the existing ZR+B jump attack are not rewritten.
     link=daAlink_c{};link.mNormalSpeed=69;assert(link.procAutoJumpInit(0));close(link.mNormalSpeed,20);
     link=daAlink_c{};link.mNormalSpeed=69;link.mEquipItem=kSwordItem;bPressed=true;
@@ -217,6 +266,7 @@ int main(){
 }
 '''
 names = ['bool sprint_requested', 'float sprint_jump_speed_multiplier',
+         'float twilit_sprint_jump_speed', 'void apply_twilit_sprint_jump_speed',
          'void apply_sprint_jump_speed', 'void set_manual_jump_direction',
          'void apply_manual_jump_movement', 'void apply_manual_jump_height', 'bool start_ground_jump',
          'HookAction before_proc_move_sprint', 'void after_proc_move_sprint',

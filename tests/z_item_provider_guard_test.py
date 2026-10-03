@@ -93,20 +93,27 @@ void update_update_service(Log*, ModContext*, void*) {}
 int main() {
     // The actual TE feature reader must use the host's escaped mod ID:
     // dots become '_', while the literal underscore in twilit_essentials becomes '__'.
+    const char* teMod = "mod.com_dusklight_twilit__essentials.enabled";
     const char* sprint = "mod.com_dusklight_twilit__essentials.staminaSprint";
     const char* wolf = "mod.com_dusklight_twilit__essentials.staminaWolfSprint";
     const char* bullet = "mod.com_dusklight_twilit__essentials.bulletTimeEnabled";
     const char* speedDrain = "mod.com_dusklight_twilit__essentials.staminaSprintDrainBySpeed";
     for (int mask = 0; mask < 8; ++mask) {
-        vars.clear();set(sprint,mask & 1);set(wolf,mask & 2);set(bullet,mask & 4);
+        vars.clear();set(teMod,true);set(sprint,mask & 1);set(wolf,mask & 2);set(bullet,mask & 4);
         assert(te_fixture::twilit_sprint_enabled(false) == bool(mask & 1));
         assert(te_fixture::twilit_sprint_enabled(true) == bool(mask & 2));
         assert(te_fixture::twilit_bullet_time_enabled() == bool(mask & 4));
     }
     vars.clear();assert(!te_fixture::twilit_sprint_enabled(false));
-    set(sprint,true);assert(te_fixture::twilit_sprint_enabled(false));
+    set(teMod,true);set(sprint,true);assert(te_fixture::twilit_sprint_enabled(false));
     set(sprint,false);assert(!te_fixture::twilit_sprint_enabled(false));
-    set(sprint,true);te_fixture::active=false;assert(!te_fixture::twilit_sprint_enabled(false));
+    set(sprint,true);te_fixture::active=false;
+    assert(te_fixture::twilit_sprint_enabled(false)); // Sprint also works with TE stamina off.
+    set(teMod,false);assert(!te_fixture::twilit_sprint_enabled(false));
+    vars.erase(teMod);assert(!te_fixture::twilit_sprint_enabled(false));
+    set(teMod,true);set(wolf,true);assert(te_fixture::twilit_sprint_enabled(true));
+    set(teMod,false);assert(!te_fixture::twilit_sprint_enabled(true));
+    set(teMod,true);
     te_fixture::active=true;
     assert(te_fixture::twilit_sprint_drain_multiplier(31,20)==1);
     set(speedDrain,true);

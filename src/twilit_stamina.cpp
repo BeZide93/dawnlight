@@ -94,8 +94,8 @@ bool twilit_stamina_drain(float amount) {
     return svc_te_stamina->drain(mod_ctx, amount) == MOD_OK;
 }
 
-static bool twilit_feature_enabled(const char* key) {
-    if (!twilit_stamina_active()) return false;
+static bool twilit_feature_enabled(const char* key, bool requireStamina = true) {
+    if (requireStamina && !twilit_stamina_active()) return false;
     // Resolve live feature switches without retaining provider-owned CVars.
     // Dusklight escapes dots to underscores and literal underscores to doubles.
     if (!s_getConfigVar) {
@@ -105,6 +105,13 @@ static bool twilit_feature_enabled(const char* key) {
             !address) return false;
         s_getConfigVar = reinterpret_cast<GetConfigVarFn>(address);
     }
+    // TE can sprint with its stamina bar disabled. Its mod-level switch still
+    // gates ownership, since registered CVars can outlive an enabled mod.
+    if (!requireStamina) {
+        const auto* enabled = s_getConfigVar("mod.com_dusklight_twilit__essentials.enabled");
+        if (!enabled || !static_cast<const dusk::config::ConfigVar<bool>*>(enabled)->getValue())
+            return false;
+    }
     const auto* value = s_getConfigVar(key);
     return value && static_cast<const dusk::config::ConfigVar<bool>*>(value)->getValue();
 }
@@ -112,7 +119,7 @@ static bool twilit_feature_enabled(const char* key) {
 bool twilit_sprint_enabled(bool wolf) {
     return twilit_feature_enabled(wolf ?
         "mod.com_dusklight_twilit__essentials.staminaWolfSprint" :
-        "mod.com_dusklight_twilit__essentials.staminaSprint");
+        "mod.com_dusklight_twilit__essentials.staminaSprint", false);
 }
 
 bool twilit_bullet_time_enabled() {

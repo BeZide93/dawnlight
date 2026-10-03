@@ -43,7 +43,6 @@ currently loaded save's story flags:
 
 | Milestone | Unlock |
 | --- | --- |
-| Start of the game | Sprint |
 | Give Talo the Wooden Sword in Ordon | Glide, with Glider selected |
 | Obtain the Ordon Sword | Dual Wield option in Collection |
 | Free Ordona | Revali's Gale and its counter |
@@ -57,8 +56,10 @@ follows the current maximum heart containers. Story flags remain unchanged.
 
 Charge capacity uses maximum heart containers, not current health; damage and
 partial heart containers do not lower or prematurely increase it. Progression
-controls Sprint, Glide, Glide Item, Revali's Gale, Gale Counter, Gale Charges,
+controls Glide, Glide Item, Revali's Gale, Gale Counter, Gale Charges,
 Dark Link and Dual Wield, locking these settings until progression is disabled.
+Sprint remains independently toggleable from the start; Progression does not
+enable or lock it. Dawnlight Mode still enables Sprint as part of its preset.
 Disabling progression restores the previous personal settings. Dual Wield is
 equipped by selecting its Ordon Sword icon beside the shields in Collection. A short
 Dusklight toast announces newly reached unlocks and charge-capacity increases

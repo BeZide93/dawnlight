@@ -423,7 +423,7 @@ ModResult build_general_tab(
             "are locked while On. Off restores your saved personal settings, including after a restart.")
         != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Progression System", progression_system_config_var(),
-            "Sprint is available from the start. Give Talo the Wooden Sword to unlock the Glider, "
+            "Sprint stays independently toggleable. Give Talo the Wooden Sword to unlock the Glider, "
             "free Ordona for Revali's Gale, and free Faron for Dark Link. Gale gains one charge "
             "per three full heart containers. Each complete heart above the starting three adds 5 maximum stamina. Controlled settings are locked while On.")
         != MOD_OK) return MOD_ERROR;

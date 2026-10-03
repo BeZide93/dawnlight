@@ -175,6 +175,18 @@ int main(){
     reset();configService.values[s_dawnlightMode]=0;configService.values[s_progressionSystem]=1;
     auto& locked=make(s_revalisGale,UI_CONTROL_TOGGLE,"Gale");assert(!uiService.controls.at(locked.unlock).visible);
     assert(mode_control_disabled(nullptr,&locked));request_mode_unlock(nullptr,&locked);assert(uiService.pushes==0);
+    // Sprint stays editable with progression alone; changing it preserves progression.
+    auto& sprint=make(s_sprint,UI_CONTROL_TOGGLE,"Sprint");
+    assert(!mode_control_disabled(nullptr,&sprint));
+    for(bool enabled:{true,false}) {
+        UiControlValue edit{};edit.bool_value=enabled;
+        mode_control_set(nullptr,&sprint,&edit);
+        assert(configService.values[s_sprint]==enabled&&progression_system_enabled());
+        assert(uiService.pushes==0);
+    }
+    reset();assert(!edit_requires_progression_off(s_sprint));
+    assert(leave_dawnlight_mode_for_edit(s_sprint)==MOD_OK);
+    assert(!dawnlight_mode_enabled()&&progression_system_enabled());
     // Normal mode toggle still exposes previous preferences without adopting the preset.
     reset();auto saved=configService.values;configService.values[s_dawnlightMode]=0;
     assert(configService.values[s_wolfSpeedPercent]==saved[s_wolfSpeedPercent]);

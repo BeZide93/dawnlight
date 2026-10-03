@@ -63,6 +63,15 @@ inline Pose blend(Pose a,Pose b,float t) { return {blend(a.q,b.q,t),a.p*(1-t)+b.
 inline Pose secondary_sword_model_pose(Pose grip) {
     return compose(grip,Pose{{1,0,0,0},{}});
 }
+// Initial visual calibration from the reported Ordon/Master hilt offset.
+// Actor-local +X points away from the torso at the left hip. Keep this
+// separate from the blade roll and IK: moving their common anchor would
+// move both meshes and leave the observed gap unchanged. Needs in-game tuning.
+constexpr float secondary_sheath_outward_offset=2.5f;
+inline Pose offset_secondary_sheath(Pose sheath,Quat actorRotation) {
+    sheath.p=sheath.p+rotate(actorRotation,{secondary_sheath_outward_offset,0,0});
+    return sheath;
+}
 inline float smooth(float t) { t=std::clamp(t,0.0f,1.0f);return t*t*(3-2*t); }
 inline float approach(float value,float target,float step) {
     return value<target ? std::min(target,value+step) : std::max(target,value-step);

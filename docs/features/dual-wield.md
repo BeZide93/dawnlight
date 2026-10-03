@@ -37,6 +37,12 @@ primary sword keeps its normal equipment slot. The Wooden Sword, including
 Twilit Essentials' additional starter-equipment slot, can also be used as the
 primary weapon.
 
+The Ordon and Master scabbards have an initial visual adjustment of **1.5 game
+units outward from Link's left hip**, in gameplay and the Collection preview.
+This is an estimate from the reported hilt/scabbard mismatch, pending in-game
+comparison with the actual models. It only translates the scabbard; the blade's
+180-degree roll, hand placement and draw/stow animation remain unchanged.
+
 Deploying Glide stows the second sword immediately and skips its right-arm
 sheathing animation. Both hands retain the native carrying pose for the Glider
 or glide Cucco; normal sword drawing and sheathing resume after gliding.

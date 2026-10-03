@@ -623,7 +623,9 @@ void status_item_matrices(daAlink_c* link) {
     Pose hip=dual::compose(pose(model->getAnmMtx(16)),local(-3,0,18,20));
     constexpr float halfTurn90=.70710678118f;
     hip=dual::compose(hip,Pose{{halfTurn90,0,0,halfTurn90},{}});
-    if(s.sheath) put(s.sheath,dual::compose(dual::secondary_sword_model_pose(hip),dual::inverse(local(-18.5f,.14f,12.2f,0,33.1f))));
+    if(s.sheath) put(s.sheath,dual::offset_secondary_sheath(
+        dual::compose(dual::secondary_sword_model_pose(hip),dual::inverse(local(-18.5f,.14f,12.2f,0,33.1f))),
+        pose(model->getBaseTRMtx()).q));
 }
 void after_status_draw(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
@@ -645,10 +647,12 @@ void after_items(ModContext*,void* args,void*,void*) {
     }
     if(!equipment_visible(link)) return;
     put(s.sword,dual::secondary_sword_model_pose(s.rightSword));
-    // Native sword-in-sheath transform, inverted to place the scabbard
-    // around the same hip-mounted blade rather than creating a second offset.
+    // Start with the native sword-in-sheath transform, then apply the
+    // estimated visual correction to the scabbard alone in actor space.
     const Pose mount=local(-18.5f,.14f,12.2f,0,33.1f);
-    if(s.sheath) put(s.sheath,dual::compose(dual::secondary_sword_model_pose(s.hipSword),dual::inverse(mount)));
+    if(s.sheath) put(s.sheath,dual::offset_secondary_sheath(
+        dual::compose(dual::secondary_sword_model_pose(s.hipSword),dual::inverse(mount)),
+        pose(link->mpLinkModel->getBaseTRMtx()).q));
     if(active(link) && s.guard>0 && link->mEquipItem==dItemNo_NONE_e) {
         put(link->mSwordModel,sword_at_hand(link,false));
         show_guard_blade(link);

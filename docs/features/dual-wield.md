@@ -37,7 +37,7 @@ primary sword keeps its normal equipment slot. The Wooden Sword, including
 Twilit Essentials' additional starter-equipment slot, can also be used as the
 primary weapon.
 
-The Ordon and Master scabbards have an initial visual adjustment of **2.5 game
+The Ordon and Master scabbards have an initial visual adjustment of **1.5 game
 units outward from Link's left hip**, in gameplay and the Collection preview.
 This is an estimate from the reported hilt/scabbard mismatch, pending in-game
 comparison with the actual models. It only translates the scabbard; the blade's

@@ -67,7 +67,7 @@ inline Pose secondary_sword_model_pose(Pose grip) {
 // Actor-local +X points away from the torso at the left hip. Keep this
 // separate from the blade roll and IK: moving their common anchor would
 // move both meshes and leave the observed gap unchanged. Needs in-game tuning.
-constexpr float secondary_sheath_outward_offset=2.5f;
+constexpr float secondary_sheath_outward_offset=1.5f;
 inline Pose offset_secondary_sheath(Pose sheath,Quat actorRotation) {
     sheath.p=sheath.p+rotate(actorRotation,{secondary_sheath_outward_offset,0,0});
     return sheath;

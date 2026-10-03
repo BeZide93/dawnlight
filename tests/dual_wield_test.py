@@ -553,8 +553,8 @@ int main() {
     for(const Vec angles:{Vec{0,1.57079632679f,0},Vec{.2f,-.8f,.1f}}) {
         link.model.base.q=dual::from_euler(angles);
         status_item_matrices(&link);
-        const Vec outward=dual::rotate(link.model.base.q,{2.5f,0,0});
-        assert(dual::length(previewSheath.base.p-previewBase.p-outward+Vec{2.5f,0,0})<.001f);
+        const Vec outward=dual::rotate(link.model.base.q,{1.5f,0,0});
+        assert(dual::length(previewSheath.base.p-previewBase.p-outward+Vec{1.5f,0,0})<.001f);
         assert(dual::length(previewSword.base.p-previewBlade.p)<.001f);
     }
     link.model.base={};
@@ -575,7 +575,7 @@ int main() {
             assert(dual::length(dual::rotate(previewSword.base.q,{0,1,0})+dual::rotate(grip.q,{0,1,0}))<.001f);
             if(s.sheath) {
                 const Pose inserted=dual::compose(previewSheath.base,hipMount);
-                const Vec outward=dual::rotate(link.model.base.q,{2.5f,0,0});
+                const Vec outward=dual::rotate(link.model.base.q,{1.5f,0,0});
                 assert(dual::length(inserted.p-previewSword.base.p-outward)<.001f);
                 assert(dual::length(dual::rotate(inserted.q,{0,1,0})-dual::rotate(previewSword.base.q,{0,1,0}))<.001f);
             }

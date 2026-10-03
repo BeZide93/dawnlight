@@ -25,7 +25,14 @@ their height, and into ledge falls with **Disable Auto Jump** enabled.
 
 ## Manual jump and ledges
 
-**R Jump** enables manual jumping. It also works as wolf Link while standing, moving or dashing, using
+**Manual Jump** enables manual jumping. **Jump Button**, directly below it, selects
+**R** (default), **R2**, **L2**, **R3** or **L3**. R uses the existing game binding,
+including keyboard/touch mappings; R2/L2 are controller triggers and R3/L3 are
+stick clicks. The selection remains editable in Dawnlight Mode and also applies
+to jump attacks, Glide and Revali's Gale. Hold it and press B during a human jump
+for a jump attack. Existing button actions are not globally remapped.
+
+Manual Jump also works as wolf Link while standing, moving or dashing, using
 the same jump binding and **Jump Height** setting with native wolf jump physics.
 Human Link can also jump while standing or walking with a carried object, such as
 a pot or bomb, using the native jump while keeping the object in his hands.
@@ -37,7 +44,7 @@ ground and cutscene restrictions still apply.
 **Jump Height** in Controls sets manual jump height
 from 100% (the original height and default) to 500%.
 
-**Disable Auto Jump**, directly below **R Jump** in Controls, is off by default.
+**Disable Auto Jump**, below **Jump Button** in Controls, is off by default.
 It remains independently editable while Dawnlight Mode is on; the preset does not
 automatically enable it.
 It prevents human and wolf Link's automatic running jump at ledges, requiring the manual
@@ -45,12 +52,12 @@ jump button instead. Walking off a ledge carries the actual forward speed and
 direction into the fall, including sprint/dash speed, without an upward jump
 impulse. Normal fall physics and ledge grabbing remain available.
 Scripted/forced jumps, Midna's targeted jumps, manual jumps and Revali's Gale are preserved.
-Turning **R Jump** off also resets this option to off and greys it out;
-re-enabling R Jump does not automatically re-enable it.
+Turning **Manual Jump** off also resets this option to off and greys it out;
+re-enabling Manual Jump does not automatically re-enable it.
 
 ## Glide
 
-Optional **Glide**: press ZR in the air to glide during manual jumps or ordinary
+Optional **Glide**: press the selected jump button in the air to glide during manual jumps or ordinary
 falls. **Glide Item**, directly below the toggle, selects **Cucco** (default) or
 an original textured **Glider** with a wooden frame and leather grips. Both use
 native Cucco glide movement; landing puts the selected item away. The Glider
@@ -77,8 +84,8 @@ game. The repository also includes editable model and texture source files.
 
 ## Revali's Gale
 
-Optional **Revali's Gale**: ZR immediately performs a normal jump, including
-while running or sprinting. Keep ZR held through landing to stop and crouch;
+Optional **Revali's Gale**: the selected jump button immediately performs a normal jump, including
+while running or sprinting. Keep the jump button held through landing to stop and crouch;
 stay crouched for at least one second, then release to launch with the saved
 pre-jump speed/direction and the native Gale
 Boomerang tornado. **Gale Height**, below the toggle, adds 100–1000% of the
@@ -88,10 +95,10 @@ Releasing before landing or before the full second in crouch cancels Gale
 without spending a charge. Pressing X, Y, A or B during charging also cancels
 Gale and passes the press to its normal action, including native R+Y Quick
 Transform and R+X Sun Song where available. This includes touch input; release
-ZR before starting another charge. Time spent in the initial jump does not count.
+the jump button before starting another charge. Time spent in the initial jump does not count.
 After one second, a flattened Gale tornado loops at Link's feet with wind
 audio until release. Cancelling the charge also stops this readiness cue.
-Gale also enables the initial ZR jump when R Jump is off; Glide is independent.
+Gale also enables the initial manual jump when Manual Jump is off; Glide is independent.
 Glide and Revali's Gale both default to disabled.
 
 ### Charges and recovery
@@ -108,7 +115,7 @@ and scene transitions. The state lasts for the session, without save-file data.
 the Dark Link bar, with full and spent charges aligned at the bars' left
 anchor. **Custom Gale Counter** in
 the HUD Editor adjusts X/Y offsets and scale relative to that default anchor.
-Empty charges block Gale, while the initial normal ZR jump remains available.
+Empty charges block Gale, while the initial normal manual jump remains available.
 
 See [HUD editing](controls-and-hud.md#hud-editing) to reposition the counter.
 

@@ -1,4 +1,4 @@
-// Included in jump_hooks.cpp so all ZR actions share the existing jump safety
+// Included in jump_hooks.cpp so all jump-button actions share the existing safety
 // checks and the same manual-jump/Bullet Time ownership.
 #include "jump_gale_visual.inc"
 

@@ -19,6 +19,7 @@
 #include "mods/svc/hook.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 #include "enemy_spawner.hpp"
@@ -34,6 +35,7 @@
 namespace dawnlight {
 namespace {
 
+DEFINE_HOOK(&mDoCPd_c::read, JumpPadRead);
 DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, CheckAutoJumpAction);
 DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
 DEFINE_HOOK(&daAlink_c::procFallInit, LedgeFallInit);
@@ -64,10 +66,6 @@ DEFINE_HOOK_SYMBOL("Z2SoundObjSimple::startLevelSound",
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
 DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
-enum class JumpBinding {
-    LockR,
-};
-
 constexpr u16 kSwordItem = 0x103;
 
 const daAlink_c* s_manualJumpOwner = nullptr;
@@ -77,25 +75,7 @@ daAlink_c* s_sprintOwner = nullptr;
 bool s_galeInputCancelled = false;
 bool s_galeChargeCancelledThisTick = false;
 
-JumpBinding active_jump_binding() {
-    return JumpBinding::LockR;
-}
-
-bool jump_pressed(JumpBinding binding) {
-    switch (binding) {
-    case JumpBinding::LockR:
-        return mDoCPd_c::getTrigLockR(PAD_1) != 0;
-    }
-    return false;
-}
-
-bool jump_held(JumpBinding binding) {
-    switch (binding) {
-    case JumpBinding::LockR:
-        return mDoCPd_c::getHoldLockR(PAD_1) != 0;
-    }
-    return false;
-}
+#include "jump_input.inc"
 
 bool sprint_requested(daAlink_c* link) {
     if (twilit_sprint_enabled()) return false;
@@ -573,8 +553,14 @@ bool glide_active_for(daAlink_c* link) {
 
 ModResult install_jump_hooks(ModError* error) {
     init_glider_visual();
+    initialize_jump_input();
     ModResult result =
         mods::hook_add_pre<CheckAutoJumpAction>(svc_hook, before_check_auto_jump);
+    if (result == MOD_OK) {
+        HookOptions options = HOOK_OPTIONS_INIT;
+        options.priority = 1000;
+        result = mods::hook_add_post<JumpPadRead>(svc_hook, after_jump_pad_read, &options);
+    }
     if (result == MOD_OK) result = mods::hook_add_post<CheckAutoJumpAction>(svc_hook, after_check_auto_jump);
     if (result == MOD_OK) result = mods::hook_add_pre<WolfSprintMovement>(svc_hook, before_wolf_sprint_movement);
     if (result == MOD_OK) result = mods::hook_add_pre<WolfSprintDash>(svc_hook, before_wolf_sprint_movement);
@@ -620,12 +606,14 @@ ModResult install_jump_hooks(ModError* error) {
     if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierSound>(svc_hook, before_glide_carrier_sound);
     if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierLevelSound>(svc_hook, before_glide_carrier_sound);
     if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install Dawnlight R jump hooks");
+        return mods::set_error(error, result, "failed to install Dawnlight manual jump hooks");
     }
     return MOD_OK;
 }
 
 void shutdown_jump_hooks() {
+    s_jumpInputs = {};
+    s_jumpGamepadAxis = nullptr;
     reset_jump_abilities(daAlink_getAlinkActorClass());
     shutdown_glider_bmd();
 }

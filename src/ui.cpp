@@ -32,6 +32,7 @@ constexpr const char* kAimModeOptions[] = {
 };
 
 constexpr const char* kSecondSwordOptions[] = {"Wooden Sword", "Ordon Sword", "Master Sword"};
+constexpr const char* kJumpButtonOptions[] = {"R", "R2", "L2", "R3", "L3"};
 constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
 constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
 constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic", "White", "Gold"};
@@ -569,17 +570,22 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "R Jump", r_jump_config_var(),
-            "Uses R as a fallback jump button for human and wolf Link when no R interaction or targeting action is active. "
-            "As human Link, press R+B during the jump to start a jump attack.")
+    if (add_toggle(ctx, left, "Manual Jump", r_jump_config_var(),
+            "Enables manual jumping for human and wolf Link when no interaction or targeting action is active. "
+            "As human Link, hold the jump button and press B during the jump to start a jump attack.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
+    if (add_select(ctx, left, "Jump Button", jump_button_config_var(), kJumpButtonOptions,
+            std::size(kJumpButtonOptions),
+            "Button for Manual Jump, jump attacks, Glide and Revali's Gale. R (default) uses the game's R binding; "
+            "R2/L2 use controller triggers and R3/L3 use stick clicks. Independent of Dawnlight Mode.") != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Disable Auto Jump", disable_auto_jump_config_var(),
             "Stops human and wolf Link from automatically jumping when running off a ledge. "
             "Use the jump button to jump; walking off ledges keeps your forward momentum. Falling and ledge grabbing still work. "
-            "Independent of Dawnlight Mode. Turns off when R Jump is disabled.", auto_jump_setting_disabled) != MOD_OK)
+            "Independent of Dawnlight Mode. Turns off when Manual Jump is disabled.", auto_jump_setting_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }
@@ -589,7 +595,7 @@ ModResult build_controls_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Glide", glide_config_var(),
-            "Press ZR again in midair to deploy the selected glide item, including during ordinary falls. "
+            "Press the jump button again in midair to deploy the selected glide item, including during ordinary falls. "
             "It is put away when you land.") != MOD_OK)
     {
         return MOD_ERROR;
@@ -601,7 +607,7 @@ ModResult build_controls_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Revali's Gale", revalis_gale_config_var(),
-            "Press ZR to jump immediately. Keep holding through landing to stop and crouch, then release for a "
+            "Press the jump button to jump immediately. Keep holding through landing to stop and crouch, then release for a "
             "wind jump with Gale Height added to Jump Height, preserving your previous running speed and direction.") != MOD_OK)
     {
         return MOD_ERROR;
@@ -937,7 +943,7 @@ ModResult build_gameplay_tab(
     if (add_select(ctx, left, "Dark Link Activation", fierce_deity_activation_config_var(),
             kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
             "Activate at full power with a charged Spin Attack, R+Z, or R+A (default). "
-            "Hold R, then press Z or A; the initial R jump remains available. Press Z or A again "
+            "Hold R, then press Z or A; Manual Jump remains available on its selected button. Press Z or A again "
             "while holding R to end early and preserve power for refilling. Requires Dark Link.",
             fierce_deity_visual_disabled) != MOD_OK)
     {
@@ -1202,7 +1208,7 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
     if (add_text(ctx, panel, "Shared Stamina and Lazy Tweaks compatibility") != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Manual Shielding, R Jump, and Sprint") != MOD_OK) {
+    if (add_text(ctx, panel, "Manual Shielding, Manual Jump, and Sprint") != MOD_OK) {
         return MOD_ERROR;
     }
     if (add_text(ctx, panel, "Z Item Slot and Dawnlight Touch UI") != MOD_OK) return MOD_ERROR;

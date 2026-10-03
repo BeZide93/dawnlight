@@ -133,6 +133,10 @@ int main() {
         set(te, mask & 4); set(teSlot, mask & 8);
         bool conflict = ((mask & 1) && (mask & 2)) || ((mask & 4) && (mask & 8));
         assert(select_dawnlight_z_slot() == !conflict);
+        const char* notice=z_slot_provider_notice();
+        assert((notice!=nullptr)==conflict);
+        if(notice)assert(std::string(notice)==((mask&1)&&(mask&2)?
+            "Z Items: Twilight HD HUD.":"Z Items: Twilit Essentials."));
         assert(savedToggle); // no writes to the user's preference
     }
     // Stale feature settings alone cannot make a disabled/absent mod own Z.
@@ -145,6 +149,9 @@ int main() {
     }
     vars.clear(); savedToggle = false; resolves = 0;
     assert(!select_dawnlight_z_slot() && resolves == 0);
+    set(te,true);set(teSlot,true);
+    assert(std::string(z_slot_provider_notice())=="Z Items: Twilit Essentials.");
+    vars.clear();
     savedToggle = true; svc_hook = nullptr; assert(!select_dawnlight_z_slot());
     svc_hook = &hook; hook.resolve = nullptr; assert(!select_dawnlight_z_slot());
     hook.resolve = resolve; resolveFails = true; assert(!select_dawnlight_z_slot());

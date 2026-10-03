@@ -11,10 +11,15 @@ ui = (root / 'src/ui.cpp').read_text()
 def function(source, name):
     match = re.search(r'^\w[^\n]*\b' + name + r'\([^;{}]*\)\s*\{', source, re.M)
     start = match.start()
-    return source[start:source.index('\n}', start) + 2]
+    body = source.index('{', start)
+    depth, end = 1, body + 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    return source[start:end]
 
 mapping = function(config, 'mode_setting_for_config')
-variables = sorted((set(re.findall(r'\bs_\w+', mapping)) | {'s_dawnlightMode'}) - {'s_staminaSettings'})
+variables = sorted((set(re.findall(r'\bs_\w+', mapping)) | {'s_dawnlightMode','s_zItemSlot'}) - {'s_staminaSettings'})
 fixture = r'''
 #include <cassert>
 #include <cstdint>
@@ -26,6 +31,12 @@ fixture = r'''
 #include "twilit_stamina.hpp"
 using namespace dawnlight;
 namespace dawnlight {bool teActive=false;bool twilit_stamina_active(){return teActive;}}
+namespace dawnlight {
+bool teHumanSprint=false,teWolfSprint=false;
+bool twilit_sprint_enabled(bool wolf){return wolf?teWolfSprint:teHumanSprint;}
+const char* zProvider=nullptr;
+const char* z_item_slot_provider_notice(){return zProvider;}
+}
 using ConfigVarHandle = unsigned;
 using UiElementHandle = uint64_t;
 struct ModContext {};
@@ -114,7 +125,9 @@ for name in ('dawnlight_mode_enabled', 'progression_system_enabled', 'mode_setti
              'mode_config_override', 'get_bool', 'get_int', 'stamina_setting_config_var',
              'stamina_setting', 'stamina_enabled', 'stamina_config_var'):
     production += '\n' + function(config, name)
-production += '\n' + function(ui, 'twilit_owns_stamina_control')
+for name in ('sprint_config_var','sprint_speed_config_var','wolf_sprint_config_var','wolf_speed_config_var','z_item_slot_config_var'):
+    production += '\n' + function(config,name)
+production += '\n' + function(ui, 'twilit_owns_stamina_control') + '\n' + function(ui, 'external_owns_control')
 production += '\n' + ui[ui.index('struct ModeControlBinding {'):ui.index('void bind_mode_control(')]
 production += '\n' + function(ui, 'stamina_settings_disabled') + '\n'
 assert ui.index('"Stamina Bar",') < ui.index('"Stamina Settings", open_stamina_settings') < ui.index('"Sprint", sprint_config_var()')

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "general_modes.hpp"
+#include "jump_button.hpp"
 #include "dual_wield_sword.hpp"
 #include "stamina_settings.hpp"
 #include "mods/api.h"
@@ -127,6 +128,7 @@ ConfigVarHandle second_sword_config_var();
 bool arrow_modes_enabled();
 bool manual_shielding_enabled();
 bool r_jump_enabled();
+JumpButton jump_button();
 bool disable_auto_jump_enabled();
 float jump_height_multiplier();
 float gale_height_bonus();
@@ -205,6 +207,7 @@ ConfigVarHandle great_spin_projectile_config_var();
 ConfigVarHandle arrow_modes_config_var();
 ConfigVarHandle manual_shielding_config_var();
 ConfigVarHandle r_jump_config_var();
+ConfigVarHandle jump_button_config_var();
 ConfigVarHandle disable_auto_jump_config_var();
 ConfigVarHandle jump_height_config_var();
 ConfigVarHandle gale_height_config_var();

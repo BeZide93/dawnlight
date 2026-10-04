@@ -14,7 +14,7 @@ def function(source,name):
         depth+=(source[end]=='{')-(source[end]=='}');end+=1
     return source[start:end]
 mapping=function(config,'mode_setting_for_config')
-variables=sorted((set(re.findall(r'\bs_\w+',mapping))|{'s_dawnlightMode','s_zItemSlot'})-{'s_staminaSettings'})
+variables=sorted((set(re.findall(r'\bs_\w+',mapping))|{'s_dawnlightMode','s_zItemSlot','s_jumpButton'})-{'s_staminaSettings'})
 fixture=r'''
 #include <cassert>
 #include <cstdint>
@@ -22,6 +22,7 @@ fixture=r'''
 #include <string>
 #include <vector>
 #include "general_modes.hpp"
+#include "jump_button.hpp"
 #include "stamina_settings.hpp"
 #include "twilit_stamina.hpp"
 using namespace dawnlight;
@@ -140,6 +141,24 @@ void reset(){
     configService.types[9000]=CONFIG_VAR_INT;configService.values[9000]=876; // unrelated preference
 }
 int main(){
+    // The jump-button selector stays native/editable under both presets and
+    // survives adopting Dawnlight Mode's gameplay values.
+    for(bool preset:{false,true}){
+        reset();configService.values[s_dawnlightMode]=preset;
+        configService.values[s_progressionSystem]=true;
+        UiControlDesc desc{};desc.config_var=jump_button_config_var();
+        desc.kind=UI_CONTROL_SELECT;desc.label="Jump Button";desc.binding=UI_BINDING_CONFIG_VAR;
+        bind_mode_control(desc);assert(desc.binding==UI_BINDING_CONFIG_VAR&&!desc.is_disabled);
+        assert(add_mode_control(nullptr,1,desc)==MOD_OK);
+        assert(s_modeControls.find(s_jumpButton)==s_modeControls.end());
+        for(int value=0;value<5;++value){
+            svc_config->set_int(nullptr,s_jumpButton,value);
+            assert(static_cast<int>(jump_button())==value);
+        }
+        if(preset)assert(leave_dawnlight_mode_for_edit(s_sprint)==MOD_OK);
+        assert(jump_button()==JumpButton::L3);
+    }
+
     // Exercise the production live UI updater, including independent windows.
     reset();configService.values[s_dawnlightMode]=0;
     for(auto var:{s_stamina,s_sprint,s_wolfSprint,s_zItemSlot})make(var,UI_CONTROL_TOGGLE,"Toggle");
@@ -314,6 +333,8 @@ for name in ('register_bool','register_int','dawnlight_mode_enabled','progressio
     production+='\n'+function(config,name)
 production+='\n'+function(config,'stamina_config_var')+'\n'+function(config,'stamina_setting_config_var')
 for name in ('sprint_config_var','sprint_speed_config_var','wolf_sprint_config_var','wolf_speed_config_var','z_item_slot_config_var'):
+    production+='\n'+function(config,name)
+for name in ('get_int','jump_button','jump_button_config_var'):
     production+='\n'+function(config,name)
 production+='\n'+function(ui,'twilit_owns_stamina_control')+'\n'+function(ui,'external_owns_control')
 production+='\n'+ui[ui.index('struct ModeControlBinding {'):ui.index('#include "mode_unlock_ui.inc"')]

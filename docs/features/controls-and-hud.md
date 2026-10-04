@@ -95,4 +95,4 @@ For the Glider's model and texture replacement options, see the
 ## Movement bindings
 
 See [movement and abilities](movement-and-abilities.md) for Sprint, Wolf Sprint,
-R Jump, Disable Auto Jump, Glide and Revali's Gale controls.
+Manual Jump, Disable Auto Jump, Glide and Revali's Gale controls.

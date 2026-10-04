@@ -123,6 +123,7 @@ jobs:
           python3 tests/glide_stamina_test.py
           python3 tests/wolf_sprint_test.py
           python3 tests/sprint_speed_test.py
+          python3 tests/manual_jump_input_test.py
 
       - name: Test HD HUD button glyph compatibility
         if: matrix.platform == 'linux-x86_64'

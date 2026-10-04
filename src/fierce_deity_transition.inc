@@ -16,6 +16,12 @@ struct WarpTransition {
     fpc_ProcID ownerId = fpcM_ERROR_PROCESS_ID_e;
     OutfitModels outgoing{};
     JKRSolidHeap* modelHeap = nullptr;
+    // Tint copies borrow immutable geometry from the still-live outfit, but
+    // own their packets, display lists and pose matrices in a separate heap.
+    OutfitModels sources{};
+    std::array<J3DModelData*, 6> sourceData{};
+    std::unique_ptr<u8[]> cloneStorage;
+    JKRExpHeap* cloneHeap = nullptr;
     JKRExpHeap* archiveHeap = nullptr;
     JKRExpHeap* scratchArchiveHeap = nullptr;
     const char* archive = nullptr;
@@ -28,6 +34,8 @@ struct WarpTransition {
 };
 WarpTransition s_transition;
 bool s_extraWarpParticleStep = false;
+using ForgetWarpMatrices = void (*)(J3DModel*);
+ForgetWarpMatrices s_forgetWarpMatrices = nullptr;
 
 void warp_warning(const char* message) {
     if (svc_log != nullptr) svc_log->warn(mod_ctx, message);
@@ -97,6 +105,7 @@ bool transition_owner(daAlink_c* link) {
 int native_warp_coord(J3DModel* model, J3DMaterial* material, daAlink_c* link) {
     if (model == nullptr || material == nullptr || link == nullptr) return -1;
     auto* data = model->getModelData();
+    if (data == nullptr) return -1;
     auto* texture = data->getTexture();
     auto* tev = material->getTevBlock();
     auto* gen = material->getTexGenBlock();
@@ -126,6 +135,7 @@ bool warp_compatible(const OutfitModels& models, daAlink_c* link) {
             return false;
         }
         auto* data = model->getModelData();
+        if (data == nullptr || data->getMaterialNum() == 0) return false;
         for (u16 i = 0; i < data->getMaterialNum(); ++i) {
             auto* material = data->getMaterialNodePointer(i);
             if (native_warp_coord(model, material, link) < 0) return false;
@@ -148,9 +158,100 @@ void discard_transition(daAlink_c* link) {
     // The replacement model heap belongs to Link. Only dispose the OUTGOING
     // instances, then their archive reference. Link keeps its original archive
     // heap: same-archive Dark transitions still store their live BMDs there.
+    if (s_transition.cloneHeap != nullptr) {
+        // Host interpolation also retains per-instance matrix history.
+        for (auto* model : s_transition.outgoing)
+            if (model != nullptr && s_forgetWarpMatrices != nullptr) s_forgetWarpMatrices(model);
+        s_transition.cloneHeap->destroy();
+    }
     if (s_transition.modelHeap != nullptr) s_transition.modelHeap->destroy();
     if (s_transition.archive != nullptr) dComIfG_deleteObjectResMain(s_transition.archive);
     s_transition = {};
+}
+
+bool tint_sources_live(daAlink_c* link) {
+    if (s_transition.cloneHeap == nullptr) return true;
+    if (!transition_owner(link) || link->mClothesChangeWaitTimer != 0) return false;
+    const auto live = outfit_models(link);
+    for (unsigned i = 0; i < live.size(); ++i) {
+        // Compare identity before reading any borrowed data. A replacement
+        // mod can retire its previous model without going through changeLink.
+        if (live[i] != s_transition.sources[i]) return false;
+        if (live[i] != nullptr && live[i]->getModelData() != s_transition.sourceData[i]) return false;
+    }
+    return true;
+}
+
+bool separate_outgoing(const OutfitModels& incoming) {
+    for (unsigned i = 0; i < s_transition.outgoing.size(); ++i) {
+        auto* model = s_transition.outgoing[i];
+        if (model == nullptr) continue;
+        for (auto* live : incoming) if (model == live) return false;
+        for (unsigned j = 0; j < i; ++j)
+            if (model == s_transition.outgoing[j]) return false;
+    }
+    return true;
+}
+
+void prepare_tint_transition(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
+    if (link == nullptr || s_transition.owner != nullptr || fromTint == toTint) return;
+    const auto models = outfit_models(link);
+    if (!warp_compatible(models, link)) return;
+    // Host-backed, bounded storage avoids exhausting Link's or the room's
+    // heaps. No geometry/texture copy and no archive reload is needed.
+    constexpr u32 capacity = 2 * 1024 * 1024;
+    std::unique_ptr<u8[]> storage(new (std::nothrow) u8[capacity + 31]);
+    if (!storage) return;
+    auto* aligned = reinterpret_cast<void*>(
+        (reinterpret_cast<uintptr_t>(storage.get()) + 31) & ~uintptr_t{31});
+    auto* heap = JKRExpHeap::create(aligned, capacity, JKRHeap::getRootHeap(), false);
+    if (heap == nullptr) return;
+    auto* previous = heap->becomeCurrentHeap();
+    OutfitModels copies{};
+    bool complete = true;
+    for (unsigned i = 0; i < models.size(); ++i) {
+        auto* source = models[i];
+        if (source == nullptr) continue;
+        // Keep the small metadata header too: forgetMtx reads its joint and
+        // envelope counts during cleanup, even if TE has retired the source.
+        // Arrays/materials/textures remain borrowed and are never freed here.
+        auto* data = JKR_NEW J3DModelData(*source->getModelData());
+        if (data == nullptr) { complete = false; break; }
+        auto* copy = JKR_NEW J3DModel();
+        // Preserve matrix modes, but never convert a borrowed shared display
+        // list to double buffering inside our short-lived heap.
+        u32 flags = source->mFlags;
+        if ((flags & J3DMdlFlag_UseSharedDL) || data->getModelDataType() == 1)
+            flags |= J3DMdlFlag_UseSingleDL;
+        if (copy == nullptr || copy->entryModelData(data, flags, 1) != kJ3DError_Success ||
+            ((flags & J3DMdlFlag_DifferedDLBuffer) &&
+             copy->newDifferedDisplayList(source->mDiffFlag) != kJ3DError_Success)) {
+            complete = false;
+            break;
+        }
+        copy->lock();
+        copy->setBaseTRMtx(source->getBaseTRMtx());
+        copy->setBaseScale(*source->getBaseScale());
+        copies[i] = copy;
+    }
+    previous->becomeCurrentHeap();
+    if (!complete) {
+        // No copy has been drawn, so none has interpolation history yet.
+        heap->destroy();
+        warp_warning("Dark Link warp: tint instance allocation failed");
+        return;
+    }
+    s_transition.owner = link;
+    s_transition.ownerId = fopAcM_GetID(link);
+    s_transition.outgoing = copies;
+    s_transition.sources = models;
+    for (unsigned i = 0; i < models.size(); ++i)
+        if (models[i] != nullptr) s_transition.sourceData[i] = models[i]->getModelData();
+    s_transition.cloneStorage = std::move(storage);
+    s_transition.cloneHeap = heap;
+    s_transition.fromTint = fromTint;
+    s_transition.toTint = toTint;
+    s_transition.wipe.entering = entering;
 }
 
 void prepare_transition(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
@@ -203,7 +304,7 @@ void prepare_transition(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTi
 
 WarpLayer warp_layer(J3DModel* model) {
     auto* link = daAlink_getAlinkActorClass();
-    if (!s_transition.committed || !transition_owner(link)) return {};
+    if (!s_transition.committed || !transition_owner(link) || !tint_sources_live(link)) return {};
     for (auto* outgoing : s_transition.outgoing) {
         if (model == outgoing) return {true, s_transition.fromTint, s_transition.wipe.inverse(false)};
     }
@@ -246,7 +347,11 @@ void copy_outgoing_pose(J3DModel* outgoing, J3DModel* incoming) {
 void draw_outgoing(daAlink_c* link) {
     if (!s_transition.committed || !transition_owner(link) || link->checkPlayerNoDraw() ||
         link->checkWolf() || link->mClothesChangeWaitTimer != 0) return;
+    // Do not free packets during a draw traversal. tick retires a stale copy
+    // on the next update; until then neither layer uses its borrowed data.
+    if (!tint_sources_live(link)) return;
     const auto incoming = outfit_models(link);
+    if (!separate_outgoing(incoming)) return;
     for (unsigned i = 0; i < incoming.size(); ++i) {
         auto* model = s_transition.outgoing[i];
         if (model == nullptr || incoming[i] == nullptr) continue;

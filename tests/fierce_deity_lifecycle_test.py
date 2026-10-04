@@ -153,6 +153,7 @@ template <class T> T arg(void* args, int index) {
 }
 bool fierce_deity_transition_busy() { return false; }
 void fierce_deity_transition_prepare(daAlink_c*, FierceDeityTint, FierceDeityTint, bool) {}
+void fierce_deity_transition_tint(daAlink_c*, FierceDeityTint, FierceDeityTint, bool) {}
 void fierce_deity_transition_commit(daAlink_c*) {}
 void fierce_deity_transition_tick(daAlink_c*) {}
 void fierce_deity_transition_cancel(daAlink_c*) {}
@@ -289,6 +290,18 @@ int main() {
                 finish(link);
             }
         }
+    }
+
+    // Tint-only transitions never invoke the native clothing loader, even
+    // for custom outfits whose selection does not identify their BMD archive.
+    for(auto visual : {FierceDeityVisual::Dark, FierceDeityVisual::White, FierceDeityVisual::Gold}) {
+        start(link); selectedVisual=visual; activate(&link); ticks(link);
+        assert(s_state.displayedTint==visual_tint(visual));
+        assert(loads==0 && equipmentWrites==0 && link.reloadCalls==0 && link.replacements==0);
+        deactivate(&link,true); ticks(link);
+        assert(s_state.displayedTint==FierceDeityTint::None);
+        assert(loads==0 && equipmentWrites==0 && link.reloadCalls==0 && link.replacements==0);
+        finish(link);
     }
 
     // Loading leaves the live outfit/save state intact; abort before completion.

@@ -26,6 +26,9 @@
 
 #include <array>
 #include <cstring>
+#include <memory>
+#include <new>
+#include <utility>
 
 namespace dawnlight {
 namespace {
@@ -40,6 +43,8 @@ DEFINE_HOOK(&J3DShapePacket::drawFast, FierceShapePacketFastHook);
 DEFINE_HOOK(&J3DShape::drawFast, FierceShapeDrawHook);
 DEFINE_HOOK(&J3DShapeDraw::draw, FiercePrimitiveDrawHook);
 DEFINE_HOOK(&JPAResource::calc, FierceWarpParticleCalcHook);
+DEFINE_HOOK(&mDoExt_modelUpdateDL, FierceEquipmentUpdateHook);
+DEFINE_HOOK(&mDoExt_modelEntryDL, FierceEquipmentEntryHook);
 #if defined(__APPLE__)
 DEFINE_HOOK(&fpcMtd_Method, FiercePlayerDrawHook);
 #else
@@ -101,12 +106,15 @@ bool player_model(daAlink_c* link, const J3DModel* model) {
         model == link->mpLinkBootModels[1]);
 }
 
+#include "fierce_deity_equipment.inc"
+
 bool player_equipment(daAlink_c* link, const J3DModel* model) {
     // Compare live instances, never shared model data or material names. Keep
     // equipment separate from player_model: it has no retained outgoing layer.
     return link != nullptr && model != nullptr &&
         (model == link->mSwordModel || model == link->mSheathModel ||
-         model == link->mShieldModel || dual_wield_owns_model(link, model));
+         model == link->mShieldModel || model == link->mpKanteraModel ||
+         dual_wield_owns_model(link, model) || observed_player_equipment(link, model));
 }
 
 #include "fierce_deity_transition.inc"
@@ -222,9 +230,12 @@ const J3DTevOrder* surface_texture_order(J3DModelData* data, J3DMaterial* materi
 // J3D material display lists update live registers without updating GX's CPU
 // shadow state. GXSetNumChans/GXSetNumTevStages would flush a stale GEN_MODE,
 // losing numTexGens (Aurora then sees GX_MAX_TEXGENSRC / "tcg src 21").
-// TREF and KSEL also pack fields belonging to existing stages. Emit a small
-// display list with BP masks against the *live* state, as J3D itself does.
-// No GX shadow-state setters or changes to shared material data are needed.
+// Aurora also stores a BP register cache separately from XF's effective
+// numTexGens. A masked GEN_MODE write still decodes the whole cached word:
+// preserving its low nibble can undo a newer XF count and produce the same
+// fatal. Write the material's generator count explicitly in both register banks.
+// TREF/KSEL still need masks to preserve the paired native stage. No GX
+// shadow-state setters or changes to shared material data are needed.
 class DarkDisplayList {
     alignas(32) std::array<u8, 1024> bytes{};
     size_t size = 0;
@@ -351,8 +362,6 @@ public:
     }
     unsigned warp(unsigned count, unsigned coord, unsigned swap, bool inverse,
                   unsigned width, unsigned height) {
-        masked_bp(0x00, 0xF, coord + 1);
-        xf(0x103F, coord + 1);
         xf(0x1040 + coord, (1u << 1) | (1u << 2)); // MTX3x4, POS, ABC1
         xf(0x1050 + coord, coord * 3); // native post-matrix slot, no normalization
         masked_bp(0x30 + coord * 2, 0x3FFFF, width - 1);
@@ -400,10 +409,12 @@ public:
         GXCallDisplayList(bytes.data(), static_cast<u32>(size));
         return true;
     }
-    bool apply(unsigned stageCount, bool darkChannels = true) {
-        // Warp-only passes preserve native lighting/channel counts as well.
-        masked_bp(0x00, darkChannels ? 0x3C70 : 0x3C00,
-                  (darkChannels ? 2u << 4 : 0) | ((stageCount - 1) << 10));
+    bool apply(unsigned stageCount, unsigned texGenCount, bool darkChannels = true) {
+        // Keep BP and XF counts coherent even when the native/animated list
+        // only refreshed XF. Warp-only passes preserve native color channels.
+        masked_bp(0x00, darkChannels ? 0x3C7F : 0x3C0F,
+                  texGenCount | (darkChannels ? 2u << 4 : 0) | ((stageCount - 1) << 10));
+        xf(0x103F, texGenCount);
         return submit();
     }
 };
@@ -417,7 +428,8 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     auto* material = shape->getMaterial();
     auto* model = scope.packet->getModel();
     if (material == nullptr || material->getTevBlock() == nullptr ||
-        material->getColorBlock() == nullptr) return HOOK_CONTINUE;
+        material->getColorBlock() == nullptr || material->getTexGenBlock() == nullptr)
+        return HOOK_CONTINUE;
     auto* matPacket = scope.materialPacket;
     if (matPacket->getDisplayListObj() == nullptr) return HOOK_CONTINUE;
     auto* tev = material->getTevBlock();
@@ -427,6 +439,8 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const auto swaps = find_swap_tables(tev, count);
     if (swaps.identity < 0) return HOOK_CONTINUE;
     const auto identity = static_cast<GXTevSwapSel>(swaps.identity);
+    unsigned texGenCount = material->getTexGenNum();
+    if (texGenCount > 8) return HOOK_CONTINUE;
     unsigned next = count;
     const unsigned warpStages = scope.warp ? (scope.inverse ? 3 : 1) : 0;
     if (scope.warp) {
@@ -491,8 +505,9 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     if (scope.warp) {
         auto* image = model->getModelData()->getTexture()->getResTIMG(tev->getTexNo(3));
         next = effect.warp(next, scope.warpCoord, identity, scope.inverse, image->width, image->height);
+        texGenCount = scope.warpCoord + 1;
     }
-    scope.applied = effect.apply(next, scope.tint != FierceDeityTint::None);
+    scope.applied = effect.apply(next, texGenCount, scope.tint != FierceDeityTint::None);
     return HOOK_CONTINUE;
 }
 
@@ -517,14 +532,10 @@ HookAction before_primitive_draw(ModContext*, void*, void*, void*) {
 }
 
 void after_player_draw(ModContext*, void* args, void*, void*) {
-    auto* link = daAlink_getAlinkActorClass();
-    if (link == nullptr || mods::arg<void*>(args, 1) != link || link->sub_method == nullptr) return;
-    const auto* methods = reinterpret_cast<const leafdraw_method_class*>(link->sub_method);
-#if defined(__APPLE__)
-    if (mods::arg<process_method_func>(args, 0) != methods->draw_method) return;
-#else
-    if (mods::arg<const leafdraw_method_class*>(args, 0) != methods) return;
-#endif
+    auto* link = equipment_draw_owner(args);
+    // Outgoing tint copies are transition layers, not additional equipment.
+    end_equipment_draw();
+    if (link == nullptr) return;
     draw_outgoing(link);
 }
 
@@ -541,8 +552,9 @@ void fierce_deity_transition_commit(daAlink_c* link) {
     restore_archive_heap(link);
     // Native clothes changes reuse the same model heap/address. Our retained
     // outgoing instances require rebinding the skeletal collision explicitly.
-    link->field_0x2e44.mModel = link->mpLinkModel;
-    if (!warp_compatible(outfit_models(link), link)) {
+    if (s_transition.cloneHeap == nullptr) link->field_0x2e44.mModel = link->mpLinkModel;
+    if (!tint_sources_live(link) || !separate_outgoing(outfit_models(link)) ||
+        !warp_compatible(outfit_models(link), link)) {
         discard_transition(link);
         return;
     }
@@ -554,10 +566,15 @@ void fierce_deity_transition_commit(daAlink_c* link) {
     update_warp_particles(link);
 }
 
+void fierce_deity_transition_tint(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
+    prepare_tint_transition(link, fromTint, toTint, entering);
+    fierce_deity_transition_commit(link);
+}
+
 void fierce_deity_transition_tick(daAlink_c* link) {
     if (!transition_owner(link) || !s_transition.committed) return;
     if (link->checkWolf() || link->checkDeadHP() || link->checkSceneChangeAreaStart() ||
-        link->checkEventRun() || s_transition.wipe.advance()) {
+        link->checkEventRun() || !tint_sources_live(link) || s_transition.wipe.advance()) {
         discard_transition(link);
     } else {
         update_warp_particles(link);
@@ -565,6 +582,7 @@ void fierce_deity_transition_tick(daAlink_c* link) {
 }
 
 void fierce_deity_transition_cancel(daAlink_c* link) {
+    reset_observed_equipment();
     if (s_transition.owner == nullptr) return;
     // reset_for_link can run after the old actor is gone; only touch a live owner.
     if (link == nullptr && transition_owner(daAlink_getAlinkActorClass()))
@@ -573,6 +591,10 @@ void fierce_deity_transition_cancel(daAlink_c* link) {
 }
 
 ModResult initialize_fierce_deity_visual(ModError* error) {
+    void* address = nullptr;
+    if (svc_hook->resolve != nullptr &&
+        svc_hook->resolve(mod_ctx, "J3DModel::forgetMtx", &address, nullptr) == MOD_OK)
+        s_forgetWarpMatrices = reinterpret_cast<ForgetWarpMatrices>(address);
     ModResult result;
     if ((result = mods::hook::add_pre<FierceMaterialDrawHook>(svc_hook, before_material_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceMaterialDrawHook>(svc_hook, after_material_draw)) != MOD_OK ||
@@ -584,6 +606,9 @@ ModResult initialize_fierce_deity_visual(ModError* error) {
         (result = mods::hook::add_post<FierceShapeDrawHook>(svc_hook, after_shape_draw)) != MOD_OK ||
         (result = mods::hook::add_pre<FiercePrimitiveDrawHook>(svc_hook, before_primitive_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceWarpParticleCalcHook>(svc_hook, after_warp_particle_calc)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceEquipmentUpdateHook>(svc_hook, observe_equipment_model)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceEquipmentEntryHook>(svc_hook, observe_equipment_model)) != MOD_OK ||
+        (result = mods::hook::add_pre<FiercePlayerDrawHook>(svc_hook, before_player_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FiercePlayerDrawHook>(svc_hook, after_player_draw)) != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Dark Link visual hooks");
     }

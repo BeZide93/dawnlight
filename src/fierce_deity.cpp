@@ -300,6 +300,15 @@ bool service_model_swap(daAlink_c* link) {
             s_state.failedArchive = nullptr;
             return false;
         }
+        if (!useMagic && !s_state.modelSwapped) {
+            // Tint-only changes keep the live outfit, including TE's cached
+            // Ordon Hero / Sumo models. Never force a native clothing reload.
+            cancel_preload();
+            if (s_state.displayedTint != useTint)
+                fierce_deity_transition_tint(link, s_state.displayedTint, useTint, s_state.active);
+            s_state.displayedTint = useTint;
+            return false;
+        }
         if (!prepare_outfit(targetArchive)) return false;
 
         // All disk I/O is complete and our reference pins the replacement.

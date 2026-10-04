@@ -22,6 +22,7 @@ bool fierce_deity_model_reload_active();
 // Called only at the native player-update boundary; never changes gameplay.
 bool fierce_deity_transition_busy();
 void fierce_deity_transition_prepare(daAlink_c*, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering);
+void fierce_deity_transition_tint(daAlink_c*, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering);
 void fierce_deity_transition_commit(daAlink_c*);
 void fierce_deity_transition_tick(daAlink_c*);
 void fierce_deity_transition_cancel(daAlink_c*);

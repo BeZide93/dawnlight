@@ -100,6 +100,7 @@ jobs:
         run: |
           python3 tests/fierce_deity_lifecycle_test.py
           python3 tests/fierce_deity_visual_test.py
+          python3 tests/fierce_deity_equipment_test.py
           python3 tests/fierce_deity_transition_test.py
           python3 tests/fierce_deity_particles_test.py
           python3 tests/fierce_deity_activation_test.py

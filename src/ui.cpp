@@ -611,7 +611,7 @@ ModResult build_controls_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Revali's Gale", revalis_gale_config_var(),
-            "Press the jump button to jump immediately. Keep holding through landing to stop and crouch, then release for a "
+            "Requires Manual Jump. Press the jump button to jump immediately. Keep holding through landing to stop and crouch, then release for a "
             "wind jump with Gale Height added to Jump Height, preserving your previous running speed and direction.") != MOD_OK)
     {
         return MOD_ERROR;

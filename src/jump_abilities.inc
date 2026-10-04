@@ -240,7 +240,7 @@ bool handle_jump_abilities(daAlink_c* link) {
     cancel_gale_for_face_input(link);
     if (s_galeInputCancelled) return false;
     if (s_jumpAbilities.charge != GaleCharge::Idle) {
-        if (!revalis_gale_enabled() || !gale_context_ready(link)) {
+        if (!r_jump_enabled() || !revalis_gale_enabled() || !gale_context_ready(link)) {
             cancel_gale_charge(link, true);
             return false;
         }

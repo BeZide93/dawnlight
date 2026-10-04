@@ -228,7 +228,7 @@ bool ground_jump_context_ready(daAlink_c* link) {
 
 bool jump_state_ready(daAlink_c* link) {
     return link && !s_galeInputCancelled &&
-        (r_jump_enabled() || (!link->checkWolf() && revalis_gale_enabled())) &&
+        r_jump_enabled() &&
         jump_pressed(active_jump_binding()) &&
         ground_jump_context_ready(link);
 }

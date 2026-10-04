@@ -98,7 +98,9 @@ Transform and R+X Sun Song where available. This includes touch input; release
 the jump button before starting another charge. Time spent in the initial jump does not count.
 After one second, a flattened Gale tornado loops at Link's feet with wind
 audio until release. Cancelling the charge also stops this readiness cue.
-Gale also enables the initial manual jump when Manual Jump is off; Glide is independent.
+Manual Jump must be enabled for the initial jump and Gale charge. Turning it off also cancels
+a pending Gale charge without spending a charge. This applies to the touch Jump button and
+all physical bindings. Glide remains available during falls when its own setting is enabled.
 Glide and Revali's Gale both default to disabled.
 
 ### Charges and recovery

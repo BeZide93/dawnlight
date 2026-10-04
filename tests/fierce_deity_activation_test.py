@@ -23,7 +23,11 @@ constexpr u32 PAD_BUTTON_A=0x100, PAD_TRIGGER_R=0x20, PAD_TRIGGER_Z=0x10, PAD_BU
 constexpr int PAD_1=0;
 struct Pad { u32 mButtonFlags=0, mPressedButtonFlags=0, mHoldLockR=0, mTrigLockR=0; float mTriggerRight=0; } pad;
 struct mDoCPd_c { static Pad& getCpadInfo(int) { return pad; } };
-enum class FierceDeityActivation : int { SpinAttack, RZ, RA };
+constexpr u32 PAD_BUTTON_LEFT_STICK=0x4000000, PAD_BUTTON_RIGHT_STICK=0x2000000;
+constexpr int PAD_ERR_NONE=0;
+struct RawPad { u32 extButton=0; int err=PAD_ERR_NONE; };
+struct JUTGamePad { inline static RawPad mPadStatus[4]{}; };
+enum class FierceDeityActivation : int { SpinAttack, RZ, RA, L3, R3 };
 FierceDeityActivation binding=FierceDeityActivation::RZ;
 FierceDeityActivation fierce_deity_activation() { return binding; }
 '''
@@ -39,6 +43,7 @@ void input(u32 held, u32 pressed=0, bool analog=false) {
 void fresh(daAlink_c& link) {
     link={}; currentLink=&link; enabled=true; paused=false;
     reset_for_link(&link); s_state.meter=100;
+    JUTGamePad::mPadStatus[0]={}; input(0);
 }
 void hit(daAlink_c& link) {
     fopAc_ac_c enemy; Collider collider; dCcU_AtInfo attack{&link,&collider};
@@ -116,6 +121,47 @@ int main() {
         link.mProcID=daAlink_c::PROC_CUT_TURN; link.cut=true; update_spin_activation(&link);
         assert(!s_state.active);
     }
+    for(auto mode:{FierceDeityActivation::L3,FierceDeityActivation::R3}) {
+        binding=mode;fresh(link);
+        const u32 selected=mode==FierceDeityActivation::L3?PAD_BUTTON_LEFT_STICK:PAD_BUTTON_RIGHT_STICK;
+        const u32 other=selected^ (PAD_BUTTON_LEFT_STICK|PAD_BUTTON_RIGHT_STICK);
+        auto click=[&](u32 buttons){JUTGamePad::mPadStatus[0].extButton=buttons;input(0);};
+        // These bits in the normal interface are stick directions, never clicks.
+        input(selected,selected);assert(!s_state.active&&pad.mButtonFlags==selected);
+        input(PAD_TRIGGER_R|PAD_TRIGGER_Z|PAD_BUTTON_A,PAD_TRIGGER_Z|PAD_BUTTON_A);
+        assert(!s_state.active); // R chords cannot trigger a stick binding.
+        JUTGamePad::mPadStatus[1].extButton=selected;input(0);assert(!s_state.active);
+        click(other);assert(!s_state.active);click(0);
+        click(selected);assert(s_state.active&&fierce_deity_input_consumed());
+        for(int i=0;i<60;++i)click(selected);
+        assert(s_state.active&&!fierce_deity_input_consumed());
+        click(0);s_state.meter=45;click(selected);assert(!s_state.active&&s_state.meter==45);
+        click(0);click(selected);assert(!s_state.active); // insufficient meter
+        s_state.meter=100;click(selected);assert(!s_state.active); // no deferred activation
+        click(0);click(selected);assert(s_state.active);
+        for(int blocked=0;blocked<6;++blocked) {
+            fresh(link);
+            if(blocked==0) paused=true;
+            if(blocked==1) enabled=false;
+            if(blocked==2) link.wolf=true;
+            if(blocked==3) link.dead=true;
+            if(blocked==4) link.event=true;
+            if(blocked==5) link.sceneChange=true;
+            click(selected);assert(!s_state.active&&!fierce_deity_input_consumed());
+            paused=false;enabled=true;link.wolf=link.dead=link.event=link.sceneChange=false;
+            click(selected);assert(!s_state.active);
+            click(0);click(selected);assert(s_state.active);
+        }
+        fresh(link);JUTGamePad::mPadStatus[0].err=-1;click(selected);assert(!s_state.active);
+        JUTGamePad::mPadStatus[0].err=PAD_ERR_NONE;click(selected);assert(!s_state.active);
+        click(0);click(selected);assert(s_state.active);
+        fresh(link);binding=FierceDeityActivation::SpinAttack;click(selected);
+        binding=mode;click(selected);assert(!s_state.active);
+        click(0);click(selected);assert(s_state.active);
+        // Reset/save replacement cannot turn an already-held click into an edge.
+        reset_for_link(&link);s_state.meter=100;click(selected);assert(!s_state.active);
+        click(0);click(selected);assert(s_state.active);
+    }
     // Touch-only path: simulate HD HUD removing Z/R after pad read. Repeated
     // visual sync callbacks and release before sampling must not erase a tap.
     binding=FierceDeityActivation::RZ; fresh(link);
@@ -158,7 +204,8 @@ int main() {
     assert(s_state.active);
     s_state.meter=0.1f; s_state.lastDrainTime=Clock::now()-std::chrono::seconds(1);
     update_drain(&link); assert(!s_state.active && s_state.meter==0);
-    for(auto mode:{FierceDeityActivation::SpinAttack,FierceDeityActivation::RZ,FierceDeityActivation::RA}) {
+    for(auto mode:{FierceDeityActivation::SpinAttack,FierceDeityActivation::RZ,FierceDeityActivation::RA,
+                   FierceDeityActivation::L3,FierceDeityActivation::R3}) {
         binding=mode;fresh(link);directTouch=true;input(0);
         assert(s_state.active&&s_state.meter==100&&pad.mButtonFlags==0&&s_state.consumedPartner==0);
         input(0);assert(s_state.active); // held input is not a second toggle
@@ -186,10 +233,10 @@ int main() {
 config = (root/'src/config.cpp').read_text()
 ui = (root/'src/ui.cpp').read_text()
 assert 'register_int("fierce-deity-activation", 2, s_fierceDeityActivation)' in config
-assert 'get_int(s_fierceDeityActivation, 2, 0, 2)' in config
+assert 'get_int(s_fierceDeityActivation, 2, 0, 4)' in config
 assert 'register_int("fierce-deity-visual", 1, s_fierceDeityVisual)' in config
 assert 'get_int(s_fierceDeityVisual, 1, 0, 4)' in config
-assert '{"Spin Attack", "R+Z", "R+A"}' in ui
+assert '{"Spin Attack", "R+Z", "R+A", "L3", "R3"}' in ui
 assert '{"Magic Armor", "Dark", "Dark Magic", "White", "Gold"}' in ui
 assert 'White = 3, Gold = 4' in (root/"src/config.hpp").read_text()
 assert ui.index('"Dark Link Visual",') < ui.index('"Dark Link Activation",') < ui.index('"Great Spin Projectile",')

@@ -36,7 +36,7 @@ constexpr const char* kJumpButtonOptions[] = {"R", "R2", "L2", "R3", "L3"};
 constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
 constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
 constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic", "White", "Gold"};
-constexpr const char* kFierceDeityActivationOptions[] = {"Spin Attack", "R+Z", "R+A"};
+constexpr const char* kFierceDeityActivationOptions[] = {"Spin Attack", "R+Z", "R+A", "L3", "R3"};
 
 constexpr const char* kNewSaveModeOptions[] = {
     "Vanilla",
@@ -942,9 +942,10 @@ ModResult build_gameplay_tab(
     }
     if (add_select(ctx, left, "Dark Link Activation", fierce_deity_activation_config_var(),
             kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
-            "Activate at full power with a charged Spin Attack, R+Z, or R+A (default). "
+            "Activate at full power with a charged Spin Attack, R+Z, R+A (default), L3, or R3. "
             "Hold R, then press Z or A; Manual Jump remains available on its selected button. Press Z or A again "
-            "while holding R to end early and preserve power for refilling. Requires Dark Link.",
+            "while holding R to end early. L3/R3 use the left/right stick click without R; click again "
+            "to end early and preserve power for refilling. Requires Dark Link.",
             fierce_deity_visual_disabled) != MOD_OK)
     {
         return MOD_ERROR;

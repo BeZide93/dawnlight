@@ -117,7 +117,7 @@ enum class FierceDeityVisual : int { MagicArmor = 0, Dark = 1, DarkMagic = 2, Wh
 bool fierce_deity_enabled();
 FierceDeityVisual fierce_deity_visual();
 ConfigVarHandle fierce_deity_visual_config_var();
-enum class FierceDeityActivation : int { SpinAttack = 0, RZ = 1, RA = 2 };
+enum class FierceDeityActivation : int { SpinAttack = 0, RZ = 1, RA = 2, L3 = 3, R3 = 4 };
 FierceDeityActivation fierce_deity_activation();
 ConfigVarHandle fierce_deity_activation_config_var();
 bool great_spin_projectile_enabled();

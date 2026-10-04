@@ -72,6 +72,8 @@ struct RuntimeState {
     bool spinChargeArmed = false;
     bool activationInputConsumed = false;
     u32 consumedPartner = 0;
+    u32 sticksHeld = 0;
+    bool sticksConnected = false;
     u32 touchHeld = 0;
     u32 touchPressed = 0;
     bool refreshFootBaseline = false;
@@ -379,6 +381,16 @@ HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
     s_state.touchPressed = 0; // discard blocked/menu presses too
     s_state.consumedPartner &= held;
     const bool directTouch = consume_dark_link_touch_press();
+    // Stick clicks live in extButton, not mButtonFlags: those bit positions
+    // in the GameCube interface encode stick directions. Sample even while
+    // blocked or using another binding so held clicks cannot trigger later.
+    constexpr u32 stickMask = PAD_BUTTON_LEFT_STICK | PAD_BUTTON_RIGHT_STICK;
+    const auto& raw = JUTGamePad::mPadStatus[PAD_1];
+    const bool connected = raw.err == PAD_ERR_NONE;
+    const u32 sticks = connected ? raw.extButton & stickMask : 0;
+    const u32 stickPressed = connected && s_state.sticksConnected ? sticks & ~s_state.sticksHeld : 0;
+    s_state.sticksHeld = sticks;
+    s_state.sticksConnected = connected;
     const auto binding = fierce_deity_activation();
     const u32 partner = binding == FierceDeityActivation::RA ? PAD_BUTTON_A : PAD_TRIGGER_Z;
     const bool rHeld = (held & PAD_TRIGGER_R) != 0 || pad.mHoldLockR != 0;
@@ -386,8 +398,11 @@ HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
         s_state.consumedPartner = 0;
         return HOOK_CONTINUE;
     }
-    const bool combo = binding != FierceDeityActivation::SpinAttack && rHeld && (pressed & partner) != 0;
-    if (directTouch || combo) {
+    const bool combo = (binding == FierceDeityActivation::RZ || binding == FierceDeityActivation::RA) &&
+        rHeld && (pressed & partner) != 0;
+    const u32 stick = binding == FierceDeityActivation::L3 ? PAD_BUTTON_LEFT_STICK :
+        binding == FierceDeityActivation::R3 ? PAD_BUTTON_RIGHT_STICK : 0;
+    if (directTouch || combo || (stickPressed & stick) != 0) {
         if (s_state.active) deactivate(link, false);
         else if (s_state.meter >= 100.0f) activate(link);
         if (combo) s_state.consumedPartner |= partner;

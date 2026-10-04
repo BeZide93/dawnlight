@@ -184,6 +184,7 @@ jobs:
           python3 tests/touch_lb_test.py
           python3 tests/touch_midna_test.py
           python3 tests/touch_midna_visual_test.py
+          python3 tests/touch_visibility_test.py
           python3 tests/touch_button_editor_test.py
           python3 tests/touch_editor_install_test.py
 

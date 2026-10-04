@@ -225,9 +225,12 @@ const J3DTevOrder* surface_texture_order(J3DModelData* data, J3DMaterial* materi
 // J3D material display lists update live registers without updating GX's CPU
 // shadow state. GXSetNumChans/GXSetNumTevStages would flush a stale GEN_MODE,
 // losing numTexGens (Aurora then sees GX_MAX_TEXGENSRC / "tcg src 21").
-// TREF and KSEL also pack fields belonging to existing stages. Emit a small
-// display list with BP masks against the *live* state, as J3D itself does.
-// No GX shadow-state setters or changes to shared material data are needed.
+// Aurora also stores a BP register cache separately from XF's effective
+// numTexGens. A masked GEN_MODE write still decodes the whole cached word:
+// preserving its low nibble can undo a newer XF count and produce the same
+// fatal. Write the material's generator count explicitly in both register banks.
+// TREF/KSEL still need masks to preserve the paired native stage. No GX
+// shadow-state setters or changes to shared material data are needed.
 class DarkDisplayList {
     alignas(32) std::array<u8, 1024> bytes{};
     size_t size = 0;
@@ -354,8 +357,6 @@ public:
     }
     unsigned warp(unsigned count, unsigned coord, unsigned swap, bool inverse,
                   unsigned width, unsigned height) {
-        masked_bp(0x00, 0xF, coord + 1);
-        xf(0x103F, coord + 1);
         xf(0x1040 + coord, (1u << 1) | (1u << 2)); // MTX3x4, POS, ABC1
         xf(0x1050 + coord, coord * 3); // native post-matrix slot, no normalization
         masked_bp(0x30 + coord * 2, 0x3FFFF, width - 1);
@@ -403,10 +404,12 @@ public:
         GXCallDisplayList(bytes.data(), static_cast<u32>(size));
         return true;
     }
-    bool apply(unsigned stageCount, bool darkChannels = true) {
-        // Warp-only passes preserve native lighting/channel counts as well.
-        masked_bp(0x00, darkChannels ? 0x3C70 : 0x3C00,
-                  (darkChannels ? 2u << 4 : 0) | ((stageCount - 1) << 10));
+    bool apply(unsigned stageCount, unsigned texGenCount, bool darkChannels = true) {
+        // Keep BP and XF counts coherent even when the native/animated list
+        // only refreshed XF. Warp-only passes preserve native color channels.
+        masked_bp(0x00, darkChannels ? 0x3C7F : 0x3C0F,
+                  texGenCount | (darkChannels ? 2u << 4 : 0) | ((stageCount - 1) << 10));
+        xf(0x103F, texGenCount);
         return submit();
     }
 };
@@ -420,7 +423,8 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     auto* material = shape->getMaterial();
     auto* model = scope.packet->getModel();
     if (material == nullptr || material->getTevBlock() == nullptr ||
-        material->getColorBlock() == nullptr) return HOOK_CONTINUE;
+        material->getColorBlock() == nullptr || material->getTexGenBlock() == nullptr)
+        return HOOK_CONTINUE;
     auto* matPacket = scope.materialPacket;
     if (matPacket->getDisplayListObj() == nullptr) return HOOK_CONTINUE;
     auto* tev = material->getTevBlock();
@@ -430,6 +434,8 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     const auto swaps = find_swap_tables(tev, count);
     if (swaps.identity < 0) return HOOK_CONTINUE;
     const auto identity = static_cast<GXTevSwapSel>(swaps.identity);
+    unsigned texGenCount = material->getTexGenNum();
+    if (texGenCount > 8) return HOOK_CONTINUE;
     unsigned next = count;
     const unsigned warpStages = scope.warp ? (scope.inverse ? 3 : 1) : 0;
     if (scope.warp) {
@@ -494,8 +500,9 @@ HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
     if (scope.warp) {
         auto* image = model->getModelData()->getTexture()->getResTIMG(tev->getTexNo(3));
         next = effect.warp(next, scope.warpCoord, identity, scope.inverse, image->width, image->height);
+        texGenCount = scope.warpCoord + 1;
     }
-    scope.applied = effect.apply(next, scope.tint != FierceDeityTint::None);
+    scope.applied = effect.apply(next, texGenCount, scope.tint != FierceDeityTint::None);
     return HOOK_CONTINUE;
 }
 

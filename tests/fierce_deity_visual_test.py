@@ -44,11 +44,15 @@ GXColor gpuAmbient{}, gpuMaterial{};
 std::array<u32,256> bp{}, nativeBP{};
 std::array<u32,0x1080> xf{}, nativeXF{};
 u32 bpMask=0xFFFFFF;
+// Aurora has one effective count fed by BOTH BP GEN_MODE and XF 0x103f.
+// An XF write invalidates the BP cache but does not update its cached bits.
+unsigned liveTexGens=0;
 void write_bp(u32 word) {
     const unsigned reg=word>>24;
     if(reg==0xFE) { bpMask=word&0xFFFFFF; return; }
     bp[reg]=(bp[reg]&~bpMask)|(word&bpMask);
     bpMask=0xFFFFFF;
+    if(reg==0) liveTexGens=bp[0]&15;
     ++gxWrites;
 }
 void decode_state() {
@@ -93,7 +97,11 @@ void GXCallDisplayList(const void* data, u32 size) {
                 assert((reg-0x500)%12==0 && count==12 &&
                        "Aurora does not support partial post-matrix uploads");
             }
-            for(unsigned i=0;i<count;++i) { xf[reg+i]=word(); ++gxWrites; }
+            for(unsigned i=0;i<count;++i) {
+                xf[reg+i]=word();
+                if(reg+i==0x103f) liveTexGens=xf[reg+i];
+                ++gxWrites;
+            }
             break;
         }
         default: assert(false && "unexpected GX command");
@@ -105,7 +113,7 @@ void GXCallDisplayList(const void* data, u32 size) {
 // Aurora copies only numTexGens generators into its shader config. All others
 // remain GX_MAX_TEXGENSRC (21), which is fatal if an active stage samples one.
 bool shader_texgens_valid() {
-    const unsigned count=((bp[0]>>10)&15)+1, texgens=bp[0]&15;
+    const unsigned count=((bp[0]>>10)&15)+1, texgens=liveTexGens;
     for(unsigned i=0;i<count;++i) {
         const u32 order=bp[0x28+i/2]>>((i&1)*12);
         if((order&(1u<<6)) && ((order>>3)&7)>=texgens) return false;
@@ -122,6 +130,7 @@ void load_native(unsigned count) {
         bp[0x28+i/2]|=order<<((i&1)*12);
     }
     for(unsigned i=0;i<xf.size();++i) xf[i]=(i*0xD315613u);
+    xf[0x103f]=liveTexGens=3;
     nativeBP=bp; nativeXF=xf;
     decode_state();
     assert(shader_texgens_valid());
@@ -196,12 +205,15 @@ struct ColorBlock {
 };
 struct J3DMaterial {
     J3DTevBlock tev; ColorBlock color;
+    unsigned texGenNum=3;
+    unsigned getTexGenNum() const {return texGenNum;}
+    J3DMaterial* getTexGenBlock() {return this;}
     J3DTevBlock* getTevBlock() {return &tev;} int getIndex() {return 0;}
     ColorBlock* getColorBlock() {return &color;}
     GXColor* getMatColor(int) {return &color.material;}
 };
 struct J3DShape { J3DMaterial* material; J3DMaterial* getMaterial() const {return material;} };
-struct DisplayList { int calls=0; void callDL() { ++calls; ++restoreCalls; bp=nativeBP; xf=nativeXF; decode_state(); } };
+struct DisplayList { int calls=0; void callDL() { ++calls; ++restoreCalls; bp=nativeBP; xf=nativeXF; liveTexGens=xf[0x103f]; decode_state(); } };
 struct J3DShapePacket;
 struct J3DMatPacket { J3DMaterial* material=nullptr; J3DMaterial* getMaterial() {return material;} J3DShapePacket* shapes=nullptr; J3DShapePacket* getShapePacket() {return shapes;} DisplayList list; DisplayList* getDisplayListObj() {return &list;} void callDL() {list.callDL();} };
 struct J3DModel {
@@ -231,7 +243,7 @@ bool warpTest = false, warpDark = false, warpInverse = false;
 WarpLayer warp_layer(J3DModel* model) {
     return model == link.mpLinkModel ? WarpLayer{warpTest,warpDark ? palette : FierceDeityTint::None,warpInverse} : WarpLayer{};
 }
-int native_warp_coord(J3DModel*, J3DMaterial*, daAlink_c*) {return warpTest ? 3 : -1;}
+int native_warp_coord(J3DModel*, J3DMaterial* material, daAlink_c*) {return warpTest ? int(material->texGenNum) : -1;}
 void warp_texture_matrix(Mtx matrix) {
     for(int i=0;i<3;++i) for(int j=0;j<4;++j) matrix[i][j] = float(i*4+j);
 }
@@ -373,7 +385,7 @@ int main() {
     const u32 staleShadow=1|(2u<<4)|(3u<<10);
     write_bp(staleShadow);
     assert(!shader_texgens_valid());
-    bp=nativeBP;
+    bp=nativeBP; liveTexGens=3;
     assert(shader_texgens_valid());
     // A full TREF/KSEL shadow write would also corrupt the paired native stage.
     write_bp((0x29u<<24)|(1u<<19));
@@ -490,6 +502,34 @@ int main() {
     before_material_draw(nullptr,batchArgs,nullptr,nullptr);
     draw_shadow(p);
     after_material_draw(nullptr,nullptr,nullptr,nullptr);
+    // Reproduce the Android fatal from the actual Aurora BP/XF semantics.
+    // A valid native draw can have 3 active generators from XF while GEN_MODE's
+    // cached low nibble still contains 1. A masked stage-count update then
+    // decodes the entire stale BP word and drops generators 1/2 (src sentinel 21).
+    player.packet.shapes=&p; player.packet.material=&mat;
+    for(unsigned generators : {1u,2u,3u})
+    for(bool warp : {false,true})
+    for(auto tint : {FierceDeityTint::None,FierceDeityTint::Dark,FierceDeityTint::White,FierceDeityTint::Gold}) {
+        if(!warp && tint==FierceDeityTint::None) continue;
+        warpTest=warp;warpDark=tint!=FierceDeityTint::None;
+        palette=tint;mat.texGenNum=generators;mat.tev.count=generators;
+        load_native(generators);
+        xf[0x103f]=liveTexGens=generators;
+        bp[0]=(bp[0]&~15u)|(generators-1); // stale BP cache after a later XF write
+        nativeBP=bp;nativeXF=xf;
+        assert(shader_texgens_valid());
+        void* ownerArgs[]={&player.packet};void* packetArgs[]={&p};void* shapeArgs[]={&shape};
+        before_material_draw(nullptr,ownerArgs,nullptr,nullptr);
+        before_packet_draw(nullptr,packetArgs,nullptr,nullptr);
+        before_shape_draw(nullptr,shapeArgs,nullptr,nullptr);
+        const unsigned expected=generators+(warp?1:0);
+        assert(liveTexGens==expected && (bp[0]&15)==expected && xf[0x103f]==expected);
+        assert(shader_texgens_valid());
+        before_primitive_draw(nullptr,nullptr,nullptr,nullptr);
+        assert(shader_texgens_valid());
+        draw_end();assert(liveTexGens==generators && shader_texgens_valid());
+    }
+    palette=FierceDeityTint::Dark;warpTest=warpDark=false;mat.texGenNum=mat.tev.count=3;
     // Skipped originals and bounded recursion unwind without stale pointers.
     player.packet.shapes=&p;
     void* ownArgs[]={&player.packet};
@@ -663,7 +703,7 @@ int main() {
     // commands or writing past the fixed command buffer.
     DarkDisplayList oversized;
     for(int i=0;i<80;++i) oversized.swap(0,0,1,2,3);
-    writes=gxWrites; assert(!oversized.apply(4)); assert(gxWrites==writes);
+    writes=gxWrites; assert(!oversized.apply(4,3)); assert(gxWrites==writes);
 
     // Capacity limits and foreign layouts never overflow the 16-stage pipeline.
     mat.tev.count=16;

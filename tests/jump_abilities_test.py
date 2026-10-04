@@ -205,7 +205,22 @@ int main(){
  setup(l);charge(l);assert(!handle_jump_abilities(&l)); // No double processing in one execute.
  assert(tick(l,false,false));assert(l.launches==2);close(l.speed.y,25*std::sqrt(6.0f));assert(!l.mLinkAcch.ground);assert(s_manualJumpOwner==&l);
  setup(l);heightPercent=500;charge(l);assert(tick(l,false,false));close(l.speed.y,25*std::sqrt(10.0f));
- setup(l);rjump=false;charge(l);assert(tick(l,false,false));assert(l.launches==2); // Gale includes the first jump.
+ // Manual Jump Off blocks the setup jump, even with Gale enabled or no charges left.
+ for(int available:{0,3}){
+  setup(l);rjump=false;gale=true;charges=available;
+  assert(!tick(l,true,true));assert(l.launches==0&&charges==available);
+  assert(s_jumpAbilities.charge==GaleCharge::Idle);
+ }
+ // Disabling while airborne or fully charged cancels Gale without a delayed launch/cost.
+ for(bool ready:{false,true}){
+  setup(l);gale=true;assert(tick(l,true,true));
+  if(ready){land(l);hold_crouch(l);}
+  rjump=false;assert(!tick(l,false,true));
+  assert(s_jumpAbilities.charge==GaleCharge::Idle&&!s_galeVisual.ready&&charges==3);
+  if(ready)assert(l.mProcID==daAlink_c::PROC_WAIT);
+  assert(!tick(l,false,false));assert(l.launches==1);
+  rjump=true;assert(!tick(l,false,false));assert(l.launches==1);
+ }
  // Costs only the successful Gale launch, never the setup jump or a failed launch.
  setup(l);charge(l);assert(charges==3);assert(tick(l,false,false));assert(charges==2);
  setup(l);charge(l);l.initSucceeds=false;assert(!tick(l,false,false));assert(charges==3);
@@ -252,8 +267,9 @@ int main(){
  setup(l);gale=true;l.initSucceeds=false;assert(!tick(l,true,true));assert(s_jumpAbilities.charge==GaleCharge::Idle);
  // Releasing to deploy Glide cancels pending Gale before the next airborne press.
  setup(l);gale=glide=true;assert(tick(l,true,true));assert(!tick(l,false,false));assert(tick(l,true,true));assert(creating&&s_jumpAbilities.charge==GaleCharge::Idle);
+ for(bool manualJump:{false,true})
  for(auto proc:{daAlink_c::PROC_AUTO_JUMP,daAlink_c::PROC_FALL})for(float velocity:{25.0f,-60.0f}){
-  setup(l);glide=true;l.mProcID=proc;l.mLinkAcch.ground=false;l.speed.y=velocity;l.mNormalSpeed=12;
+  setup(l);rjump=manualJump;glide=true;l.mProcID=proc;l.mLinkAcch.ground=false;l.speed.y=velocity;l.mNormalSpeed=12;
   assert(tick(l,true,true));assert(creating);update_glide(&l);assert(!s_jumpAbilities.attached&&!staminaGliding);
   assert(!glide_active_for(&l));
   creating=false;live=true;update_glide(&l);assert(s_jumpAbilities.attached);assert(l.mGrabItemAcKeep.actor==&cucco);

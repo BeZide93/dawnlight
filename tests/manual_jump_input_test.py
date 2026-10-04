@@ -7,6 +7,9 @@ root = Path(__file__).resolve().parents[1]
 config = (root / 'src/config.cpp').read_text()
 start = config.index('JumpButton jump_button() {')
 getter = config[start:config.index('\n}', start) + 2]
+hooks = (root / 'src/jump_hooks.cpp').read_text()
+start = hooks.index('bool jump_state_ready(')
+jump_gate = hooks[start:hooks.index('\n}', start) + 2]
 fixture = r'''
 #include <algorithm>
 #include <array>
@@ -64,6 +67,12 @@ ModResult resolve(ModContext*,const char* symbol,void** out,void*){
 struct HookService{ModResult (*resolve)(ModContext*,const char*,void**,void*);};
 HookService hook{resolve};HookService* svc_hook=&hook;
 // INPUT
+struct daAlink_c {bool checkWolf(){return false;}} link;
+bool manualJump=true,gale=true,s_galeInputCancelled=false;
+bool r_jump_enabled(){return manualJump;}
+bool revalis_gale_enabled(){return gale;}
+bool ground_jump_context_ready(daAlink_c*){return true;}
+// JUMP_GATE
 void sample(){after_jump_pad_read(nullptr,nullptr,nullptr,nullptr);}
 void reset(){
     axes[4]=axes[5]=0;jut={};JUTGamePad::mPadStatus[0]={};portIndex=0;jutAvailable=true;
@@ -79,6 +88,19 @@ void down(int option,bool held){
     }
 }
 int main(){
+    // Exercise the real input adapter and launch gate for every physical binding
+    // and the independent touch button, with Gale both on and off.
+    for(bool galeEnabled:{false,true})for(bool touch:{false,true})for(int option=0;option<5;++option){
+        reset();configured=option;gale=galeEnabled;
+        nativePressed=nativeHeld=false;directPressed=directHeld=false;sample();
+        if(touch)directPressed=directHeld=true;
+        else if(option==0)nativePressed=nativeHeld=true;
+        else down(option,true);
+        sample();assert(jump_pressed(active_jump_binding()));
+        manualJump=false;assert(!jump_state_ready(&link));
+        manualJump=true;assert(jump_state_ready(&link));
+        nativePressed=nativeHeld=directPressed=directHeld=false;
+    }
     reset();
     for(int option=0;option<5;++option){
         configured=option;directPressed=directHeld=true;
@@ -130,7 +152,7 @@ int main(){
     jutAvailable=false;sample();assert(!jump_held(active_jump_binding()));
     assert(!jump_pressed(static_cast<JumpButton>(-1))&&!jump_held(static_cast<JumpButton>(99)));
 }
-'''.replace('// GETTER', getter).replace('// INPUT', (root / 'src/jump_input.inc').read_text())
+'''.replace('// GETTER', getter).replace('// INPUT', (root / 'src/jump_input.inc').read_text()).replace('// JUMP_GATE', jump_gate)
 assert 'register_bool("r-jump", true, s_rJump)' in config  # Preserve existing saved toggles.
 assert 'register_int("jump-button", 0, s_jumpButton)' in config
 ui = (root / 'src/ui.cpp').read_text()

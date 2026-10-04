@@ -127,7 +127,9 @@ int main(){
  }
  parent=pressed=true;blocked=event=false;
  daAlink_c human;human.wolf=false;human.mProcID=daAlink_c::PROC_WAIT;b=false;
- parent=false;assert(start_ground_jump(&human)); // existing human Gale fallback
+ parent=false;assert(!start_ground_jump(&human)); // Gale cannot bypass the human toggle either
+ assert(!human.humanCalls&&!human.cutCalls&&!human.jumpMode);
+ parent=true;assert(start_ground_jump(&human));
  assert(human.humanCalls==1&&human.wolfCalls==0&&human.speed.y==16&&marks==1);
  parent=true;human.mProcID=daAlink_c::PROC_WAIT;human.mLinkAcch.hit=true;b=true;
  assert(start_ground_jump(&human)&&human.cutCalls==1);

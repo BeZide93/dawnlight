@@ -43,6 +43,8 @@ DEFINE_HOOK(&J3DShapePacket::drawFast, FierceShapePacketFastHook);
 DEFINE_HOOK(&J3DShape::drawFast, FierceShapeDrawHook);
 DEFINE_HOOK(&J3DShapeDraw::draw, FiercePrimitiveDrawHook);
 DEFINE_HOOK(&JPAResource::calc, FierceWarpParticleCalcHook);
+DEFINE_HOOK(&mDoExt_modelUpdateDL, FierceEquipmentUpdateHook);
+DEFINE_HOOK(&mDoExt_modelEntryDL, FierceEquipmentEntryHook);
 #if defined(__APPLE__)
 DEFINE_HOOK(&fpcMtd_Method, FiercePlayerDrawHook);
 #else
@@ -104,12 +106,15 @@ bool player_model(daAlink_c* link, const J3DModel* model) {
         model == link->mpLinkBootModels[1]);
 }
 
+#include "fierce_deity_equipment.inc"
+
 bool player_equipment(daAlink_c* link, const J3DModel* model) {
     // Compare live instances, never shared model data or material names. Keep
     // equipment separate from player_model: it has no retained outgoing layer.
     return link != nullptr && model != nullptr &&
         (model == link->mSwordModel || model == link->mSheathModel ||
-         model == link->mShieldModel || dual_wield_owns_model(link, model));
+         model == link->mShieldModel || model == link->mpKanteraModel ||
+         dual_wield_owns_model(link, model) || observed_player_equipment(link, model));
 }
 
 #include "fierce_deity_transition.inc"
@@ -527,14 +532,10 @@ HookAction before_primitive_draw(ModContext*, void*, void*, void*) {
 }
 
 void after_player_draw(ModContext*, void* args, void*, void*) {
-    auto* link = daAlink_getAlinkActorClass();
-    if (link == nullptr || mods::arg<void*>(args, 1) != link || link->sub_method == nullptr) return;
-    const auto* methods = reinterpret_cast<const leafdraw_method_class*>(link->sub_method);
-#if defined(__APPLE__)
-    if (mods::arg<process_method_func>(args, 0) != methods->draw_method) return;
-#else
-    if (mods::arg<const leafdraw_method_class*>(args, 0) != methods) return;
-#endif
+    auto* link = equipment_draw_owner(args);
+    // Outgoing tint copies are transition layers, not additional equipment.
+    end_equipment_draw();
+    if (link == nullptr) return;
     draw_outgoing(link);
 }
 
@@ -581,6 +582,7 @@ void fierce_deity_transition_tick(daAlink_c* link) {
 }
 
 void fierce_deity_transition_cancel(daAlink_c* link) {
+    reset_observed_equipment();
     if (s_transition.owner == nullptr) return;
     // reset_for_link can run after the old actor is gone; only touch a live owner.
     if (link == nullptr && transition_owner(daAlink_getAlinkActorClass()))
@@ -604,6 +606,9 @@ ModResult initialize_fierce_deity_visual(ModError* error) {
         (result = mods::hook::add_post<FierceShapeDrawHook>(svc_hook, after_shape_draw)) != MOD_OK ||
         (result = mods::hook::add_pre<FiercePrimitiveDrawHook>(svc_hook, before_primitive_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceWarpParticleCalcHook>(svc_hook, after_warp_particle_calc)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceEquipmentUpdateHook>(svc_hook, observe_equipment_model)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceEquipmentEntryHook>(svc_hook, observe_equipment_model)) != MOD_OK ||
+        (result = mods::hook::add_pre<FiercePlayerDrawHook>(svc_hook, before_player_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FiercePlayerDrawHook>(svc_hook, after_player_draw)) != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Dark Link visual hooks");
     }

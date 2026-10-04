@@ -122,6 +122,7 @@ bool failModels=false, failScratch=false, failPin=false, compatible=true;
 unsigned scratchRequested=0;
 void warp_warning(const char*) {}
 void stop_warp_particles() {}
+void reset_observed_equipment() {}
 struct JKRSolidHeap : Heap {
     static JKRSolidHeap* create(unsigned,Heap*,bool) {
         if(failModels) return nullptr;

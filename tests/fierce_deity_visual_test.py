@@ -7,6 +7,7 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'src/fierce_deity_visual.cpp').read_text()
 callbacks = source[source.index('struct DrawScope'):source.index('void after_player_draw')]
 callbacks = callbacks.replace('#include "fierce_deity_transition.inc"', '')
+callbacks = callbacks.replace('#include "fierce_deity_equipment.inc"', '')
 dual_source = (root / 'src/dual_wield.cpp').read_text()
 dual_start = dual_source.index('bool dual_wield_owns_model(')
 dual_owner = dual_source[dual_start:dual_source.index('\n}', dual_start) + 2]
@@ -230,10 +231,12 @@ struct daAlink_c {
     J3DModel *mpLinkModel=nullptr,*mpLinkFaceModel=nullptr,*mpLinkHatModel=nullptr,
     *mpLinkHandModel=nullptr,*mpDemoFCBlendModel=nullptr,*mpDemoFCTongueModel=nullptr,
     *mpDemoHLTmpModel=nullptr,*mpDemoHRTmpModel=nullptr,*mpLinkBootModels[2]{},
-    *mSwordModel=nullptr,*mSheathModel=nullptr,*mShieldModel=nullptr;
+    *mSwordModel=nullptr,*mSheathModel=nullptr,*mShieldModel=nullptr,*mpKanteraModel=nullptr;
 };
 daAlink_c link;
 struct { const daAlink_c* owner=nullptr; J3DModel* sword=nullptr; J3DModel* sheath=nullptr; } s;
+J3DModel* observedModel=nullptr;
+bool observed_player_equipment(daAlink_c*,const J3DModel* model) {return model && model==observedModel;}
 bool darkActive=true;
 daAlink_c* daAlink_getAlinkActorClass() {return &link;}
 FierceDeityTint palette=FierceDeityTint::Dark;
@@ -589,11 +592,12 @@ int main() {
     // Every held/stowed equipment instance gets the same body shading, even
     // when its material is shared with an unrelated actor. No retained warp
     // layer exists for equipment, and shadow draws must remain native.
-    J3DModel sword, sheath, shield, second, secondSheath;
+    J3DModel sword, sheath, shield, second, secondSheath, lantern, teGear;
     link.mSwordModel=&sword;link.mSheathModel=&sheath;link.mShieldModel=&shield;
     s.owner=&link;s.sword=&second;s.sheath=&secondSheath;
+    link.mpKanteraModel=&lantern;observedModel=&teGear;
     for(auto tint : {FierceDeityTint::Dark,FierceDeityTint::White,FierceDeityTint::Gold})
-    for(auto* model : {&sword,&sheath,&shield,&second,&secondSheath}) {
+    for(auto* model : {&sword,&sheath,&shield,&second,&secondSheath,&lantern,&teGear}) {
         palette=tint;
         J3DShapePacket gear{model,&shape,{}};
         assert(!player_model(&link,model) && player_equipment(&link,model));
@@ -620,6 +624,8 @@ int main() {
     s.owner=&link;s.sword=nullptr;s.sheath=nullptr; // released Dual Wield models
     assert(!player_equipment(&link,&second) && !player_equipment(&link,&secondSheath));
     link.mSwordModel=nullptr;link.mSheathModel=nullptr;link.mShieldModel=nullptr;
+    link.mpKanteraModel=nullptr;observedModel=nullptr;
+    assert(!player_equipment(&link,&teGear) && !player_equipment(&link,&lantern));
     assert(!player_equipment(&link,&sword) && !player_equipment(&link,&shield));
 
     // White classifies texture color BEFORE lighting, using all RGB channels.

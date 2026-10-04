@@ -194,9 +194,15 @@ EditorState* attach_extra_editor(NativeEditor* editor) {
     for (size_t i = 0; i < state->count; ++i) {
         state->defaults[i] = default_extra_props(i, size);
         state->working[i] = saved_extra_props(i, size);
-        fragment += "<button class='control trigger'><span>";
-        fragment += i == kQuickAccessEditorSlot ? "Quick Access" : touch::Labels[i];
-        fragment += "</span></button>";
+        if (i == touch::Midna) {
+            fragment += "<button class='control trigger button-z'>";
+            fragment += midna_button_rml(midna_touch_button_icon());
+            fragment += "</button>";
+        } else {
+            fragment += "<button class='control trigger'><span>";
+            fragment += i == kQuickAccessEditorSlot ? "Quick Access" : touch::Labels[i];
+            fragment += "</span></button>";
+        }
     }
     fragment += "<selection-frame>";
     for (const char* style : {"edge horizontal left", "edge horizontal right", "edge vertical top", "edge vertical bottom",

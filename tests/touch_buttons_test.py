@@ -36,6 +36,7 @@ namespace mods {
 touch::Presses s_extraPresses;
 NativeTouch touchOwner;NativeTouch* s_touchOwner=&touchOwner;
 bool allowed=true;
+bool s_midnaTouchTriggered=false;
 bool s_midnaTouchPending=false;
 std::array<bool, touch::Count> enabled={true,true,true,true,true,true};
 PADStatus s_extraBasePad{},s_extraMergedPad{},written{};

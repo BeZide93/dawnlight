@@ -124,6 +124,8 @@ namespace dusk::config {
 std::map<std::string,dusk::config::ConfigVar<bool>> hostConfig;
 struct ButtonConfig{int layout;};
 std::array<ButtonConfig,touch::Count> s_buttons={{{0},{1},{2},{3},{4},{5}}};
+std::string midna_button_rml(const std::string&){return "<span>Midna</span>";}
+std::string midna_touch_button_icon(){return {};}
 touch::Layout button_layout(size_t i){return touch::Defaults[i];}
 bool s_touchEditorAvailable=true;
 struct TouchApi {
@@ -183,6 +185,9 @@ void save(TouchControlsEditor& e,bool foreignFirst=false,bool veto=false,bool re
  after_save_extra_editor(nullptr,a,nullptr,nullptr);++foreignPost;
 }
 int main(){
+ const auto midnaDefault=default_extra_props(touch::Midna,{960,432});
+ assert(midnaDefault.w==78&&midnaDefault.h==46&&midnaDefault.x==24&&midnaDefault.y==72);
+ assert(midnaDefault.anchor==ControlAnchor::TopLeft);
  Rml::Context context;Rml::Element document;document.context=&context;
  Rml::Element frame;
  NativeEditor editor;editor.mRoot=&document;editor.mDocument=&document;editor.mSelectionFrame=&frame;

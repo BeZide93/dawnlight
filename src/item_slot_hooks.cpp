@@ -639,12 +639,6 @@ bool is_z_lantern_item(u8 itemNo);
 bool z_item_has_ammo(u8 itemNo);
 bool z_item_ammo_values(u8 itemNo, u8& itemNum, u8& itemMax);
 
-struct PaneRenderState {
-    J2DPane* pane = nullptr;
-    u8 alpha = 0;
-    bool visible = false;
-};
-
 ResTIMG* z_hud_item_tex(const u8 page, const u8 layer) {
     return reinterpret_cast<ResTIMG*>(s_zHudItemTexBuf[page][layer]);
 }
@@ -687,7 +681,9 @@ bool boss_rush_save_active() {
 }
 
 bool midna_touch_available() {
-    return midna_unlocked() || boss_rush_save_active();
+    return boss_rush_save_active() ||
+           (dComIfGs_isEventBit(dSv_event_flag_c::M_067) &&
+            !dComIfGs_isEventBit(dSv_event_flag_c::F_0800));
 }
 
 bool midna_touch_button_ready() {
@@ -804,56 +800,7 @@ void sync_z_touch_item_meter(Rml::Element* button) {
     s_zTouchMeterRml = rml;
 }
 
-void collect_pane_render_state(
-    J2DPane* pane, std::array<PaneRenderState, 64>& states, size_t& count) {
-    if (pane == nullptr || count >= states.size()) {
-        return;
-    }
-
-    states[count++] = {
-        .pane = pane,
-        .alpha = pane->getAlpha(),
-        .visible = pane->isVisible(),
-    };
-    pane->show();
-    pane->setAlpha(255);
-
-    for (J2DPane* child = pane->getFirstChildPane(); child != nullptr;
-         child = child->getNextChildPane())
-    {
-        collect_pane_render_state(child, states, count);
-    }
-}
-
-void restore_pane_render_state(const std::array<PaneRenderState, 64>& states, size_t count) {
-    while (count > 0) {
-        const PaneRenderState& state = states[--count];
-        if (state.pane == nullptr) {
-            continue;
-        }
-
-        state.pane->setAlpha(state.alpha);
-        if (state.visible) {
-            state.pane->show();
-        } else {
-            state.pane->hide();
-        }
-    }
-}
-
-void refresh_midna_touch_icon_texture(J2DPane* midnaPane) {
-    if (midnaPane == nullptr || UpdateMidnaIconTextureHook::g_orig == nullptr) {
-        return;
-    }
-
-    std::array<PaneRenderState, 64> states{};
-    size_t count = 0;
-    collect_pane_render_state(midnaPane, states, count);
-    UpdateMidnaIconTextureHook::g_orig(midnaPane);
-    restore_pane_render_state(states, count);
-}
-#else
-void refresh_midna_touch_icon_texture(J2DPane*) {}
+#include "touch_midna_capture.inc"
 #endif
 
 u8 hud_layout_item(u8 itemNo) {
@@ -3220,9 +3167,6 @@ void after_meter_gauge_screen(ModContext*, void*, void*, void*) {
 
 void after_meter_midna_alpha(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
-    if (dawnlight_touch_ui_active() && meter != nullptr && meter->mpButtonMidona != nullptr) {
-        refresh_midna_touch_icon_texture(meter->mpButtonMidona->getPanePtr());
-    }
     if (z_item_slot_active()) {
         move_midna_hud_to_dpad(meter);
     }
@@ -4048,7 +3992,10 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_pre<RmlSetClassHook>(svc_hook, before_rml_set_class);
     }
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
-        result = mods::hook::install<UpdateMidnaIconTextureHook>(svc_hook);
+        result = mods::hook_add_pre<UpdateMidnaIconTextureHook>(svc_hook, before_midna_icon_capture);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_post<UpdateMidnaIconTextureHook>(svc_hook, after_midna_icon_capture);
     }
     if (result == MOD_OK) {
         // Fierce Deity shortcuts also need native touch input when our custom

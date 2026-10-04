@@ -16,10 +16,14 @@
 
 #if defined(__ANDROID__)
 #include "global.h"
+#include "Z2AudioLib/Z2AudioMgr.h"
+#include "Z2AudioLib/Z2SeMgr.h"
 #include <SDL3/SDL_gamepad.h>
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_meter2_info.h"
+#include "d/d_meter2.h"
+#include "d/d_meter2_draw.h"
 #include "d/d_msg_object.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "mods/hook.hpp"
@@ -41,6 +45,7 @@ std::array<ButtonConfig, touch::Count> s_buttons{};
 ConfigVarHandle s_quickAccessLayout = 0;
 UiWindowHandle s_touchWindow = 0;
 bool s_midnaTouchPending = false;
+bool s_midnaTouchTriggered = false;
 #if defined(__ANDROID__)
 bool s_touchRuntimeAvailable = false;
 bool s_touchEditorAvailable = false;
@@ -119,8 +124,8 @@ bool consume_midna_touch_press() {
 #if defined(__ANDROID__)
     prune_extra_presses(s_touchOwner);
 #endif
-    const bool pressed = s_midnaTouchPending;
-    s_midnaTouchPending = false;
+    const bool pressed = s_midnaTouchTriggered;
+    s_midnaTouchTriggered = false;
     return pressed;
 }
 

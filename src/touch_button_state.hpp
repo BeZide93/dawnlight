@@ -39,6 +39,10 @@ public:
         for (const auto& p : pointers) if (p.button < Count && p.id == id) return true;
         return false;
     }
+    bool owns(int64_t id, size_t button) const {
+        for (const auto& p : pointers) if (p.button == button && p.id == id) return true;
+        return false;
+    }
     bool press(int64_t id, size_t button) {
         if (button >= Count) return false;
         if (owns(id)) return true;

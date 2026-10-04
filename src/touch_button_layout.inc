@@ -50,6 +50,9 @@ dusk::ui::ControlProps default_extra_props(size_t index, dusk::ui::ControlLayout
     bool migrateLegacy = false) {
     if (index == kQuickAccessEditorSlot)
         return {298.f, 0.f, 64.f, 46.f, 1.f, dusk::ui::ControlAnchor::BottomLeft};
+    // Fresh/reset Midna layout matches TE. Keep explicitly saved native/legacy layouts.
+    if (index == touch::Midna && (!migrateLegacy || button_layout(index) == touch::Defaults[index]))
+        return {24.f, 72.f, 78.f, 46.f, 1.f, dusk::ui::ControlAnchor::TopLeft};
     const auto legacy = migrateLegacy ? button_layout(index) : touch::Defaults[index];
     const auto rect = touch::rect(legacy, size.w, size.h);
     dusk::ui::ControlProps props;

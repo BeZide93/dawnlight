@@ -32,7 +32,11 @@ layouts; **Cancel** discards changes; **Reset** restores both groups' defaults i
 the editor until you save. No separate touch overlay is raised over the editor
 or its Reset confirmation dialog. Dawnlight keeps its edit state separate from
 the native controls and leaves other mods' button events and normal save hooks intact.
-The dedicated Midna button shows her icon and calls her when available. Skip is
+The dedicated Midna button matches Twilit Essentials' rounded purple button,
+centered icon, pressed feedback, and green hint pulse with its chime. A fresh/reset
+layout uses TE's 78×46 dp button at 24/72 dp; saved custom positions and sizes stay
+intact. Each tap calls Midna once when available, without sending Z, D-Pad or Skip.
+Cancelled touches and missed input frames cannot queue a delayed call. Skip stays
 reserved for cutscenes; enable Midna separately in Touch Buttons.
 
 When Twilit Essentials and its **Quick Access** feature are enabled, the editor

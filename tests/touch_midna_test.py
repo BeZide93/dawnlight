@@ -37,6 +37,7 @@ Rml::Element rootElement,midnaElement{&rootElement},icon{&midnaElement},skipElem
 Rml::Element* s_extraRoot=&rootElement;
 std::array<Rml::Element*,touch::Count> s_extraElements{};
 touch::Presses s_extraPresses;
+bool s_midnaTouchTriggered=false;
 bool s_midnaTouchPending=false,allowed=true,ready=true;
 std::array<bool,touch::Count> enabled{};
 bool button_enabled(size_t i){return enabled[i];}
@@ -55,6 +56,7 @@ unsigned observedButton=0;bool observedPressed=false;
 void fierce_deity_touch_button(unsigned button,bool pressed){observedButton=button;observedPressed=pressed;}
 // GAME
 bool talk(){
+ sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
  daAlink_c link;const auto* p=&link;void* args[]={&p};BOOL result=FALSE;
  before_midna_talk_trigger(nullptr,args,&result,nullptr);return result;
 }
@@ -105,6 +107,11 @@ int main(){
  down(11);assert(talk());up(11);s_touchZItemHeld=false;
  zActive=true;down(12);assert(talk()&&!talk());up(12);
  s_dpadLeftTrig=true;assert(talk());s_dpadLeftTrig=false;assert(!talk());
+ down(14);sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ assert(!consume_midna_touch_press());up(14); // a missed sample never queues a delayed call
+ down(15);up(99,true);assert(talk());up(15); // unrelated cancelled finger does not cancel Midna
+ down(16);s_extraPresses.press(17,0);up(17,true);assert(talk());up(16); // LB cancel keeps Midna tap
  // Midna has no GameCube button bit (especially no START, Z or D-pad).
  struct Pad {unsigned short button=0x840;};Pad pad;
  down(13);assert(s_extraPresses.merge(pad)&&pad.button==0x840);up(13);assert(talk());
@@ -112,7 +119,7 @@ int main(){
 '''
 fixture = fixture.replace('// INPUT', '\n'.join(function(native, sig) for sig in (
     'void prune_extra_presses', 'HookAction extra_touch_down',
-    'HookAction extra_touch_up', 'HookAction extra_touch_cancel')) + '\n' +
+    'HookAction extra_touch_up', 'HookAction extra_touch_cancel', 'void sample_midna_touch_press')) + '\n' +
     function(buttons, 'bool consume_midna_touch_press'))
 fixture = fixture.replace('// GAME', '\n'.join(function(items, sig) for sig in (
     'HookAction before_midna_talk_trigger', 'HookAction before_touch_set_control_pressed')))

@@ -1,4 +1,4 @@
-"""Run the actual two-model ownership callbacks with checked native heap stubs."""
+"""Exercise native outfit swaps and independent tint instances with checked heap stubs."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -97,6 +97,9 @@ fixture = r'''
 #include <cstdio>
 #include <map>
 #include <memory>
+#include <cstdint>
+#include <new>
+#include <utility>
 #include <string>
 #include <vector>
 #include "fierce_deity_wipe.hpp"
@@ -104,9 +107,12 @@ using dawnlight::FierceWarpWipe;
 enum class FierceDeityTint { None, Dark, White, Gold };
 using u8=unsigned char; using u32=unsigned; using fpc_ProcID=unsigned;
 constexpr unsigned fpcM_ERROR_PROCESS_ID_e=~0u;
+struct Heap;
+Heap* currentHeap=nullptr;
 struct Heap {
     virtual ~Heap() = default;
     bool alive=true;
+    Heap* becomeCurrentHeap() {auto* old=currentHeap; currentHeap=this; return old;}
     unsigned getHeapSize() const {return 0x40000;}
     Heap* getParent() {return nullptr;}
     void destroy() {assert(alive); alive=false;}
@@ -123,7 +129,9 @@ struct JKRSolidHeap : Heap {
         heaps.push_back(std::move(p)); return result;
     }
 };
+struct JKRHeap {static Heap* getRootHeap() {return nullptr;}};
 struct JKRExpHeap : Heap {
+    static JKRExpHeap* create(void*,unsigned size,Heap* parent,bool flag) {return create(size,parent,flag);}
     static JKRExpHeap* create(unsigned size,Heap*,bool) {
         scratchRequested=size;
         if(failScratch) return nullptr;
@@ -132,7 +140,51 @@ struct JKRExpHeap : Heap {
     }
 };
 constexpr u32 Z2SE_AL_WARP_OUT=0x20098, Z2SE_AL_WARP_IN_TATE=0x20096;
-struct J3DModel {};
+
+#define JKR_NEW new
+struct J3DModelData {
+    bool alive=true;
+    int geometry=42;
+    unsigned getJointNum() {assert(alive); return 3;}
+    unsigned getModelDataType() {return 0;}
+};
+constexpr unsigned J3DMdlFlag_UseSharedDL=0x40000, J3DMdlFlag_UseSingleDL=0x80000,
+    J3DMdlFlag_DifferedDLBuffer=0x1000000;
+constexpr int kJ3DError_Success=0;
+struct J3DModel {
+    int entryModelData(J3DModelData*,unsigned,unsigned);
+    int newDifferedDisplayList(unsigned diff) {mDiffFlag=diff;return 0;}
+    void lock() {}
+    J3DModelData ownData;
+    J3DModelData* data=&ownData;
+    unsigned mFlags=0x80000, mDiffFlag=0x02000400;
+    float base=1, scale=1;
+    bool ownsData=false;
+    ~J3DModel() {if(ownsData) delete data;}
+    J3DModelData* getModelData() {assert(ownData.alive);return data;}
+    float* getBaseTRMtx() {return &base;}
+    float* getBaseScale() {return &scale;}
+    void setBaseTRMtx(float* m) {base=*m;}
+    void setBaseScale(float s) {scale=s;}
+};
+std::vector<std::unique_ptr<J3DModel>> copies;
+int copyAttempts=0, failCopy=-1, forgotten=0, entries=0, poses=0;
+int J3DModel::entryModelData(J3DModelData* incoming,unsigned flags,unsigned count) {
+    assert(count==1 && currentHeap && currentHeap->alive);
+    data=incoming;ownsData=true;mFlags=flags;
+    copies.emplace_back(this);
+    return copyAttempts++==failCopy ? -1 : kJ3DError_Success;
+}
+void forget_matrices(J3DModel* model) {
+    assert(model->getModelData()->getJointNum()==3);++forgotten;
+}
+void copy_outgoing_pose(J3DModel* outgoing,J3DModel* incoming) {
+    assert(outgoing!=incoming);assert(incoming->getModelData()->alive);
+    assert(outgoing->getModelData()->geometry==incoming->getModelData()->geometry);++poses;
+}
+void mDoExt_modelEntryDL(J3DModel*) {++entries;}
+struct Environment {void setLightTevColorType_MAJI(J3DModel*,int*) {}} g_env_light;
+
 struct daAlink_c {
     unsigned soundCalls=0; u32 lastSound=0;
     void seStartOnlyReverb(u32 sound) {++soundCalls;lastSound=sound;}
@@ -143,6 +195,10 @@ struct daAlink_c {
     J3DModel *mpLinkModel=nullptr,*mpLinkFaceModel=nullptr,*mpLinkHatModel=nullptr,
         *mpLinkHandModel=nullptr,*mpLinkBootModels[2]{};
     struct {J3DModel* mModel=nullptr;} field_0x2e44;
+    int mClothesChangeWaitTimer=0, tevStr=0;
+    bool noDraw=false,heavy=false;
+    bool checkPlayerNoDraw() {return noDraw;}
+    bool checkEquipHeavyBoots() {return heavy;}
     bool wolf=false,dead=false,scene=false,event=false;
     bool checkWolf() {return wolf;}
     bool checkDeadHP() {return dead;}
@@ -167,10 +223,10 @@ bool player_model(daAlink_c* link, J3DModel* model) {return model && model==link
 '''
 state = transition[transition.index('struct WarpLayer'):transition.index('void warp_warning')]
 callbacks = ''.join(function(transition, name) for name in (
-    'outfit_models', 'transition_owner', 'restore_archive_heap', 'discard_transition', 'prepare_transition', 'warp_layer'))
+    'outfit_models', 'transition_owner', 'restore_archive_heap', 'discard_transition', 'tint_sources_live', 'separate_outgoing', 'prepare_tint_transition', 'prepare_transition', 'warp_layer', 'draw_outgoing'))
 callbacks += ''.join(function(visual, name) for name in (
     'fierce_deity_transition_busy', 'fierce_deity_transition_prepare', 'fierce_deity_transition_commit',
-    'fierce_deity_transition_tick', 'fierce_deity_transition_cancel'))
+    'fierce_deity_transition_tick', 'fierce_deity_transition_cancel', 'fierce_deity_transition_tint'))
 checks = r'''
 int main() {
     // Native human range 6.0 / native rate 0.06 = 100 ticks. Exactly twice
@@ -191,11 +247,15 @@ int main() {
     J3DModel oldModel, newModel;
     auto setup=[&]() {
         assert(!fierce_deity_transition_busy());
-        heaps.clear(); refs.clear();
+        heaps.clear(); refs.clear(); copies.clear();
+        oldModel.ownData.alive=true;
+        copyAttempts=0; failCopy=-1; forgotten=entries=poses=0;
+        s_forgetWarpMatrices=forget_matrices;
         failModels=failScratch=failPin=false; compatible=true;
         link={}; link.mpLinkModel=&oldModel; link.field_0x2e44.mModel=&oldModel;
         link.mAnmHeap3.mAnimeHeap=JKRSolidHeap::create(0,nullptr,false);
         link.mpArcHeap=JKRExpHeap::create(0,nullptr,false);
+        currentHeap=link.mpArcHeap;
         refs["Kmdl"]=1;
     };
     auto nativeSwap=[&](const char* target) {
@@ -279,6 +339,83 @@ int main() {
         assert(warp_layer(old).inverse!=warp_layer(&incoming).inverse);
         fierce_deity_transition_cancel(&link);
     }
+
+    // Shared lists must stay borrowed; converting them to double buffering
+    // would put live material storage in the disposable transition heap.
+    for(unsigned flags : {J3DMdlFlag_UseSharedDL,J3DMdlFlag_DifferedDLBuffer}) {
+        setup();oldModel.mFlags=flags;
+        fierce_deity_transition_tint(&link,FierceDeityTint::None,FierceDeityTint::Dark,true);
+        auto* copy=s_transition.outgoing[0];assert(copy);
+        if(flags==J3DMdlFlag_UseSharedDL) assert(copy->mFlags & J3DMdlFlag_UseSingleDL);
+        if(flags==J3DMdlFlag_DifferedDLBuffer) assert(copy->mDiffFlag==oldModel.mDiffFlag);
+        fierce_deity_transition_cancel(&link);
+    }
+    // Cached TE models must remain live, with independent packets for BOTH
+    // wipe layers, on entry and exit. No native heap swap or archive reference.
+    for(bool entering : {false,true}) {
+        setup(); J3DModel face, boot;
+        link.mpLinkFaceModel=&face;link.mpLinkBootModels[0]=&boot;
+        auto* modelHeap=link.mAnmHeap3.mAnimeHeap;auto* arc=link.mpArcHeap;
+        fierce_deity_transition_tint(&link,entering?FierceDeityTint::None:FierceDeityTint::Dark,
+            entering?FierceDeityTint::Dark:FierceDeityTint::None,entering);
+        assert(s_transition.committed && s_transition.cloneHeap);
+        auto* owned=s_transition.cloneHeap;
+        assert(link.mpLinkModel==&oldModel && link.field_0x2e44.mModel==&oldModel);
+        assert(link.mpArcHeap==arc && link.mAnmHeap3.mAnimeHeap==modelHeap && currentHeap==arc);
+        assert(refs["Kmdl"]==1 && s_transition.modelHeap==nullptr && copies.size()==3);
+        auto* copy=s_transition.outgoing[0];
+        assert(copy!=&oldModel && copy->getModelData()!=oldModel.getModelData());
+        assert(copy->getModelData()->geometry==oldModel.getModelData()->geometry);
+        assert(warp_layer(copy).active && warp_layer(&oldModel).active);
+        assert(warp_layer(copy).inverse!=warp_layer(&oldModel).inverse);
+        draw_outgoing(&link);assert(entries==2 && poses==2); // unequipped boots skipped
+        link.heavy=true;draw_outgoing(&link);assert(entries==5);
+        link.noDraw=true;draw_outgoing(&link);assert(entries==5);
+        for(int tick=0;tick<50;++tick) fierce_deity_transition_tick(&link);
+        assert(!fierce_deity_transition_busy() && !owned->alive && forgotten==3);
+        assert(modelHeap->alive && arc->alive && oldModel.ownData.alive && refs["Kmdl"]==1);
+    }
+    // Abort on source replacement (including in-place data swaps), clothing
+    // reload, deletion and scene changes. Never read a retired borrowed header
+    // even while clearing the host's per-instance interpolation history.
+    for(int reason=0;reason<7;++reason) {
+        setup();J3DModelData replacementData;
+        fierce_deity_transition_tint(&link,FierceDeityTint::None,FierceDeityTint::Dark,true);
+        auto* owned=s_transition.cloneHeap;
+        if(reason==0) {link.mpLinkModel=&newModel;oldModel.ownData.alive=false;}
+        if(reason==1) {oldModel.data=&replacementData;}
+        if(reason==2) link.mClothesChangeWaitTimer=4;
+        if(reason==3) link.scene=true;
+        if(reason==4) link.wolf=true;
+        if(reason==5) link.event=true;
+        if(reason<3) {draw_outgoing(&link);assert(entries==0);assert(!warp_layer(link.mpLinkModel).active);}
+        if(reason==6) fierce_deity_transition_cancel(&link);
+        else fierce_deity_transition_tick(&link);
+        assert(!owned->alive && forgotten==1 && !fierce_deity_transition_busy());
+        assert(link.mpArcHeap->alive && link.mAnmHeap3.mAnimeHeap->alive);
+        oldModel.data=&oldModel.ownData;
+    }
+    // Partial allocation failure and unsupported geometry are all-or-nothing.
+    for(int reason=0;reason<4;++reason) {
+        setup();J3DModel face;link.mpLinkFaceModel=&face;
+        if(reason==0) failScratch=true;
+        if(reason==1) failCopy=0;
+        if(reason==2) failCopy=1;
+        if(reason==3) compatible=false;
+        fierce_deity_transition_tint(&link,FierceDeityTint::None,FierceDeityTint::Dark,true);
+        assert(!fierce_deity_transition_busy() && currentHeap==link.mpArcHeap);
+        assert(link.mpLinkModel==&oldModel && refs["Kmdl"]==1 && link.soundCalls==0);
+        for(const auto& heap:heaps)
+            if(heap.get()!=link.mpArcHeap && heap.get()!=link.mAnmHeap3.mAnimeHeap) assert(!heap->alive);
+    }
+    // Defensive coverage for the native armor path: a third-party changeLink
+    // callback may reinstall an outgoing model in ANY incoming slot.
+    for(bool differentSlot : {false,true}) {
+        setup();fierce_deity_transition_prepare(&link,FierceDeityTint::None,FierceDeityTint::Dark,true);
+        if(differentSlot) {link.mpLinkModel=&newModel;link.mpLinkHatModel=&oldModel;}
+        fierce_deity_transition_commit(&link);
+        assert(!fierce_deity_transition_busy());draw_outgoing(&link);assert(entries==0);
+    }
     setup(); fierce_deity_transition_prepare(&link,FierceDeityTint::None,FierceDeityTint::Dark,true);
     auto* old=s_transition.modelHeap;
     compatible=false; nativeSwap("Mmdl");
@@ -296,4 +433,4 @@ with tempfile.TemporaryDirectory(prefix='dawnlight-warp-') as temp:
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', '-Wno-multichar',
                     str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Fierce Deity warp layout detection, timing, heap/reference lifetime and collision rebinding: passed')
+print('Fierce Deity warp layout, tint instances, borrowed-data lifetime, allocation failures and native swaps: passed')

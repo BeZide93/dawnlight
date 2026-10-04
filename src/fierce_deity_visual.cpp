@@ -26,6 +26,9 @@
 
 #include <array>
 #include <cstring>
+#include <memory>
+#include <new>
+#include <utility>
 
 namespace dawnlight {
 namespace {
@@ -541,8 +544,9 @@ void fierce_deity_transition_commit(daAlink_c* link) {
     restore_archive_heap(link);
     // Native clothes changes reuse the same model heap/address. Our retained
     // outgoing instances require rebinding the skeletal collision explicitly.
-    link->field_0x2e44.mModel = link->mpLinkModel;
-    if (!warp_compatible(outfit_models(link), link)) {
+    if (s_transition.cloneHeap == nullptr) link->field_0x2e44.mModel = link->mpLinkModel;
+    if (!tint_sources_live(link) || !separate_outgoing(outfit_models(link)) ||
+        !warp_compatible(outfit_models(link), link)) {
         discard_transition(link);
         return;
     }
@@ -554,10 +558,15 @@ void fierce_deity_transition_commit(daAlink_c* link) {
     update_warp_particles(link);
 }
 
+void fierce_deity_transition_tint(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
+    prepare_tint_transition(link, fromTint, toTint, entering);
+    fierce_deity_transition_commit(link);
+}
+
 void fierce_deity_transition_tick(daAlink_c* link) {
     if (!transition_owner(link) || !s_transition.committed) return;
     if (link->checkWolf() || link->checkDeadHP() || link->checkSceneChangeAreaStart() ||
-        link->checkEventRun() || s_transition.wipe.advance()) {
+        link->checkEventRun() || !tint_sources_live(link) || s_transition.wipe.advance()) {
         discard_transition(link);
     } else {
         update_warp_particles(link);
@@ -573,6 +582,10 @@ void fierce_deity_transition_cancel(daAlink_c* link) {
 }
 
 ModResult initialize_fierce_deity_visual(ModError* error) {
+    void* address = nullptr;
+    if (svc_hook->resolve != nullptr &&
+        svc_hook->resolve(mod_ctx, "J3DModel::forgetMtx", &address, nullptr) == MOD_OK)
+        s_forgetWarpMatrices = reinterpret_cast<ForgetWarpMatrices>(address);
     ModResult result;
     if ((result = mods::hook::add_pre<FierceMaterialDrawHook>(svc_hook, before_material_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceMaterialDrawHook>(svc_hook, after_material_draw)) != MOD_OK ||

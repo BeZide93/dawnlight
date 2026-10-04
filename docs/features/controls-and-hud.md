@@ -43,11 +43,13 @@ reserved for cutscenes; enable Midna separately in Touch Buttons.
 buttons directly. **Jump** (upward arrow above a take-off line) is a separate input for Manual Jump,
 Revali's Gale and Glide, regardless of the selected **Jump Button**. Tap to jump;
 hold through landing to charge Gale and release when ready, or use it in the air
-to glide. **Dark Link** (two red eyes) toggles the mode without
+to glide. **Dark Link** (two red outlined eyes with pupils) toggles the mode without
 using the configured activation combo or spin attack. Activation still requires
 a full meter; tapping again ends it early. All feature toggles, progression
 unlocks, stamina costs and gameplay restrictions continue to apply.
-Both action icons are drawn from scalable UI shapes and also appear in the editor.
+Both action icons use the same bundled Material Symbols Rounded font as the
+vanilla utility controls and TE bottle button, with matching thin outlines.
+They scale with the button and also appear in the editor.
 
 When Twilit Essentials and its **Quick Access** feature are enabled, the editor
 also includes a **Quick Access** button. Move or resize it and **Save** to apply

@@ -70,6 +70,9 @@ void draw_extra_editor(EditorState& state) {
         element.layout.layoutScale = layout.scale;
         s_touchApi.applyBox(element.root, &element.layout.appliedBox, layout.box);
         s_editorApi.applyTransform(element.root, &element.layout.appliedTransform, layout.scale);
+        if (i == touch::Jump || i == touch::DarkLink)
+            extra_property(element.root, "font-size",
+                std::to_string(std::min(layout.box.w, layout.box.h) * 0.42f) + "dp");
         s_editorApi.applyDock(element.root, s_editorApi.dockAnchor(layout.visual, size));
         editor_class(element.root, "editor-selected", state.selected == i);
     }

@@ -1,29 +1,18 @@
-// Minimal symbols shared by gameplay and the layout editor.
-// RmlUi corner radii use lengths; percentage radii are unsupported by the host.
-std::string extra_icon_part(const char* style) {
-    return "<span style='position:absolute;display:block;pointer-events:none;" +
-        std::string(style) + "'></span>";
-}
+// Use the same bundled Material Symbols Rounded font as Dusklight's utility
+// controls and TE's bottle button (U+F69D), rather than approximating strokes.
+// Relative font sizes follow the button/editor scale; the host supplies colour,
+// antialiasing, rounded outlines and the usual pressed feedback.
 std::string extra_button_content(size_t index) {
-    if (index != touch::Jump && index != touch::DarkLink)
-        return "<span>" + std::string(touch::Labels[index]) + "</span>";
-    std::string icon = "<span style='position:relative;display:block;width:76%;height:76%;pointer-events:none;'>";
     if (index == touch::Jump) {
-        // Upward arrow over a short take-off line: jump, lift and flight.
-        const char* parts[] = {
-            "left:44%;top:24%;width:12%;height:42%;border-radius:100dp;background-color:#f8f4e8;",
-            "left:24%;top:24%;width:34%;height:12%;border-radius:100dp;background-color:#f8f4e8;transform:rotate(-45deg);",
-            "left:42%;top:24%;width:34%;height:12%;border-radius:100dp;background-color:#f8f4e8;transform:rotate(45deg);",
-            "left:28%;top:78%;width:44%;height:8%;border-radius:100dp;background-color:#f8f4e8;",
-        };
-        for (const auto* part : parts) icon += extra_icon_part(part);
-    } else {
-        // Two restrained red eyes retain Dark Link's signature at small sizes.
-        const char* parts[] = {
-            "left:16%;top:44%;width:29%;height:12%;border-radius:2dp;background-color:#ff354b;transform:rotate(14deg);",
-            "left:55%;top:44%;width:29%;height:12%;border-radius:2dp;background-color:#ff354b;transform:rotate(-14deg);",
-        };
-        for (const auto* part : parts) icon += extra_icon_part(part);
+        // "upgrade": an upward arrow with a short take-off line.
+        return "<icon style='pointer-events:none;'>"
+               "<glyph style='font-size:100%;'>&#xf0fb;</glyph></icon>";
     }
-    return icon + "</span>";
+    if (index == touch::DarkLink) {
+        // "visibility": actual eye contours with pupils, tilted gently inward.
+        return "<icon style='pointer-events:none;color:#ed5966;'>"
+               "<glyph style='font-size:75%;transform:rotate(12deg);'>&#xe8f4;</glyph>"
+               "<glyph style='font-size:75%;transform:rotate(-12deg);'>&#xe8f4;</glyph></icon>";
+    }
+    return "<span>" + std::string(touch::Labels[index]) + "</span>";
 }

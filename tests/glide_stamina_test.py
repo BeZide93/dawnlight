@@ -200,7 +200,6 @@ int main() {
     int success=1,failed=0;
     assert(before_guard_attack(nullptr,nullptr,&success,nullptr)==HOOK_CONTINUE);
     after_guard_attack(nullptr,nullptr,&success,nullptr);near(s_state.stamina,0);
-    assert(before_midna_charge(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
     // Continuous costs are points per real second; wolf ticks charge once.
     reset();setting(StaminaSetting::WolfSprint,17);
     mark_wolf_sprint_stamina_active();mark_wolf_sprint_stamina_active();step(.2);near(s_state.stamina,96.6f);
@@ -215,11 +214,8 @@ int main() {
     after_back_slice(nullptr,nullptr,&success,nullptr);near(s_state.stamina,47);
     after_helm_splitter(nullptr,nullptr,&success,nullptr);near(s_state.stamina,27);
     assert(before_guard_attack(nullptr,nullptr,&success,nullptr)==HOOK_SKIP_ORIGINAL&&success==0);
-    assert(before_midna_charge(nullptr,nullptr,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
     enabled=false;assert(before_guard_attack(nullptr,nullptr,&success,nullptr)==HOOK_CONTINUE);
     success=1;after_guard_attack(nullptr,nullptr,&success,nullptr);near(s_state.stamina,27);
-    enabled=true;reset();assert(before_midna_charge(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
-    near(s_state.stamina,50);
     // Block or Guard Break charges once; ordinary damage / armor SE never count.
     daAlink_c* owner=&link;dCcD_GObjInf hit,*hitPtr=&hit;
     void* damageArgs[]={&owner};void* hitArgs[]={&owner,&hitPtr};
@@ -251,7 +247,7 @@ production = function('maximum_stamina') + '\n' + state + '\n' + source[source.i
     'consume_defense', 'before_damage', 'after_block', 'after_guard_break', 'after_damage',
     'before_skill', 'after_skill', 'before_guard_attack', 'after_guard_attack',
     'before_back_slice', 'after_back_slice', 'before_helm_splitter', 'after_helm_splitter',
-    'before_midna_charge', 'stamina_ability_available', 'stamina_available_for_bullet_time', 'stamina_available_for_sprint',
+    'stamina_ability_available', 'stamina_available_for_bullet_time', 'stamina_available_for_sprint',
     'stamina_available_for_wolf_sprint', 'mark_wolf_sprint_stamina_active',
     'consume_flurry_rush_stamina', 'consume_great_spin_stamina',
     'stamina_meter_visible', 'stamina_available_for_glide',

@@ -103,8 +103,9 @@ int main(){
  assert(beeps==2&&fills==2&&s_midnaPulseFrame==0); // TE's 30-frame hint pulse
  update_midna_touch_visual(&button,78,46,false,true);
  assert(button.hidden&&!button.pressed&&s_midnaPulseFrame==0);
+ assert(button.props["pointer-events"]=="none");
  draw.field_0x738=0;update_midna_touch_visual(&button,78,46,true,false);
- assert(g.props["opacity"]=="0.000000");
+ assert(g.props["opacity"]=="0.000000"&&button.props["pointer-events"]=="auto");
  source.clear();update_midna_touch_visual(&button,78,46,true,false);
  assert(button.rml.find(">Midna</span>")!=std::string::npos&&releases==2);
  s_touchApi.releaseTexture=nullptr;source="meter://midna?slot=3";

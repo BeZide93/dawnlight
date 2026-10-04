@@ -25,6 +25,7 @@ struct TouchApi {
     dusk::ui::ControlAnchor (*dockAnchor)(dusk::ui::ControlRect, dusk::ui::ControlLayoutSize) = nullptr;
     void (*applyDock)(Rml::Element*, dusk::ui::ControlAnchor) = nullptr;
     void (*setClass)(Rml::Element*, const Rml::String*, bool) = nullptr;
+    bool (*isPseudoClassSet)(const Rml::Element*, const Rml::String*) = nullptr;
     void (*setPseudoClass)(Rml::Element*, const Rml::String*, bool) = nullptr;
     bool (*releaseTexture)(const Rml::String*, Rml::RenderInterface*) = nullptr;
     Rml::Element* (*child)(const Rml::Element*, int) = nullptr;
@@ -57,14 +58,26 @@ void extra_property(Rml::Element* element, const char* name, const std::string& 
     const std::string property = name;
     s_touchApi.setProperty(element, &property, &value);
 }
+#include "touch_button_visibility.inc"
+
 bool extra_controls_available(NativeTouch* controls) {
     if (!s_extraHooksReady || !s_extraSessionEnabled || controls == nullptr || controls->mWasSuppressed ||
         !s_touchApi.visible(controls)) return false;
     const auto* config = s_touchApi.config("game.enableTouchControls");
     if (config == nullptr || !static_cast<const dusk::config::ConfigVar<bool>*>(config)->getValue()) return false;
+    // Match TE's native action-bar gate. The host accounts for fader status,
+    // heap locks, scene overlaps, dialogs and skip/cutscene controls here.
+    const Rml::String hidden = "hidden";
+    if (!controls->mActionBar || s_touchApi.isPseudoClassSet(controls->mActionBar, &hidden)) return false;
+    // The title/demo scene can briefly own a Link actor while loading a save.
+    const char* stage = dComIfGp_getStartStageName();
+    if (!stage || !*stage || std::string_view(stage) == "F_SP102" ||
+        std::string_view(stage) == "title" || std::string_view(stage) == "opening" ||
+        std::string_view(stage) == "name") return false;
     return dComIfGp_getLinkPlayer() != nullptr && !dComIfGp_event_runCheck() &&
         !dComIfGp_isPauseFlag() && !dComIfGp_isEnableNextStage() &&
-        dMeter2Info_getWindowStatus() == 0 &&
+        dMeter2Info_getWindowStatus() == 0 && g_meter2_info.getPauseStatus() == 0 &&
+        !dMeter2Info_isShopTalkFlag() &&
         !(dComIfGp_getMsgObjectClass() != nullptr && dMsgObject_isTalkNowCheck());
 }
 void prune_extra_presses(NativeTouch* controls) {
@@ -127,14 +140,17 @@ bool create_extra_elements(NativeTouch* controls) {
         }
         rml += i == touch::Midna ?
             "<button class='control trigger button-z' style='pointer-events:auto;box-sizing:border-box;'>" :
-            "<button class='control trigger' style='display:none;pointer-events:auto;box-sizing:border-box;'>";
+            "<button class='control trigger' style='pointer-events:auto;box-sizing:border-box;'>";
         rml += extra_button_content(i) + "</button>";
     }
     s_touchApi.setRml(root.get(), &rml);
     s_extraRoot = s_touchApi.append(controls->mRoot, std::move(root), true);
     s_touchOwner = controls;
     if (!s_extraRoot) return false;
-    for (size_t i = 0; i < touch::Count; ++i) s_extraElements[i] = s_touchApi.child(s_extraRoot, int(i));
+    for (size_t i = 0; i < touch::Count; ++i) {
+        s_extraElements[i] = s_touchApi.child(s_extraRoot, int(i));
+        if (s_extraElements[i]) set_extra_element_visibility(s_extraElements[i], false, extra_action_button(i));
+    }
     return true;
 }
 #include "touch_button_shape.inc"
@@ -151,7 +167,8 @@ void update_extra_elements(ModContext*, void* args, void*, void*) {
     dusk::ui::ControlLayoutSize size;
     if (!extra_viewport(controls->mDocument, size)) {
         s_extraPresses.clear();
-        for (auto* element : s_extraElements) if (element) extra_property(element, "display", "none");
+        for (size_t i = 0; i < touch::Count; ++i)
+            if (s_extraElements[i]) set_extra_element_visibility(s_extraElements[i], false, extra_action_button(i));
         s_extraStyles = {};
         return;
     }
@@ -170,6 +187,7 @@ void update_extra_elements(ModContext*, void* args, void*, void*) {
             update_midna_touch_visual(element, rect.w, rect.h, show, s_extraPresses.held(i), dock);
             continue;
         }
+        set_extra_element_visibility(element, show, extra_action_button(i));
         const bool held = s_extraPresses.held(i);
         char key[160];
         std::snprintf(key, sizeof(key), "%.2f/%.2f/%d/%d/%d", rect.w, rect.h, show, held, int(dock));
@@ -177,14 +195,12 @@ void update_extra_elements(ModContext*, void* args, void*, void*) {
         s_extraStyles[i] = key;
         if (extra_action_button(i)) {
             apply_extra_action_style(element, rect.w, rect.h, held, dock);
-            extra_property(element, "display", show ? "flex" : "none");
             continue;
         }
         const auto dp = [](float value) { return std::to_string(value) + "dp"; };
         extra_property(element, "font-size", dp(std::min(rect.w, rect.h) * (i == touch::Midna ? 0.25f : 0.42f)));
         apply_extra_dock_corners(element, dock, std::min(rect.w, rect.h) * 0.3f);
         extra_property(element, "background-color", held ? "rgba(63,78,90,90%)" : "rgba(22,24,28,58%)");
-        extra_property(element, "display", show ? "flex" : "none");
     }
 }
 HookAction extra_touch_down(ModContext*, void* args, void*, void*) {
@@ -349,6 +365,7 @@ ModResult install_native_buttons(ModError* error) {
         !resolve_extra("_ZNK3Rml7Element8GetChildEi", s_touchApi.child) ||
         !resolve_extra("_ZN3Rml7Element8SetClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb", s_touchApi.setClass) ||
         !resolve_extra("_ZN3Rml7Element14SetPseudoClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb", s_touchApi.setPseudoClass) ||
+        !resolve_extra("_ZNK3Rml7Element16IsPseudoClassSetERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE", s_touchApi.isPseudoClassSet) ||
         !resolve_extra("Rml::Element::GetParentNode", s_touchApi.parent) ||
         !resolve_extra("Rml::Event::GetTargetElement", s_touchApi.target) ||
         !resolve_extra("Rml::Event::StopPropagation", s_touchApi.stop) ||

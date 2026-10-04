@@ -61,6 +61,7 @@ struct Audio {template<class... T>void seStart(T...){++beeps;}} audio;
 Audio* Z2GetAudioMgr(){return &audio;}
 #include "dusk/ui/controls.hpp"
 #include "touch_button_shape.inc"
+#include "touch_button_visibility.inc"
 #include "touch_midna_visual.inc"
 int main(){
  assert(midna_touch_available());riding=false;assert(!midna_touch_available());

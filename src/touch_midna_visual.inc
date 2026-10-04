@@ -10,13 +10,9 @@ std::string midna_button_rml(const std::string& source) {
 }
 void update_midna_touch_visual(Rml::Element* button, float width, float height, bool shown, bool held,
     dusk::ui::ControlAnchor dock = dusk::ui::ControlAnchor::None) {
-    const Rml::String hidden = "hidden", pressed = "pressed";
-    s_touchApi.setPseudoClass(button, &hidden, !shown);
+    const Rml::String pressed = "pressed";
+    set_extra_element_visibility(button, shown);
     s_touchApi.setClass(button, &pressed, shown && held);
-    // Override our inline hit-testing rule when hidden, just like TE's :hidden style.
-    extra_property(button, "pointer-events", shown ? "auto" : "none");
-    // A failed viewport query may have hidden all buttons with display:none.
-    extra_property(button, "display", "flex");
     if (!shown) {
         s_midnaPulseFrame = 0;
         s_midnaGlowLevel = -1;

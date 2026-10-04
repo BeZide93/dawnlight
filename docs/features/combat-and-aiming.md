@@ -48,14 +48,18 @@ damage. **Dark Link Visual**, directly below its toggle, selects the appearance:
 | Gold | Current outfit with warm golden shading/specular highlights and fully white glowing eyes. |
 
 **Dark Link Activation**, below the visual selector, offers **Spin Attack**
-(charged), **R+Z**, or **R+A** (default). Activation requires a full meter. With
-either button shortcut, hold R and then press Z or A, just like native R+Y Quick
+(charged), **R+Z**, **R+A** (default), **L3**, or **R3**. Activation requires a full meter. With
+either R shortcut, hold R and then press Z or A, just like native R+Y Quick
 Transform. The initial R press can still trigger a manual jump; the shortcut also
 works during that jump. Keep holding R and press Z or A again to end early. The
 remaining charge stops draining immediately and damaging sword hits can refill
 it; the next activation requires full power again. Holding the combination does
 not toggle repeatedly. Holding Z/A first and then pressing R does not activate it.
 Only Z/A is consumed until release; R and its manual jump remain available.
+L3/R3 use a fresh left/right stick click without holding R. Click again to end
+Dark Link early and preserve the remaining charge. Holding a stick click never
+repeats; clicks held through menus, blocked states, or controller reconnection
+must be released before they can activate. Physical and touch stick buttons work.
 On Android, touch presses are captured directly so short Z taps and the HD HUD
 Z mapping can also trigger the shortcut. A pending Gale charge is cancelled when the
 shortcut fires, while the jump already in progress continues normally.

@@ -1310,7 +1310,7 @@ FierceDeityVisual fierce_deity_visual() {
 ConfigVarHandle fierce_deity_visual_config_var() { return s_fierceDeityVisual; }
 
 FierceDeityActivation fierce_deity_activation() {
-    return static_cast<FierceDeityActivation>(get_int(s_fierceDeityActivation, 2, 0, 2));
+    return static_cast<FierceDeityActivation>(get_int(s_fierceDeityActivation, 2, 0, 4));
 }
 
 ConfigVarHandle fierce_deity_activation_config_var() { return s_fierceDeityActivation; }

@@ -27,6 +27,7 @@ DEFINE_HOOK(&dMeter2Draw_c::drawKanteraScreen, LazySkillMeterScreenHook);
 DEFINE_HOOK(&daAlink_c::procGuardAttackInit, StaminaGuardAttackHook);
 DEFINE_HOOK(&daAlink_c::procCutFinishJumpUpInit, StaminaBackSliceHook);
 DEFINE_HOOK(&daAlink_c::procCutHeadInit, StaminaHelmSplitterHook);
+DEFINE_HOOK(&daAlink_c::procWolfRollAttackMove, StaminaMidnaChargeMoveHook);
 DEFINE_HOOK(&daAlink_c::setWolfLockDomeModel, StaminaMidnaChargeHook);
 
 DEFINE_HOOK(&daAlink_c::checkDamageAction, StaminaDamageHook);
@@ -152,8 +153,26 @@ HookAction before_helm_splitter(ModContext*, void*, void* retval, void*) {
 void after_helm_splitter(ModContext*, void*, void* retval, void*) {
     after_skill(retval, StaminaSetting::HelmSplitter);
 }
-HookAction before_midna_charge(ModContext*, void*, void*, void*) {
-    return try_consume(stamina_setting(StaminaSetting::MidnaAttack)) ? HOOK_CONTINUE : HOOK_SKIP_ORIGINAL;
+HookAction before_midna_charge_move(ModContext*, void* args, void*, void*) {
+    // Refuse the charge at the caller's 1 -> 0 countdown edge. Skipping the
+    // model initializer still invokes other mods' post-hooks, which expect
+    // its model and BRK animation to exist (e.g. Cosmetics' ring recoloring).
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (link && link->swordButton() && link->mProcVar1.field_0x300a != 0 &&
+        link->mProcVar0.field_0x3008 == 1 &&
+        !can_consume(stamina_setting(StaminaSetting::MidnaAttack)))
+    {
+        link->mProcVar0.field_0x3008 = 0;
+    }
+    // Preserve native movement and ordinary spin/release behavior.
+    return HOOK_CONTINUE;
+}
+
+void after_midna_charge(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (link && link->mEquipItem == 0x109 && link->mHeldItemModel && link->field_0x0724) {
+        try_consume(stamina_setting(StaminaSetting::MidnaAttack));
+    }
 }
 
 // Defensive reactions must still run if the remaining stamina cannot cover
@@ -280,7 +299,8 @@ ModResult initialize_stamina(ModError* error) {
     if (result == MOD_OK) result = mods::hook::add_post<StaminaBackSliceHook>(svc_hook, after_back_slice);
     if (result == MOD_OK) result = mods::hook::add_pre<StaminaHelmSplitterHook>(svc_hook, before_helm_splitter);
     if (result == MOD_OK) result = mods::hook::add_post<StaminaHelmSplitterHook>(svc_hook, after_helm_splitter);
-    if (result == MOD_OK) result = mods::hook::add_pre<StaminaMidnaChargeHook>(svc_hook, before_midna_charge);
+    if (result == MOD_OK) result = mods::hook::add_pre<StaminaMidnaChargeMoveHook>(svc_hook, before_midna_charge_move);
+    if (result == MOD_OK) result = mods::hook::add_post<StaminaMidnaChargeHook>(svc_hook, after_midna_charge);
     if (result == MOD_OK) result = mods::hook::add_pre<StaminaDamageHook>(svc_hook, before_damage);
     if (result == MOD_OK) result = mods::hook::add_post<StaminaDamageHook>(svc_hook, after_damage);
     if (result == MOD_OK) result = mods::hook::add_post<StaminaBlockHook>(svc_hook, after_block);

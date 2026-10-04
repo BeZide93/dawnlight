@@ -73,7 +73,15 @@ void draw_extra_editor(EditorState& state) {
         if (i == touch::Jump || i == touch::DarkLink)
             extra_property(element.root, "font-size",
                 std::to_string(std::min(layout.box.w, layout.box.h) * 0.42f) + "dp");
-        s_editorApi.applyDock(element.root, s_editorApi.dockAnchor(layout.visual, size));
+        const auto dock = s_editorApi.dockAnchor(layout.visual, size);
+        s_editorApi.applyDock(element.root, dock);
+        if (i < touch::Count) {
+            // Editor transforms scale the base box; gameplay uses the visual box.
+            const float radius = i == touch::Midna ?
+                23.f * std::min(layout.box.w / 78.f, layout.box.h / 46.f) :
+                std::min(layout.box.w, layout.box.h) * 0.3f;
+            apply_extra_dock_corners(element.root, dock, radius);
+        }
         editor_class(element.root, "editor-selected", state.selected == i);
     }
     const bool selected = state.selected < state.count;

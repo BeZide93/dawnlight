@@ -52,10 +52,11 @@ namespace Rml {
  struct Element {
   Element* parent=nullptr;Context* context=nullptr;bool hidden=false,selected=false,visible=false;
   std::map<std::string,std::string> styles;
+  std::map<std::string,bool> classes;
   std::optional<dusk::ui::ControlRect> box;
   std::vector<std::unique_ptr<Element>> children;
   Context* GetContext(){return context;}
-  void SetClass(const String& name,bool v){if(name=="editor-selected")selected=v;else if(name=="visible")visible=v;}
+  void SetClass(const String& name,bool v){classes[name]=v;if(name=="editor-selected")selected=v;else if(name=="visible")visible=v;}
   void SetPseudoClass(const String&,bool v){hidden=v;}
  };
  using ElementPtr=std::unique_ptr<Element>;
@@ -76,7 +77,6 @@ namespace dusk::ui {
  Rml::Vector2f mouse_event_position(Rml::Event& e){return e.pos;}
  SDL_FingerID touch_event_id(Rml::Event& e){return e.id;}
  void apply_control_box_if_changed(Rml::Element*,std::optional<ControlRect>& box,ControlRect r){box=r;}
- void apply_control_dock_classes(Rml::Element*,ControlAnchor){}
  void apply_control_transform_if_changed(Rml::Element*,std::optional<float>& old,float s){old=s;}
  struct ScopedEventListener {using Callback=std::function<void(Rml::Event&)>;
   Rml::Element* element;Callback callback;bool capture;bool mouse;int kind;};
@@ -156,6 +156,7 @@ void extra_property(Rml::Element* e,const char* key,const std::string& v){e->sty
 struct NativeTouch {Rml::Element* mRoot=nullptr;};
 NativeTouch* s_touchOwner=nullptr;
 Rml::Element* liveQuickButton=nullptr;
+#include "touch_button_shape.inc"
 // LAYOUT
 // QUICK_ACCESS
 ControlLayout persistedVanilla;int saves=0,uncovered=0,deletedListeners=0;
@@ -313,11 +314,61 @@ int main(){
  const auto original=quickState->defaults[q];
  auto qr=*quickState->elements[q].layout.visualRect;
  assert(qr.l==298&&qr.t==viewport.h-46&&qr.w==64&&qr.h==46);
+ // Exercise docking on every edge/corner and restore rounded corners on undock.
+ // A scaled editor box must match the runtime visual box after its transform.
+ const char* corners[]={"border-top-left-radius","border-top-right-radius",
+                        "border-bottom-left-radius","border-bottom-right-radius"};
+ struct DockCase {float x,y;ControlAnchor anchor;unsigned flat;};
+ const DockCase docks[]={
+  {200,0,ControlAnchor::Top,3},{200,352,ControlAnchor::Bottom,12},
+  {0,150,ControlAnchor::Left,5},{840,150,ControlAnchor::Right,10},
+  {0,0,ControlAnchor::TopLeft,7},{840,0,ControlAnchor::TopRight,11},
+  {0,352,ControlAnchor::BottomLeft,13},{840,352,ControlAnchor::BottomRight,14},
+  {200,150,ControlAnchor::None,0}};
+ for(size_t index=0;index<touch::Count;++index){
+  const auto before=quickState->working[index];
+  auto* button=quickState->elements[index].root;
+  for(const auto& d:docks){
+   const ControlRect target{d.x,d.y,120,80};
+   ControlProps base{0,0,60,40,2,ControlAnchor::None};
+   quickState->working[index]=encode_control_props(target,viewport,base,d.anchor);
+   draw_extra_editor(*quickState);
+   assert(button->classes["docked"]==(d.flat!=0));
+   assert(button->classes["docked-bottom"]==(d.y==352));
+   assert(button->classes["docked-top"]==(d.y==0));
+   assert(button->classes["docked-left"]==(d.x==0));
+   assert(button->classes["docked-right"]==(d.x==840));
+   Rml::Element runtime;
+   const float radius=index==touch::Midna?23.f*std::min(120.f/78,80.f/46):24.f;
+   apply_extra_dock_corners(&runtime,touch_control_dock_anchor(target,viewport),radius);
+   for(unsigned corner=0;corner<4;++corner){
+    const float editorRadius=std::stof(button->styles.at(corners[corner]));
+    const float runtimeRadius=std::stof(runtime.styles.at(corners[corner]));
+    assert(std::abs(editorRadius*2-runtimeRadius)<.001f);
+    assert((editorRadius==0)==bool(d.flat&(1u<<corner)));
+   }
+  }
+  // Drag past the lower boundary: clamp, anchor, save/reload, viewport resize.
+  assert(begin_extra_edit(*quickState,index,EditHandle::Move,{500,300},true,1));
+  move_extra_edit(*quickState,{500,3000});quickState->pointer={};
+  assert(quickState->working[index]->anchor==ControlAnchor::Bottom);
+  save(quickEditor);quickEditor.mPendingClose=false;
+  const auto persisted=saved_extra_props(index,viewport);
+  assert(persisted==quickState->working[index]);
+  for(const auto size:{viewport,ControlLayoutSize{432,960}}){
+   const auto visual=resolve_control_layout(persisted,size).visual;
+   assert(std::abs(visual.t+visual.h-size.h)<.001f);
+   assert(touch_control_dock_anchor(visual,size)==ControlAnchor::Bottom);
+  }
+  quickState->working[index]=before;
+ }
+ draw_extra_editor(*quickState);
+
  dispatch(quickEditor,quick,{800,1000});
  dispatch(quickEditor,&quickDocument,{1000,800},1,false,1);
  dispatch(quickEditor,&quickDocument,{1000,800},1,false,2);
  assert(quickState->working[q]!=original);
- assert(!config.values.contains(s_quickAccessLayout)); // Drafts do not affect gameplay.
+ assert(saved_extra_props(q,viewport)==original); // Drafts do not affect gameplay.
  // Resize by mouse, then cancel a second gesture.
  qr=*quickState->elements[q].layout.visualRect;
  dispatch(quickEditor,quickState->handles[7],{(qr.l+qr.w)*2.5f,(qr.t+qr.h)*2.5f},0,true);
@@ -361,7 +412,7 @@ int main(){
 }
 '''
 fixture = fixture.replace('// COMMON', '\n'.join(function(common, name) for name in (
-    'ControlLayoutSize touch_document_size_dp', 'bool control_float_near', 'ControlAnchor touch_control_dock_anchor')))
+    'ControlLayoutSize touch_document_size_dp', 'bool control_float_near', 'ControlAnchor touch_control_dock_anchor', 'void apply_control_dock_classes')))
 types = header[header.index('    enum class EditHandle'):header.index('    void bind_control_events')]
 fixture = fixture.replace('// TYPES', types.replace('private:', 'public:'))
 methods = ('bind_control_events', 'sync_control_layouts', 'sync_selection_frame',

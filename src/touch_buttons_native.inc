@@ -22,6 +22,8 @@ struct TouchApi {
     bool (*setProperty)(Rml::Element*, const Rml::String*, const Rml::String*) = nullptr;
     Rml::Context* (*context)(const Rml::Element*) = nullptr;
     void (*applyBox)(Rml::Element*, std::optional<dusk::ui::ControlRect>*, dusk::ui::ControlRect) = nullptr;
+    dusk::ui::ControlAnchor (*dockAnchor)(dusk::ui::ControlRect, dusk::ui::ControlLayoutSize) = nullptr;
+    void (*applyDock)(Rml::Element*, dusk::ui::ControlAnchor) = nullptr;
     void (*setClass)(Rml::Element*, const Rml::String*, bool) = nullptr;
     void (*setPseudoClass)(Rml::Element*, const Rml::String*, bool) = nullptr;
     bool (*releaseTexture)(const Rml::String*, Rml::RenderInterface*) = nullptr;
@@ -131,6 +133,7 @@ bool create_extra_elements(NativeTouch* controls) {
     for (size_t i = 0; i < touch::Count; ++i) s_extraElements[i] = s_touchApi.child(s_extraRoot, int(i));
     return true;
 }
+#include "touch_button_shape.inc"
 #include "touch_button_layout.inc"
 #include "touch_quick_access.inc"
 #include "touch_midna_visual.inc"
@@ -155,20 +158,22 @@ void update_extra_elements(ModContext*, void* args, void*, void*) {
         const auto props = saved_extra_props(i, size);
         const auto rect = dusk::ui::resolve_control_layout(props, size).visual;
         s_touchApi.applyBox(element, &s_extraBoxes[i], rect);
+        const auto dock = s_touchApi.dockAnchor(rect, size);
+        s_touchApi.applyDock(element, dock);
         const bool show = available && button_enabled(i) &&
             (i != touch::Midna || midna_touch_button_available());
         if (i == touch::Midna) {
-            update_midna_touch_visual(element, rect.w, rect.h, show, s_extraPresses.held(i));
+            update_midna_touch_visual(element, rect.w, rect.h, show, s_extraPresses.held(i), dock);
             continue;
         }
         const bool held = s_extraPresses.held(i);
         char key[160];
-        std::snprintf(key, sizeof(key), "%.2f/%.2f/%d/%d", rect.w, rect.h, show, held);
+        std::snprintf(key, sizeof(key), "%.2f/%.2f/%d/%d/%d", rect.w, rect.h, show, held, int(dock));
         if (s_extraStyles[i] == key) continue;
         s_extraStyles[i] = key;
         const auto dp = [](float value) { return std::to_string(value) + "dp"; };
         extra_property(element, "font-size", dp(std::min(rect.w, rect.h) * (i == touch::Midna ? 0.25f : 0.42f)));
-        extra_property(element, "border-radius", dp(std::min(rect.w, rect.h) * 0.3f));
+        apply_extra_dock_corners(element, dock, std::min(rect.w, rect.h) * 0.3f);
         extra_property(element, "background-color", held ? "rgba(63,78,90,90%)" : "rgba(22,24,28,58%)");
         extra_property(element, "display", show ? "flex" : "none");
     }
@@ -325,6 +330,8 @@ ModResult install_native_buttons(ModError* error) {
     // lacking these private APIs can still load the rest of Dawnlight.
     if (!resolve_extra("Rml::Element::GetContext", s_touchApi.context) ||
         !resolve_extra("dusk::ui::apply_control_box_if_changed", s_touchApi.applyBox) ||
+        !resolve_extra("dusk::ui::touch_control_dock_anchor", s_touchApi.dockAnchor) ||
+        !resolve_extra("dusk::ui::apply_control_dock_classes", s_touchApi.applyDock) ||
         !resolve_extra("Rml::ElementDocument::CreateElement", s_touchApi.create) ||
         !resolve_extra("Rml::Element::AppendChild", s_touchApi.append) ||
         !resolve_extra("Rml::Element::RemoveChild", s_touchApi.remove) ||

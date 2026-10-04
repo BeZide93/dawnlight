@@ -16,3 +16,14 @@ std::string extra_button_content(size_t index) {
     }
     return "<span>" + std::string(touch::Labels[index]) + "</span>";
 }
+
+// Use TE's action-bar + utility button structure so the native stylesheet owns
+// background/border colours, transparency, clipping and pressed feedback.
+bool extra_action_button(size_t index) {
+    return index == touch::Jump || index == touch::DarkLink;
+}
+std::string extra_action_button_rml(size_t index) {
+    return "<action-bar class='control' style='pointer-events:auto;box-sizing:border-box;'>"
+           "<button class='utility' style='width:100%;height:100%;pointer-events:auto;'>" +
+           extra_button_content(index) + "</button></action-bar>";
+}

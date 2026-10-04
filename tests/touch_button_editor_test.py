@@ -132,6 +132,7 @@ bool s_touchEditorAvailable=true;
 struct TouchApi {
  dusk::config::ConfigVarBase* (*config)(std::string_view)=[](std::string_view key)->dusk::config::ConfigVarBase* {
   auto it=hostConfig.find(std::string(key));return it==hostConfig.end()?nullptr:&it->second;};
+ void (*setClass)(Rml::Element*,const Rml::String*,bool)=[](auto* e,const auto* name,bool v){e->SetClass(*name,v);};
  float (*scale)(Rml::Context*)=touch_dp_scale;
  SDL_FingerID (*finger)(Rml::Event*)=[](Rml::Event* e){return e->id;};
  void (*stop)(Rml::Event*)=[](Rml::Event* e){e->StopPropagation();};
@@ -148,7 +149,7 @@ struct TouchApi {
   auto f=std::make_unique<Rml::Element>();f->parent=p;f->context=p->context;
   for(int i=0;i<8;++i){auto h=std::make_unique<Rml::Element>();h->parent=f.get();f->children.push_back(std::move(h));}
   p->children.push_back(std::move(f));};
- Rml::Element* (*child)(Rml::Element*,int)=[](Rml::Element* p,int i){return p->children.at(i).get();};
+ Rml::Element* (*child)(Rml::Element*,int)=[](Rml::Element* p,int i){return i<int(p->children.size())?p->children[i].get():nullptr;};
  Rml::Element* (*target)(Rml::Event*)=[](Rml::Event* e){return e->target;};
  Rml::Element* (*parent)(Rml::Element*)=[](Rml::Element* e){return e->parent;};
 } s_touchApi;
@@ -187,6 +188,16 @@ void save(TouchControlsEditor& e,bool foreignFirst=false,bool veto=false,bool re
  after_save_extra_editor(nullptr,a,nullptr,nullptr);++foreignPost;
 }
 int main(){
+ for(size_t index:{touch::Jump,touch::DarkLink}){
+  const auto props=default_extra_props(index,{960,432});
+  assert(props.w==57&&props.h==46&&props.y==0&&props.scale==1);
+  assert(props.x==(index==touch::Jump?423:492)&&props.anchor==ControlAnchor::BottomLeft);
+  assert(saved_extra_props(index,{960,432})==props);
+  for(const auto size:{ControlLayoutSize{960,432},ControlLayoutSize{1200,600}}){
+   const auto visual=resolve_control_layout(props,size).visual;
+   assert(visual.l==props.x&&visual.t+visual.h==size.h);
+  }
+ }
  const auto midnaDefault=default_extra_props(touch::Midna,{960,432});
  assert(midnaDefault.w==78&&midnaDefault.h==46&&midnaDefault.x==24&&midnaDefault.y==72);
  assert(midnaDefault.anchor==ControlAnchor::TopLeft);
@@ -339,7 +350,8 @@ int main(){
    assert(button->classes["docked-left"]==(d.x==0));
    assert(button->classes["docked-right"]==(d.x==840));
    Rml::Element runtime;
-   const float radius=index==touch::Midna?23.f*std::min(120.f/78,80.f/46):24.f;
+   const float radius=index==touch::Midna?23.f*std::min(120.f/78,80.f/46):
+       extra_action_button(index)?23.f*std::min(120.f/57,80.f/46):24.f;
    apply_extra_dock_corners(&runtime,touch_control_dock_anchor(target,viewport),radius);
    for(unsigned corner=0;corner<4;++corner){
     const float editorRadius=std::stof(button->styles.at(corners[corner]));

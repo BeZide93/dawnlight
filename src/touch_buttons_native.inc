@@ -121,6 +121,10 @@ bool create_extra_elements(NativeTouch* controls) {
     extra_property(root.get(), "z-index", "2");
     std::string rml;
     for (size_t i = 0; i < touch::Count; ++i) {
+        if (extra_action_button(i)) {
+            rml += extra_action_button_rml(i);
+            continue;
+        }
         rml += i == touch::Midna ?
             "<button class='control trigger button-z' style='pointer-events:auto;box-sizing:border-box;'>" :
             "<button class='control trigger' style='display:none;pointer-events:auto;box-sizing:border-box;'>";
@@ -171,6 +175,11 @@ void update_extra_elements(ModContext*, void* args, void*, void*) {
         std::snprintf(key, sizeof(key), "%.2f/%.2f/%d/%d/%d", rect.w, rect.h, show, held, int(dock));
         if (s_extraStyles[i] == key) continue;
         s_extraStyles[i] = key;
+        if (extra_action_button(i)) {
+            apply_extra_action_style(element, rect.w, rect.h, held, dock);
+            extra_property(element, "display", show ? "flex" : "none");
+            continue;
+        }
         const auto dp = [](float value) { return std::to_string(value) + "dp"; };
         extra_property(element, "font-size", dp(std::min(rect.w, rect.h) * (i == touch::Midna ? 0.25f : 0.42f)));
         apply_extra_dock_corners(element, dock, std::min(rect.w, rect.h) * 0.3f);

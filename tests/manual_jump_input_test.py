@@ -26,6 +26,9 @@ bool registered=true;
 int get_int(int handle,int fallback,int low,int high){
     assert(handle==s_jumpButton);return registered?std::clamp(configured,low,high):fallback;
 }
+bool directPressed=false,directHeld=false;
+bool touch_jump_pressed(){return directPressed;}
+bool touch_jump_held(){return directHeld;}
 // GETTER
 bool nativePressed=false,nativeHeld=false,player=true,paused=false,visible=false,uiFails=false;
 namespace mDoCPd_c {
@@ -76,6 +79,13 @@ void down(int option,bool held){
     }
 }
 int main(){
+    reset();
+    for(int option=0;option<5;++option){
+        configured=option;directPressed=directHeld=true;
+        assert(jump_pressed(active_jump_binding())&&jump_held(active_jump_binding()));
+        directPressed=false;assert(!jump_pressed(active_jump_binding())&&jump_held(active_jump_binding()));
+        directHeld=false;assert(!jump_pressed(active_jump_binding())&&!jump_held(active_jump_binding()));
+    }
     reset();registered=false;configured=4;assert(active_jump_binding()==JumpButton::R);registered=true;
     for(int option=0;option<5;++option){configured=option;assert(static_cast<int>(active_jump_binding())==option);}
     configured=-1;assert(active_jump_binding()==JumpButton::R);

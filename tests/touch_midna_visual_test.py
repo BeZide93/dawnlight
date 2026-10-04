@@ -1,8 +1,12 @@
 """Exercise production Midna capture/visual code without game assets or a GPU."""
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[1]
+dusk = Path(os.environ.get('DUSKLIGHT_DIR', root / 'dusklight'))
+if not dusk.exists():
+    dusk = root.parent / 'dusk-source'
 fixture = r'''
 #include <algorithm>
 #include <array>
@@ -55,6 +59,8 @@ struct {Meter* getMeterClass(){return &meter;}} g_meter2_info;
 constexpr int Z2SE_SY_HINT_BUTTON_BLINK=1;
 struct Audio {template<class... T>void seStart(T...){++beeps;}} audio;
 Audio* Z2GetAudioMgr(){return &audio;}
+#include "dusk/ui/controls.hpp"
+#include "touch_button_shape.inc"
 #include "touch_midna_visual.inc"
 int main(){
  assert(midna_touch_available());riding=false;assert(!midna_touch_available());
@@ -92,7 +98,7 @@ int main(){
  update_midna_touch_visual(&button,78,46,true,false);
  assert(fills==1&&releases==0&&!button.hidden&&!button.pressed);
  assert(i.props["width"]=="40.000000dp"&&i.props["margin-left"]=="-20.000000dp");
- assert(button.props["border-radius"]=="23.000000dp");
+ assert(button.props["border-top-left-radius"]=="23.000000dp");
  assert(button.rml.find("left:50%;top:50%")!=std::string::npos);
  for(int frame=0;frame<60;++frame)update_midna_touch_visual(&button,78,46,true,true);
  assert(fills==1&&button.pressed&&beeps==0); // stable source never rebuilds the DOM
@@ -108,6 +114,17 @@ int main(){
  assert(g.props["opacity"]=="0.000000"&&button.props["pointer-events"]=="auto");
  source.clear();update_midna_touch_visual(&button,78,46,true,false);
  assert(button.rml.find(">Midna</span>")!=std::string::npos&&releases==2);
+ // Dock/undock also reshapes the hint overlay, including after a texture rebuild.
+ source="meter://midna?slot=4";
+ update_midna_touch_visual(&button,156,92,true,false,dusk::ui::ControlAnchor::Bottom);
+ for(auto* node:{&button,&g}){
+  assert(node->props["border-bottom-left-radius"]=="0dp");
+  assert(node->props["border-bottom-right-radius"]=="0dp");
+  assert(node->props["border-top-left-radius"]=="46.000000dp");
+ }
+ update_midna_touch_visual(&button,156,92,true,false);
+ assert(button.props["border-bottom-left-radius"]=="46.000000dp");
+ assert(g.props["border-bottom-left-radius"]=="46.000000dp");
  s_touchApi.releaseTexture=nullptr;source="meter://midna?slot=3";
  update_midna_touch_visual(&button,78,46,true,false); // optional release API
 }
@@ -119,7 +136,7 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp)/'test.cpp', Path(tmp)/'test'
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', '-Wno-multichar',
-                    '-I'+str(root/'src'), str(cpp), '-o', str(exe)], check=True)
+                    '-I'+str(root/'src'), '-I'+str(dusk/'src'), str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 source = (root/'src/item_slot_hooks.cpp').read_text()
 assert 'refresh_midna_touch_icon_texture' not in source

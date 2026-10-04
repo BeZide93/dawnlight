@@ -8,7 +8,8 @@ std::string midna_button_rml(const std::string& source) {
         "<img class='midna-icon visible' style='left:50%;top:50%;width:40dp;height:40dp;"
         "margin-left:-20dp;margin-top:-20dp;pointer-events:none;' src='" + source + "' />");
 }
-void update_midna_touch_visual(Rml::Element* button, float width, float height, bool shown, bool held) {
+void update_midna_touch_visual(Rml::Element* button, float width, float height, bool shown, bool held,
+    dusk::ui::ControlAnchor dock = dusk::ui::ControlAnchor::None) {
     const Rml::String hidden = "hidden", pressed = "pressed";
     s_touchApi.setPseudoClass(button, &hidden, !shown);
     s_touchApi.setClass(button, &pressed, shown && held);
@@ -35,10 +36,10 @@ void update_midna_touch_visual(Rml::Element* button, float width, float height, 
     }
     const float scale = std::min(width / 78.f, height / 46.f);
     const auto dp = [](float value) { return std::to_string(value) + "dp"; };
-    extra_property(button, "border-radius", dp(23.f * scale));
+    apply_extra_dock_corners(button, dock, 23.f * scale);
     auto* glow = s_touchApi.child(button, 0);
     auto* icon = s_touchApi.child(button, 1);
-    if (glow) extra_property(glow, "border-radius", dp(23.f * scale));
+    if (glow) apply_extra_dock_corners(glow, dock, 23.f * scale);
     if (icon && !source.empty()) {
         extra_property(icon, "width", dp(40.f * scale));
         extra_property(icon, "height", dp(40.f * scale));

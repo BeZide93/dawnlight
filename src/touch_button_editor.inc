@@ -70,7 +70,17 @@ void draw_extra_editor(EditorState& state) {
         element.layout.layoutScale = layout.scale;
         s_touchApi.applyBox(element.root, &element.layout.appliedBox, layout.box);
         s_editorApi.applyTransform(element.root, &element.layout.appliedTransform, layout.scale);
-        s_editorApi.applyDock(element.root, s_editorApi.dockAnchor(layout.visual, size));
+        const auto dock = s_editorApi.dockAnchor(layout.visual, size);
+        s_editorApi.applyDock(element.root, dock);
+        if (extra_action_button(i)) {
+            apply_extra_action_style(element.root, layout.box.w, layout.box.h, false, dock);
+        } else if (i < touch::Count) {
+            // Editor transforms scale the base box; gameplay uses the visual box.
+            const float radius = i == touch::Midna ?
+                23.f * std::min(layout.box.w / 78.f, layout.box.h / 46.f) :
+                std::min(layout.box.w, layout.box.h) * 0.3f;
+            apply_extra_dock_corners(element.root, dock, radius);
+        }
         editor_class(element.root, "editor-selected", state.selected == i);
     }
     const bool selected = state.selected < state.count;
@@ -198,10 +208,12 @@ EditorState* attach_extra_editor(NativeEditor* editor) {
             fragment += "<button class='control trigger button-z'>";
             fragment += midna_button_rml(midna_touch_button_icon());
             fragment += "</button>";
+        } else if (extra_action_button(i)) {
+            fragment += extra_action_button_rml(i);
         } else {
-            fragment += "<button class='control trigger'><span>";
-            fragment += i == kQuickAccessEditorSlot ? "Quick Access" : touch::Labels[i];
-            fragment += "</span></button>";
+            fragment += "<button class='control trigger'>";
+            fragment += i == kQuickAccessEditorSlot ? "<span>Quick Access</span>" : extra_button_content(i);
+            fragment += "</button>";
         }
     }
     fragment += "<selection-frame>";

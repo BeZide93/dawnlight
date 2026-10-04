@@ -46,6 +46,7 @@ ConfigVarHandle s_quickAccessLayout = 0;
 UiWindowHandle s_touchWindow = 0;
 bool s_midnaTouchPending = false;
 bool s_midnaTouchTriggered = false;
+touch::ActionInput s_jumpTouchInput, s_darkLinkTouchInput;
 #if defined(__ANDROID__)
 bool s_touchRuntimeAvailable = false;
 bool s_touchEditorAvailable = false;
@@ -101,6 +102,9 @@ ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle 
         desc.config_var = s_buttons[i].enabled;
         if (i == 0) desc.help_rml = "Virtual left bumper (LB/L1) for compatible mods, including Twilight HD HUD. The action is defined by the mod; no fixed Midna action is assigned.";
         if (i == touch::Midna) desc.help_rml = "Call Midna with a dedicated touch button. Shown when Midna is available; move and resize it in the Touch Layout Editor.";
+        if (i == touch::L3 || i == touch::R3) desc.help_rml = "Virtual left/right stick click for the game and compatible mods.";
+        if (i == touch::Jump) desc.help_rml = "Jump, hold to charge Revali's Gale, or hold in the air to glide. Independent of Jump Button; normal feature settings and stamina costs apply.";
+        if (i == touch::DarkLink) desc.help_rml = "Toggle Dark Link directly, independent of its activation binding. Requires the feature to be unlocked/enabled and a full meter to activate.";
         if (svc_ui->pane_add_control(ctx, left, &desc, nullptr) != MOD_OK) return MOD_ERROR;
     }
     UiControlDesc editor = UI_CONTROL_DESC_INIT;
@@ -127,6 +131,31 @@ bool consume_midna_touch_press() {
     const bool pressed = s_midnaTouchTriggered;
     s_midnaTouchTriggered = false;
     return pressed;
+}
+
+bool touch_jump_pressed() {
+#if defined(__ANDROID__)
+    prune_extra_presses(s_touchOwner);
+    return s_jumpTouchInput.pressed;
+#else
+    return false;
+#endif
+}
+bool touch_jump_held() {
+#if defined(__ANDROID__)
+    prune_extra_presses(s_touchOwner);
+    return s_extraHooksReady && s_extraPresses.held(touch::Jump);
+#else
+    return false;
+#endif
+}
+bool consume_dark_link_touch_press() {
+#if defined(__ANDROID__)
+    prune_extra_presses(s_touchOwner);
+    return s_darkLinkTouchInput.consume();
+#else
+    return false;
+#endif
 }
 
 ModResult register_touch_button_config(ModError* error) {

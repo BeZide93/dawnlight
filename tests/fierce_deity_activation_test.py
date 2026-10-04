@@ -16,6 +16,8 @@ fixture = fixture.replace('fpc_ProcID id = 1;', '''
     bool getCutAtFlg() const { return cut; }
     fpc_ProcID id = 1;''')
 fixture += r'''
+bool directTouch=false;
+bool consume_dark_link_touch_press(){bool v=directTouch;directTouch=false;return v;}
 constexpr float kMeterDrainPerSecond = 5.0f;
 constexpr u32 PAD_BUTTON_A=0x100, PAD_TRIGGER_R=0x20, PAD_TRIGGER_Z=0x10, PAD_BUTTON_B=0x200;
 constexpr int PAD_1=0;
@@ -156,6 +158,26 @@ int main() {
     assert(s_state.active);
     s_state.meter=0.1f; s_state.lastDrainTime=Clock::now()-std::chrono::seconds(1);
     update_drain(&link); assert(!s_state.active && s_state.meter==0);
+    for(auto mode:{FierceDeityActivation::SpinAttack,FierceDeityActivation::RZ,FierceDeityActivation::RA}) {
+        binding=mode;fresh(link);directTouch=true;input(0);
+        assert(s_state.active&&s_state.meter==100&&pad.mButtonFlags==0&&s_state.consumedPartner==0);
+        input(0);assert(s_state.active); // held input is not a second toggle
+        s_state.meter=45;directTouch=true;input(0);assert(!s_state.active&&s_state.meter==45);
+        directTouch=true;input(0);assert(!s_state.active); // activation still needs a full meter
+        s_state.meter=100;input(0);assert(!s_state.active); // no deferred activation
+        for(int blocked=0;blocked<6;++blocked) {
+            fresh(link);
+            if(blocked==0) paused=true;
+            if(blocked==1) enabled=false;
+            if(blocked==2) link.wolf=true;
+            if(blocked==3) link.dead=true;
+            if(blocked==4) link.event=true;
+            if(blocked==5) link.sceneChange=true;
+            directTouch=true;input(0);assert(!s_state.active&&!directTouch);
+            paused=false;enabled=true;link.wolf=link.dead=link.event=link.sceneChange=false;
+            input(0);assert(!s_state.active);
+        }
+    }
     // Save replacement/deletion still clears partial charge and input ownership.
     s_state.meter=40; on_save_started(nullptr,0,nullptr); assert(s_state.meter==0 && !s_state.link);
     currentLink=nullptr; input(0); assert(!fierce_deity_input_consumed());

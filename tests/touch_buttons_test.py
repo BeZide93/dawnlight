@@ -34,6 +34,7 @@ namespace mods {
  template<class T> T arg(void* args, int index) { return arg_ref<T>(args,index); }
 }
 touch::Presses s_extraPresses;
+touch::ActionInput s_jumpTouchInput,s_darkLinkTouchInput;
 NativeTouch touchOwner;NativeTouch* s_touchOwner=&touchOwner;
 bool allowed=true;
 bool s_midnaTouchTriggered=false;
@@ -58,10 +59,14 @@ int main(){
  for(size_t i=0;i<touch::Count;++i){
   presses.clear();pad={};assert(presses.press(123,i));assert(presses.merge(pad));
   assert(pad.button==masks[i]);assert(pad.triggerLeft==0);
+  assert(pad.extButton==(i==touch::L3?0x4000000u:i==touch::R3?0x2000000u:0u));
   pad.triggerLeft=123;presses.merge(pad);assert(pad.triggerLeft==123);
   assert(presses.release(123));assert(!presses.release(123));pad={};assert(!presses.merge(pad));
  }
  assert(!presses.press(1,touch::Count));
+ presses.clear();assert(presses.press(18,touch::L3));
+ assert(!presses.press(18,touch::Jump)&&presses.held(touch::L3)&&!presses.held(touch::Jump));
+ presses.clear();
  // Multiple fingers on one button do not release each other.
  presses.press(1,1);presses.press(2,1);presses.press(3,0);presses.press(4,4);
  presses.release(1);assert(presses.held(1));presses.release(2);assert(!presses.held(1));

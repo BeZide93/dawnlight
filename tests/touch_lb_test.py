@@ -10,9 +10,10 @@ def function(signature):
 fixture=r'''
 #include "touch_button_state.hpp"
 #include <cassert>
+using namespace dawnlight;
 using u32=unsigned;using s32=int;
 constexpr u32 PAD_1=0;
-enum SDL_GamepadButton {SDL_GAMEPAD_BUTTON_A=0,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER=9,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER=10};
+enum SDL_GamepadButton {SDL_GAMEPAD_BUTTON_A=0,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER=9,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER=10,SDL_GAMEPAD_BUTTON_LEFT_STICK=7,SDL_GAMEPAD_BUTTON_RIGHT_STICK=8};
 struct SDL_Gamepad {bool buttons[11]{};};
 struct ModContext {};struct NativeTouch {};
 namespace mods {template<class T>T arg(void* args,int i){return *static_cast<T*>(static_cast<void**>(args)[i]);}}
@@ -56,6 +57,14 @@ int main(){
  allowed=true;assert(!mod_lb_read());
  s_extraPresses.press(5,0);s_extraHooksReady=false;assert(!mod_lb_read());
  s_extraHooksReady=true;s_extraPresses.clear();assert(!mod_lb_read());
+ for(bool right:{false,true}){
+  const auto index=right?touch::R3:touch::L3;
+  const auto button=right?SDL_GAMEPAD_BUTTON_RIGHT_STICK:SDL_GAMEPAD_BUTTON_LEFT_STICK;
+  s_extraPresses.clear();connected=false;s_extraPresses.press(70,index);
+  assert(native_read(0)==button&&native_read(1)==-1);
+  connected=true;assert(sdl_read(&primary,button)&&!sdl_read(&secondary,button));
+  s_extraPresses.release(70);assert(!sdl_read(&primary,button));
+ }
  // D-pad fingers never become LB, with or without a controller.
  s_extraPresses.press(6,1);assert(!mod_lb_read());connected=false;assert(!mod_lb_read());
  // Touch LB continues through disconnect/reconnect using the correct query path.
@@ -64,7 +73,7 @@ int main(){
 }
 '''
 fixture=fixture.replace('// PRODUCTION','\n'.join(function(s) for s in (
-    'bool extra_lb_held','void extra_sdl_button','void extra_native_button')))
+    'bool extra_lb_held','bool extra_stick_held','void extra_sdl_button','void extra_native_button')))
 with tempfile.TemporaryDirectory() as tmp:
     cpp,exe=Path(tmp)/'test.cpp',Path(tmp)/'test'
     cpp.write_text(fixture)

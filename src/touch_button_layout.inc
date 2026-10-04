@@ -50,6 +50,12 @@ dusk::ui::ControlProps default_extra_props(size_t index, dusk::ui::ControlLayout
     bool migrateLegacy = false) {
     if (index == kQuickAccessEditorSlot)
         return {298.f, 0.f, 64.f, 46.f, 1.f, dusk::ui::ControlAnchor::BottomLeft};
+    // TE's 113dp bar has two 55dp utility buttons, a 1dp separator and
+    // 1dp outer borders. Match one slot, with the same 12dp bar spacing.
+    if ((index == touch::Jump || index == touch::DarkLink) &&
+        (!migrateLegacy || button_layout(index) == touch::Defaults[index]))
+        return {index == touch::Jump ? 423.f : 492.f, 0.f, 57.f, 46.f, 1.f,
+            dusk::ui::ControlAnchor::BottomLeft};
     // Fresh/reset Midna layout matches TE. Keep explicitly saved native/legacy layouts.
     if (index == touch::Midna && (!migrateLegacy || button_layout(index) == touch::Defaults[index]))
         return {24.f, 72.f, 78.f, 46.f, 1.f, dusk::ui::ControlAnchor::TopLeft};

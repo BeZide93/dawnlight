@@ -52,12 +52,14 @@ void after_jump_pad_read(ModContext*, void*, void*, void*) {
 }
 
 bool jump_pressed(JumpBinding binding) {
+    if (touch_jump_pressed()) return true;
     if (binding == JumpBinding::R) return mDoCPd_c::getTrigLockR(PAD_1) != 0;
     const auto index = static_cast<int>(binding) - 1;
     return index >= 0 && index < static_cast<int>(s_jumpInputs.size()) && s_jumpInputs[index].pressed;
 }
 
 bool jump_held(JumpBinding binding) {
+    if (touch_jump_held()) return true;
     if (binding == JumpBinding::R) return mDoCPd_c::getHoldLockR(PAD_1) != 0;
     const auto index = static_cast<int>(binding) - 1;
     return index >= 0 && index < static_cast<int>(s_jumpInputs.size()) && s_jumpInputs[index].held;

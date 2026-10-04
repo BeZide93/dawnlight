@@ -8,6 +8,7 @@
 #include "service_imports.hpp"
 #include "stamina.hpp"
 #include "twilit_stamina.hpp"
+#include "touch_buttons.hpp"
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"

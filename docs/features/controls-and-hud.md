@@ -20,12 +20,12 @@ Twilit Essentials and Twilight HD HUD.
 
 ## Android touch buttons
 
-Under **Controls → Touch Buttons**, enable **Midna**, **LB**, and each of the four **D-Pad**
+Under **Controls → Touch Buttons**, enable **Midna**, **LB**, **L3**, **R3**, **Jump**, **Dark Link**, and each of the four **D-Pad**
 directions individually (all default to off). LB supplies the native left-bumper
 input for compatible mods, including Twilight HD HUD; the mod decides its action. Both Dusklight Touch Controls and
 Dawnlight Touch UI must be enabled. Open **Dusklight's normal Touch Layout
 Editor**, or use **Open Dusklight Touch Layout Editor** in Dawnlight's Touch Buttons
-window. Both entry points edit the nine vanilla elements and six Dawnlight buttons
+window. Both entry points edit the nine vanilla elements and ten Dawnlight buttons
 together: drag to move, resize with the edge/corner handles, then **Save**.
 Existing Dawnlight positions are loaded automatically. **Save** applies both
 layouts; **Cancel** discards changes; **Reset** restores both groups' defaults in
@@ -38,6 +38,18 @@ layout uses TE's 78×46 dp button at 24/72 dp; saved custom positions and sizes 
 intact. Each tap calls Midna once when available, without sending Z, D-Pad or Skip.
 Cancelled touches and missed input frames cannot queue a delayed call. Skip stays
 reserved for cutscenes; enable Midna separately in Touch Buttons.
+
+**L3/R3** send real left/right stick clicks, including for mods that read SDL
+buttons directly. **Jump** (upward arrow above a take-off line) is a separate input for Manual Jump,
+Revali's Gale and Glide, regardless of the selected **Jump Button**. Tap to jump;
+hold through landing to charge Gale and release when ready, or use it in the air
+to glide. **Dark Link** (two red outlined eyes with pupils) toggles the mode without
+using the configured activation combo or spin attack. Activation still requires
+a full meter; tapping again ends it early. All feature toggles, progression
+unlocks, stamina costs and gameplay restrictions continue to apply.
+Both action icons use the same bundled Material Symbols Rounded font as the
+vanilla utility controls and TE bottle button, with matching thin outlines.
+They scale with the button and also appear in the editor.
 
 When Twilit Essentials and its **Quick Access** feature are enabled, the editor
 also includes a **Quick Access** button. Move or resize it and **Save** to apply

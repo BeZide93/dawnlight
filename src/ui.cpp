@@ -19,6 +19,7 @@ namespace dawnlight {
 namespace {
 
 UiWindowHandle s_staminaWindow = 0;
+UiWindowHandle s_darkLinkWindow = 0;
 UiElementHandle s_teStaminaNote = 0;
 UiElementHandle s_teStaminaSettingsNote = 0, s_localStaminaHelp = 0;
 UiElementHandle s_teSprintNote = 0, s_teWolfSprintNote = 0, s_zItemsNote = 0;
@@ -539,6 +540,9 @@ ModResult build_stamina_tab(ModContext* ctx, UiWindowHandle, UiElementHandle lef
                 desc.min, desc.max, 1, desc.suffix, nullptr, shared ? stamina_settings_disabled : stamina_local_settings_disabled) != MOD_OK)
             return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "Stamina Bar Auto Fade", hud_custom_stamina_fade_when_full_config_var(),
+            "Fade the Stamina Bar when full. Applies to all HUD layouts; Twilit Essentials manages its own bar.",
+            stamina_local_settings_disabled) != MOD_OK) return MOD_ERROR;
     update_stamina_ui();
     return MOD_OK;
 }
@@ -865,20 +869,8 @@ ModResult build_hud_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "Fade when full", hud_custom_stamina_fade_when_full_config_var(),
-            "Fades the Stamina Bar at full stamina and shows it again when stamina is spent.",
-            custom_hud_controls_disabled) != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
     if (add_custom_transform_controls(
             ctx, left, "Custom Dark Link Bar", HudElement::FierceDeityBar) != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    if (add_toggle(ctx, left, "Fade when empty", hud_custom_fierce_deity_fade_when_empty_config_var(),
-            "Fades the Dark Link Bar when empty and shows it again when it gains charge.",
-            custom_hud_controls_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }
@@ -887,6 +879,56 @@ ModResult build_hud_tab(
         return MOD_ERROR;
     }
     return MOD_OK;
+}
+
+ModResult build_dark_link_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
+    UiElementHandle, void*, ModError*) {
+    if (add_select(ctx, left, "Dark Link Visual", fierce_deity_visual_config_var(),
+            kFierceDeityVisualOptions, std::size(kFierceDeityVisualOptions),
+            "Magic Armor uses the armor model. Dark (default) applies a shadow appearance "
+            "and red eyes to your current outfit. Dark Magic combines Magic Armor with that effect. "
+            "White inverts white surfaces to black and other colors to white, with amber eyes. "
+            "Gold uses a golden appearance with white eyes. Both keep your current outfit. "
+            "Changes apply when gameplay resumes; requires Dark Link.",
+            fierce_deity_visual_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Dark Link Activation", fierce_deity_activation_config_var(),
+            kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
+            "Activate at full power with a charged Spin Attack, R+Z, R+A (default), L3, or R3. "
+            "Hold R, then press Z or A; Manual Jump remains available on its selected button. Press Z or A again "
+            "while holding R to end early. L3/R3 use the left/right stick click without R; click again "
+            "to end early and preserve power for refilling. Requires Dark Link.",
+            fierce_deity_visual_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    for (size_t i = 0; i < kDarkLinkSettings.size(); ++i) {
+        const auto& setting = kDarkLinkSettings[i];
+        if (add_number(ctx, left, setting.label, dark_link_setting_config_var(static_cast<DarkLinkSetting>(i)),
+                setting.min, setting.max, 1, setting.suffix, setting.help,
+                fierce_deity_visual_disabled) != MOD_OK) return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Gauge Auto Fade", hud_custom_fierce_deity_fade_when_empty_config_var(),
+            "Fade the gauge when empty and show it again when it gains charge. Applies to all HUD layouts.",
+            fierce_deity_visual_disabled) != MOD_OK) return MOD_ERROR;
+    return MOD_OK;
+}
+
+void dark_link_window_closed(ModContext*, UiWindowHandle, void*) {
+    s_darkLinkWindow = 0;
+}
+void open_dark_link_settings(ModContext* ctx, void*) {
+    if (s_darkLinkWindow || fierce_deity_visual_disabled(ctx, nullptr)) return;
+    UiTabDesc tab = UI_TAB_DESC_INIT;
+    tab.title = "Dark Link Settings";
+    tab.build = build_dark_link_tab;
+    UiWindowDesc desc = UI_WINDOW_DESC_INIT;
+    desc.tabs = &tab;
+    desc.tab_count = 1;
+    desc.on_closed = dark_link_window_closed;
+    svc_ui->window_push(ctx, &desc, &s_darkLinkWindow);
 }
 
 ModResult build_gameplay_tab(
@@ -923,33 +965,14 @@ ModResult build_gameplay_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Dark Link", fierce_deity_config_var(),
-            "Builds power with damaging sword attacks. Use the selected activation at full power "
-            "to transform, deal double sword damage, and consume the meter over time.")
+            "Build power and activate at full charge to transform. Configure appearance, activation, "
+            "gauge gains, depletion and sword damage in Dark Link Settings.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
-    if (add_select(ctx, left, "Dark Link Visual", fierce_deity_visual_config_var(),
-            kFierceDeityVisualOptions, std::size(kFierceDeityVisualOptions),
-            "Magic Armor uses the armor model. Dark (default) applies a shadow appearance "
-            "and red eyes to your current outfit. Dark Magic combines Magic Armor with that effect. "
-            "White inverts white surfaces to black and other colors to white, with amber eyes. "
-            "Gold uses a golden appearance with white eyes. Both keep your current outfit. "
-            "Changes apply when gameplay resumes; requires Dark Link.",
-            fierce_deity_visual_disabled) != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    if (add_select(ctx, left, "Dark Link Activation", fierce_deity_activation_config_var(),
-            kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
-            "Activate at full power with a charged Spin Attack, R+Z, R+A (default), L3, or R3. "
-            "Hold R, then press Z or A; Manual Jump remains available on its selected button. Press Z or A again "
-            "while holding R to end early. L3/R3 use the left/right stick click without R; click again "
-            "to end early and preserve power for refilling. Requires Dark Link.",
-            fierce_deity_visual_disabled) != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
+    if (add_button(ctx, left, "Dark Link Settings", open_dark_link_settings,
+            fierce_deity_visual_disabled) != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Great Spin Projectile", great_spin_projectile_config_var(),
             "Launches the Great Spin trail forward as a damaging sword projectile at full "
             "health. Uses the configured Great Spin Projectile cost (default 40 stamina points).")

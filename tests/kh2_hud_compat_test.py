@@ -40,7 +40,8 @@ ModResult resolve(ModContext* ctx,const char* symbol,void** address,HookSymbolFl
 HookService hook{};const HookService* svc_hook=&hook;
 namespace dawnlight {
 DawnlightFierceDeityHudState current{sizeof(current),1,1,0,40};
-bool renderer=false;
+bool renderer=false,autoFade=false;
+bool hud_custom_fierce_deity_fade_when_empty(){return autoFade;}
 DawnlightFierceDeityHudState fierce_deity_hud_state(){return current;}
 bool fierce_deity_hud_renderer_registered(){return renderer;}
 }
@@ -92,6 +93,10 @@ int main(){
     toggle.value=false;registered=false;assert(update_kh2_drive()); // missing CVar defaults on
     registered=true;assert(!update_kh2_drive()&&!gaugePresent); // re-registration is observed
     toggle.value=true;
+    autoFade=true;current.percentage=0;const int drawsBeforeFade=nativeDraws;
+    draw();assert(!gaugePresent&&nativeDraws==drawsBeforeFade);
+    current.percentage=1;draw();assert(gaugePresent&&nativeDraws==drawsBeforeFade);
+    autoFade=false;current.percentage=0;draw();assert(gaugePresent);
     clear_kh2_drive();
     std::cout<<"KH2 HUD: DRIVE/MAX/FORM, live toggle, visibility, owner priority, failure fallback and reset passed\n";
 }

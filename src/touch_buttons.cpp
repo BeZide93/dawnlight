@@ -51,24 +51,7 @@ touch::ActionInput s_jumpTouchInput, s_darkLinkTouchInput;
 #if defined(__ANDROID__)
 bool s_touchRuntimeAvailable = false;
 bool s_touchEditorAvailable = false;
-void open_native_touch_editor(ModContext*, void*);
 #endif
-
-bool touch_editor_disabled(ModContext*, void*) {
-#if defined(__ANDROID__)
-    return !s_touchEditorAvailable;
-#else
-    return true;
-#endif
-}
-void edit_touch_layout(ModContext* ctx, void* data) {
-#if defined(__ANDROID__)
-    open_native_touch_editor(ctx, data);
-#else
-    (void)ctx;
-    (void)data;
-#endif
-}
 
 bool button_enabled(size_t i) {
     bool value = false;
@@ -108,13 +91,7 @@ ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle 
         if (i == touch::DarkLink) desc.help_rml = "Toggle Dark Link directly, independent of its activation binding. Requires the feature to be unlocked/enabled and a full meter to activate.";
         if (svc_ui->pane_add_control(ctx, left, &desc, nullptr) != MOD_OK) return MOD_ERROR;
     }
-    UiControlDesc editor = UI_CONTROL_DESC_INIT;
-    editor.kind = UI_CONTROL_BUTTON;
-    editor.label = "Open Dusklight Touch Layout Editor";
-    editor.help_rml = "Edit vanilla, Dawnlight and the Twilit Essentials Quick Access button together. Drag to move; use edge/corner handles to resize. Save applies both layouts; Cancel discards changes.";
-    editor.on_pressed = edit_touch_layout;
-    editor.is_disabled = touch_editor_disabled;
-    return svc_ui->pane_add_control(ctx, left, &editor, nullptr);
+    return MOD_OK;
 }
 void touch_window_closed(ModContext*, UiWindowHandle, void*) {
     s_touchWindow = 0;

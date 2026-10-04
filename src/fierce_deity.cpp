@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <cstring>
 #include <thread>
+#include <vector>
 
 namespace dawnlight {
 namespace {
@@ -46,14 +47,14 @@ DEFINE_HOOK(&fpcMtd_Execute, FiercePlayerExecuteHook);
 #endif
 DEFINE_HOOK(&daAlink_c::checkMagicArmorWearAbility, FierceMagicArmorAbilityHook);
 DEFINE_HOOK(&at_power_check, FierceAttackPowerHook);
+DEFINE_HOOK(&daAlink_c::setDamagePoint, FierceReceivedDamageHook);
 DEFINE_HOOK(&cc_at_check, FierceDamageCheckHook);
 DEFINE_HOOK(&dMeter2Draw_c::draw, FierceMeterDrawHook);
 DEFINE_HOOK(&fpcLf_Delete, FiercePlayerDeleteHook);
 DEFINE_HOOK_SYMBOL("dusk::processGameCombos", void(), FierceGameCombosHook);
 DEFINE_HOOK(&daAlink_c::midnaTalkTrigger, FierceMidnaTriggerHook);
 
-constexpr float kMeterGainPerAttack = 5.0f;
-constexpr float kMeterDrainPerSecond = 5.0f;
+float maximum_gauge() { return static_cast<float>(dark_link_setting(DarkLinkSetting::Gauge)); }
 
 using Clock = std::chrono::steady_clock;
 
@@ -90,6 +91,13 @@ struct RuntimeState {
 
 RuntimeState s_state;
 SaveObserverHandle s_saveObserver = 0;
+
+float gauge_percentage() {
+    return std::clamp(s_state.meter * 100.0f / maximum_gauge(), 0.0f, 100.0f);
+}
+struct DamageSample { daAlink_c* link; void* args; float pendingLife; bool eligible; };
+std::vector<DamageSample> s_damageSamples;
+
 
 // This reference outlives the player when a save/scene change interrupts I/O.
 // Never destroy an archive while its DVD command is still running.
@@ -238,7 +246,7 @@ bool can_transform(daAlink_c* link) {
 void activate(daAlink_c* link) {
     if (!can_transform(link)) return;
     s_state.active = true;
-    s_state.meter = 100.0f;
+    s_state.meter = maximum_gauge();
     s_state.spinChargeArmed = false;
     s_state.lastDrainTime = Clock::now();
     s_state.visual = fierce_deity_visual();
@@ -342,7 +350,7 @@ bool service_model_swap(daAlink_c* link) {
 
 void update_spin_activation(daAlink_c* link) {
     if (fierce_deity_activation() != FierceDeityActivation::SpinAttack ||
-        menu_or_pause_active() || s_state.active || s_state.meter < 100.0f) {
+        menu_or_pause_active() || s_state.active || s_state.meter < maximum_gauge()) {
         s_state.spinChargeArmed = false;
         return;
     }
@@ -372,6 +380,7 @@ void update_spin_activation(daAlink_c* link) {
 HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
     auto* link = daAlink_getAlinkActorClass();
     if (!same_link(link)) reset_for_link(link);
+    s_state.meter = std::clamp(s_state.meter, 0.0f, maximum_gauge());
     s_state.activationInputConsumed = false;
     auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
     // Touch Z can be removed/reassigned by the touch UI or HD HUD after pad
@@ -404,7 +413,7 @@ HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
         binding == FierceDeityActivation::R3 ? PAD_BUTTON_RIGHT_STICK : 0;
     if (directTouch || combo || (stickPressed & stick) != 0) {
         if (s_state.active) deactivate(link, false);
-        else if (s_state.meter >= 100.0f) activate(link);
+        else if (s_state.meter >= maximum_gauge()) activate(link);
         if (combo) s_state.consumedPartner |= partner;
         s_state.activationInputConsumed = true;
     }
@@ -477,7 +486,7 @@ void update_drain(daAlink_c* link) {
     const float elapsed = std::clamp(
         std::chrono::duration<float>(now - s_state.lastDrainTime).count(), 0.0f, 0.25f);
     s_state.lastDrainTime = now;
-    s_state.meter = std::max(0.0f, s_state.meter - elapsed * kMeterDrainPerSecond);
+    s_state.meter = std::max(0.0f, s_state.meter - elapsed * dark_link_setting(DarkLinkSetting::Depletion));
     if (s_state.meter <= 0.0f) {
         deactivate(link, true);
     }
@@ -511,6 +520,7 @@ HookAction before_player_execute(ModContext*, void* args, void* retval, void*) {
         reset_for_link(link);
     }
 
+    s_state.meter = std::clamp(s_state.meter, 0.0f, maximum_gauge());
     if (!fierce_deity_enabled()) {
         deactivate(link, true);
     }
@@ -566,13 +576,14 @@ void after_attack_power_check(ModContext*, void* args, void*, void*) {
     }
 
     attack->mAttackPower = static_cast<u16>(std::min<u32>(
-        static_cast<u32>(attack->mAttackPower) * 2U, 0xFFFFU));
+        (static_cast<u32>(attack->mAttackPower) * dark_link_setting(DarkLinkSetting::DamageMultiplier) + 99U) / 100U, 0xFFFFU));
 }
 
 void after_damage_check(ModContext*, void* args, void*, void*) {
     auto* enemy = mods::arg<fopAc_ac_c*>(args, 0);
     auto* attack = mods::arg<dCcU_AtInfo*>(args, 1);
     if (!fierce_deity_enabled() || s_state.active || enemy == nullptr || attack == nullptr ||
+        attack->mAttackPower == 0 ||
         !same_link(daAlink_getAlinkActorClass()) ||
         !is_sword_attack(attack) || attack->mpActor != s_state.link ||
         fopAcM_GetGroup(enemy) != fopAc_ENEMY_e)
@@ -580,7 +591,30 @@ void after_damage_check(ModContext*, void* args, void*, void*) {
         return;
     }
 
-    s_state.meter = std::min(100.0f, s_state.meter + kMeterGainPerAttack);
+    s_state.meter = std::min(maximum_gauge(), s_state.meter + dark_link_setting(DarkLinkSetting::SwordGain));
+}
+
+HookAction before_received_damage(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    // Compare pending health damage inside this call, before the meter applies
+    // it later. Armor rupee costs, blocked hits and healing do not qualify.
+    const bool eligible = fierce_deity_enabled() && same_link(link) && !s_state.active &&
+        !menu_or_pause_active() && !link->checkWolf() && !link->checkDeadHP() &&
+        !link->checkSceneChangeAreaStart() && mods::arg<int>(args, 1) > 0 &&
+        mods::arg<int>(args, 4) == 0; // Ignore carried-over damage during scene initialization.
+    s_damageSamples.push_back({link, args, dComIfGp_getItemLifeCount(), eligible});
+    return HOOK_CONTINUE;
+}
+void after_received_damage(ModContext*, void* args, void*, void*) {
+    if (s_damageSamples.empty() || s_damageSamples.back().args != args) return;
+    const auto sample = s_damageSamples.back();
+    s_damageSamples.pop_back();
+    const float delta = dComIfGp_getItemLifeCount() - sample.pendingLife;
+    // Nested damage calls own their gain, not their enclosing call's gain.
+    if (!s_damageSamples.empty()) s_damageSamples.back().pendingLife += delta;
+    if (sample.eligible && delta < 0.0f && same_link(sample.link) &&
+        fierce_deity_enabled() && !s_state.active)
+        s_state.meter = std::min(maximum_gauge(), s_state.meter + dark_link_setting(DarkLinkSetting::DamageGain));
 }
 
 void draw_fierce_meter(dMeter2Draw_c* meter) {
@@ -589,7 +623,7 @@ void draw_fierce_meter(dMeter2Draw_c* meter) {
     {
         return;
     }
-    draw_combat_meter(meter, s_state.meter, CombatMeterStyle::FierceDeity,
+    draw_combat_meter(meter, gauge_percentage(), CombatMeterStyle::FierceDeity,
         stamina_meter_visible() ? 1 : 0);
 }
 
@@ -651,10 +685,15 @@ ModResult initialize_fierce_deity(ModError* error) {
     {
         return result;
     }
+    result = mods::hook::add_pre<FierceReceivedDamageHook>(svc_hook, before_received_damage);
+    if (result != MOD_OK) return mods::set_error(error, result, "failed to observe Dark Link received damage");
+    if ((result = add_post<FierceReceivedDamageHook>(error, after_received_damage,
+            "failed to process Dark Link received damage")) != MOD_OK) return result;
     return initialize_fierce_deity_visual(error);
 }
 
 void shutdown_fierce_deity() {
+    s_damageSamples.clear();
     clear_kh2_drive();
     if (s_saveObserver != 0 && svc_save != nullptr) {
         svc_save->unobserve_saves(mod_ctx, s_saveObserver);
@@ -681,7 +720,7 @@ DawnlightFierceDeityHudState fierce_deity_hud_state() {
     const bool enabled = fierce_deity_enabled();
     return {sizeof(DawnlightFierceDeityHudState), enabled,
         enabled && hasPlayer && !menu_or_pause_active(),
-        hasPlayer && s_state.active, hasPlayer ? std::clamp(s_state.meter, 0.0f, 100.0f) : 0.0f};
+        hasPlayer && s_state.active, hasPlayer ? gauge_percentage() : 0.0f};
 }
 
 bool fierce_deity_active() {

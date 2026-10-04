@@ -1,4 +1,5 @@
 #include "kh2_hud_compat.hpp"
+#include "config.hpp"
 #include "fierce_deity_hud.hpp"
 #include "dawnlight/kh2_hud_drive.h"
 #include "mods/svc/hook.h"
@@ -48,6 +49,12 @@ bool update_kh2_drive() {
         !std::isfinite(state.percentage)) {
         clear_kh2_drive();
         return false;
+    }
+    if (hud_custom_fierce_deity_fade_when_empty() && state.percentage <= 0.0f) {
+        // The drive API has no alpha field. Hide its persistent empty gauge
+        // while retaining ownership, so Dawnlight does not draw a fallback.
+        clear_kh2_drive();
+        return true;
     }
     Kh2HudDriveState drive = KH2HUD_DRIVE_STATE_INIT;
     const float charge = std::clamp(state.percentage, 0.0f, 100.0f);

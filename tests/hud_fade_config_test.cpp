@@ -44,6 +44,14 @@ int main(int argc, char** argv) {
     svc_config = &config;
     HostService host{}; host.data_dir = data_dir; svc_host = &host;
     assert(register_config(nullptr) == MOD_OK);
+    for(size_t i=0;i<kDarkLinkSettings.size();++i){
+        auto setting=static_cast<DarkLinkSetting>(i);const auto& d=kDarkLinkSettings[i];
+        auto handle=dark_link_setting_config_var(setting);
+        assert(dark_link_setting(setting)==d.standard);
+        values[handle]=d.min-1;assert(dark_link_setting(setting)==d.min);
+        values[handle]=d.max+1;assert(dark_link_setting(setting)==d.max);
+        values[handle]=d.standard;
+    }
     assert(!hud_auto_fade_enabled());
     assert(!hud_custom_stamina_fade_when_full());
     assert(!hud_custom_fierce_deity_fade_when_empty());
@@ -53,7 +61,7 @@ int main(int argc, char** argv) {
             set_bool(nullptr, hud_custom_stamina_fade_when_full_config_var(), true);
             set_bool(nullptr, hud_custom_fierce_deity_fade_when_empty_config_var(), true);
             assert(copy_hud_preset_to_custom(preset) == HudSettingsIoResult::Ok);
-            assert(!hud_custom_stamina_fade_when_full() && !hud_custom_fierce_deity_fade_when_empty());
+            assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
             assert(hud_auto_fade_enabled() == autoFade);
         }
         std::string path;
@@ -61,15 +69,19 @@ int main(int argc, char** argv) {
         set_bool(nullptr, hud_custom_fierce_deity_fade_when_empty_config_var(), true);
         assert(export_custom_hud_settings(path) == HudSettingsIoResult::Ok);
         assert(reset_custom_hud_settings() == HudSettingsIoResult::Ok);
-        assert(!hud_custom_stamina_fade_when_full() && !hud_custom_fierce_deity_fade_when_empty());
+        assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
         assert(hud_auto_fade_enabled() == autoFade);
         assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
         assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
         assert(hud_auto_fade_enabled() == autoFade);
-        // Old presets without the fields must use Off, not retain previous Custom values.
+        // Old presets leave both independent gameplay fade settings intact.
         { std::ofstream out(path); out << R"({"version":14,"elements":{}})"; }
         assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
-        assert(!hud_custom_stamina_fade_when_full() && !hud_custom_fierce_deity_fade_when_empty());
+        assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
         assert(hud_auto_fade_enabled() == autoFade);
+        // Legacy layout fade fields cannot override the relocated settings.
+        { std::ofstream out(path); out << R"({"version":14,"elements":{"stamina-bar":{"fadeWhenFull":false},"fierce-deity-bar":{"fadeWhenEmpty":false}}})"; }
+        assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
+        assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
     }
 }

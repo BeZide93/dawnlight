@@ -148,8 +148,9 @@ HookAction before_meter_delete(ModContext*, void*, void*, void*) {
 
 void draw_combat_meter_screen(J2DScreen* screen, J2DGrafContext* graf, bool stamina, float percentage,
     const DawnlightFierceDeityHudFrame* replacement) {
-    const bool enabled = custom_hud_layout_enabled() && (stamina ?
-        hud_custom_stamina_fade_when_full() : hud_custom_fierce_deity_fade_when_empty());
+    const bool enabled = stamina ?
+        hud_custom_stamina_fade_when_full() :
+        hud_custom_fierce_deity_fade_when_empty();
     auto& fade = stamina ? s_stamina : s_fierceDeity;
     const float previous = s_barAlpha;
     s_barAlpha = fade.update(seconds(), stamina ? percentage >= 100.0f : percentage <= 0.0f, enabled);

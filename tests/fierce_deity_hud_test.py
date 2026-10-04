@@ -9,7 +9,9 @@ sdk = Path(sys.argv[1] if len(sys.argv) > 1 else root/'dusklight')/'sdk/include'
 source = (root/'src/fierce_deity.cpp').read_text()
 start = source.index('DawnlightFierceDeityHudState fierce_deity_hud_state() {')
 end = source.index('\nbool fierce_deity_active()', start)
-query = source[start:end]
+percent_start = source.index('float gauge_percentage()')
+percent_end = source.index('\n}', percent_start)+2
+query = source[percent_start:percent_end]+'\n'+source[start:end]
 fixture = r'''
 #include "fierce_deity_hud.cpp"
 #include <algorithm>
@@ -30,6 +32,7 @@ const HostService* svc_host=&host;
 namespace dawnlight {
 struct {bool active=false;float meter=0;} s_state;
 bool setting=true,player=true,hidden=false;
+float capacity=100;float maximum_gauge(){return capacity;}
 void* daAlink_getAlinkActorClass(){return player?&player:nullptr;}
 bool same_link(void* ptr){return ptr!=nullptr;}
 bool fierce_deity_enabled(){return setting;}
@@ -67,6 +70,7 @@ int main(){
     setting=true;player=false;s_service.get_state(&owner,&state);
     assert(!state.visible&&!state.active&&state.percentage==0);player=true;
     s_state.meter=101;s_service.get_state(&owner,&state);assert(state.percentage==100);
+    capacity=200;s_state.meter=50;s_service.get_state(&owner,&state);assert(state.percentage==25);capacity=100;
     s_state.meter=-5;s_service.get_state(&owner,&state);assert(state.percentage==0);s_state.meter=25;
     s_service.get_state(&owner,&state);
     DawnlightFierceDeityHudFrame frame{};frame.struct_size=sizeof(frame);frame.state=state;frame.alpha=0.5f;

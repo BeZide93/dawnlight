@@ -12,8 +12,6 @@ DEFINE_HOOK_SYMBOL("dusk::ui::push_document",
     EditorDocument*(std::unique_ptr<EditorDocument>*, bool, bool), ExtraEditorPush);
 
 struct EditorApi {
-    void (*construct)(NativeEditor*) = nullptr;
-    EditorDocument& (*push)(std::unique_ptr<EditorDocument>, bool, bool) = nullptr;
     EditorDocument* (*top)() = nullptr;
     void (*uncover)() = nullptr;
     void (*hide)(EditorDocument*, bool) = nullptr;
@@ -323,19 +321,6 @@ void close_extra_editor() {
     if (!s_editors.empty()) s_editorApi.uncover();
     s_editors.clear();
 }
-void open_native_touch_editor(ModContext*, void*) {
-    if (!s_touchEditorAvailable) return;
-    void* storage = ::operator new(sizeof(NativeEditor));
-    auto* editor = static_cast<NativeEditor*>(storage);
-    try { s_editorApi.construct(editor); }
-    catch (...) { ::operator delete(storage); throw; }
-    std::unique_ptr<EditorDocument> owned(editor);
-    if (!editor->mDocument) return;
-    auto* parent = s_editorApi.top();
-    s_editorApi.push(std::move(owned), true, false);
-    if (parent) parent->cover();
-}
-
 struct EditorHookBinding {
     const char* name;
     void* (*address)();
@@ -356,9 +341,7 @@ ModResult install_extra_editor(ModError*) {
         svc_log->warn(mod_ctx, "Touch editor unavailable: hook rollback is unsupported");
         return MOD_OK;
     }
-    if (!resolve_extra("_ZN4dusk2ui19TouchControlsEditorC1Ev", s_editorApi.construct) ||
-        !resolve_extra("dusk::ui::push_document", s_editorApi.push) ||
-        !resolve_extra("dusk::ui::top_document", s_editorApi.top) ||
+    if (!resolve_extra("dusk::ui::top_document", s_editorApi.top) ||
         !resolve_extra("dusk::ui::uncover_top_document", s_editorApi.uncover) ||
         !resolve_extra("dusk::ui::Document::hide", s_editorApi.hide) ||
         !resolve_extra("_ZN4dusk2ui8Document6listenEPN3Rml7ElementERKNSt6__ndk112basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEENS5_8functionIFvRNS2_5EventEEEEb", s_editorApi.listenTouch) ||

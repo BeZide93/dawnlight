@@ -33,6 +33,7 @@ fixture = r'''
 #include <map>
 #include <string>
 using u8 = uint8_t;
+using u16 = uint16_t;
 using u32 = uint32_t;
 using fpc_ProcID = uint32_t;
 constexpr fpc_ProcID fpcM_ERROR_PROCESS_ID_e = 0xffffffff;
@@ -42,7 +43,7 @@ constexpr u8 tunic = 0x2f;
 using BOOL = int;
 constexpr BOOL FALSE = 0;
 using Clock = std::chrono::steady_clock;
-constexpr float kMeterGainPerAttack = 5.0f;
+// SETTINGS
 enum class FierceDeityVisual : int { MagicArmor, Dark, DarkMagic, White, Gold };
 enum class FierceDeityTint { None, Dark, White, Gold };
 FierceDeityVisual selectedVisual = FierceDeityVisual::MagicArmor;
@@ -170,15 +171,22 @@ struct dCcU_AtInfo {
     daAlink_c* mpActor;
     Collider* mpCollider;
     unsigned mHitType = HIT_TYPE_LINK_NORMAL_ATTACK;
+    u16 mAttackPower = 1;
 };
 '''
+
+fixture = fixture.replace('// SETTINGS', (root/'src/dark_link_settings.hpp').read_text().replace('#pragma once', '') + r'''
+using namespace dawnlight;
+std::array<int, kDarkLinkSettings.size()> settings=[] {std::array<int,kDarkLinkSettings.size()> a{};for(size_t i=0;i<a.size();++i)a[i]=kDarkLinkSettings[i].standard;return a;}();
+int dark_link_setting(DarkLinkSetting s){return settings[static_cast<size_t>(s)];}
+''')
 
 state = source[source.index("enum class ModelSwapState"):
                source.index("SaveObserverHandle s_saveObserver")]
 preload_state = source[source.index("struct OutfitPreload"):
                        source.index("bool same_archive")]
 callbacks = "".join(function(name) for name in (
-    "same_archive", "release_preload", "poll_preload", "cancel_preload",
+    "maximum_gauge", "gauge_percentage", "same_archive", "release_preload", "poll_preload", "cancel_preload",
     "outfit_archive", "prepare_outfit", "is_sword_attack", "restore_equipment_selection",
     "deactivate", "can_transform", "activate", "update_visual_selection",
     "reset_for_link", "same_link", "on_save_started", "before_player_delete",

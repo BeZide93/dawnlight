@@ -69,6 +69,7 @@ void shutdown_hud_fade();
 struct dMeter2Draw_c {};
 enum class CombatMeterStyle {FierceDeity};
 struct {float meter=0;} s_state;
+float gauge_percentage(){return s_state.meter;}
 bool deityEnabled=true;
 bool fierce_deity_enabled(){return deityEnabled;}
 bool same_link(daAlink_c* p){return p!=nullptr;}
@@ -202,10 +203,14 @@ int main(){
     s_hudDepth=1;s_hudAlpha=0.5f;
     draw_combat_meter_screen(&screen,nullptr,true,50);near(screen.rendered,0.5f);
     s_hudDepth=0;
-    // Built-in presets ignore saved Custom fade options; Off immediately restores the bar.
+    // Auto-fade applies to built-in presets too; Off immediately restores the bar.
     for(int i=1;i<=60;++i){now+=1.0/60;draw_combat_meter_screen(&screen,nullptr,true,100);}
     near(screen.rendered,0);custom=false;
-    draw_combat_meter_screen(&screen,nullptr,true,100);near(screen.rendered,1);
+    draw_combat_meter_screen(&screen,nullptr,true,100);near(screen.rendered,0);
+    for(int i=1;i<=60;++i){now+=1.0/60;draw_combat_meter_screen(&screen,nullptr,false,0);}
+    near(screen.rendered,0); // Dark Link's setting applies to built-in presets too.
+    deityFade=false;draw_combat_meter_screen(&screen,nullptr,false,0);near(screen.rendered,1);
+    deityFade=true;
     custom=true;staminaFade=false;
     draw_combat_meter_screen(&screen,nullptr,true,100);near(screen.rendered,1);
     shutdown_hud_fade();

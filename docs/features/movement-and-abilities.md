@@ -126,6 +126,10 @@ Open **Dawnlight Settings -> Controls -> Stamina Settings**, directly below
 is active. Turning Stamina Bar Off disables Dawnlight's stamina costs only when
 Twilit Essentials is not supplying stamina.
 
+**Stamina Bar Auto Fade** is also in this submenu. It hides Dawnlight's bar when
+full on any HUD preset, retaining the existing saved value. HUD preset changes
+do not reset it. This control is disabled when TE manages the stamina bar.
+
 ### Twilit Essentials integration
 
 When the optional Twilit Essentials stamina service reports stamina enabled,

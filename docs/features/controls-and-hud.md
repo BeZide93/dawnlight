@@ -24,9 +24,8 @@ Under **Controls → Touch Buttons**, enable **Midna**, **LB**, **L3**, **R3**, 
 directions individually (all default to off). LB supplies the native left-bumper
 input for compatible mods, including Twilight HD HUD; the mod decides its action. Both Dusklight Touch Controls and
 Dawnlight Touch UI must be enabled. Open **Dusklight's normal Touch Layout
-Editor**, or use **Open Dusklight Touch Layout Editor** in Dawnlight's Touch Buttons
-window. Both entry points edit the nine vanilla elements and ten Dawnlight buttons
-together: drag to move, resize with the edge/corner handles, then **Save**.
+Editor** in Dusklight's settings to edit the nine vanilla elements and ten Dawnlight
+buttons together: drag to move, resize with the edge/corner handles, then **Save**.
 Existing Dawnlight positions are loaded automatically. **Save** applies both
 layouts; **Cancel** discards changes; **Reset** restores both groups' defaults in
 the editor until you save. No separate touch overlay is raised over the editor
@@ -88,11 +87,12 @@ Custom from the GameCube, X-Box, Wii-U, or Dawnlight presets.
 The `hud_layout_settings.json` format is compatible with the Dawnlight fork's
 HUD layout export where the same fields are available.
 
-Under **Custom Stamina Bar**, **Fade when full** hides the bar at full stamina;
-under **Custom Dark Link Bar**, **Fade when empty** hides it at zero charge.
-Both fade out smoothly and reappear when their condition no longer applies.
-Both are Off in every built-in preset and after copying/resetting a preset.
-Custom exports/imports preserve these two choices; they never change HUD Auto Fade.
+**Stamina Bar Auto Fade** is in **Controls → Stamina Settings** and hides the bar
+when full. **Gauge Auto Fade** is in **Gameplay → Dark Link Settings** and hides
+that bar when empty. Both default to Off, work with every HUD preset, and fade
+back in when their condition no longer applies. Existing saved toggle values are
+retained. HUD preset copy/reset/export/import no longer changes these gameplay
+settings or HUD Auto Fade. When TE owns stamina, its own bar settings take priority.
 
 The editor also supports D-Pad arrows and shadows, single-row hearts, round
 X/Y buttons, and [Gale Counter](movement-and-abilities.md#gale-counter) offsets

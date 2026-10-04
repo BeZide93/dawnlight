@@ -51,6 +51,7 @@ ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_fierceDeityVisual = 0;
 ConfigVarHandle s_fierceDeityActivation = 0;
+std::array<ConfigVarHandle, kDarkLinkSettings.size()> s_darkLinkSettings{};
 ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_arrowModes = 0;
 ConfigVarHandle s_dualWield = 0;
@@ -517,9 +518,7 @@ bool set_custom_hud_from_defaults(const HudElementDefaultArray& elementDefaults,
         !set_bool(s_hudDpadHideShadows, false) ||
         !set_bool(s_roundXYButtons, roundXYButtons) ||
         !set_bool(s_hudButtonBackingVisible, buttonBackingVisible) ||
-        !set_bool(s_hudHealthBar, false) ||
-        !set_bool(s_hudStaminaFadeWhenFull, false) ||
-        !set_bool(s_hudFierceDeityFadeWhenEmpty, false))
+        !set_bool(s_hudHealthBar, false))
     {
         return false;
     }
@@ -836,16 +835,6 @@ bool apply_element_json(const std::string& elementsObject, HudElement element) {
         }
     }
 
-    if (element == HudElement::StaminaBar || element == HudElement::FierceDeityBar) {
-        const bool stamina = element == HudElement::StaminaBar;
-        bool fade = false;
-        if (read_json_bool(object, stamina ? "fadeWhenFull" : "fadeWhenEmpty", fade) &&
-            !set_bool(stamina ? s_hudStaminaFadeWhenFull : s_hudFierceDeityFadeWhenEmpty, fade))
-        {
-            return false;
-        }
-    }
-
     if (element == HudElement::Hearts) {
         bool healthBar = false;
         if (read_json_bool(object, "healthBar", healthBar) &&
@@ -928,6 +917,11 @@ ModResult register_custom_hud_config() {
 
 ModResult register_config(ModError* error) {
     s_configTypes.clear();
+    for (size_t i = 0; i < kDarkLinkSettings.size(); ++i) {
+        const auto& desc = kDarkLinkSettings[i];
+        if (const auto result = register_int(desc.key, desc.standard, s_darkLinkSettings[i]); result != MOD_OK)
+            return mods::set_error(error, result, "failed to register Dark Link settings");
+    }
     for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
         const auto& desc = kStaminaSettings[i];
         if (const auto result = register_int(desc.key, desc.standard, s_staminaSettings[i]); result != MOD_OK)
@@ -1308,6 +1302,14 @@ FierceDeityVisual fierce_deity_visual() {
 }
 
 ConfigVarHandle fierce_deity_visual_config_var() { return s_fierceDeityVisual; }
+
+int dark_link_setting(DarkLinkSetting setting) {
+    const auto& desc = kDarkLinkSettings[static_cast<size_t>(setting)];
+    return get_int(s_darkLinkSettings[static_cast<size_t>(setting)], desc.standard, desc.min, desc.max);
+}
+ConfigVarHandle dark_link_setting_config_var(DarkLinkSetting setting) {
+    return s_darkLinkSettings[static_cast<size_t>(setting)];
+}
 
 FierceDeityActivation fierce_deity_activation() {
     return static_cast<FierceDeityActivation>(get_int(s_fierceDeityActivation, 2, 0, 4));
@@ -1862,13 +1864,6 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
         if (element == HudElement::DPad) {
             write_json_bool(out, "hideArrows", hud_custom_dpad_hide_arrows(), true);
             write_json_bool(out, "hideShadows", hud_custom_dpad_hide_shadows(), true);
-        }
-
-        if (element == HudElement::StaminaBar) {
-            write_json_bool(out, "fadeWhenFull", hud_custom_stamina_fade_when_full(), true);
-        }
-        if (element == HudElement::FierceDeityBar) {
-            write_json_bool(out, "fadeWhenEmpty", hud_custom_fierce_deity_fade_when_empty(), true);
         }
 
         if (element == HudElement::Hearts) {

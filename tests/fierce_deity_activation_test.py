@@ -18,7 +18,6 @@ fixture = fixture.replace('fpc_ProcID id = 1;', '''
 fixture += r'''
 bool directTouch=false;
 bool consume_dark_link_touch_press(){bool v=directTouch;directTouch=false;return v;}
-constexpr float kMeterDrainPerSecond = 5.0f;
 constexpr u32 PAD_BUTTON_A=0x100, PAD_TRIGGER_R=0x20, PAD_TRIGGER_Z=0x10, PAD_BUTTON_B=0x200;
 constexpr int PAD_1=0;
 struct Pad { u32 mButtonFlags=0, mPressedButtonFlags=0, mHoldLockR=0, mTrigLockR=0; float mTriggerRight=0; } pad;
@@ -225,6 +224,24 @@ int main() {
             input(0);assert(!s_state.active);
         }
     }
+    // Gauge uses configurable points; all activation paths require that capacity.
+    settings[static_cast<size_t>(DarkLinkSetting::Gauge)]=200;
+    settings[static_cast<size_t>(DarkLinkSetting::SwordGain)]=25;
+    binding=FierceDeityActivation::RA;fresh(link);
+    input(PAD_TRIGGER_R|PAD_BUTTON_A,PAD_BUTTON_A);assert(!s_state.active);
+    for(int i=0;i<4;++i)hit(link);
+    assert(s_state.meter==200&&gauge_percentage()==100);
+    input(0);input(PAD_TRIGGER_R|PAD_BUTTON_A,PAD_BUTTON_A);assert(s_state.active&&s_state.meter==200);
+    settings[static_cast<size_t>(DarkLinkSetting::Depletion)]=20;
+    s_state.lastDrainTime=Clock::now()-std::chrono::milliseconds(200);
+    update_drain(&link);assert(s_state.meter>195.5f&&s_state.meter<196.5f);
+    settings[static_cast<size_t>(DarkLinkSetting::Depletion)]=0;
+    const float charge=s_state.meter;s_state.lastDrainTime=Clock::now()-std::chrono::seconds(1);
+    update_drain(&link);assert(s_state.meter==charge&&s_state.active);
+    settings[static_cast<size_t>(DarkLinkSetting::Gauge)]=50;input(0);
+    assert(s_state.meter==50&&gauge_percentage()==100);
+    settings[static_cast<size_t>(DarkLinkSetting::Gauge)]=200;input(0);
+    assert(s_state.meter==50&&gauge_percentage()==25);
     // Save replacement/deletion still clears partial charge and input ownership.
     s_state.meter=40; on_save_started(nullptr,0,nullptr); assert(s_state.meter==0 && !s_state.link);
     currentLink=nullptr; input(0); assert(!fierce_deity_input_consumed());

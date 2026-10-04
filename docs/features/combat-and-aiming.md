@@ -36,8 +36,9 @@ Bullet Time, Flurry Rush and the Great Spin projectile share the
 
 ## Dark Link
 
-**Dark Link** adds a charge meter, a temporary transformation and doubled sword
-damage. **Dark Link Visual**, directly below its toggle, selects the appearance:
+**Dark Link** adds a charge meter, a temporary transformation and configurable sword
+damage (double by default). Open **Gameplay -> Dark Link Settings** below its toggle.
+**Dark Link Visual** selects the appearance:
 
 | Visual | Appearance during the transformation |
 | --- | --- |
@@ -63,6 +64,30 @@ must be released before they can activate. Physical and touch stick buttons work
 On Android, touch presses are captured directly so short Z taps and the HD HUD
 Z mapping can also trigger the shortcut. A pending Gale charge is cancelled when the
 shortcut fires, while the jump already in progress continues normally.
+
+The same submenu contains these gauge/combat options. Gains and depletion use
+points; both the built-in bar and HUD integrations display the resulting percentage.
+Raising capacity preserves existing points; lowering it clamps charge to the new capacity.
+
+| Setting | Range | Default |
+| --- | --- | --- |
+| Dark Link Gauge | 1–10,000 points | 100 |
+| Sword Attack Gain | 0–1,000 points per damaging sword hit | 5 |
+| Damage Received Gain | 0–1,000 points per health-damage event | 0 |
+| Depletion Rate | 0–1,000 points/sec | 5 |
+| Damage Multiplier | 0–1,000% sword damage | 200% |
+| Gauge Auto Fade | Off / On | Off |
+
+Both gain options apply while Dark Link is inactive. Received damage must actually
+reduce pending health: blocked hits, armor-only costs, healing and carried-over
+scene-entry damage do not grant points. Wolf-form damage does not charge the gauge.
+Zero depletion keeps the form active until manually stopped or otherwise interrupted.
+Fractional sword damage rounds up and is capped to the native damage field.
+
+Gauge Auto Fade hides an empty bar on every HUD preset. HUD preset import/reset
+no longer changes this setting. Registered HUD replacements receive its fading alpha;
+the KH2 drive API supports show/hide only, so its empty gauge is cleared without
+an alpha animation and returns when charge is gained.
 
 Entry and exit use the native flying warp particles at twice the normal speed:
 the appearance effect and sound on entry, and the disappearance effect and sound

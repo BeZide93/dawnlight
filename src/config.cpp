@@ -1342,7 +1342,13 @@ bool disable_auto_jump_enabled() {
 }
 
 JumpButton jump_button() {
-    return static_cast<JumpButton>(get_int(s_jumpButton, 0, 0, 4));
+    const auto value = get_int(s_jumpButton, 0, 0, 6);
+    switch (value) {
+    case 3: return JumpButton::R3;
+    case 4: return JumpButton::L3;
+    case 5: return JumpButton::LB;
+    default: return JumpButton::R;
+    }
 }
 
 ConfigVarHandle jump_button_config_var() { return s_jumpButton; }

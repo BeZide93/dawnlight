@@ -33,7 +33,7 @@ constexpr const char* kAimModeOptions[] = {
 };
 
 constexpr const char* kSecondSwordOptions[] = {"Wooden Sword", "Ordon Sword", "Master Sword"};
-constexpr const char* kJumpButtonOptions[] = {"R", "R2", "L2", "R3", "L3"};
+constexpr const char* kJumpButtonOptions[] = {"R", "L (LB)", "R3", "L3"};
 constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
 constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
 constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic", "White", "Gold"};
@@ -209,6 +209,19 @@ ModResult add_number(ModContext* ctx, UiElementHandle pane, const char* label,
     return add_mode_control(ctx, pane, desc);
 }
 
+// Compact UI indices map to stable persisted values (R=0, LB=5, R3=3, L3=4).
+void jump_button_get(ModContext*, void*, UiControlValue* out) {
+    const auto button = jump_button();
+    out->int_value = button == JumpButton::LB ? 1 :
+        button == JumpButton::R3 ? 2 : button == JumpButton::L3 ? 3 : 0;
+}
+
+void jump_button_set(ModContext* ctx, void*, const UiControlValue* value) {
+    if (value->int_value < 0 || value->int_value > 3) return;
+    svc_config->set_int(ctx, jump_button_config_var(),
+        value->int_value == 0 ? 0 : value->int_value == 1 ? 5 : value->int_value + 1);
+}
+
 ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
     ConfigVarHandle var, const char* const* options, size_t optionCount,
     const char* help = nullptr, UiPredicateFn isDisabled = nullptr) {
@@ -221,6 +234,11 @@ ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.options = options;
     desc.option_count = optionCount;
     desc.is_disabled = isDisabled;
+    if (var == jump_button_config_var()) {
+        desc.binding = UI_BINDING_CALLBACKS;
+        desc.get = jump_button_get;
+        desc.set = jump_button_set;
+    }
     bind_mode_control(desc);
     return add_mode_control(ctx, pane, desc);
 }
@@ -584,7 +602,8 @@ ModResult build_controls_tab(
     if (add_select(ctx, left, "Jump Button", jump_button_config_var(), kJumpButtonOptions,
             std::size(kJumpButtonOptions),
             "Button for Manual Jump, jump attacks, Glide and Revali's Gale. R (default) uses the game's R binding; "
-            "R2/L2 use controller triggers and R3/L3 use stick clicks. Independent of Dawnlight Mode.") != MOD_OK)
+            "L (LB) uses the left bumper, not the camera/targeting trigger. "
+            "R3/L3 use stick clicks. Independent of Dawnlight Mode.") != MOD_OK)
         return MOD_ERROR;
     if (add_toggle(ctx, left, "Disable Auto Jump", disable_auto_jump_config_var(),
             "Stops human and wolf Link from automatically jumping when running off a ledge. "

@@ -146,14 +146,27 @@ int main(){
     for(bool preset:{false,true}){
         reset();configService.values[s_dawnlightMode]=preset;
         configService.values[s_progressionSystem]=true;
-        UiControlDesc desc{};desc.config_var=jump_button_config_var();
-        desc.kind=UI_CONTROL_SELECT;desc.label="Jump Button";desc.binding=UI_BINDING_CONFIG_VAR;
-        bind_mode_control(desc);assert(desc.binding==UI_BINDING_CONFIG_VAR&&!desc.is_disabled);
-        assert(add_mode_control(nullptr,1,desc)==MOD_OK);
+        const char* buttons[]={"R","L (LB)","R3","L3"};
+        assert(add_select(nullptr,1,"Jump Button",jump_button_config_var(),buttons,4)==MOD_OK);
+        auto& desc=uiService.controls.begin()->second.desc;
+        assert(desc.binding==UI_BINDING_CALLBACKS&&!desc.is_disabled);
         assert(s_modeControls.find(s_jumpButton)==s_modeControls.end());
-        for(int value=0;value<5;++value){
-            svc_config->set_int(nullptr,s_jumpButton,value);
-            assert(static_cast<int>(jump_button())==value);
+        const int stored[]={0,5,3,4};
+        for(int i=0;i<4;++i){
+            UiControlValue edit{};edit.int_value=i;desc.set(nullptr,nullptr,&edit);
+            assert(configService.values[s_jumpButton]==stored[i]);
+            assert(static_cast<int>(jump_button())==stored[i]);
+            UiControlValue read{};desc.get(nullptr,nullptr,&read);assert(read.int_value==i);
+        }
+        for(int removed:{1,2}){
+            configService.values[s_jumpButton]=removed;
+            UiControlValue read{};desc.get(nullptr,nullptr,&read);assert(read.int_value==0);
+            assert(jump_button()==JumpButton::R);
+        }
+        configService.values[s_jumpButton]=4;
+        for(int invalid:{-1,4}){
+            UiControlValue edit{};edit.int_value=invalid;desc.set(nullptr,nullptr,&edit);
+            assert(configService.values[s_jumpButton]==4);
         }
         if(preset)assert(leave_dawnlight_mode_for_edit(s_sprint)==MOD_OK);
         assert(jump_button()==JumpButton::L3);
@@ -339,6 +352,8 @@ for name in ('get_int','jump_button','jump_button_config_var'):
 production+='\n'+function(ui,'twilit_owns_stamina_control')+'\n'+function(ui,'external_owns_control')
 production+='\n'+ui[ui.index('struct ModeControlBinding {'):ui.index('#include "mode_unlock_ui.inc"')]
 production+='\n'+(root/'src/mode_unlock_ui.inc').read_text()
+for name in ('jump_button_get','jump_button_set','add_select'):
+    production+='\n'+function(ui,name)
 production+='\n'+ui[ui.index('UiWindowHandle s_staminaWindow'):ui.index('UiMenuTabHandle s_menuTab')]
 for name in ('update_stamina_ui','stamina_window_closed','settings_closed'):
     production+='\n'+function(ui,name)

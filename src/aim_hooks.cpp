@@ -459,6 +459,14 @@ bool fixed_bow_aim_active(daAlink_c* link) {
         (dComIfGp_checkPlayerStatus0(0, 0x1000) || bullet_time_active_for(link));
 }
 
+bool custom_slingshot_sight_active(daAlink_c* link) {
+    // Sight only: keep the Slingshot out of the Bow pose/arrow correction hooks.
+    return link != nullptr && use_scope_suppress_camera() &&
+        link->mEquipItem == dItemNo_PACHINKO_e &&
+        !link->checkWolf() && !link->checkAttentionLock() && !link->checkEventRun() &&
+        dComIfGp_checkPlayerStatus0(0, 0x40);
+}
+
 bool fixed_clawshot_aim_active(daAlink_c* link) {
     return link != nullptr && use_scope_suppress_camera() &&
         link->checkHookshotItem(link->mEquipItem) && !link->checkWolf() &&
@@ -1310,6 +1318,12 @@ void after_camera_run(ModContext*, void* args, void*, void*) {
     const bool subjectAiming = dComIfGp_checkPlayerStatus0(camera->mPadID, 0x1040);
     if (dCamera_c::isAimActive() && fixed_camera_sight_active(link)) {
         draw_fixed_camera_sight(link);
+    } else if (dCamera_c::isAimActive() &&
+        (fixed_bow_aim_active(link) || custom_slingshot_sight_active(link))) {
+        // Mounted Bow/Slingshot aiming bypasses replace_bow_subject, so no earlier hook
+        // may have activated our sight. Draw from the current aim state after
+        // the camera has updated, including the first aiming frame on Epona.
+        draw_bow_trajectory_sight(link);
     } else if (s_customCinemaSightActive && subjectAiming && should_keep_cinema_bow_sight(link)) {
         draw_bow_trajectory_sight(link);
     }

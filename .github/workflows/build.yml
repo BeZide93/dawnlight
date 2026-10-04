@@ -85,6 +85,10 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/bullet_time_gyro_compat_test.py
 
+      - name: Test mounted Bow and Slingshot reticles
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/mounted_bow_sight_test.py
+
       - name: Test Dual Wield
         if: matrix.platform == 'linux-x86_64'
         run: |

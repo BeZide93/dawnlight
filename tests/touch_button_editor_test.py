@@ -116,14 +116,15 @@ struct Config {
 } config;auto* svc_config=&config;
 struct Log {void warn(ModContext*,const char*){}} logService;auto* svc_log=&logService;
 using ConfigVarHandle=int;
-ConfigVarHandle s_quickAccessLayout=6;
+ConfigVarHandle s_quickAccessLayout=touch::Count;
 namespace dusk::config {
  struct ConfigVarBase {};
  template<class T> struct ConfigVar:ConfigVarBase {T value=false;T getValue()const{return value;}};
 }
 std::map<std::string,dusk::config::ConfigVar<bool>> hostConfig;
 struct ButtonConfig{int layout;};
-std::array<ButtonConfig,touch::Count> s_buttons={{{0},{1},{2},{3},{4},{5}}};
+std::array<ButtonConfig,touch::Count> s_buttons=[] {std::array<ButtonConfig,touch::Count> b{};for(size_t i=0;i<b.size();++i)b[i].layout=int(i);return b;}();
+#include "touch_button_icons.inc"
 std::string midna_button_rml(const std::string&){return "<span>Midna</span>";}
 std::string midna_touch_button_icon(){return {};}
 touch::Layout button_layout(size_t i){return touch::Defaults[i];}
@@ -223,11 +224,11 @@ int main(){
  assert(state->count==touch::Count&&!state->elements[kQuickAccessEditorSlot].root);
  assert(state->working[5]==migrated&&config.values==storedBefore);
  assert(editor.mWorkingLayout==vanillaBefore&&touch_layout_controls().size()==10&&foreignLayouts==1);
- std::array<Rml::Element*,6> extras;
- for(size_t i=0;i<6;++i){extras[i]=state->elements[i].root;assert(extras[i]&&state->elements[i].layout.visualRect);}
+ std::array<Rml::Element*,touch::Count> extras;
+ for(size_t i=0;i<touch::Count;++i){extras[i]=state->elements[i].root;assert(extras[i]&&state->elements[i].layout.visualRect);}
  for(size_t i=0;i<9;++i){assert(editor.mElements[i].root==&vanillaElements[i]);
   dispatch(editor,&vanillaElements[i],{50,50});assert(editor.mSelectedIndex==i);editor.end_edit(true,1,false);}
- for(size_t i=0;i<6;++i){assert(dispatch(editor,extras[i],{50,50}).stopped);
+ for(size_t i=0;i<touch::Count;++i){assert(dispatch(editor,extras[i],{50,50}).stopped);
   assert(state->selected==i&&state->pointer.active&&!editor.mPointerEdit.active);
   editor.sync_selection_frame();assert(!frame.visible);
   dispatch(editor,extras[i],{50,50},1,false,2);}
@@ -306,7 +307,7 @@ int main(){
  NativeEditor quickEditor;Rml::Element quickDocument,quickFrame;
  quickDocument.context=&context;quickEditor.mDocument=&quickDocument;
  quickEditor.mRoot=&quickDocument;quickEditor.mSelectionFrame=&quickFrame;
- auto* quickState=attach_extra_editor(&quickEditor);assert(quickState&&quickState->count==7);
+ auto* quickState=attach_extra_editor(&quickEditor);assert(quickState&&quickState->count==touch::Count+1);
  draw_extra_editor(*quickState);
  const size_t q=kQuickAccessEditorSlot;auto* quick=quickState->elements[q].root;
  const auto original=quickState->defaults[q];

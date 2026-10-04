@@ -69,10 +69,14 @@ void prune_extra_presses(NativeTouch* controls) {
     if (!extra_controls_available(controls)) {
         s_extraPresses.clear();
         s_midnaTouchPending = s_midnaTouchTriggered = false;
+        s_jumpTouchInput.clear();
+        s_darkLinkTouchInput.clear();
     } else for (size_t i = 0; i < touch::Count; ++i) {
         if (!button_enabled(i) || (i == touch::Midna && !midna_touch_button_available())) {
             s_extraPresses.disable(i);
             if (i == touch::Midna) s_midnaTouchPending = s_midnaTouchTriggered = false;
+            if (i == touch::Jump) s_jumpTouchInput.clear();
+            if (i == touch::DarkLink) s_darkLinkTouchInput.clear();
         }
     }
 }
@@ -89,12 +93,16 @@ void remove_extra_elements() {
     s_extraStyles = {};
     s_extraBoxes = {};
     s_extraPresses.clear();
+    s_jumpTouchInput.clear();
+    s_darkLinkTouchInput.clear();
     s_midnaTouchPending = s_midnaTouchTriggered = false;
     s_midnaButtonSource.clear();
     s_midnaButtonFilled = false;
     s_midnaPulseFrame = 0;
     s_midnaGlowLevel = -1;
 }
+#include "touch_button_icons.inc"
+
 bool create_extra_elements(NativeTouch* controls) {
     if (controls->mRoot == nullptr || controls->mDocument == nullptr) return false;
     if (s_touchOwner != controls) remove_extra_elements();
@@ -112,10 +120,9 @@ bool create_extra_elements(NativeTouch* controls) {
     std::string rml;
     for (size_t i = 0; i < touch::Count; ++i) {
         rml += i == touch::Midna ?
-            "<button class='control trigger button-z' style='pointer-events:auto;box-sizing:border-box;'><span>" :
-            "<button class='control trigger' style='display:none;pointer-events:auto;box-sizing:border-box;'><span>";
-        rml += touch::Labels[i];
-        rml += "</span></button>";
+            "<button class='control trigger button-z' style='pointer-events:auto;box-sizing:border-box;'>" :
+            "<button class='control trigger' style='display:none;pointer-events:auto;box-sizing:border-box;'>";
+        rml += extra_button_content(i) + "</button>";
     }
     s_touchApi.setRml(root.get(), &rml);
     s_extraRoot = s_touchApi.append(controls->mRoot, std::move(root), true);
@@ -178,8 +185,11 @@ HookAction extra_touch_down(ModContext*, void* args, void*, void*) {
         for (size_t i = 0; i < touch::Count; ++i) if (target == s_extraElements[i] && button_enabled(i)) {
             if (i == touch::Midna && !midna_touch_button_available()) return HOOK_CONTINUE;
             const bool held = s_extraPresses.held(i);
-            if (s_extraPresses.press(s_touchApi.finger(event), i) && i == touch::Midna && !held)
-                s_midnaTouchPending = true;
+            if (s_extraPresses.press(s_touchApi.finger(event), i) && !held) {
+                if (i == touch::Midna) s_midnaTouchPending = true;
+                if (i == touch::Jump) s_jumpTouchInput.press();
+                if (i == touch::DarkLink) s_darkLinkTouchInput.press();
+            }
             s_touchApi.stop(event);
             return HOOK_SKIP_ORIGINAL;
         }
@@ -203,6 +213,8 @@ HookAction extra_touch_cancel(ModContext* ctx, void* args, void* retval, void* d
     auto* event = mods::arg<Rml::Event*>(args, 1);
     if (s_extraPresses.owns(s_touchApi.finger(event), touch::Midna))
         s_midnaTouchPending = s_midnaTouchTriggered = false;
+    if (s_extraPresses.owns(s_touchApi.finger(event), touch::Jump)) s_jumpTouchInput.clear();
+    if (s_extraPresses.owns(s_touchApi.finger(event), touch::DarkLink)) s_darkLinkTouchInput.clear();
     return extra_touch_up(ctx, args, retval, data);
 }
 void sample_midna_touch_press(ModContext*, void*, void*, void*) {
@@ -210,14 +222,20 @@ void sample_midna_touch_press(ModContext*, void*, void*, void*) {
     // Match TE: a tap lives for one pad sample, not until a later talk check.
     s_midnaTouchTriggered = s_midnaTouchPending;
     s_midnaTouchPending = false;
+    s_jumpTouchInput.sample();
+    s_darkLinkTouchInput.sample();
 }
 HookAction extra_clear_input(ModContext*, void*, void*, void*) {
     s_extraPresses.clear();
+    s_jumpTouchInput.clear();
+    s_darkLinkTouchInput.clear();
     s_midnaTouchPending = s_midnaTouchTriggered = false;
     return HOOK_CONTINUE;
 }
 HookAction extra_clear_all(ModContext*, void*, void*, void*) {
     s_extraPresses.clear();
+    s_jumpTouchInput.clear();
+    s_darkLinkTouchInput.clear();
     s_midnaTouchPending = s_midnaTouchTriggered = false;
     s_extraPadOwned = false;
     s_extraBasePad = {};
@@ -235,9 +253,17 @@ bool extra_lb_held() {
     prune_extra_presses(s_touchOwner);
     return s_extraHooksReady && s_extraPresses.held(0);
 }
+bool extra_stick_held(bool right) {
+    prune_extra_presses(s_touchOwner);
+    return s_extraHooksReady && s_extraPresses.held(right ? touch::R3 : touch::L3);
+}
 void extra_sdl_button(ModContext*, void* args, void* result, void*) {
-    if (!result || mods::arg<SDL_GamepadButton>(args, 1) != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER ||
-        !extra_lb_held()) return;
+    if (!result) return;
+    const auto button = mods::arg<SDL_GamepadButton>(args, 1);
+    const bool held = button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER ? extra_lb_held() :
+        button == SDL_GAMEPAD_BUTTON_LEFT_STICK ? extra_stick_held(false) :
+        button == SDL_GAMEPAD_BUTTON_RIGHT_STICK ? extra_stick_held(true) : false;
+    if (!held) return;
     // Add LB to player one's real gamepad queries without touching other players
     // or replacing physical input. Mods may cache the resolved SDL function.
     const auto index = PADGetIndexForPort(PAD_1);
@@ -246,11 +272,14 @@ void extra_sdl_button(ModContext*, void* args, void* result, void*) {
         *static_cast<bool*>(result) = true;
 }
 void extra_native_button(ModContext*, void* args, void* result, void*) {
-    if (!result || mods::arg<u32>(args, 0) != PAD_1 || !extra_lb_held()) return;
+    if (!result || mods::arg<u32>(args, 0) != PAD_1) return;
     // This query also works without a controller. Preserve a physical result:
     // its API can report only one button, while SDL queries remain independent.
     auto& button = *static_cast<s32*>(result);
-    if (button < 0) button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
+    if (button >= 0) return;
+    if (extra_lb_held()) button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
+    else if (extra_stick_held(false)) button = SDL_GAMEPAD_BUTTON_LEFT_STICK;
+    else if (extra_stick_held(true)) button = SDL_GAMEPAD_BUTTON_RIGHT_STICK;
 }
 HookAction extra_set_pad(ModContext*, void* args, void*, void*) {
     if (mods::arg<u32>(args, 0) != PAD_1) return HOOK_CONTINUE;

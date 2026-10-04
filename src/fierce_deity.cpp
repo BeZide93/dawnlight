@@ -6,6 +6,7 @@
 #include "config.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+#include "touch_buttons.hpp"
 
 #include "d/actor/d_a_alink.h"
 #include "d/d_cc_d.h"
@@ -377,18 +378,19 @@ HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
     const u32 pressed = pad.mPressedButtonFlags | s_state.touchPressed;
     s_state.touchPressed = 0; // discard blocked/menu presses too
     s_state.consumedPartner &= held;
+    const bool directTouch = consume_dark_link_touch_press();
     const auto binding = fierce_deity_activation();
     const u32 partner = binding == FierceDeityActivation::RA ? PAD_BUTTON_A : PAD_TRIGGER_Z;
     const bool rHeld = (held & PAD_TRIGGER_R) != 0 || pad.mHoldLockR != 0;
-    if (binding == FierceDeityActivation::SpinAttack ||
-        !fierce_deity_enabled() || menu_or_pause_active() || !can_transform(link)) {
+    if (!fierce_deity_enabled() || menu_or_pause_active() || !can_transform(link)) {
         s_state.consumedPartner = 0;
         return HOOK_CONTINUE;
     }
-    if (rHeld && (pressed & partner) != 0) {
+    const bool combo = binding != FierceDeityActivation::SpinAttack && rHeld && (pressed & partner) != 0;
+    if (directTouch || combo) {
         if (s_state.active) deactivate(link, false);
         else if (s_state.meter >= 100.0f) activate(link);
-        s_state.consumedPartner |= partner;
+        if (combo) s_state.consumedPartner |= partner;
         s_state.activationInputConsumed = true;
     }
 

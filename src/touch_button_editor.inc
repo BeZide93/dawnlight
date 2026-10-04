@@ -199,9 +199,9 @@ EditorState* attach_extra_editor(NativeEditor* editor) {
             fragment += midna_button_rml(midna_touch_button_icon());
             fragment += "</button>";
         } else {
-            fragment += "<button class='control trigger'><span>";
-            fragment += i == kQuickAccessEditorSlot ? "Quick Access" : touch::Labels[i];
-            fragment += "</span></button>";
+            fragment += "<button class='control trigger'>";
+            fragment += i == kQuickAccessEditorSlot ? "<span>Quick Access</span>" : extra_button_content(i);
+            fragment += "</button>";
         }
     }
     fragment += "<selection-frame>";

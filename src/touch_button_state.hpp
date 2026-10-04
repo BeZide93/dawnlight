@@ -6,16 +6,18 @@
 
 namespace dawnlight::touch {
 constexpr size_t Midna = 5;
-constexpr size_t Count = 6;
+constexpr size_t L3 = 6, R3 = 7, Jump = 8, DarkLink = 9;
+constexpr size_t Count = 10;
 constexpr std::array<const char*, Count> Names = {
-    "LB", "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right", "Midna"};
+    "LB", "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right", "Midna", "L3", "R3", "Jump", "Dark Link"};
 // Keep the old first-slot key so existing enabled state and layout survive the LB correction.
-constexpr std::array<const char*, Count> Keys = {"zl", "up", "down", "left", "right", "midna"};
-constexpr std::array<const char*, Count> Labels = {"LB", "&#8593;", "&#8595;", "&#8592;", "&#8594;", "Midna"};
+constexpr std::array<const char*, Count> Keys = {"zl", "up", "down", "left", "right", "midna", "l3", "r3", "jump", "dark-link"};
+constexpr std::array<const char*, Count> Labels = {"LB", "&#8593;", "&#8595;", "&#8592;", "&#8594;", "Midna", "L3", "R3", "Jump", "Dark Link"};
 struct Layout { int x, y, size; bool operator==(const Layout&) const = default; };
 // Positions are percentages of the available travel inside the safe screen area.
 constexpr std::array<Layout, Count> Defaults = {{{3, 22, 56}, {19, 55, 44},
-    {19, 81, 44}, {13, 68, 44}, {25, 68, 44}, {88, 22, 56}}};
+    {19, 81, 44}, {13, 68, 44}, {25, 68, 44}, {88, 22, 56},
+    {9, 85, 46}, {69, 85, 46}, {76, 61, 56}, {67, 22, 56}}};
 inline Layout clamp(Layout value) {
     return {std::clamp(value.x, 0, 100), std::clamp(value.y, 0, 100),
         std::clamp(value.size, 28, 120)};
@@ -45,7 +47,8 @@ public:
     }
     bool press(int64_t id, size_t button) {
         if (button >= Count) return false;
-        if (owns(id)) return true;
+        for (const auto& p : pointers)
+            if (p.button < Count && p.id == id) return p.button == button;
         for (auto& p : pointers) if (p.button == Count) { p = {id, button}; return true; }
         return false;
     }
@@ -68,7 +71,19 @@ public:
         constexpr uint16_t masks[Count] = {0, 0x0008, 0x0004, 0x0001, 0x0002, 0};
         bool active = held(0) || held(Midna);
         for (size_t i = 1; i < Count; ++i) if (held(i)) { pad.button |= masks[i]; active = true; }
+        // Extended stick bits are kept separate from the GameCube button mask.
+        if (held(L3)) pad.extButton |= 0x4000000;
+        if (held(R3)) pad.extButton |= 0x2000000;
         return active;
     }
+};
+
+// Direct actions are sampled once per pad frame, independently of any binding.
+struct ActionInput {
+    bool pending = false, pressed = false;
+    void press() { pending = true; }
+    void clear() { pending = pressed = false; }
+    void sample() { pressed = pending; pending = false; }
+    bool consume() { const bool value = pressed; pressed = false; return value; }
 };
 }  // namespace dawnlight::touch

@@ -11,4 +11,7 @@ void open_touch_buttons(ModContext* ctx, void*);
 bool midna_touch_button_available();
 std::string midna_touch_button_icon();
 bool consume_midna_touch_press();
+bool touch_jump_pressed();
+bool touch_jump_held();
+bool consume_dark_link_touch_press();
 }  // namespace dawnlight

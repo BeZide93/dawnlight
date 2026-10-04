@@ -37,6 +37,8 @@ Rml::Element rootElement,midnaElement{&rootElement},icon{&midnaElement},skipElem
 Rml::Element* s_extraRoot=&rootElement;
 std::array<Rml::Element*,touch::Count> s_extraElements{};
 touch::Presses s_extraPresses;
+touch::ActionInput s_jumpTouchInput,s_darkLinkTouchInput;
+bool s_extraHooksReady=true;
 bool s_midnaTouchTriggered=false;
 bool s_midnaTouchPending=false,allowed=true,ready=true;
 std::array<bool,touch::Count> enabled{};
@@ -112,15 +114,36 @@ int main(){
  assert(!consume_midna_touch_press());up(14); // a missed sample never queues a delayed call
  down(15);up(99,true);assert(talk());up(15); // unrelated cancelled finger does not cancel Midna
  down(16);s_extraPresses.press(17,0);up(17,true);assert(talk());up(16); // LB cancel keeps Midna tap
+ Rml::Element jump{&rootElement},dark{&rootElement};
+ s_extraElements[touch::Jump]=&jump;s_extraElements[touch::DarkLink]=&dark;
+ enabled[touch::Jump]=enabled[touch::DarkLink]=true;
+ down(30,&jump);sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ assert(touch_jump_pressed()&&touch_jump_held()&&!consume_dark_link_touch_press());
+ sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ assert(!touch_jump_pressed()&&touch_jump_held()); // hold drives Gale/glide
+ down(31,&jump);up(30);assert(touch_jump_held());up(31);assert(!touch_jump_held());
+ down(32,&jump);up(32);sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ assert(touch_jump_pressed()&&!touch_jump_held()); // quick tap survives release
+ down(33,&dark);up(33);sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ assert(consume_dark_link_touch_press()&&!consume_dark_link_touch_press());
+ down(34,&jump);down(35,&dark);up(34,true);sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ assert(!touch_jump_pressed()&&consume_dark_link_touch_press());up(35); // cancel only owning action
+ down(36,&dark);up(36,true);sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ assert(!consume_dark_link_touch_press());
+ down(37,&jump);down(38,&dark);allowed=false;sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ allowed=true;assert(!touch_jump_pressed()&&!touch_jump_held()&&!consume_dark_link_touch_press());
+ down(39,&jump);enabled[touch::Jump]=false;assert(!touch_jump_held()&&!touch_jump_pressed());
+ down(40,&dark);sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
+ sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);assert(!consume_dark_link_touch_press());up(40);
  // Midna has no GameCube button bit (especially no START, Z or D-pad).
- struct Pad {unsigned short button=0x840;};Pad pad;
+ struct Pad {unsigned short button=0x840;unsigned extButton=0;};Pad pad;
  down(13);assert(s_extraPresses.merge(pad)&&pad.button==0x840);up(13);assert(talk());
 }
 '''
 fixture = fixture.replace('// INPUT', '\n'.join(function(native, sig) for sig in (
     'void prune_extra_presses', 'HookAction extra_touch_down',
     'HookAction extra_touch_up', 'HookAction extra_touch_cancel', 'void sample_midna_touch_press')) + '\n' +
-    function(buttons, 'bool consume_midna_touch_press'))
+    '\n'.join(function(buttons, sig) for sig in ('bool consume_midna_touch_press','bool touch_jump_pressed','bool touch_jump_held','bool consume_dark_link_touch_press')))
 fixture = fixture.replace('// GAME', '\n'.join(function(items, sig) for sig in (
     'HookAction before_midna_talk_trigger', 'HookAction before_touch_set_control_pressed')))
 with tempfile.TemporaryDirectory() as tmp:

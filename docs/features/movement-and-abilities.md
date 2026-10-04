@@ -26,10 +26,12 @@ their height, and into ledge falls with **Disable Auto Jump** enabled.
 ## Manual jump and ledges
 
 **Manual Jump** enables manual jumping. **Jump Button**, directly below it, selects
-**R** (default), **R2**, **L2**, **R3** or **L3**. R uses the existing game binding,
-including keyboard/touch mappings; R2/L2 are controller triggers and R3/L3 are
-stick clicks. The selection remains editable in Dawnlight Mode and also applies
-to jump attacks, Glide and Revali's Gale. Hold it and press B during a human jump
+**R** (default), **L (LB)**, **R3** or **L3**. R uses the existing game binding,
+including keyboard/touch mappings. L (LB) reads the left bumper (LB/L1), not LT/L2,
+which retains camera alignment and targeting. R3/L3 are stick clicks. Previously saved
+R2/L2 selections fall back to R; saved R3/L3 selections retain their meaning.
+The selection remains editable in Dawnlight Mode and also applies to jump attacks,
+Glide and Revali's Gale. Hold it and press B during a human jump
 for a jump attack. Existing button actions are not globally remapped.
 
 Manual Jump also works as wolf Link while standing, moving or dashing, using

@@ -614,7 +614,7 @@ ModResult install_jump_hooks(ModError* error) {
 
 void shutdown_jump_hooks() {
     s_jumpInputs = {};
-    s_jumpGamepadAxis = nullptr;
+    s_jumpGamepadButton = nullptr;
     reset_jump_abilities(daAlink_getAlinkActorClass());
     shutdown_glider_bmd();
 }

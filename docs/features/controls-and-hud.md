@@ -40,10 +40,10 @@ Cancelled touches and missed input frames cannot queue a delayed call. Skip stay
 reserved for cutscenes; enable Midna separately in Touch Buttons.
 
 **L3/R3** send real left/right stick clicks, including for mods that read SDL
-buttons directly. **Jump** (jumping figure) is a separate input for Manual Jump,
+buttons directly. **Jump** (upward arrow above a take-off line) is a separate input for Manual Jump,
 Revali's Gale and Glide, regardless of the selected **Jump Button**. Tap to jump;
 hold through landing to charge Gale and release when ready, or use it in the air
-to glide. **Dark Link** (black Link face with red eyes) toggles the mode without
+to glide. **Dark Link** (two red eyes) toggles the mode without
 using the configured activation combo or spin attack. Activation still requires
 a full meter; tapping again ends it early. All feature toggles, progression
 unlocks, stamina costs and gameplay restrictions continue to apply.

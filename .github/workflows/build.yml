@@ -227,6 +227,10 @@ jobs:
           fi
           cmake -B build "${args[@]}"
 
+      - name: Test TE aim bridge against native ConfigVar ABI
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/twilit_aim_sdk_test.py dusklight
+
       - name: Test Midna stamina charge against native code
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/midna_charge_stamina_test.py --dusklight-dir dusklight

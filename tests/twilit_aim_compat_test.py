@@ -15,7 +15,10 @@ bool notifiedFirstPerson = false;
 int writes = 0;
 namespace dusk::config {
 enum class ConfigVarLayer { Default, Value, Override, Speedrun };
-struct ConfigVarBase {};
+struct ConfigVarBase {
+    bool has_subscribers() const;
+    void notify_changed(const void*);
+};
 template<class T> struct ConfigVar : ConfigVarBase {
     bool registered = true;
     T saved = false, effective = false;
@@ -41,9 +44,17 @@ dusk::config::ConfigVarBase* lookup(std::string_view key) {
     assert(key == "mod.com_dusklight_twilit__essentials.bulletTimeFirstPerson");
     return live;
 }
+bool host_has_subscribers(const dusk::config::ConfigVarBase*) { return true; }
+void host_notify_changed(dusk::config::ConfigVarBase*, const void*) {}
 int resolve(void*, const char* symbol, void** address, void*) {
-    assert(std::string_view(symbol) == "dusk::config::GetConfigVar");
-    *address = missingResolver ? nullptr : reinterpret_cast<void*>(&lookup);
+    const std::string_view name(symbol);
+    if (name == "dusk::config::GetConfigVar") *address = reinterpret_cast<void*>(&lookup);
+    else if (name == "dusk::config::ConfigVarBase::has_subscribers")
+        *address = reinterpret_cast<void*>(&host_has_subscribers);
+    else if (name == "dusk::config::ConfigVarBase::notify_changed")
+        *address = reinterpret_cast<void*>(&host_notify_changed);
+    else assert(false);
+    if (missingResolver) *address = nullptr;
     return missingResolver ? MOD_UNAVAILABLE : MOD_OK;
 }
 struct Hook { int (*resolve)(void*, const char*, void**, void*); } hook{resolve};

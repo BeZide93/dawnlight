@@ -81,7 +81,7 @@ struct daAlink_c {
         PROC_CUT_LARGE_JUMP_CHARGE,PROC_CUT_LARGE_JUMP,PROC_CUT_LARGE_JUMP_LAND,
         PROC_LARGE_DAMAGE,PROC_LARGE_DAMAGE_WALL,PROC_LARGE_DAMAGE_UP,PROC_LAND_DAMAGE};
     int mProcID=PROC_WAIT,cut=0,mEquipItem=0x103;
-    bool event=false,guard=false,human=true,equipping=false;
+    bool event=false,guard=false,human=true,equipping=false,horse=false;
     int field_0x3198=0;
     Morph morph;Morph* field_0x2060=&morph;
     J3DModel model;J3DModel* mpLinkModel=&model;
@@ -93,6 +93,7 @@ struct daAlink_c {
     int getCutType(){return cut;}
     bool checkEventRun(){return event;}
     bool checkPlayerGuardAndAttack(){return guard;}
+    bool checkHorseRide(){return horse;}
     bool checkSwordEquipAnime(){return equipping;}
     J3DModel* mSwordModel=nullptr;int swordShown=0,swordHidden=0;
     J3DModel* mShieldModel=nullptr;unsigned mRightItemJntNo=15;int mShieldChangeWaitTimer=0;
@@ -370,6 +371,38 @@ int main() {
     link.model.joints[13]={{},{-32,105,0}};
     link.model.joints[14]={{},{-24,93,22}};
     const auto nativeJoints=link.model.joints;
+    // Mounted block keeps the native lean and every arm joint, even when
+    // mounting interrupts an on-foot guard, draw, stow or release blend.
+    for(int item:std::array<int,4>{0x103,dItemNo_NONE_e,dItemNo_BOW_e,dItemNo_PACHINKO_e}) {
+        for(bool drawing:{false,true}) {
+            link.horse=true;link.guard=true;link.mEquipItem=item;
+            s.guard=1;s.draw=1;s.haveGuardBody=true;
+            s.stow.active=true;s.stow.drawing=drawing;s.stow.release=1;
+            s.forcedBlade=true;
+            for(int frame=0;frame<30;++frame) {
+                link.model.joints=nativeJoints;
+                ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+                assert(s.active && s.enabled && s.guard==0 && !s.haveGuardBody);
+                assert(!s.stow.active && s.stow.release==0);
+                before_guard_attack(nullptr,&args,nullptr,nullptr);assert(!s.haveGuardBody);
+                before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+                after_arms(nullptr,&args,nullptr,nullptr);after_items(nullptr,&args,nullptr,nullptr);
+                assert(!s.forcedBlade);
+                for(int joint=0;joint<35;++joint) {
+                    const auto& a=link.model.joints[joint];const auto& b=nativeJoints[joint];
+                    assert(a.p.x==b.p.x&&a.p.y==b.p.y&&a.p.z==b.p.z);
+                    assert(a.q.x==b.q.x&&a.q.y==b.q.y&&a.q.z==b.q.z&&a.q.w==b.q.w);
+                }
+            }
+            // A fresh mounted block press must not start a hip draw either.
+            link.guard=false;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+            link.guard=true;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+            assert(s.guard==0 && !s.stow.active && s.stow.release==0);
+            link.horse=false;
+            ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+            assert(s.guard>0 && s.guard<1); // on-foot block resumes
+        }
+    }
     // Deploying Glide from drawn swords must immediately free both arms,
     // even with guard held or a draw/stow/release transition already running.
     for(bool drawing:{false,true}) for(bool guardHeld:{false,true}) {

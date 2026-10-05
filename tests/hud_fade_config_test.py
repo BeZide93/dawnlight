@@ -8,7 +8,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 build = Path(sys.argv[1] if len(sys.argv) > 1 else root / 'build').resolve()
 ninja = (build / 'build.ninja').read_text()
-block = ninja.split('build CMakeFiles/dawnlight_mod.dir/src/config.cpp.o:', 1)[1].split('\nbuild ', 1)[0]
+block = ninja.split('build CMakeFiles/dawnlight_lite.dir/src/config.cpp.o:', 1)[1].split('\nbuild ', 1)[0]
 args = ['c++', '-ffunction-sections', '-fdata-sections']
 for key in ('DEFINES', 'FLAGS', 'INCLUDES'):
     line = next(x for x in block.splitlines() if x.startswith('  ' + key + ' = '))

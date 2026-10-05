@@ -1,7 +1,7 @@
 #include "enemy_hard_mode.hpp"
 
 #include "config.hpp"
-#include "enemy_slow_motion/profile.hpp"
+#include "enemy_hard_mode_runtime.hpp"
 
 #include "m_Do/m_Do_ext.h"
 
@@ -139,10 +139,10 @@ void arm_normal_finisher_knockdown(fopAc_ac_c* enemy, dCcD_GObjInf* collider) {
 HookAction before_normal_finisher_hit(ModContext*, void* args, void*, void*) {
     auto* enemy = mods::arg<fopAc_ac_c*>(args, 0);
     auto* attack = mods::arg<dCcU_AtInfo*>(args, 1);
-    auto* step = current_enemy_slow_step();
-    if (step == nullptr || step->actor != enemy || step->profile == nullptr ||
-        (step->profile->name != fpcNm_E_OC_e && step->profile->name != fpcNm_E_DN_e &&
-         step->profile->name != fpcNm_E_MF_e) ||
+    auto* step = current_enemy_hard_mode_step();
+    if (step == nullptr || step->actor != enemy ||
+        (step->profileName != fpcNm_E_OC_e && step->profileName != fpcNm_E_DN_e &&
+         step->profileName != fpcNm_E_MF_e) ||
         attack == nullptr ||
         attack->mpCollider == nullptr)
     {
@@ -156,9 +156,9 @@ HookAction before_normal_finisher_hit(ModContext*, void* args, void*, void*) {
 
 void after_bokoblin_damage_check(ModContext*, void* args, void*, void*) {
     auto* actor = mods::arg<daE_OC_c*>(args, 0);
-    auto* step = current_enemy_slow_step();
-    if (step == nullptr || step->actor != actor || step->profile == nullptr ||
-        step->profile->name != fpcNm_E_OC_e)
+    auto* step = current_enemy_hard_mode_step();
+    if (step == nullptr || step->actor != actor ||
+        step->profileName != fpcNm_E_OC_e)
     {
         return;
     }
@@ -182,8 +182,8 @@ void shorten_timer(T& timer) {
     if (timer > 0) --timer;
 }
 
-void shorten_attack_interval(EnemySlowStep& step) {
-    switch (step.profile->name) {
+void shorten_attack_interval(EnemyHardModeStep& step) {
+    switch (step.profileName) {
     case fpcNm_B_TN_e:
         {
             auto& actor = *static_cast<daB_TN_c*>(step.actor);
@@ -387,9 +387,9 @@ void shorten_attack_interval(EnemySlowStep& step) {
 // death. Accelerating only timer[0] lets get-up beat timer[1]'s death branch
 // (Wolf: 80 accelerated ticks expire before 55 native ticks). Keep the whole
 // damage action synchronized, including while alive before a finishing hit.
-bool preserve_damage_timers(const EnemySlowStep& step) {
+bool preserve_damage_timers(const EnemyHardModeStep& step) {
     if (step.actor->health <= 0) return true;
-    switch (step.profile->name) {
+    switch (step.profileName) {
     case fpcNm_E_RD_e:
     case fpcNm_E_DN_e:
     case fpcNm_E_MF_e:
@@ -448,9 +448,9 @@ bool enemy_hard_mode_applies(int profileName) {
     }
 }
 
-float enemy_hard_mode_turn_scale(const EnemySlowStep& step) {
-    if (step.profile == nullptr || !enemy_hard_mode_applies(step.profile->name)) return 1.0f;
-    switch (step.profile->name) {
+float enemy_hard_mode_turn_scale(const EnemyHardModeStep& step) {
+    if (!enemy_hard_mode_applies(step.profileName)) return 1.0f;
+    switch (step.profileName) {
     case fpcNm_E_FZ_e:
     case fpcNm_E_BA_e:
     case fpcNm_E_BU_e:
@@ -467,10 +467,10 @@ float enemy_hard_mode_turn_scale(const EnemySlowStep& step) {
     }
 }
 
-float enemy_hard_mode_chase_scale(const EnemySlowStep& step, const float* value) {
-    if (step.actor == nullptr || step.profile == nullptr || value != &step.actor->speedF ||
-        !enemy_hard_mode_applies(step.profile->name)) return 1.0f;
-    switch (step.profile->name) {
+float enemy_hard_mode_chase_scale(const EnemyHardModeStep& step, const float* value) {
+    if (step.actor == nullptr || value != &step.actor->speedF ||
+        !enemy_hard_mode_applies(step.profileName)) return 1.0f;
+    switch (step.profileName) {
     case fpcNm_E_FZ_e:
     case fpcNm_E_BA_e:
     case fpcNm_E_BU_e:
@@ -489,9 +489,9 @@ float enemy_hard_mode_chase_scale(const EnemySlowStep& step, const float* value)
     }
 }
 
-void prepare_enemy_hard_mode(EnemySlowStep& step) {
-    if (step.actor == nullptr || step.profile == nullptr || !step.timerTick ||
-        !enemy_hard_mode_applies(step.profile->name) || preserve_damage_timers(step)) {
+void prepare_enemy_hard_mode(EnemyHardModeStep& step) {
+    if (step.actor == nullptr ||
+        !enemy_hard_mode_applies(step.profileName) || preserve_damage_timers(step)) {
         return;
     }
 
@@ -503,16 +503,16 @@ void prepare_enemy_hard_mode(EnemySlowStep& step) {
     if (clock.phase < 2) shorten_attack_interval(step);
 }
 
-void finish_enemy_hard_mode(EnemySlowStep& step) {
-    if (step.actor == nullptr || step.profile == nullptr ||
-        !enemy_hard_mode_applies(step.profile->name)) return;
+void finish_enemy_hard_mode(EnemyHardModeStep& step) {
+    if (step.actor == nullptr ||
+        !enemy_hard_mode_applies(step.profileName)) return;
 
     auto& clock = cadence_clock_for(step.actor);
     restore_finisher_collider(clock);
 
     // Match the Dynalfos' native five-point recovery after a living enemy has
     // completed its fall and entered the grounded knockdown state.
-    if (step.profile->name == fpcNm_E_OC_e) {
+    if (step.profileName == fpcNm_E_OC_e) {
         auto& actor = *static_cast<daE_OC_c*>(step.actor);
         if (step.action == kBokoblinBigDamageAction && step.subaction == 4 &&
             actor.mActionMode == kBokoblinBigDamageAction && actor.mOcState == 5 &&
@@ -520,7 +520,7 @@ void finish_enemy_hard_mode(EnemySlowStep& step) {
         {
             actor.field_0x6c0 = kShortKnockdownRecovery;
         }
-    } else if (step.profile->name == fpcNm_E_DN_e) {
+    } else if (step.profileName == fpcNm_E_DN_e) {
         auto& actor = *reinterpret_cast<e_dn_class*>(step.actor);
         if (step.action == kLizardDamageAction && step.subaction == 2 &&
             actor.action == kLizardDamageAction && actor.mode == 3 && actor.actor.health > 0)
@@ -531,7 +531,7 @@ void finish_enemy_hard_mode(EnemySlowStep& step) {
 
     // A bounded second pounce makes some Stalhounds less predictable without
     // allowing an endless attack loop. Actor-ID parity also staggers packs.
-    if (step.profile->name == fpcNm_E_SH_e) {
+    if (step.profileName == fpcNm_E_SH_e) {
         auto& actor = *reinterpret_cast<e_sh_class*>(step.actor);
         if (step.action != 3 && actor.field_0x676 == 3) {
             clock.followUp = (fopAcM_GetID(step.actor) & 1U) != 0;

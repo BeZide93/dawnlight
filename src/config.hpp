@@ -12,7 +12,6 @@
 
 namespace dawnlight {
 
-enum class BulletTimeMode : int { Off = 0, Always = 1, Botw = 2 };
 
 enum class AimMode : int {
     Vanilla = 0,
@@ -54,7 +53,6 @@ enum class HudElement : int {
     B,
     X,
     Y,
-    Z,
     ButtonBacking,
     DPad,
     Midna,
@@ -77,7 +75,6 @@ enum class HudButton : int {
     B,
     X,
     Y,
-    Z,
     Count,
 };
 
@@ -111,9 +108,6 @@ AimMode aim_mode();
 bool aim_movement_enabled();
 int cinema_zoom_percent();
 int third_person_reticle_offset_y();
-BulletTimeMode bullet_time_mode();
-bool bullet_time_enabled();
-bool flurry_rush_enabled();
 enum class FierceDeityVisual : int { MagicArmor = 0, Dark = 1, DarkMagic = 2, White = 3, Gold = 4 };
 bool fierce_deity_enabled();
 FierceDeityVisual fierce_deity_visual();
@@ -149,7 +143,6 @@ bool sprint_enabled();
 bool wolf_sprint_enabled();
 float wolf_speed_multiplier();
 float sprint_speed_multiplier();
-bool z_item_slot_enabled();
 bool dawnlight_touch_ui_enabled();
 bool check_for_updates_enabled();
 bool enemy_hard_mode_enabled();
@@ -203,8 +196,6 @@ ConfigVarHandle aim_mode_config_var();
 ConfigVarHandle aim_movement_config_var();
 ConfigVarHandle cinema_zoom_config_var();
 ConfigVarHandle third_person_reticle_offset_y_config_var();
-ConfigVarHandle bullet_time_config_var();
-ConfigVarHandle flurry_rush_config_var();
 ConfigVarHandle fierce_deity_config_var();
 ConfigVarHandle great_spin_projectile_config_var();
 ConfigVarHandle arrow_modes_config_var();
@@ -227,7 +218,6 @@ ConfigVarHandle wolf_speed_config_var();
 ConfigVarHandle sprint_speed_config_var();
 int enemy_spawner_profile();
 ConfigVarHandle enemy_spawner_profile_config_var();
-ConfigVarHandle z_item_slot_config_var();
 ConfigVarHandle dawnlight_touch_ui_config_var();
 ConfigVarHandle check_for_updates_config_var();
 ConfigVarHandle enemy_hard_mode_config_var();

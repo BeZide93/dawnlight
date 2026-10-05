@@ -130,7 +130,7 @@ int main(){
  update_midna_touch_visual(&button,78,46,true,false); // optional release API
 }
 '''
-item_source = (root/'src/item_slot_hooks.cpp').read_text()
+item_source = (root/'src/hud_touch_hooks.cpp').read_text()
 start = item_source.index('bool midna_touch_available()')
 fixture = fixture.replace('// AVAILABILITY', item_source[start:item_source.index('\n}', start)+2])
 with tempfile.TemporaryDirectory() as tmp:
@@ -139,7 +139,7 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', '-Wno-multichar',
                     '-I'+str(root/'src'), '-I'+str(dusk/'src'), str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-source = (root/'src/item_slot_hooks.cpp').read_text()
+source = (root/'src/hud_touch_hooks.cpp').read_text()
 assert 'refresh_midna_touch_icon_texture' not in source
 assert 'hook_add_pre<UpdateMidnaIconTextureHook>' in source
 assert 'hook_add_post<UpdateMidnaIconTextureHook>' in source

@@ -6,7 +6,7 @@
 
 namespace dawnlight {
 enum class StaminaSetting {
-    Amount, Recovery, ExhaustThreshold, ExhaustRecovery, Sprint, WolfSprint, Glide, BulletTime, FlurryRush, Block, GuardBreak, GreatSpin, ShieldAttack, BackSlice, HelmSplitter, MidnaAttack, Count
+    Amount, Recovery, ExhaustThreshold, ExhaustRecovery, Sprint, WolfSprint, Glide, Block, GuardBreak, GreatSpin, ShieldAttack, BackSlice, HelmSplitter, MidnaAttack, Count
 };
 struct StaminaSettingDesc {
     const char* key;
@@ -22,8 +22,6 @@ inline constexpr std::array<StaminaSettingDesc, static_cast<size_t>(StaminaSetti
     {"stamina-sprint", "Sprint", 0, 20, 5, " /sec"},
     {"stamina-wolf-sprint", "Wolf Sprint", 0, 20, 5, " /sec"},
     {"stamina-glide", "Glide", 0, 20, 5, " /sec"},
-    {"stamina-bullet-time", "Bullet Time", 0, 50, 15, " /sec"},
-    {"stamina-flurry-rush", "Flurry Rush", 0, 100, 50, ""},
     {"stamina-block", "Block", 0, 100, 10, ""},
     {"stamina-guard-break", "Guard Break", 0, 100, 60, ""},
     {"stamina-great-spin", "Great Spin Projectile", 0, 100, 40, ""},

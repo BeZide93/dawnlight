@@ -14,27 +14,11 @@ including the 3rd Person reticle offset, with Aim Movement either on or off.
 
 See [Arrow Modes](arrow-modes.md) for Bow ammunition modes and ZR controls.
 
-## Bullet Time
+## Great Spin
 
-Bullet Time while aiming the Bow during a manual jump or Gale: **Off** disables
-it, **Always** preserves the previous On behavior, and **BOTW** requires a ground
-clearance of twice the original 100% jump height when activating. The threshold
-is independent of Jump Height/Gale Height. A 100% jump from level ground cannot
-trigger BOTW Bullet Time; jumping off a ledge or using Gale can. A 200% jump
-reaches the threshold near its apex. Once activated, duration, stamina and
-cancellation work as before. Existing On/Off configurations migrate to Always/Off.
-
-## Flurry Rush and Great Spin
-
-**Flurry Rush** rewards a perfectly timed evade. The optional **Great Spin
-Projectile** adds a ranged attack to the Great Spin.
-
-During Flurry Rush, each sword strike that connects shows the native impact
-effect at the contact point. Damage and the enemy's hit reaction are still
-deferred until the rush ends.
-
-Bullet Time, Flurry Rush and the Great Spin projectile share the
-[stamina meter](movement-and-abilities.md#shared-stamina) with movement abilities.
+The optional **Great Spin Projectile** adds a ranged attack to the Great Spin.
+It shares the [stamina meter](movement-and-abilities.md#shared-stamina) with
+movement abilities.
 
 ## Dark Link
 

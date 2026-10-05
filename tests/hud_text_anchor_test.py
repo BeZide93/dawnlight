@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'src/item_slot_hooks.cpp').read_text()
+source = (root / 'src/hud_touch_hooks.cpp').read_text()
 config = (root / 'src/config.cpp').read_text()
 layout = (root / 'src/hud_layout.hpp').read_text()
 

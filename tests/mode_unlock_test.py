@@ -14,7 +14,7 @@ def function(source,name):
         depth+=(source[end]=='{')-(source[end]=='}');end+=1
     return source[start:end]
 mapping=function(config,'mode_setting_for_config')
-variables=sorted((set(re.findall(r'\bs_\w+',mapping))|{'s_dawnlightMode','s_zItemSlot','s_jumpButton'})-{'s_staminaSettings'})
+variables=sorted((set(re.findall(r'\bs_\w+',mapping))|{'s_dawnlightMode','s_jumpButton'})-{'s_staminaSettings'})
 fixture=r'''
 #include <cassert>
 #include <cstdint>
@@ -30,8 +30,6 @@ namespace dawnlight { bool teActive=false;bool twilit_stamina_active(){return te
 namespace dawnlight {
 bool teHumanSprint=false,teWolfSprint=false;
 bool twilit_sprint_enabled(bool wolf){return wolf?teWolfSprint:teHumanSprint;}
-const char* zProvider=nullptr;
-const char* z_item_slot_provider_notice(){return zProvider;}
 }
 using ConfigVarHandle=uint64_t;
 using UiElementHandle=uint64_t;
@@ -132,8 +130,8 @@ void open(ModeControlBinding& b){
     control.desc.on_pressed(nullptr,control.desc.user_data);
 }
 void reset(){
-    teActive=teHumanSprint=teWolfSprint=false;zProvider=nullptr;configService={};uiService={};s_configTypes.clear();s_modeControls.clear();s_modeUnlockDialog=0;
-    s_teStaminaNote=s_teStaminaSettingsNote=s_localStaminaHelp=s_teSprintNote=s_teWolfSprintNote=s_zItemsNote=0;
+    teActive=teHumanSprint=teWolfSprint=false;configService={};uiService={};s_configTypes.clear();s_modeControls.clear();s_modeUnlockDialog=0;
+    s_teStaminaNote=s_teStaminaSettingsNote=s_localStaminaHelp=s_teSprintNote=s_teWolfSprintNote=0;
     // TYPES
     for(size_t i=0;i<s_staminaSettings.size();++i){s_staminaSettings[i]=1000+i;s_configTypes[1000+i]=CONFIG_VAR_INT;}
     for(const auto& [h,t]:s_configTypes){configService.types[h]=t;configService.values[h]=t==CONFIG_VAR_BOOL?0:237;}
@@ -174,28 +172,26 @@ int main(){
 
     // Exercise the production live UI updater, including independent windows.
     reset();configService.values[s_dawnlightMode]=0;
-    for(auto var:{s_stamina,s_sprint,s_wolfSprint,s_zItemSlot})make(var,UI_CONTROL_TOGGLE,"Toggle");
+    for(auto var:{s_stamina,s_sprint,s_wolfSprint})make(var,UI_CONTROL_TOGGLE,"Toggle");
     for(auto var:{s_sprintSpeedPercent,s_wolfSpeedPercent})make(var,UI_CONTROL_NUMBER,"Speed");
     for(auto var:s_staminaSettings)make(var,UI_CONTROL_NUMBER,"Cost");
-    for(auto* handle:{&s_teStaminaNote,&s_teStaminaSettingsNote,&s_localStaminaHelp,&s_teSprintNote,&s_teWolfSprintNote,&s_zItemsNote})
+    for(auto* handle:{&s_teStaminaNote,&s_teStaminaSettingsNote,&s_localStaminaHelp,&s_teSprintNote,&s_teWolfSprintNote})
         svc_ui->pane_add_text(nullptr,1,"Notice",handle);
     const auto stored=configService.values;
-    teActive=teHumanSprint=teWolfSprint=true;zProvider="Z Items: Twilit Essentials.";
+    teActive=teHumanSprint=teWolfSprint=true;
     update_stamina_ui();
     assert(uiService.controls.at(s_teStaminaNote).visible&&uiService.controls.at(s_teStaminaSettingsNote).visible);
     assert(!uiService.controls.at(s_localStaminaHelp).visible);
     assert(uiService.controls.at(s_teSprintNote).visible&&uiService.controls.at(s_teWolfSprintNote).visible);
-    assert(uiService.controls.at(s_zItemsNote).visible&&uiService.controls.at(s_zItemsNote).label==zProvider);
     for(auto& [var,b]:s_modeControls){
         assert(uiService.controls.at(b.control).visible==!external_owns_control(var));
         assert(!uiService.controls.at(b.unlock).visible);
     }
-    zProvider="Z Items: Twilight HD HUD.";teHumanSprint=false;update_stamina_ui();
-    assert(uiService.controls.at(s_zItemsNote).label==zProvider);
+    teHumanSprint=false;update_stamina_ui();
     assert(!uiService.controls.at(s_teSprintNote).visible&&uiService.controls.at(s_teWolfSprintNote).visible);
-    teActive=teWolfSprint=false;zProvider=nullptr;update_stamina_ui();
+    teActive=teWolfSprint=false;update_stamina_ui();
     assert(!uiService.controls.at(s_teStaminaNote).visible&&!uiService.controls.at(s_teStaminaSettingsNote).visible);
-    assert(uiService.controls.at(s_localStaminaHelp).visible&&!uiService.controls.at(s_zItemsNote).visible);
+    assert(uiService.controls.at(s_localStaminaHelp).visible);
     for(auto& [var,b]:s_modeControls)assert(uiService.controls.at(b.control).visible);
     assert(configService.values==stored);
     stamina_window_closed(nullptr,0,nullptr);settings_closed(nullptr,0,nullptr);
@@ -219,20 +215,19 @@ int main(){
             assert(uiService.controls.at(preset?b.unlock:b.control).visible);
         }
         teActive=true;
-        for(auto setting:{StaminaSetting::Glide,StaminaSetting::FlurryRush,StaminaSetting::GreatSpin,StaminaSetting::MidnaAttack})
+        for(auto setting:{StaminaSetting::Glide,StaminaSetting::GreatSpin,StaminaSetting::MidnaAttack})
             assert(!twilit_owns_stamina_control(s_staminaSettings[static_cast<size_t>(setting)]));
     }
     // External providers hide toggles, speed sliders and preset proxies,
     // reject stale writes, and restore the saved local settings independently.
-    for(bool preset:{false,true}) for(int owner=0;owner<3;++owner){
+    for(bool preset:{false,true}) for(int owner=0;owner<2;++owner){
         reset();configService.values[s_dawnlightMode]=preset;
-        const auto toggle=owner==0?s_sprint:owner==1?s_wolfSprint:s_zItemSlot;
+        const auto toggle=owner==0?s_sprint:s_wolfSprint;
         auto& b=make(toggle,UI_CONTROL_TOGGLE,"External setting");
         const auto speed=owner==0?s_sprintSpeedPercent:s_wolfSpeedPercent;
         if(owner<2)make(speed,UI_CONTROL_NUMBER,"Speed");
         auto saved=configService.values;
         teHumanSprint=owner==0;teWolfSprint=owner==1;
-        zProvider=owner==2?"Z Items: Twilit Essentials.":nullptr;
         assert(!teActive); // Feature ownership works with the TE meter off.
         sync_mode_control(nullptr,b);
         assert(!uiService.controls.at(b.control).visible&&!uiService.controls.at(b.unlock).visible);
@@ -246,7 +241,7 @@ int main(){
             assert(mode_control_disabled(nullptr,&rate));
             assert(!external_owns_control(owner==0?s_wolfSprint:s_sprint));
         }
-        teHumanSprint=teWolfSprint=false;zProvider=nullptr;sync_mode_control(nullptr,b);
+        teHumanSprint=teWolfSprint=false;sync_mode_control(nullptr,b);
         assert(uiService.controls.at(preset&&owner<2?b.unlock:b.control).visible);
         assert(configService.values==saved);
     }
@@ -260,7 +255,7 @@ int main(){
     assert(register_bool("extra-bool",true,extra)==MOD_OK&&s_configTypes[extra]==CONFIG_VAR_BOOL);
     assert(register_int("extra-int",42,extra)==MOD_OK&&s_configTypes[extra]==CONFIG_VAR_INT);
     for(auto kind:{UI_CONTROL_TOGGLE,UI_CONTROL_NUMBER,UI_CONTROL_SELECT}){
-        reset();auto target=kind==UI_CONTROL_TOGGLE?s_wolfSprint:kind==UI_CONTROL_NUMBER?s_wolfSpeedPercent:s_bulletTimeMode;
+        reset();auto target=kind==UI_CONTROL_TOGGLE?s_wolfSprint:kind==UI_CONTROL_NUMBER?s_wolfSpeedPercent:s_galeRecovery;
         auto& b=make(target,kind,"Test setting");auto saved=configService.values;
         assert(!uiService.controls.at(b.control).visible);
         open(b);assert(uiService.body.find("replace your previously saved manual settings")!=std::string::npos);
@@ -345,7 +340,7 @@ for name in ('register_bool','register_int','dawnlight_mode_enabled','progressio
              'mode_setting_for_config','mode_config_override','edit_requires_progression_off','leave_dawnlight_mode_for_edit'):
     production+='\n'+function(config,name)
 production+='\n'+function(config,'stamina_config_var')+'\n'+function(config,'stamina_setting_config_var')
-for name in ('sprint_config_var','sprint_speed_config_var','wolf_sprint_config_var','wolf_speed_config_var','z_item_slot_config_var'):
+for name in ('sprint_config_var','sprint_speed_config_var','wolf_sprint_config_var','wolf_speed_config_var'):
     production+='\n'+function(config,name)
 for name in ('get_int','jump_button','jump_button_config_var'):
     production+='\n'+function(config,name)

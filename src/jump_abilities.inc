@@ -1,5 +1,5 @@
 // Included in jump_hooks.cpp so all jump-button actions share the existing safety
-// checks and the same manual-jump/Bullet Time ownership.
+// checks and the same manual-jump ownership.
 #include "jump_gale_visual.inc"
 
 constexpr ActorId kNoGlideActor = fpcM_ERROR_PROCESS_ID_e;
@@ -229,7 +229,6 @@ bool launch_gale(daAlink_c* link) {
     link->current.angle.y = launchAngle;
     apply_manual_jump_height(link, jump_height_multiplier() + gale_height_bonus());
     s_manualJumpOwner = link;
-    mark_manual_jump_started(link);
     s_galeVisual.launch(origin);
     return true;
 }

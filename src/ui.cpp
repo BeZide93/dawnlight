@@ -1,6 +1,5 @@
 #include "touch_buttons.hpp"
 #include "config.hpp"
-#include "item_slot_compat.hpp"
 #include "stamina.hpp"
 #include "twilit_stamina.hpp"
 #include "enemy_spawner.hpp"
@@ -22,7 +21,7 @@ UiWindowHandle s_staminaWindow = 0;
 UiWindowHandle s_darkLinkWindow = 0;
 UiElementHandle s_teStaminaNote = 0;
 UiElementHandle s_teStaminaSettingsNote = 0, s_localStaminaHelp = 0;
-UiElementHandle s_teSprintNote = 0, s_teWolfSprintNote = 0, s_zItemsNote = 0;
+UiElementHandle s_teSprintNote = 0, s_teWolfSprintNote = 0;
 UiWindowHandle s_settingsWindow = 0;
 UiMenuTabHandle s_menuTab = 0;
 
@@ -35,7 +34,6 @@ constexpr const char* kAimModeOptions[] = {
 constexpr const char* kSecondSwordOptions[] = {"Wooden Sword", "Ordon Sword", "Master Sword"};
 constexpr const char* kJumpButtonOptions[] = {"R", "L (LB)", "R3", "L3"};
 constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
-constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
 constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic", "White", "Gold"};
 constexpr const char* kFierceDeityActivationOptions[] = {"Spin Attack", "R+Z", "R+A", "L3", "R3"};
 
@@ -114,7 +112,6 @@ bool twilit_owns_stamina_control(ConfigVarHandle var) {
 bool external_owns_control(ConfigVarHandle var) {
     if (var == sprint_config_var() || var == sprint_speed_config_var()) return twilit_sprint_enabled();
     if (var == wolf_sprint_config_var() || var == wolf_speed_config_var()) return twilit_sprint_enabled(true);
-    if (var == z_item_slot_config_var()) return z_item_slot_provider_notice() != nullptr;
     return twilit_owns_stamina_control(var);
 }
 
@@ -165,8 +162,7 @@ void mode_control_set(ModContext* ctx, void* data, const UiControlValue* value) 
 }
 
 void bind_mode_control(UiControlDesc& desc) {
-    if (mode_setting_for_config(desc.config_var) == ModeSetting::None &&
-        desc.config_var != z_item_slot_config_var()) return;
+    if (mode_setting_for_config(desc.config_var) == ModeSetting::None) return;
     auto& binding = s_modeControls[desc.config_var];
     binding = {desc.config_var, desc.kind, desc.is_disabled};
     desc.binding = UI_BINDING_CALLBACKS;
@@ -521,15 +517,7 @@ ModResult build_aiming_tab(
     {
         return MOD_ERROR;
     }
-    if (add_select(ctx, left, "Bullet Time", bullet_time_config_var(), kBulletTimeOptions,
-            std::size(kBulletTimeOptions),
-            "Off disables Bullet Time. Always keeps the original airborne Bow aiming behavior. "
-            "BOTW requires twice the original jump height above the ground to activate, independent "
-            "of Jump Height and Gale Height. Stamina cost is configurable in Controls -> Stamina Settings (default 15 points/sec). Press A to cancel.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
+
     return MOD_OK;
 }
 
@@ -694,23 +682,12 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
-    if (svc_ui->pane_add_text(ctx, left, "Z Items: external provider.", &s_zItemsNote) != MOD_OK)
-        return MOD_ERROR;
-    if (add_toggle(ctx, left, "Z Item Slot", z_item_slot_config_var(),
-            "Adds an item slot on Z and moves Midna off the Z button. "
-            "Automatically skipped when Twilight HD HUD Z Items or "
-            "Twilit Essentials Custom Z Button is active. "
-            "Restart the app after changing this setting.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
+
     update_stamina_ui();
     if (add_toggle(ctx, left, "Dawnlight Touch UI", dawnlight_touch_ui_config_var(),
-            "Shows the third item on the touch Z button. Enable a separate Midna button "
-            "under Touch Buttons. Keeps the L touch button available on the map. "
-            "This works independently from Dawnlight's Z Item Slot for "
-            "compatibility with other third-item mods. Restart the app after changing this "
+            "Enables the separate Midna button under Touch Buttons and keeps the L "
+            "touch button available on the map. "
+            "Restart the app after changing this "
             "setting.")
         != MOD_OK)
     {
@@ -823,14 +800,8 @@ ModResult build_hud_tab(
     {
         return MOD_ERROR;
     }
-    if (add_custom_transform_controls(ctx, left, "Custom Z", HudElement::Z) != MOD_OK) {
-        return MOD_ERROR;
-    }
-    if (add_custom_button_controls(ctx, left, "Custom Z Content", HudButton::Z, true, true, true) !=
-        MOD_OK)
-    {
-        return MOD_ERROR;
-    }
+
+
     if (add_custom_button_backing_controls(ctx, left) != MOD_OK) {
         return MOD_ERROR;
     }
@@ -974,15 +945,7 @@ ModResult build_gameplay_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "Flurry Rush", flurry_rush_config_var(),
-            "Perfectly evade a locked enemy attack with a side jump or backflip to slow the "
-            "dodge and enemies for three seconds. A sword attack closes to melee range and "
-            "restores Link's speed. Link cannot be hit while the effect is active. Releasing "
-            "the lock-on ends the effect early. Uses the configured Flurry Rush cost (default 50 stamina points per activation).")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
+
     if (add_toggle(ctx, left, "Dark Link", fierce_deity_config_var(),
             "Build power and activate at full charge to transform. Configure appearance, activation, "
             "gauge gains, depletion and sword damage in Dark Link Settings.")
@@ -1003,7 +966,7 @@ ModResult build_gameplay_tab(
     if (add_section(ctx, left, "Enemy Spawner") != MOD_OK) return MOD_ERROR;
     if (add_select(ctx, left, "Enemy", enemy_spawner_profile_config_var(),
             kEnemySpawnerProfileLabels.data(), kEnemySpawnerProfileLabels.size(),
-            "Select an enemy with a Dawnlight slow-motion profile.")
+            "Select an enemy to spawn.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -1192,7 +1155,7 @@ ModResult build_models_tab(
 }
 
 void settings_closed(ModContext*, UiWindowHandle, void*) {
-    s_teStaminaNote = s_teSprintNote = s_teWolfSprintNote = s_zItemsNote = 0;
+    s_teStaminaNote = s_teSprintNote = s_teWolfSprintNote = 0;
     s_settingsWindow = 0;
 }
 
@@ -1242,10 +1205,10 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
     if (add_button(ctx, panel, "Open Dawnlight Settings", open_settings) != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Aim Movement, Aim Modes, and Bullet Time") != MOD_OK) {
+    if (add_text(ctx, panel, "Aim Movement and Aim Modes") != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Flurry Rush, Dark Link, and Great Spin Projectile") != MOD_OK) {
+    if (add_text(ctx, panel, "Dark Link and Great Spin Projectile") != MOD_OK) {
         return MOD_ERROR;
     }
     if (add_text(ctx, panel, "Shared Stamina and Lazy Tweaks compatibility") != MOD_OK) {
@@ -1254,7 +1217,7 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
     if (add_text(ctx, panel, "Manual Shielding, Manual Jump, and Sprint") != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Z Item Slot and Dawnlight Touch UI") != MOD_OK) return MOD_ERROR;
+    if (add_text(ctx, panel, "Dawnlight Touch UI") != MOD_OK) return MOD_ERROR;
     if (add_text(ctx, panel, "Intro Skip new-save mode") != MOD_OK) return MOD_ERROR;
     if (add_text(ctx, panel, "Boss Rush hub, portals, resume, and hardmode") != MOD_OK) {
         return MOD_ERROR;
@@ -1272,7 +1235,7 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
 
 void update_stamina_ui() {
     if (!s_teStaminaNote && !s_teStaminaSettingsNote && !s_teSprintNote &&
-        !s_teWolfSprintNote && !s_zItemsNote) return;
+        !s_teWolfSprintNote) return;
     const bool external = twilit_stamina_active();
     const auto sync = [](ConfigVarHandle var) {
         const auto entry = s_modeControls.find(var);
@@ -1292,12 +1255,7 @@ void update_stamina_ui() {
         sync(wolf_sprint_config_var());
         sync(wolf_speed_config_var());
     }
-    if (s_zItemsNote) {
-        const char* notice = z_item_slot_provider_notice();
-        if (notice) svc_ui->elem_set_text(mod_ctx, s_zItemsNote, notice);
-        svc_ui->elem_set_visible(mod_ctx, s_zItemsNote, notice != nullptr);
-        sync(z_item_slot_config_var());
-    }
+
     if (s_teStaminaSettingsNote) {
         svc_ui->elem_set_visible(mod_ctx, s_teStaminaSettingsNote, external);
         svc_ui->elem_set_visible(mod_ctx, s_localStaminaHelp, !external);

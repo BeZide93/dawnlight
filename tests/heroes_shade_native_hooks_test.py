@@ -1013,21 +1013,12 @@ int main() {
     daNpc_Kn_c survivor;sBattle.health=1;sBattle.recovery=45;
     int executeResult=0;before_execute(nullptr,&survivor,&executeResult,nullptr);
     assert(!sCinema.active() && !sBattle.dying && sBattle.recovery==44);
-    // A held simulation step must not advance the encounter clock; foreign
-    // actors and an inactive scope keep the original cadence.
-    EnemySlowStep slow{&survivor,false,.1f};activeSlowStep=&slow;
+    // Native encounter cadence and gravity advance once per execute.
     before_execute(nullptr,&survivor,&executeResult,nullptr);
-    assert(sBattle.recovery==44);
-    slow.timerTick=true;before_execute(nullptr,&survivor,&executeResult,nullptr);
     assert(sBattle.recovery==43);
-    slow.timerTick=false;slow.actor=&a;
-    before_execute(nullptr,&survivor,&executeResult,nullptr);
-    assert(sBattle.recovery==42);
-    slow.actor=&survivor;survivor.speedF=0;survivor.speed.y=12;
-    survivor.mMotionSeqMngr.no=14;
+    survivor.speedF=0;survivor.speed.y=12;survivor.mMotionSeqMngr.no=14;
     before_movement(nullptr,&survivor,nullptr,nullptr);
-    assert(std::abs(survivor.speed.y-11.7f)<.0001f);
-    activeSlowStep=nullptr;
+    assert(std::abs(survivor.speed.y-9.0f)<.0001f);
 
     a.owned=false;
     assert(sword_collision(nullptr,&a,nullptr,nullptr)==HOOK_CONTINUE);
@@ -1036,12 +1027,7 @@ int main() {
 
 start = encounter.index("void stop_blade_sweeps(")
 end = encounter.index("\n}\n",start)+3
-slow_fixture = r'''
-struct EnemySlowStep {daNpc_Kn_c* actor=nullptr;bool timerTick=false;float scale=1;};
-EnemySlowStep* activeSlowStep=nullptr;
-EnemySlowStep* current_enemy_slow_step(){return activeSlowStep;}
-'''
-source = fixture + slow_fixture + function("shade_simulation_tick", "bool") + function("shade_simulation_scale", "float") + function("move_toward", "void") + function("attack_movement", "void") + function("retire_double", "void") + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + function("begin_victory", "void") + function("before_execute") + checks
+source = fixture + function("move_toward", "void") + function("attack_movement", "void") + function("retire_double", "void") + function("waiting_action", "int") + function("cinema_landing", "bool") + encounter[start:end] + (root / "src/heroes_shade_spin.inc").read_text() + function("add_doubles", "void") + function("accessory_motion") + function("sword_collision") + function("trial_body_collision", "void") + function("after_jump_pose", "void") + function("finish_helm_splitter", "void") + function("after_approach", "void") + function("hold_recovery", "void") + function("before_movement", "void") + function("after_knockdown_movement", "void") + function("before_ending_blow_wait") + function("no_order") + function("after_bullet", "void") + function("begin_victory", "void") + function("before_execute") + checks
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / "native_hooks.cpp"
     exe = Path(tmp) / "native_hooks"

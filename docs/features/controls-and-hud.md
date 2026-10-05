@@ -2,22 +2,6 @@
 
 [← Dawnlight overview](../../README.md)
 
-## Z item slot
-
-Z item slot: bind a third item to Z, move Midna to the D-Pad prompt, and use
-the Z slot from the item wheel. The separate Dawnlight Touch UI option keeps
-the touch controls available when another mod provides the third item slot.
-
-Improved item HUD support for extra item slots, including item icons, ammo,
-oil, bottle contents, and combine prompts.
-
-Dawnlight automatically skips its Z-slot hooks when Twilight HD HUD Z Items or
-Twilit Essentials Custom Z Button is enabled. Your saved Dawnlight toggle stays
-unchanged, and Dawnlight Touch UI remains independent. Restart Dusklight after
-changing which mod provides the slot. See the
-[compatibility guide](../../COMPATIBILITY.md) for configurations with
-Twilit Essentials and Twilight HD HUD.
-
 ## Android touch buttons
 
 Under **Controls → Touch Buttons**, enable **Midna**, **LB**, **L3**, **R3**, **Jump**, **Dark Link**, and each of the four **D-Pad**

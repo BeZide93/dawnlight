@@ -1,4 +1,3 @@
-#include "bullet_time.hpp"
 #include "config.hpp"
 #include "fierce_deity.hpp"
 #include "gale_counter.hpp"
@@ -65,13 +64,10 @@ DEFINE_HOOK_SYMBOL("Z2SoundObjSimple::startSound",
 DEFINE_HOOK_SYMBOL("Z2SoundObjSimple::startLevelSound",
     Z2SoundHandlePool*(Z2SoundObjSimple*, JAISoundID, u32, s8), GlideCarrierLevelSound);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
-DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
 constexpr u16 kSwordItem = 0x103;
 
 const daAlink_c* s_manualJumpOwner = nullptr;
-daAlink_c* s_slowSpeedOwner = nullptr;
-float s_previousNormalSpeed = 0.0f;
 daAlink_c* s_sprintOwner = nullptr;
 bool s_galeInputCancelled = false;
 bool s_galeChargeCancelledThisTick = false;
@@ -287,7 +283,7 @@ void apply_twilit_sprint_jump_speed(daAlink_c* link, float speed) {
 void apply_sprint_jump_speed(daAlink_c* link, const float multiplier) {
     // The native initializer has already calculated vertical speed/gravity.
     // Scale horizontal motion once, then leave airborne steering and collision
-    // to the existing jump procedure (including Bullet Time).
+    // to the existing jump procedure.
     link->mNormalSpeed *= multiplier;
     link->speedF *= multiplier;
     link->mMaxSpeed *= multiplier;
@@ -311,12 +307,11 @@ bool start_ground_jump(daAlink_c* link) {
     set_manual_jump_direction(link);
     if (link->checkWolf()) {
         // Use wolf animations, dash parameters and landing/collision handling.
-        // Human sword attacks and Bullet Time do not own wolf jumps.
+        // Human sword attacks do not own wolf jumps.
         if (!link->procWolfAutoJumpInit(1)) return false;
         apply_manual_jump_movement(link);
         apply_manual_jump_height(link, jump_height_multiplier());
         s_manualJumpOwner = nullptr;
-        clear_manual_jump(link);
         return true;
     }
     const float sprintJumpMultiplier = sprint_jump_speed_multiplier(link);
@@ -329,7 +324,6 @@ bool start_ground_jump(daAlink_c* link) {
         if (link->procCutJumpInit(FALSE)) {
             apply_manual_jump_movement(link);
             s_manualJumpOwner = nullptr;
-            clear_manual_jump(link);
             return true;
         }
         return false;
@@ -341,7 +335,6 @@ bool start_ground_jump(daAlink_c* link) {
         apply_twilit_sprint_jump_speed(link, twilitSprintSpeed);
         apply_manual_jump_height(link, jump_height_multiplier());
         s_manualJumpOwner = link;
-        mark_manual_jump_started(link);
         return true;
     }
     return false;
@@ -363,7 +356,6 @@ bool start_air_jump_attack(daAlink_c* link) {
     }
     apply_manual_jump_movement(link);
     s_manualJumpOwner = nullptr;
-    clear_manual_jump(link);
     return true;
 }
 
@@ -434,27 +426,12 @@ HookAction before_check_auto_jump(ModContext*, void* args, void* retval, void*) 
 
 HookAction before_proc_auto_jump(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    s_slowSpeedOwner = nullptr;
     if (!start_air_jump_attack(link)) {
-        update_bullet_time_before_jump(link);
-        if (bullet_time_active_for(link)) {
-            s_slowSpeedOwner = link;
-            s_previousNormalSpeed = link->mNormalSpeed;
-        }
         return HOOK_CONTINUE;
     }
 
     *static_cast<int*>(retval) = 1;
     return HOOK_SKIP_ORIGINAL;
-}
-
-void after_proc_auto_jump(ModContext*, void* args, void*, void*) {
-    auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (s_slowSpeedOwner == link) {
-        slow_bullet_time_jump_speed_change(link, s_previousNormalSpeed);
-    }
-    s_slowSpeedOwner = nullptr;
-    update_bullet_time_after_jump(link);
 }
 
 HookAction before_proc_move_sprint(ModContext*, void* args, void*, void*) {
@@ -528,14 +505,8 @@ HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     }
     if (s_manualJumpOwner == link && nextProc != daAlink_c::PROC_AUTO_JUMP) {
         s_manualJumpOwner = nullptr;
-        clear_manual_jump(link);
     }
     return HOOK_CONTINUE;
-}
-
-HookAction before_set_body_angle_x_ready_anime(ModContext*, void* args, void*, void*) {
-    return bullet_time_active_for(mods::arg<daAlink_c*>(args, 0)) ? HOOK_SKIP_ORIGINAL :
-                                                                   HOOK_CONTINUE;
 }
 
 }  // namespace
@@ -575,9 +546,7 @@ ModResult install_jump_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_pre<CommonProcInit>(svc_hook, before_common_proc_init);
     }
-    if (result == MOD_OK) {
-        result = mods::hook_add_post<ProcAutoJump>(svc_hook, after_proc_auto_jump);
-    }
+
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ProcMoveSprint>(svc_hook, before_proc_move_sprint);
     }
@@ -592,10 +561,7 @@ ModResult install_jump_hooks(ModError* error) {
         result = mods::hook_add_pre<GetMainBckDataSprint>(
             svc_hook, before_get_main_bck_data_sprint);
     }
-    if (result == MOD_OK) {
-        result = mods::hook_add_pre<SetBodyAngleXReadyAnime>(
-            svc_hook, before_set_body_angle_x_ready_anime);
-    }
+
     if (result == MOD_OK) result = mods::hook_add_pre<JumpGameCombos>(svc_hook, before_jump_game_combos);
     if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesExecute>(svc_hook, before_jump_abilities_execute);
     if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesExecute>(svc_hook, after_jump_abilities_execute);

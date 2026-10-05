@@ -371,29 +371,6 @@ inline DuskModHudButtonLayout hud_layout_y_button_layout() {
     return {};
 }
 
-inline DuskModHudTransform hud_layout_z_transform() {
-    switch (hud_layout()) {
-    case HudLayout::XBox:
-    case HudLayout::WiiU:
-        return {
-            .offset_x = 0.0f,
-            .offset_y = 0.0f,
-            .scale = 1.0f,
-        };
-    case HudLayout::Dawnlight:
-        return {
-            .offset_x = -100.0f,
-            .offset_y = 0.0f,
-            .scale = 1.0f,
-        };
-    case HudLayout::Custom:
-        return hud_custom_element_transform(HudElement::Z);
-    case HudLayout::GameCube:
-    default:
-        return {};
-    }
-}
-
 inline DuskModHudTransform hud_layout_dpad_transform() {
     switch (hud_layout()) {
     case HudLayout::XBox:
@@ -444,61 +421,6 @@ inline DuskModHudTransform hud_layout_midna_transform() {
             .offset_x = -6.0f,
             .offset_y = 0.0f,
             .scale = 1.0f,
-        };
-    }
-    return {};
-}
-
-inline DuskModHudButtonLayout hud_layout_z_button_layout() {
-    if (custom_hud_layout_enabled()) {
-        return hud_custom_button_layout(HudButton::Z, kHudItemAnchorRight);
-    }
-    if (hud_layout() == HudLayout::WiiU) {
-        return {
-            .item_scale = 1.0f,
-            .item_offset_x = 0.0f,
-            .item_offset_y = 0.0f,
-            .ammo_scale = 0.8f,
-            .ammo_offset_x = 0.0f,
-            .ammo_offset_y = -15.0f,
-            .text_scale = 1.0f,
-            .text_offset_x = 0.0f,
-            .text_offset_y = 0.0f,
-            .item_anchor = kHudItemAnchorRight,
-            .default_item_anchor = kHudItemAnchorRight,
-            .text_anchor = kHudTextAnchorLeft,
-        };
-    }
-    if (hud_layout() == HudLayout::XBox) {
-        return {
-            .item_scale = 1.0f,
-            .item_offset_x = 0.0f,
-            .item_offset_y = 0.0f,
-            .ammo_scale = 0.7f,
-            .ammo_offset_x = 0.0f,
-            .ammo_offset_y = -15.0f,
-            .text_scale = 1.0f,
-            .text_offset_x = 0.0f,
-            .text_offset_y = 0.0f,
-            .item_anchor = kHudItemAnchorRight,
-            .default_item_anchor = kHudItemAnchorRight,
-            .text_anchor = kHudTextAnchorLeft,
-        };
-    }
-    if (hardcoded_hud_layout_enabled()) {
-        return {
-            .item_scale = 1.0f,
-            .item_offset_x = 0.0f,
-            .item_offset_y = 0.0f,
-            .ammo_scale = 0.7f,
-            .ammo_offset_x = 0.0f,
-            .ammo_offset_y = -15.0f,
-            .text_scale = 1.0f,
-            .text_offset_x = 0.0f,
-            .text_offset_y = 0.0f,
-            .item_anchor = kHudItemAnchorRight,
-            .default_item_anchor = kHudItemAnchorRight,
-            .text_anchor = kHudTextAnchorLeft,
         };
     }
     return {};

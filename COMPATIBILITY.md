@@ -4,27 +4,6 @@ This document describes Dawnlight compatibility fixes for Dusklight forks and
 tested configurations for mods that modify the third item slot, touch controls,
 or the gameplay HUD.
 
-## Lazy Tweaks startup compatibility
-
-Lazy Tweaks adds fields to Dusklight's internal `UserSettings` structure.
-Dawnlight 3.5.3 read the gyro setting through the upstream structure layout,
-which could abort the app during its regular update, including immediately
-after installation through the mod browser. This was confirmed in a Windows
-crash dump from Lazy Tweaks `v3.1.0-309` (`9bf52f4ca8ba`).
-
-Dawnlight now looks up `game.enableGyroAim` by name through
-`dusk::config::GetConfigVar`, without depending on its position in
-`UserSettings`. Runtime setting changes remain effective. If the lookup or
-setting is unavailable, Dawnlight skips its Bullet Time gyro integration.
-This uses the shared `ConfigVar<bool>` ABI of the inspected upstream and fork;
-it does not guarantee compatibility with arbitrary changes to that type or
-other private host interfaces.
-
-Run `python3 tests/bullet_time_gyro_compat_test.py` for the focused regression
-test. In-game verification should cover both app startup with Dawnlight
-installed and installation through the mod browser on Lazy Tweaks, followed
-by gyro aiming during Bullet Time on upstream Dusklight and Lazy Tweaks.
-
 ## Dual Wield Collection option
 
 Enabling Dual Wield adds the selected second sword’s icon after the rightmost visible shield
@@ -86,19 +65,14 @@ setting, fully restart Dusklight before testing the new configuration.
 `Dawnlight Touch UI` is an Android-only compatibility layer. It does not create
 or own a third item slot. It:
 
-- displays the active third-slot item on the touch Z button;
-- displays supported ammo counts and lantern oil on that button;
 - restores native Quick Transform (R+Y) and Sun Song (R+X, wolf form) while
   Dusklight touch controls are enabled, for both touch and controller input;
-- allows the touch Z button to assign the selected item from the item wheel;
 - keeps touch L available on field and dungeon maps, and routes it to the
   field map's portal action after Twilight HD HUD's physical-L mapping;
 - offers a separate Midna button with her icon, enabled under Controls → Touch Buttons; and
 - leaves the normal Skip button behavior intact during cutscenes.
 
-This toggle works independently from Dawnlight's `Z Item Slot` setting so that
-another mod can own the third item slot while Dawnlight supplies the compatible
-touch controls. Restart Dusklight after changing it.
+Restart Dusklight after changing the Touch UI setting.
 
 ### Extra touch buttons
 
@@ -178,56 +152,21 @@ touch L, releasing/repeating the press, and returning to normal gameplay.
 
 ## Twilit Essentials
 
-Tested with Twilit Essentials 1.1.9.
-
-Dawnlight skips its Z-slot hooks when Twilit Essentials is enabled and its
-`customZButtonEnabled` setting is on. The saved Dawnlight toggle is preserved;
-restart after changing the provider settings. The setup for using Essentials is:
-
-| Setting | Value |
-| --- | --- |
-| Dawnlight `Z Item Slot` | Either (automatically skipped) |
-| Dawnlight `Dawnlight Touch UI` | On on Android |
-| Twilit Essentials `Custom Z Button` | On |
-
-In this configuration, Twilit Essentials owns the item slot and its gameplay
-behavior. Dawnlight supplies the Android touch integration: item-wheel
-assignment through touch Z, the item icon and counters on touch Z, and Midna's
-head and action on the separate Midna button (enable it under Controls → Touch Buttons).
-
-Alternatively, Dawnlight's `Z Item Slot` can be enabled when Twilit Essentials'
-`Custom Z Button` is disabled and Twilight HD HUD Z Items is also off or absent.
-Other Twilit Essentials features can remain enabled.
+Dawnlight Lite retains shared stamina and collection-menu compatibility.
+Third-item slots and their touch integration are supplied entirely by the mod
+that provides them. Lite does not assign an item to Z or remap Midna to the D-Pad.
 
 ## Twilight HD HUD
 
-Tested with Twilight HD HUD 2.1.1.
-
-Dawnlight checks both Twilight HD HUD's enabled state and its `third-item-slot`
-setting, matching Essentials' guard. An enabled older version without that key
-is treated as having Z Items on (the provider default). Dawnlight makes this
-decision on its first update, after all mods have registered their saved settings,
-so it works in either startup load order. If host config lookup is unavailable,
-Dawnlight skips its Z slot and logs the reason. Dawnlight Touch UI and shared HUD
-hooks remain independent. With Twilight HD HUD Z Items enabled, use:
-
-| Setting | Value |
-| --- | --- |
-| Dawnlight `Z Item Slot` | Either (automatically skipped) |
-| Twilit Essentials `Custom Z Button` | Off, if Essentials is installed |
-| Dawnlight `Dawnlight Touch UI` | On on Android, if Dawnlight touch controls are desired |
-
-This avoids competing third-item implementations. `Dawnlight Touch UI` may
-remain enabled because it does not create another slot; it adapts the active
-third slot to Dawnlight's Android touch layout. Enable the separate Midna button
-under Controls → Touch Buttons to call her; Skip remains a cutscene-only button.
+The HUD artwork, supported layout controls and separate Midna touch button
+remain available. Third-slot behavior and counters belong to the providing mod.
 
 Dawnlight hides HD HUD's obsolete separate A/B/X/Y letter pictures during gameplay
 HUD drawing. This prevents a second set of letters appearing when the button
 groups are moved far left in Dawnlight's editor. The replacement discs and action
 text remain visible; the adapter preserves the original visibility after drawing
 and leaves the vanilla HUD unchanged when HD HUD is disabled. This is independent
-of both mods' Z-slot settings and Dawnlight's Round X/Y Buttons option.
+of Dawnlight's Round X/Y Buttons option.
 
 Dawnlight's HUD Layout Editor is compatible with Twilight HD HUD's gameplay HUD
 for the supported elements. Twilight HD HUD owns its artwork and base layout;
@@ -239,8 +178,7 @@ Custom text offsets/scales and explicit Left/Right anchors remain editable;
 `Original` is also preserved when exporting/importing HUD settings.
 
 Ammo offsets and scales also compose with Twilight HD HUD: X/Y counts receive
-the editor transform after the HD layout, and its third-slot count uses the
-Z ammo settings. These adjustments are restored after each draw so repeated
+the editor transform after the HD layout. These adjustments are restored after each draw so repeated
 presentation frames and live edits do not accumulate offsets or scaling.
 
 ## Arrow Modes and ZR input
@@ -250,8 +188,7 @@ ZR cycles Normal, Fire, and Triple Shot only during active Bow/Hawkeye aiming.
 Dawnlight's R Jump, Sprint, and Manual Shielding do not also activate from that
 press. Holding the Bow without aiming keeps the normal ZR actions available.
 
-Arrow Modes do not change the Z item slot settings described above. They work
-with Dawnlight's Vanilla, 3rd Person, and Cinema aiming modes; bomb arrows and
+Arrow Modes work with Dawnlight's Vanilla, 3rd Person, and Cinema aiming modes; bomb arrows and
 the native Hawkeye zoom button keep their normal behavior.
 
 If another mod also assigns an action to ZR while aiming, disable one of the
@@ -260,14 +197,9 @@ returns the Bow to normal arrows. Already-fired arrows keep their effects.
 
 ## All three mods
 
-When Dawnlight, Twilit Essentials, and Twilight HD HUD are active together,
-Twilight HD HUD must be the only owner of the third item slot:
-
-- Dawnlight `Z Item Slot`: Either (automatically skipped)
-- Twilit Essentials `Custom Z Button`: Automatically skipped by current Essentials; off on older versions
-- Dawnlight `Dawnlight Touch UI`: On on Android when its touch layout is wanted
-
-Twilit Essentials features unrelated to its Custom Z Button can remain enabled.
+Dawnlight Lite does not provide a third item slot. If both Twilit Essentials and
+Twilight HD HUD provide one, configure those mods to use a single provider.
+Dawnlight Touch UI can remain enabled for its separate buttons and map controls.
 
 The editor's required symbols have also been checked against the official Android
 v2.0.1 APK, build ID `8431032be1f483cf884995a28bddd81556950b09`.

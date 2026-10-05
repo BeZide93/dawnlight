@@ -100,10 +100,8 @@ For profiles that expose the corresponding native chase values:
   actor's base `speedF`, `current.angle.y`, or `shape_angle.y`.
 
 Hard Mode does not accelerate animation playback. This preserves exact-frame
-hit, sound, and projectile events and avoids duplicate attacks. The cadence
-also composes with the enemy slow-motion system: Hard Mode is evaluated from
-real enemy timer ticks, while slow motion retains its fractional integration
-and duplicate-event protections.
+hit, sound, and projectile events and avoids duplicate attacks. The Lite runtime evaluates Hard Mode once per native enemy execution.
+It retains actor eligibility, nested-call isolation and native damage timing.
 
 ### Native death and Wolf knockdown timing
 
@@ -130,8 +128,7 @@ Ordinary living combat still uses the five-timer-points-in-three-ticks cadence.
 Run `python3 tests/enemy_hard_mode_death_test.py` to reproduce the old race and
 verify the actual pre-execute guard/timer adjustments against terminal
 conditions extracted from the pinned native actor sources. Coverage includes
-all three affected profiles, each cadence offset, normal and fractional slow
-motion, lethal hits during an existing knockdown, human hits, completed Wolf
+all three affected profiles, each cadence offset, lethal hits during an existing knockdown, human hits, completed Wolf
 takedowns, and Hard Mode off. On-device validation should exercise Wolf bites,
 lethal pounces, takedowns and normal drops for melee and bow Bulblins, Lizalfos,
 Dynalfos and the Bokoblin control case.
@@ -179,8 +176,6 @@ Dynalfos and the Bokoblin control case.
 - Leads thrown spears toward `Link position + Link velocity * 8`.
 - Suppresses a new thrown spear while three Chilfos spear actors are already
   active.
-- Retains the slow-motion protection that prevents the frame-23 spear event
-  from spawning repeatedly.
 - Does not force a direct transition from a throw into a new melee state.
 
 ### White Wolfos (`E_WW`)
@@ -200,7 +195,6 @@ Dynalfos and the Bokoblin control case.
 - Every second bow shot becomes a three-arrow spread: the center arrow plus
   two arrows at `-0x900` and `+0x900` yaw.
 - Extra arrows preserve the native arrow type and targeting parameters.
-- Retains the slow-motion arrow guard that prevents duplicate arrows.
 - Mounted Bulblins remain excluded by the profile eligibility checks.
 - Does not add projectile leading or force a new two-hit melee state.
 
@@ -224,7 +218,6 @@ Dynalfos and the Bokoblin control case.
 - Applies `1.4x` turning.
 - Alternates normal combo finishers per Dynalfos so only every second one
   causes a knockdown; its native `5`-point grounded recovery is preserved.
-- Retains the slow-motion protection for fight-run sidestep impulses.
 - Does not force guard, counter, or jump-attack transitions.
 
 ### Stalfos (`E_SF`)
@@ -291,7 +284,6 @@ Dynalfos and the Bokoblin control case.
 - Applies `1.25x` turning.
 - Does not receive a base `speedF` acceleration multiplier.
 - Does not accelerate the active middle portion of the breath animation.
-- Retains the slow-motion protection against duplicate breath events.
 
 ### Stalchild (`E_BS`)
 
@@ -326,8 +318,6 @@ Dynalfos and the Bokoblin control case.
 - Applies `1.2x` movement/approach acceleration.
 - Applies `1.25x` turning.
 - Makes approach and attack availability occur sooner.
-- Retains the swept-hitbox guard that prevents repeated hits on fractional
-  slow-motion frames.
 - Does not add a new combo state.
 
 ### Bomskit (`E_CR`)
@@ -336,8 +326,6 @@ Dynalfos and the Bokoblin control case.
 - Applies `1.4x` movement/escape acceleration.
 - Applies `1.25x` turning.
 - Reduces native bomb/egg action and retreat intervals.
-- Retains the slow-motion lifetime handling that prevents duplicate egg
-  spawns.
 - Does not lead bomb or egg placement toward Link's future position.
 
 ### Stalhound (`E_SH`)
@@ -361,7 +349,7 @@ Dynalfos and the Bokoblin control case.
   two projectiles at `-0x900` and `+0x900` yaw.
 - The extra projectiles remain suspended until the native center projectile is
   released, then all three launch together from the Toadpoli's muzzle.
-- Recursion and slow-motion duplicate guards prevent the extra projectiles from
+- Recursion guards prevent the extra projectiles from
   recursively producing more spreads or repeating on the same event frame.
 
 ### Water Toadpoli (`E_TK`)
@@ -393,7 +381,6 @@ Dynalfos and the Bokoblin control case.
 - Also shortens `mDefTimer` during ground-fight action `0x33`.
 - Applies `1.2x` movement/approach acceleration.
 - Applies `1.25x` turning.
-- Retains the slow-motion protection against duplicate silk projectiles.
 - Does not rewrite vulnerability hitboxes.
 
 ### Baba Serpent (`E_HB`)
@@ -425,10 +412,8 @@ Dynalfos and the Bokoblin control case.
 
 ## Adult Goron exclusion
 
-Adult Goron (`NPC_GRA`) remains one of the enemy slow-motion integration
-profiles but is deliberately excluded from Enemy Hard Mode. The profile covers
-normal Goron NPCs rather than a regular enemy. Dangoro is a separate actor and
-is not covered by PR #14.
+Adult Goron (`NPC_GRA`) is excluded from Enemy Hard Mode because it covers
+normal Goron NPCs. Dangoro remains a separate Boss Hard Mode actor.
 
 ## New profile-specific mechanics
 

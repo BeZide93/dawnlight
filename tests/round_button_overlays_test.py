@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-source = (Path(__file__).resolve().parents[1] / 'src/item_slot_hooks.cpp').read_text()
+source = (Path(__file__).resolve().parents[1] / 'src/hud_touch_hooks.cpp').read_text()
 
 
 def function(name):

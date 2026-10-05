@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'src/item_slot_hooks.cpp').read_text()
+source = (root / 'src/hud_touch_hooks.cpp').read_text()
 
 def function(name):
     start = source.index(name + '(')
@@ -48,8 +48,6 @@ auto hud_layout_z_transform(){return transforms[2];}
 auto hud_layout_z_button_layout(){return layouts[2];}
 bool enabled=true,ownedZ=false,ammo=true;
 bool hardcoded_hud_layout_enabled(){return enabled;}
-bool z_item_slot_active(){return ownedZ;}
-bool z_item_has_ammo(u8){return ammo;}
 u8 dComIfGp_getSelectItem(int){return 1;}
 constexpr int kZItemSlot=2;
 std::array<dMeter2Draw_c::item_params,2> s_xyAmmoOriginalParams;
@@ -70,7 +68,7 @@ int main(){
     CPaneMgr x,y,z; dMeter2Draw_c meter{{},{&x,&y},&z};
     auto* m=&meter; J2DScreen screen; auto* s=&screen;
     s_hudLayoutMeter=m; s_hudLayoutScreen=s;
-    const auto base=m->mItemParams[0]; const auto zBounds=z.pane.mGlobalBounds;
+    const auto base=m->mItemParams[0];
     // Repeated presentation draws (without a simulation update) used to retain
     // Dawnlight's edited values in HD HUD's snapshot and compound each frame.
     for(bool hd:{false,true}) for(int frame=0;frame<1000;++frame){
@@ -103,33 +101,13 @@ int main(){
             close(m->mItemParams[i].num_pos_x,base.num_pos_x);
             close(m->mItemParams[i].num_scale,base.num_scale);
         }
-        // External Z uses the drawn item's bottom-right corner for 2/3 digits.
-        for(int digits:{2,3}){
-            const float size=m->mItemParams[2].num_scale*16*0.55f;
-            const auto bounds=z.pane.getGlbBounds();
-            close(bounds.f.x-size*digits,zBounds.f.x+(enabled?layouts[2].ammo_offset_x:0)-16*0.55f*(enabled?1.5f:1)*digits);
-            close(bounds.f.y,zBounds.f.y+(enabled?layouts[2].ammo_offset_y:0));
-        }
-        after_meter_draw_restore_external_z_ammo(nullptr,nullptr,nullptr,nullptr);
-        close(m->mItemParams[2].num_scale,1);
-        close(z.pane.mGlobalBounds.f.x,zBounds.f.x);
-        close(z.pane.mGlobalBounds.f.y,zBounds.f.y);
     }
-    // No adjustments for Dawnlight's own Z renderer, non-ammo items, or no pane.
-    enabled=true;
-    for(int scenario=0;scenario<3;++scenario){
-        ownedZ=scenario==0;ammo=scenario!=1;m->mpItemR=scenario==2?nullptr:&z;
-        apply_external_z_ammo_layout(m);assert(s_externalZAmmoDraw.meter==nullptr);
-    }
-    apply_external_z_ammo_layout(nullptr);restore_external_z_ammo_layout();
 }
+
 '''
-start = source.index('struct ExternalZAmmoDrawState {')
-state = source[start:source.index('ExternalZAmmoDrawState s_externalZAmmoDraw;', start) + len('ExternalZAmmoDrawState s_externalZAmmoDraw;')]
+state = ''
 names = ['f32 hud_ammo_scale', 'void apply_xy_ammo_layout', 'void restore_xy_ammo_layout',
-         'void apply_external_z_ammo_layout', 'void restore_external_z_ammo_layout',
          'HookAction before_meter_draw', 'void after_meter_draw_restore_xy_ammo',
-         'void after_meter_draw_restore_external_z_ammo',
          'HookAction before_meter_screen_draw_restore_hud', 'HookAction before_meter_screen_draw_apply_hud']
 fixture = fixture.replace('// STATE', state).replace('// FUNCTIONS', '\n'.join(function(n) for n in names))
 with tempfile.TemporaryDirectory() as tmp:
@@ -138,4 +116,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('HUD ammo regression passed: X/Y/Z positions, scales, restoration, and 2,000 presentation draws')
+print('HUD ammo regression passed: X/Y positions, scales, restoration, and 2,000 presentation draws')

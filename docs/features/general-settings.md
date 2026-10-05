@@ -10,7 +10,7 @@ save slots are initialized.
 ## Dawnlight Mode
 
 **Dawnlight Mode** applies the intended preset: Sprint at 150%, Wolf Sprint On at 100%, Manual Jump at 110%,
-Flurry Rush, BOTW Bullet Time, Enemy Hard Mode, Boss Hard Mode,
+Enemy Hard Mode, Boss Hard Mode,
 Manual Shielding, 500% Gale Height, 60-second Gale recovery, Stamina Bar On with
 [default stamina settings](movement-and-abilities.md#shared-stamina),
 Arrow Modes, Great Spin Projectile, and the Progression System.

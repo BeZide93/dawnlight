@@ -111,7 +111,6 @@ namespace mDoCPd_c {u32 getTrig(int){return facePressed;}bool getHoldB(int){retu
 bool r_action_context_active(daAlink_c* l){return l->action;}
 bool ground_jump_context_ready(daAlink_c* l){return l->valid&&l->mLinkAcch.ground;}
 void apply_manual_jump_movement(daAlink_c* l){l->mLinkAcch.ground=false;if(!l->input)l->mNormalSpeed=0;}
-void mark_manual_jump_started(daAlink_c*){++marks;}
 // HEIGHT
 bool r_jump_enabled(){return rjump;}
 void set_manual_jump_direction(daAlink_c* l){if(l->input)l->shape_angle.y=l->mMoveAngle;l->current.angle.y=l->shape_angle.y;}
@@ -119,7 +118,6 @@ float sprint_jump_speed_multiplier(daAlink_c*){return 1;}
 void apply_sprint_jump_speed(daAlink_c*,float){}
 float twilit_sprint_jump_speed(daAlink_c*){return 0;}
 void apply_twilit_sprint_jump_speed(daAlink_c*,float){}
-void clear_manual_jump(daAlink_c*){}
 // START_JUMP
 // ABILITIES
 void daAlink_c::procWaitInit(){jump_abilities_proc_change(this,PROC_WAIT);mProcID=PROC_WAIT;}

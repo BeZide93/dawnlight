@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'src/item_slot_hooks.cpp').read_text()
+source = (root / 'src/hud_touch_hooks.cpp').read_text()
 
 
 def function(signature):
@@ -109,11 +109,11 @@ int main(){
 
     // A child already inherits its primary picture's transform. HD reparents
     // it as a sibling, preserving independent scales (including bow combos).
-    constexpr std::array primaries{HudPaneSlot::ItemX,HudPaneSlot::ItemY,HudPaneSlot::ItemZ};
-    constexpr std::array secondaries{HudPaneSlot::ItemXSecondary,HudPaneSlot::ItemYSecondary,HudPaneSlot::ItemZSecondary};
+    constexpr std::array primaries{HudPaneSlot::ItemX,HudPaneSlot::ItemY};
+    constexpr std::array secondaries{HudPaneSlot::ItemXSecondary,HudPaneSlot::ItemYSecondary};
     J2DPane parent,primary,secondary;
     primary.parent=&parent;
-    for(int slot=0;slot<3;++slot) for(bool sibling:{false,true})
+    for(int slot=0;slot<2;++slot) for(bool sibling:{false,true})
     for(bool combo:{false,true}) {
         secondary.parent=sibling?&parent:&primary;
         const f32 primaryScale=combo?0.6f:1;
@@ -169,10 +169,8 @@ fixture = fixture.replace('// FUNCTIONS', functions)
 # Verify the tested helpers are wired into the final HUD pass for all slots.
 layout = function('void apply_wii_u_hud_layout')
 assert 'apply_midna_hud_layout(meter)' in layout
-for slot in 'XYZ':
+for slot in 'XY':
     assert f'apply_hud_item_secondary_transform(HudPaneSlot::Item{slot}Secondary' in layout
-assert 'hud_layout_z_' not in function('void layout_z_hud_item')
-assert 'hud_layout_midna_transform' not in function('void move_midna_hud_to_dpad')
 assert 'hook_add_pre<MinimapPictureDrawHook>' in source
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'test.cpp'
@@ -180,4 +178,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('HUD editor regression passed: minimap X/slide, Midna, and X/Y/Z item layers')
+print('HUD editor regression passed: minimap X/slide, Midna, and X/Y item layers')

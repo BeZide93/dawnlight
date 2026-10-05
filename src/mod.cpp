@@ -1,6 +1,6 @@
 #include "touch_buttons.hpp"
 #include "bow_modes.hpp"
-#include "bullet_time.hpp"
+#include "enemy_hard_mode_runtime.hpp"
 #include "boss_hard_mode.hpp"
 #include "cave_randomizer.hpp"
 #include "config.hpp"
@@ -60,20 +60,20 @@ ModResult install_aim_hooks(ModError* error);
 ModResult install_enemy_scaling_hooks(ModError* error);
 ModResult install_eye_movement_hooks(ModError* error);
 ModResult install_item_integrity_hooks(ModError* error);
-ModResult install_item_slot_hooks(ModError* error);
+ModResult install_hud_touch_hooks(ModError* error);
 ModResult install_jump_hooks(ModError* error);
 ModResult install_manual_shield_hooks(ModError* error);
 ModResult register_new_save_modes(ModError* error);
 ModResult register_ui(ModError* error);
 void update_new_save_modes();
-void shutdown_item_slot_hooks();
+void shutdown_hud_touch_hooks();
 void shutdown_jump_hooks();
 void shutdown_new_save_modes();
 }
 
 namespace {
 // Provider settings are registered by mod_initialize, in user-defined load order.
-bool s_itemSlotHooksInstalled = false;
+bool s_hudTouchHooksInstalled = false;
 }
 
 extern "C" {
@@ -98,7 +98,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         return result;
     }
     dawnlight::initialize_model_overlays();
-    if (const ModResult result = dawnlight::initialize_bullet_time(error); result != MOD_OK) {
+    if (const ModResult result = dawnlight::initialize_enemy_hard_mode_runtime(); result != MOD_OK) {
         return result;
     }
     if (const ModResult result = dawnlight::initialize_bow_modes(error); result != MOD_OK) {
@@ -181,16 +181,16 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
 MOD_EXPORT ModResult mod_update(ModError* error) {
     // All mods have initialized before the first update, so saved provider
     // toggles are available even when Dawnlight is earlier in the load order.
-    if (!s_itemSlotHooksInstalled) {
-        if (const ModResult result = dawnlight::install_item_slot_hooks(error); result != MOD_OK) {
+    if (!s_hudTouchHooksInstalled) {
+        if (const ModResult result = dawnlight::install_hud_touch_hooks(error); result != MOD_OK) {
             return result;
         }
-        s_itemSlotHooksInstalled = true;
+        s_hudTouchHooksInstalled = true;
     }
     dawnlight::update_cave_randomizer();
     dawnlight::update_new_save_modes();
     dawnlight::update_progression();
-    dawnlight::bullet_time_tick();
+    dawnlight::update_stamina();
     dawnlight::update_stamina_ui();
     dawnlight::update_kh2_drive();
     dawnlight::update_update_service(svc_log, mod_ctx, svc_ui);
@@ -198,7 +198,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
-    s_itemSlotHooksInstalled = false;
+    s_hudTouchHooksInstalled = false;
     dawnlight::shutdown_cave_randomizer();
     dawnlight::shutdown_collection_dual_wield();
     dawnlight::shutdown_dual_wield();
@@ -211,13 +211,13 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_bow_modes();
     dawnlight::shutdown_great_spin_projectile();
     dawnlight::shutdown_fierce_deity();
-    dawnlight::shutdown_bullet_time();
+    dawnlight::reset_enemy_hard_mode_runtime();
     dawnlight::shutdown_stamina();
     dawnlight::shutdown_new_save_modes();
     dawnlight::shutdown_progression();
     dawnlight::shutdown_save_state();
     dawnlight::shutdown_update_service();
-    dawnlight::shutdown_item_slot_hooks();
+    dawnlight::shutdown_hud_touch_hooks();
     svc_log->info(mod_ctx, "Dawnlight portable feature pack stopped");
     return MOD_OK;
 }

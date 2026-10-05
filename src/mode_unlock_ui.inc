@@ -93,8 +93,7 @@ void request_mode_unlock(ModContext* ctx, void* data) {
 }
 
 ModResult add_mode_control(ModContext* ctx, UiElementHandle pane, UiControlDesc& desc) {
-    if (mode_setting_for_config(desc.config_var) == ModeSetting::None &&
-        desc.config_var != z_item_slot_config_var())
+    if (mode_setting_for_config(desc.config_var) == ModeSetting::None)
         return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
     auto& binding = s_modeControls.at(desc.config_var);
     binding.label = desc.label;

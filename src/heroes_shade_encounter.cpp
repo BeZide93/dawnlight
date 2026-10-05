@@ -1,5 +1,4 @@
 #include "heroes_shade_encounter.hpp"
-#include "enemy_slow_motion/profile.hpp"
 #include "clear_timer.hpp"
 #include "heroes_shade_battle.hpp"
 #include "heroes_shade_cinema.hpp"
@@ -52,14 +51,8 @@
 
 namespace dawnlight {
 namespace {
-bool shade_simulation_tick(daNpc_Kn_c* actor) {
-    const auto* step=current_enemy_slow_step();
-    return !step || step->actor!=actor || step->timerTick;
-}
-float shade_simulation_scale(daNpc_Kn_c* actor) {
-    const auto* step=current_enemy_slow_step();
-    return step && step->actor==actor ? step->scale : 1.0f;
-}
+
+
 constexpr ActorId kNone = fpcM_ERROR_PROCESS_ID_e;
 constexpr u32 kShadeParams = 0x00ffff07; // lesson 7 resources, no path
 constexpr char kSwordArchive[] = "MstrSword";
@@ -668,9 +661,9 @@ HookAction before_execute(ModContext*,void* args,void* result,void*) {
         if (entry->deleting) { *static_cast<int*>(result)=1; return HOOK_SKIP_ORIGINAL; }
         if (sCinema.active()) return HOOK_CONTINUE;
     }
-    if (!entry->divide && !sCinema.active() && !sBattle.dying && shade_simulation_tick(actor)) tick_arena_hazards();
+    if (!entry->divide && !sCinema.active() && !sBattle.dying) tick_arena_hazards();
     actor->mType=shade::phases[sBattle.phase].type;
-    if (!entry->divide && !actor->mCreating && shade_simulation_tick(actor) && sBattle.tick(cM_rndF)) {
+    if (!entry->divide && !actor->mCreating && sBattle.tick(cM_rndF)) {
         remove_companions(true);
         entry->reset=true;
         if (sBattle.trial!=shade::Trial::None) {
@@ -807,7 +800,7 @@ void after_approach(ModContext*,void* args,void*,void*) {
         entry->helmTurnPending=false;
     }
     if (actor->speedF>0) {
-        entry->walkSpeed+=(shade::stride::approach_speed(entry->walkSpeed)-entry->walkSpeed)*shade_simulation_scale(actor);
+        entry->walkSpeed+=(shade::stride::approach_speed(entry->walkSpeed)-entry->walkSpeed);
         actor->speedF=entry->walkSpeed;
     } else entry->walkSpeed=0;
 }
@@ -882,7 +875,7 @@ void after_motion(ModContext*,void* args,void*,void*) {
     if (stepping) {
         const bool moving=actor->speedF>0 && !attacking && !sBattle.recovery &&
             !sBattle.dying && !sCinema.active();
-        entry->stride->weight+=(shade::stride::blend_weight(entry->stride->weight,moving)-entry->stride->weight)*shade_simulation_scale(actor);
+        entry->stride->weight+=(shade::stride::blend_weight(entry->stride->weight,moving)-entry->stride->weight);
         if (moving) rate=shade::stride::playback*std::clamp(actor->speedF/kApproachSpeed,0.1f,1.0f);
     } else {
         entry->walkSpeed=0;
@@ -978,7 +971,7 @@ void before_movement(ModContext*,void* args,void*,void*) {
     // We decouple movement from facing for the orbit. Native execute therefore
     // chooses posMove, which unlike posMoveF does NOT integrate gravity. Apply
     // it exactly once here, including after a jump is interrupted by a block.
-    actor->speed.y=std::max(actor->speed.y+actor->gravity*shade_simulation_scale(actor),fopAcM_GetMaxFallSpeed(actor));
+    actor->speed.y=std::max(actor->speed.y+actor->gravity,fopAcM_GetMaxFallSpeed(actor));
 }
 void hold_recovery(daNpc_Kn_c* actor) {
     // Recovery blocks new attacks, not the physical knockback already in flight.
@@ -1096,7 +1089,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         return HOOK_CONTINUE;
     }
     if (entry->offense<0) {
-        if (entry->cooldown>0 && shade_simulation_tick(actor)) --entry->cooldown;
+        if (entry->cooldown>0) --entry->cooldown;
         if (phase.attack<0 || actor->mMode!=2 || actor->mActionMode!=waiting_action(*entry) ||
             actor->field_0x15bc || !shade::ready_motion(actor->mMotionSeqMngr.getNo(),
                                                       actor->mMotionSeqMngr.getStepNo())) {
@@ -1107,7 +1100,7 @@ HookAction combat_action(ModContext*,void* args,void*,void*) {
         if (!entry->chain.remaining) entry->chain.begin(sBattle.phase);
         start_attack(actor,*entry);
     }
-    if (shade_simulation_tick(actor)) ++entry->attackTicks;
+    ++entry->attackTicks;
     actor->mCcStts.Move();
     const int step=actor->mMotionSeqMngr.getStepNo();
     const float frame=actor->mpModelMorf[0]->getFrame();
@@ -1494,15 +1487,6 @@ int draw_pedestal(void* ptr) {
 }
 int can_delete(void*) { return 1; }
 } // namespace
-
-bool heroes_shade_combat_slow_eligible(fopAc_ac_c* base) {
-    auto* actor=static_cast<daNpc_Kn_c*>(base);
-    const auto* entry=fighter(actor);
-    return entry && !entry->deleting && !entry->returning && entry->defeatPhase<0 &&
-        !sStopping && !sCinema.active() && !sBattle.dying &&
-        sBattle.trial==shade::Trial::None && !actor->mCreating &&
-        !dComIfGp_event_runCheck();
-}
 
 ModResult initialize_heroes_shade_encounter(ModError* error) {
     ModResult result=MOD_OK;

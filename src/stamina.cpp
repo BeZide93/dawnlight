@@ -333,10 +333,6 @@ bool stamina_ability_available(StaminaSetting setting) {
     return can_consume(cost == 0 ? 0 : 0.0001f);
 }
 
-bool stamina_available_for_bullet_time() {
-    return stamina_ability_available(StaminaSetting::BulletTime);
-}
-
 bool stamina_available_for_sprint() {
     return stamina_ability_available(StaminaSetting::Sprint);
 }
@@ -368,10 +364,6 @@ void mark_sprint_stamina_active() {
     }
 }
 
-bool consume_flurry_rush_stamina() {
-    return try_consume(stamina_setting(StaminaSetting::FlurryRush));
-}
-
 bool stamina_available_for_glide() {
     return stamina_ability_available(StaminaSetting::Glide);
 }
@@ -387,10 +379,10 @@ bool consume_great_spin_stamina() {
     return try_consume(stamina_setting(StaminaSetting::GreatSpin));
 }
 
-bool update_stamina(bool bulletTimeActive) {
+void update_stamina() {
     daAlink_c* link = current_link();
     if (link == nullptr) {
-        return false;
+        return;
     }
 
     const Clock::time_point now = Clock::now();
@@ -410,9 +402,9 @@ bool update_stamina(bool bulletTimeActive) {
         s_state.lastUpdate = now;
         if (link->checkDeadHP() || link->checkSceneChangeAreaStart()) {
             reset_for_link(link);
-            return false;
+            return;
         }
-        if (menu_or_pause_active() || !twilit_stamina_gameplay()) return false;
+        if (menu_or_pause_active() || !twilit_stamina_gameplay()) return;
         float rate = 0;
         const auto addRate = [&](StaminaSetting setting) {
             const float cost = twilit_stamina_cost(setting);
@@ -421,12 +413,11 @@ bool update_stamina(bool bulletTimeActive) {
                 s_state.sprintDrainMultiplier : 1.0f);
             return true;
         };
-        if (bulletTimeActive && !addRate(StaminaSetting::BulletTime)) return false;
-        if (sprintActive && !twilit_sprint_enabled() && !addRate(StaminaSetting::Sprint)) return false;
-        if (wolfSprintActive && !twilit_sprint_enabled(true) && !addRate(StaminaSetting::WolfSprint)) return false;
-        if (s_state.glideActive && glide_enabled() && !addRate(StaminaSetting::Glide)) return false;
-        if (rate > 0 && elapsed > 0 && !twilit_stamina_drain(rate * elapsed)) return false;
-        return rate >= 0 && stamina_available_for_bullet_time();
+        if (sprintActive && !twilit_sprint_enabled() && !addRate(StaminaSetting::Sprint)) return;
+        if (wolfSprintActive && !twilit_sprint_enabled(true) && !addRate(StaminaSetting::WolfSprint)) return;
+        if (s_state.glideActive && glide_enabled() && !addRate(StaminaSetting::Glide)) return;
+        if (rate > 0 && elapsed > 0 && !twilit_stamina_drain(rate * elapsed)) return;
+        return;
     }
     if (!stamina_enabled()) {
         const bool wasExhausted = s_state.exhausted;
@@ -440,28 +431,27 @@ bool update_stamina(bool bulletTimeActive) {
                 link->procWolfWaitInit();
             }
         }
-        return true;
+        return;
     }
     if (link->checkDeadHP() || link->checkSceneChangeAreaStart()) {
         reset_for_link(link);
-        return true;
+        return;
     }
     if (menu_or_pause_active()) {
         s_state.lastUpdate = now;
-        return s_state.stamina > 0.0f;
+        return;
     }
     if (s_state.lastUpdate.time_since_epoch().count() == 0) {
         s_state.lastUpdate = now;
-        return s_state.stamina > 0.0f;
+        return;
     }
 
     const float elapsed = std::clamp(
         std::chrono::duration<float>(now - s_state.lastUpdate).count(), 0.0f, 0.25f);
     s_state.lastUpdate = now;
     const bool wasExhausted = s_state.exhausted;
-    float drainPerSecond = bulletTimeActive ? stamina_setting(StaminaSetting::BulletTime) :
-        (sprintActive ? stamina_setting(StaminaSetting::Sprint) :
-        (wolfSprintActive ? stamina_setting(StaminaSetting::WolfSprint) : 0.0f));
+    float drainPerSecond = sprintActive ? stamina_setting(StaminaSetting::Sprint) :
+        (wolfSprintActive ? stamina_setting(StaminaSetting::WolfSprint) : 0.0f);
     if (s_state.glideActive && glide_enabled()) drainPerSecond += stamina_setting(StaminaSetting::Glide);
     if (drainPerSecond > 0.0f && !s_state.exhausted) {
         s_state.stamina = std::max(
@@ -488,7 +478,7 @@ bool update_stamina(bool bulletTimeActive) {
             link->procWolfWaitInit();
         }
     }
-    return stamina_available_for_bullet_time();
+    return;
 }
 
 }  // namespace dawnlight

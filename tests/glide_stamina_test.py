@@ -64,7 +64,6 @@ bool twilit_stamina_gameplay(){return teGameplay;}
 bool twilit_sprint_enabled(bool=false){return teSprint;}
 float twilit_sprint_drain_multiplier(float,float){return 1;}
 float twilit_stamina_cost(StaminaSetting key){
-    if(key==StaminaSetting::BulletTime)return 10.5f;
     if(key==StaminaSetting::Sprint||key==StaminaSetting::WolfSprint)return 27;
     return stamina_setting(key);
 }
@@ -78,17 +77,15 @@ bool twilit_stamina_drain(float amount){
     tePool=std::max(0.0f,tePool-amount);if(tePool==0)teExhausted=true;return true;
 }
 bool glide_enabled() { return glide; }
-bool bullet_time_enabled() { return false; }
-bool flurry_rush_enabled() { return false; }
 bool great_spin_projectile_enabled() { return false; }
 bool sprint_enabled() { return false; }
 bool menu_or_pause_active() { return paused; }
 int dComIfGs_getLife() { return 20; }
 // PRODUCTION
 void near(float actual, float expected) { assert(std::fabs(actual - expected) < 0.002f); }
-void step(double seconds, bool bullet = false) {
+void step(double seconds) {
     Clock::value += std::chrono::duration_cast<Clock::time_point::duration>(std::chrono::duration<double>(seconds));
-    update_stamina(bullet);
+    update_stamina();
 }
 void reset() {
     link = {}; current = &link; enabled = glide = true; paused = false;
@@ -101,19 +98,17 @@ int main() {
     for(int fps : {30,60,120}) {
         reset();teActive=true;enabled=false;reset_for_link(&link);
         set_glide_stamina_active(true);
-        for(int i=0;i<fps*2;++i)step(1.0/fps,true);
-        near(tePool,69);near(s_state.stamina,100);assert(!stamina_meter_visible());
+        for(int i=0;i<fps*2;++i)step(1.0/fps);
+        near(tePool,90);near(s_state.stamina,100);assert(!stamina_meter_visible());
     }
     reset();teActive=true;reset_for_link(&link);
     mark_sprint_stamina_active();step(.2);near(tePool,94.6f);
     teSprint=true;mark_sprint_stamina_active();step(.2);near(tePool,94.6f);
-    assert(consume_flurry_rush_stamina());near(tePool,44.6f);
-    assert(!consume_flurry_rush_stamina());near(tePool,44.6f);
     int teSuccess=1;assert(before_skill(&teSuccess,StaminaSetting::ShieldAttack)==HOOK_CONTINUE);
     after_guard_attack(nullptr,nullptr,&teSuccess,nullptr);consume_defense(StaminaSetting::Block);
-    near(tePool,44.6f);near(s_state.stamina,100);
-    set_glide_stamina_active(true);teGameplay=false;step(10);near(tePool,44.6f);
-    teGameplay=true;step(.2);near(tePool,43.6f);
+    near(tePool,94.6f);near(s_state.stamina,100);
+    set_glide_stamina_active(true);teGameplay=false;step(10);near(tePool,94.6f);
+    teGameplay=true;step(.2);near(tePool,93.6f);
     tePool=.5f;step(.2);near(tePool,0);assert(teExhausted&&!stamina_available_for_glide());
     tePool=20;assert(!stamina_available_for_glide()); // TE recovery lockout.
     teActive=false;step(.2);assert(stamina_meter_visible());near(s_state.stamina,100);
@@ -138,8 +133,8 @@ int main() {
     assert(stamina_available_for_glide() && !stamina_meter_visible());
     enabled = true; step(0.2); near(s_state.stamina, 99);
     glide = false; step(0.2); near(s_state.stamina, 100); assert(stamina_meter_visible());
-    // Glide adds its own cost if bullet time overlaps; sprint cost stays intact.
-    reset(); set_glide_stamina_active(true); step(0.2, true); near(s_state.stamina, 96);
+    // Glide and sprint costs remain active after removing combat time effects.
+    reset(); set_glide_stamina_active(true); step(0.2); near(s_state.stamina, 99);
     reset(); mark_sprint_stamina_active(); step(0.2); near(s_state.stamina, 99);
     // Empty stamina gates redeployment until normal exhaustion recovery completes.
     reset(); s_state.stamina = 0.5f; set_glide_stamina_active(true); step(0.2);
@@ -151,8 +146,7 @@ int main() {
 
     // Maximum points are independent of costs and rendering percentages.
     reset(); setting(StaminaSetting::Amount, 500); reset_for_link(&link);
-    assert(consume_flurry_rush_stamina()); near(s_state.stamina,450);
-    assert(consume_great_spin_stamina()); near(s_state.stamina,410);
+    assert(consume_great_spin_stamina()); near(s_state.stamina,460);
     setting(StaminaSetting::Amount,50);current_link();near(s_state.stamina,50);
     // Progression derives from complete max hearts, never current life or a global counter.
     reset();progression=true;
@@ -192,11 +186,11 @@ int main() {
     // Zero means free, including while other actions have exhausted the meter.
     reset();s_state.stamina=0;s_state.exhausted=true;
     for(auto key:{StaminaSetting::Sprint,StaminaSetting::WolfSprint,StaminaSetting::Glide,
-                 StaminaSetting::BulletTime,StaminaSetting::FlurryRush,StaminaSetting::GreatSpin,
+                 StaminaSetting::GreatSpin,
                  StaminaSetting::ShieldAttack,StaminaSetting::BackSlice,StaminaSetting::HelmSplitter,
                  StaminaSetting::MidnaAttack})setting(key,0);
-    assert(stamina_available_for_bullet_time()&&stamina_available_for_sprint()&&stamina_available_for_wolf_sprint());
-    assert(stamina_available_for_glide()&&consume_flurry_rush_stamina()&&consume_great_spin_stamina());
+    assert(stamina_available_for_sprint()&&stamina_available_for_wolf_sprint());
+    assert(stamina_available_for_glide()&&consume_great_spin_stamina());
     int success=1,failed=0;
     assert(before_guard_attack(nullptr,nullptr,&success,nullptr)==HOOK_CONTINUE);
     after_guard_attack(nullptr,nullptr,&success,nullptr);near(s_state.stamina,0);
@@ -204,8 +198,8 @@ int main() {
     reset();setting(StaminaSetting::WolfSprint,17);
     mark_wolf_sprint_stamina_active();mark_wolf_sprint_stamina_active();step(.2);near(s_state.stamina,96.6f);
     setting(StaminaSetting::Sprint,20);mark_sprint_stamina_active();step(.2);near(s_state.stamina,92.6f);
-    setting(StaminaSetting::BulletTime,50);setting(StaminaSetting::Glide,20);
-    set_glide_stamina_active(true);step(.2,true);near(s_state.stamina,78.6f);
+    setting(StaminaSetting::Glide,20);
+    set_glide_stamina_active(true);step(.2);near(s_state.stamina,88.6f);
     // Paid skills require enough points, charge once on successful init, and respect Off.
     reset();setting(StaminaSetting::ShieldAttack,33);
     after_guard_attack(nullptr,nullptr,&failed,nullptr);near(s_state.stamina,100);
@@ -247,9 +241,9 @@ production = function('maximum_stamina') + '\n' + state + '\n' + source[source.i
     'consume_defense', 'before_damage', 'after_block', 'after_guard_break', 'after_damage',
     'before_skill', 'after_skill', 'before_guard_attack', 'after_guard_attack',
     'before_back_slice', 'after_back_slice', 'before_helm_splitter', 'after_helm_splitter',
-    'stamina_ability_available', 'stamina_available_for_bullet_time', 'stamina_available_for_sprint',
+    'stamina_ability_available', 'stamina_available_for_sprint',
     'stamina_available_for_wolf_sprint', 'mark_wolf_sprint_stamina_active',
-    'consume_flurry_rush_stamina', 'consume_great_spin_stamina',
+    'consume_great_spin_stamina',
     'stamina_meter_visible', 'stamina_available_for_glide',
     'set_glide_stamina_active', 'mark_sprint_stamina_active', 'update_stamina'))
 with tempfile.TemporaryDirectory() as tmp:

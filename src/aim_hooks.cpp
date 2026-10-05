@@ -1,5 +1,4 @@
 #include "aim_hooks.hpp"
-#include "bullet_time.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
 
@@ -158,7 +157,6 @@ struct SavedTouchMove {
 };
 
 SavedTouchMove s_savedTouchMove;
-bool s_touchBulletTimeMoveActive = false;
 #endif
 bool s_customCinemaSightActive = false;
 bool s_thirdPersonAimActive = false;
@@ -456,7 +454,7 @@ bool fixed_bow_aim_active(daAlink_c* link) {
     return link != nullptr && use_scope_suppress_camera() &&
         daAlink_c::checkBowItem(link->mEquipItem) && !is_hawkeye_bow(link) &&
         !link->checkWolf() && !link->checkAttentionLock() && !link->checkEventRun() &&
-        (dComIfGp_checkPlayerStatus0(0, 0x1000) || bullet_time_active_for(link));
+        dComIfGp_checkPlayerStatus0(0, 0x1000);
 }
 
 bool custom_slingshot_sight_active(daAlink_c* link) {
@@ -1047,10 +1045,6 @@ bool update_subject_aim(daAlink_c* link, AimItem item) {
 HookAction before_touch_sync_state(ModContext*, void* args, void*, void*) {
     s_savedTouchMove = {};
     auto* controls = mods::arg<TouchControls*>(args, 0);
-    auto* link = daAlink_getAlinkActorClass();
-    s_touchBulletTimeMoveActive =
-        controls != nullptr && !controls->mWasSuppressed && controls->mMoveTouch.active &&
-        link != nullptr && bullet_time_active_for(link);
     if (!touch_aim_movement_enabled() || controls == nullptr || !controls->mMoveTouch.active) {
         return HOOK_CONTINUE;
     }
@@ -1368,7 +1362,7 @@ void after_camera_next_type(ModContext*, void* args, void* retval, void*) {
 void after_player_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (link == nullptr || !use_third_person_camera_for(link) || is_hawkeye_bow(link) ||
-        (!bullet_time_active_for(link) && !player_in_supported_aim_status(0)))
+        !player_in_supported_aim_status(0))
     {
         s_thirdPersonAimActive = false;
     }
@@ -1377,8 +1371,7 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
     }
 
     if (link != nullptr && use_scope_suppress_camera() &&
-        (bullet_time_active_for(link) ||
-            (dCamera_c::isAimActive() && player_in_supported_aim_status(0))))
+        (dCamera_c::isAimActive() && player_in_supported_aim_status(0)))
     {
         return;
     }
@@ -1473,47 +1466,6 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
 }
 
 }  // namespace
-
-void prepare_bullet_time_bow_aim(daAlink_c* link) {
-    prepare_third_person_aim(link);
-    if (link == nullptr || !use_cinema_camera_for(link) || is_hawkeye_bow(link)) {
-        return;
-    }
-
-    face_camera_view_yaw(link);
-}
-
-bool update_bullet_time_bow_aim(daAlink_c* link) {
-    if (!should_keep_cinema_bow_sight(link)) {
-        return false;
-    }
-    prepare_third_person_aim(link);
-
-#if DAWNLIGHT_HAS_PRIVATE_TOUCH_UI
-    if (s_touchBulletTimeMoveActive) {
-        link->setBodyAngleToCamera();
-        apply_bullet_time_gyro(link);
-        draw_camera_center_sight(link);
-        return true;
-    }
-#endif
-
-    if (!aim_movement_enabled()) {
-        link->setBodyAngleToCamera();
-        apply_bullet_time_gyro(link);
-        draw_camera_center_sight(link);
-        return true;
-    }
-
-    if (use_cinema_camera_for(link)) {
-        face_camera_view_yaw(link);
-    } else {
-        aim_with_c_stick(link);
-    }
-    keep_cinema_bow_sight(link);
-    apply_bullet_time_gyro(link);
-    return true;
-}
 
 ModResult install_aim_hooks(ModError* error) {
     return add_aim_hooks(error, mods::hook_add_pre<BowSubjectHook>(svc_hook, replace_bow_subject));

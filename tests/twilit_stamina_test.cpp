@@ -40,8 +40,7 @@ ModResult drain(ModContext*, float amount) {
 ModResult deny(ModContext*) { ++denials; return MOD_OK; }
 ModResult get_source(ModContext*, uint32_t source, TwilitEssentialsStaminaSourceInfo* out) {
     assert(source == TWILIT_ESSENTIALS_STAMINA_SOURCE_SPRINT ||
-           source == TWILIT_ESSENTIALS_STAMINA_SOURCE_WOLF_SPRINT ||
-           source == TWILIT_ESSENTIALS_STAMINA_SOURCE_BULLET_TIME);
+           source == TWILIT_ESSENTIALS_STAMINA_SOURCE_WOLF_SPRINT);
     out->enabled = sourceEnabled; out->cost_multiplier = multiplier;
     return sourceResult;
 }
@@ -57,11 +56,9 @@ int main() {
     assert(twilit_stamina_active());
     near(twilit_stamina_cost(StaminaSetting::Sprint), 54);
     near(twilit_stamina_cost(StaminaSetting::WolfSprint), 54);
-    near(twilit_stamina_cost(StaminaSetting::BulletTime), 21);
     near(twilit_stamina_cost(StaminaSetting::Glide), 5);
-    near(twilit_stamina_cost(StaminaSetting::FlurryRush), 49);
     sourceEnabled = false;
-    near(twilit_stamina_cost(StaminaSetting::BulletTime), 0);
+    near(twilit_stamina_cost(StaminaSetting::Sprint), 0);
     sourceEnabled = true;
     multiplier = std::numeric_limits<float>::quiet_NaN();
     assert(twilit_stamina_cost(StaminaSetting::Sprint) < 0);
@@ -98,9 +95,8 @@ int main() {
     assert(!twilit_stamina_active());
     svc_te_stamina = nullptr;
     assert(!twilit_stamina_active() && !twilit_stamina_consume(1));
-    assert(!twilit_sprint_enabled() && !twilit_bullet_time_enabled());
+    assert(!twilit_sprint_enabled());
     assert(twilit_owns_stamina_setting(StaminaSetting::Amount));
-    assert(twilit_owns_stamina_setting(StaminaSetting::BulletTime));
     assert(!twilit_owns_stamina_setting(StaminaSetting::Glide));
     shutdown_twilit_stamina();
 }

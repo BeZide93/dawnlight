@@ -91,7 +91,7 @@ int main() {
     auto send_notifications = [&] {
         const int before = toasts;
         dawnlight::push_toast("HUD/Spawner result", "Result");
-        for(auto var : {z_item_slot_config_var(), dawnlight_touch_ui_config_var(),
+        for(auto var : {dawnlight_touch_ui_config_var(),
                 custom_model_config_var(CustomModel::OrdonLink)})
             subscriptions.at(var)(mod_ctx, var, nullptr, nullptr, nullptr);
         UiToastDesc desc = UI_TOAST_DESC_INIT;
@@ -110,7 +110,6 @@ int main() {
     set_int(nullptr, gale_recovery_config_var(), 91);
     set_int(nullptr, gale_height_config_var(), 320);
     set_bool(nullptr, stamina_config_var(), false);
-    set_int(nullptr, bullet_time_config_var(), 0);
     set_bool(nullptr, sprint_config_var(), false);
     set_bool(nullptr, glide_config_var(), true);
     set_bool(nullptr, fierce_deity_config_var(), true);
@@ -141,11 +140,10 @@ int main() {
         assert(dawnlight_mode_enabled() && health_scale_percent() == manual);
         assert(shown(healthScale).int_value == manual);
     }
-    assert(bullet_time_mode() == BulletTimeMode::Botw);
     assert(gale_height_bonus() == 5.0f && stamina_enabled());
     assert(disabled(galeHeight) && disabled(stamina));
     assert(shown(galeHeight).int_value == 500 && shown(stamina).bool_value);
-    assert(flurry_rush_enabled() && enemy_hard_mode_enabled() && bossrush_hardmode_hazards_enabled());
+    assert(enemy_hard_mode_enabled() && bossrush_hardmode_hazards_enabled());
     assert(manual_shielding_enabled() && arrow_modes_enabled() && great_spin_projectile_enabled());
     assert(!remove_normal_hit_invulnerability_enabled());
     auto noInvulnerability = control(remove_normal_hit_invulnerability_config_var(), UI_CONTROL_TOGGLE);
@@ -195,7 +193,6 @@ int main() {
     assert(std::abs(sprint_speed_multiplier() - 1.85f) < 0.001f);
     assert(std::abs(jump_height_multiplier() - 2.4f) < 0.001f);
     assert(health_scale_percent() == 245 && gale_recovery_seconds() == 91);
-    assert(bullet_time_mode() == BulletTimeMode::Off);
     assert(std::abs(gale_height_bonus() - 3.2f) < 0.001f && !stamina_enabled());
     galeHeight = control(gale_height_config_var(), UI_CONTROL_NUMBER);
     stamina = control(stamina_config_var(), UI_CONTROL_TOGGLE);

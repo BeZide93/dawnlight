@@ -4,7 +4,7 @@
 
 namespace dawnlight {
 
-// Real seconds, independent of simulation FPS and Bullet Time. Long gaps (menus,
+// Real seconds, independent of simulation FPS. Long gaps (menus,
 // scene loads, backgrounded app) start visible rather than completing an unseen fade.
 struct HudFadeEnvelope {
     double last = -1.0;

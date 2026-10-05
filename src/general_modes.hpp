@@ -5,7 +5,7 @@
 
 namespace dawnlight {
 enum class ModeSetting {
-    None, Progression, Sprint, SprintSpeed, Jump, JumpHeight, FlurryRush, BulletTime,
+    None, Progression, Sprint, SprintSpeed, Jump, JumpHeight,
     EnemyHardMode, BossHardMode, HealthScale, ManualShielding, GaleRecovery,
     ArrowModes, GreatSpin, NoNormalHitInvulnerability, Glide, GlideItem, Gale,
     GaleCounter, GaleCharges, FierceDeity, GaleHeight, Stamina, StaminaSettings, WolfSprint, WolfSpeed, DisableAutoJump, DualWield,
@@ -36,7 +36,6 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
         case ModeSetting::Sprint:
         case ModeSetting::Jump:
         case ModeSetting::WolfSprint:
-        case ModeSetting::FlurryRush:
         case ModeSetting::EnemyHardMode:
         case ModeSetting::BossHardMode:
         case ModeSetting::ManualShielding:
@@ -45,7 +44,6 @@ inline bool mode_override(ModeSetting setting, bool dawnlight, bool progression,
         case ModeSetting::SprintSpeed: value = 150; return true;
         case ModeSetting::WolfSpeed: value = 100; return true;
         case ModeSetting::JumpHeight: value = 110; return true;
-        case ModeSetting::BulletTime: value = 2; return true; // BOTW
         case ModeSetting::GaleRecovery: value = 60; return true;
         case ModeSetting::GaleHeight: value = 500; return true;
         default: break;

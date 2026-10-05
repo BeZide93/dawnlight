@@ -53,10 +53,8 @@ float twilit_stamina_cost(StaminaSetting setting) {
     float base;
     uint32_t source;
     switch (setting) {
-    // TE's base costs are per 30 Hz Link step: 0.35 for Bullet Time, 0.90
-    // for sprint. The service reports their live source toggles/multipliers.
+    // TE costs are normalized to seconds where needed.
     // Dawnlight's duplicate sliders must not affect these rates.
-    case StaminaSetting::BulletTime: base = 0.35f * 30; source = TWILIT_ESSENTIALS_STAMINA_SOURCE_BULLET_TIME; break;
     case StaminaSetting::Sprint: base = 0.90f * 30; source = TWILIT_ESSENTIALS_STAMINA_SOURCE_SPRINT; break;
     case StaminaSetting::WolfSprint: base = 0.90f * 30; source = TWILIT_ESSENTIALS_STAMINA_SOURCE_WOLF_SPRINT; break;
     default: return stamina_setting(setting);
@@ -120,10 +118,6 @@ bool twilit_sprint_enabled(bool wolf) {
     return twilit_feature_enabled(wolf ?
         "mod.com_dusklight_twilit__essentials.staminaWolfSprint" :
         "mod.com_dusklight_twilit__essentials.staminaSprint", false);
-}
-
-bool twilit_bullet_time_enabled() {
-    return twilit_feature_enabled("mod.com_dusklight_twilit__essentials.bulletTimeEnabled");
 }
 
 float twilit_sprint_drain_multiplier(float speed, float baseSpeed) {

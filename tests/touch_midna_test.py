@@ -6,7 +6,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 native = (root / 'src/touch_buttons_native.inc').read_text()
 buttons = (root / 'src/touch_buttons.cpp').read_text()
-items = (root / 'src/item_slot_hooks.cpp').read_text()
+items = (root / 'src/hud_touch_hooks.cpp').read_text()
 
 
 def function(source, signature):
@@ -50,7 +50,6 @@ using BOOL=int;
 constexpr BOOL TRUE=1,FALSE=0;
 struct daAlink_c {};
 bool zActive=false,touchActive=true,s_dpadLeftTrig=false,s_touchZItemHeld=false,s_touchZItemTrig=false;
-bool z_item_slot_active(){return zActive;}
 bool dawnlight_touch_ui_active(){return touchActive;}
 namespace dusk::ui {enum class Control {Z,SKIP,A,R};}
 constexpr unsigned PAD_TRIGGER_R=0x20,PAD_TRIGGER_Z=0x10,PAD_BUTTON_A=0x100;
@@ -87,28 +86,18 @@ int main(){
  down(8);ready=false;assert(!talk());assert(down(9)==HOOK_CONTINUE);
  ready=true;assert(!talk()); // locked Midna, cutscene or unavailable player
  assert(down(10,&skipElement)==HOOK_CONTINUE&&!talk()); // native skip untouched
- // Existing Z-item interception and controller D-pad shortcut remain independent.
- auto control=dusk::ui::Control::SKIP;bool pressed=true;void* args[]={&s_touchOwner,&control,&pressed};
+ // Native Z input is only observed for Dark Link; Midna touch is independent.
+ auto control=dusk::ui::Control::Z;bool pressed=true;void* args[]={&s_touchOwner,&control,&pressed};
  assert(before_touch_set_control_pressed(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
- assert(!s_touchZItemHeld&&!talk());
- control=dusk::ui::Control::Z;
- assert(before_touch_set_control_pressed(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
- assert(s_touchZItemHeld&&s_touchZItemTrig&&!talk());
  assert(observedButton==PAD_TRIGGER_Z&&observedPressed);
- before_touch_set_control_pressed(nullptr,args,nullptr,nullptr); // repeated true
- assert(s_touchZItemTrig);
  pressed=false;before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
- assert(!s_touchZItemHeld&&s_touchZItemTrig); // quick release retains sampled edge
  assert(observedButton==PAD_TRIGGER_Z&&!observedPressed);
  control=dusk::ui::Control::R;pressed=true;
  before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
  assert(observedButton==PAD_TRIGGER_R&&observedPressed);
- control=dusk::ui::Control::A;
- before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
+ control=dusk::ui::Control::A;before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
  assert(observedButton==PAD_BUTTON_A&&observedPressed);
- down(11);assert(talk());up(11);s_touchZItemHeld=false;
- zActive=true;down(12);assert(talk()&&!talk());up(12);
- s_dpadLeftTrig=true;assert(talk());s_dpadLeftTrig=false;assert(!talk());
+ down(11);assert(talk());up(11);
  down(14);sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
  sample_midna_touch_press(nullptr,nullptr,nullptr,nullptr);
  assert(!consume_midna_touch_press());up(14); // a missed sample never queues a delayed call

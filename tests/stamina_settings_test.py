@@ -19,7 +19,7 @@ def function(source, name):
     return source[start:end]
 
 mapping = function(config, 'mode_setting_for_config')
-variables = sorted((set(re.findall(r'\bs_\w+', mapping)) | {'s_dawnlightMode','s_zItemSlot'}) - {'s_staminaSettings'})
+variables = sorted((set(re.findall(r'\bs_\w+', mapping)) | {'s_dawnlightMode'}) - {'s_staminaSettings'})
 fixture = r'''
 #include <cassert>
 #include <cstdint>
@@ -34,8 +34,6 @@ namespace dawnlight {bool teActive=false;bool twilit_stamina_active(){return teA
 namespace dawnlight {
 bool teHumanSprint=false,teWolfSprint=false;
 bool twilit_sprint_enabled(bool wolf){return wolf?teWolfSprint:teHumanSprint;}
-const char* zProvider=nullptr;
-const char* z_item_slot_provider_notice(){return zProvider;}
 }
 using ConfigVarHandle = unsigned;
 using UiElementHandle = uint64_t;
@@ -56,9 +54,9 @@ using UiPredicateFn=bool(*)(ModContext*,void*);
 struct UiControlValue {bool bool_value=false;int64_t int_value=0;};
 // PRODUCTION
 int main(){
-    const std::array<int,16> expected{100,5,50,5,5,5,5,15,50,10,60,40,20,20,20,50};
-    const std::array<int,16> minimum{50,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0};
-    const std::array<int,16> maximum{500,100,100,100,20,20,20,50,100,100,100,100,50,50,50,100};
+    const std::array<int,14> expected{100,5,50,5,5,5,5,10,60,40,20,20,20,50};
+    const std::array<int,14> minimum{50,1,0,1,0,0,0,0,0,0,0,0,0,0};
+    const std::array<int,14> maximum{500,100,100,100,20,20,20,100,100,100,50,50,50,100};
     service.values[s_stamina]=1;
     for(size_t i=0;i<s_staminaSettings.size();++i){
         s_staminaSettings[i]=1000+i;
@@ -125,7 +123,7 @@ for name in ('dawnlight_mode_enabled', 'progression_system_enabled', 'mode_setti
              'mode_config_override', 'get_bool', 'get_int', 'stamina_setting_config_var',
              'stamina_setting', 'stamina_enabled', 'stamina_config_var'):
     production += '\n' + function(config, name)
-for name in ('sprint_config_var','sprint_speed_config_var','wolf_sprint_config_var','wolf_speed_config_var','z_item_slot_config_var'):
+for name in ('sprint_config_var','sprint_speed_config_var','wolf_sprint_config_var','wolf_speed_config_var'):
     production += '\n' + function(config,name)
 production += '\n' + function(ui, 'twilit_owns_stamina_control') + '\n' + function(ui, 'external_owns_control')
 production += '\n' + ui[ui.index('struct ModeControlBinding {'):ui.index('void bind_mode_control(')]

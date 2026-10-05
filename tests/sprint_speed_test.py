@@ -84,8 +84,6 @@ daAlink_c* s_wolfSprintOwner=nullptr;
 float jump_height_multiplier(){return 1;}
 void jump_abilities_proc_change(daAlink_c*,daAlink_c::daAlink_PROC){}
 bool jump_state_ready(daAlink_c* link){return link&&jumpReady;}
-void mark_manual_jump_started(daAlink_c*){++manualMarks;}
-void clear_manual_jump(daAlink_c*){++manualClears;}
 // FUNCTIONS
 void transition(daAlink_c* link,daAlink_c::daAlink_PROC proc){
     void* args[]={&link,&proc};before_common_proc_init(nullptr,args,nullptr,nullptr);

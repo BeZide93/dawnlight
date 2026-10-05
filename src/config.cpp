@@ -45,9 +45,6 @@ ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
 ConfigVarHandle s_thirdPersonReticleOffsetY = 0;
-ConfigVarHandle s_bulletTime = 0; // Legacy boolean, read only for migration.
-ConfigVarHandle s_bulletTimeMode = 0;
-ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
 ConfigVarHandle s_fierceDeityVisual = 0;
 ConfigVarHandle s_fierceDeityActivation = 0;
@@ -75,7 +72,6 @@ ConfigVarHandle s_wolfSprint = 0;
 ConfigVarHandle s_wolfSpeedPercent = 0;
 ConfigVarHandle s_sprintSpeedPercent = 0;
 ConfigVarHandle s_enemySpawnerProfile = 0;
-ConfigVarHandle s_zItemSlot = 0;
 ConfigVarHandle s_dawnlightTouchUi = 0;
 ConfigVarHandle s_checkForUpdates = 0;
 ConfigVarHandle s_enemyHardMode = 0;
@@ -149,14 +145,6 @@ void on_jump_setting_changed(ModContext*, ConfigVarHandle, const ConfigVarValue*
     enforce_auto_jump_dependency();
 }
 
-void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
-    const ConfigVarValue*, void*) {
-    UiToastDesc toast = UI_TOAST_DESC_INIT;
-    toast.title_rml = "Z-Items";
-    toast.body_rml = "Restart game after toggling Z-items";
-    svc_ui->push_toast(ctx, &toast);
-}
-
 void on_dawnlight_touch_ui_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
     const ConfigVarValue*, void*) {
     UiToastDesc toast = UI_TOAST_DESC_INIT;
@@ -211,7 +199,6 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
     {"b", 0, 0, 100},
     {"x", 0, 0, 100},
     {"y", 0, 0, 100},
-    {"z", 0, 0, 100},
     {"button-backing", 0, 0, 100},
     {"dpad", 0, 0, 100},
     {"midna", 0, 0, 100},
@@ -233,7 +220,6 @@ constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
     {"b", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
     {"x", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
     {"y", 0, 0, 100, 0, 0, 100, 0, 0, 100, 0, 2},
-    {"z", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
 }};
 
 constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults = {{
@@ -241,7 +227,6 @@ constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults =
     {"b", 20, -27, 149},
     {"x", -102, -1, 170},
     {"y", -22, 0, 170},
-    {"z", 0, 0, 100},
     {"button-backing", -100, 0, 100},
     {"dpad", 0, -280, 100},
     {"midna", -6, 0, 100},
@@ -263,7 +248,6 @@ constexpr std::array<HudButtonDefaults, kHudButtonCount> kHudButtonDefaults = {{
     {"b", 30, 0, 50, 0, 0, 100, 160, 0, 50, 2, 1},
     {"x", -15, -15, 50, 0, 0, 100, 100, -15, 50, 0, 1},
     {"y", 0, 0, 50, 0, 0, 100, 150, 0, 50, 2, 1},
-    {"z", 0, 0, 100, 0, -15, 70, 0, 0, 100, 1, 0},
 }};
 
 constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
@@ -271,7 +255,6 @@ constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
     {"b", -11, 5, 150},
     {"x", -73, -35, 170},
     {"y", -52, 32, 170},
-    {"z", 0, 0, 100},
     {"button-backing", -100, 0, 100},
     {"dpad", 0, -280, 100},
     {"midna", -6, 0, 100},
@@ -293,7 +276,6 @@ constexpr HudButtonDefaultArray kWiiUHudButtonDefaults = {{
     {"b", 30, 0, 50, 0, 0, 100, 160, 0, 50, 2, 1},
     {"x", -10, -5, 50, 0, 0, 100, 30, -15, 50, 2, 0},
     {"y", 20, 6, 50, 0, 0, 100, 65, 0, 50, 0, 0},
-    {"z", 0, 0, 100, 0, -15, 80, 0, 0, 100, 1, 0},
 }};
 
 constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
@@ -301,7 +283,6 @@ constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
     {"b", -80, -27, 150},
     {"x", -202, -1, 170},
     {"y", -122, 0, 170},
-    {"z", -100, 0, 100},
     {"button-backing", -100, 0, 100},
     {"dpad", 0, -15, 100},
     {"midna", 0, 0, 100},
@@ -323,7 +304,6 @@ constexpr HudButtonDefaultArray kDawnlightHudButtonDefaults = {{
     {"b", 30, 0, 50, 0, 0, 100, 160, 0, 50, 2, 1},
     {"x", 0, 0, 50, 0, 0, 100, 100, -15, 50, 0, 1},
     {"y", 0, 0, 50, 0, 0, 100, 150, 0, 50, 2, 1},
-    {"z", 0, 0, 100, 0, -15, 70, 0, 0, 100, 1, 0},
 }};
 
 constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
@@ -331,7 +311,6 @@ constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
     "B",
     "X",
     "Y",
-    "Z",
     "Button Backing",
     "D-Pad",
     "Midna",
@@ -353,7 +332,6 @@ constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{
     "B",
     "X",
     "Y",
-    "Z",
 }};
 
 constexpr const char* kHudSettingsFileName = "hud_layout_settings.json";
@@ -735,12 +713,6 @@ bool button_for_element(
         outHasAmmo = true;
         outHasText = true;
         return true;
-    case HudElement::Z:
-        outButton = HudButton::Z;
-        outHasItem = true;
-        outHasAmmo = true;
-        outHasText = true;
-        return true;
     default:
         return false;
     }
@@ -943,9 +915,6 @@ ModResult register_config(ModError* error) {
         register_bool("aim-movement", true, s_aimMovement) != MOD_OK ||
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
         register_int("third-person-reticle-offset-y", 0, s_thirdPersonReticleOffsetY) != MOD_OK ||
-        register_bool("bullet-time", true, s_bulletTime) != MOD_OK ||
-        register_int("bullet-time-mode", -1, s_bulletTimeMode) != MOD_OK ||
-        register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
         register_int("fierce-deity-visual", 1, s_fierceDeityVisual) != MOD_OK ||
         register_int("fierce-deity-activation", 2, s_fierceDeityActivation) != MOD_OK ||
@@ -971,7 +940,6 @@ ModResult register_config(ModError* error) {
         register_int("wolf-speed-percent", 100, s_wolfSpeedPercent) != MOD_OK ||
         register_int("sprint-speed-percent", 150, s_sprintSpeedPercent) != MOD_OK ||
         register_int("enemy-spawner-profile", 0, s_enemySpawnerProfile) != MOD_OK ||
-        register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
         register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
         register_bool("check-for-updates", true, s_checkForUpdates) != MOD_OK ||
         register_bool("enemy-hard-mode", false, s_enemyHardMode) != MOD_OK ||
@@ -1012,11 +980,7 @@ ModResult register_config(ModError* error) {
 
     // A sentinel distinguishes old configs from an explicitly chosen mode.
     // Keep the legacy boolean's type so saved Off/On values remain readable.
-    if (get_int(s_bulletTimeMode, -1, -1, 2) == -1 &&
-        !set_int(s_bulletTimeMode, get_bool(s_bulletTime, true) ? 1 : 0))
-    {
-        return mods::set_error(error, MOD_ERROR, "failed to migrate Bullet Time mode");
-    }
+
 
     if (!get_bool(s_aimDefaultsMigrated, false)) {
         if (svc_config->set_int(mod_ctx, s_aimMode, static_cast<int64_t>(AimMode::Cinema)) != MOD_OK ||
@@ -1097,13 +1061,6 @@ ModResult register_config(ModError* error) {
         }
     }
 
-    subscribeResult =
-        svc_config->subscribe(mod_ctx, s_zItemSlot, on_z_item_slot_changed, nullptr, nullptr);
-    if (subscribeResult != MOD_OK) {
-        return mods::set_error(
-            error, subscribeResult, "failed to subscribe to Dawnlight Z-Items changes");
-    }
-
     subscribeResult = svc_config->subscribe(
         mod_ctx, s_dawnlightTouchUi, on_dawnlight_touch_ui_changed, nullptr, nullptr);
     if (subscribeResult != MOD_OK) {
@@ -1150,8 +1107,6 @@ ModeSetting mode_setting_for_config(ConfigVarHandle var) {
     if (var == s_disableAutoJump) return ModeSetting::DisableAutoJump;
     if (var == s_rJump) return ModeSetting::Jump;
     if (var == s_jumpHeight) return ModeSetting::JumpHeight;
-    if (var == s_flurryRush) return ModeSetting::FlurryRush;
-    if (var == s_bulletTimeMode) return ModeSetting::BulletTime;
     if (var == s_enemyHardMode) return ModeSetting::EnemyHardMode;
     if (var == s_bossrushHardmodeHazards) return ModeSetting::BossHardMode;
     if (var == s_healthScale) return ModeSetting::HealthScale;
@@ -1281,18 +1236,6 @@ int third_person_reticle_offset_y() {
     return get_int(s_thirdPersonReticleOffsetY, 0, -40, 40);
 }
 
-BulletTimeMode bullet_time_mode() {
-    return static_cast<BulletTimeMode>(get_int(s_bulletTimeMode, 1, 0, 2));
-}
-
-bool bullet_time_enabled() {
-    return bullet_time_mode() != BulletTimeMode::Off;
-}
-
-bool flurry_rush_enabled() {
-    return get_bool(s_flurryRush, false);
-}
-
 bool fierce_deity_enabled() {
     return get_bool(s_fierceDeity, false);
 }
@@ -1398,10 +1341,6 @@ float wolf_speed_multiplier() {
 
 float sprint_speed_multiplier() {
     return static_cast<float>(get_int(s_sprintSpeedPercent, 150, 100, 300)) / 100.0f;
-}
-
-bool z_item_slot_enabled() {
-    return get_bool(s_zItemSlot, true);
 }
 
 bool dawnlight_touch_ui_enabled() {
@@ -1624,14 +1563,6 @@ ConfigVarHandle third_person_reticle_offset_y_config_var() {
     return s_thirdPersonReticleOffsetY;
 }
 
-ConfigVarHandle bullet_time_config_var() {
-    return s_bulletTimeMode;
-}
-
-ConfigVarHandle flurry_rush_config_var() {
-    return s_flurryRush;
-}
-
 ConfigVarHandle fierce_deity_config_var() {
     return s_fierceDeity;
 }
@@ -1685,10 +1616,6 @@ int enemy_spawner_profile() {
 
 ConfigVarHandle enemy_spawner_profile_config_var() {
     return s_enemySpawnerProfile;
-}
-
-ConfigVarHandle z_item_slot_config_var() {
-    return s_zItemSlot;
 }
 
 ConfigVarHandle dawnlight_touch_ui_config_var() {

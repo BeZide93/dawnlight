@@ -24,7 +24,7 @@ enum { Vanilla, ThirdPerson, Cinema };
 enum { Bow, BombArrow, Hawkeye, Boomerang, dItemNo_PACHINKO_e };
 int mode = Cinema, zoom = 100, bowDraws = 0, otherDraws = 0;
 u32 status = 0x1000;
-bool aiming = true, bulletTime = false;
+bool aiming = true;
 bool s_customCinemaSightActive = false, s_thirdPersonAimActive = true;
 struct Sight {
     bool draw = false, locked = false;
@@ -65,7 +65,6 @@ bool use_scope_suppress_camera() { return mode != Vanilla; }
 bool use_cinema_camera_for(daAlink_c*) { return mode == Cinema; }
 bool use_third_person_camera_for(daAlink_c*) { return mode == ThirdPerson; }
 bool is_hawkeye_bow(daAlink_c* link) { return link && link->mEquipItem == Hawkeye; }
-bool bullet_time_active_for(daAlink_c*) { return bulletTime; }
 bool dComIfGp_checkPlayerStatus0(u32, u32 mask) { return status & mask; }
 int cinema_zoom_percent() { return zoom; }
 bool fixed_camera_sight_active(daAlink_c* link) { return link->mEquipItem == Boomerang; }
@@ -81,7 +80,7 @@ void frame() {
 }
 void reset() {
     player = {}; current = &player; camera = {}; status = 0x1000;
-    aiming = true; bulletTime = false; zoom = 100;
+    aiming = true; zoom = 100;
     bowDraws = otherDraws = 0; s_customCinemaSightActive = false;
 }
 int main() {

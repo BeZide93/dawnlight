@@ -1,4 +1,4 @@
-# Dawnlight
+# Dawnlight Lite
 
 Enhances Twilight Princess with new abilities, combat mechanics, customizable
 controls, and a Boss Rush mode. Dawnlight is a mod for
@@ -8,13 +8,17 @@ controls, and a Boss Rush mode. Dawnlight is a mod for
 > Dawnlight does not include game assets. You need a legal Dusklight installation
 > and your own dumped copy of Twilight Princess.
 
+This branch is the Lite edition: Z-Items, Bullet Time, Flurry Rush and all
+Dawnlight slow-motion systems have been removed from the source and build.
+The remaining movement, aiming, Hard Mode and Boss Rush features are retained.
+
 ## Features and guides
 
 | Feature | What it adds |
 | --- | --- |
 | [Dawnlight Mode & progression](docs/features/general-settings.md) | An optional gameplay preset and abilities unlocked through story progress. |
 | [Movement & abilities](docs/features/movement-and-abilities.md) | Sprint, Wolf Sprint, manual jumping, Glide, Revali's Gale and shared stamina. |
-| [Combat & aiming](docs/features/combat-and-aiming.md) | Bullet Time, Flurry Rush, Dark Link with Magic Armor/Dark/Dark Magic/White/Gold visuals, Great Spin projectiles, manual shielding and aiming modes. |
+| [Combat & aiming](docs/features/combat-and-aiming.md) | Dark Link with Magic Armor/Dark/Dark Magic/White/Gold visuals, Great Spin projectiles, manual shielding and aiming modes. |
 | [Dual Wield](docs/features/dual-wield.md) | A choice of second sword, alternating attacks and a crossed-sword guard. |
 | [Arrow Modes](docs/features/arrow-modes.md) | Normal arrows, fire arrows and triple shots, switched while aiming. |
 | [Hard Mode](docs/features/hard-mode.md) | Enemy and boss behavior changes, HP/damage scaling and optional invulnerability changes. |
@@ -46,7 +50,7 @@ On Android, use the folder selected in Dusklight's **Change Data Folder** settin
 ## Compatibility and customization
 
 - [Mod compatibility](COMPATIBILITY.md): supported configurations for Twilit Essentials,
-  Twilight HD HUD and Lazy Tweaks, including Z-slot and Android touch settings.
+  Twilight HD HUD and Lazy Tweaks, including Android touch settings.
 - [Glider texture replacement](art/glider/README.md#replacing-the-texture-without-rebuilding):
   customize the bundled canopy, wood and leather textures.
 - [DawnlightCustomGlider](https://github.com/BeZide93/DawnlightCustomGlider):

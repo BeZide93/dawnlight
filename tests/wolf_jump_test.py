@@ -56,8 +56,6 @@ float sprint_jump_speed_multiplier(daAlink_c*){++sprintCalls;return 1;}
 void apply_sprint_jump_speed(daAlink_c*,float){}
 float twilit_sprint_jump_speed(daAlink_c*){return 0;}
 void apply_twilit_sprint_jump_speed(daAlink_c*,float){}
-void mark_manual_jump_started(daAlink_c*){++marks;}
-void clear_manual_jump(daAlink_c*){++clears;}
 // FUNCTIONS
 int main(){
  for(int proc: {daAlink_c::PROC_WOLF_WAIT,daAlink_c::PROC_WOLF_MOVE,daAlink_c::PROC_WOLF_DASH,
@@ -65,7 +63,7 @@ int main(){
    daAlink_c link;link.mProcID=proc;b=true;
    assert(start_ground_jump(&link));assert(link.wolfCalls==1&&!link.humanCalls&&!link.cutCalls);
    assert(link.speed.y==20&&link.speedF==0&&link.mNormalSpeed==0);
-   assert(!link.mLinkAcch.hit&&link.jumpMode&&!s_manualJumpOwner&&!marks&&!sprintCalls);
+   assert(!link.mLinkAcch.hit&&link.jumpMode&&!s_manualJumpOwner&&!sprintCalls);
    assert(!start_ground_jump(&link)); // cannot relaunch while airborne
  }
  daAlink_c moving;moving.input=true;assert(start_ground_jump(&moving));
@@ -130,7 +128,7 @@ int main(){
  parent=false;assert(!start_ground_jump(&human)); // Gale cannot bypass the human toggle either
  assert(!human.humanCalls&&!human.cutCalls&&!human.jumpMode);
  parent=true;assert(start_ground_jump(&human));
- assert(human.humanCalls==1&&human.wolfCalls==0&&human.speed.y==16&&marks==1);
+ assert(human.humanCalls==1&&human.wolfCalls==0&&human.speed.y==16);
  parent=true;human.mProcID=daAlink_c::PROC_WAIT;human.mLinkAcch.hit=true;b=true;
  assert(start_ground_jump(&human)&&human.cutCalls==1);
  // Human standing/walking carry uses the native initializer without discarding

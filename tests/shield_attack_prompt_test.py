@@ -122,4 +122,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture)
     subprocess.run(["c++", "-std=c++20", "-Wall", "-Wextra", "-Werror", str(cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("Shield Attack / Flurry Rush prompts: HD layers, draw order, restoration and vanilla passthrough passed")
+print("Shield Attack prompts: HD layers, draw order, restoration and vanilla passthrough passed")

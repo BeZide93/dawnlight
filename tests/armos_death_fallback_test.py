@@ -9,8 +9,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dusklight-dir', type=Path, required=True)
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
-source = (root / 'src/enemy_slow_motion/armos.cpp').read_text()
-guard = source[source.index('HookAction before_damage('):source.index('bool eligible(')]
+source = (root / 'src/enemy_hard_mode_runtime.cpp').read_text()
+guard = source[source.index('HookAction before_damage('):source.index('struct HardModeProfile {')]
 native_source = (args.dusklight_dir / 'src/d/actor/d_a_e_ai.cpp').read_text()
 native = native_source[native_source.index('void e_ai_class::e_ai_damage()'):native_source.index('void e_ai_class::e_ai_attack()')]
 ids = sorted(set(re.findall(r'\bZ2SE_\w+\b', guard + native)))

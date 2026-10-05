@@ -14,8 +14,8 @@ int main() {
     assert(progression_charges(0) == 1);
 
     constexpr std::array settings{ModeSetting::Sprint, ModeSetting::SprintSpeed,
-        ModeSetting::Jump, ModeSetting::JumpHeight, ModeSetting::FlurryRush,
-        ModeSetting::BulletTime, ModeSetting::EnemyHardMode, ModeSetting::BossHardMode,
+        ModeSetting::Jump, ModeSetting::JumpHeight,
+        ModeSetting::EnemyHardMode, ModeSetting::BossHardMode,
         ModeSetting::ManualShielding, ModeSetting::GaleRecovery,
         ModeSetting::ArrowModes, ModeSetting::GreatSpin,
         ModeSetting::Progression, ModeSetting::Glide, ModeSetting::GlideItem,
@@ -23,7 +23,7 @@ int main() {
         ModeSetting::FierceDeity, ModeSetting::GaleHeight, ModeSetting::Stamina,
         ModeSetting::WolfSprint, ModeSetting::WolfSpeed, ModeSetting::DualWield};
     constexpr std::array<int64_t, settings.size()> intended{
-        1, 150, 1, 110, 1, 2, 1, 1, 1, 60, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1, 1, 100, 0};
+        1, 150, 1, 110, 1, 1, 1, 60, 1, 1, 1, 0, 1, 0, 0, 1, 0, 500, 1, 1, 100, 0};
     for (size_t i = 0; i < settings.size(); ++i) {
         int64_t value = 777;
         assert(!mode_override(settings[i], false, false, {}, value));

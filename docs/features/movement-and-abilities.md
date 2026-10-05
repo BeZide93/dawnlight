@@ -145,23 +145,19 @@ TE owns capacity, regeneration, recovery lockout, and the shared activity settin
 Their Dawnlight controls and preset-unlock buttons are replaced in place with
 **controlled by Twilit Essentials stamina settings** notices. This covers Stamina
 Amount, Recovery speed, Exhaust Threshold, Exhaust Recovery speed, Sprint, Wolf
-Sprint, Bullet Time, Block, Guard Break, Shield Attack, Back Slice and Helm Splitter.
+Sprint, Block, Guard Break, Shield Attack, Back Slice and Helm Splitter.
 TE applies the native combat costs; Dawnlight does not add a second charge.
 
-Glide, Flurry Rush, Great Spin Projectile and Midna Attack retain their Dawnlight
-cost settings, paid from the TE pool. Glide and Bullet Time drain per real gameplay
-second, including during slow motion; Flurry Rush pays once on activation and is
-blocked when the shared pool cannot cover its cost. TE's normal attack costs still
-apply during Flurry Rush. Pauses/events do not accumulate deferred drain.
+Glide, Great Spin Projectile and Midna Attack retain their Dawnlight cost
+settings, paid from the TE pool. Glide drains per real gameplay second.
+Pauses/events do not accumulate deferred drain.
 
-For Dawnlight Sprint/Wolf Sprint and Bullet Time, TE's source toggles and cost
-multipliers take priority over Dawnlight's saved sliders. The adapter uses TE's
-base rates of 27 points/sec for sprint and 10.5 points/sec for Bullet Time at 100%.
-TE's optional speed-based sprint drain also applies to Dawnlight sprint.
-If TE's own Sprint, Wolf Sprint or Bullet Time implementation is enabled, it takes
-ownership of that ability so that movement, time scaling and costs are not applied
-twice. Disable the corresponding TE ability to use Dawnlight's implementation
-with the shared TE stamina pool.
+For Dawnlight Sprint/Wolf Sprint, TE's source toggles and cost multipliers take
+priority over Dawnlight's saved sliders. The adapter uses TE's base rate of
+27 points/sec at 100%. TE's optional speed-based sprint drain also applies.
+If TE's own Sprint or Wolf Sprint is enabled, it owns that ability to prevent
+duplicate movement changes and costs. Disable the corresponding TE ability to
+use Dawnlight's implementation with the shared TE stamina pool.
 
 Disabling TE stamina or removing its service restores Dawnlight's saved settings
 and meter automatically. An exhausted pool or a temporary service error never
@@ -184,8 +180,6 @@ at 50 points even with a capacity of 200 or more.
 | Sprint | 0–20/sec | 5/sec |
 | Wolf Sprint | 0–20/sec | 5/sec |
 | Glide | 0–20/sec | 5/sec |
-| Bullet Time | 0–50/sec | 15/sec |
-| Flurry Rush | 0–100 | 50 |
 | Block | 0–100 | 10 |
 | Guard Break | 0–100 | 60 |
 | Great Spin Projectile | 0–100 | 40 |
@@ -207,8 +201,7 @@ it. It is added after the base amount, including Dawnlight Mode's default:
 3 hearts = 100, 6 hearts = 115, 20 hearts = 185. Turning Progression Off removes
 the bonus. The meter displays current stamina relative to this effective maximum.
 
-Continuous costs run per real second; menus pause their accounting. Glide adds
-its cost to Bullet Time. Recovery runs when there is no continuous drain; exhausted
+Continuous costs run per real second; menus pause their accounting. Recovery runs when there is no continuous drain; exhausted
 recovery runs until the configured threshold is reached. A threshold of 0 resumes
 paid actions as soon as any stamina has regenerated. A threshold above the current
 maximum capacity is treated as that capacity, so full stamina always ends exhaustion.
@@ -221,5 +214,5 @@ activation; Midna Attack charges when opening the wolf lock-on field. Shield
 Attack, Back Slice, Helm Splitter and Midna Attack work with these costs even
 without Lazy Tweaks. The existing Lazy Tweaks meter compatibility remains enabled.
 
-For Bullet Time, Flurry Rush and the Great Spin projectile, see
+For the Great Spin projectile, see
 [combat and aiming](combat-and-aiming.md).

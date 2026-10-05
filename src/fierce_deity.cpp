@@ -39,7 +39,7 @@ namespace {
 // Use the actor dispatcher: the member execute entry is not reached by every
 // gameplay path/build. Match Link's innermost method table so nested dispatch
 // does not tick the meter or advance a model reload more than once per frame.
-// Apple builds inline fpcMtd_Execute; use the same fallback as bullet_time.cpp.
+// Apple builds inline fpcMtd_Execute; use the exported method dispatcher.
 #if defined(__APPLE__)
 DEFINE_HOOK(&fpcMtd_Method, FiercePlayerExecuteHook);
 #else

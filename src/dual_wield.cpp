@@ -370,7 +370,7 @@ void after_flourish(ModContext*,void* args,void* result,void*) {
     if(*static_cast<int*>(result)) start_stow(mods::arg<daAlink_c*>(args,0),true);
 }
 void update_stow(daAlink_c* link,bool guard) {
-    if(!s.active || sword_attack(link) || knocked_down(link) || (guard && !s.stow.drawing) ||
+    if(!s.active || sword_attack(link) || knocked_down(link) || link->checkHorseRide() || (guard && !s.stow.drawing) ||
        (!sword_guard_equipment(link) && !item_guard_equipment(link))) {
         s.stow={};return;
     }
@@ -404,14 +404,16 @@ void after_matrix(ModContext*,void* args,void*,void*) {
         // both arms, including when guard is still held during deployment.
         s.stow={};s.guard=0;s.draw=0;s.sheathTilt=0;
     }
-    if(!s.active || !sword_guard_equipment(link) || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) s.haveGuardBody=false;
+    if(!s.active || link->checkHorseRide() || !sword_guard_equipment(link) || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) s.haveGuardBody=false;
     const bool mirror=s.active && ordinary(link) && s.attacks.right;
     if(mirror!=s.mirror) s.seedBlade=true;
     s.mirror=mirror;
     if(s.poseTick==s.tick) return;
     s.poseTick=s.tick;
     const bool attacking=sword_attack(link);
-    const bool nativeArms=attacking || knocked_down(link);
+    // Mounted guard is a native sideways lean, not an on-foot sword block.
+    // It must also interrupt any draw/stow arm blend carried onto Epona.
+    const bool nativeArms=attacking || knocked_down(link) || link->checkHorseRide();
     const bool canGuard=sword_guard_equipment(link) || item_guard_equipment(link);
     const bool guard=s.active && !nativeArms && canGuard &&
                      link->checkPlayerGuardAndAttack();
@@ -426,7 +428,7 @@ void after_matrix(ModContext*,void* args,void*,void*) {
     // Bound per-tick movement even when an attack/event interrupts the clip.
     // Like the arm state, this advances only once, never per render/model pass.
     s.sheathTilt=dual::approach(s.sheathTilt,tilt,1.0f/6);
-    // Attacks and knockdowns take the arms immediately, including a guard
+    // Attacks, knockdowns and horse riding take the arms immediately, including a guard
     // already raised before the hit. Native morphing handles their transition.
     s.guard=(!canGuard || nativeArms) ? 0.0f : dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
     if(s.stow.active) {
@@ -445,7 +447,7 @@ void after_cut(ModContext*,void* args,void* result,void*) {
 }
 HookAction before_guard_attack(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
-    if(!active(link) || (link->mEquipItem!=0x103 && link->mEquipItem!=dItemNo_NONE_e) ||
+    if(!active(link) || link->checkHorseRide() || (link->mEquipItem!=0x103 && link->mEquipItem!=dItemNo_NONE_e) ||
        !link->field_0x2060->getOldFrameFlg()) return HOOK_CONTINUE;
     // Capture before native init swaps in the shield-bash clip. The cache's
     // quaternion contains the blended rotation; mRotation alone does not.

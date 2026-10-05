@@ -129,6 +129,9 @@ void prepare_glider_bmd() {
 
 bool draw_glider_bmd(Mtx transform, dKy_tevstr_c* lighting) {
     if (!s_model) return false;
+    // Retained packets of this model can be drawn after this function returns
+    // (for example by Deferred Fog). Never bind them to a stack-local matrix.
+    static Mtx presentedView{};
     CurrentHeap scope(s_heap);
     // The outer GliderPacket is already in a retained world list. Never enter
     // this model into that list from draw(): it would mutate the active traversal.
@@ -149,6 +152,13 @@ bool draw_glider_bmd(Mtx transform, dKy_tevstr_c* lighting) {
     s_model->update();
     s_model->lock();
     s_model->viewCalc();
+    // The model uses ConcatView with matrix mode 0. viewCalc rebinds every
+    // shape to j3dSys.mViewMtx, which we restore below. Keep the already
+    // presented hand attachment in persistent draw state for delayed draws.
+    // Rebind after EVERY viewCalc, including configuration-ID replays.
+    MTXCopy(j3dSys.getViewMtx(), presentedView);
+    for (u16 i = 0; i < s_model->getModelData()->getShapeNum(); ++i)
+        s_model->getShapePacket(i)->setBaseMtxPtr(&presentedView);
     j3dSys.setDrawModeOpaTexEdge();
     s_opaque->draw();
     j3dSys.setDrawModeXlu();

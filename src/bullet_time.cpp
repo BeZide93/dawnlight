@@ -173,7 +173,9 @@ struct SlowActorClockEntry {
     int pendingTicks = 0;
 };
 
-constexpr int kAudioChannels = 2;
+// DspRender's OutputSubframe ABI reserves eight channels even in stereo.
+// Keep that full layout through resampling; inactive channels remain zero.
+constexpr int kAudioChannels = 8;
 constexpr int kAudioSubframeSize = 0x50;
 
 struct AudioOutputSubframe {
@@ -277,7 +279,7 @@ slow_motion::Controller s_flurryLinkSlowMotion;
 Clock::time_point s_lastPresentationSample{};
 GfxStageHookHandle s_edgesHook = 0;
 std::atomic<float> s_audioRate{1.0f};
-thread_local dusk::audio::MusicRateBuffer s_musicRateBuffer;
+thread_local dusk::audio::MusicRateBuffer<kAudioChannels> s_musicRateBuffer;
 thread_local NativeAudioSource s_nativeAudioSource;
 thread_local bool s_audioSlowMotionActive = false;
 std::array<LinkVoiceRateEntry, 8> s_linkVoiceRates{};

@@ -810,7 +810,11 @@ DEFINE_HOOK(&cLib_chaseAngleS, ChaseAngleLinearHook);
 HookAction before_process_method(ModContext* ctx, void* args, void* retval, void*) {
     bool entered = false;
     void* process = mods::arg<void*>(args, 1);
-    if (s_processDepth < s_processFrames.size() && process != nullptr && fopAcM_IsActor(process)) {
+    // Before the first actor is created, the native actor type ID is zero.
+    // IsActor alone then accepts zero-filled scene data (including the logo
+    // scene). Reject an uninitialized type before reading actor-only pointers.
+    if (s_processDepth < s_processFrames.size() && process != nullptr &&
+        static_cast<fopAc_ac_c*>(process)->actor_type != 0 && fopAcM_IsActor(process)) {
         auto* actor = static_cast<fopAc_ac_c*>(process);
         const auto* profile = find_profile(actor);
         const auto* methods = reinterpret_cast<const process_method_class*>(actor->sub_method);

@@ -35,7 +35,9 @@ using process_method_func = void(*)();
 void execute() {}
 void draw() {}
 struct process_method_class {process_method_func execute_method = execute;} methods;
+int actorType = 0; // Native type ID is assigned when the first actor is created.
 struct fopAc_ac_c {
+    int actor_type = 0x9130001;
     int kind = 1;
     bool eligible = true;
     void* sub_method = &methods;
@@ -43,7 +45,9 @@ struct fopAc_ac_c {
     struct {struct {s16 y = 0;} angle;} current;
     struct {s16 y = 0;} shape_angle;
 };
-bool fopAcM_IsActor(void* actor) {return actor != nullptr;}
+bool fopAcM_IsActor(void* actor) {
+    return static_cast<fopAc_ac_c*>(actor)->actor_type == actorType;
+}
 struct EnemyHardModeStep {
     fopAc_ac_c* actor = nullptr;
     int profileName = -1, action = 0, subaction = 0;
@@ -87,6 +91,20 @@ void enter(fopAc_ac_c* actor, process_method_func method = execute) {
 }
 void leave() {after_process_method(nullptr, nullptr, nullptr, nullptr);}
 int main() {
+    // At the logo screen no actor exists yet. Native IsActor compares zero
+    // with zero even though this is not an actor and has no actor method table.
+    fopAc_ac_c logo;
+    logo.kind = 99;
+    logo.actor_type = 0;
+    logo.sub_method = reinterpret_cast<void*>(uintptr_t{1});
+    assert(fopAcM_IsActor(&logo));
+    enter(&logo);
+    assert(!current_enemy_hard_mode_step() && preparations == 0);
+    leave();
+    assert(s_depth == 0 && s_processDepth == 0);
+    actorType = 0x9130001;
+    enter(&logo); leave();
+    assert(s_depth == 0 && s_processDepth == 0 && preparations == 0);
     fopAc_ac_c parent, foreign, typed;
     foreign.kind = 99; typed.kind = 2;
     enter(&parent);

@@ -98,11 +98,11 @@ add_mod(dawnlight_lite
     RES_DIR res
 )
 
-target_include_directories(dawnlight_mod PRIVATE
+target_include_directories(dawnlight_lite PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-target_compile_definitions(dawnlight_mod PRIVATE DAWNLIGHT_VERSION="${DAWNLIGHT_VER}")
+target_compile_definitions(dawnlight_lite PRIVATE DAWNLIGHT_VERSION="${DAWNLIGHT_VER}")
 
 # Cross-mod HUD, KH2 gauge and TE stamina guards read live ConfigVars on every platform.
 # Keep private host headers scoped to these sources on non-touch builds.
@@ -110,7 +110,7 @@ set_property(SOURCE src/hud_touch_hooks.cpp src/kh2_hud_compat.cpp src/twilit_st
     INCLUDE_DIRECTORIES "${DUSKLIGHT_DIR}/src")
 
 if(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS)
-    target_include_directories(dawnlight_mod PRIVATE
+    target_include_directories(dawnlight_lite PRIVATE
         "${DUSKLIGHT_DIR}/src"
         "${dawnlight_rmlui_headers_SOURCE_DIR}/Include"
         "${dawnlight_sdl3_headers_SOURCE_DIR}/include"

@@ -113,6 +113,13 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/collection_dual_wield_test.py
 
+      - name: Test glider loading and deferred rendering
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/glider_bmd_test.py
+          python3 tests/glider_bmd_load_test.py
+          python3 tests/glider_bmd_draw_test.py
+
       - name: Test Shield Attack and Flurry Rush prompts
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/shield_attack_prompt_test.py

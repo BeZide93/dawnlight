@@ -126,7 +126,9 @@ jobs:
 
       - name: Test mounted Bow and Slingshot reticles
         if: matrix.platform == 'linux-x86_64'
-        run: python3 tests/mounted_bow_sight_test.py
+        run: |
+          python3 tests/mounted_bow_sight_test.py
+          python3 tests/twilit_aim_compat_test.py
 
       - name: Test Dual Wield
         if: matrix.platform == 'linux-x86_64'
@@ -224,6 +226,10 @@ jobs:
                    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28)
           fi
           cmake -B build "${args[@]}"
+
+      - name: Test TE aim bridge against native ConfigVar ABI
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/twilit_aim_sdk_test.py dusklight
 
       - name: Test Midna stamina charge against native code
         if: matrix.platform == 'linux-x86_64'

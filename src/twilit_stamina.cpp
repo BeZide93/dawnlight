@@ -123,7 +123,8 @@ bool twilit_sprint_enabled(bool wolf) {
 }
 
 bool twilit_bullet_time_enabled() {
-    return twilit_feature_enabled("mod.com_dusklight_twilit__essentials.bulletTimeEnabled");
+    // Bullet Time can run with TE stamina disabled; ownership is independent.
+    return twilit_feature_enabled("mod.com_dusklight_twilit__essentials.bulletTimeEnabled", false);
 }
 
 float twilit_sprint_drain_multiplier(float speed, float baseSpeed) {

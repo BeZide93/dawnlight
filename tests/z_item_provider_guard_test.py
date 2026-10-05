@@ -81,6 +81,7 @@ ModResult install_item_slot_hooks(ModError*) {
 void update_cave_randomizer() {}
 void update_new_save_modes() { ++otherUpdates; }
 void update_progression() {}
+void update_collection_dual_wield() {}
 void bullet_time_tick() {}
 // Stamina ownership/UI behavior is covered by the stamina and mode fixtures.
 void update_stamina_ui() {}

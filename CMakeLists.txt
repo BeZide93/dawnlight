@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
-project(dawnlight_mod CXX)
+project(dawnlight_lite CXX)
 
 # The Dusklight version to build against: a release tag (e.g. "v1.5.0") or a commit SHA.
 if (NOT DUSKLIGHT_VERSION)
@@ -44,7 +44,7 @@ string(JSON DAWNLIGHT_VER GET "${MOD_JSON_CONTENT}" "version")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mod.json")
 set_source_files_properties(src/mod.cpp src/update_service.cpp PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mod.json")
 
-add_mod(dawnlight_mod
+add_mod(dawnlight_lite
     FEATURES game webgpu
     SOURCES
         src/aim_hooks.cpp

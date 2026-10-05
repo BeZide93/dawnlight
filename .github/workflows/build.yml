@@ -10,13 +10,42 @@ on:
 env:
   SYMGEN_VERSION: v1.2.4
 
+permissions:
+  contents: read
+
 jobs:
+  sources:
+    name: Resolve build sources
+    runs-on: ubuntu-latest
+    outputs:
+      variants: ${{steps.sources.outputs.variants}}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Pin source commits
+        id: sources
+        shell: bash
+        run: |
+          source_sha=$(git rev-parse HEAD)
+          variants=$(jq -cn --arg ref "$source_sha" '[{name: "main", ref: $ref}]')
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/* ]]; then
+            # Resolve Lite once so all platforms build the same source snapshot.
+            git fetch --no-tags --depth=1 origin refs/heads/dawnlight-lite
+            lite_sha=$(git rev-parse FETCH_HEAD)
+            variants=$(jq -c --arg ref "$lite_sha" '. + [{name: "lite", ref: $ref}]' <<< "$variants")
+          fi
+          echo "variants=$variants" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.name): `\(.ref)`"' <<< "$variants" >> "$GITHUB_STEP_SUMMARY"
+
   build:
-    name: Build ${{matrix.platform}}
+    name: Build ${{matrix.variant.name}} ${{matrix.platform}}
+    needs: sources
     runs-on: ${{matrix.runner}}
     strategy:
       fail-fast: false
       matrix:
+        variant: ${{fromJSON(needs.sources.outputs.variants)}}
+        platform: [linux-x86_64, linux-aarch64, macos-arm64, macos-x86_64, ios-arm64, windows-amd64, windows-arm64, android-aarch64]
         include:
           - platform: linux-x86_64
             runner: ubuntu-latest
@@ -45,6 +74,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{matrix.variant.ref}}
 
       - name: Test Boss Rush clear timers
         if: matrix.platform == 'linux-x86_64'
@@ -67,23 +98,31 @@ jobs:
           python3 tests/cave_randomizer_selection_test.py
           python3 tests/cave_randomizer_stalhound_test.py
 
-      - name: Test Cave enemy slow motion and spawner
+      - name: Test Cave enemy spawner
         if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/cave_enemy_spawner_test.py
+          python3 tests/enemy_spawner_scene_test.py
+
+      - name: Test Cave enemy slow motion
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
         run: |
           python3 tests/cave_enemy_slow_test.py
           python3 tests/boss_enemy_slow_test.py
-          python3 tests/cave_enemy_spawner_test.py
-          python3 tests/enemy_spawner_scene_test.py
           c++ -std=c++20 -Wall -Wextra -Werror tests/enemy_slow_motion_timing.cpp -o /tmp/enemy-slow-test
           /tmp/enemy-slow-test
 
       - name: Test Z item provider guards
-        if: matrix.platform == 'linux-x86_64'
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
         run: python3 tests/z_item_provider_guard_test.py
 
       - name: Test Bullet Time gyro compatibility
-        if: matrix.platform == 'linux-x86_64'
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
         run: python3 tests/bullet_time_gyro_compat_test.py
+
+      - name: Test native Enemy Hard Mode runtime
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'lite'
+        run: python3 tests/enemy_hard_mode_runtime_test.py
 
       - name: Test mounted Bow and Slingshot reticles
         if: matrix.platform == 'linux-x86_64'
@@ -221,24 +260,30 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: mod-${{matrix.platform}}
+          name: mod-${{matrix.variant.name}}-${{matrix.platform}}
           path: build/mods/*.dusk
           if-no-files-found: error
 
   combine:
-    name: Combine bundles
-    needs: build
+    name: Combine ${{matrix.variant.name}} bundles
+    needs: [sources, build]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{fromJSON(needs.sources.outputs.variants)}}
     permissions:
       actions: read
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{matrix.variant.ref}}
 
       - name: Download platform bundles
         uses: actions/download-artifact@v8
         with:
-          pattern: mod-*
+          pattern: mod-${{matrix.variant.name}}-*
           path: dist
 
       - name: Install symgen
@@ -248,20 +293,38 @@ jobs:
           chmod +x symgen
 
       - name: Merge bundles
+        env:
+          VARIANT: ${{matrix.variant.name}}
         run: |
-          name=$(basename dist/mod-linux-x86_64/*.dusk)
+          name=$(basename dist/mod-"$VARIANT"-linux-x86_64/*.dusk)
           python3 tools/merge_mod.py -o "combined/$name" --symgen ./symgen \
             dist/*/*.dusk
 
       - name: Upload combined bundle
         uses: actions/upload-artifact@v7
         with:
-          name: mod-combined
+          name: mod-combined-${{matrix.variant.name}}
           path: combined/*.dusk
           if-no-files-found: error
 
+  release:
+    name: Publish both release bundles
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: combine
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download combined bundles
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mod-combined-*
+          path: release-bundles
+
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{github.token}}
         run: |
@@ -273,7 +336,7 @@ jobs:
                 -f tag_name="$GITHUB_REF_NAME" --jq '.body' > "$RUNNER_TEMP/release-notes.md"
               gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
             fi
-            gh release upload "$GITHUB_REF_NAME" combined/*.dusk --clobber
+            gh release upload "$GITHUB_REF_NAME" release-bundles/*/*.dusk --clobber
           else
-            gh release create "$GITHUB_REF_NAME" combined/*.dusk --verify-tag --generate-notes
+            gh release create "$GITHUB_REF_NAME" release-bundles/*/*.dusk --verify-tag --generate-notes
           fi

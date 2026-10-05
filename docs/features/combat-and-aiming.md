@@ -24,6 +24,19 @@ trigger BOTW Bullet Time; jumping off a ledge or using Gale can. A 200% jump
 reaches the threshold near its apex. Once activated, duration, stamina and
 cancellation work as before. Existing On/Off configurations migrate to Always/Off.
 
+With Twilit Essentials' **Bullet Time** enabled, TE owns the slowdown, activation,
+airborne input and stamina cost, including when its stamina bar is disabled.
+Dawnlight's **Cinema** and **3rd Person** Aim Modes also apply to that airborne
+Bow aiming. TE's **First-person aiming** backend is temporarily enabled when
+needed for these modes; its saved preference returns when selecting Vanilla,
+disabling TE Bullet Time or unloading Dawnlight. Existing launch/speedrun overrides
+are respected. Hawkeye retains its native scope.
+
+TE continues to sample stick/gyro input and preview it between simulation ticks.
+Dawnlight refreshes the reticle from that preview and applies Cinema zoom once
+after TE's extra camera updates. TE's airborne controls remain in charge;
+Dawnlight's Aim Movement does not replace them.
+
 ## Flurry Rush and Great Spin
 
 **Flurry Rush** rewards a perfectly timed evade. The optional **Great Spin
@@ -135,4 +148,3 @@ Manual Shielding provides optional manual guard controls.
 uses a crossed-sword guard and Shield Attack.
 
 For enemy and boss difficulty settings, see [Hard Mode](hard-mode.md).
-

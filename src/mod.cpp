@@ -21,6 +21,7 @@
 #include "service_imports.hpp"
 #include "stamina.hpp"
 #include "twilit_essentials/stamina.h"
+#include "twilit_aim.hpp"
 #include "update_service.hpp"
 
 #include "mods/service.hpp"
@@ -57,6 +58,7 @@ IMPORT_SERVICE(UiService, svc_ui);
 
 namespace dawnlight {
 ModResult install_aim_hooks(ModError* error);
+void shutdown_aim_hooks();
 ModResult install_enemy_scaling_hooks(ModError* error);
 ModResult install_eye_movement_hooks(ModError* error);
 ModResult install_item_integrity_hooks(ModError* error);
@@ -190,6 +192,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
     dawnlight::update_cave_randomizer();
     dawnlight::update_new_save_modes();
     dawnlight::update_progression();
+    dawnlight::update_twilit_aim();
     dawnlight::bullet_time_tick();
     dawnlight::update_stamina_ui();
     dawnlight::update_kh2_drive();
@@ -211,6 +214,7 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_bow_modes();
     dawnlight::shutdown_great_spin_projectile();
     dawnlight::shutdown_fierce_deity();
+    dawnlight::shutdown_aim_hooks();
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_stamina();
     dawnlight::shutdown_new_save_modes();

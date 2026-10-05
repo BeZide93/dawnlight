@@ -1,5 +1,6 @@
 #include "aim_hooks.hpp"
 #include "bullet_time.hpp"
+#include "twilit_aim.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
 
@@ -10,6 +11,8 @@
 #include "d/actor/d_a_obj_swhang.h"
 #include "d/d_camera.h"
 #include "d/d_com_inf_game.h"
+#include "d/d_drawlist.h"
+#include "f_pc/f_pc_manager.h"
 #include "f_op/f_op_actor_iter.h"
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_controller_pad.h"
@@ -47,10 +50,12 @@ DEFINE_HOOK(&daAlink_c::procHookshotSubject, HookshotSubjectHook);
 DEFINE_HOOK(&daAlink_c::procIronBallSubject, IronBallSubjectHook);
 DEFINE_HOOK(&daAlink_c::procCopyRodSubject, CopyRodSubjectHook);
 DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
+DEFINE_HOOK(&daAlink_c::setBodyAngleToCamera, BodyAngleToCameraHook);
 DEFINE_HOOK(&daAlink_c::modelCalc, BowModelCalcHook);
 DEFINE_HOOK(&daArrow_c::arrowShooting, BowArrowShootingHook);
 DEFINE_HOOK(&daAlink_c::setHookshotPos, HookshotPosHook);
 DEFINE_HOOK(&dCamera_c::Run, CameraRunHook);
+DEFINE_HOOK(&fpcM_DrawIterater, AimPresentationHook);
 DEFINE_HOOK(&dCamera_c::subjectCamera, SubjectCameraHook);
 DEFINE_HOOK(&dCamera_c::nextMode, CameraNextModeHook);
 DEFINE_HOOK(&dCamera_c::nextType, CameraNextTypeHook);
@@ -165,6 +170,9 @@ bool s_thirdPersonAimActive = false;
 float s_thirdPersonDistance = 300.0f;
 float s_thirdPersonFovy = 45.0f;
 float s_thirdPersonHeight = 130.0f;
+daAlink_c* s_twilitAimOwner = nullptr;
+unsigned s_cameraRunDepth = 0;
+const view_class* s_twilitPresentationView = nullptr;
 
 bool use_custom_aim_movement() {
     return aim_movement_enabled();
@@ -452,6 +460,21 @@ void draw_camera_center_sight(daAlink_c* link) {
     remember_custom_cinema_sight();
 }
 
+bool twilit_air_bow_aim_active(daAlink_c* link) {
+    // TE sets the Bow status only while its live airborne aim is active. A
+    // feature toggle or a reduced global timescale alone is not an active aim.
+    return link != nullptr && use_scope_suppress_camera() &&
+        twilit_bullet_time_aim_enabled() && !is_hawkeye_bow(link) &&
+        daAlink_c::checkBowItem(link->mEquipItem) && !link->checkWolf() &&
+        !link->checkAttentionLock() && !link->checkEventRun() &&
+        dComIfGp_isPauseFlag() == 0 && !link->mLinkAcch.ChkGroundHit() &&
+        !link->checkModeFlg(daAlink_c::MODE_SWIMMING) &&
+        (link->mProcID == daAlink_c::PROC_AUTO_JUMP || link->mProcID == daAlink_c::PROC_FALL) &&
+        (link->checkBowReloadAnime() || link->checkBowChargeWaitAnime() ||
+            link->checkBowWaitAnime() || link->checkBowShootAnime()) &&
+        dComIfGp_checkPlayerStatus0(0, 0x1000);
+}
+
 bool fixed_bow_aim_active(daAlink_c* link) {
     return link != nullptr && use_scope_suppress_camera() &&
         daAlink_c::checkBowItem(link->mEquipItem) && !is_hawkeye_bow(link) &&
@@ -553,8 +576,12 @@ bool camera_aim_ray(daAlink_c* link, cXyz& eye, cXyz& forward) {
     auto* actor = dComIfGp_getCamera(link->field_0x317c);
     if (actor == nullptr) return false;
     // Run's post-hook sees the new camera before camera_class::view is updated.
-    eye = actor->mCamera.mEye;
-    forward = actor->mCamera.mCenter - eye;
+    // TE previews live input in the rendered view between simulation ticks.
+    // Only the presentation sight refresh uses that view; launch correction
+    // continues to use the simulation camera after TE has applied its input.
+    eye = s_twilitPresentationView ? s_twilitPresentationView->lookat.eye : actor->mCamera.mEye;
+    forward = (s_twilitPresentationView ? s_twilitPresentationView->lookat.center :
+        actor->mCamera.mCenter) - eye;
     if (forward.abs() <= 0.001f) return false;
     forward.normalize();
     if (use_third_person_camera_for(link)) {
@@ -879,6 +906,18 @@ void draw_bow_trajectory_sight(daAlink_c* link) {
     remember_custom_cinema_sight();
 }
 
+HookAction before_aim_presentation(ModContext*, void*, void*, void*) {
+    auto* link = daAlink_getAlinkActorClass();
+    if (twilit_air_bow_aim_active(link)) {
+        // Run after TE's default-priority DrawIterater preview, without
+        // resampling input or altering its view/model interpolation matrices.
+        s_twilitPresentationView = dComIfGd_getView();
+        if (s_twilitPresentationView) draw_bow_trajectory_sight(link);
+        s_twilitPresentationView = nullptr;
+    }
+    return HOOK_CONTINUE;
+}
+
 void draw_subject_sight(daAlink_c* link, AimItem item) {
     switch (item) {
     case AimItem::Bow:
@@ -979,6 +1018,26 @@ void prepare_third_person_aim(daAlink_c* link) {
     s_thirdPersonFovy = camera.mFovy;
     s_thirdPersonHeight = std::clamp(camera.mCenter.y - link->current.pos.y, 100.0f, 180.0f);
     s_thirdPersonAimActive = true;
+}
+
+HookAction before_body_angle_to_camera(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (twilit_air_bow_aim_active(link) && s_twilitAimOwner != link) {
+        // This is called inside TE's ready-body hook, after it sets the aim
+        // status but before it consumes input. Capture the chase camera once,
+        // before TE's extra Link/Camera steps can enter the subject camera.
+        prepare_third_person_aim(link);
+        if (use_cinema_camera_for(link)) face_camera_view_yaw(link);
+        s_twilitAimOwner = link;
+    }
+    // TE owns stick/gyro sampling, including its presentation-frame preview.
+    // Do not call update_bullet_time_bow_aim or sample the same deltas again.
+    return HOOK_CONTINUE;
+}
+
+HookAction before_camera_run(ModContext*, void*, void*, void*) {
+    ++s_cameraRunDepth;
+    return HOOK_CONTINUE;
 }
 
 bool update_subject_aim(daAlink_c* link, AimItem item) {
@@ -1301,6 +1360,10 @@ void after_subject_camera(ModContext*, void* args, void*, void*) {
 }
 
 void after_camera_run(ModContext*, void* args, void*, void*) {
+    // TE calls Run recursively from its post-hook to compensate for slow time.
+    // Its inner passes still update the subject camera; apply zoom and refresh
+    // the sight only once, after the outermost pass has finished.
+    if (s_cameraRunDepth > 0 && --s_cameraRunDepth != 0) return;
     auto* camera = mods::arg<dCamera_c*>(args, 0);
     auto* link = daAlink_getAlinkActorClass();
     if (camera == nullptr || !use_scope_suppress_camera() || !player_in_supported_aim_state(camera) ||
@@ -1367,6 +1430,7 @@ void after_camera_next_type(ModContext*, void* args, void* retval, void*) {
 
 void after_player_execute(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!twilit_air_bow_aim_active(link)) s_twilitAimOwner = nullptr;
     if (link == nullptr || !use_third_person_camera_for(link) || is_hawkeye_bow(link) ||
         (!bullet_time_active_for(link) && !player_in_supported_aim_status(0)))
     {
@@ -1391,6 +1455,19 @@ void after_player_execute(ModContext*, void* args, void*, void*) {
 }
 
 ModResult add_aim_hooks(ModError* error, ModResult result) {
+    HookOptions early = HOOK_OPTIONS_INIT;
+    early.priority = 100;
+    HookOptions late = HOOK_OPTIONS_INIT;
+    late.priority = -100;
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<BodyAngleToCameraHook>(svc_hook, before_body_angle_to_camera, &early);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<CameraRunHook>(svc_hook, before_camera_run, &early);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<AimPresentationHook>(svc_hook, before_aim_presentation, &late);
+    }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<BoomerangSubjectHook>(svc_hook, replace_boomerang_subject);
     }
@@ -1443,7 +1520,7 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
     }
 #endif
     if (result == MOD_OK) {
-        result = mods::hook_add_post<PlayerExecuteHook>(svc_hook, after_player_execute);
+        result = mods::hook_add_post<PlayerExecuteHook>(svc_hook, after_player_execute, &late);
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<BowModelCalcHook>(svc_hook, before_bow_model_calc);
@@ -1464,7 +1541,7 @@ ModResult add_aim_hooks(ModError* error, ModResult result) {
         result = mods::hook_add_post<SubjectCameraHook>(svc_hook, after_subject_camera);
     }
     if (result == MOD_OK) {
-        result = mods::hook_add_post<CameraRunHook>(svc_hook, after_camera_run);
+        result = mods::hook_add_post<CameraRunHook>(svc_hook, after_camera_run, &late);
     }
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight aim hooks");
@@ -1513,6 +1590,15 @@ bool update_bullet_time_bow_aim(daAlink_c* link) {
     keep_cinema_bow_sight(link);
     apply_bullet_time_gyro(link);
     return true;
+}
+
+void shutdown_aim_hooks() {
+    shutdown_twilit_aim();
+    s_twilitAimOwner = nullptr;
+    s_cameraRunDepth = 0;
+    s_twilitPresentationView = nullptr;
+    s_thirdPersonAimActive = false;
+    s_customCinemaSightActive = false;
 }
 
 ModResult install_aim_hooks(ModError* error) {

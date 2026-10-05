@@ -28,6 +28,8 @@ struct cXyz {
 };
 bool near(cXyz a,cXyz b){return (a-b).abs()<.005f;}
 struct csXyz {s16 x=0,y=0,z=0;};
+struct view_class {struct {cXyz eye,center;} lookat;};
+const view_class* s_twilitPresentationView=nullptr;
 s16 cM_atan2s(float y,float x){return std::atan2(y,x)*32768/M_PI;}
 struct fopAc_ac_c {};
 struct daBoomerang_c:fopAc_ac_c {
@@ -115,6 +117,20 @@ int main(){
         assert(link.flags&daPy_py_c::RFLG0_ITEM_SIGHT_BG_HIT);
         assert(link.prompt==BUTTON_STATUS_LOCK&&link.triggers==1);
         assert(link.mSight.locked&&genericQueries==0); // No generic arrow ray or lock reset.
+    }
+    // TE can render a newer view between simulation ticks. The reticle must
+    // use it without replacing the authoritative simulation camera.
+    {
+        auto link=fresh(); mode=2;
+        const cXyz simulationEye=camera.mCamera.mEye;
+        view_class preview; preview.lookat.eye={30,40,50}; preview.lookat.center={130,40,50};
+        s_twilitPresentationView=&preview;
+        cXyz eye,forward; assert(camera_aim_ray(&link,eye,forward));
+        assert(near(eye,preview.lookat.eye)&&near(forward,{1,0,0}));
+        assert(near(camera.mCamera.mEye,simulationEye));
+        s_twilitPresentationView=nullptr;
+        assert(camera_aim_ray(&link,eye,forward));
+        assert(near(eye,simulationEye)&&near(forward,{0,0,1}));
     }
     // Repeated camera refreshes do not add targets themselves; native procWait owns that.
     auto link=fresh();mode=1;draw_fixed_camera_sight(&link);draw_fixed_camera_sight(&link);

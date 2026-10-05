@@ -199,6 +199,29 @@ Alternatively, Dawnlight's `Z Item Slot` can be enabled when Twilit Essentials'
 `Custom Z Button` is disabled and Twilight HD HUD Z Items is also off or absent.
 Other Twilit Essentials features can remain enabled.
 
+### Bullet Time aiming
+
+The airborne aim bridge targets the Bullet Time implementation in
+`BeZide93/dawnlight-twilit-essentials` 2.5.0. It uses the live `bulletTimeEnabled`
+and `bulletTimeFirstPerson` settings and native Bow aiming state; it does not
+require changes to TE or access to its private active-state variable.
+
+Cinema and 3rd Person use TE's existing air input backend. If its First-person
+aiming preference is off, Dawnlight enables it with a temporary, non-saved
+override while a custom Aim Mode is selected. The preference is restored for
+Vanilla, TE Bullet Time off, or Dawnlight unload. Pre-existing launch/speedrun
+overrides are left alone. Older TE versions without this backend are unchanged.
+TE owns slowdown, extra simulation steps, airborne controls and stamina drain;
+Dawnlight does not start a second Bullet Time when TE is enabled, even without
+TE's stamina bar. Hawkeye keeps its scope.
+
+The bridge captures the camera before TE's first airborne body-angle update,
+refreshes the sight after TE's render-frame aim preview, and uses explicit hook
+priorities so TE's recursive camera updates finish before Cinema zoom is applied.
+Native callback/config regression tests cover this behavior. Device validation
+is still required for both custom modes, stick/gyro/touch, firing and landing,
+TE First-person aiming initially on/off, stamina off, mode changes and mod reload.
+
 ## Twilight HD HUD
 
 Tested with Twilight HD HUD 2.1.1.

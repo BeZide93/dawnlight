@@ -81,6 +81,7 @@ ModResult install_item_slot_hooks(ModError*) {
 void update_cave_randomizer() {}
 void update_new_save_modes() { ++otherUpdates; }
 void update_progression() {}
+void update_twilit_aim() {}
 void bullet_time_tick() {}
 // Stamina ownership/UI behavior is covered by the stamina and mode fixtures.
 void update_stamina_ui() {}
@@ -109,6 +110,8 @@ int main() {
     set(sprint,false);assert(!te_fixture::twilit_sprint_enabled(false));
     set(sprint,true);te_fixture::active=false;
     assert(te_fixture::twilit_sprint_enabled(false)); // Sprint also works with TE stamina off.
+    set(bullet,true);assert(te_fixture::twilit_bullet_time_enabled()); // No stamina dependency.
+    set(teMod,false);assert(!te_fixture::twilit_bullet_time_enabled());
     set(teMod,false);assert(!te_fixture::twilit_sprint_enabled(false));
     vars.erase(teMod);assert(!te_fixture::twilit_sprint_enabled(false));
     set(teMod,true);set(wolf,true);assert(te_fixture::twilit_sprint_enabled(true));

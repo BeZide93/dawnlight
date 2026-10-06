@@ -29,7 +29,19 @@ struct J3DAnmTransform {
     virtual void getTransform(u16,J3DTransformInfo*) const=0;
 };
 struct J3DAnmTransformKey : J3DAnmTransform {
+    bool armRig=false;
     void calcTransform(float t,u16 joint,J3DTransformInfo* out) const {
+        if(armRig && joint>=11 && joint<=14) {
+            *out={};
+            // Native Link proportions; animated two-handed rotations deliberately
+            // differ from bind. Full charge must not retain their axial twist.
+            if(joint==11)out->mTranslate={13.798f,0,-2};
+            if(joint==12)out->mTranslate={15.692f,-1.017f,0};
+            if(joint==13)out->mTranslate={29,0,0};
+            if(joint==14)out->mTranslate={26.5f,0,0};
+            out->mRotation={s16(-8000+t*80),s16(6000+t*50),s16(14000+t*20)};
+            return;
+        }
         *out={};out->mTranslate={float(joint),t,float(100+joint)};
         out->mRotation={s16(joint*30),s16(joint*20),s16(joint*10)};
         if(joint==0) out->mRotation={s16(t*80),s16(t*100),s16(t*180)};
@@ -61,7 +73,13 @@ enum {dItemNo_BOOMERANG_e=0x40,dItemNo_BOW_e=0x43,dItemNo_HOOKSHOT_e=0x44,
  dItemNo_BOMB_ARROW_e=0x59,dItemNo_HAWK_ARROW_e=0x5a};
 struct Args {void* link;void* model=nullptr;};
 namespace mods {template<class T>T arg(void* p,int i){auto* a=static_cast<Args*>(p);return static_cast<T>(i?a->model:a->link);}}
-struct J3DModel {dual::Pose base;std::array<dual::Pose,35> joints;auto& getBaseTRMtx(){return base;}auto getAnmMtx(int i){return joints[i];}};
+struct RigJoint {J3DTransformInfo transform;auto& getTransformInfo(){return transform;}};
+struct RigData {
+    std::array<RigJoint,35> joints;
+    RigData(){joints[11].transform.mRotation={-16384,16384,0};joints[12].transform.mRotation={16384,0,0};}
+    auto* getJointNodePointer(int i){return &joints[i];}
+};
+struct J3DModel {RigData data;auto* getModelData(){return &data;}dual::Pose base;std::array<dual::Pose,35> joints;auto& getBaseTRMtx(){return base;}auto getAnmMtx(int i){return joints[i];}};
 struct cXyz {float x=0,y=0,z=0;void set(float a,float b,float c){x=a;y=b;z=c;}};
 struct Morph {
     int calls=0;bool valid=true;
@@ -83,6 +101,7 @@ struct daAlink_c {
     int mProcID=PROC_WAIT,cut=0,mEquipItem=0x103;
     bool event=false,guard=false,human=true,equipping=false,horse=false;
     int field_0x3198=0;
+    struct {int field_0x300c=0;} mProcVar2;
     Morph morph;Morph* field_0x2060=&morph;
     J3DModel model;J3DModel* mpLinkModel=&model;
     std::array<mDoExt_AnmRatioPack,3> mNowAnmPackUnder,mNowAnmPackUpper;
@@ -104,7 +123,7 @@ struct State {
     SecondSword swordType=SecondSword::Ordon;
     daAlink_c* owner=nullptr;
     bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
-    float guard=0,draw=0,sheathTilt=0;unsigned tick=0,poseTick=~0u;
+    float guard=0,draw=0,sheathTilt=0,charge=0;Pose chargeMount;DualChargeArmPose chargeArm;unsigned tick=0,poseTick=~0u;
     dual::Alternation attacks;
     DualGuardBodyPose guardBody;bool haveGuardBody=false;
     dual::StowMotion stow;Pose rightSword,hipSword,nativeShield;unsigned shieldTick=~0u;J3DModel* sword=nullptr;J3DModel* sheath=nullptr;
@@ -121,12 +140,11 @@ Pose pose(Pose p){return p;}
 void put(J3DModel* model,int joint,Pose p){model->joints[joint]=p;}
 void put(J3DModel* model,Pose p){model->base=p;}
 void matrix(Pose value,Pose& destination){destination=value;}
-Pose sword_at_hand(daAlink_c*,bool right){return {{},{right?20.f:-20.f,80,40}};}
 void show_guard_blade(daAlink_c* link){++link->swordShown;}
 '''
 
 fixture += "\n".join(function(name, result) for name, result in [
-    ("local", "Pose"), ("status_item_matrices", "void"), ("hand_mount", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("knocked_down", "bool"), ("sword_guard_equipment", "bool"), ("item_guard_equipment", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
+    ("local", "Pose"), ("status_item_matrices", "void"), ("hand_mount", "Pose"), ("sword_at_hand", "Pose"), ("solve_arm", "void"), ("detach", "void"), ("ordinary", "bool"), ("sword_attack", "bool"), ("jump_charge", "bool"), ("knocked_down", "bool"), ("sword_guard_equipment", "bool"), ("item_guard_equipment", "bool"), ("start_stow", "void"), ("start_draw", "void"), ("after_equip", "void"), ("update_stow", "void"), ("after_matrix", "void"),
     ("after_cut", "void"), ("before_guard_attack", "HookAction"),
     ("guard_thrust", "float"), ("before_model_calc", "HookAction"),
     ("after_model_calc", "void"), ("after_sword_pos", "void"),
@@ -150,7 +168,29 @@ int main() {
     }
     assert(original.frame==12.5f); // no shared BCK/frame writes
 
+    // Link's shoulder bind is at the Euler pitch singularity. Quaternion
+    // conversion must preserve it, including during partial charge blending.
+    for(float pitch:{-1.57079632679f,1.57079632679f})
+    for(float roll:{-1.57079632679f,0.f,.8f}) for(float yaw:{0.f,.5f}) {
+        const auto q=dual::from_euler({roll,pitch,yaw});
+        J3DTransformInfo t;set_joint_rotation(t,q);
+        for(Vec axis:{Vec{1,0,0},Vec{0,1,0},Vec{0,0,1}})
+            assert(dual::length(dual::rotate(joint_rotation(t),axis)-dual::rotate(q,axis))<.001f);
+    }
+    DualChargeArmPose bind{};bind[0].mRotation={-16384,16384,0};bind[1].mRotation={16384,0,0};
+    pose_jump_charge_arm(bind);
+    for(float weight:{0.f,.25f,.5f,.75f,1.f}) {
+        DualWieldAnimation charged(original,false,nullptr,0,&bind,weight);
+        for(int joint=11;joint<=14;++joint) {
+            J3DTransformInfo native,actual;original.getTransform(joint,&native);charged.getTransform(joint,&actual);
+            const auto expected=dual::blend(joint_rotation(native),joint_rotation(bind[joint-11]),weight);
+            for(Vec axis:{Vec{1,0,0},Vec{0,1,0},Vec{0,0,1}})
+                assert(dual::length(dual::rotate(joint_rotation(actual),axis)-dual::rotate(expected,axis))<.001f);
+        }
+    }
+
     daAlink_c link,other;s.owner=&link;Args args{&link,link.mpLinkModel};
+    link.model.joints[9].p={-20,80,40};link.model.joints[14].p={20,80,40};
     after_matrix(nullptr,&args,nullptr,nullptr);assert(s.active && !s.mirror);
     const float draw=s.draw;
     after_matrix(nullptr,&args,nullptr,nullptr);assert(s.draw==draw); // one advance per tick
@@ -321,7 +361,8 @@ int main() {
         ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
         assert(s.guard==0 && !s.stow.active && s.stow.release==0 && s.draw>0);
         assert(!s.haveGuardBody && !s.mirror);
-        before_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+        before_model_calc(nullptr,&args,nullptr,nullptr);assert(s_calculating==jump_charge(&link));
+        after_model_calc(nullptr,&args,nullptr,nullptr);
         ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.guard==0);
     }
     // A held/manual guard signal must not pose the arms during knockback,
@@ -371,6 +412,132 @@ int main() {
     link.model.joints[13]={{},{-32,105,0}};
     link.model.joints[14]={{},{-24,93,22}};
     const auto nativeJoints=link.model.joints;
+
+    const auto samePose=[](Pose a,Pose b) {
+        assert(dual::length(a.p-b.p)<.003f);
+        for(Vec axis:{Vec{1,0,0},Vec{0,1,0},Vec{0,0,1}})
+            assert(dual::length(dual::rotate(a.q,axis)-dual::rotate(b.q,axis))<.003f);
+    };
+    // ANM_FINISH spins the main sword's item track. Hold all other inputs
+    // fixed and rotate that track through full turns: the offhand wrist and
+    // sword must stay identical during insertion, empty-hand rest and release.
+    link.guard=false;s.guard=0;s.charge=0;s.stow={};s.draw=1;
+    link.mProcID=daAlink_c::PROC_SWORD_UNEQUIP_SP;link.field_0x3198=0;
+    link.morph.quaternions[10]=dual::from_euler({-.8f,.5f,.7f});
+    link.morph.transforms[10].mTranslate={9.66f,2.14f,3.02f};
+    s.rightSword=sword_at_hand(&link,true);
+    const Pose gripBefore=hand_mount(&link,true);
+    start_stow(&link,true);
+    assert(s.stow.active&&s.stow.special);samePose(s.stow.mount,gripBefore);
+    for(float progress:{.1f,.5f,1.f}) {
+        Pose wrist,sword;
+        for(int step=0;step<=80;++step) {
+            const float angle=step*.16f;
+            link.model.joints=nativeJoints;
+            link.morph.quaternions[10]=dual::from_euler({angle,-angle*.7f,angle*.4f});
+            s.stow.progress=progress;
+            samePose(hand_mount(&link,true),gripBefore);
+            // Main sword still consumes the actual animated quaternion.
+            assert(hand_mount(&link,false).q.x==link.morph.quaternions[10].x);
+            after_arms(nullptr,&args,nullptr,nullptr);
+            if(step==0) {wrist=link.model.joints[14];sword=s.rightSword;}
+            else {samePose(link.model.joints[14],wrist);samePose(s.rightSword,sword);}
+            for(int joint=0;joint<35;++joint)
+                if(joint<11||joint>15)samePose(link.model.joints[joint],nativeJoints[joint]);
+        }
+    }
+    link.field_0x3198=1;link.mUnderFrameCtrl[0].frame=2;
+    update_stow(&link,false);assert(s.stow.active);samePose(hand_mount(&link,true),gripBefore);
+    link.mProcID=daAlink_c::PROC_WAIT;link.mEquipItem=dItemNo_NONE_e;
+    update_stow(&link,false);assert(s.stow.release==1);samePose(hand_mount(&link,true),gripBefore);
+    for(int i=0;i<7;++i)update_stow(&link,false);
+    assert(s.stow.release==0);
+    // Reversed draw also snapshots the grip before activating the new motion.
+    s.draw=0;const Pose drawMount=hand_mount(&link,true);start_draw(&link,false);
+    samePose(s.stow.mount,drawMount);
+
+    // Charge is authored in the real local rig: +X is bone length, the
+    // elbow uses local Z. Native skinning/morphing receives the whole chain.
+    s.stow={};s.guard=0;s.draw=1;s.charge=0;link.mEquipItem=0x103;
+    link.mProcID=daAlink_c::PROC_CUT_LARGE_JUMP_CHARGE;link.guard=true;
+    for(int tick=0;tick<7;++tick) {
+        ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+        const float weight=s.charge;after_matrix(nullptr,&args,nullptr,nullptr);
+        assert(s.charge==weight&&s.guard==0&&!s.stow.active);
+    }
+    assert(s.charge==1);original.armRig=true;
+    for(int proc:{daAlink_c::PROC_CUT_LARGE_JUMP_CHARGE,daAlink_c::PROC_CUT_TURN_MOVE}) {
+        link.mProcID=proc;link.mProcVar2.field_0x300c=1;
+        ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.charge==1&&jump_charge(&link));
+        for(auto type:{SecondSword::Wooden,SecondSword::Ordon,SecondSword::Master}) {
+            s.swordType=type;
+            for(float frame:{0.f,10.f,30.f,60.f}) {
+                original.frame=frame;
+                before_model_calc(nullptr,&args,nullptr,nullptr);assert(s_calculating);
+                std::array<J3DTransformInfo,4> arm;
+                for(auto* packs:{&link.mNowAnmPackUnder,&link.mNowAnmPackUpper})
+                for(auto& pack:*packs) for(int joint=0;joint<35;++joint) {
+                    J3DTransformInfo native,actual;
+                    original.getTransform(joint,&native);pack.value->getTransform(joint,&actual);
+                    assert(actual.mTranslate.x==native.mTranslate.x&&actual.mTranslate.y==native.mTranslate.y&&actual.mTranslate.z==native.mTranslate.z);
+                    assert(actual.mScale.x==native.mScale.x&&actual.mScale.y==native.mScale.y&&actual.mScale.z==native.mScale.z);
+                    if(joint>=11&&joint<=14)arm[joint-11]=actual;
+                    else assert(actual.mRotation.x==native.mRotation.x&&actual.mRotation.y==native.mRotation.y&&actual.mRotation.z==native.mRotation.z);
+                }
+                constexpr float radians=3.14159265358979323846f/180;
+                const auto elbow=joint_rotation(arm[2]);
+                // A pure 75-degree hinge: no inherited X/Y twist at the elbow.
+                samePose({elbow,{}},{dual::from_euler({0,0,75*radians}),{}});
+                samePose({joint_rotation(arm[3]),{}},{dual::from_euler({35*radians,0,0}),{}});
+                for(float yaw:{0.f,1.7f,-2.8f}) {
+                    // Root/chest bind orientation and real native joint offsets.
+                    Pose chest{dual::multiply(dual::from_euler({0,yaw,0}),dual::from_euler({90*radians,0,90*radians})),{80,143,-120}};
+                    std::array<Pose,4> posed;
+                    for(int bone=0;bone<4;++bone) {
+                        const auto& t=arm[bone];
+                        posed[bone]=dual::compose(bone?posed[bone-1]:chest,
+                            Pose{joint_rotation(t),{t.mTranslate.x,t.mTranslate.y,t.mTranslate.z}});
+                    }
+                    assert(std::abs(dual::length(posed[2].p-posed[1].p)-29)<.003f);
+                    assert(std::abs(dual::length(posed[3].p-posed[2].p)-26.5f)<.003f);
+                    const Vec offset=dual::rotate(dual::conjugate(dual::from_euler({0,yaw,0})),posed[3].p-posed[1].p);
+                    assert(offset.x<-10&&offset.y>10&&offset.y<20&&offset.z>35); // above and ahead of the thigh
+                    // Another 35 degrees of shoulder swing lifts the chain without
+                    // changing the accepted local elbow and wrist rotations.
+                    const Vec previous{-15.155f,-11.940f,39.610f};
+                    assert(offset.z>previous.z-1&&offset.y>previous.y+20);
+                    const Pose relative=dual::compose(dual::inverse(posed[1]),posed[2]);
+                    samePose(relative,{elbow,{29,0,0}});
+                }
+                after_model_calc(nullptr,&args,nullptr,nullptr);assert(!s_calculating);
+                for(auto& pack:link.mNowAnmPackUnder)assert(pack.value==&original);
+                for(auto& pack:link.mNowAnmPackUpper)assert(pack.value==&original);
+            }
+        }
+    }
+    original.armRig=false;
+    // Ordinary spin charge must not inherit the Jump Strike override.
+    link.mProcVar2.field_0x300c=0;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
+    assert(!jump_charge(&link)&&s.charge==0);
+    for(int boundary=0;boundary<8;++boundary) {
+        s.charge=1;link.mProcID=daAlink_c::PROC_CUT_LARGE_JUMP_CHARGE;
+        if(boundary==0)link.mProcID=daAlink_c::PROC_CUT_LARGE_JUMP;
+        if(boundary==1)link.mProcID=daAlink_c::PROC_LARGE_DAMAGE;
+        if(boundary==2)link.horse=true;
+        if(boundary==3)link.event=true;
+        if(boundary==4)glidingOwner=&link;
+        if(boundary==5)setting=false;
+        if(boundary==6)link.human=false;
+        if(boundary==7)link.mEquipItem=dItemNo_BOW_e;
+        ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.charge==0);
+        link.horse=link.event=false;glidingOwner=nullptr;setting=true;link.human=true;link.mEquipItem=0x103;
+    }
+    link.model.base={};link.model.joints=nativeJoints;link.guard=false;
+    link.mProcID=daAlink_c::PROC_WAIT;s.swordType=SecondSword::Ordon;
+    s.charge=1;s.stow={};s.draw=1;s.guard=0;
+    for(int i=0;i<7;++i) {const float previous=s.charge;++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);assert(s.charge<=previous);}
+    assert(s.charge==0);
+    ++s.tick;after_matrix(nullptr,&args,nullptr,nullptr);
     // Mounted block keeps the native lean and every arm joint, even when
     // mounting interrupts an on-foot guard, draw, stow or release blend.
     for(int item:std::array<int,4>{0x103,dItemNo_NONE_e,dItemNo_BOW_e,dItemNo_PACHINKO_e}) {

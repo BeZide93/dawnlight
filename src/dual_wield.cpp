@@ -56,7 +56,9 @@ struct State {
     J3DModel* sheath=nullptr;
     dual::Alternation attacks;
     bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
-    float guard=0,draw=0,sheathTilt=0;
+    float guard=0,draw=0,sheathTilt=0,charge=0;
+    Pose chargeMount;
+    DualChargeArmPose chargeArm;
     unsigned tick=0,poseTick=~0u;
     Pose rightSword,hipSword,nativeShield;
     unsigned shieldTick=~0u;
@@ -245,6 +247,12 @@ bool sword_attack(daAlink_c* link) {
     default: return false;
     }
 }
+bool jump_charge(daAlink_c* link) {
+    // Once charged, native code keeps the upper charge clip in CUT_TURN_MOVE.
+    // Its process argument distinguishes Jump Strike from ordinary spin charge.
+    return link->mProcID==daAlink_c::PROC_CUT_LARGE_JUMP_CHARGE ||
+        (link->mProcID==daAlink_c::PROC_CUT_TURN_MOVE && link->mProcVar2.field_0x300c!=0);
+}
 bool sword_guard_equipment(daAlink_c* link) {
     return link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e;
 }
@@ -331,6 +339,10 @@ HookAction before_execute(ModContext*,void* args,void*,void*) {
     return HOOK_CONTINUE;
 }
 Pose hand_mount(daAlink_c* link,bool right) {
+    if(right) {
+        if(s.stow.active || s.stow.release>0) return s.stow.mount;
+        if(s.charge>0) return s.chargeMount;
+    }
     const auto& t=*link->field_0x2060->getOldFrameTransInfo(10);
     // Euler fields retain an input clip's angles during native blending;
     // the quaternion is the rotation actually used for the rendered joint.
@@ -344,7 +356,8 @@ Pose sword_at_hand(daAlink_c* link,bool right) {
 }
 void start_stow(daAlink_c* link,bool special) {
     if(!active(link) || s.draw<=0) return;
-    s.stow={};s.stow.active=true;s.stow.special=special;
+    const Pose mount=hand_mount(link,true);
+    s.stow={};s.stow.mount=mount;s.stow.active=true;s.stow.special=special;
     const auto& frame=special ? link->mUnderFrameCtrl[0] : link->mUpperFrameCtrl[2];
     s.stow.lastFrame=frame.getFrame();
     s.stow.duration=special ? 18.0f : std::max(1.0f,frame.getEnd()-frame.getFrame());
@@ -353,7 +366,8 @@ void start_stow(daAlink_c* link,bool special) {
 }
 void start_draw(daAlink_c* link,bool nativeClock) {
     if(!active(link) || s.draw>0) return;
-    s.stow={};s.stow.active=true;s.stow.drawing=true;s.stow.nativeClock=nativeClock;
+    const Pose mount=hand_mount(link,true);
+    s.stow={};s.stow.mount=mount;s.stow.active=true;s.stow.drawing=true;s.stow.nativeClock=nativeClock;
     const auto& frame=link->mUpperFrameCtrl[2];
     s.stow.lastFrame=frame.getFrame();
     s.stow.duration=nativeClock ? std::max(1.0f,frame.getFrame()-frame.getStart()) : 20.0f;
@@ -436,6 +450,13 @@ void after_matrix(ModContext*,void* args,void*,void*) {
         const bool held=s.stow.drawing ? s.stow.progress>=dual::draw_grip_start : s.stow.progress<dual::stow_insert_end;
         s.draw=held ? 1.0f : 0.0f;
     } else s.draw=dual::approach(s.draw,drawn ? 1.0f : 0.0f,1.0f/8);
+    const bool charging=s.active && !link->checkHorseRide() && sword_guard_equipment(link) && jump_charge(link);
+    if(charging && s.charge==0) s.chargeMount=hand_mount(link,true);
+    // Ease in, and ease back to idle on cancel. Attacks, damage, riding, tools
+    // and scripted/gliding poses take ownership immediately, like guard/stow.
+    const bool releaseCharge=s.active && !nativeArms && sword_guard_equipment(link) &&
+        !s.stow.active && s.stow.release==0 && s.guard==0;
+    s.charge=(charging || releaseCharge) ? dual::approach(s.charge,charging ? 1.0f : 0.0f,1.0f/6) : 0;
 }
 void after_cut(ModContext*,void* args,void* result,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
@@ -473,19 +494,28 @@ HookAction before_model_calc(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     auto* model=mods::arg<J3DModel*>(args,1);
     const bool thrust=s.haveGuardBody && sword_guard_equipment(link) && link->mProcID==daAlink_c::PROC_GUARD_ATTACK;
-    if(!active(link) || (!s.mirror && !thrust) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
+    if(!active(link) || (!s.mirror && !thrust && s.charge==0) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
     // Reject nonstandard tracks as a group; never partly mirror a mixed rig.
     for(int i=0;i<6;++i) {
         auto& pack=i<3 ? link->mNowAnmPackUnder[i] : link->mNowAnmPackUpper[i-3];
         auto* anm=pack.getAnmTransform();
         if(anm && (anm->getKind()!=8 || anm->field_0x1e!=35)) { s.mirror=false;return HOOK_CONTINUE; }
     }
+    if(s.charge>0) {
+        // Build an anatomical local chain from this model's bind pose, rather
+        // than preserving the twist of the native two-handed charge through IK.
+        // +X runs along each arm bone; the elbow bends around local +Z.
+        for(int joint=11;joint<=14;++joint)
+            s.chargeArm[joint-11]=model->getModelData()->getJointNodePointer(joint)->getTransformInfo();
+        pose_jump_charge_arm(s.chargeArm);
+    }
     s_calculating=true;
     for(int i=0;i<6;++i) {
         auto& b=s_borrow[i];b.pack=i<3 ? &link->mNowAnmPackUnder[i] : &link->mNowAnmPackUpper[i-3];
         b.original=b.pack->getAnmTransform();if(!b.original) continue;
         b.wrapper.emplace(*static_cast<J3DAnmTransformKey*>(b.original),s.mirror,
-                          thrust ? &s.guardBody : nullptr,guard_thrust(link));
+                          thrust ? &s.guardBody : nullptr,guard_thrust(link),
+                          s.charge>0 ? &s.chargeArm : nullptr,dual::smooth(s.charge));
         b.pack->setAnmTransform(&*b.wrapper);
     }
     return HOOK_CONTINUE;

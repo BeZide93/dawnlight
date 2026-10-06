@@ -50,6 +50,7 @@ add_mod(dawnlight_lite
         src/aim_hooks.cpp
         src/dual_wield.cpp
         src/collection_dual_wield.cpp
+        src/collection_service.cpp
         src/bow_modes.cpp
         src/bow_fire_resource.cpp
         src/enemy_hard_mode.cpp

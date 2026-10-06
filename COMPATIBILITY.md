@@ -6,6 +6,38 @@ or the gameplay HUD.
 
 ## Dual Wield Collection option
 
+When TE exports `com.dusklight.twilit_essentials.collection` v1.0, Dawnlight
+registers a shield-row slot using the ABI from the supplied `collection-slot-demo`.
+The service receives the selected second sword's name and its native collection
+archive icon ID, plus an already-owned, currently equipped backing shield. TE
+owns slot placement (`column = 0`, first free column), navigation, highlighting,
+equip sounds and selection. Dawnlight continues to own the two sword models and
+combat poses. No demo textures or models are included.
+
+Registration waits for the collection archive. While the service slot is active,
+all legacy menu interception passes through. Selection is read by slot handle;
+Dawnlight does not overwrite TE save data or turn a selected shield into a sword
+item. Missing/incompatible services, registration failures and ambiguous initial
+selection retain the legacy backend. Unload drops provider handles without
+calling a stale table; shutdown removes the slot and its unlock callback.
+
+**Service compatibility:** the demo header does not document whether
+`is_equipped` distinguishes a model-less slot from its `base_item`. The older
+Collection-Lib treats model-less slots as native-item aliases, which is unsuitable
+for Dual Wield. A new slot already reported equipped is rejected, rather than
+silently enabling Dual Wield while a normal shield is worn. TE must support an
+independently selectable model-less slot for this backend to take over. This
+also means an initial provider-restored selection cannot currently be distinguished
+from an alias and may use the legacy fallback. The service has no selection setter
+or descriptor-update call: legacy saves are not auto-migrated; reselect the slot
+when switching backend or changing the configured second sword (remove/re-add).
+When updating TE or the HUD, verify model-less slot semantics, persistence,
+first-free placement with TE's own slots and HD HUD behavior.
+
+Run `python3 tests/collection_service_test.py dusklight` for the supplied ABI and
+provider lifecycle fixture. This does not substitute for testing the actual TE
+implementation. The following describes the retained legacy backend:
+
 Enabling Dual Wield adds the selected second sword’s icon after the rightmost visible shield
 slot. Selecting it equips Dual Wield; the setting itself only enables the menu
 option. The existing equipped shield remains the underlying source of native
@@ -33,7 +65,7 @@ Source review for this adapter used:
 | BeZide93/dawnlight-hd-hud (2.4.4) | `0e3a495e7df93b45afa4f1800e02291b89a4e8f8` |
 
 These are source-inspected versions, **not an in-game compatibility claim**.
-The inspected forks do not yet provide a shared Collection extension API;
+The published forks inspected for the legacy backend did not provide a shared Collection extension API;
 Twilight HD HUD uses a fixed native-cell layout and hides other menu roots.
 Dawnlight's separate icon survives that behavior, but does not make Essentials'
 own extra entries compatible with that HUD. When Essentials exposes those

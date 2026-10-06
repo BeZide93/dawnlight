@@ -21,6 +21,7 @@
 #include "service_imports.hpp"
 #include "stamina.hpp"
 #include "twilit_essentials/stamina.h"
+#include "twilit_essentials/collection.h"
 #include "update_service.hpp"
 
 #include "mods/service.hpp"
@@ -42,6 +43,7 @@ DEFINE_MOD();
 IMPORT_SERVICE(ActorService, svc_actor);
 IMPORT_OPTIONAL_SERVICE(Kh2HudDriveService, svc_kh2hud_drive);
 IMPORT_OPTIONAL_SERVICE_VERSION(TwilitEssentialsStaminaService, svc_te_stamina, 0);
+IMPORT_OPTIONAL_SERVICE(TwilitEssentialsCollectionService, svc_te_collection);
 IMPORT_SERVICE(ConfigService, svc_config);
 IMPORT_SERVICE(FlowService, svc_flow);
 IMPORT_SERVICE(GameModeService, svc_game_mode);
@@ -79,6 +81,7 @@ bool s_hudTouchHooksInstalled = false;
 extern "C" {
 
 MOD_EXPORT ModResult mod_initialize(ModError* error) {
+    (void)&mod_meta_import_svc_te_collection;
     if (const ModResult result = dawnlight::register_config(error); result != MOD_OK) {
         return result;
     }
@@ -190,6 +193,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
     dawnlight::update_cave_randomizer();
     dawnlight::update_new_save_modes();
     dawnlight::update_progression();
+    dawnlight::update_collection_dual_wield();
     dawnlight::update_stamina();
     dawnlight::update_stamina_ui();
     dawnlight::update_kh2_drive();

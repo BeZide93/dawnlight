@@ -56,7 +56,8 @@ struct State {
     J3DModel* sheath=nullptr;
     dual::Alternation attacks;
     bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
-    float guard=0,draw=0,sheathTilt=0;
+    float guard=0,draw=0,sheathTilt=0,charge=0;
+    Pose chargeMount;
     unsigned tick=0,poseTick=~0u;
     Pose rightSword,hipSword,nativeShield;
     unsigned shieldTick=~0u;
@@ -245,6 +246,12 @@ bool sword_attack(daAlink_c* link) {
     default: return false;
     }
 }
+bool jump_charge(daAlink_c* link) {
+    // Once charged, native code keeps the upper charge clip in CUT_TURN_MOVE.
+    // Its process argument distinguishes Jump Strike from ordinary spin charge.
+    return link->mProcID==daAlink_c::PROC_CUT_LARGE_JUMP_CHARGE ||
+        (link->mProcID==daAlink_c::PROC_CUT_TURN_MOVE && link->mProcVar2.field_0x300c!=0);
+}
 bool sword_guard_equipment(daAlink_c* link) {
     return link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e;
 }
@@ -331,6 +338,10 @@ HookAction before_execute(ModContext*,void* args,void*,void*) {
     return HOOK_CONTINUE;
 }
 Pose hand_mount(daAlink_c* link,bool right) {
+    if(right) {
+        if(s.stow.active || s.stow.release>0) return s.stow.mount;
+        if(s.charge>0) return s.chargeMount;
+    }
     const auto& t=*link->field_0x2060->getOldFrameTransInfo(10);
     // Euler fields retain an input clip's angles during native blending;
     // the quaternion is the rotation actually used for the rendered joint.
@@ -344,7 +355,8 @@ Pose sword_at_hand(daAlink_c* link,bool right) {
 }
 void start_stow(daAlink_c* link,bool special) {
     if(!active(link) || s.draw<=0) return;
-    s.stow={};s.stow.active=true;s.stow.special=special;
+    const Pose mount=hand_mount(link,true);
+    s.stow={};s.stow.mount=mount;s.stow.active=true;s.stow.special=special;
     const auto& frame=special ? link->mUnderFrameCtrl[0] : link->mUpperFrameCtrl[2];
     s.stow.lastFrame=frame.getFrame();
     s.stow.duration=special ? 18.0f : std::max(1.0f,frame.getEnd()-frame.getFrame());
@@ -353,7 +365,8 @@ void start_stow(daAlink_c* link,bool special) {
 }
 void start_draw(daAlink_c* link,bool nativeClock) {
     if(!active(link) || s.draw>0) return;
-    s.stow={};s.stow.active=true;s.stow.drawing=true;s.stow.nativeClock=nativeClock;
+    const Pose mount=hand_mount(link,true);
+    s.stow={};s.stow.mount=mount;s.stow.active=true;s.stow.drawing=true;s.stow.nativeClock=nativeClock;
     const auto& frame=link->mUpperFrameCtrl[2];
     s.stow.lastFrame=frame.getFrame();
     s.stow.duration=nativeClock ? std::max(1.0f,frame.getFrame()-frame.getStart()) : 20.0f;
@@ -436,6 +449,13 @@ void after_matrix(ModContext*,void* args,void*,void*) {
         const bool held=s.stow.drawing ? s.stow.progress>=dual::draw_grip_start : s.stow.progress<dual::stow_insert_end;
         s.draw=held ? 1.0f : 0.0f;
     } else s.draw=dual::approach(s.draw,drawn ? 1.0f : 0.0f,1.0f/8);
+    const bool charging=s.active && !link->checkHorseRide() && sword_guard_equipment(link) && jump_charge(link);
+    if(charging && s.charge==0) s.chargeMount=hand_mount(link,true);
+    // Ease in, and ease back to idle on cancel. Attacks, damage, riding, tools
+    // and scripted/gliding poses take ownership immediately, like guard/stow.
+    const bool releaseCharge=s.active && !nativeArms && sword_guard_equipment(link) &&
+        !s.stow.active && s.stow.release==0 && s.guard==0;
+    s.charge=(charging || releaseCharge) ? dual::approach(s.charge,charging ? 1.0f : 0.0f,1.0f/6) : 0;
 }
 void after_cut(ModContext*,void* args,void* result,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
@@ -527,6 +547,14 @@ void after_arms(ModContext*,void* args,void*,void*) {
         s.nativeShield=pose(model->getAnmMtx(link->mRightItemJntNo));
         s.shieldTick=s.tick;
     } else s.shieldTick=~0u;
+    if(s.charge>0) {
+        const Pose inverseActor=dual::inverse(actor);
+        const Vec shoulder=dual::compose(inverseActor,pose(model->getAnmMtx(12))).p;
+        const float side=shoulder.x<0 ? -1.0f : 1.0f;
+        const Pose target=dual::jump_charge_blade(shoulder,hand_mount(link,true));
+        const Vec pole=dual::compose(actor,Pose{{},shoulder+Vec{35*side,-25,0}}).p;
+        solve_arm(link,true,dual::compose(actor,target),dual::smooth(s.charge),&pole);
+    }
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());
         const Pose inverseBase=dual::inverse(base);

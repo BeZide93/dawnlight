@@ -87,6 +87,14 @@ inline Pose cross_guard_blade(bool right,float thrust) {
     if(!right) rotation=multiply(rotation,{1,0,0,0});
     return {rotation,{18*side,112,50+16*thrust+(right ? 6.0f : -6.0f)}};
 }
+// Jump Strike keeps the main sword raised. The offhand stays below/outside
+// the right shoulder, pointing forward and up instead of reaching for its grip.
+inline Pose jump_charge_blade(Vec shoulder,Pose mount) {
+    const float side=shoulder.x<0 ? -1.0f : 1.0f;
+    const Quat blade=between({1,0,0},unit({.35f*side,.65f,.68f}));
+    const Pose hand{multiply(blade,conjugate(mount.q)),shoulder+Vec{12*side,-30,24}};
+    return compose(hand,mount);
+}
 constexpr float stow_insert_end=.75f;
 constexpr float draw_grip_start=.30f;
 inline float sheath_tilt_target(float progress,bool drawing) {
@@ -137,7 +145,9 @@ struct StowMotion {
     bool active=false,special=false,drawing=false,nativeClock=true;
     int phase=0;
     float elapsed=0,lastFrame=0,duration=22,progress=0,release=0;
-    Pose start;
+    // Keep the grip basis from the start of the motion. ANM_FINISH animates
+    // the main sword's item joint; it must not spin the offhand wrist through IK.
+    Pose start,mount;
     void advance(float frame,int nextPhase) {
         // Equip runs backwards; flourish changes clip and resets its controller.
         if(nextPhase==phase) elapsed+=std::max(0.0f,drawing ? lastFrame-frame : frame-lastFrame);

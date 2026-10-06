@@ -36,10 +36,10 @@ inline void pose_jump_charge_arm(DualChargeArmPose& bind) {
     const std::array<dual::Vec,4> angles{{{}, {0,65*radians,0}, {0,0,75*radians}, {35*radians,0,0}}};
     for(size_t i=1;i<bind.size();++i) {
         auto turn=dual::from_euler(angles[i]);
-        // Swing the entire chain 35 degrees forward around the neutral upper
+        // Swing the entire chain 70 degrees forward around the neutral upper
         // arm axis, BEFORE lowering it. Post-multiplying would only roll the
         // lowered arm and change its elbow plane instead of lifting the hand.
-        if(i==1) turn=dual::multiply(dual::from_euler({35*radians,0,0}),turn);
+        if(i==1) turn=dual::multiply(dual::from_euler({70*radians,0,0}),turn);
         set_joint_rotation(bind[i],dual::multiply(joint_rotation(bind[i]),turn));
     }
 }

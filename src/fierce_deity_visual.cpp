@@ -165,371 +165,462 @@ void after_packet_draw(ModContext*, void*, void*, void*) {
     }
 }
 
-// Reuse an identity table i…16381 tokens truncated…rol: a GX setter flushing GEN_MODE from a stale shadow
-    // (one texgen) recreates the log's invalid generator with this native model.
-    load_native(3);
-    const u32 staleShadow=1|(2u<<4)|(3u<<10);
-    write_bp(staleShadow);
-    assert(!shader_texgens_valid());
-    bp=nativeBP; liveTexGens=3;
-    assert(shader_texgens_valid());
-    // A full TREF/KSEL shadow write would also corrupt the paired native stage.
-    write_bp((0x29u<<24)|(1u<<19));
-    assert((bp[0x29]&0xFFF)!=(nativeBP[0x29]&0xFFF));
-    write_bp((0xF6u<<24)|4u);
-    assert((bp[0xF6]&0xFFFFF0)!=(nativeBP[0xF6]&0xFFFFF0));
+// Reuse an identity table if present. Only unused tables may be repurposed, since
+// the original stages still compute texture alpha (hair, eyelashes, cutouts).
+struct SwapTables {
+    int identity = -1;
+};
 
-    J3DMaterial mat; J3DShape shape{&mat}; J3DModel player, other;
-    link.mpLinkModel=&player;
-    J3DShapePacket p{&player,&shape,{}}, foreign{&other,&shape,{}};
-    draw_shadow(p);
-    draw_begin(p);
-    assert(gpuCount==5 && gpuMaterial.r==24);
-    assert(gpuMaterial.a==93 && gpuAmbient.a==61); // Aurora's full RGBA writes
-    // Check actual SPEC bits, independent channels, additive composition,
-    // and normal-dependent highlights rather than a constant gray silhouette.
-    assert(xf[0x100F]==((1u<<9)|(1u<<1)|(1u<<2)));
-    assert(((xf[0x100E]>>7)&3)==GX_DF_CLAMP);
-    assert(((bp[0x29]>>19)&7)==0); // stage3: COLOR0 diffuse
-    assert(((bp[0x2A]>>7)&7)==1); // stage4: COLOR1 specular
-    assert((gpuStages[4].color==std::array<int,4>{GX_CC_RASC,GX_CC_ZERO,GX_CC_ZERO,GX_CC_CPREV}));
-    const float hx=xf_float_value(0x60D), hy=xf_float_value(0x60E), hz=xf_float_value(0x60F);
-    assert(highlight(hx,hy,hz)>0.98f);
-    assert(highlight(0,0,1)>0.1f && highlight(0,0,1)<0.5f);
-    assert(highlight(1,0,0)==0);
-    assert((xf[0x100A]&255)==61 && (xf[0x100C]&255)==93);
-    assert(xf[0x1010]==nativeXF[0x1010] && xf[0x1011]==nativeXF[0x1011]);
-    draw_end();
-    assert(bp==nativeBP && xf==nativeXF); // includes light registers
-    assert(gpuCount==3 && restoreCalls==2); // base + per-instance animation DL
-    int writes=gxWrites;
-    draw_begin(foreign); draw_end(); // same material pointer, different actor
-    assert(gxWrites==writes && restoreCalls==2);
-    darkActive=false;
-    draw_begin(p); draw_end();
-    assert(gxWrites==writes);
-    darkActive=true;
-
-    // A material without a light in its own DL must not overwrite global lights.
-    mat.color.hasLight=false;
-    draw_begin(p); assert(gpuCount==4 && gpuMaterial.r==8);
-    for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
-    draw_end(); mat.color.hasLight=true;
-    mat.color.alpha.enabled=true;
-    draw_begin(p); assert(gpuCount==4);
-    for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
-    draw_end(); mat.color.alpha.enabled=false;
-
-    // Entire eyes are self-lit red, independent of original iris/pupil/sclera
-    // RGB and lighting. Alpha/eyelid cutouts still use the native chain.
-    for(const char* name : {"al_eyeballL_m","bl_eyeballR_m","ml_eyeballL_m","zl_eyeballR_m"}) {
-        player.data.materials.name=name;
-        draw_begin(p);
-        assert(gpuCount==4 && gpuMaterial.r==255 && gpuMaterial.g==28 && gpuMaterial.b==20);
-        assert((xf[0x100F] & 2)==0); // COLOR1 lighting disabled: emissive in dark rooms
-        assert(gpuMaterial.a==93 && gpuAmbient.a==61);
-        for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
-        for(float r : {0.f,0.4f,0.6f,1.f}) for(float b : {0.f,0.4f,0.6f,1.f})
-            assert(eye_coverage(3,r,b)==1); // white, black, blue and red all emit
-        for(int alpha : {0,93,255}) assert(warp_alpha(3,alpha,0)==alpha);
-        draw_end(); assert(bp==nativeBP && xf==nativeXF);
+SwapTables find_swap_tables(J3DTevBlock* tev, unsigned count) {
+    std::array<bool, 4> used{};
+    SwapTables result;
+    for (unsigned i = 0; i < count; ++i) {
+        const auto* stage = tev->getTevStage(i);
+        if (stage == nullptr) return result;
+        used[stage->mTevSwapModeInfo & 3] = true;
+        used[(stage->mTevSwapModeInfo >> 2) & 3] = true;
     }
-    // Named replacement eyes no longer depend on native texture names or
-    // spare red/blue swap tables; the full surface uses only one extra stage.
-    player.data.textures.name="custom_eye_texture";
-    mat.tev.stages[0].mTevSwapModeInfo=0;
-    mat.tev.stages[1].mTevSwapModeInfo=5;
-    mat.tev.stages[2].mTevSwapModeInfo=14;
-    draw_begin(p);assert(gpuCount==4 && gpuMaterial.r==255);draw_end();
-    for(auto& stage : mat.tev.stages) stage.mTevSwapModeInfo=0;
-    player.data.textures.name="al_eyeball";
-    // Cover both halves of packed TREF registers and every legal stage count.
-    // Baseline live TREF values intentionally differ from the CPU material's
-    // orders (as they can after per-instance material animation).
-    for(int count=1;count<=15;++count) {
-        mat.tev.count=count;
-        for(const char* name : {"al_body", "al_eyeballL_m"}) {
-            player.data.materials.name=name;
-            draw_begin(p);
-            assert(gpuCount==count+(std::strstr(name,"eyeball") ? 1 : count<=14 ? 2 : 1));
-            draw_end();
-            assert(bp==nativeBP && xf==nativeXF);
+    for (int i = 0; i < 4; ++i) {
+        const auto* table = tev->getTevSwapModeTable(i);
+        if (table != nullptr && table->getR() == GX_CH_RED &&
+            table->getG() == GX_CH_GREEN && table->getB() == GX_CH_BLUE &&
+            table->getA() == GX_CH_ALPHA) {
+            result.identity = i;
+            break;
         }
     }
-    // Batched materials can be owned by a different model. Only the player
-    // receives the effect, and cleanup must replay the batch's actual base DL.
-    mat.tev.count=3;
-    player.data.materials.name="al_body";
-    other.packet.material=&mat;
-    other.packet.shapes=&foreign; foreign.next=&p;
-    void* batchArgs[]={&other.packet};
-    before_material_draw(nullptr,batchArgs,nullptr,nullptr);
-    load_native(3);
-    void* foreignArgs[]={&foreign}; void* playerArgs[]={&p}; void* bodyArgs[]={&shape};
-    writes=gxWrites;
-    before_packet_draw(nullptr,foreignArgs,nullptr,nullptr);
-    before_shape_draw(nullptr,bodyArgs,nullptr,nullptr);
-    after_shape_draw(nullptr,nullptr,nullptr,nullptr);
-    after_packet_draw(nullptr,nullptr,nullptr,nullptr);
-    assert(gxWrites==writes);
-    const int ownCalls=player.packet.list.calls, batchCalls=other.packet.list.calls;
-    before_packet_draw(nullptr,playerArgs,nullptr,nullptr);
-    before_shape_draw(nullptr,bodyArgs,nullptr,nullptr);
-    assert(gpuCount==5); assert_native_fields(3);
-    after_shape_draw(nullptr,nullptr,nullptr,nullptr);
-    after_packet_draw(nullptr,nullptr,nullptr,nullptr);
-    assert(player.packet.list.calls==ownCalls && other.packet.list.calls==batchCalls+1);
-    after_material_draw(nullptr,nullptr,nullptr,nullptr);
-    assert(s_materialDepth==0 && s_materialScopes[0]==nullptr);
-    foreign.next=nullptr;
-    draw_shadow(p); // a regular draw must not leave an active material scope
-
-    // An unrelated material draw on the stack does not authorize this packet.
-    before_material_draw(nullptr,batchArgs,nullptr,nullptr);
-    draw_shadow(p);
-    after_material_draw(nullptr,nullptr,nullptr,nullptr);
-    // Reproduce the Android fatal from the actual Aurora BP/XF semantics.
-    // A valid native draw can have 3 active generators from XF while GEN_MODE's
-    // cached low nibble still contains 1. A masked stage-count update then
-    // decodes the entire stale BP word and drops generators 1/2 (src sentinel 21).
-    player.packet.shapes=&p; player.packet.material=&mat;
-    for(unsigned generators : {1u,2u,3u})
-    for(bool warp : {false,true})
-    for(auto tint : {FierceDeityTint::None,FierceDeityTint::Dark,FierceDeityTint::White,FierceDeityTint::Gold}) {
-        if(!warp && tint==FierceDeityTint::None) continue;
-        warpTest=warp;warpDark=tint!=FierceDeityTint::None;
-        palette=tint;mat.texGenNum=generators;mat.tev.count=generators;
-        load_native(generators);
-        xf[0x103f]=liveTexGens=generators;
-        bp[0]=(bp[0]&~15u)|(generators-1); // stale BP cache after a later XF write
-        nativeBP=bp;nativeXF=xf;
-        assert(shader_texgens_valid());
-        void* ownerArgs[]={&player.packet};void* packetArgs[]={&p};void* shapeArgs[]={&shape};
-        before_material_draw(nullptr,ownerArgs,nullptr,nullptr);
-        before_packet_draw(nullptr,packetArgs,nullptr,nullptr);
-        before_shape_draw(nullptr,shapeArgs,nullptr,nullptr);
-        const unsigned expected=generators+(warp?1:0);
-        assert(liveTexGens==expected && (bp[0]&15)==expected && xf[0x103f]==expected);
-        assert(shader_texgens_valid());
-        before_primitive_draw(nullptr,nullptr,nullptr,nullptr);
-        assert(shader_texgens_valid());
-        draw_end();assert(liveTexGens==generators && shader_texgens_valid());
+    for (int i = 0; i < 4; ++i) {
+        if (used[i] || i == result.identity) continue;
+        if (result.identity < 0) result.identity = i;
     }
-    palette=FierceDeityTint::Dark;warpTest=warpDark=false;mat.texGenNum=mat.tev.count=3;
-    // Skipped originals and bounded recursion unwind without stale pointers.
-    player.packet.shapes=&p;
-    void* ownArgs[]={&player.packet};
-    for(int i=0;i<20;++i) before_material_draw(nullptr,ownArgs,nullptr,nullptr);
-    draw_shadow(p);
-    for(int i=0;i<20;++i) after_material_draw(nullptr,nullptr,nullptr,nullptr);
-    assert(s_materialDepth==0);
-    for(auto* material : s_materialScopes) assert(material==nullptr);
-
-    // Warp-only and dark+warp passes use the same native generator slot. Check
-    // complements for EVERY mask byte: no gap at the threshold, no double draw,
-    // and native cutout/translucent alpha remains unchanged on its chosen side.
-    warpTest=true;
-    for(bool dark : {false,true}) {
-        warpDark=dark;
-        std::array<int,256> normal{}, inverse{};
-        for(int alpha : {0,93,255}) {
-            for(bool invert : {false,true}) {
-                warpInverse=invert;
-                draw_begin(p);
-                assert((bp[0]&15)==4 && xf[0x103F]==4 && xf[0x1043]==6);
-                assert(xf[0x1053]==9 && shader_texgens_valid());
-                assert((bp[0x36]&0x3ffff)==31 && (bp[0x37]&0x3ffff)==63);
-                assert((bp[0x43]&(1u<<6))==0); // no hidden-half depth writes
-                before_primitive_draw(nullptr,nullptr,nullptr,nullptr);
-                for(unsigned element=0;element<12;++element)
-                    assert(xf_float_value(0x500+36+element)==float(element));
-                for(int mask=0;mask<256;++mask)
-                    (invert?inverse:normal)[mask]=warp_alpha(3,alpha,mask);
-                draw_end();
-                assert(bp==nativeBP && xf==nativeXF);
-            }
-            for(int mask=0;mask<256;++mask) {
-                assert(normal[mask]+inverse[mask]==alpha);
-                assert(normal[mask]==0 || inverse[mask]==0);
-            }
-        }
-    }
-    draw_shadow(p); // a transition still never enters the shadow-image pass
-    warpTest=false;
-
-    // Whole-eye emission must preserve complementary warp alpha and transparency.
-    player.data.materials.name="al_eyeballL_m";
-    warpTest=warpDark=true;
-    for(bool invert : {false,true}) {
-        warpInverse=invert;
-        draw_begin(p);
-        assert(gpuCount==4+(invert ? 3 : 1));
-        assert(eye_coverage(3,0,0)==1 && eye_coverage(3,1,1)==1);
-        for(int alpha : {0,93,255}) for(int mask=0;mask<256;++mask)
-            assert(warp_alpha(3,alpha,mask)==((invert ? mask!=255 : mask==255) ? alpha : 0));
-        draw_end();assert(bp==nativeBP && xf==nativeXF);
-    }
-    warpTest=false;
-    player.data.materials.name="al_body";
-
-    // Every held/stowed equipment instance gets the same body shading, even
-    // when its material is shared with an unrelated actor. No retained warp
-    // layer exists for equipment, and shadow draws must remain native.
-    J3DModel sword, sheath, shield, second, secondSheath, lantern, teGear;
-    link.mSwordModel=&sword;link.mSheathModel=&sheath;link.mShieldModel=&shield;
-    s.owner=&link;s.sword=&second;s.sheath=&secondSheath;
-    link.mpKanteraModel=&lantern;observedModel=&teGear;
-    for(auto tint : {FierceDeityTint::Dark,FierceDeityTint::White,FierceDeityTint::Gold})
-    for(auto* model : {&sword,&sheath,&shield,&second,&secondSheath,&lantern,&teGear}) {
-        palette=tint;
-        J3DShapePacket gear{model,&shape,{}};
-        assert(!player_model(&link,model) && player_equipment(&link,model));
-        draw_begin(gear);assert(gpuCount==(tint==FierceDeityTint::White?4:5));
-        assert(gpuMaterial.r==(tint==FierceDeityTint::White?240:tint==FierceDeityTint::Gold?255:24));
-        if(tint==FierceDeityTint::White) {
-            assert(gpuMaterial.r==gpuMaterial.g && gpuMaterial.g==gpuMaterial.b);
-            assert((gpuStages[3].color==std::array<int,4>{GX_CC_ZERO,GX_CC_ZERO,GX_CC_ZERO,GX_CC_RASC}));
-            assert(((bp[0x29]>>12)&(1u<<6))==0); // no texture RGB can turn white areas black
-            assert(!(xf[0x100F]&2)); // uniform white in every lighting condition
-            for(int alpha : {0,93,255})assert(warp_alpha(3,alpha,0)==alpha);
-        }
-        draw_end();assert(bp==nativeBP && xf==nativeXF);
-        draw_shadow(gear);
-        darkActive=false;
-        writes=gxWrites;draw_begin(gear);draw_end();assert(gxWrites==writes);
-        darkActive=true;
-    }
-    palette=FierceDeityTint::Dark;
-    assert(!player_equipment(nullptr,&sword) && !player_equipment(&link,nullptr));
-    assert(!player_equipment(&link,&other));
-    daAlink_c otherLink;s.owner=&otherLink;
-    assert(!player_equipment(&link,&second));
-    s.owner=&link;s.sword=nullptr;s.sheath=nullptr; // released Dual Wield models
-    assert(!player_equipment(&link,&second) && !player_equipment(&link,&secondSheath));
-    link.mSwordModel=nullptr;link.mSheathModel=nullptr;link.mShieldModel=nullptr;
-    link.mpKanteraModel=nullptr;observedModel=nullptr;
-    assert(!player_equipment(&link,&teGear) && !player_equipment(&link,&lantern));
-    assert(!player_equipment(&link,&sword) && !player_equipment(&link,&shield));
-
-    // White classifies texture color BEFORE lighting, using all RGB channels.
-    // Saturated yellow/magenta/cyan must not be mistaken for white.
-    palette=FierceDeityTint::White;
-    for(bool eye : {false,true}) {
-        player.data.materials.name=eye ? "al_eyeballL_m" : "al_body";
-        draw_begin(p);assert(gpuCount==6 && !(xf[0x100F]&2));
-        const std::array<float,3> glow{gpuMaterial.r/255.f,gpuMaterial.g/255.f,gpuMaterial.b/255.f};
-        assert((eye && gpuMaterial.r==255 && gpuMaterial.g==176 && gpuMaterial.b==24) ||
-               (!eye && gpuMaterial.r==240 && gpuMaterial.g==240 && gpuMaterial.b==240));
-        assert((monochrome_color(3,{1,1,1})==std::array<float,3>{0,0,0}));
-        for(auto color : {std::array<float,3>{0,0,0},{1,0,0},{0,1,0},{0,0,1},{1,1,0},{1,0,1},{0,1,1},{.5f,.5f,.5f}})
-            assert(monochrome_color(3,color)==glow);
-        // Native white/gray boundary, including each independent RGB channel.
-        const int threshold=eye?191:223;
-        for(int component=0;component<3;++component) for(int value=0;value<256;++value) {
-            std::array<float,3> color{1,1,1};color[component]=value/255.f;
-            assert(monochrome_color(3,color)==(value>threshold ? std::array<float,3>{0,0,0}:glow));
-        }
-        for(int alpha : {0,93,255})assert(warp_alpha(3,alpha,0)==alpha);
-        draw_end();assert(bp==nativeBP && xf==nativeXF);
-        // Both wipe directions preserve the same classification/alpha.
-        warpTest=warpDark=true;
-        for(bool inverse : {false,true}) {
-            warpInverse=inverse;draw_begin(p);
-            assert(gpuCount==6+(inverse?3:1));
-            assert((monochrome_color(3,{1,1,1})==std::array<float,3>{0,0,0}));
-            assert(monochrome_color(3,{0,0,0})==glow);
-            for(int alpha : {0,93,255})for(int mask=0;mask<256;++mask)
-                assert(warp_alpha(3,alpha,mask)==((inverse?mask!=255:mask==255)?alpha:0));
-            draw_end();assert(bp==nativeBP && xf==nativeXF);
-        }
-        warpTest=false;
-    }
-    // White eyes must reuse their actual animated UV/map, not assume slot 0.
-    mat.tev.orders[0]={2,2};
-    draw_begin(p);
-    assert(((bp[0x29]>>12)&0x7f)==(2u|(2u<<3)|(1u<<6)));
-    draw_end();mat.tev.orders[0]={0,0};
-    // Gold uses warm normal-dependent highlights and full white emissive eyes.
-    palette=FierceDeityTint::Gold;player.data.materials.name="al_body";
-    draw_begin(p);assert(gpuCount==5 && gpuMaterial.r==255 && gpuMaterial.g==221 && gpuMaterial.b==120);
-    assert((xf[0x100C]>>8)==((190u<<16)|(115u<<8)|18u));
-    assert(highlight(-0.212703f,0.265879f,0.940248f)>highlight(0,0,1));
-    draw_end();assert(bp==nativeBP && xf==nativeXF);
-    player.data.materials.name="al_eyeballR_m";
-    draw_begin(p);assert(gpuCount==4 && gpuMaterial.r==255 && gpuMaterial.g==255 && gpuMaterial.b==255);
-    assert(!(xf[0x100F]&2) && eye_coverage(3,0,0)==1);draw_end();
-    // White's three-stage path fits through stage 16, then safely falls back.
-    palette=FierceDeityTint::White;
-    for(int count=1;count<=15;++count) {
-        mat.tev.count=count;draw_begin(p);
-        assert(gpuCount==count+(count<=13?3:1));draw_end();
-    }
-    mat.tev.count=3;palette=FierceDeityTint::Dark;player.data.materials.name="al_body";
-
-    // Different native materials use different dormant generator slots. Every
-    // coefficient, including the changing vertical translation, must reach the
-    // selected post matrix as a complete block without touching its neighbors.
-    for(unsigned coord=0;coord<4;++coord) {
-        for(unsigned frame=0;frame<50;++frame) {
-            Mtx matrix;
-            for(unsigned row=0;row<3;++row) for(unsigned col=0;col<4;++col)
-                matrix[row][col]=float(row*4+col)+float(frame)*0.12f;
-            const auto previous=xf;
-            DarkDisplayList upload;
-            upload.post_matrix(coord,matrix);
-            assert(upload.submit());
-            const unsigned base=0x500+coord*12;
-            for(unsigned reg=0;reg<xf.size();++reg) {
-                if(reg>=base && reg<base+12) {
-                    const unsigned element=reg-base;
-                    assert(xf_float_value(reg)==matrix[element/4][element%4]);
-                } else assert(xf[reg]==previous[reg]);
-            }
-        }
-    }
-
-    // A malformed/future expanded effect must fail without submitting partial
-    // commands or writing past the fixed command buffer.
-    DarkDisplayList oversized;
-    for(int i=0;i<80;++i) oversized.swap(0,0,1,2,3);
-    writes=gxWrites; assert(!oversized.apply(4,3)); assert(gxWrites==writes);
-
-    // Capacity limits and foreign layouts never overflow the 16-stage pipeline.
-    mat.tev.count=16;
-    writes=gxWrites; draw_begin(p); draw_end(); assert(gxWrites==writes);
-    mat.tev.count=14;
-    draw_begin(p); assert(gpuCount==16); draw_end(); // two body stages fit
-    mat.tev.count=3;
-    player.data.textures.name="custom_without_native_mask";
-    draw_begin(p); assert(gpuCount==5 && gpuMaterial.r==24); draw_end();
-    player.data.textures.name="al_eyeball";
-    mat.tev.stages[0].mTevSwapModeInfo=0;
-    mat.tev.stages[1].mTevSwapModeInfo=5;
-    mat.tev.stages[2].mTevSwapModeInfo=14; // all swap tables in use
-    draw_begin(p); assert(gpuCount==5); draw_end();
-    // Nested unrelated packets must not inherit the player's effect; cancellation
-    // before the shape draw must not leave any state or pointers behind.
-    void* args[]={&p}; before_packet_draw(nullptr,args,nullptr,nullptr);
-    draw_begin(foreign);
-    after_shape_draw(nullptr,nullptr,nullptr,nullptr);
-    after_packet_draw(nullptr,nullptr,nullptr,nullptr);
-    after_material_draw(nullptr,nullptr,nullptr,nullptr);
-    assert(s_drawDepth==1);
-    after_packet_draw(nullptr,nullptr,nullptr,nullptr);
-    assert(s_drawDepth==0 && s_drawScopes[0].packet==nullptr);
-    for(int i=0;i<20;++i) before_packet_draw(nullptr,args,nullptr,nullptr);
-    void* shapeArgs[]={&shape}; writes=gxWrites;
-    before_shape_draw(nullptr,shapeArgs,nullptr,nullptr);
-    assert(gxWrites==writes); // bounded recursion guard
-    for(int i=0;i<20;++i) after_packet_draw(nullptr,nullptr,nullptr,nullptr);
-    assert(s_drawDepth==0);
+    return result;
 }
-'''
-with tempfile.TemporaryDirectory() as temp:
-    cpp = Path(temp) / 'visual.cpp'
-    exe = Path(temp) / 'visual'
-    cpp.write_text(fixture + dual_owner + callbacks + checks)
-    subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror',
-                    '-fsanitize=address,undefined', str(cpp), '-o', str(exe)], check=True)
-    subprocess.run([str(exe)], check=True)
-print('Fierce Deity warp masks, late depth, specular response, shadow isolation, Dark/White/Gold palettes, eyes, equipment and alpha: passed')
+
+bool eye_material(J3DModelData* data, J3DMaterial* material) {
+    const auto* names = data->getMaterialName();
+    if (names == nullptr) return false;
+    const char* name = names->getName(material->getIndex());
+    // Color the entire visible eyeball, including sclera and pupil. Native
+    // alpha/geometry still determines the eye boundary and blinking; no iris
+    // texture/color mask is needed for al/bl/ml/zl or named replacements.
+    return name != nullptr && (std::strstr(name, "eyeballL") != nullptr ||
+                               std::strstr(name, "eyeballR") != nullptr);
+}
+
+// Sample the material's live diffuse UVs before lighting. Eye textures may
+// use another slot; prefer their named order over the body slot-zero fallback.
+const J3DTevOrder* surface_texture_order(J3DModelData* data, J3DMaterial* material, bool eye) {
+    auto* tev = material->getTevBlock();
+    const auto* names = data->getTextureName();
+    const auto* texture = data->getTexture();
+    const J3DTevOrder* diffuse = nullptr;
+    if (texture == nullptr) return nullptr;
+    for (unsigned i = 0; i < tev->getTevStageNum(); ++i) {
+        const auto* order = tev->getTevOrder(i);
+        if (order == nullptr || order->mTexCoord >= 8 || order->getTexMap() >= 8 ||
+            order->getTexMap() == 3) continue; // never classify the warp mask
+        const auto texNo = tev->getTexNo(order->getTexMap());
+        if (texNo >= texture->getNum()) continue;
+        const char* name = names != nullptr ? names->getName(texNo) : nullptr;
+        if (eye && name != nullptr && std::strstr(name, "eyeball") != nullptr) return order;
+        if (order->getTexMap() == 0 && diffuse == nullptr) diffuse = order;
+    }
+    return diffuse;
+}
+
+// J3D material display lists update live registers without updating GX's CPU
+// shadow state. GXSetNumChans/GXSetNumTevStages would flush a stale GEN_MODE,
+// losing numTexGens (Aurora then sees GX_MAX_TEXGENSRC / "tcg src 21").
+// Aurora also stores a BP register cache separately from XF's effective
+// numTexGens. A masked GEN_MODE write still decodes the whole cached word:
+// preserving its low nibble can undo a newer XF count and produce the same
+// fatal. Write the material's generator count explicitly in both register banks.
+// TREF/KSEL still need masks to preserve the paired native stage. No GX
+// shadow-state setters or changes to shared material data are needed.
+class DarkDisplayList {
+    alignas(32) std::array<u8, 1024> bytes{};
+    size_t size = 0;
+    bool valid = true;
+
+    void byte(u8 value) {
+        if (size < bytes.size()) bytes[size++] = value;
+        else valid = false;
+    }
+    void word(u32 value) {
+        byte(value >> 24); byte(value >> 16); byte(value >> 8); byte(value);
+    }
+    void bp(u8 reg, u32 value) {
+        byte(0x61); word((u32(reg) << 24) | (value & 0xFFFFFF));
+    }
+    void masked_bp(u8 reg, u32 mask, u32 value) {
+        bp(0xFE, mask); bp(reg, value);
+    }
+    void xf(u16 reg, u32 value) {
+        byte(0x10); word(reg); word(value); // one XF word, big-endian
+    }
+    void xf_float(u16 reg, float value) {
+        u32 bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        xf(reg, bits);
+    }
+    static u32 rgba(GXColor color) {
+        return (u32(color.r) << 24) | (u32(color.g) << 16) |
+               (u32(color.b) << 8) | color.a;
+    }
+
+public:
+    void lighting(FierceDeityTint tint, bool eye, u8 ambientAlpha, u8 materialAlpha) {
+        xf(0x1009, 2); // XF number of color channels
+        xf(0x100B, rgba({64, 64, 64, ambientAlpha}));
+        const GXColor eyeColor = tint == FierceDeityTint::Gold ? GXColor{255,255,255,materialAlpha} :
+            tint == FierceDeityTint::White ? GXColor{255,176,24,materialAlpha} : GXColor{255,28,20,materialAlpha};
+        const GXColor bodyColor = tint == FierceDeityTint::Gold ? GXColor{210,145,24,materialAlpha} :
+            tint == FierceDeityTint::White ? GXColor{240,240,240,materialAlpha} : GXColor{8,9,11,materialAlpha};
+        xf(0x100D, rgba(eye ? eyeColor : bodyColor));
+        // COLOR1 only: register sources, clamp diffuse, no attenuation, light0
+        // on the body; self-lit eyes and monochrome surfaces ignore room lighting.
+        // Preserve the native ALPHA1 control and cutout transparency.
+        xf(0x100F, (1u << 10) | (u32(GX_DF_CLAMP) << 7) |
+                     ((eye || tint == FierceDeityTint::White) ? 0u : (1u << 1) | (1u << 2)));
+    }
+    void specular_lighting(FierceDeityTint tint, u8 ambientAlpha0, u8 materialAlpha0,
+                           u8 ambientAlpha1, u8 materialAlpha1) {
+        xf(0x1009, 2);
+        // Near-black diffuse base on COLOR0; preserve both native alpha channels.
+        xf(0x100A, rgba({64, 64, 64, ambientAlpha0}));
+        xf(0x100C, rgba(tint == FierceDeityTint::Gold ? GXColor{190,115,18,materialAlpha0} :
+                        GXColor{8,9,11,materialAlpha0}));
+        xf(0x100E, (1u << 10) | (u32(GX_DF_CLAMP) << 7) | (1u << 1) | (1u << 2));
+        // Keep Dark highlights subdued so the key light reveals contours without
+        // washing the surface gray. Gold retains its bright metallic response.
+        // COLOR1 uses GX_AF_SPEC: attenuation enabled, diffuse disabled.
+        xf(0x100B, rgba({0, 0, 0, ambientAlpha1}));
+        xf(0x100D, rgba(tint == FierceDeityTint::Gold ? GXColor{255,221,120,materialAlpha1} :
+                        GXColor{24,28,32,materialAlpha1}));
+        xf(0x100F, (1u << 9) | (1u << 1) | (1u << 2));
+
+        // A soft camera-space key light keeps the black surface readable in
+        // dark rooms. Both channels use light0, with different attenuation.
+        // L = (-0.4, 0.5, sqrt(0.59)); H = normalize(L + view direction).
+        // Use Aurora's finite distance to avoid overflow on mobile GPUs.
+        xf(0x0603, rgba({255, 255, 255, 255}));
+        xf_float(0x0604, 0.0f); xf_float(0x0605, 0.0f); xf_float(0x0606, 1.0f);
+        xf_float(0x0607, 16.0f); xf_float(0x0608, 0.0f); xf_float(0x0609, -15.0f);
+        xf_float(0x060A, -419430.4f);
+        xf_float(0x060B, 524288.0f);
+        xf_float(0x060C, 805414.91f);
+        xf_float(0x060D, -0.212703f);
+        xf_float(0x060E, 0.265879f);
+        xf_float(0x060F, 0.940248f);
+    }
+    void swap(unsigned table, unsigned r, unsigned g, unsigned b, unsigned a) {
+        // KSEL's upper 20 bits belong to native stage konst selections.
+        masked_bp(0xF6 + 2 * table, 0xF, r | (g << 2));
+        masked_bp(0xF7 + 2 * table, 0xF, b | (a << 2));
+    }
+    void stage(unsigned index, GXTexCoordID coord, GXTexMapID map,
+               unsigned identity, unsigned textureSwap,
+               GXTevColorArg a, GXTevColorArg b, GXTevColorArg c, GXTevColorArg d,
+               GXTevOp op = GX_TEV_ADD, GXTevScale scale = GX_CS_SCALE_1,
+               unsigned rasterChannel = 1) {
+        const unsigned shift = (index & 1) * 12;
+        const bool textured = coord != GX_TEXCOORD_NULL && map != GX_TEXMAP_NULL;
+        const u32 order = (rasterChannel << 7) | (textured ?
+            (u32(map) | (u32(coord) << 3) | (1u << 6)) : 0u); // COLOR0A0 or COLOR1A1
+        // Preserve the other half, even when it is an animated native stage.
+        masked_bp(0x28 + index / 2, 0xFFFu << shift, order << shift);
+        bp(0x10 + index, 0); // direct TEV stage (no indirect lookup)
+        const u32 operation = op < 2 ? (u32(op) << 18) :
+            (3u << 16) | ((u32(op) & 1u) << 18) | (((u32(op) >> 1) & 3u) << 20);
+        bp(0xC0 + 2 * index, u32(d) | (u32(c) << 4) | (u32(b) << 8) |
+            (u32(a) << 12) | operation | (1u << 19) | (op < 2 ? u32(scale) << 20 : 0));
+        // Preserve the native alpha chain: (0 * (1 - 0) + 0 * 0) + APREV.
+        bp(0xC1 + 2 * index, identity | (textureSwap << 2) |
+            (u32(GX_CA_APREV) << 4) | (u32(GX_CA_ZERO) << 7) |
+            (u32(GX_CA_ZERO) << 10) | (u32(GX_CA_ZERO) << 13) | (1u << 19));
+    }
+    unsigned monochrome(unsigned count, const J3DTevOrder* order, unsigned identity, bool eye) {
+        // Classify raw RGB, not shaded brightness: all three components must
+        // exceed the white threshold. RGB8 compare produces per-channel flags;
+        // packed BGR24 equality reduces them to one neutral black/white mask.
+        const unsigned shift = (count & 1) ? 14 : 4;
+        masked_bp(0xF6 + count / 2, 0x1Fu << shift,
+                  u32(eye ? GX_TEV_KCSEL_3_4 : GX_TEV_KCSEL_7_8) << shift);
+        stage(count++, static_cast<GXTexCoordID>(order->mTexCoord),
+              static_cast<GXTexMapID>(order->getTexMap()), identity, identity,
+              GX_CC_TEXC, GX_CC_KONST, GX_CC_ONE, GX_CC_ZERO, GX_TEV_COMP_RGB8_GT);
+        stage(count++, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+              GX_CC_CPREV, GX_CC_ONE, GX_CC_ONE, GX_CC_ZERO, GX_TEV_COMP_BGR24_EQ);
+        // White -> black; black and every other color -> white/amber.
+        stage(count++, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+              GX_CC_RASC, GX_CC_ZERO, GX_CC_CPREV, GX_CC_ZERO);
+        return count;
+    }
+    void alpha(unsigned index, unsigned swap, unsigned a, unsigned b,
+               unsigned c, unsigned d, unsigned op = 0, unsigned dest = 0) {
+        const u32 operation = op < 2 ? (op << 18) :
+            (3u << 16) | ((op & 1u) << 18) | (((op >> 1) & 3u) << 20);
+        bp(0xC1 + 2 * index, swap | (swap << 2) | (d << 4) | (c << 7) |
+            (b << 10) | (a << 13) | operation | (1u << 19) | (dest << 22));
+    }
+    unsigned warp(unsigned count, unsigned coord, unsigned swap, bool inverse,
+                  unsigned width, unsigned height) {
+        xf(0x1040 + coord, (1u << 1) | (1u << 2)); // MTX3x4, POS, ABC1
+        xf(0x1050 + coord, coord * 3); // native post-matrix slot, no normalization
+        masked_bp(0x30 + coord * 2, 0x3FFFF, width - 1);
+        masked_bp(0x31 + coord * 2, 0x3FFFF, height - 1);
+        masked_bp(0x43, 1u << 6, 0); // late depth test: clipped pixels write no depth
+        // Save native alpha before building the complementary half of the mask.
+        if (inverse) {
+            stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, swap, swap,
+                  GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+            alpha(count++, swap, 7, 7, 7, 0, 0, 3); // A2 = APREV
+        }
+        stage(count, static_cast<GXTexCoordID>(coord), GX_TEXMAP3, swap, swap,
+              GX_CC_ZERO, inverse ? GX_CC_ZERO : GX_CC_TEXC,
+              inverse ? GX_CC_ZERO : GX_CC_CPREV,
+              inverse ? GX_CC_CPREV : GX_CC_ZERO);
+        const unsigned shift = (count & 1) ? 19 : 9;
+        masked_bp(0xF6 + count / 2, 0x1Fu << shift, 0u); // K alpha = 1 (255)
+        // Native warp's alpha test requires exactly 255. Keep that boundary,
+        // then subtract EXACTLY the same mask for the complementary layer.
+        alpha(count++, swap, 4, 6, 0, 7, 15); // A8_EQ, TEXA/KONST/APREV/ZERO
+        if (inverse) {
+            stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, swap, swap,
+                  GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+            alpha(count++, swap, 0, 7, 7, 3, 1); // APREV = A2 - APREV
+        }
+        return count;
+    }
+    void post_matrix(unsigned coord, const Mtx matrix) {
+        // Aurora's copy_xf_data only supports a full, aligned post matrix.
+        // Twelve single-word XF commands silently overwrite element zero in
+        // release builds instead of updating their respective matrix elements.
+        byte(0x10);
+        word((11u << 16) | (0x500 + coord * 12));
+        for (unsigned row = 0; row < 3; ++row) {
+            for (unsigned col = 0; col < 4; ++col) {
+                u32 bits;
+                std::memcpy(&bits, &matrix[row][col], sizeof(bits));
+                word(bits);
+            }
+        }
+    }
+    bool submit() {
+        while (size % 32 != 0 && valid) byte(0);
+        if (!valid) return false;
+        GXCallDisplayList(bytes.data(), static_cast<u32>(size));
+        return true;
+    }
+    bool apply(unsigned stageCount, unsigned texGenCount, bool darkChannels = true) {
+        // Keep BP and XF counts coherent even when the native/animated list
+        // only refreshed XF. Warp-only passes preserve native color channels.
+        masked_bp(0x00, darkChannels ? 0x3C7F : 0x3C0F,
+                  texGenCount | (darkChannels ? 2u << 4 : 0) | ((stageCount - 1) << 10));
+        xf(0x103F, texGenCount);
+        return submit();
+    }
+};
+
+HookAction before_shape_draw(ModContext*, void* args, void*, void*) {
+    if (s_drawDepth == 0 || s_drawDepth > s_drawScopes.size()) return HOOK_CONTINUE;
+    auto& scope = s_drawScopes[s_drawDepth - 1];
+    auto* shape = mods::arg<const J3DShape*>(args, 0);
+    if (scope.packet == nullptr || shape == nullptr || scope.applied ||
+        scope.packet->getShape() != shape) return HOOK_CONTINUE;
+    auto* material = shape->getMaterial();
+    auto* model = scope.packet->getModel();
+    if (material == nullptr || material->getTevBlock() == nullptr ||
+        material->getColorBlock() == nullptr || material->getTexGenBlock() == nullptr)
+        return HOOK_CONTINUE;
+    auto* matPacket = scope.materialPacket;
+    if (matPacket->getDisplayListObj() == nullptr) return HOOK_CONTINUE;
+    auto* tev = material->getTevBlock();
+    const unsigned count = tev->getTevStageNum();
+    // Never index stage 16 or resize a foreign material's TEV allocation.
+    if (count == 0 || count >= 16) return HOOK_CONTINUE;
+    const auto swaps = find_swap_tables(tev, count);
+    if (swaps.identity < 0) return HOOK_CONTINUE;
+    const auto identity = static_cast<GXTevSwapSel>(swaps.identity);
+    unsigned texGenCount = material->getTexGenNum();
+    if (texGenCount > 8) return HOOK_CONTINUE;
+    unsigned next = count;
+    const unsigned warpStages = scope.warp ? (scope.inverse ? 3 : 1) : 0;
+    if (scope.warp) {
+        scope.warpCoord = native_warp_coord(model, material, daAlink_getAlinkActorClass());
+        if (scope.warpCoord < 0 || count + warpStages + (scope.tint != FierceDeityTint::None ? 1 : 0) > 16)
+            return HOOK_CONTINUE;
+    }
+    // White equipment is a solid tint, independent of its texture colors.
+    const bool solidWhiteEquipment = scope.tint == FierceDeityTint::White &&
+        player_equipment(daAlink_getAlinkActorClass(), model);
+    const bool eye = !solidWhiteEquipment && eye_material(model->getModelData(), material);
+
+    DarkDisplayList effect;
+    effect.swap(identity, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
+    if (scope.tint != FierceDeityTint::None) {
+    // XF color registers contain RGBA. Retain alpha for the native stages.
+    const auto* ambient = material->getColorBlock()->getAmbColor(1);
+    const auto* color = material->getMatColor(1);
+    const u8 ambientAlpha = ambient != nullptr ? ambient->a : 255;
+    const u8 materialAlpha = color != nullptr ? color->a : 255;
+    // Only borrow light0 when the actual batch material reloads it in its DL.
+    // Replaying that DL in restore_draw_state restores the light as well as
+    // both color channels. Materials without a restorable light use diffuse.
+    auto* batchMaterial = matPacket->getMaterial();
+    const auto* alpha0 = material->getColorBlock()->getColorChan(1);
+    const auto* alpha1 = material->getColorBlock()->getColorChan(3);
+    const bool alphaUsesLight0 =
+        (alpha0 != nullptr && alpha0->getEnable() && (alpha0->getLightMask() & 1)) ||
+        (alpha1 != nullptr && alpha1->getEnable() && (alpha1->getLightMask() & 1));
+    const bool glossy = scope.tint != FierceDeityTint::White && !alphaUsesLight0 && !eye && count + warpStages + 2 <= 16 && batchMaterial != nullptr &&
+        batchMaterial->getColorBlock() != nullptr &&
+        batchMaterial->getColorBlock()->getLight(0) != nullptr;
+    if (glossy) {
+        const auto* ambient0 = material->getColorBlock()->getAmbColor(0);
+        const auto* color0 = material->getMatColor(0);
+        effect.specular_lighting(scope.tint, ambient0 != nullptr ? ambient0->a : 255,
+            color0 != nullptr ? color0->a : 255, ambientAlpha, materialAlpha);
+    } else {
+        effect.lighting(scope.tint, eye, ambientAlpha, materialAlpha);
+    }
+
+    const auto* surface = scope.tint == FierceDeityTint::White && !solidWhiteEquipment ?
+        surface_texture_order(model->getModelData(), material, eye) : nullptr;
+    if (surface != nullptr && count + warpStages + 3 <= 16) {
+        next = effect.monochrome(count, surface, identity, eye);
+    } else if (glossy) {
+        effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC,
+                     GX_TEV_ADD, GX_CS_SCALE_1, 0);
+        // Add COLOR1's highlight to the diffuse color already in PREV.
+        effect.stage(count + 1, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_RASC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+        next = count + 2;
+    } else {
+        // Eyes use the full self-lit COLOR1, without sampling iris RGB. Native
+        // alpha remains in APREV, so eyelids/cutouts and warp masks still work.
+        effect.stage(count, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, identity, identity,
+                     GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
+        next = count + 1;
+    }
+    }
+    if (scope.warp) {
+        auto* image = model->getModelData()->getTexture()->getResTIMG(tev->getTexNo(3));
+        next = effect.warp(next, scope.warpCoord, identity, scope.inverse, image->width, image->height);
+        texGenCount = scope.warpCoord + 1;
+    }
+    scope.applied = effect.apply(next, texGenCount, scope.tint != FierceDeityTint::None);
+    return HOOK_CONTINUE;
+}
+
+void after_shape_draw(ModContext*, void*, void*, void*) {
+    if (s_drawDepth != 0 && s_drawDepth <= s_drawScopes.size()) {
+        restore_draw_state(s_drawScopes[s_drawDepth - 1]);
+    }
+}
+
+HookAction before_primitive_draw(ModContext*, void*, void*, void*) {
+    if (s_drawDepth == 0 || s_drawDepth > s_drawScopes.size()) return HOOK_CONTINUE;
+    const auto& scope = s_drawScopes[s_drawDepth - 1];
+    if (!scope.applied || scope.warpCoord < 0) return HOOK_CONTINUE;
+    // Skinning loads position/texture matrices inside drawFast, after our
+    // material hook. Install the warp projection AFTER those per-group loads.
+    Mtx matrix;
+    warp_texture_matrix(matrix);
+    DarkDisplayList projection;
+    projection.post_matrix(scope.warpCoord, matrix);
+    projection.submit();
+    return HOOK_CONTINUE;
+}
+
+void after_player_draw(ModContext*, void* args, void*, void*) {
+    auto* link = equipment_draw_owner(args);
+    // Outgoing tint copies are transition layers, not additional equipment.
+    end_equipment_draw();
+    if (link == nullptr) return;
+    draw_outgoing(link);
+}
+
+} // namespace
+
+bool fierce_deity_transition_busy() { return s_transition.owner != nullptr; }
+
+void fierce_deity_transition_prepare(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
+    stop_dark_aura();
+    prepare_transition(link, fromTint, toTint, entering);
+}
+
+void fierce_deity_transition_commit(daAlink_c* link) {
+    if (!transition_owner(link) || s_transition.committed) return;
+    restore_archive_heap(link);
+    // Native clothes changes reuse the same model heap/address. Our retained
+    // outgoing instances require rebinding the skeletal collision explicitly.
+    if (s_transition.cloneHeap == nullptr) link->field_0x2e44.mModel = link->mpLinkModel;
+    if (!tint_sources_live(link) || !separate_outgoing(outfit_models(link)) ||
+        !warp_compatible(outfit_models(link), link)) {
+        discard_transition(link);
+        return;
+    }
+    s_transition.committed = true;
+    // Match procCoWarpInit's human sounds to our APP / DISAPP particles.
+    // OUT is the native appearance sound; IN_TATE is vertical disappearance.
+    link->seStartOnlyReverb(s_transition.wipe.entering ?
+        Z2SE_AL_WARP_OUT : Z2SE_AL_WARP_IN_TATE);
+    update_warp_particles(link);
+}
+
+void fierce_deity_transition_tint(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
+    stop_dark_aura();
+    prepare_tint_transition(link, fromTint, toTint, entering);
+    fierce_deity_transition_commit(link);
+}
+
+void fierce_deity_transition_tick(daAlink_c* link) {
+    update_dark_aura(link);
+    if (!transition_owner(link) || !s_transition.committed) return;
+    if (link->checkWolf() || link->checkDeadHP() || link->checkSceneChangeAreaStart() ||
+        link->checkEventRun() || !tint_sources_live(link) || s_transition.wipe.advance()) {
+        discard_transition(link);
+    } else {
+        update_warp_particles(link);
+    }
+}
+
+void fierce_deity_transition_cancel(daAlink_c* link) {
+    stop_dark_aura();
+    reset_observed_equipment();
+    if (s_transition.owner == nullptr) return;
+    // reset_for_link can run after the old actor is gone; only touch a live owner.
+    if (link == nullptr && transition_owner(daAlink_getAlinkActorClass()))
+        link = daAlink_getAlinkActorClass();
+    discard_transition(link);
+}
+
+ModResult initialize_fierce_deity_visual(ModError* error) {
+    void* address = nullptr;
+    if (svc_hook->resolve != nullptr &&
+        svc_hook->resolve(mod_ctx, "J3DModel::forgetMtx", &address, nullptr) == MOD_OK)
+        s_forgetWarpMatrices = reinterpret_cast<ForgetWarpMatrices>(address);
+    ModResult result;
+    if ((result = mods::hook::add_pre<FierceMaterialDrawHook>(svc_hook, before_material_draw)) != MOD_OK ||
+        (result = mods::hook::add_post<FierceMaterialDrawHook>(svc_hook, after_material_draw)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceShapePacketDrawHook>(svc_hook, before_packet_draw)) != MOD_OK ||
+        (result = mods::hook::add_post<FierceShapePacketDrawHook>(svc_hook, after_packet_draw)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceShapePacketFastHook>(svc_hook, before_packet_draw)) != MOD_OK ||
+        (result = mods::hook::add_post<FierceShapePacketFastHook>(svc_hook, after_packet_draw)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceShapeDrawHook>(svc_hook, before_shape_draw)) != MOD_OK ||
+        (result = mods::hook::add_post<FierceShapeDrawHook>(svc_hook, after_shape_draw)) != MOD_OK ||
+        (result = mods::hook::add_pre<FiercePrimitiveDrawHook>(svc_hook, before_primitive_draw)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceWarpParticleCalcHook>(svc_hook, before_dark_aura_calc)) != MOD_OK ||
+        (result = mods::hook::add_post<FierceWarpParticleCalcHook>(svc_hook, after_warp_particle_calc)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceEquipmentUpdateHook>(svc_hook, observe_equipment_model)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceEquipmentEntryHook>(svc_hook, observe_equipment_model)) != MOD_OK ||
+        (result = mods::hook::add_pre<FiercePlayerDrawHook>(svc_hook, before_player_draw)) != MOD_OK ||
+        (result = mods::hook::add_post<FiercePlayerDrawHook>(svc_hook, after_player_draw)) != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight Dark Link visual hooks");
+    }
+    return MOD_OK;
+}
+
+} // namespace dawnlight

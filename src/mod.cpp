@@ -1,15 +1,27 @@
+#include "touch_buttons.hpp"
 #include "bow_modes.hpp"
 #include "bullet_time.hpp"
 #include "boss_hard_mode.hpp"
+#include "cave_randomizer.hpp"
 #include "config.hpp"
+#include "dual_wield.hpp"
+#include "collection_dual_wield.hpp"
 #include "fierce_deity.hpp"
+#include "fierce_deity_hud.hpp"
+#include "kh2_hud_compat.hpp"
+#include "dawnlight/kh2_hud_drive.h"
+#include "gale_counter.hpp"
+#include "hud_fade.hpp"
 #include "great_spin_projectile.hpp"
 #include "model_overlays.hpp"
 #include "player_hard_mode.hpp"
 #include "save_compat.hpp"
 #include "save_state.hpp"
+#include "progression.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+#include "twilit_essentials/stamina.h"
+#include "twilit_essentials/collection.h"
 #include "update_service.hpp"
 
 #include "mods/service.hpp"
@@ -29,6 +41,9 @@
 
 DEFINE_MOD();
 IMPORT_SERVICE(ActorService, svc_actor);
+IMPORT_OPTIONAL_SERVICE(Kh2HudDriveService, svc_kh2hud_drive);
+IMPORT_OPTIONAL_SERVICE_VERSION(TwilitEssentialsStaminaService, svc_te_stamina, 0);
+IMPORT_OPTIONAL_SERVICE(TwilitEssentialsCollectionService, svc_te_collection);
 IMPORT_SERVICE(ConfigService, svc_config);
 IMPORT_SERVICE(FlowService, svc_flow);
 IMPORT_SERVICE(GameModeService, svc_game_mode);
@@ -54,12 +69,19 @@ ModResult register_new_save_modes(ModError* error);
 ModResult register_ui(ModError* error);
 void update_new_save_modes();
 void shutdown_item_slot_hooks();
+void shutdown_jump_hooks();
 void shutdown_new_save_modes();
+}
+
+namespace {
+// Provider settings are registered by mod_initialize, in user-defined load order.
+bool s_itemSlotHooksInstalled = false;
 }
 
 extern "C" {
 
 MOD_EXPORT ModResult mod_initialize(ModError* error) {
+    (void)&mod_meta_import_svc_te_collection;
     if (const ModResult result = dawnlight::register_config(error); result != MOD_OK) {
         return result;
     }
@@ -73,6 +95,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         return result;
     }
     if (const ModResult result = dawnlight::install_eye_movement_hooks(error); result != MOD_OK) {
+        return result;
+    }
+    if (const auto result = dawnlight::initialize_progression(error); result != MOD_OK) {
         return result;
     }
     dawnlight::initialize_model_overlays();
@@ -102,13 +127,28 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::install_item_integrity_hooks(error); result != MOD_OK) {
         return result;
     }
-    if (const ModResult result = dawnlight::install_item_slot_hooks(error); result != MOD_OK) {
+    if (const ModResult result = dawnlight::install_touch_button_hooks(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::install_collection_dual_wield(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::install_dual_wield_hooks(error); result != MOD_OK) {
         return result;
     }
     if (const ModResult result = dawnlight::install_manual_shield_hooks(error); result != MOD_OK) {
         return result;
     }
     if (const ModResult result = dawnlight::register_new_save_modes(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::initialize_hud_fade(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::initialize_fierce_deity_hud(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::initialize_gale_counter(error); result != MOD_OK) {
         return result;
     }
     if (const ModResult result = dawnlight::install_jump_hooks(error); result != MOD_OK) {
@@ -120,6 +160,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::install_player_hard_mode_hooks(error);
         result != MOD_OK)
     {
+        return result;
+    }
+    if (const ModResult result = dawnlight::install_cave_randomizer(error); result != MOD_OK) {
         return result;
     }
     if (const ModResult result = dawnlight::install_boss_hard_mode_hooks(error);
@@ -138,14 +181,36 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     return MOD_OK;
 }
 
-MOD_EXPORT ModResult mod_update(ModError*) {
+MOD_EXPORT ModResult mod_update(ModError* error) {
+    // All mods have initialized before the first update, so saved provider
+    // toggles are available even when Dawnlight is earlier in the load order.
+    if (!s_itemSlotHooksInstalled) {
+        if (const ModResult result = dawnlight::install_item_slot_hooks(error); result != MOD_OK) {
+            return result;
+        }
+        s_itemSlotHooksInstalled = true;
+    }
+    dawnlight::update_cave_randomizer();
     dawnlight::update_new_save_modes();
+    dawnlight::update_progression();
+    dawnlight::update_collection_dual_wield();
     dawnlight::bullet_time_tick();
+    dawnlight::update_stamina_ui();
+    dawnlight::update_kh2_drive();
     dawnlight::update_update_service(svc_log, mod_ctx, svc_ui);
     return MOD_OK;
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    s_itemSlotHooksInstalled = false;
+    dawnlight::shutdown_cave_randomizer();
+    dawnlight::shutdown_collection_dual_wield();
+    dawnlight::shutdown_dual_wield();
+    dawnlight::shutdown_touch_buttons();
+    dawnlight::shutdown_jump_hooks();
+    dawnlight::shutdown_fierce_deity_hud();
+    dawnlight::shutdown_hud_fade();
+    dawnlight::shutdown_gale_counter();
     dawnlight::shutdown_model_overlays();
     dawnlight::shutdown_bow_modes();
     dawnlight::shutdown_great_spin_projectile();
@@ -153,6 +218,7 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     dawnlight::shutdown_bullet_time();
     dawnlight::shutdown_stamina();
     dawnlight::shutdown_new_save_modes();
+    dawnlight::shutdown_progression();
     dawnlight::shutdown_save_state();
     dawnlight::shutdown_update_service();
     dawnlight::shutdown_item_slot_hooks();

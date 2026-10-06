@@ -1,4 +1,6 @@
+#include "touch_buttons.hpp"
 #include "config.hpp"
+#include "progression.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
 #include "update_service.hpp"
@@ -8,6 +10,8 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
+#include <vector>
 #include <cerrno>
 #include <cctype>
 #include <cmath>
@@ -25,29 +29,57 @@
 namespace dawnlight {
 namespace {
 
+std::map<ConfigVarHandle, ConfigVarType> s_configTypes;
+ConfigVarHandle s_dawnlightMode = 0;
+ConfigVarHandle s_progressionSystem = 0;
+ConfigVarHandle s_notifications = 0;
 ConfigVarHandle s_healthScale = 0;
 ConfigVarHandle s_automaticHealthScale = 0;
 ConfigVarHandle s_saveCompatibility = 0;
 ConfigVarHandle s_itemIntegrity = 0;
 ConfigVarHandle s_newSaveMode = 0;
+ConfigVarHandle s_bossRushEnabled = 0;
+ConfigVarHandle s_clearTimer = 0;
+ConfigVarHandle s_caveBossVisits = 0;
 ConfigVarHandle s_aimMode = 0;
 ConfigVarHandle s_aimMovement = 0;
 ConfigVarHandle s_cinemaZoomPercent = 0;
 ConfigVarHandle s_thirdPersonReticleOffsetY = 0;
-ConfigVarHandle s_bulletTime = 0;
+ConfigVarHandle s_bulletTime = 0; // Legacy boolean, read only for migration.
+ConfigVarHandle s_bulletTimeMode = 0;
 ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
+ConfigVarHandle s_fierceDeityVisual = 0;
+ConfigVarHandle s_fierceDeityActivation = 0;
+std::array<ConfigVarHandle, kDarkLinkSettings.size()> s_darkLinkSettings{};
 ConfigVarHandle s_greatSpinProjectile = 0;
 ConfigVarHandle s_arrowModes = 0;
+ConfigVarHandle s_dualWield = 0;
+ConfigVarHandle s_secondSword = 0;
 ConfigVarHandle s_manualShielding = 0;
 ConfigVarHandle s_rJump = 0;
+ConfigVarHandle s_jumpButton = 0;
+ConfigVarHandle s_disableAutoJump = 0;
+ConfigVarHandle s_jumpHeight = 0;
+ConfigVarHandle s_glide = 0;
+ConfigVarHandle s_glideItem = 0;
+ConfigVarHandle s_revalisGale = 0;
+ConfigVarHandle s_galeHeight = 0;
+ConfigVarHandle s_galeCounterVisible = 0;
+ConfigVarHandle s_galeCounterCapacity = 0;
+ConfigVarHandle s_galeRecovery = 0;
 ConfigVarHandle s_stamina = 0;
+std::array<ConfigVarHandle, kStaminaSettings.size()> s_staminaSettings{};
 ConfigVarHandle s_sprint = 0;
+ConfigVarHandle s_wolfSprint = 0;
+ConfigVarHandle s_wolfSpeedPercent = 0;
+ConfigVarHandle s_sprintSpeedPercent = 0;
 ConfigVarHandle s_enemySpawnerProfile = 0;
 ConfigVarHandle s_zItemSlot = 0;
 ConfigVarHandle s_dawnlightTouchUi = 0;
 ConfigVarHandle s_checkForUpdates = 0;
 ConfigVarHandle s_enemyHardMode = 0;
+ConfigVarHandle s_caveRandomizer = 0;
 ConfigVarHandle s_removeNormalHitInvulnerability = 0;
 ConfigVarHandle s_bossrushHardmodeHazards = 0;
 ConfigVarHandle s_hideShield = 0;
@@ -57,6 +89,9 @@ ConfigVarHandle s_legacyWiiUHud = 0;
 ConfigVarHandle s_roundXYButtons = 0;
 ConfigVarHandle s_hudButtonBackingVisible = 0;
 ConfigVarHandle s_hudHealthBar = 0;
+ConfigVarHandle s_hudAutoFade = 0;
+ConfigVarHandle s_hudStaminaFadeWhenFull = 0;
+ConfigVarHandle s_hudFierceDeityFadeWhenEmpty = 0;
 ConfigVarHandle s_aimDefaultsMigrated = 0;
 ConfigVarHandle s_hudLayoutMigrated = 0;
 ConfigVarHandle s_hudLayoutMigratedV2 = 0;
@@ -100,6 +135,19 @@ ConfigVarHandle s_hudMinimapSlideDirection = 0;
 ConfigVarHandle s_hudDpadHideArrows = 0;
 ConfigVarHandle s_hudDpadHideShadows = 0;
 std::array<ConfigVarHandle, kCustomModelCount> s_customModels = {};
+
+void enforce_auto_jump_dependency() {
+    bool enabled = false;
+    if (s_disableAutoJump && !r_jump_enabled() &&
+        svc_config->get_bool(mod_ctx, s_disableAutoJump, &enabled) == MOD_OK && enabled) {
+        svc_config->set_bool(mod_ctx, s_disableAutoJump, false);
+    }
+}
+
+void on_jump_setting_changed(ModContext*, ConfigVarHandle, const ConfigVarValue*,
+    const ConfigVarValue*, void*) {
+    enforce_auto_jump_dependency();
+}
 
 void on_z_item_slot_changed(ModContext* ctx, ConfigVarHandle, const ConfigVarValue*,
     const ConfigVarValue*, void*) {
@@ -177,14 +225,16 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 25, 0, 100},
+    {"tears-of-light", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
-    {"a", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 0},
-    {"b", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 0},
-    {"x", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 0},
-    {"y", 0, 0, 100, 0, 0, 100, 0, 0, 100, 0, 0},
-    {"z", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 0},
+    {"a", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
+    {"b", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
+    {"x", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
+    {"y", 0, 0, 100, 0, 0, 100, 0, 0, 100, 0, 2},
+    {"z", 0, 0, 100, 0, 0, 100, 0, 0, 100, 1, 2},
 }};
 
 constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults = {{
@@ -206,6 +256,8 @@ constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults =
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 25, 0, 100},
+    {"tears-of-light", 0, 0, 100},
 }};
 
 constexpr std::array<HudButtonDefaults, kHudButtonCount> kHudButtonDefaults = {{
@@ -235,6 +287,8 @@ constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
+    {"gale-counter", 25, 0, 100},
+    {"tears-of-light", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kWiiUHudButtonDefaults = {{
@@ -264,6 +318,8 @@ constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
     {"dpad-map-text", 0, 0, 100},
     {"stamina-bar", 100, 0, 100},
     {"fierce-deity-bar", 100, 0, 100},
+    {"gale-counter", 25, 0, 100},
+    {"tears-of-light", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kDawnlightHudButtonDefaults = {{
@@ -292,7 +348,9 @@ constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
     "D-Pad Items Text",
     "D-Pad Map Text",
     "Stamina Bar",
-    "Fierce Deity Bar",
+    "Dark Link Bar",
+    "Gale Counter",
+    "Tears of Light",
 }};
 
 constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{
@@ -305,7 +363,7 @@ constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{
 
 constexpr const char* kHudSettingsFileName = "hud_layout_settings.json";
 constexpr const char* kItemAnchorNames[] = {"Left", "Right", "Top", "Bottom"};
-constexpr const char* kTextAnchorNames[] = {"Left", "Right"};
+constexpr const char* kTextAnchorNames[] = {"Left", "Right", "Original"};
 constexpr const char* kSlideDirectionNames[] = {"Left -> Right", "Right -> Left"};
 
 size_t hud_element_index(HudElement element) {
@@ -325,7 +383,9 @@ ModResult register_bool(const char* name, bool defaultValue, ConfigVarHandle& ha
     desc.name = name;
     desc.type = CONFIG_VAR_BOOL;
     desc.default_bool = defaultValue;
-    return svc_config->register_var(mod_ctx, &desc, &handle);
+    const auto result = svc_config->register_var(mod_ctx, &desc, &handle);
+    if (result == MOD_OK) s_configTypes[handle] = CONFIG_VAR_BOOL;
+    return result;
 }
 
 ModResult register_int(const char* name, int64_t defaultValue, ConfigVarHandle& handle) {
@@ -333,7 +393,9 @@ ModResult register_int(const char* name, int64_t defaultValue, ConfigVarHandle& 
     desc.name = name;
     desc.type = CONFIG_VAR_INT;
     desc.default_int = defaultValue;
-    return svc_config->register_var(mod_ctx, &desc, &handle);
+    const auto result = svc_config->register_var(mod_ctx, &desc, &handle);
+    if (result == MOD_OK) s_configTypes[handle] = CONFIG_VAR_INT;
+    return result;
 }
 
 ModResult register_custom_int(
@@ -345,6 +407,8 @@ ModResult register_custom_int(
 }
 
 bool get_bool(ConfigVarHandle handle, bool fallback) {
+    int64_t overrideValue = 0;
+    if (mode_config_override(handle, overrideValue)) return overrideValue != 0;
     bool value = fallback;
     if (handle != 0) {
         svc_config->get_bool(mod_ctx, handle, &value);
@@ -353,6 +417,8 @@ bool get_bool(ConfigVarHandle handle, bool fallback) {
 }
 
 int get_int(ConfigVarHandle handle, int fallback, int min, int max) {
+    int64_t overrideValue = 0;
+    if (mode_config_override(handle, overrideValue)) return static_cast<int>(overrideValue);
     int64_t value = fallback;
     if (handle != 0) {
         svc_config->get_int(mod_ctx, handle, &value);
@@ -381,7 +447,7 @@ const char* item_anchor_name(int anchor) {
 }
 
 const char* text_anchor_name(int anchor) {
-    return kTextAnchorNames[std::clamp(anchor, 0, 1)];
+    return kTextAnchorNames[std::clamp(anchor, 0, 2)];
 }
 
 std::filesystem::path hud_settings_file_path() {
@@ -855,29 +921,66 @@ ModResult register_custom_hud_config() {
 }  // namespace
 
 ModResult register_config(ModError* error) {
-    if (register_int("hp-scale-percent", 100, s_healthScale) != MOD_OK ||
+    s_configTypes.clear();
+    for (size_t i = 0; i < kDarkLinkSettings.size(); ++i) {
+        const auto& desc = kDarkLinkSettings[i];
+        if (const auto result = register_int(desc.key, desc.standard, s_darkLinkSettings[i]); result != MOD_OK)
+            return mods::set_error(error, result, "failed to register Dark Link settings");
+    }
+    for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
+        const auto& desc = kStaminaSettings[i];
+        if (const auto result = register_int(desc.key, desc.standard, s_staminaSettings[i]); result != MOD_OK)
+            return mods::set_error(error, result, "failed to register stamina settings");
+    }
+    if (const auto result = register_touch_button_config(error); result != MOD_OK) return result;
+    if (register_bool("dawnlight-mode", false, s_dawnlightMode) != MOD_OK ||
+        register_bool("progression-system", false, s_progressionSystem) != MOD_OK ||
+        register_bool("notifications", false, s_notifications) != MOD_OK ||
+        register_int("hp-scale-percent", 100, s_healthScale) != MOD_OK ||
         register_bool("ngplus-auto-hp-scaling", true, s_automaticHealthScale) != MOD_OK ||
         register_bool("save-compatibility", true, s_saveCompatibility) != MOD_OK ||
         register_bool("item-integrity-fixes", true, s_itemIntegrity) != MOD_OK ||
         register_int("new-save-mode", 0, s_newSaveMode) != MOD_OK ||
+        register_bool("boss-rush-enabled", true, s_bossRushEnabled) != MOD_OK ||
+        register_bool("boss-rush-clear-timer", false, s_clearTimer) != MOD_OK ||
+        register_bool("cave-fairy-boss-warps", false, s_caveBossVisits) != MOD_OK ||
         register_int("aim-mode", 2, s_aimMode) != MOD_OK ||
         register_bool("aim-movement", true, s_aimMovement) != MOD_OK ||
         register_int("cinema-zoom-percent", 100, s_cinemaZoomPercent) != MOD_OK ||
         register_int("third-person-reticle-offset-y", 0, s_thirdPersonReticleOffsetY) != MOD_OK ||
         register_bool("bullet-time", true, s_bulletTime) != MOD_OK ||
+        register_int("bullet-time-mode", -1, s_bulletTimeMode) != MOD_OK ||
         register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
+        register_int("fierce-deity-visual", 1, s_fierceDeityVisual) != MOD_OK ||
+        register_int("fierce-deity-activation", 2, s_fierceDeityActivation) != MOD_OK ||
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
         register_bool("arrow-modes", true, s_arrowModes) != MOD_OK ||
+        register_bool("dual-wield", false, s_dualWield) != MOD_OK ||
+        register_int("dual-wield-second-sword", static_cast<int>(SecondSword::Ordon), s_secondSword) != MOD_OK ||
         register_bool("manual-shielding", true, s_manualShielding) != MOD_OK ||
         register_bool("r-jump", true, s_rJump) != MOD_OK ||
+        register_int("jump-button", 0, s_jumpButton) != MOD_OK ||
+        register_bool("disable-auto-jump", false, s_disableAutoJump) != MOD_OK ||
+        register_int("jump-height-percent", 100, s_jumpHeight) != MOD_OK ||
+        register_bool("glide", false, s_glide) != MOD_OK ||
+        register_int("glide-item", 0, s_glideItem) != MOD_OK ||
+        register_bool("revalis-gale", false, s_revalisGale) != MOD_OK ||
+        register_int("gale-height-percent", 500, s_galeHeight) != MOD_OK ||
+        register_bool("gale-counter-visible", true, s_galeCounterVisible) != MOD_OK ||
+        register_int("gale-counter-capacity", 3, s_galeCounterCapacity) != MOD_OK ||
+        register_int("gale-recovery-seconds", 120, s_galeRecovery) != MOD_OK ||
         register_bool("stamina-enabled", true, s_stamina) != MOD_OK ||
         register_bool("sprint", false, s_sprint) != MOD_OK ||
+        register_bool("wolf-sprint", false, s_wolfSprint) != MOD_OK ||
+        register_int("wolf-speed-percent", 100, s_wolfSpeedPercent) != MOD_OK ||
+        register_int("sprint-speed-percent", 150, s_sprintSpeedPercent) != MOD_OK ||
         register_int("enemy-spawner-profile", 0, s_enemySpawnerProfile) != MOD_OK ||
         register_bool("z-item-slot", true, s_zItemSlot) != MOD_OK ||
         register_bool("dawnlight-touch-ui", true, s_dawnlightTouchUi) != MOD_OK ||
         register_bool("check-for-updates", true, s_checkForUpdates) != MOD_OK ||
         register_bool("enemy-hard-mode", false, s_enemyHardMode) != MOD_OK ||
+        register_bool("cave-of-ordeals-randomizer", false, s_caveRandomizer) != MOD_OK ||
         register_bool("remove-normal-hit-invulnerability", false,
             s_removeNormalHitInvulnerability) != MOD_OK ||
         register_bool("bossrush-hardmode-hazards", false, s_bossrushHardmodeHazards) != MOD_OK ||
@@ -890,6 +993,9 @@ ModResult register_config(ModError* error) {
         register_bool("hud-custom-button-backing-visible", false, s_hudButtonBackingVisible) !=
             MOD_OK ||
         register_bool("hud-custom-health-bar", false, s_hudHealthBar) != MOD_OK ||
+        register_bool("hud-auto-fade", false, s_hudAutoFade) != MOD_OK ||
+        register_bool("hud-custom-stamina-fade-when-full", false, s_hudStaminaFadeWhenFull) != MOD_OK ||
+        register_bool("hud-custom-fierce-deity-fade-when-empty", false, s_hudFierceDeityFadeWhenEmpty) != MOD_OK ||
         register_bool("aim-defaults-v2", false, s_aimDefaultsMigrated) != MOD_OK ||
         register_bool("hud-layout-migrated-v1", false, s_hudLayoutMigrated) != MOD_OK ||
         register_bool("hud-layout-migrated-v2", false, s_hudLayoutMigratedV2) != MOD_OK ||
@@ -907,6 +1013,14 @@ ModResult register_config(ModError* error) {
     if (register_custom_hud_config() != MOD_OK) {
         return mods::set_error(
             error, MOD_ERROR, "failed to register Dawnlight custom HUD variables");
+    }
+
+    // A sentinel distinguishes old configs from an explicitly chosen mode.
+    // Keep the legacy boolean's type so saved Off/On values remain readable.
+    if (get_int(s_bulletTimeMode, -1, -1, 2) == -1 &&
+        !set_int(s_bulletTimeMode, get_bool(s_bulletTime, true) ? 1 : 0))
+    {
+        return mods::set_error(error, MOD_ERROR, "failed to migrate Bullet Time mode");
     }
 
     if (!get_bool(s_aimDefaultsMigrated, false)) {
@@ -949,6 +1063,13 @@ ModResult register_config(ModError* error) {
     }
 
     ModResult subscribeResult = MOD_OK;
+    for (const auto handle : {s_rJump, s_disableAutoJump, s_dawnlightMode, s_progressionSystem}) {
+        subscribeResult = svc_config->subscribe(
+            mod_ctx, handle, on_jump_setting_changed, nullptr, nullptr);
+        if (subscribeResult != MOD_OK) return mods::set_error(error, subscribeResult,
+            "failed to subscribe to jump setting dependencies");
+    }
+    enforce_auto_jump_dependency();
     g_configCheckForUpdatesEnabled = false;
     if constexpr (kDawnlightUpdateCheckerAvailable) {
         g_configCheckForUpdatesEnabled = get_bool(s_checkForUpdates, true);
@@ -1005,12 +1126,124 @@ ModResult register_config(ModError* error) {
     return MOD_OK;
 }
 
-int health_scale_percent() {
-    int64_t value = 100;
-    if (s_healthScale != 0) {
-        svc_config->get_int(mod_ctx, s_healthScale, &value);
+bool dawnlight_mode_enabled() {
+    bool enabled = false;
+    if (s_dawnlightMode) svc_config->get_bool(mod_ctx, s_dawnlightMode, &enabled);
+    return enabled;
+}
+
+bool notifications_enabled() {
+    bool enabled = false;
+    if (s_notifications && svc_config) svc_config->get_bool(mod_ctx, s_notifications, &enabled);
+    return enabled;
+}
+
+bool progression_system_enabled() {
+    bool enabled = false;
+    if (s_progressionSystem) svc_config->get_bool(mod_ctx, s_progressionSystem, &enabled);
+    return dawnlight_mode_enabled() || enabled;
+}
+
+ModeSetting mode_setting_for_config(ConfigVarHandle var) {
+    if (!var) return ModeSetting::None;
+    for (auto handle : s_staminaSettings) if (var == handle) return ModeSetting::StaminaSettings;
+    if (var == s_progressionSystem) return ModeSetting::Progression;
+    if (var == s_sprint) return ModeSetting::Sprint;
+    if (var == s_sprintSpeedPercent) return ModeSetting::SprintSpeed;
+    if (var == s_wolfSprint) return ModeSetting::WolfSprint;
+    if (var == s_wolfSpeedPercent) return ModeSetting::WolfSpeed;
+    if (var == s_disableAutoJump) return ModeSetting::DisableAutoJump;
+    if (var == s_rJump) return ModeSetting::Jump;
+    if (var == s_jumpHeight) return ModeSetting::JumpHeight;
+    if (var == s_flurryRush) return ModeSetting::FlurryRush;
+    if (var == s_bulletTimeMode) return ModeSetting::BulletTime;
+    if (var == s_enemyHardMode) return ModeSetting::EnemyHardMode;
+    if (var == s_bossrushHardmodeHazards) return ModeSetting::BossHardMode;
+    if (var == s_healthScale) return ModeSetting::HealthScale;
+    if (var == s_manualShielding) return ModeSetting::ManualShielding;
+    if (var == s_galeRecovery) return ModeSetting::GaleRecovery;
+    if (var == s_galeHeight) return ModeSetting::GaleHeight;
+    if (var == s_stamina) return ModeSetting::Stamina;
+    if (var == s_arrowModes) return ModeSetting::ArrowModes;
+    if (var == s_greatSpinProjectile) return ModeSetting::GreatSpin;
+    if (var == s_removeNormalHitInvulnerability) return ModeSetting::NoNormalHitInvulnerability;
+    if (var == s_glide) return ModeSetting::Glide;
+    if (var == s_glideItem) return ModeSetting::GlideItem;
+    if (var == s_revalisGale) return ModeSetting::Gale;
+    if (var == s_galeCounterVisible) return ModeSetting::GaleCounter;
+    if (var == s_galeCounterCapacity) return ModeSetting::GaleCharges;
+    if (var == s_fierceDeity) return ModeSetting::FierceDeity;
+    if (var == s_dualWield) return ModeSetting::DualWield;
+    return ModeSetting::None;
+}
+
+bool mode_config_override(ConfigVarHandle var, int64_t& value) {
+    const auto setting = mode_setting_for_config(var);
+    if (setting == ModeSetting::None) return false;
+    const bool dawnlight = dawnlight_mode_enabled();
+    if (setting == ModeSetting::StaminaSettings) {
+        if (!dawnlight) return false;
+        for (size_t i = 0; i < s_staminaSettings.size(); ++i) {
+            if (s_staminaSettings[i] == var) { value = kStaminaSettings[i].standard; return true; }
+        }
+        return false;
     }
-    return static_cast<int>(std::clamp<int64_t>(value, 1, 9999));
+    const bool progression = progression_system_enabled();
+    if (!dawnlight && !progression) return false;
+    return mode_override(setting, dawnlight, progression, progression_state(), value);
+}
+
+bool edit_requires_progression_off(ConfigVarHandle var) {
+    int64_t ignored = 0;
+    return mode_override(mode_setting_for_config(var), false, true, progression_state(), ignored);
+}
+
+ModResult leave_dawnlight_mode_for_edit(ConfigVarHandle var) {
+    int64_t effective = 0;
+    if (!dawnlight_mode_enabled() || !mode_config_override(var, effective)) return MOD_INVALID_ARGUMENT;
+    struct Change { ConfigVarHandle var; ConfigVarType type; int64_t previous, next; };
+    std::vector<Change> changes;
+    const bool stopProgression = edit_requires_progression_off(var);
+    // Snapshot every overridden setting before any write. Unrelated preferences
+    // stay untouched, and tab visibility cannot affect which values are saved.
+    for (const auto& [handle, type] : s_configTypes) {
+        int64_t next = 0, previous = 0;
+        if (!mode_config_override(handle, next)) continue;
+        ModResult result;
+        if (type == CONFIG_VAR_BOOL) {
+            bool value = false;
+            result = svc_config->get_bool(mod_ctx, handle, &value);
+            previous = value;
+        } else result = svc_config->get_int(mod_ctx, handle, &previous);
+        if (result != MOD_OK) return result;
+        if (handle == s_progressionSystem && stopProgression) next = 0;
+        changes.push_back({handle, type, previous, next});
+    }
+    const auto apply = [](const Change& change, int64_t value) {
+        return change.type == CONFIG_VAR_BOOL ?
+            svc_config->set_bool(mod_ctx, change.var, value != 0) :
+            svc_config->set_int(mod_ctx, change.var, value);
+    };
+    size_t applied = 0;
+    ModResult result = MOD_OK;
+    for (; applied < changes.size(); ++applied) {
+        result = apply(changes[applied], changes[applied].next);
+        if (result != MOD_OK) break;
+    }
+    // Keep the preset effective until all persisted values have been adopted.
+    if (result == MOD_OK) result = svc_config->set_bool(mod_ctx, s_dawnlightMode, false);
+    if (result != MOD_OK) {
+        while (applied > 0) { --applied; apply(changes[applied], changes[applied].previous); }
+    }
+    return result;
+}
+
+ConfigVarHandle dawnlight_mode_config_var() { return s_dawnlightMode; }
+ConfigVarHandle progression_system_config_var() { return s_progressionSystem; }
+ConfigVarHandle notifications_config_var() { return s_notifications; }
+
+int health_scale_percent() {
+    return get_int(s_healthScale, 100, 1, 9999);
 }
 
 bool automatic_ngplus_health_scaling() {
@@ -1053,8 +1286,12 @@ int third_person_reticle_offset_y() {
     return get_int(s_thirdPersonReticleOffsetY, 0, -40, 40);
 }
 
+BulletTimeMode bullet_time_mode() {
+    return static_cast<BulletTimeMode>(get_int(s_bulletTimeMode, 1, 0, 2));
+}
+
 bool bullet_time_enabled() {
-    return get_bool(s_bulletTime, true);
+    return bullet_time_mode() != BulletTimeMode::Off;
 }
 
 bool flurry_rush_enabled() {
@@ -1065,9 +1302,34 @@ bool fierce_deity_enabled() {
     return get_bool(s_fierceDeity, false);
 }
 
+FierceDeityVisual fierce_deity_visual() {
+    return static_cast<FierceDeityVisual>(get_int(s_fierceDeityVisual, 1, 0, 4));
+}
+
+ConfigVarHandle fierce_deity_visual_config_var() { return s_fierceDeityVisual; }
+
+int dark_link_setting(DarkLinkSetting setting) {
+    const auto& desc = kDarkLinkSettings[static_cast<size_t>(setting)];
+    return get_int(s_darkLinkSettings[static_cast<size_t>(setting)], desc.standard, desc.min, desc.max);
+}
+ConfigVarHandle dark_link_setting_config_var(DarkLinkSetting setting) {
+    return s_darkLinkSettings[static_cast<size_t>(setting)];
+}
+
+FierceDeityActivation fierce_deity_activation() {
+    return static_cast<FierceDeityActivation>(get_int(s_fierceDeityActivation, 2, 0, 4));
+}
+
+ConfigVarHandle fierce_deity_activation_config_var() { return s_fierceDeityActivation; }
+
 bool great_spin_projectile_enabled() {
     return get_bool(s_greatSpinProjectile, true);
 }
+
+bool dual_wield_enabled() { return get_bool(s_dualWield, false); }
+ConfigVarHandle dual_wield_config_var() { return s_dualWield; }
+SecondSword second_sword() { return static_cast<SecondSword>(get_int(s_secondSword, 1, 0, 2)); }
+ConfigVarHandle second_sword_config_var() { return s_secondSword; }
 
 bool arrow_modes_enabled() {
     return get_bool(s_arrowModes, true);
@@ -1077,8 +1339,52 @@ bool manual_shielding_enabled() {
     return get_bool(s_manualShielding, true);
 }
 
+bool disable_auto_jump_enabled() {
+    // Also normalize after save/progression changes that change the effective
+    // Jump setting without writing its stored config value.
+    enforce_auto_jump_dependency();
+    return r_jump_enabled() && get_bool(s_disableAutoJump, false);
+}
+
+JumpButton jump_button() {
+    const auto value = get_int(s_jumpButton, 0, 0, 6);
+    switch (value) {
+    case 3: return JumpButton::R3;
+    case 4: return JumpButton::L3;
+    case 5: return JumpButton::LB;
+    default: return JumpButton::R;
+    }
+}
+
+ConfigVarHandle jump_button_config_var() { return s_jumpButton; }
+
 bool r_jump_enabled() {
     return get_bool(s_rJump, true);
+}
+
+float jump_height_multiplier() {
+    return static_cast<float>(get_int(s_jumpHeight, 100, 100, 500)) / 100.0f;
+}
+
+float gale_height_bonus() {
+    return static_cast<float>(get_int(s_galeHeight, 500, 100, 1000)) / 100.0f;
+}
+
+bool gale_counter_visible() { return get_bool(s_galeCounterVisible, true); }
+int gale_counter_capacity() { return get_int(s_galeCounterCapacity, 3, 1, 12); }
+int gale_recovery_seconds() { return get_int(s_galeRecovery, 120, 1, 3600); }
+
+bool glide_enabled() { return get_bool(s_glide, false); }
+GlideItem glide_item() { return static_cast<GlideItem>(get_int(s_glideItem, 0, 0, 1)); }
+bool revalis_gale_enabled() { return get_bool(s_revalisGale, false); }
+
+ConfigVarHandle stamina_setting_config_var(StaminaSetting setting) {
+    return s_staminaSettings[static_cast<size_t>(setting)];
+}
+
+int stamina_setting(StaminaSetting setting) {
+    const auto& desc = kStaminaSettings[static_cast<size_t>(setting)];
+    return get_int(stamina_setting_config_var(setting), desc.standard, desc.min, desc.max);
 }
 
 bool stamina_enabled() {
@@ -1087,6 +1393,16 @@ bool stamina_enabled() {
 
 bool sprint_enabled() {
     return get_bool(s_sprint, false);
+}
+
+bool wolf_sprint_enabled() { return get_bool(s_wolfSprint, false); }
+
+float wolf_speed_multiplier() {
+    return static_cast<float>(get_int(s_wolfSpeedPercent, 100, 100, 300)) / 100.0f;
+}
+
+float sprint_speed_multiplier() {
+    return static_cast<float>(get_int(s_sprintSpeedPercent, 150, 100, 300)) / 100.0f;
 }
 
 bool z_item_slot_enabled() {
@@ -1099,6 +1415,17 @@ bool dawnlight_touch_ui_enabled() {
 
 bool check_for_updates_enabled() {
     return kDawnlightUpdateCheckerAvailable && get_bool(s_checkForUpdates, true);
+}
+
+bool boss_rush_enabled() { return get_bool(s_bossRushEnabled, true); }
+bool cave_boss_visits_enabled() { return get_bool(s_caveBossVisits, false); }
+ConfigVarHandle cave_boss_visits_config_var() { return s_caveBossVisits; }
+bool clear_timer_enabled() { return get_bool(s_clearTimer, false); }
+ConfigVarHandle boss_rush_config_var() { return s_bossRushEnabled; }
+ConfigVarHandle clear_timer_config_var() { return s_clearTimer; }
+
+bool cave_randomizer_enabled() {
+    return get_bool(s_caveRandomizer, false);
 }
 
 bool enemy_hard_mode_enabled() {
@@ -1148,6 +1475,10 @@ bool round_xy_buttons_enabled() {
 bool hud_custom_button_backing_visible() {
     return get_bool(s_hudButtonBackingVisible, false);
 }
+
+bool hud_auto_fade_enabled() { return get_bool(s_hudAutoFade, false); }
+bool hud_custom_stamina_fade_when_full() { return get_bool(s_hudStaminaFadeWhenFull, false); }
+bool hud_custom_fierce_deity_fade_when_empty() { return get_bool(s_hudFierceDeityFadeWhenEmpty, false); }
 
 bool hud_custom_health_bar_enabled() {
     return get_bool(s_hudHealthBar, false);
@@ -1251,7 +1582,7 @@ int hud_custom_button_item_anchor(HudButton button) {
 
 int hud_custom_button_text_anchor(HudButton button) {
     const size_t index = hud_button_index(button);
-    return get_int(s_hudButtonTextAnchor[index], kHudButtonDefaults[index].textAnchor, 0, 1);
+    return get_int(s_hudButtonTextAnchor[index], kHudButtonDefaults[index].textAnchor, 0, 2);
 }
 
 bool hud_custom_dpad_follows_minimap() {
@@ -1299,7 +1630,7 @@ ConfigVarHandle third_person_reticle_offset_y_config_var() {
 }
 
 ConfigVarHandle bullet_time_config_var() {
-    return s_bulletTime;
+    return s_bulletTimeMode;
 }
 
 ConfigVarHandle flurry_rush_config_var() {
@@ -1322,9 +1653,20 @@ ConfigVarHandle manual_shielding_config_var() {
     return s_manualShielding;
 }
 
+ConfigVarHandle disable_auto_jump_config_var() { return s_disableAutoJump; }
+
 ConfigVarHandle r_jump_config_var() {
     return s_rJump;
 }
+
+ConfigVarHandle jump_height_config_var() { return s_jumpHeight; }
+ConfigVarHandle glide_config_var() { return s_glide; }
+ConfigVarHandle glide_item_config_var() { return s_glideItem; }
+ConfigVarHandle revalis_gale_config_var() { return s_revalisGale; }
+ConfigVarHandle gale_height_config_var() { return s_galeHeight; }
+ConfigVarHandle gale_counter_visible_config_var() { return s_galeCounterVisible; }
+ConfigVarHandle gale_counter_capacity_config_var() { return s_galeCounterCapacity; }
+ConfigVarHandle gale_recovery_config_var() { return s_galeRecovery; }
 
 ConfigVarHandle stamina_config_var() {
     return s_stamina;
@@ -1332,6 +1674,13 @@ ConfigVarHandle stamina_config_var() {
 
 ConfigVarHandle sprint_config_var() {
     return s_sprint;
+}
+
+ConfigVarHandle wolf_sprint_config_var() { return s_wolfSprint; }
+ConfigVarHandle wolf_speed_config_var() { return s_wolfSpeedPercent; }
+
+ConfigVarHandle sprint_speed_config_var() {
+    return s_sprintSpeedPercent;
 }
 
 int enemy_spawner_profile() {
@@ -1353,6 +1702,10 @@ ConfigVarHandle dawnlight_touch_ui_config_var() {
 
 ConfigVarHandle check_for_updates_config_var() {
     return s_checkForUpdates;
+}
+
+ConfigVarHandle cave_randomizer_config_var() {
+    return s_caveRandomizer;
 }
 
 ConfigVarHandle enemy_hard_mode_config_var() {
@@ -1390,6 +1743,10 @@ ConfigVarHandle round_xy_buttons_config_var() {
 ConfigVarHandle hud_custom_button_backing_visible_config_var() {
     return s_hudButtonBackingVisible;
 }
+
+ConfigVarHandle hud_auto_fade_config_var() { return s_hudAutoFade; }
+ConfigVarHandle hud_custom_stamina_fade_when_full_config_var() { return s_hudStaminaFadeWhenFull; }
+ConfigVarHandle hud_custom_fierce_deity_fade_when_empty_config_var() { return s_hudFierceDeityFadeWhenEmpty; }
 
 ConfigVarHandle hud_custom_health_bar_config_var() {
     return s_hudHealthBar;
@@ -1530,7 +1887,7 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
     }
     out << "    },\n";
     out << "    \"roundXYButtons\": " << (round_xy_buttons_enabled() ? "true" : "false") << ",\n";
-    out << "    \"version\": 14\n";
+    out << "    \"version\": 15\n";
     out << "}\n";
 
     return out.good() ? HudSettingsIoResult::Ok : HudSettingsIoResult::WriteFailed;

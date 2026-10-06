@@ -1,51 +1,33 @@
 # Dawnlight
 
-Dawnlight is a Dusklight mod package that adds optional gameplay, controller,
-aiming, boss, and HUD features for Twilight Princess.
+Enhances Twilight Princess with new abilities, combat mechanics, customizable
+controls, and a Boss Rush mode. Dawnlight is a mod for
+[Dusklight](https://github.com/TwilitRealm/dusklight).
 
 > [!IMPORTANT]
-> Dawnlight does not include or provide copyrighted game assets. You need a
-> legal Dusklight installation and your own dumped copy of Twilight Princess.
+> Dawnlight does not include game assets. You need a legal Dusklight installation
+> and your own dumped copy of Twilight Princess.
 
-## Features
+## Features and guides
 
-- Z item slot: bind a third item to Z, move Midna to the D-Pad prompt, and use
-  the Z slot from the item wheel. The separate Dawnlight Touch UI option keeps
-  the touch controls available when another mod provides the third item slot.
-- Improved item HUD support for extra item slots, including item icons, ammo,
-  oil, bottle contents, and combine prompts.
-- Aim Movement and Aim Mode settings with Vanilla, 3rd Person, and Cinema
-  options.
-- Optional [Arrow Modes](#arrow-modes): press ZR while aiming the Bow to cycle
-  normal arrows, fire arrows, and a three-arrow spread, with a visual mode indicator.
-- Touch and gyro aiming support for the modded aiming modes.
-- Optional Bullet Time while aiming the Bow during a manual R jump, Flurry Rush
-  after a perfectly timed evade, and a ranged Great Spin projectile.
-- Shared Stamina meter for Bullet Time, Flurry Rush, Sprint, and the Great Spin
-  projectile, including compatibility with Lazy Tweaks stamina actions. Emptying
-  the meter causes exhaustion until it recovers to 50%. The Stamina Bar setting
-  can disable both the meter and all Dawnlight stamina costs.
-- Fierce Deity mode with a charge meter, temporary Magic Armor model swap, and
-  doubled sword damage.
-- Manual Shielding, R Jump, and a stamina-powered Sprint option.
-- Intro Skip new-save mode, enemy HP scaling, and optional NG+ HP scaling.
-- Optional [Enemy Hard Mode](ENEMY_HARD_MODE.md) with shorter combat intervals,
-  faster tracking, and selected profile-specific mechanics.
-- Boss Rush Game Mode with the Garden of Twilight hub, individual boss portals,
-  a complete-run portal, Cave of Ordeals access, hardmode arena hazards, save
-  and resume support, and a Return to Hub Midna option.
-- HUD Layout Editor for supported HUD elements, item/text/ammo offsets, button
-  backing, D-Pad arrows and shadows, single-row hearts, round X/Y buttons, and
-  HUD import/export.
-- External custom model overlays for Link's outfits, Wolf Link, Sumo Link, the
-  horse, items, animations, and shields, plus shield visibility and eye movement
-  controls.
-- Save compatibility and item integrity repairs.
+| Feature | What it adds |
+| --- | --- |
+| [Dawnlight Mode & progression](docs/features/general-settings.md) | An optional gameplay preset and abilities unlocked through story progress. |
+| [Movement & abilities](docs/features/movement-and-abilities.md) | Sprint, Wolf Sprint, manual jumping, Glide, Revali's Gale and shared stamina. |
+| [Combat & aiming](docs/features/combat-and-aiming.md) | Bullet Time, Flurry Rush, Dark Link with Magic Armor/Dark/Dark Magic/White/Gold visuals, Great Spin projectiles, manual shielding and aiming modes. |
+| [Dual Wield](docs/features/dual-wield.md) | A choice of second sword, alternating attacks and a crossed-sword guard. |
+| [Arrow Modes](docs/features/arrow-modes.md) | Normal arrows, fire arrows and triple shots, switched while aiming. |
+| [Hard Mode](docs/features/hard-mode.md) | Enemy and boss behavior changes, HP/damage scaling and optional invulnerability changes. |
+| [Boss Rush](docs/features/boss-rush.md) | Game-mode toggle, Garden of Twilight hub, boss portals, complete runs, saved Clear Timers and custom hub music. |
+| [Controls & HUD](docs/features/controls-and-hud.md) | Third item slot, Android touch buttons, HUD presets/editor and custom model support. |
+
+Each guide covers the relevant settings, controls and details. Intro Skip and
+save compatibility are covered in [General settings](docs/features/general-settings.md).
 
 ## Installation
 
-1. Download `dawnlight_mod.dusk` from the Releases page.
-2. Move the file into your Dusklight mods directory:
+1. Download `dawnlight_mod.dusk` from [Releases](https://github.com/BeZide93/dawnlight/releases).
+2. Place it in your Dusklight mods directory:
 
 | OS | Path |
 | --- | --- |
@@ -54,185 +36,40 @@ aiming, boss, and HUD features for Twilight Princess.
 | macOS | `~/Library/Application Support/TwilitRealm/Dusklight/mods` |
 | Android | `<active Dusklight data folder>/mods` |
 
-3. Enable Dawnlight in the in-game Mod Manager menu.
+3. Enable Dawnlight in the in-game **Mod Manager**.
+4. Open **Mod Manager → Dawnlight → Open Dawnlight Settings** to configure it.
 
-On Android, the active data folder is the folder currently selected by
-Dusklight. If you changed it with `Change Data Folder`, create or use the
-`mods` folder inside that selected location.
+On Android, use the folder selected in Dusklight's **Change Data Folder** setting.
+**Dawnlight Mode** and **Progression System** default to off; enable them under
+**General** if desired.
 
-## Compatibility
+## Compatibility and customization
 
-See [COMPATIBILITY.md](COMPATIBILITY.md) for tested Twilit Essentials and
-Twilight HD HUD versions, compatible Z-item settings, and details about the
-Android-only `Dawnlight Touch UI` option.
+- [Mod compatibility](COMPATIBILITY.md): supported configurations for Twilit Essentials,
+  Twilight HD HUD and Lazy Tweaks, including Z-slot and Android touch settings.
+- [Glider texture replacement](art/glider/README.md#replacing-the-texture-without-rebuilding):
+  customize the bundled canopy, wood and leather textures.
+- [DawnlightCustomGlider](https://github.com/BeZide93/DawnlightCustomGlider):
+  example `.dusk` model replacement with editable source files.
 
-## Arrow Modes
+## Developer notes
 
-Added in Dawnlight 3.1.0. Open
-`Mod Manager -> Dawnlight -> Open Dawnlight Settings -> Gameplay -> Combat`
-and use the `Arrow Modes` toggle. It is enabled by default and works independently
-of Hard Mode.
+- [Fierce Deity HUD replacement API](docs/fierce-deity-hud-api.md)
+- [Enemy and boss Hard Mode profiles](ENEMY_HARD_MODE.md)
+- [Enemy Spawner: scene ownership and adding enemies](docs/darknut-arena-spawner.md)
+- [Hero's Shade encounter](docs/heroes-shade-arena.md)
 
-While actively aiming the Bow, tap **ZR** to cycle
-**Normal -> Fire -> Triple Shot -> Normal**. Merely holding the Bow does not
-change modes or reserve ZR. Arrow Modes support Vanilla, 3rd Person, and Cinema
-aiming.
-
-| Mode | Arrows consumed per shot | Effect |
-| --- | --- | --- |
-| Normal | 1 | Standard arrow behavior and damage. |
-| Fire | 2 | 50% more damage; ignites lantern-compatible torches, wood, and spiderwebs. |
-| Triple Shot | 3 | Three normal arrows in a horizontal spread. |
-
-A brief arrow, flame, or spread icon above Link shows the selected mode; dots
-indicate its ammunition cost. In first-person aim the indicator appears near
-the center of the screen. If ammunition is insufficient, the indicator turns
-red and the shot is blocked.
-
-Fire arrows show the original Bulblin flame while aiming and in flight, including
-in rooms without Bulblins. The effect is loaded from your game disc, so no extra
-asset files are required. Fire arrows extinguish in water. Bomb arrows keep
-their normal behavior, and Hawkeye zoom remains available through the native
-item-action button.
-
-Switching `Arrow Modes` off takes effect without restarting, returns the Bow to
-normal arrows, and releases ZR for other actions. Arrows already fired retain
-their effects. See [COMPATIBILITY.md](COMPATIBILITY.md#arrow-modes-and-zr-input)
-for input considerations.
-
-## Hard Mode
-
-Open `Mod Manager -> Dawnlight -> Open Dawnlight Settings -> Hard Mode` to
-configure Dawnlight's combat difficulty options. The three Hard Mode switches
-are independent and disabled by default:
-
-- `Enemy Hard Mode` makes supported regular enemies more aggressive without
-  changing their health or damage. Selected attack, waiting, and recovery
-  timers lose five timer points every three frames, shortening those intervals
-  by approximately 40%. Supported enemies also track and approach Link more
-  quickly, while their animation speed and exact hit, sound, and projectile
-  event frames remain unchanged.
-- `Boss Hard Mode` enables faster or expanded behavior for Ook, Diababa,
-  Dangoro, Fyrus, and Death Sword. It also enables the additional Ganondorf
-  arena projectiles in Boss Rush.
-- `No Normal-Hit Invulnerability` removes Link's post-hit invulnerability after
-  normal damage. Knockdowns, launches, wall impacts, and landing reactions keep
-  their normal invulnerability window.
-
-Enemy Hard Mode also adds selected enemy-specific mechanics: every second
-Bulblin bow shot becomes a three-arrow spread, every Fire Toadpoli shot and
-every second Water Toadpoli shot become three-ball spreads, Chilfos lead thrown
-spears, selected Stalhounds can immediately follow up a pounce, and Bokoblins,
-Lizalfos, and Dynalfos only suffer knockdown from every second normal combo
-finisher.
-
-Enemy HP scaling, NG+ HP scaling, and enemy damage scaling remain separate
-settings and can be combined freely with these options. See
-[ENEMY_HARD_MODE.md](ENEMY_HARD_MODE.md) for the complete enemy and boss profile
-list, exact multipliers, exclusions, and implementation details.
-
-## Custom Boss Rush Hub Music
-
-Dawnlight can load custom music for the Garden of Twilight Boss Rush hub. The
-music is not included in `dawnlight_mod.dusk`; provide your own Nintendo AST
-file named exactly `temp.ast`.
-
-Place `temp.ast` next to `dawnlight_mod.dusk` in the active Dusklight mods
-directory:
-
-| OS | File path |
-| --- | --- |
-| Windows | `%APPDATA%\TwilitRealm\Dusklight\mods\temp.ast` |
-| Linux | `~/.local/share/TwilitRealm/Dusklight/mods/temp.ast` |
-| macOS | `~/Library/Application Support/TwilitRealm/Dusklight/mods/temp.ast` |
-| Android | `<active Dusklight data folder>/mods/temp.ast` |
-
-Restart Dusklight after adding or replacing the file. If `temp.ast` is absent
-or cannot be read, Boss Rush remains playable but the custom hub music is
-disabled. Only use audio that you have the right to use and distribute.
-
-### Creating the AST file
-
-[Nintendo AST Creator](https://github.com/gheskett/Nintendo-AST-Creator)
-converts 16-bit PCM WAV files to Nintendo AST. Prepare the source audio as a
-16-bit PCM WAV first; filenames passed to AST Creator should contain only ASCII
-characters.
-
-Create a looping file with loop boundaries expressed as sample positions:
-
-```powershell
-ASTCreate.exe music.wav -o temp.ast -s LOOP_START_SAMPLE -e LOOP_END_SAMPLE
-```
-
-Replace the two placeholders with the loop start and end samples. Then move
-the resulting `temp.ast` to the platform-specific path above.
-
-### Finding loop points
-
-The included [loop_analysis.py](loop_analysis.py) helper searches a 16-bit PCM
-WAV for musically repeating sections and refines the best candidate to
-sample-aligned, click-resistant boundaries. It requires Python 3 and NumPy:
-
-```powershell
-python -m pip install numpy
-python loop_analysis.py "music.wav"
-```
-
-The script prints several musical periods and a `Recommended sample-aligned
-boundary`. Use its `start` and `end` sample values with AST Creator's `-s` and
-`-e` arguments. To inspect a different period from the reported list, rerun it
-with the period length in seconds:
-
-```powershell
-python loop_analysis.py "music.wav" --period 123.4
-```
-
-The analysis is a starting point: listen across the resulting loop boundary
-before settling on the final AST file.
-
-## HUD Editing
-
-Open `Mod Manager -> Dawnlight -> Open Dawnlight Settings -> HUD`.
-
-The HUD layout setting has five modes:
-
-- GameCube: vanilla-style HUD placement and backing.
-- X-Box: Dawnlight's X-Box-style HUD placement with hidden button backing.
-- Wii-U: Wii-U inspired HUD placement with hidden button backing.
-- Dawnlight: Dawnlight's compact custom layout with hidden button backing.
-- Custom: editable layout, initialized from the X-Box preset.
-
-The Custom layout can move and scale supported HUD elements and can adjust item,
-text, ammo, and button-backing offsets on the HUD buttons. `EXPORT HUD` writes
-`hud_layout_settings.json` into Dawnlight's mod data directory provided by
-Dusklight, and `IMPORT HUD` reads the same file from there. Existing exports in
-the old `mods` folder are migrated automatically. The copy buttons can seed
-Custom from the GameCube, X-Box, Wii-U, or Dawnlight presets.
-
-The `hud_layout_settings.json` format is compatible with the Dawnlight fork's
-HUD layout export where the same fields are available.
-
-## Developer Notes
-
-- [Enemy Spawner: confirmed scene-ownership fix and adding new enemies](docs/darknut-arena-spawner.md)
-- [Hero's Shade arena encounter](docs/heroes-shade-arena.md)
-
-## LLM Disclaimer
-
-Parts of Dawnlight's source code and documentation were created or modified
-with assistance from large language model (LLM) tools. LLM-assisted output can
-contain mistakes even after review and testing. Use Dawnlight at your own risk
-and report reproducible issues through the project's issue tracker.
-
-## License
-
-Dawnlight is released under CC0 1.0 Universal. See [LICENSE.md](LICENSE.md) for
-the full license text.
-
-## Credits
+## Credits and license
 
 Dawnlight is maintained by BeZide93 and builds on the Dusklight mod API.
 
 Special thanks to the [Dusklight](https://github.com/TwilitRealm/dusklight)
 project, the TP decompilation team, the GC/Wii decompilation community, the
 Aurora developers, the TP speedrunning community, and all contributors.
+
+Dawnlight is released under CC0 1.0 Universal. See [LICENSE.md](LICENSE.md) for
+the full license text.
+
+Parts of the code and documentation were created or modified with LLM assistance
+and may contain mistakes despite review and testing. Use Dawnlight at your own
+risk and [report reproducible issues](https://github.com/BeZide93/dawnlight/issues).

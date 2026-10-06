@@ -1,11 +1,18 @@
 #pragma once
 
+#include "general_modes.hpp"
+#include "jump_button.hpp"
+#include "dual_wield_sword.hpp"
+#include "stamina_settings.hpp"
+#include "dark_link_settings.hpp"
 #include "mods/api.h"
 #include "mods/svc/config.h"
 
 #include <string>
 
 namespace dawnlight {
+
+enum class BulletTimeMode : int { Off = 0, Always = 1, Botw = 2 };
 
 enum class AimMode : int {
     Vanilla = 0,
@@ -61,6 +68,8 @@ enum class HudElement : int {
     DPadMapText,
     StaminaBar,
     FierceDeityBar,
+    GaleCounter,
+    TearsOfLight,
     Count,
 };
 
@@ -84,6 +93,16 @@ enum class HudSettingsIoResult {
 };
 
 ModResult register_config(ModError* error);
+bool dawnlight_mode_enabled();
+bool edit_requires_progression_off(ConfigVarHandle var);
+ModResult leave_dawnlight_mode_for_edit(ConfigVarHandle var);
+bool progression_system_enabled();
+bool notifications_enabled();
+ConfigVarHandle dawnlight_mode_config_var();
+ConfigVarHandle progression_system_config_var();
+ConfigVarHandle notifications_config_var();
+ModeSetting mode_setting_for_config(ConfigVarHandle var);
+bool mode_config_override(ConfigVarHandle var, int64_t& value);
 int health_scale_percent();
 bool automatic_ngplus_health_scaling();
 bool save_compatibility_enabled();
@@ -93,19 +112,55 @@ AimMode aim_mode();
 bool aim_movement_enabled();
 int cinema_zoom_percent();
 int third_person_reticle_offset_y();
+BulletTimeMode bullet_time_mode();
 bool bullet_time_enabled();
 bool flurry_rush_enabled();
+enum class FierceDeityVisual : int { MagicArmor = 0, Dark = 1, DarkMagic = 2, White = 3, Gold = 4 };
 bool fierce_deity_enabled();
+FierceDeityVisual fierce_deity_visual();
+ConfigVarHandle fierce_deity_visual_config_var();
+enum class FierceDeityActivation : int { SpinAttack = 0, RZ = 1, RA = 2, L3 = 3, R3 = 4 };
+FierceDeityActivation fierce_deity_activation();
+int dark_link_setting(DarkLinkSetting setting);
+ConfigVarHandle dark_link_setting_config_var(DarkLinkSetting setting);
+ConfigVarHandle fierce_deity_activation_config_var();
 bool great_spin_projectile_enabled();
+bool dual_wield_enabled();
+ConfigVarHandle dual_wield_config_var();
+SecondSword second_sword();
+ConfigVarHandle second_sword_config_var();
 bool arrow_modes_enabled();
 bool manual_shielding_enabled();
 bool r_jump_enabled();
+JumpButton jump_button();
+bool disable_auto_jump_enabled();
+float jump_height_multiplier();
+float gale_height_bonus();
+bool gale_counter_visible();
+int gale_counter_capacity();
+int gale_recovery_seconds();
+bool glide_enabled();
+enum class GlideItem { Cucco, Glider };
+GlideItem glide_item();
+bool revalis_gale_enabled();
 bool stamina_enabled();
+int stamina_setting(StaminaSetting setting);
+ConfigVarHandle stamina_setting_config_var(StaminaSetting setting);
 bool sprint_enabled();
+bool wolf_sprint_enabled();
+float wolf_speed_multiplier();
+float sprint_speed_multiplier();
 bool z_item_slot_enabled();
 bool dawnlight_touch_ui_enabled();
 bool check_for_updates_enabled();
 bool enemy_hard_mode_enabled();
+bool boss_rush_enabled();
+bool clear_timer_enabled();
+bool cave_boss_visits_enabled();
+ConfigVarHandle cave_boss_visits_config_var();
+ConfigVarHandle boss_rush_config_var();
+ConfigVarHandle clear_timer_config_var();
+bool cave_randomizer_enabled();
 bool remove_normal_hit_invulnerability_enabled();
 bool bossrush_hardmode_hazards_enabled();
 bool hide_shield_enabled();
@@ -116,6 +171,9 @@ bool hardcoded_hud_layout_enabled();
 bool custom_hud_layout_enabled();
 bool round_xy_buttons_enabled();
 bool hud_custom_button_backing_visible();
+bool hud_auto_fade_enabled();
+bool hud_custom_stamina_fade_when_full();
+bool hud_custom_fierce_deity_fade_when_empty();
 bool hud_custom_health_bar_enabled();
 bool hud_custom_dpad_hide_arrows();
 bool hud_custom_dpad_hide_shadows();
@@ -153,14 +211,28 @@ ConfigVarHandle great_spin_projectile_config_var();
 ConfigVarHandle arrow_modes_config_var();
 ConfigVarHandle manual_shielding_config_var();
 ConfigVarHandle r_jump_config_var();
+ConfigVarHandle jump_button_config_var();
+ConfigVarHandle disable_auto_jump_config_var();
+ConfigVarHandle jump_height_config_var();
+ConfigVarHandle gale_height_config_var();
+ConfigVarHandle gale_counter_visible_config_var();
+ConfigVarHandle gale_counter_capacity_config_var();
+ConfigVarHandle gale_recovery_config_var();
+ConfigVarHandle glide_config_var();
+ConfigVarHandle glide_item_config_var();
+ConfigVarHandle revalis_gale_config_var();
 ConfigVarHandle stamina_config_var();
 ConfigVarHandle sprint_config_var();
+ConfigVarHandle wolf_sprint_config_var();
+ConfigVarHandle wolf_speed_config_var();
+ConfigVarHandle sprint_speed_config_var();
 int enemy_spawner_profile();
 ConfigVarHandle enemy_spawner_profile_config_var();
 ConfigVarHandle z_item_slot_config_var();
 ConfigVarHandle dawnlight_touch_ui_config_var();
 ConfigVarHandle check_for_updates_config_var();
 ConfigVarHandle enemy_hard_mode_config_var();
+ConfigVarHandle cave_randomizer_config_var();
 ConfigVarHandle remove_normal_hit_invulnerability_config_var();
 ConfigVarHandle bossrush_hardmode_hazards_config_var();
 ConfigVarHandle hide_shield_config_var();
@@ -169,6 +241,9 @@ ConfigVarHandle custom_model_config_var(CustomModel model);
 ConfigVarHandle hud_layout_config_var();
 ConfigVarHandle round_xy_buttons_config_var();
 ConfigVarHandle hud_custom_button_backing_visible_config_var();
+ConfigVarHandle hud_auto_fade_config_var();
+ConfigVarHandle hud_custom_stamina_fade_when_full_config_var();
+ConfigVarHandle hud_custom_fierce_deity_fade_when_empty_config_var();
 ConfigVarHandle hud_custom_health_bar_config_var();
 ConfigVarHandle hud_custom_dpad_hide_arrows_config_var();
 ConfigVarHandle hud_custom_dpad_hide_shadows_config_var();

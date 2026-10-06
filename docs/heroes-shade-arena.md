@@ -23,12 +23,73 @@ actor heap buffer is borrowed or rewritten. The checked-in generated header
 keeps Python/Pillow out of platform builds. Regenerate it only after changing
 the source PNG with `python tools/generate_pedestal_texture.py`.
 
+## Walking animation
+
+Boss Rush uses a longer, authored stride based on the `KN_STEP` skeleton instead
+of the original short stepping-in-place loop. Six leg joints and the root are
+resampled with fixed-length two-bone IK: each foot has a planted stance and a
+raised swing, with a continuous 30-frame loop. Native upper-body animation,
+attack sequences and bone translations remain intact.
+
+Forward approach accelerates to 8 units per tick (previously 6). Playback follows
+actual approach speed, reaching 1.2x at full pace; 120 units of planted travel over
+18 animation frames matches that speed. An eight-tick blend restores the original
+stance when movement stops. Main Shade and doubles own separate animation state;
+native story lessons and the shared game animation are not modified. Deletion
+detaches the private animation before the native model/archive is released.
+
+The checked-in `src/generated/shade_stride.hpp` contains only the authored leg
+and root tracks. Regenerate it with NumPy/SciPy installed:
+
+```sh
+python3 tools/generate_shade_stride.py /path/to/KN_a.arc
+```
+
+The source archive is supplied locally and is not needed by platform builds.
+Skeleton checks cover fixed bone lengths, foot trajectories, toe clearance and
+loop continuity; final appearance with the character mesh needs in-game review.
+
+## Combat footwork and transitions
+
+Grounded attacks, guards, sidesteps and recovery poses now use a wider support
+stance and longer leg reach. Fixed-length two-bone IK increases lateral spacing
+by up to 14% and forward/back spacing by up to 24%, limited by each leg's reach.
+The source ankle height and foot orientation are preserved. The correction fades
+out as a foot rises or the pelvis tilts into a roll; airborne choreography, root
+travel (including Helm Splitter's coordinate reset), upper-body poses, animation
+lengths and damage windows remain native.
+
+All 35 native motion-table entries share an actor-local transition layer. On a
+clip change, six leg joints blend over six simulation ticks from the last
+rendered quaternions, including interrupted native morphs. Native full-body morphs
+still apply. Same-clip restarts retain their native pointer comparison and failed
+changes retain the previous wrapper. Cleanup also detaches a wrapper borrowed
+by the facial-animation joint callback.
+
+Combat corrections are sampled as additive quaternions with cubic interpolation;
+looping clips wrap and one-shot clips hold their last correction. The original
+archive remains read-only, and the existing authored walking cycle is unchanged.
+Regenerate the checked-in combat tracks with:
+
+```sh
+python3 tools/generate_shade_combat.py /path/to/KN_a.arc
+```
+
+The generator checks foot contact height, foot orientation and bone lengths.
+Runtime regression checks cover interrupted transitions, failed clip changes,
+separate actor state, one-shot endpoints and safe animation detachment. Final
+appearance and transition feel still require an in-game check with the mesh.
+
 ## Intro and victory scenes
 
 The sword now starts a short original boss introduction. Shade stays hidden
 through asynchronous creation and until the native potential demo event has
-been accepted. The camera eases toward him with letterboxing; blue spectral
-ribbons precede his native materialization. Two original captions refer to his
+been accepted and the Golden Wolf actor has finished loading. On sword interaction,
+the native Golden Wolf is created hidden at the encounter position. The accepted
+cinematic starts on Link/the sword with the seated wolf behind the camera, then
+pans to him with letterboxing. After a two-second pan he plays the vanilla
+`WL_HOWLB` transformation howl, including its native frame-synchronized voice.
+A full-screen white flash covers the swap to Hero's Shade. Two original captions refer to his
 unfinished teaching and Link's inherited courage, followed by a sword-ready
 pose before combat begins. During the final 30% of the pointing/ready gesture
 (`KN_DEMO_KAMAE`, sequence 24 step 0), the native boss-name banner displays
@@ -59,13 +120,38 @@ text before gameplay resumes; replacement messages are never touched.
 After the last successful counter, doubles and projectiles are removed. Shade
 finishes any airborne fall and uses his native get-up animation when needed.
 He praises Link as a true hero and asks him to carry their legacy into the world.
-His native warp-out is accompanied by gold light ribbons and a brief afterglow;
-only then is the actor deleted and gameplay restored. The captions have German
+A second full-screen white flash transforms him back into the seated Golden
+Wolf. The wolf stays fully visible for one second after the flash clears, then
+plays the native transformation howl again. A further full-screen white flash
+covers its disappearance: it is hidden and queued for native deletion while the
+screen is fully white. The flash clears onto the empty arena, followed by a
+one-second hold before gameplay is restored. The captions have German
 and English variants (English fallback for the other supported languages).
 Each page automatically advances after 120 simulation ticks, and the controller
 waits for the actual native message to finish instead of cutting it off at an
-assumed time. Appearance takes 54 ticks including anticipation; departure plus
-afterglow takes 75. Recovery and dialogue have bounded failure timeouts.
+assumed time. Both howls follow the actual animation clip, with a bounded timeout.
+All white flashes rise over 12 ticks, hold opaque for six ticks before the model
+swap, then clear over 18 ticks (30 simulation ticks/second). Recovery and dialogue
+have bounded failure timeouts.
+
+The accepted intro starts Darknut's native cinematic stream (`0x2000037`).
+When the intro stream ends, or the introduction finishes first, the encounter switches
+to `Z2BGM_TN_MBOSS`, the Temple of Time Darknut battle music, on the native
+sub-sequence channel. A pre-hook on the audio framework performs the handoff
+before its automatic room-music unmute, even when captions are still open.
+The native Darknut start stops the stream directly; the battle cue is not
+restarted when the boss-name banner finishes. It continues through all four intermissions. Starting the
+victory scene stops that sub-sequence and immediately hands back to the room music;
+it does not wait for Darknut's usual 510-tick post-battle delay. The underlying
+room sequence is preserved, and a replaced room stream is remembered and restored.
+
+`heroes_shade_music.inc` owns only this encounter's music. Death, departure,
+unexpected fighter/pedestal deletion and mod shutdown stop its matching cues.
+Restoration never restarts an old stream over game-over or destination music.
+The cinema fixture exercises intro-to-battle timing, room sequence/stream
+restoration, cancellation, replay and foreign-cue ownership. Listen on device
+for cue transitions, volume and native stream duration during long dialogue.
+All audio comes from the player's game; no music files are bundled.
 
 Implementation and lifecycle details:
 
@@ -81,25 +167,324 @@ Implementation and lifecycle details:
   release acquired control. A failed async spawn can be retried at the sword.
 - Captions are registered with MessageService. Cancellation only closes the
   matching owned message; it never deletes the shared `dMsgObject` actor.
-- Native `ctrlWarp` state 3 materializes and state 1 disappears. The controller
-  never advances departure into state 2, which would teleport/reappear again.
-  The original translucent ribbons use their own stable packet in the pedestal
-  actor. No shared model material, external mod code or game asset is packaged.
+- `heroes_shade_wolf.inc` owns one native type-2 `NPC_GWOLF` actor, using the
+  same parameters and motion 4 as KN's vanilla second-encounter cutscene. Its
+  normal skeletal/BTK/BRK animation and howl audio are preserved. Hooks scoped
+  to the owned actor bypass its story AI, event requests and proximity behavior.
+  Type 2 does not register the type-0 damage cylinder or touch story save flags.
+- Both actors are ready before camera movement starts. Wolf load failure cancels
+  the encounter after a bounded wait, restores the sword interaction and removes
+  pending actors. The native wolf is held hidden during combat for the outro.
+- `heroes_shade_trial_waves.inc` keeps Shade's native scene groups `0x4a` and `0x5d`
+  (`F_SP200` / `Z2SCENE_SHADES_REALM`) loaded throughout arena residence,
+  including ordinary combat and every intermission. They are requested first and
+  use the same reserved-ARAM fallback and safe cleanup as the trial groups.
+  Both native scene slots are required: `0x4a` is shared with Hyrule Field,
+  and `0x5d` supplies the second slot. Together
+  these supply the existing actor's breath, guard, pain, attack and skill voice
+  calls; loading `KN_a` model/animation resources alone does not supply them.
+  Readiness includes both groups, requesting `0x5d` first. The regression
+  checks that a pending or missing second group prevents readiness.
+  It also preloads trial SE groups `0x08`, `0x16`, `0x1d`, `0x1f`,
+  `0x21`, and `0x22` from the player's disc in the background, selecting only
+  the current or next trial: shield uses the Palace/Castle groups, fire uses
+  `0x08`, eyes use `0x16`, and wind uses resident Boomerang samples. Prefetch
+  starts during preceding combat (the first shuffled trial during the intro); previous trial
+  groups get 60 mod frames for their one-shot tails before retirement. The arena's
+  Darknut audio alias only provides the Temple of Time miniboss groups
+  `0x15/0x17`; loading the Beamos model does not load its wave samples.
+  These additional groups cover Fyrus, the normal Temple of Time, Phantom Zant,
+  and Hyrule Castle audio sets used below. Readiness requires native wave status
+  2 (complete), not 1 (queued). Failed allocations retry at most once per 61 ticks
+  and log the archive ID, disc entry, file size, largest free audio block and
+  load status. Audio readiness
+  never gates sword interaction, encounter start, or wind-trial completion.
+  `tests/heroes_shade_pedestal_test.py` exercises the actual interaction with
+  audio both ready and indefinitely unavailable.
+  The scene manager is obtained through the imported `Z2AudioMgr::mAudioMgrPtr`.
+  Do not use `Z2GetSceneMgr()` in mod code: its template singleton storage is
+  unannotated and becomes a separate null variable inside the mod. The host
+  `JAUSectionHeap` is reached through `mSoundMgr.getSeqMgr()->getSeqDataMgr()`,
+  which `Z2AudioMgr::init` binds to the section heap. This also avoids importing
+  unexported template data, which is rejected by the Windows/Android/Apple SDKs.
+  The wave test models a null mod-local scene singleton and a live host manager.
+  In addition to phase-scoped loading, a confirmed lack of audio-heap space
+  falls back to a separately reserved tail block in JKR's
+  graph ARAM heap. Its bounds are checked against the actual audio root, since
+  the configured audio size can exceed JKR's nominal audio partition. Ordinary
+  RAM pointers must never be passed as ARAM addresses. A native `JASHeap` parent
+  allocated in the host system heap lets the ordinary DVD loader and wave bank
+  keep their native behavior; no mod vtable or callback is stored in the host.
+  Reclaim that parent/block only after the archive detaches and its native DVD
+  pending count reaches zero. Adopted or pending storage survives mod shutdown
+  until process teardown rather than exposing a dangling parent or reusing a
+  pending write's destination. Missing disc entries do not trigger this fallback.
+  Fixture tests cannot prove the total space the user's disc archives require
+  or native in-game audibility.
+  Audio maintenance runs every mod frame, including outside the arena, so
+  deferred releases continue after an early departure or scene reset.
+  Leaving the arena stops the owned loops and releases only added groups after
+  their DVD writes finish. A destination scene can adopt an existing preload;
+  the load hook reports success so native loaded-slot bookkeeping remains valid.
+  Erasure restores shared sample bindings from other resident groups. At mod
+  shutdown, any still-pending native DVD request retains its memory, since its
+  callback must finish without writing into freed storage.
+  `tests/heroes_shade_trial_waves_test.py` covers readiness, failed allocation,
+  phase selection, persistent voice residency across all trials and ordinary
+  combat, exhausted audio memory with successful reserved allocation,
+  overlapping/full reserves, deferred writes, borrowed groups, shared bindings,
+  destination adoption, and collection after native erasure.
+- Trial audio uses native game cues: the shield activates with
+  `Z2SE_OBJ_GANON_BARRIER_APPR`, hums with `Z2SE_OBJ_GANON_BARRIER`, and bursts
+  once with `Z2SE_EN_PZ_BALL_BURST` at Shade's current position. Each Beamos eye
+  plays its native detection/charge cues, then owns a `Z2SE_EN_BM_BEAM2` loop
+  positioned along the visible beam nearest Link and a `Z2SE_EN_BM_SPARK` loop
+  at its impact point once the beam reaches full length. Fire charges with
+  `Z2SE_EN_FM_ATTACK_TAME`, launches with `Z2SE_EN_FM_BLAST`, and sustains
+  `Z2SE_EN_FM_BURNING` until the phase ends. Wind uses the native looping
+  `Z2SE_BOOM_TORNADO` at Link's position after its warning period, including
+  while Iron Boots suppress the force, and stops on sword interaction.
+  Separate native sound
+  objects preserve both spatial sources. Pause, eye destruction, phase changes,
+  cancellation and arena teardown stop only the owned loops; resuming restores
+  active loops without replaying activation or shield-break cues. No audio
+  assets are bundled. `tests/heroes_shade_trial_audio_test.py` checks timing,
+  positions, independent handles, pause/resume, destruction and replay.
+- The white overlay is advanced on simulation ticks and held fully opaque before
+  swapping visibility. Camera framing follows the wolf's lower seated height.
+  The Shade Draw hook enforces visibility even if native execution resets its
+  own flag. Dialogue and combat begin only after the intro flash has cleared.
+- Visible wolves always use the native Golden Wolf Draw method. The former
+  translucent draw packet, alpha-mask texture, extra TEV stage and texgen
+  modifications are removed completely after the victory fade still crashed.
+  Departure uses the existing white-screen overlay and native actor deletion;
+  no model transparency, material edits or custom wolf render packets remain.
+  The actor ID stays owned until cleanup, so deferred draws remain hidden.
+- Cancellation, actor/pedestal deletion and shutdown remove the wolf and cancel
+  pending creation. Cleanup clears only the owned white fade; a replacement
+  scene fade is preserved. Pause/UI freezes the cinematic and wolf animation.
+  No game assets are bundled. The former flame and CoWarp implementations are
+  removed.
+- `tests/heroes_shade_cinema_test.py` runs the production wolf and cinematic
+  controller against native stubs: asynchronous loading, howl/white-swap order,
+  dialogue/title timing, pause, departure howl, deletion under full white, native
+  wolf draw visibility, cleanup and replacement
+  fades. The native-hook suite checks combat isolation. Rendered appearance,
+  camera composition and final audio/animation synchronization require in-game
+  validation.
+
+
 
 Run `python tests/heroes_shade_cinema_test.py` for the real controller's event,
-caption, warp, pause, timeout and cleanup paths against native API stubs. The
+caption, wolf transformation, pause, timeout and cleanup paths against native API stubs. The
 existing native-hook fixture also verifies that scene swords cannot register
 hits and scene events cannot consume boss health. On-device checks still needed:
 first arrival (no one-frame pop), caption readability, victory after both fall
 directions, camera near arena walls, replay, and leaving/unloading during a scene.
 
+## Intermissions at 8 / 6 / 4 / 2 HP
+
+The fight starts at **10 HP**. After each of the first four pairs of accepted
+hits, one intermission begins. The energy ward, Beamos eyes and wind preserve normal
+movement, sword attacks and combos; only the fire intermission pauses the combat controller. Repeated
+success events cannot consume health during it. Resolving the intermission
+costs no HP; after the fourth intermission, two further successful counters are needed for the
+existing victory scene. Missed-skill timeouts do not trigger intermissions.
+
+The four intermissions are shuffled independently at each sword interaction that
+starts a new fight. Each occurs exactly once, at 8 / 6 / 4 / 2 HP in the drawn
+order, with fire always preceding wind so the persistent lava rim is already
+present for the wind trial. All 12 valid orders remain possible; the two trials
+do not have to be adjacent. Audio preloading follows that order and retains the current trial's
+archives until it ends. Ending wind at the sword does not reshuffle the fight.
+
+| Intermission | Resolution |
+| --- | --- |
+| Blue energy ward (Shade keeps attacking) | Bomb explosion or Ball and Chain; other weapons are ignored. The shell expands and fades for 12 ticks when broken. |
+| Fyrus fire wave | Five-second warning through a sword gesture and orange charge rings, then six seconds of outward travel. Reach a wall Clawshot target and hang above the fire. |
+| Two wall-mounted Beamos heads/eyes | Each tracks Link with a laser after a two-second charge. One arrow removes each eye and its beam. |
+| Outward wind | One second of visible wind without force, then a three-second smooth buildup. Wind continues until Link faces the central Master Sword and presses A within reach. Iron Boots prevent the applied force. |
+
+Four native `Obj_HsTarget` actors use the `L7HsMato` variant and its original
+hookable DZB. Each target's largest hookable face is rotated to face the arena
+with a horizontal normal, using the actual wall normal rather than a guessed
+model pitch. The same matrix is applied to the model and MoveBG collision.
+This selects Link's native wall-wait path instead of the ceiling-hang path that
+immediately detached near the wall. Targets sit 90 units in front of the wall
+for hanging clearance; native release and subsequent Clawshot use remain available.
+Wall rays position them on diagonal walls, normally 650 units above the arena
+floor. Rays may shift within their wall sector or use height 550 to avoid a
+corner/opening. Each target is placed independently and pending actor IDs are
+retained: a missing wall or eye location cannot suppress the other targets or
+create duplicate requests. The eyes use side walls at height 400. The sword
+prompt waits until target creation, eye placement and effect loading complete. Targets remain until arena
+teardown, so finishing the fire phase cannot delete the surface Link hangs on.
+Creation/deletion uses the same player-layer ownership and pending-request
+cancellation as the encounter and enemy-spawner fixes.
+
+`heroes_shade_trials.hpp` holds health-independent intermission timing;
+`heroes_shade_trials.inc` implements the private arena runtime included by
+`heroes_shade_encounter.cpp`. The pedestal owns all models, archives, draw
+packets and collision volumes. Only the main Shade execute hook advances time.
+Doubles/projectiles are removed on entry. During the ward, eyes and wind, the normal
+offensive controller and sword colliders remain active. A post-`setCollision` hook
+disarms Shade's body damage target during every trial, preventing native hit
+reactions from stranding the offensive controller in a lesson state. The separate
+ward sphere accepts the breaking weapons and follows Shade's final position after
+movement. Fire suspends ordinary combat until completion. Pause/menu and
+unrelated events disarm volumes without advancing or resetting progress.
+Death, warps, deletion and mod shutdown cancel effects. Intermissions do not
+register or open dialogue: visual cues announce attacks without explaining
+their solutions. Intro and victory captions remain unchanged.
+
+The fire uses only `E_fm`'s two original attack-effect BMD/BCK/BTK resources and
+the second effect's BRK; it does not create Fyrus or run his boss/room scripts.
+Horizontal scale covers the farthest wall, including an off-center caster.
+Both native motion clips are sampled across 180 ticks of travel, followed by
+28 ticks of visual fade. The collider radius follows the sampled frame; its
+height is limited to 300, below a hanging Link. Native fire material and attack
+special `0xE` use the engine's `ChkAtNoGuard` path. The warning has no damage. A fire-wave hit deals four hearts (attack power 16).
+
+Beamos eyes use `E_bm6`'s named `bm6_eye` material, fully raised pose and active
+eye color, without drawing the tower or installing native Beamos gameplay logic.
+Each model has its own draw packets. Eye submission does not change shared
+shape visibility and does not assume that the head joint itself owns a mesh. A native Beamos spawned alongside the fight can install archive
+joint callbacks that expect a real Beamos actor: the eye-only model suppresses
+those callbacks only around its synchronous matrix calculation and immediately
+restores them. Lasers use the original `EF_BIMOL6` BMD/BCK and scrolling/startup
+BTKs from `E_bm6`, with per-eye animation state. Collision follows the native
+startup reach and room-clipped endpoints. Before firing, each eye selects a
+floor spot about 600 units away from Link; several wall-clipped candidates are
+compared to keep the initial beam path away from him. The spots stay fixed
+during the two-second charge, then move toward his floor position at at most
+10 units per tick. The two beams alternate their capsule registration so they
+cannot hit twice in the same simulation step. A hit disarms both for 90 ticks
+(three seconds) and resets their aim to safe floor spots, then tracking resumes.
+The beams remain visible during this recovery and Link's invincibility timer
+suppresses only collision, never rendering. Rewinding a completed startup BTK
+also restores its playback speed: setting only its frame to zero left it stopped
+and could make subsequent beams disappear. Eye targets remain vulnerable and
+accept arrows only.
+Wind rings appear immediately, with no external force during the first 30
+simulation ticks (one second). Over the next 90 ticks (three seconds), a smoothstep curve raises
+the force from weak to the existing maximum of 55. The active gust has no timeout.
+Facing the Master Sword within the existing 230-unit interaction range and pressing
+A requests wind completion; the next Shade execute tick stops applying force and
+finishes the trial. This interaction consumes A and preserves the existing fighter,
+HP, skill progression and lava rim. It cannot spawn another Shade or restart the
+intro, and pause, menus, death, wolf form, events and transitions suppress it.
+Wind uses Link's native external-force API, retaining wall collision. Both the equipment check and the native heavy-aware
+force flag let Iron Boots resist it. Ordinary walking cannot cancel that force.
+
+At the end of the fire phase, an 80-unit-wide molten strip appears along the
+arena walls and remains until victory, death, departure or replay. It follows
+64 room-wall samples, excluding rays into the exit corridor. Original dark-red
+edges and moving orange seams mark its extent. A native fire capsule along the
+nearest strip segment deals four hearts on contact (attack power 16), with a 45-tick repeat-hit
+pause; the height is low enough for hanging Link to remain safe. Only one rim
+capsule is registered per tick, avoiding collision-table pressure and duplicate
+hits at corners. Intermission completion preserves the rim; full encounter
+cancellation removes it, and pause/menus suspend its drawing and collision.
+
+Doubles spawn at the boss's exact position and yaw, then walk outward using the
+native Jump Strike formation in both double phases: motion 9 and six units per
+tick toward mirrored 180-unit offsets. Their first execution aligns with the
+live boss to account for asynchronous creation. The arena keeps formation active
+until arrival (or a 120-tick obstruction timeout), bypassing the tutorial's
+immediate no-event transition and the spin lesson's circle-position teleport.
+Body pushing and offensive blades are disabled while emerging; a valid skill hit
+still interrupts formation with native knockback, landing and departure.
+Unbeaten doubles return to Shade on a phase change at 24 units per tick (four
+times their outward speed), following his current position and disappearing
+only on overlap. They cannot push, receive hits or attack during the return.
+Retirement continues during intermissions, with pause/event guards preserved;
+defeated doubles instead retain their original fall/landing/departure sequence
+across phase changes. Encounter teardown still removes actors immediately.
+The offensive controller waits for action 15 (Jump Strike double) or 21 (Spin Attack double),
+not formation actions 14/20. Once ready, they use the existing sword/sword/special
+combos and staggered cooldowns, including normal one-heart sword attacks.
+
+No game asset files or code from Twilit Essentials are added to the mod. The
+native resources are loaded from the player's game at runtime; the ward,
+telegraph and wind rings are original procedural effects.
+
+Validation: `python tests/heroes_shade_trials_test.py` runs the actual runtime
+methods with instrumented collision APIs, checking weapon filters, separate
+eye removal, warning/damage boundaries, shared beam endpoints, pause/resume,
+cleanup, safe beam startup and repeated recovery, persistent rim contact, and
+the wind warning, smooth buildup, restart, Iron Boots, indefinite duration and
+stopping force after sword interaction. `python tests/heroes_shade_pedestal_test.py`
+executes the actual pedestal method, checking normal startup, range/facing and
+state guards, A consumption, no duplicate spawn and the two remaining hits after
+wind resolution. The native-hook test verifies active blades during ward/eyes/wind,
+fire-only suspension and protected boss health/body targets. The battle test checks
+all ten hits, all four thresholds exactly once, ignored hits during trials,
+phase timeouts and replay. `python tests/heroes_shade_wall_targets_test.py`
+checks the actual alignment method for ceiling, reversed and tilted DZB faces
+on all four wall orientations, including matching model/collision transforms.
+Existing native-hook and cinematic tests also run.
+
+On-device verification is still required for the four wall attachment points,
+Clawshot reach/hanging clearance, Beamos head alignment and visibility, fire
+appearance across the room, attacks during ward/eyes/wind, laser recovery, wind
+strength and sword interaction under pressure, replay, and
+leaving/dying/unloading during each phase. These tests cannot render game
+archives or exercise actual Link physics.
+
+### Missing sword / targets regression
+
+The initial intermission patch put both effect archives and the Beamos model
+checks inside the pedestal's creation transaction. A failed effect initialization
+therefore deleted the entire pedestal before its execute method could create
+any wall targets. The Beamos path also incorrectly required exactly six joints
+and a mesh attached directly to `BM6_JNT_HEAD`, and requested a differed display
+list even when the BMDE resource had no shared list. These assumptions are not
+requirements of the native Beamos renderer.
+
+The pedestal now uses its original sword-only heap and becomes visible as soon
+as `MstrSword` loads. Effects load later in an independent solid heap owned by
+the pedestal, restoring the previous current heap before returning. Success
+shrinks the allocation; failure frees it once and logs the failing step instead
+of destroying/recreating the sword every frame. Teardown frees the effect heap
+before releasing its archives. Target placement runs independently of effect
+loading. Combat still waits for the complete arena to prevent invisible hazards.
+
+The eye model follows the native BMDE allocation convention: flags 0 without
+a shared display list, shared mode for locked shared data, differed mode only
+for unlocked shared data. It looks up `bm6_eye` by name and submits that material's
+own joint/shape packet. Callback backup storage follows the actual joint count.
+
+`python tests/heroes_shade_initialization_test.py` exercises these real methods
+with no head-mesh API, a seven-joint model, all shared/locked list combinations,
+asynchronous resource loading, allocation failure/current-heap restoration,
+and partial wall/eye availability without duplicate target actors. The existing
+trial, battle, native-hook and cinematic regression tests remain applicable.
+
 ## Combat
 
-Hero's Shade has eight health points. Each successful native lesson counter
+Hero's Shade has ten health points. Each successful native lesson counter
 removes one point; a missed opportunity changes the phase after 600 simulation
-ticks without damaging him. Success gives 45 ticks of recovery, followed by the
-next phase. The fight cycles until his health reaches zero, then starts the
-victory scene above. This is a new boss controller, not the original lesson event.
+ticks without damaging him. Nonfinal successes give 45 ticks of recovery,
+followed by the next phase. At zero health the next unpaused actor update
+latches victory before recovery or phase progression. It retires the doubles,
+clears native group-warp state and restores Shade's full model scale/visibility,
+while preserving the knockback pose and velocity for the cinematic landing and
+get-up. The main actor stays alive through the victory scene above. This also
+applies to final Jump Strike and Spin counters; they cannot restart a group warp
+or another phase. This is a new boss controller, not the original lesson event.
+
+All eight normal phases are shuffled with the game's `cM_rndF` generator at
+encounter start and after each complete cycle. Every phase appears once per
+cycle, with no immediate repeat across cycle boundaries. The starting phase is
+also random. Phase identities remain unchanged for native counters, attacks and
+double management; the separate cursor only selects their order. Random draws
+occur when shuffling, never from frame counts or audio polling. The shared game
+generator is not reseeded.
+
+At 1 HP, Jump Strike and Spin Attack are skipped when selecting the next phase,
+including after timeouts and reshuffles. Only the other six phases can provide
+the final hit. Boundary-repeat prevention uses the first eligible phase; above
+1 HP all eight phases remain available. The fire-before-wind rule is unchanged.
 
 The lesson phase determines which counter damages Shade; it no longer restricts
 his offensive move selection. Outside the reflection phase, he uses three-hit
@@ -117,7 +502,7 @@ the opening phase. Reflection keeps the native ball throw uninterrupted.
 | Helm Splitter | Shield Attack, Helm Splitter, follow-up |
 | Mortal Draw | Mortal Draw |
 | Jump Strike | Jump Strike; two doubles participate |
-| Great Spin | Great Spin; two doubles participate |
+| Spin Attack | Normal Spin or Great Spin; two doubles participate |
 
 ### Double reactions and Ending Blow window
 
@@ -147,13 +532,22 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   step, a moving blade enables those native hit volumes at their current pose;
   there is no delayed proximity hit. Two stable capsule colliders also trace
   those points between consecutive poses, so fast cuts cannot pass through Link
-  between sphere samples. Back Slice activates its first cut pose immediately,
+  between sphere samples. This includes ordinary swings for the main Shade and
+  both doubles: KN_MAGIC at 1.65x moves its tip about 322 units per tick. Its
+  sweep accepts up to 400 units only between consecutive poses inside frames
+  30–40 (at most two animation frames apart), and retains one-heart damage.
+  Windup, return poses, skipped intervals and larger jumps cannot create that
+  sweep. Each fighter consumes only its own contact budget.
+  Back Slice activates its first cut pose immediately,
   without tracing the preceding non-damaging roll. Frozen frames, interrupted
   motions and large discontinuities cannot generate swept hits.
-  A player hit or shield block consumes the strike. Jump Strike alone can rearm
-  once, after both blade points remain clearly separated from all of Link's hurt
-  cylinders for two samples. This permits its second blow without repeated hits
-  from a blade resting on Link. Normal sword damage is 4 quarter-heart units
+  A player hit or shield block consumes only the current strike. Helm Splitter
+  has three independent strike budgets; Jump Strike has two. KN_DAIJUMP's first
+  sweep uses frames 40–49 and its landing blow uses frames 58–66. Entering the
+  second phase rearms contact even if the blade remains close to Link. A miss
+  or block on the first blow cannot suppress the second, and withdrawing the
+  blade cannot earn a second hit during the same phase. Charge, somersault gap
+  and recovery do not deal damage. Normal sword damage is 4 quarter-heart units
   (one heart); specials use 8 (two hearts). Native shield and
   invulnerability handling still decide whether each contact damages Link.
 - Gaps are six simulation ticks within a combo and 18 between combos. Doubles
@@ -164,9 +558,19 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   lesson's hit reaction) retain their sequence number when they return to a
   ready/walking stance in step 1. Those return steps are now
   recognized; requiring sequence 9 alone previously suppressed later attacks.
+- Ordinary sword swings keep forward and X/Z speed at zero for their entire
+  animation; only facing can track Link before the swing commits.
 - Back Slice uses animation progress to follow a semicircle around Link at a
   150-unit radius, with bounded movement through native collision. The cut then
   faces Link and closes to sword reach. Sidestep/roll frames never deal damage.
+- Helm Splitter has three separate, single-contact strikes: the shield bash
+  (KN_KABUTO frames 8–18), aerial sword cut (27–67), and final sword thrust into
+  the stance (68–76). The bash uses one 40-unit sphere and its swept path at
+  shield attachment joint 21. Sword phases use the native joint 13 coverage.
+  The shield-to-sword switch cannot create a sweep between the two weapons.
+  A hit or shield block consumes only that phase; the following authored strike
+  can hit again. The planted final pose accepts endpoint contact at frames
+  75–76 even as the blade stops, but holding the stance never rearms damage.
 - Jump animations already contain vertical motion and forward root travel.
   Do not add a second physical jump: it puts the sword above Link at impact.
   A post-`setAttnPos` hook anchors the backbone's X/Z position to actor movement
@@ -175,6 +579,11 @@ Native expiry still waits for an already-started Ending Blow to resolve.
   or registering another draw entry. Helm Splitter commits to a landing 140
   units beyond Link, where its turning cut faces him; Jump Strike stops 110
   units before him. Targets are captured at takeoff, so Link can evade them.
+  Translation is restricted to the source BCK's push-off/landing interval:
+  frames 27–48 for KN_KABUTO and 42–62 for KN_DAIJUMP. The charge and landing
+  recovery stay stationary. Jump speed is captured once to cover the target
+  distance within that interval; collision still constrains every movement and
+  never triggers a catch-up acceleration. Native skeleton motion supplies Y.
   On natural completion, Helm Splitter keeps its authored ending pose, then
   transfers the final half-turn into actor yaw and installs native stance 6
   with zero blend before clearing the attack. Position stays at the landing
@@ -200,7 +609,7 @@ tilt or height, restarts an existing landing, or changes the main Shade's native
 Ending Blow action 3 and its down/finishing flags. Both visible models continue
 through the engine's shared motion controller.
 
-Native approach speed remains six units per tick. Ordinary sword swings use
+Forward approach accelerates to eight units per tick with matched stride playback. Ordinary sword swings use
 attack power 4 (one heart). All special blade strikes, their swept volumes and
 the light ball use power 8 (two hearts) per accepted hit. Native damage modifiers
 and invulnerability still apply. Successful counters still grant 45 ticks of
@@ -315,7 +724,7 @@ Device checklist (still required):
    Check ordinary counter knockdowns and Spin Attack knockdowns of both doubles:
    the fall must finish in a flat ground pose rather than a tilted flight pose.
    The Ending Blow waiting pose and its prompt must still work.
-   Check attack collisions and both doubles in the final phases. Jump Strike
+   Check attack collisions and both doubles in the Jump Strike and Spin phases. Jump Strike
    must play their native hit/fall/landing response before disappearance.
    Verify the main Shade's Ending Blow opportunity lasts one quarter of the previously halved
    waiting time, while an already-started Ending Blow still completes. During special
@@ -325,3 +734,44 @@ Device checklist (still required):
 6. Win and replay; leave/warp during a projectile or double spawn; re-enter and
    reload a save. Confirm Link stays visible and no enemy survives in the hub.
 7. Visit a normal Hidden Skill lesson on a story save; confirm it is unchanged.
+
+
+### Spin-phase double defeat lifecycle
+
+The Spin skill phase accepts normal left/right Spin Attacks as well as both
+Great Spins, for the boss and each double. `heroes_shade_spin.inc` validates
+Link's sword contact, applies the native forward/backward knockback and invokes
+the existing landing/departure actions. Doubles finish landing before departure;
+they continue falling even if a simultaneous boss hit starts global recovery.
+The arena does not set the tutorial's parent talk flag or invoke its group-wide
+lesson-end callbacks for these hits.
+
+Defeated slots are recorded in `Battle::defeated_doubles`, independently of actor
+storage. Thus native deletion and the per-frame `add_doubles` call cannot recreate
+a defeated double. Hitting only one double leaves the other active; hitting both
+leaves the boss alone without removing boss HP. The mask resets on the next skill
+phase or a fresh encounter. Defeated doubles have no hurt target or sword attack
+colliders. Other lessons and unowned story actors retain their behavior.
+
+Validation: the production native-hook regression covers all four spin types,
+independent clone defeats, forward/backward falls, landing-before-departure,
+repeated spawn maintenance after deletion, boss success/recovery, collision
+scope and protected intermissions. Progression tests cover timeout/replay mask
+reset. Native animation appearance still requires in-game verification.
+
+
+### Jump Strike double landing follow-up
+
+The same arena-owned counter lifecycle now covers Jump Strike (skill phase 6).
+The native teacher's parent talk flag previously allowed the group end callback
+to start departure as soon as Link stopped the attack, before clone landing.
+Successful `LARGE_JUMP`/`LARGE_JUMP_FINISH` contacts now enter native action 16,
+finish the forward/backward knockback and landing animation, then enter native
+warp/delete action 17. Defeated slots stay empty for the remainder of the phase.
+The opening `LARGE_JUMP_INIT` swipe retains its native small stagger; an ordinary
+jumping slash or Spin Attack does not fulfill the Jump Strike counter.
+
+The production-hook regression covers both Jump Strike hit stages, both facing
+directions, attack completion during flight, boss recovery during landing,
+landing-animation completion before departure, no replacement of the defeated
+slot, and unchanged boss success event 21. Spin-phase regressions remain active.

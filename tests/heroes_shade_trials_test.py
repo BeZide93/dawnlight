@@ -1,0 +1,269 @@
+"""Run the actual trial collision/timing methods against instrumented native APIs.
+
+The fixture does not load game archives or duplicate the trial implementation.
+"""
+from pathlib import Path
+import subprocess
+import tempfile
+
+root = Path(__file__).resolve().parents[1]
+source = (root / "src/heroes_shade_trials.inc").read_text()
+runtime = source[source.index("struct ShadeTrials {"):]
+
+def method(signature):
+    start = runtime.index("    " + signature)
+    end = runtime.index("\n    }", start) + len("\n    }")
+    return runtime[start:end]
+
+fixture = r'''
+#include "heroes_shade_battle.hpp"
+#include <cassert>
+#include <vector>
+using namespace dawnlight;
+struct cXyz {
+    float x=0,y=0,z=0;
+    cXyz()=default;
+    cXyz(float a,float b,float c):x(a),y(b),z(c) {}
+    cXyz operator+(cXyz b) const {return {x+b.x,y+b.y,z+b.z};}
+    cXyz operator-(cXyz b) const {return {x-b.x,y-b.y,z-b.z};}
+    cXyz operator*(float f) const {return {x*f,y*f,z*f};}
+    cXyz& operator+=(cXyz b) {x+=b.x;y+=b.y;z+=b.z;return *this;}
+    float abs() const {return std::sqrt(x*x+y*y+z*z);}
+    float absXZ() const {return std::sqrt(x*x+z*z);}
+};
+struct fopAc_ac_c { struct {cXyz pos;} current; };
+struct daNpc_Kn_c : fopAc_ac_c {};
+struct Player : fopAc_ac_c {
+    bool boots=false; int forces=0,damageTimer=0,heavyAware=0; float power=0; int yaw=0;
+    int getDamageWaitTimer(){return damageTimer;}
+    bool checkEquipHeavyBoots() {return boots;}
+    void setOutPower(float p,int y,int h) {++forces;power=p;yaw=y;heavyAware=h;}
+} player;
+auto daAlink_getAlinkActorClass() {return &player;}
+int cLib_targetAngleY(const cXyz* from,const cXyz* to) {
+    return static_cast<int>(std::atan2(to->x-from->x,to->z-from->z)*32768/3.1415926536);
+}
+constexpr unsigned AT_TYPE_BOMB=0x20,AT_TYPE_IRON_BALL=0x400000,AT_TYPE_ARROW=0x2000;
+constexpr unsigned AT_TYPE_CSTATUE_SWING=0x8000,AT_TYPE_100=0x100;
+constexpr int dCcD_SE_HARD_BODY=1,dCcD_SE_SWORD=2,dCcD_MTRL_FIRE=3;
+enum dCcG_At_Spl {dummy};
+struct Attack {unsigned type;bool ChkAtType(unsigned mask) {return type&mask;}};
+struct dCcD_Stts {void Init(int,int,fopAc_ac_c*) {} void Move() {}};
+struct Collider {
+    bool at=false,tg=false;unsigned atType=0,tgType=0;int power=0,special=0,material=0;
+    float radius=0,height=0;cXyz center;Attack* hit=nullptr;fopAc_ac_c* atHit=nullptr;
+    void SetStts(dCcD_Stts*) {} void SetTgType(unsigned t){tgType=t;}
+    void SetAtType(unsigned t){atType=t;}void SetAtAtp(int p){power=p;}
+    void SetTgSPrm(unsigned p){tg=p&1;}void SetAtSPrm(unsigned p){at=p&1;}
+    void SetAtSpl(dCcG_At_Spl s){special=s;}void SetAtMtrl(int m){material=m;}
+    void SetR(float r){radius=r;}void SetH(float h){height=h;}void SetC(cXyz p){center=p;}
+    void SetTgSe(int){}void SetAtSe(int){}void SetAtVec(cXyz&){}
+    void OffTgSetBit(){tg=false;}void OnTgSetBit(){tg=true;}
+    void OffAtSetBit(){at=false;}void OnAtSetBit(){at=true;}
+    bool ChkAtHit(){return atHit;}fopAc_ac_c* GetAtHitAc(){return atHit;}
+    void ClrAtHit(){atHit=nullptr;}void ClrTgHit(){hit=nullptr;}
+    bool ChkTgHit(){return hit;}Attack* GetTgHitObj(){return hit;}
+};
+struct dCcD_Sph:Collider{};
+struct dCcD_Cyl:Collider{};
+struct cM3dGCps {cXyz start,end;void Set(cXyz a,cXyz b,float){start=a;end=b;}};
+struct dCcD_Cps:Collider,cM3dGCps{};
+struct CollisionWorld {
+    std::vector<Collider*> entries;
+    void Set(Collider* c) {entries.push_back(c);}
+    bool contains(Collider* c) {return std::find(entries.begin(),entries.end(),c)!=entries.end();}
+} world;
+auto dComIfG_Ccsp(){return &world;}
+struct dBgS_LinChk {cXyz end;void Set(cXyz*,cXyz* b,fopAc_ac_c*){end=*b;}cXyz GetCross(){return end;}};
+struct Background {bool LineCross(dBgS_LinChk*){return false;}} background;
+auto& dComIfG_Bgsp(){return background;}
+struct Message {int msg_idx=0;int getStatusLocal(){return 1;}};
+Message* dMsgObject_getMsgObjectClass(){return nullptr;}
+constexpr int Z2SE_EN_BM_EYE_BREAK=1,Z2SE_EN_FM_BLAST=2,Z2SE_EN_BM_BEAM2=3;
+void mDoAud_seStart(int,cXyz*,int,int){}void mDoAud_seStartLevel(int,cXyz*,int,int){}
+int dComIfGp_getReverb(int){return 0;}void cinema_pose(daNpc_Kn_c*,int){}
+struct Animation {float frame=0;float getFrame(){return frame;}float getEndFrame(){return 70;}void play(){}};
+struct Fire {Animation bck;void sample(float frame){bck.frame=frame;}};
+struct Beam {int frame=0;void play(){++frame;}void reset(){frame=0;}float reach(){return std::min(1.0f,frame*0.3f);}};
+struct TrialPacket {
+    static constexpr unsigned rimSegments=64;
+    std::array<cXyz,rimSegments> rimOuter{},rimInner{};
+    std::array<bool,rimSegments> rimValid{};
+    bool lava=false;int lavaTicks=0;
+    shade::TrialClock clock;cXyz center,boss;std::array<cXyz,2> eyes,ends;float radius=0;
+};
+// Record integration calls; the native audio helper itself is exercised in
+// heroes_shade_trial_audio_test.py.
+struct TrialAudioProbe {
+    bool windLive=false,fireLive=false;
+    void stop(){windLive=fireLive=false;}
+    void update_shield(bool,const cXyz&){}
+    void update_beam(unsigned,bool,const cXyz&,const cXyz&,float,const cXyz&){}
+    void update_fire(bool live,const cXyz&){fireLive=live;}
+    void update_wind(bool live,const cXyz&){windLive=live;}
+};
+struct ShadeTrials {
+    TrialAudioProbe audio;
+    shade::TrialClock clock;TrialPacket packet;dCcD_Stts status;dCcD_Sph shield;
+    dCcD_Cyl flame;dCcD_Cps lavaContact;bool lavaActive=false;int lavaRecovery=0;std::array<dCcD_Sph,2> eyeTargets;std::array<dCcD_Cps,2> beams;
+    std::array<cXyz,2> eyePos{},aim{};std::array<Fire,2> fire;Animation eyeColor;
+    fopAc_ac_c* owner=nullptr;cXyz center,origin;float radius=2000,fireScale=2.5;
+    bool visible=false,beamVisible=false;int beamRecovery=0;std::array<Beam,2> beamModels;
+'''
+# The shared archive may also be used by a real Beamos with actor callbacks.
+head_start = source.index("    void calc() override {")
+head_end = source.index("\n    }", head_start) + len("\n    }")
+head_fixture = r'''
+struct J3DJoint;
+using J3DJointCallBack=int (*)(J3DJoint*,int);
+struct J3DJoint {
+    J3DJointCallBack callback=nullptr;
+    auto getCallBack(){return callback;}void setCallBack(J3DJointCallBack cb){callback=cb;}
+};
+struct ModelData {
+    std::array<J3DJoint,7> joints;
+    J3DJoint* getJointNodePointer(unsigned i){return &joints.at(i);}
+};
+struct J3DModel {
+    ModelData data;
+    auto getModelData(){return &data;}
+    virtual void calc(){for(auto& joint:data.joints) assert(!joint.callback);}
+};
+struct TrialEyeModel:J3DModel {
+    unsigned jointCount=7;
+    std::array<J3DJointCallBack,7> callbacks{};
+''' + source[head_start:head_end] + r'''
+};
+int native_callback(J3DJoint*,int){assert(false);return 1;}
+'''
+beam_source = source[source.index('struct TrialBeamModel {'):]
+reset_start = beam_source.index('    void reset() {')
+reset_end = beam_source.index('\n    }', reset_start)+6
+head_fixture += r'''
+struct RestartAnimation {
+    float frame=99,speed=0;
+    void setFrame(float f){frame=f;}void setPlaySpeed(float s){speed=s;}
+};
+struct RestartBeam {RestartAnimation bck,scroll,on;
+''' + beam_source[reset_start:reset_end] + '\n};\n'
+checks = r'''
+};
+int main() {
+    RestartBeam restarted;restarted.reset();
+    assert(restarted.on.frame==0 && restarted.on.speed==1);
+    TrialEyeModel head;
+    for(auto& joint:head.data.joints) joint.callback=native_callback;
+    head.calc();
+    for(auto& joint:head.data.joints) assert(joint.callback==native_callback);
+    fopAc_ac_c owner; daNpc_Kn_c boss; ShadeTrials t;t.init(&owner);
+    assert(t.shield.tgType==(AT_TYPE_BOMB|AT_TYPE_IRON_BALL));
+    assert(t.eyeTargets[0].tgType==AT_TYPE_ARROW && t.eyeTargets[1].tgType==AT_TYPE_ARROW);
+    assert(t.flame.special>=12 && t.flame.material==dCcD_MTRL_FIRE);
+    assert(t.flame.height==300 && t.flame.power==16);
+    auto tick=[&]{world.entries.clear();return t.tick(&boss);};
+    Attack sword{1},arrow{AT_TYPE_ARROW},bomb{AT_TYPE_BOMB},ball{AT_TYPE_IRON_BALL};
+    for (auto* breaker:{&bomb,&ball}) {
+        t.cancel();t.clock.begin(shade::Trial::Shield);
+        for (auto* invalid:{&sword,&arrow}) {
+            t.shield.hit=invalid;assert(!tick() && !t.clock.broken && t.shield.tg);
+        }
+        t.shield.hit=breaker;assert(!tick() && t.clock.broken && !t.shield.tg);
+        for (int i=0;i<10;++i) assert(!tick());
+        assert(tick()); // twelve-tick burst, no extra boss HP damage
+    }
+    t.cancel();t.clock.begin(shade::Trial::Fire);
+    for (int i=0;i<150;++i) {assert(!tick());assert(!world.contains(&t.flame));}
+    float radius=0;
+    for (int i=0;i<shade::fire_travel_ticks;++i) {
+        assert(!tick() && world.contains(&t.flame) && t.flame.at);
+        assert(t.flame.radius>radius);radius=t.flame.radius;
+    }
+    assert(std::abs(radius-1496.25f)<0.1f);
+    for (int i=330;i<357;++i) {assert(!tick());assert(!t.flame.at);}
+    assert(tick() && t.lavaActive); // rim ignites only once the wave has finished
+    t.cancel(true);assert(t.lavaActive); // survives intermission completion
+    t.packet.rimValid[0]=t.packet.rimValid[1]=true;
+    t.packet.rimOuter[0]={1000,4,-500};t.packet.rimInner[0]={920,4,-500};
+    t.packet.rimOuter[1]={1000,4,500};t.packet.rimInner[1]={920,4,500};
+    player.current.pos={960,0,0};world.entries.clear();t.tick_lava();
+    assert(t.packet.lava && world.entries.size()==1 && world.contains(&t.lavaContact));
+    assert(t.lavaContact.material==dCcD_MTRL_FIRE && t.lavaContact.special>=12);
+    assert(t.lavaContact.power==16); // four hearts per accepted contact
+    t.lavaContact.atHit=&player;t.tick_lava();assert(t.lavaRecovery==45 && !t.lavaContact.at);
+    t.suspend();assert(t.lavaActive && !t.packet.lava && !t.lavaContact.at);
+    for(int i=0;i<45;++i) { t.tick_lava(); }
+    assert(t.lavaContact.at);
+    player.current.pos={0,0,0};world.entries.clear();t.tick_lava();assert(world.entries.empty());
+    t.cancel();assert(!t.lavaActive && !t.packet.lava);
+    t.clock.begin(shade::Trial::Eyes);
+    player.current.pos={400,0,200};
+    t.reset_beam_aim();
+    const auto initial=t.aim;
+    for(auto p:initial){assert(p.y==4 && (p-player.current.pos).absXZ()>590);}
+    for(int i=0;i<60;++i) {assert(!tick());assert(!world.contains(&t.beams[0]));}
+    assert(t.aim[0].x==initial[0].x && t.aim[0].z==initial[0].z); // no hidden tracking during charge
+    assert(!tick() && world.contains(&t.beams[0]) && !world.contains(&t.beams[1]));
+    assert(std::abs(t.beams[0].end.x-t.packet.ends[0].x*0.3f)<0.01f); // native startup reach
+    assert(!tick() && !world.contains(&t.beams[0]) && world.contains(&t.beams[1]));
+    t.beams[1].atHit=&player;
+    assert(!tick() && t.beamRecovery==90 && t.beamVisible);
+    for(int i=0;i<89;++i) {
+        assert(!tick() && t.beamVisible);
+        assert(!world.contains(&t.beams[0]) && !world.contains(&t.beams[1]));
+    }
+    assert(!tick() && t.beamVisible); // recovers even with native damageTimer zero
+    player.damageTimer=10;assert(!tick() && t.beamVisible);
+    player.damageTimer=0;
+    for (auto* invalid:{&sword,&bomb,&ball}) {
+        t.eyeTargets[0].hit=invalid;assert(!tick() && t.clock.eyes==3);
+    }
+    t.eyeTargets[0].hit=&arrow;assert(!tick() && t.clock.eyes==2 && !t.beams[0].at);
+    assert(!world.contains(&t.beams[0]) && world.contains(&t.beams[1]));
+    int saved=t.clock.ticks;t.suspend();
+    assert(t.clock.ticks==saved && t.clock.eyes==2 && !t.visible && !t.beams[1].at);
+    assert(!tick() && t.clock.ticks==saved+1 && t.beams[1].at);
+    t.eyeTargets[1].hit=&arrow;assert(tick() && t.clock.eyes==0);
+    t.cancel();t.clock.begin(shade::Trial::Wind);
+    player.current.pos={100,0,0}; player.forces=0;
+    for(int i=0;i<30;++i) {
+        assert(!tick() && t.visible && t.packet.clock.kind==shade::Trial::Wind);
+        assert(player.forces==0 && !t.audio.windLive); // animation is already visible for a full second
+    }
+    int windTime=t.clock.ticks;t.suspend();assert(t.clock.ticks==windTime);
+    float previous=0;
+    for(int i=0;i<90;++i) {
+        assert(!tick() && player.power>previous && player.power<=55);
+        assert(player.power-previous<1.0f); // smooth ramp, no full-strength jump
+        if(i<89) assert(player.power<55); // full strength only at the end of three seconds
+        previous=player.power;
+    }
+    assert(player.forces==90 && player.power==55 && player.yaw==0x4000 && player.heavyAware==1);
+    for(int i=120;i<210;++i) assert(!tick());
+    assert(player.forces==180 && player.power==55);
+    player.boots=true;
+    for(int i=210;i<900;++i) assert(!tick()); // no automatic timeout, even in Iron Boots
+    assert(player.forces==180 && t.clock.ticks==900 && t.audio.windLive);
+    player.boots=false;
+    assert(!tick() && player.forces==181 && player.power==55);
+    t.clock.release_wind();
+    assert(tick() && player.forces==181 && !t.audio.windLive); // no new force after interacting at the sword
+    t.cancel();t.clock.begin(shade::Trial::Wind); // restart does not retain strong wind
+    player.boots=false;player.forces=0;
+    assert(!t.clock.windReleased);
+    for(int i=0;i<30;++i) assert(!tick() && player.forces==0);
+    player.boots=true;
+    for(int i=0;i<90;++i) assert(!tick() && player.forces==0); // boots also suppress ramp
+    t.cancel();assert(!t.clock.active() && !t.visible && !t.audio.windLive && !t.audio.fireLive);
+    assert(!t.shield.tg && !t.flame.at);
+    for (int i=0;i<2;++i) assert(!t.eyeTargets[i].tg && !t.beams[i].at);
+}
+'''
+code = fixture + '\n'.join(method(sig) for sig in (
+    'void init(', 'void suspend()', 'void cancel(', 'void tick_lava()', 'void reset_beam_aim()', 'bool tick(')) + checks.replace("};\nint main()", "};\n" + head_fixture + "\nint main()", 1)
+with tempfile.TemporaryDirectory() as tmp:
+    cpp = Path(tmp) / 'trials.cpp'
+    binary = Path(tmp) / 'trials'
+    cpp.write_text(code)
+    subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)
+    subprocess.run([str(binary)],check=True)
+print("Hero's Shade trial weapon filters, native collision registration, telegraph, wind and cancellation: passed")

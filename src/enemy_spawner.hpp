@@ -8,13 +8,15 @@
 
 namespace dawnlight {
 
-inline constexpr std::array<const char*, 33> kEnemySpawnerProfileLabels{
+inline constexpr std::array<const char*, 43> kEnemySpawnerProfileLabels{
     "Darknut", "Bokoblin", "Mini Freezard", "Keese", "Fire Keese", "Ice Keese",
     "Tektite", "Gibdo", "Goron", "Staltroop", "Aeralfos", "Chilfos", "Freezard",
     "Stalchild", "Bubble", "Fire Bubble", "Ice Bubble", "Rat", "White Wolfos",
     "Puppet", "Bomskit", "Stalhound (night only)", "Water Toadpoli", "Fire Toadpoli",
     "Bulblin", "Lizalfos", "Dodongo", "Dynalfos", "Skulltula", "Baba Serpent",
     "Big Baba", "Deku Baba", "Stalfos",
+    "Helmasaur", "Helmasaurus", "Kargarok", "Guay", "Armos",
+    "Red Chu", "Blue Chu", "Yellow Chu", "Purple Chu", "Black Chu",
 };
 
 // Scene ownership plus per-process room-state isolation for standalone actors.

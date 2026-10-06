@@ -5,6 +5,7 @@
 #include "enemy_slow_motion.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+#include "twilit_stamina.hpp"
 
 #include "global.h"
 #include "dusk/audio/MusicRateBuffer.h"
@@ -15,10 +16,10 @@
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "Z2AudioLib/Z2LinkMgr.h"
 #include "d/actor/d_a_alink.h"
-#if __has_include("dusk/gyro.h") && __has_include("dusk/settings.h")
+#if __has_include("dusk/gyro.h") && __has_include("dusk/config_var.hpp")
 #define DAWNLIGHT_HAS_GYRO_API 1
+#include "dusk/config_var.hpp"
 #include "dusk/gyro.h"
-#include "dusk/settings.h"
 #else
 #define DAWNLIGHT_HAS_GYRO_API 0
 #endif
@@ -26,6 +27,7 @@
 #include "d/d_cc_s.h"
 #include "d/d_cc_uty.h"
 #include "d/d_com_inf_game.h"
+#include "d/d_bg_s_gnd_chk.h"
 #include "d/d_meter2_draw.h"
 #include "f_op/f_op_actor.h"
 #include "f_op/f_op_actor_mng.h"
@@ -45,6 +47,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "../integration/dusklight_edges.inc"
@@ -170,7 +173,9 @@ struct SlowActorClockEntry {
     int pendingTicks = 0;
 };
 
-constexpr int kAudioChannels = 2;
+// DspRender's OutputSubframe ABI reserves eight channels even in stereo.
+// Keep that full layout through resampling; inactive channels remain zero.
+constexpr int kAudioChannels = 8;
 constexpr int kAudioSubframeSize = 0x50;
 
 struct AudioOutputSubframe {
@@ -243,11 +248,11 @@ bool s_bulletTimeOwnsGyroKeepAlive = false;
 using GetGyroKeepAliveFn = bool (*)();
 using SetGyroKeepAliveFn = void (*)(bool);
 using GetGyroAimDeltasFn = void (*)(float&, float&);
-using GetSettingsFn = dusk::UserSettings& (*)();
+using GetConfigVarFn = dusk::config::ConfigVarBase* (*)(std::string_view);
 GetGyroKeepAliveFn s_getGyroKeepAlive = nullptr;
 SetGyroKeepAliveFn s_setGyroKeepAlive = nullptr;
 GetGyroAimDeltasFn s_getGyroAimDeltas = nullptr;
-GetSettingsFn s_getSettings = nullptr;
+GetConfigVarFn s_getConfigVar = nullptr;
 bool s_gyroKeepAliveSymbolsResolved = false;
 #endif
 bool s_flurryRushActive = false;
@@ -274,7 +279,7 @@ slow_motion::Controller s_flurryLinkSlowMotion;
 Clock::time_point s_lastPresentationSample{};
 GfxStageHookHandle s_edgesHook = 0;
 std::atomic<float> s_audioRate{1.0f};
-thread_local dusk::audio::MusicRateBuffer s_musicRateBuffer;
+thread_local dusk::audio::MusicRateBuffer<kAudioChannels> s_musicRateBuffer;
 thread_local NativeAudioSource s_nativeAudioSource;
 thread_local bool s_audioSlowMotionActive = false;
 std::array<LinkVoiceRateEntry, 8> s_linkVoiceRates{};
@@ -294,7 +299,7 @@ void resolve_bullet_time_gyro_symbols() {
     constexpr const char* getSymbol = "dusk::gyro::get_sensor_keep_alive";
     constexpr const char* setSymbol = "dusk::gyro::set_sensor_keep_alive";
     constexpr const char* deltasSymbol = "dusk::gyro::getAimDeltas";
-    constexpr const char* settingsSymbol = "dusk::getSettings";
+    constexpr const char* configVarSymbol = "dusk::config::GetConfigVar";
 
     void* address = nullptr;
     if (svc_hook->resolve(mod_ctx, getSymbol, &address, nullptr) == MOD_OK) {
@@ -309,16 +314,24 @@ void resolve_bullet_time_gyro_symbols() {
         s_getGyroAimDeltas = reinterpret_cast<GetGyroAimDeltasFn>(address);
     }
     address = nullptr;
-    if (svc_hook->resolve(mod_ctx, settingsSymbol, &address, nullptr) == MOD_OK) {
-        s_getSettings = reinterpret_cast<GetSettingsFn>(address);
+    if (svc_hook->resolve(mod_ctx, configVarSymbol, &address, nullptr) == MOD_OK) {
+        s_getConfigVar = reinterpret_cast<GetConfigVarFn>(address);
     }
     s_gyroKeepAliveSymbolsResolved = true;
 }
 
 bool bullet_time_gyro_enabled() {
     resolve_bullet_time_gyro_symbols();
-    return s_getSettings != nullptr &&
-           s_getSettings().game.enableGyroAim.getValue();
+    if (s_getConfigVar == nullptr) {
+        return false;
+    }
+
+    // Forks such as Lazy Tweaks insert fields into UserSettings. Resolve this
+    // registered bool by name instead of applying the upstream struct offsets.
+    // Look it up each time so absence is safe and runtime changes stay visible.
+    const auto* variable = s_getConfigVar("game.enableGyroAim");
+    return variable != nullptr &&
+           static_cast<const dusk::config::ConfigVar<bool>*>(variable)->getValue();
 }
 
 void sync_bullet_time_gyro_keep_alive() {
@@ -639,9 +652,38 @@ void stop_flurry_rush(bool releaseDamage = true) {
     }
 }
 
+float botw_minimum_ground_clearance() {
+    // Immutable native defaults, never the current jump's boosted velocity or
+    // gravity (which Bullet Time itself changes). Native posMove applies gravity
+    // BEFORE displacement: sum the rising ticks to get the actual 100% apex.
+    static const float minimum = [] {
+        const auto& jump = daAlinkHIO_autoJump_c0::m;
+        float velocity = jump.mMaxJumpSpeed * jump.mJumpSpeedRate * cM_ssin(jump.mJumpAngle);
+        float height = 0.0f;
+        for (velocity += jump.mGravity; velocity > 0.0f; velocity += jump.mGravity)
+            height += velocity;
+        return 2.0f * height;
+    }();
+    return minimum;
+}
+
+bool bullet_time_height_allowed(daAlink_c* link) {
+    const auto mode = bullet_time_mode();
+    if (mode == BulletTimeMode::Off || !link) return false;
+    if (mode == BulletTimeMode::Always) return true;
+    // Fresh Link-filtered ground query: takeoff height and the previous frame's
+    // collision cache can still refer to the ledge we just jumped away from.
+    dBgS_LinkGndChk ground;
+    ground.SetPos(&link->current.pos);
+    const float floor = dComIfG_Bgsp().GroundCross(&ground);
+    if (!std::isfinite(floor) || floor == -G_CM3D_F_INF) return false;
+    const float clearance = link->current.pos.y - floor;
+    return std::isfinite(clearance) && clearance >= botw_minimum_ground_clearance();
+}
+
 void start_bullet_time(daAlink_c* link) {
-    if (s_bulletTimeActive || s_bulletTimeUsedForJump || link == nullptr ||
-        !stamina_available_for_bullet_time())
+    if (twilit_bullet_time_enabled() || s_bulletTimeActive || s_bulletTimeUsedForJump || link == nullptr ||
+        !stamina_available_for_bullet_time() || !bullet_time_height_allowed(link))
     {
         return;
     }
@@ -1934,6 +1976,35 @@ void preserve_flurry_attack_hit(cCcD_Obj* attack, cCcD_Obj* target,
     attackInfo->SetAtHitPos(*hitPosition);
 }
 
+void show_flurry_hit_effect(cCcD_Obj* attack, cCcD_Obj* target, cXyz* hitPosition) {
+    auto* attackInfo = static_cast<dCcD_GObjInf*>(attack->GetGObjInf());
+    auto* targetInfo = static_cast<dCcD_GObjInf*>(target->GetGObjInf());
+    cCcD_Stts* attackStatus = attack->GetStts();
+    cCcD_Stts* targetStatus = target->GetStts();
+    if (attackInfo == nullptr || targetInfo == nullptr ||
+        attackStatus == nullptr || targetStatus == nullptr ||
+        attackStatus->GetGStts() == nullptr || targetStatus->GetGStts() == nullptr)
+    {
+        return;
+    }
+
+    auto* collision = dComIfG_Ccsp();
+    const bool shieldHit = collision->ChkShield(attack, target, attackInfo, targetInfo, hitPosition);
+    auto* actor = target->GetAc();
+    // A slowed actor can retain the native per-update hitmark flag across swings.
+    // The caller already deduplicates by sword attack, so allow this new impact.
+    const bool hadHitmark = fopAcM_CheckStatus(actor, fopAcStts_UNK_0x40000000_e);
+    fopAcM_OffStatus(actor, fopAcStts_UNK_0x40000000_e);
+    // Only create native particles: no target hit flags, callbacks or damage.
+    collision->ProcAtTgHitmark(true, true, attack, target, attackInfo, targetInfo,
+        attackStatus, targetStatus,
+        static_cast<dCcD_GStts*>(attackStatus->GetGStts()),
+        static_cast<dCcD_GStts*>(targetStatus->GetGStts()), hitPosition, shieldHit);
+    if (hadHitmark) {
+        fopAcM_OnStatus(actor, fopAcStts_UNK_0x40000000_e);
+    }
+}
+
 HookAction before_common_at_tg_hit(ModContext*, void* args, void*, void*) {
     if (!s_flurryRushActive || s_flurrySwordAttackSerial == 0) {
         return HOOK_CONTINUE;
@@ -1973,6 +2044,7 @@ HookAction before_common_at_tg_hit(ModContext*, void* args, void*, void*) {
     s_deferredFlurryDamage.setAttackHit = true;
     s_deferredFlurryDamage.pending = true;
 
+    show_flurry_hit_effect(attack, target, hitPosition);
     return HOOK_SKIP_ORIGINAL;
 }
 
@@ -2184,7 +2256,7 @@ void update_bullet_time_before_jump(daAlink_c* link) {
         return;
     }
 
-    if (!bullet_time_enabled() || !r_jump_enabled() || !manual_jump_is_airborne(link) ||
+    if (!bullet_time_enabled() || (!r_jump_enabled() && !revalis_gale_enabled()) || !manual_jump_is_airborne(link) ||
         Clock::now() - s_manualJumpStarted >= kManualJumpTimeout)
     {
         clear_manual_jump(link);
@@ -2271,7 +2343,8 @@ void bullet_time_tick() {
     }
 
     if (s_manualJumpOwner != nullptr) {
-        if (currentLink != s_manualJumpOwner || !bullet_time_enabled() || !r_jump_enabled()) {
+        if (currentLink != s_manualJumpOwner || !bullet_time_enabled() ||
+            (!r_jump_enabled() && !revalis_gale_enabled())) {
             clear_manual_jump(nullptr);
         } else {
             const auto now = Clock::now();
@@ -2287,6 +2360,7 @@ void bullet_time_tick() {
         }
     }
 
+    if (s_bulletTimeActive && twilit_bullet_time_enabled()) stop_bullet_time();
     if (!update_stamina(s_bulletTimeActive) && s_bulletTimeActive) {
         stop_bullet_time();
     }

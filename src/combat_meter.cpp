@@ -1,12 +1,16 @@
 #include "combat_meter.hpp"
 
 #include "hud_layout.hpp"
+#include "hud_fade.hpp"
+#include "fierce_deity_hud.hpp"
 
 #include "JSystem/J2DGraph/J2DGrafContext.h"
 #include "JSystem/J2DGraph/J2DPicture.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_meter_HIO.h"
 #include "d/d_meter2_draw.h"
+#include "d/d_meter2_info.h"
+#include "d/d_msg_object.h"
 #include "d/d_pane_class.h"
 
 #include <algorithm>
@@ -174,7 +178,62 @@ ScreenBounds combat_meter_bounds(dMeter2Draw_c* meter) {
     return result;
 }
 
+ScreenBounds position_combat_meter(dMeter2Draw_c* meter, int row, const DuskModHudTransform& meterTransform) {
+    const PaneState parent = save_pane(meter->mpMagicParent);
+    const DuskModHudTransform heartsTransform = hud_layout_hearts_transform();
+    const float heartsScale = std::max(heartsTransform.scale, 0.001f);
+    const float lifeBaseScale = std::max(g_drawHIO.mLifeParentScale, 0.001f);
+    const float relativeScale = g_drawHIO.mMagicMeterScale / lifeBaseScale;
+    meter->mpMagicParent->scale(
+        meter->mpLifeParent->getScaleX() / heartsScale * relativeScale * meterTransform.scale,
+        meter->mpLifeParent->getScaleY() / heartsScale * relativeScale * meterTransform.scale);
+    meter->mpMagicParent->paneTrans(parent.x, parent.y);
+
+    const ScreenBounds hearts = untransformed_heart_bounds(meter);
+    const ScreenBounds frame = pane_screen_bounds(meter->mpMagicFrameL);
+    const ScreenBounds meterBounds = combat_meter_bounds(meter);
+    if (hearts.valid && frame.valid && meterBounds.valid) {
+        const float lifeScaleY = std::abs(meter->mpLifeParent->getScaleY()) / heartsScale;
+        const float meterScaleY = std::abs(meter->mpMagicParent->getScaleY());
+        const float gap = -kHeartPaneOverlap * lifeScaleY;
+        const float rowStep =
+            meterBounds.bottom - meterBounds.top - kRowPaneOverlap * meterScaleY;
+        const int normalizedRow = std::max(row, 0);
+        const float targetTop = hearts.bottom + gap + normalizedRow * rowStep -
+                                normalizedRow * kAdditionalRowLiftPixels;
+        meter->mpMagicParent->paneTrans(
+            parent.x + hearts.left - frame.left + meterTransform.offset_x,
+            parent.y + targetTop - frame.top + meterTransform.offset_y);
+    }
+
+    return combat_meter_bounds(meter);
+}
+
 }  // namespace
+
+bool combat_meter_hud_visible() {
+    return dMeter2Info_getWindowStatus() == 0 && dMeter2Info_getPauseStatus() == 0 &&
+           !dComIfGp_isPauseFlag() && !dComIfGp_event_runCheck() &&
+           !dMeter2Info_isShopTalkFlag() && !dMsgObject_isTalkNowCheck();
+}
+
+float combat_meter_screen_alpha(dMeter2Draw_c* meter) {
+    if (!meter || !meter->mpKanteraScreen || !meter->mpMagicParent ||
+        !meter->mpMagicParent->getPanePtr()) return 0.0f;
+    // draw_combat_meter shows magic_n at full alpha. Its containing panes
+    // remain under the native HUD's control; the separate counter must follow.
+    auto* pane = meter->mpMagicParent->getPanePtr();
+    bool inheritAlpha = pane->isInfluencedAlpha();
+    unsigned alpha = 255;
+    for (pane = pane->getParentPane(); pane; pane = pane->getParentPane()) {
+        if (!pane->isVisible()) return 0.0f;
+        if (inheritAlpha) {
+            alpha = alpha * pane->getAlpha() / 255;
+            inheritAlpha = pane->isInfluencedAlpha();
+        }
+    }
+    return alpha / 255.0f;
+}
 
 void draw_combat_meter(
     dMeter2Draw_c* meter, float percentage, CombatMeterStyle style, int row)
@@ -230,35 +289,19 @@ void draw_combat_meter(
     meter->mpMagicBase->resize(
         meter->mpMagicBase->getInitSizeX(), meter->mpMagicBase->getInitSizeY());
 
-    const DuskModHudTransform meterTransform = combat_meter_transform(style);
-    const DuskModHudTransform heartsTransform = hud_layout_hearts_transform();
-    const float heartsScale = std::max(heartsTransform.scale, 0.001f);
-    const float lifeBaseScale = std::max(g_drawHIO.mLifeParentScale, 0.001f);
-    const float relativeScale = g_drawHIO.mMagicMeterScale / lifeBaseScale;
-    meter->mpMagicParent->scale(
-        meter->mpLifeParent->getScaleX() / heartsScale * relativeScale * meterTransform.scale,
-        meter->mpLifeParent->getScaleY() / heartsScale * relativeScale * meterTransform.scale);
-    meter->mpMagicParent->paneTrans(parent.x, parent.y);
-
-    const ScreenBounds hearts = untransformed_heart_bounds(meter);
-    const ScreenBounds frame = pane_screen_bounds(meter->mpMagicFrameL);
-    const ScreenBounds meterBounds = combat_meter_bounds(meter);
-    if (hearts.valid && frame.valid && meterBounds.valid) {
-        const float lifeScaleY = std::abs(meter->mpLifeParent->getScaleY()) / heartsScale;
-        const float meterScaleY = std::abs(meter->mpMagicParent->getScaleY());
-        const float gap = -kHeartPaneOverlap * lifeScaleY;
-        const float rowStep =
-            meterBounds.bottom - meterBounds.top - kRowPaneOverlap * meterScaleY;
-        const int normalizedRow = std::max(row, 0);
-        const float targetTop = hearts.bottom + gap + normalizedRow * rowStep -
-                                normalizedRow * kAdditionalRowLiftPixels;
-        meter->mpMagicParent->paneTrans(
-            parent.x + hearts.left - frame.left + meterTransform.offset_x,
-            parent.y + targetTop - frame.top + meterTransform.offset_y);
-    }
+    const ScreenBounds bounds = position_combat_meter(meter, row, combat_meter_transform(style));
 
     J2DGrafContext* graf = dComIfGp_getCurrentGrafPort();
-    meter->mpKanteraScreen->draw(0.0f, 0.0f, graf);
+    DawnlightFierceDeityHudFrame replacement{};
+    const bool external = style == CombatMeterStyle::FierceDeity && bounds.valid;
+    if (external) {
+        replacement = {sizeof(replacement), fierce_deity_hud_state(),
+            bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top,
+            std::abs(meter->mpMagicParent->getScaleX()), std::abs(meter->mpMagicParent->getScaleY()),
+            combat_meter_screen_alpha(meter), graf};
+    }
+    draw_combat_meter_screen(meter->mpKanteraScreen, graf,
+        style != CombatMeterStyle::FierceDeity, percentage, external ? &replacement : nullptr);
 
     fillPicture->setBlackWhite(oldBlack, oldWhite);
     restore_pane(frameR);
@@ -266,6 +309,25 @@ void draw_combat_meter(
     restore_pane(frameL);
     restore_pane(base);
     restore_pane(parent);
+}
+
+bool combat_meter_next_row_anchor(dMeter2Draw_c* meter, int row, float& x, float& y, float& scale) {
+    if (!meter || !meter->mpLifeParent || !meter->mpMagicParent || !meter->mpMagicBase ||
+        !meter->mpMagicFrameL || !meter->mpMagicFrameR || !meter->mpMagicMeter) return false;
+    const PaneState parent = save_pane(meter->mpMagicParent);
+    const PaneState right = save_pane(meter->mpMagicFrameR);
+    const PaneState base = save_pane(meter->mpMagicBase);
+    meter->mpMagicFrameR->move(meter->mpMagicFrameR->getInitPosX(), meter->mpMagicFrameR->getInitPosY());
+    meter->mpMagicBase->resize(meter->mpMagicBase->getInitSizeX(), meter->mpMagicBase->getInitSizeY());
+    const ScreenBounds bounds = position_combat_meter(meter, row, hud_layout_fierce_deity_bar_transform());
+    const ScreenBounds frame = pane_screen_bounds(meter->mpMagicFrameL);
+    x = frame.left;
+    y = bounds.bottom + 4.0f;
+    scale = std::abs(meter->mpMagicParent->getScaleX());
+    restore_pane(base);
+    restore_pane(right);
+    restore_pane(parent);
+    return bounds.valid && frame.valid;
 }
 
 }  // namespace dawnlight

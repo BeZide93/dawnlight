@@ -1,4 +1,7 @@
 #include "config.hpp"
+#include "item_slot_compat.hpp"
+#include "fierce_deity.hpp"
+#include "touch_buttons.hpp"
 #include "hud_layout.hpp"
 #include "save_state.hpp"
 #include "service_imports.hpp"
@@ -14,6 +17,7 @@
 #include "d/d_meter_button.h"
 #include "d/d_meter_HIO.h"
 #include "d/d_meter2_info.h"
+#include "d/d_menu_fmap.h"
 #include "d/d_menu_window.h"
 #include "d/d_menu_item_explain.h"
 #include "d/d_pane_class.h"
@@ -40,6 +44,9 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <string_view>
+
+#include "dusk/config_var.hpp"
 
 #if defined(__ANDROID__)
 #define private public
@@ -81,6 +88,9 @@ enum class Control {
 #endif
 
 namespace dawnlight {
+
+bool gale_shortcut_priority_active(const daAlink_c* link);
+
 namespace {
 
 constexpr u8 kZItemSlot = SELECT_ITEM_DOWN;
@@ -109,7 +119,11 @@ DEFINE_HOOK(&dMeterButton_c::setString, MeterButtonSetStringHook);
 DEFINE_HOOK(&dMeterButton_c::_execute, MeterButtonExecuteHook);
 DEFINE_HOOK(&dMeterButton_c::draw, MeterButtonDrawHook);
 DEFINE_HOOK(&dMeterMap_c::draw, MeterMapDrawHook);
+DEFINE_HOOK(static_cast<void (J2DPicture::*)(f32, f32, f32, f32, bool, bool, bool)>(
+    &J2DPicture::draw), MinimapPictureDrawHook);
 DEFINE_HOOK(&daAlink_c::midnaTalkTrigger, MidnaTalkTriggerHook);
+DEFINE_HOOK(&daAlink_c::handleQuickTransform, NativeQuickTransformHook);
+DEFINE_HOOK(&daAlink_c::handleWolfHowl, NativeWolfHowlHook);
 DEFINE_HOOK(&mDoCPd_c::read, PadReadHook);
 DEFINE_HOOK(&daAlink_c::checkItemButtonChange, CheckItemButtonChangeHook);
 DEFINE_HOOK(&daAlink_c::checkItemChangeFromButton, CheckItemChangeFromButtonHook);
@@ -119,16 +133,18 @@ DEFINE_HOOK(&daAlink_c::setHeavyBoots, SetHeavyBootsHook);
 DEFINE_HOOK(&daAlink_c::execute, PlayerExecuteHook);
 #if defined(__ANDROID__)
 DEFINE_HOOK(&PADSetVirtualStatus, PadSetVirtualStatusHook);
-DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_action_bar_stateEv",
-    void(dusk::ui::TouchControls*), TouchSyncActionBarHook);
+DEFINE_HOOK(&PADClearVirtualStatus, PadClearVirtualStatusHook);
+DEFINE_HOOK(&dMenu_Fmap_c::_move, TouchFmapMoveHook);
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui20set_control_overrideENS0_7ControlENS0_15ControlOverrideE",
+    void(dusk::ui::Control, dusk::ui::ControlOverride), TouchSetControlOverrideHook);
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls17sync_visual_stateEv",
+    void(dusk::ui::TouchControls*), TouchSyncVisualStateHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_control_displaysEv",
     void(dusk::ui::TouchControls*), TouchSyncControlDisplaysHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls19set_control_pressedENS0_7ControlEb",
     void(dusk::ui::TouchControls*, dusk::ui::Control, bool), TouchSetControlPressedHook);
 DEFINE_HOOK_SYMBOL("_ZN3Rml7Element8SetClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb",
     void(Rml::Element*, const Rml::String*, bool), RmlSetClassHook);
-DEFINE_HOOK_SYMBOL("_ZN3Rml7Element14SetPseudoClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb",
-    void(Rml::Element*, const Rml::String*, bool), RmlSetPseudoClassHook);
 DEFINE_HOOK_SYMBOL("_ZN3Rml7Element11SetInnerRMLERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE",
     void(Rml::Element*, const Rml::String*), RmlSetInnerRMLHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui17midna_icon_sourceEv", std::string(), MidnaIconSourceHook);
@@ -169,16 +185,8 @@ bool s_zHeavyBootsWaitRelease = false;
 u8 s_zHeavyBootsGuardFrames = 0;
 bool s_dpadLeftHeld = false;
 bool s_dpadLeftTrig = false;
-bool s_touchMidnaTrig = false;
 bool s_touchZItemHeld = false;
 bool s_touchZItemTrig = false;
-u8 s_touchMidnaBlockStartFrames = 0;
-bool s_inTouchActionBarSync = false;
-Rml::Element* s_skipTouchElement = nullptr;
-Rml::Element* s_skipTouchRmlElement = nullptr;
-bool s_skipTouchMidnaMode = false;
-bool s_skipTouchMidnaPressed = false;
-std::string s_skipTouchMidnaSource;
 bool s_midnaPromptThisFrame = false;
 bool s_zPromptCustomVisualsActive = false;
 bool s_hideZPromptButton = false;
@@ -200,7 +208,54 @@ Rml::Element* s_zTouchMeterButton = nullptr;
 Rml::Element* s_zTouchMeterContainer = nullptr;
 std::string s_zTouchMeterRml;
 bool s_inTouchControlDisplaySync = false;
+dusk::ui::ControlOverride s_hostLTouchOverride = dusk::ui::ControlOverride::Default;
+bool s_mapLTouchOverrideActive = false;
+bool s_touchMapLRawHeld = false;
+bool s_touchMapLHeld = false;
+bool s_touchMapLPressed = false;
+u32 s_touchMapZHeldOriginal = 0;
+u32 s_touchMapZPressedOriginal = 0;
+bool s_touchMapPortalInputActive = false;
 #endif
+
+// The host escapes dots as '_' and existing underscores as '__' in mod CVar IDs.
+using ZSlotGetConfigVarFn = dusk::config::ConfigVarBase* (*)(std::string_view);
+
+bool z_slot_provider_enabled(ZSlotGetConfigVarFn getVar,
+    const char* enabledKey, const char* slotKey)
+{
+    const auto readBool = [getVar](const char* key, bool fallback) {
+        const auto* var = getVar(key);
+        return var ? static_cast<const dusk::config::ConfigVar<bool>*>(var)->getValue() :
+                     fallback;
+    };
+    // Both providers default their third slot to on. Older versions may not
+    // register the feature toggle, but a disabled/absent mod never owns the slot.
+    return readBool(enabledKey, false) && readBool(slotKey, true);
+}
+
+const char* z_slot_provider_notice() {
+    void* address = nullptr;
+    if (svc_hook == nullptr || svc_hook->resolve == nullptr ||
+        svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) != MOD_OK ||
+        address == nullptr)
+        return "Z Items unavailable: provider check failed.";
+    const auto getVar = reinterpret_cast<ZSlotGetConfigVarFn>(address);
+    if (z_slot_provider_enabled(getVar,
+            "mod.org_twilight_hd__hud.enabled", "mod.org_twilight_hd__hud.third-item-slot"))
+        return "Z Items: Twilight HD HUD.";
+    if (z_slot_provider_enabled(getVar, "mod.com_dusklight_twilit__essentials.enabled",
+            "mod.com_dusklight_twilit__essentials.customZButtonEnabled"))
+        return "Z Items: Twilit Essentials.";
+    return nullptr;
+}
+
+bool select_dawnlight_z_slot() {
+    if (!z_item_slot_enabled()) return false;
+    const char* notice = z_slot_provider_notice();
+    if (notice && svc_log) svc_log->info(mod_ctx, notice);
+    return notice == nullptr;
+}
 
 bool z_item_slot_active() {
     return s_zItemSlotSessionEnabled;
@@ -257,18 +312,22 @@ enum class HudPaneSlot : std::size_t {
     TextB,
     ButtonX,
     ItemX,
+    ItemXSecondary,
     LightX,
     TextX,
     ButtonY,
     ItemY,
+    ItemYSecondary,
     LightY,
     TextY,
     ButtonZ,
     ItemZ,
+    ItemZSecondary,
     LightZ,
     TextZ,
     Backing,
     DPad,
+    Midna,
     DPadItemsText,
     DPadMapText,
     Hearts,
@@ -279,6 +338,7 @@ enum class HudPaneSlot : std::size_t {
     Rupee1,
     Rupee2,
     Keys,
+    TearsOfLight,
     Count,
 };
 
@@ -306,6 +366,19 @@ struct HudPaneVisibilityState {
 std::array<HudPaneVisibilityState, 4> s_dpadArrowVisibility;
 std::array<HudPaneVisibilityState, 4> s_dpadShadowVisibility;
 
+std::array<HudPaneVisibilityState, 4> s_hdHudGlyphVisibility;
+void* s_hdHudGlyphDraw = nullptr;
+ZSlotGetConfigVarFn s_hdHudGetConfigVar = nullptr;
+bool s_hdHudConfigLookupAttempted = false;
+
+struct RoundButtonOverlayState {
+    J2DPicture* picture = nullptr;
+    std::array<JUtility::TColor, 4> corners;
+};
+std::array<RoundButtonOverlayState, 32> s_roundXYOverlays;
+std::size_t s_roundXYOverlayCount = 0;
+J2DScreen* s_roundXYOverlayScreen = nullptr;
+
 struct GaugeDrawState {
     dMeter2Draw_c* meter = nullptr;
     J2DPane* pane = nullptr;
@@ -318,7 +391,6 @@ GaugeDrawState s_gaugeDraw;
 
 struct MinimapTransformState {
     dMeterMap_c* map = nullptr;
-    f32 drawPosX = 0.0f;
     f32 drawPosY = 0.0f;
     f32 sizeW = 0.0f;
     f32 sizeH = 0.0f;
@@ -343,12 +415,6 @@ dMeter2Draw_c* s_roundHudMeter = nullptr;
 dMeter2Draw_c* s_hudLayoutMeter = nullptr;
 J2DScreen* s_hudLayoutScreen = nullptr;
 bool s_interactionPromptLayout = false;
-
-bool consume_touch_midna_trigger() {
-    const bool triggered = s_touchMidnaTrig;
-    s_touchMidnaTrig = false;
-    return triggered;
-}
 
 J2DPane* prompt_pane(dMeterButton_c* meter, u64 tag) {
     return meter != nullptr && meter->mpButtonScreen != nullptr ? meter->mpButtonScreen->search(tag) :
@@ -575,12 +641,6 @@ bool is_z_lantern_item(u8 itemNo);
 bool z_item_has_ammo(u8 itemNo);
 bool z_item_ammo_values(u8 itemNo, u8& itemNum, u8& itemMax);
 
-struct PaneRenderState {
-    J2DPane* pane = nullptr;
-    u8 alpha = 0;
-    bool visible = false;
-};
-
 ResTIMG* z_hud_item_tex(const u8 page, const u8 layer) {
     return reinterpret_cast<ResTIMG*>(s_zHudItemTexBuf[page][layer]);
 }
@@ -623,10 +683,12 @@ bool boss_rush_save_active() {
 }
 
 bool midna_touch_available() {
-    return midna_unlocked() || boss_rush_save_active();
+    return boss_rush_save_active() ||
+           (dComIfGs_isEventBit(dSv_event_flag_c::M_067) &&
+            !dComIfGs_isEventBit(dSv_event_flag_c::F_0800));
 }
 
-bool skip_touch_can_be_midna() {
+bool midna_touch_button_ready() {
     return dawnlight_touch_ui_active() && !cutscene_skip_touch_visible() &&
            !touch_midna_controls_suppressed() && midna_touch_available() &&
            dComIfGp_getLinkPlayer() != nullptr;
@@ -740,111 +802,7 @@ void sync_z_touch_item_meter(Rml::Element* button) {
     s_zTouchMeterRml = rml;
 }
 
-void set_skip_touch_rml(Rml::Element* element, const std::string& rml) {
-    if (element == nullptr || RmlSetInnerRMLHook::g_orig == nullptr) {
-        return;
-    }
-    RmlSetInnerRMLHook::g_orig(element, &rml);
-}
-
-void set_skip_touch_hidden(Rml::Element* element, const bool hidden) {
-    if (element == nullptr || RmlSetPseudoClassHook::g_orig == nullptr) {
-        return;
-    }
-
-    const std::string hiddenClass = "hidden";
-    RmlSetPseudoClassHook::g_orig(element, &hiddenClass, hidden);
-}
-
-void sync_skip_touch_midna_button(Rml::Element* element) {
-    const std::string source = true_midna_icon_source();
-    if (element == s_skipTouchRmlElement && s_skipTouchMidnaMode &&
-        source == s_skipTouchMidnaSource)
-    {
-        return;
-    }
-
-    s_skipTouchElement = element;
-    s_skipTouchRmlElement = element;
-    s_skipTouchMidnaMode = true;
-
-    if (source.empty()) {
-        s_skipTouchMidnaSource.clear();
-        set_skip_touch_rml(element, "<span>Midna</span>");
-        return;
-    }
-
-    s_skipTouchMidnaSource = source;
-    set_skip_touch_rml(element,
-        "<img class=\"midna-icon visible\" src=\"" + source + "\" /><span></span>");
-}
-
-void restore_skip_touch_button(Rml::Element* element) {
-    if (element == s_skipTouchRmlElement && !s_skipTouchMidnaMode) {
-        return;
-    }
-
-    s_skipTouchElement = element;
-    s_skipTouchRmlElement = element;
-    s_skipTouchMidnaMode = false;
-    s_skipTouchMidnaPressed = false;
-    s_skipTouchMidnaSource.clear();
-    set_skip_touch_rml(element, "<icon><glyph>&#xe044;</glyph></icon>");
-}
-
-void collect_pane_render_state(
-    J2DPane* pane, std::array<PaneRenderState, 64>& states, size_t& count) {
-    if (pane == nullptr || count >= states.size()) {
-        return;
-    }
-
-    states[count++] = {
-        .pane = pane,
-        .alpha = pane->getAlpha(),
-        .visible = pane->isVisible(),
-    };
-    pane->show();
-    pane->setAlpha(255);
-
-    for (J2DPane* child = pane->getFirstChildPane(); child != nullptr;
-         child = child->getNextChildPane())
-    {
-        collect_pane_render_state(child, states, count);
-    }
-}
-
-void restore_pane_render_state(const std::array<PaneRenderState, 64>& states, size_t count) {
-    while (count > 0) {
-        const PaneRenderState& state = states[--count];
-        if (state.pane == nullptr) {
-            continue;
-        }
-
-        state.pane->setAlpha(state.alpha);
-        if (state.visible) {
-            state.pane->show();
-        } else {
-            state.pane->hide();
-        }
-    }
-}
-
-void refresh_midna_touch_icon_texture(J2DPane* midnaPane) {
-    if (midnaPane == nullptr || UpdateMidnaIconTextureHook::g_orig == nullptr) {
-        return;
-    }
-
-    std::array<PaneRenderState, 64> states{};
-    size_t count = 0;
-    collect_pane_render_state(midnaPane, states, count);
-    UpdateMidnaIconTextureHook::g_orig(midnaPane);
-    restore_pane_render_state(states, count);
-}
-#else
-void set_skip_touch_hidden(Rml::Element*, bool) {}
-void sync_skip_touch_midna_button(Rml::Element*) {}
-void restore_skip_touch_button(Rml::Element*) {}
-void refresh_midna_touch_icon_texture(J2DPane*) {}
+#include "touch_midna_capture.inc"
 #endif
 
 u8 hud_layout_item(u8 itemNo) {
@@ -1254,10 +1212,14 @@ void clear_shared_hud_layout_cache() {
     s_hudTextBoxFlags = {};
     s_dpadArrowVisibility = {};
     s_dpadShadowVisibility = {};
+    s_hdHudGlyphVisibility = {};
+    s_hdHudGlyphDraw = nullptr;
     s_xyAmmoOriginalParams = {};
     s_xyAmmoOriginalValid = {};
     s_externalZAmmoDraw = {};
     s_gaugeDraw = {};
+    s_roundXYOverlayCount = 0;
+    s_roundXYOverlayScreen = nullptr;
     s_roundPictureStates = {};
     s_roundHudMeter = nullptr;
     s_hudLayoutMeter = nullptr;
@@ -1302,9 +1264,11 @@ void apply_hud_text_box_binding(const HudPaneSlot slot, const std::size_t index,
         return;
     }
 
-    if (!enabled) {
+    // GameCube copies keep the native/HD HUD alignment, including centered
+    // HD action labels. Position and scale edits still apply independently.
+    if (!enabled || textAnchor == kHudTextAnchorOriginal) {
         if (state.active && state.textBox == textBox) {
-            textBox->mFlags = state.originalFlags;
+            textBox->mFlags = (textBox->mFlags & ~0x0C) | (state.originalFlags & 0x0C);
         }
         state = {};
         return;
@@ -1319,6 +1283,18 @@ void apply_hud_text_box_binding(const HudPaneSlot slot, const std::size_t index,
     }
 
     set_text_box_h_binding(textBox, hud_text_anchor_binding(textAnchor));
+}
+
+void restore_hud_text_box_bindings() {
+    for (auto& group : s_hudTextBoxFlags) {
+        for (auto& state : group) {
+            if (state.active && state.textBox != nullptr) {
+                state.textBox->mFlags = (state.textBox->mFlags & ~0x0C) |
+                    (state.originalFlags & 0x0C);
+            }
+            state = {};
+        }
+    }
 }
 
 void apply_hud_text_box_group_binding(const HudPaneSlot slot, CPaneMgr* const* panes,
@@ -1383,6 +1359,18 @@ void apply_hud_pane_transform(const HudPaneSlot slot, CPaneMgrAlpha* pane, const
     const f32 offsetX, const f32 offsetY, const f32 scale) {
     apply_hud_pane_transform(hud_pane_state(slot), pane_ptr(pane), enabled, offsetX, offsetY,
         scale);
+}
+
+// HD HUD reparents the secondary item picture (bottle glass / bow) beside
+// the primary picture. Native children already inherit the editor transform.
+void apply_hud_item_secondary_transform(const HudPaneSlot slot, J2DPane* primary,
+    J2DPane* secondary, const bool enabled, const f32 offsetX, const f32 offsetY,
+    const f32 scale) {
+    const bool sibling = primary != nullptr && secondary != nullptr &&
+        primary->getParentPane() != nullptr &&
+        secondary->getParentPane() == primary->getParentPane();
+    apply_hud_pane_transform(hud_pane_state(slot), secondary,
+        enabled && sibling, offsetX, offsetY, scale);
 }
 
 void apply_hud_text_pane_transform(const HudPaneSlot slot, CPaneMgr* pane, const bool enabled,
@@ -1554,6 +1542,29 @@ void apply_hud_action_button_layout(dMeter2Draw_c* meter, const bool enabled) {
         HudPaneSlot::TextB, meter->mpBText, 5, enabled, bLayout.text_anchor);
 }
 
+void apply_midna_hud_layout(dMeter2Draw_c* meter) {
+    if (meter == nullptr) {
+        return;
+    }
+    // Apply to the final native/HD/Dawnlight Midna anchor independently of who
+    // owns the third item slot. The regular restore pass prevents accumulation.
+    const DuskModHudTransform midnaTransform = hud_layout_midna_transform();
+    apply_hud_pane_transform(HudPaneSlot::Midna, meter->mpButtonMidona,
+        hardcoded_hud_layout_enabled(), midnaTransform.offset_x, midnaTransform.offset_y,
+        midnaTransform.scale);
+}
+
+void apply_tears_of_light_hud_layout(dMeter2Draw_c* meter) {
+    if (meter == nullptr) {
+        return;
+    }
+    // Transform the complete vessel after native presentation / HUD mods.
+    // Leave its visibility, collection progress and animation state untouched.
+    const DuskModHudTransform transform = hud_layout_tears_of_light_transform();
+    apply_hud_pane_transform(HudPaneSlot::TearsOfLight, meter->mpLightDropParent,
+        hardcoded_hud_layout_enabled(), transform.offset_x, transform.offset_y, transform.scale);
+}
+
 void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     if (meter == nullptr) {
         return;
@@ -1610,13 +1621,26 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
         zTransform.offset_x + zLayout.text_offset_x,
         zTransform.offset_y + zLayout.text_offset_y, hud_text_scale(zTransform, zLayout));
 
-    const bool externalZItem = enabled && !z_item_slot_active();
-    apply_hud_pane_transform(HudPaneSlot::ItemZ, meter->mpItemR, externalZItem,
+    apply_hud_pane_transform(HudPaneSlot::ItemZ, meter->mpItemR, enabled,
         zTransform.offset_x + zLayout.item_offset_x,
         zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
-    apply_hud_pane_transform(HudPaneSlot::LightZ, meter->mpLightXY[2], externalZItem,
+    apply_hud_pane_transform(HudPaneSlot::LightZ, meter->mpLightXY[2], enabled,
         zTransform.offset_x + zLayout.item_offset_x,
         zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
+
+    apply_hud_item_secondary_transform(HudPaneSlot::ItemXSecondary,
+        pane_ptr(meter->mpItemXY[0]), meter->mpItemXYPane[0], enabled,
+        xItemOffsetX, xItemOffsetY, hud_item_scale(xTransform, xLayout));
+    apply_hud_item_secondary_transform(HudPaneSlot::ItemYSecondary,
+        pane_ptr(meter->mpItemXY[1]), meter->mpItemXYPane[1], enabled,
+        yItemOffsetX, yItemOffsetY, hud_item_scale(yTransform, yLayout));
+    apply_hud_item_secondary_transform(HudPaneSlot::ItemZSecondary,
+        pane_ptr(meter->mpItemR), meter->mpItemXYPane[2], enabled,
+        zTransform.offset_x + zLayout.item_offset_x,
+        zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
+
+    apply_midna_hud_layout(meter);
+    apply_tears_of_light_hud_layout(meter);
 
     const DuskModHudTransform backingTransform = hud_layout_backing_transform();
     apply_hud_pane_transform(HudPaneSlot::Backing, meter->mpUzu, enabled,
@@ -1741,7 +1765,6 @@ void apply_wii_u_minimap_layout(dMeterMap_c* map) {
 
     s_wiiUMinimapTransform = {
         .map = map,
-        .drawPosX = map->mDrawPosX,
         .drawPosY = map->mDrawPosY,
         .sizeW = map->mSizeW,
         .sizeH = map->mSizeH,
@@ -1749,12 +1772,6 @@ void apply_wii_u_minimap_layout(dMeterMap_c* map) {
     };
 
     const DuskModHudTransform transform = hud_layout_minimap_transform();
-    if (transform.slide_direction == kHudSlideRightToLeft) {
-        const f32 insidePosX =
-            map->mDrawPosX - (static_cast<f32>(map->mSlidePositionOffset) * 2.0f);
-        map->mDrawPosX = insidePosX - (map->mDrawPosX - insidePosX);
-    }
-    map->mDrawPosX += transform.offset_x;
     map->mDrawPosY += transform.offset_y;
     map->mSizeW *= transform.scale;
     map->mSizeH *= transform.scale;
@@ -1766,11 +1783,31 @@ void restore_wii_u_minimap_layout(dMeterMap_c* map) {
         return;
     }
 
-    map->mDrawPosX = s_wiiUMinimapTransform.drawPosX;
     map->mDrawPosY = s_wiiUMinimapTransform.drawPosY;
     map->mSizeW = s_wiiUMinimapTransform.sizeW;
     map->mSizeH = s_wiiUMinimapTransform.sizeH;
     s_wiiUMinimapTransform = {};
+}
+
+HookAction before_minimap_picture_draw(ModContext*, void* args, void*, void*) {
+    const auto& state = s_wiiUMinimapTransform;
+    if (!state.active || state.map == nullptr ||
+        mods::arg<J2DPicture*>(args, 0) != state.map->mMapJ2DPicture)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    // draw() advances presentation interpolation and then recomputes X. Edit
+    // only the final picture argument, leaving native slide state/targets intact.
+    const DuskModHudTransform transform = hud_layout_minimap_transform();
+    f32& x = mods::arg_ref<f32>(args, 1);
+    x += transform.offset_x;
+    if (transform.slide_direction == kHudSlideRightToLeft) {
+        // Native X includes the slide twice (directly and via the edge getter).
+        // Reflect that displacement about the fully open position.
+        x -= 4.0f * state.map->mSlidePositionOffset;
+    }
+    return HOOK_CONTINUE;
 }
 
 J2DPane* item_wheel_z_anchor(J2DScreen* screen) {
@@ -2013,25 +2050,15 @@ void layout_z_hud_item(dMeter2Draw_c* meter, const u8 itemNo) {
         meter->mpItemR->getSizeY() * 0.5f, ROTATE_Z,
         meter->mItemParams[dMeter2Draw_c::SELECT_Z_e].rotation);
 
-    const DuskModHudTransform hudTransform = hud_layout_z_transform();
-    const DuskModHudButtonLayout buttonLayout = hud_layout_z_button_layout();
-    const f32 hudScale = hudTransform.scale;
-    const f32 itemScale = buttonLayout.item_scale > 0.0f ? buttonLayout.item_scale : 1.0f;
-    const f32 itemOffsetX = buttonLayout.item_offset_x;
-    const f32 itemOffsetY = buttonLayout.item_offset_y;
-
-    meter->mpItemR->scale(g_drawHIO.mButtonZItemScale * hudScale * itemScale,
-        g_drawHIO.mButtonZItemScale * hudScale * itemScale);
-    meter->mpItemR->paneTrans(g_drawHIO.mButtonZItemPosX + meter->field_0x6ac[2] +
-            itemOffsetX + hudTransform.offset_x,
-        g_drawHIO.mButtonZItemPosY + meter->field_0x6b8[2] + itemOffsetY +
-            hudTransform.offset_y);
-
-    meter->mpLightXY[2]->scale(g_drawHIO.mButtonZItemBaseScale * hudScale * itemScale,
-        g_drawHIO.mButtonZItemBaseScale * hudScale * itemScale);
-    meter->mpLightXY[2]->paneTrans(g_drawHIO.mButtonZItemBasePosX + itemOffsetX +
-            hudTransform.offset_x,
-        g_drawHIO.mButtonZItemBasePosY + itemOffsetY + hudTransform.offset_y);
+    // Editor transforms belong to the final screen draw, after presentation
+    // and other HUD mods have laid out all item layers.
+    meter->mpItemR->scale(g_drawHIO.mButtonZItemScale, g_drawHIO.mButtonZItemScale);
+    meter->mpItemR->paneTrans(g_drawHIO.mButtonZItemPosX + meter->field_0x6ac[2],
+        g_drawHIO.mButtonZItemPosY + meter->field_0x6b8[2]);
+    meter->mpLightXY[2]->scale(g_drawHIO.mButtonZItemBaseScale,
+        g_drawHIO.mButtonZItemBaseScale);
+    meter->mpLightXY[2]->paneTrans(g_drawHIO.mButtonZItemBasePosX,
+        g_drawHIO.mButtonZItemBasePosY);
 }
 
 bool is_z_lantern_item(const u8 itemNo) {
@@ -2311,7 +2338,6 @@ void move_midna_hud_to_dpad(dMeter2Draw_c* meter) {
         return;
     }
 
-    const DuskModHudTransform midnaTransform = hud_layout_midna_transform();
     J2DPane* midnaPane = meter->mpScreen->search(MULTI_CHAR('midona_n'));
     if (midnaPane == nullptr) {
         return;
@@ -2332,9 +2358,9 @@ void move_midna_hud_to_dpad(dMeter2Draw_c* meter) {
         set_pane_influenced_alpha_tree(midnaPane, true);
     }
 
-    const f32 scale = g_drawHIO.mMidnaIconScale * midnaTransform.scale;
+    const f32 scale = g_drawHIO.mMidnaIconScale;
     midnaPane->scale(scale, scale);
-    midnaPane->move(-18.0f + midnaTransform.offset_x, midnaTransform.offset_y);
+    midnaPane->move(-18.0f, 0.0f);
 
     if (boss_rush_save_active() && meter->isEmphasisZ() &&
         dComIfGp_getZStatus() == BUTTON_STATUS_CHECK && dComIfGp_isZSetFlag(BUTTON_STATUS_FLAG_EMPHASIS))
@@ -2882,25 +2908,17 @@ void after_pad_read(ModContext*, void*, void*, void*) {
     if (!zItemsActive && !touchUiActive) {
         s_dpadLeftHeld = false;
         s_dpadLeftTrig = false;
-        s_touchMidnaTrig = false;
         s_touchZItemHeld = false;
         s_touchZItemTrig = false;
-        s_skipTouchMidnaPressed = false;
-        s_touchMidnaBlockStartFrames = 0;
         return;
     }
 
     interface_of_controller_pad& pad = mDoCPd_c::getCpadInfo(PAD_1);
-    if (touchUiActive && s_touchMidnaBlockStartFrames != 0) {
-        pad.mButtonFlags &= ~PAD_BUTTON_START;
-        pad.mPressedButtonFlags &= ~PAD_BUTTON_START;
-        --s_touchMidnaBlockStartFrames;
-    }
 
-    if (touchUiActive && s_touchZItemHeld && dComIfGp_getLinkPlayer() != nullptr &&
+    if (touchUiActive && (s_touchZItemHeld || s_touchZItemTrig) && dComIfGp_getLinkPlayer() != nullptr &&
         daAlink_getAlinkActorClass() != nullptr)
     {
-        pad.mButtonFlags |= PAD_TRIGGER_Z;
+        if (s_touchZItemHeld) pad.mButtonFlags |= PAD_TRIGGER_Z;
         if (s_touchZItemTrig) {
             pad.mPressedButtonFlags |= PAD_TRIGGER_Z;
         }
@@ -2910,11 +2928,6 @@ void after_pad_read(ModContext*, void*, void*, void*) {
     if (!zItemsActive) {
         s_dpadLeftHeld = false;
         s_dpadLeftTrig = false;
-        if (dComIfGp_getLinkPlayer() == nullptr || daAlink_getAlinkActorClass() == nullptr ||
-            z_item_menu_or_pause_context())
-        {
-            s_touchMidnaTrig = false;
-        }
         return;
     }
 
@@ -2923,7 +2936,6 @@ void after_pad_read(ModContext*, void*, void*, void*) {
     {
         s_dpadLeftHeld = false;
         s_dpadLeftTrig = false;
-        s_touchMidnaTrig = false;
         return;
     }
 
@@ -2965,8 +2977,127 @@ HookAction before_meter_draw_restore_hud(ModContext*, void* args, void*, void*) 
         return HOOK_CONTINUE;
     }
 
+    // Restore before native/HD presentation snapshots the next frame. This
+    // also lets Original follow live HUD changes after an explicit anchor.
+    restore_hud_text_box_bindings();
     restore_hud_layout_base();
     return HOOK_CONTINUE;
+}
+
+bool twilight_hd_hud_active() {
+    if (!s_hdHudConfigLookupAttempted) {
+        s_hdHudConfigLookupAttempted = true;
+        void* address = nullptr;
+        if (svc_hook != nullptr && svc_hook->resolve != nullptr &&
+            svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) == MOD_OK)
+        {
+            s_hdHudGetConfigVar = reinterpret_cast<ZSlotGetConfigVarFn>(address);
+        }
+    }
+    // Look up the variable each draw; another mod can unregister/re-register it.
+    // HUD styling is independent of HD HUD's optional third-item-slot setting.
+    const auto* enabled = s_hdHudGetConfigVar ?
+        s_hdHudGetConfigVar("mod.org_twilight_hd__hud.enabled") : nullptr;
+    return enabled != nullptr &&
+        static_cast<const dusk::config::ConfigVar<bool>*>(enabled)->getValue();
+}
+
+HookAction before_hd_hud_glyph_draw(ModContext*, void* args, void*, void*) {
+    auto* screen = mods::arg<J2DScreen*>(args, 0);
+    if (s_hdHudGlyphDraw != nullptr || s_hudLayoutMeter == nullptr || screen == nullptr ||
+        screen != s_hudLayoutScreen || !twilight_hd_hud_active())
+    {
+        return HOOK_CONTINUE;
+    }
+
+    s_hdHudGlyphDraw = args;
+    // HD HUD's discs include their own letters. Its archive still contains the
+    // stock letter pictures, displaced to the right. Moving the complete button
+    // groups left brings these obsolete pictures back on screen unless hidden.
+    const std::array<CPaneMgr*, 4> glyphs = {s_hudLayoutMeter->mpBTextA,
+        s_hudLayoutMeter->mpBTextB, s_hudLayoutMeter->mpBTextXY[0],
+        s_hudLayoutMeter->mpBTextXY[1]};
+    for (std::size_t i = 0; i < glyphs.size(); ++i) {
+        auto* pane = pane_ptr(glyphs[i]);
+        if (pane == nullptr) continue;
+        s_hdHudGlyphVisibility[i] = {pane, pane->isVisible(), true};
+        pane->hide();
+    }
+    return HOOK_CONTINUE;
+}
+
+void after_hd_hud_glyph_draw(ModContext*, void* args, void*, void*) {
+    // Unrelated/nested draws (including draws skipped by another mod) cannot
+    // restore the outer HUD's letters early.
+    if (s_hdHudGlyphDraw == nullptr || s_hdHudGlyphDraw != args) return;
+    for (auto& state : s_hdHudGlyphVisibility) {
+        if (state.active) {
+            if (state.wasVisible) state.pane->show();
+            else state.pane->hide();
+        }
+        state = {};
+    }
+    s_hdHudGlyphDraw = nullptr;
+}
+
+void suppress_round_button_overlays(J2DPane* pane, J2DPicture* base, J2DPane* glyph) {
+    if (pane == nullptr || pane == glyph) return;
+
+    if (auto* picture = as_picture(pane);
+        picture != nullptr && picture != base && s_roundXYOverlayCount < s_roundXYOverlays.size())
+    {
+        auto& state = s_roundXYOverlays[s_roundXYOverlayCount++];
+        state.picture = picture;
+        std::array<JUtility::TColor, 4> transparent;
+        for (std::size_t i = 0; i < state.corners.size(); ++i) {
+            state.corners[i] = picture->corner(i);
+            transparent[i] = state.corners[i];
+            transparent[i].a = 0;
+        }
+        // Vertex alpha suppresses this artwork without hiding a letter or
+        // replacement button nested beneath the picture in the pane tree.
+        picture->setCornerColor(transparent[0], transparent[1], transparent[2], transparent[3]);
+    }
+    for (auto* child = pane->getFirstChildPane(); child != nullptr;
+         child = child->getNextChildPane())
+    {
+        suppress_round_button_overlays(child, base, glyph);
+    }
+}
+
+HookAction before_round_xy_screen_draw(ModContext*, void* args, void*, void*) {
+    auto* screen = mods::arg<J2DScreen*>(args, 0);
+    if (!round_xy_buttons_enabled() || s_hudLayoutMeter == nullptr || screen == nullptr ||
+        screen != s_hudLayoutScreen)
+    {
+        return HOOK_CONTINUE;
+    }
+
+    s_roundXYOverlayCount = 0;
+    s_roundXYOverlayScreen = screen;
+    for (std::size_t i = 0; i < 2; ++i) {
+        auto* button = s_hudLayoutMeter->mpButtonXY[i];
+        auto* label = s_hudLayoutMeter->mpBTextXY[i];
+        auto* root = button != nullptr ? button->getPanePtr() : nullptr;
+        auto* base = first_picture_pane(root);
+        auto* glyph = label != nullptr ? label->getPanePtr() : nullptr;
+        // Do not alter an incomplete group if its base or letter is absent.
+        if (base != nullptr && glyph != nullptr) {
+            suppress_round_button_overlays(root, base, glyph);
+        }
+    }
+    return HOOK_CONTINUE;
+}
+
+void after_round_xy_screen_draw(ModContext*, void* args, void*, void*) {
+    if (mods::arg<J2DScreen*>(args, 0) != s_roundXYOverlayScreen) return;
+    for (std::size_t i = 0; i < s_roundXYOverlayCount; ++i) {
+        const auto& state = s_roundXYOverlays[i];
+        state.picture->setCornerColor(
+            state.corners[0], state.corners[1], state.corners[2], state.corners[3]);
+    }
+    s_roundXYOverlayCount = 0;
+    s_roundXYOverlayScreen = nullptr;
 }
 
 HookAction before_meter_draw(ModContext*, void* args, void*, void*) {
@@ -3092,15 +3223,6 @@ void after_meter_gauge_screen(ModContext*, void*, void*, void*) {
 
 void after_meter_midna_alpha(ModContext*, void* args, void*, void*) {
     auto* meter = mods::arg<dMeter2Draw_c*>(args, 0);
-    if (dawnlight_touch_ui_active() && meter != nullptr && meter->mpButtonMidona != nullptr) {
-        refresh_midna_touch_icon_texture(meter->mpButtonMidona->getPanePtr());
-#if defined(__ANDROID__)
-        if (s_skipTouchElement != nullptr && !cutscene_skip_touch_visible())
-        {
-            sync_skip_touch_midna_button(s_skipTouchElement);
-        }
-#endif
-    }
     if (z_item_slot_active()) {
         move_midna_hud_to_dpad(meter);
     }
@@ -3198,7 +3320,7 @@ HookAction before_midna_talk_trigger(ModContext*, void* args, void* retval, void
         return HOOK_CONTINUE;
     }
 
-    const bool touchTriggered = consume_touch_midna_trigger();
+    const bool touchTriggered = consume_midna_touch_press();
     if (z_item_slot_active()) {
         *static_cast<BOOL*>(retval) = s_dpadLeftTrig || touchTriggered;
         return HOOK_SKIP_ORIGINAL;
@@ -3500,17 +3622,105 @@ void after_meter_button_draw(ModContext*, void* args, void*, void*) {
     draw_z_prompt_dpad(mods::arg<dMeterButton_c*>(args, 0));
 }
 
+#include "native_shortcut_compat.inc"
+
 #if defined(__ANDROID__)
+bool map_l_touch_override_needed() {
+    const auto windowStatus = dMeter2Info_getWindowStatus();
+    // dMw_c uses 4 for the field map and 5 for the dungeon map, including
+    // their opening/closing animations. Other menus keep the host behavior.
+    return dawnlight_touch_ui_active() && (windowStatus == 4 || windowStatus == 5);
+}
+
+void sync_map_l_touch_override() {
+    if (TouchSetControlOverrideHook::g_orig == nullptr) {
+        return;
+    }
+
+    const bool mapActive = map_l_touch_override_needed();
+    if (mapActive || s_mapLTouchOverrideActive) {
+        // Action keeps L visible and uses momentary input instead of target
+        // locking. Apply before sync_visual_state can hide/release the button.
+        TouchSetControlOverrideHook::g_orig(dusk::ui::Control::L,
+            mapActive ? dusk::ui::ControlOverride::Action : s_hostLTouchOverride);
+    }
+    s_mapLTouchOverrideActive = mapActive;
+}
+
+HookAction before_touch_set_control_override(ModContext*, void* args, void*, void*) {
+    if (mods::arg<dusk::ui::Control>(args, 0) == dusk::ui::Control::L) {
+        auto& requested = mods::arg_ref<dusk::ui::ControlOverride>(args, 1);
+        // Remember the latest host/other-mod request so closing the map does
+        // not clear an L action that belongs to another menu.
+        s_hostLTouchOverride = requested;
+        s_mapLTouchOverrideActive = map_l_touch_override_needed();
+        if (s_mapLTouchOverrideActive) {
+            requested = dusk::ui::ControlOverride::Action;
+        }
+    }
+    return HOOK_CONTINUE;
+}
+
+HookAction before_touch_sync_visual_state(ModContext*, void*, void*, void*) {
+    sync_map_l_touch_override();
+    return HOOK_CONTINUE;
+}
+
 HookAction before_pad_set_virtual_status(ModContext*, void* args, void*, void*) {
     if (!dawnlight_touch_ui_active() || mods::arg<u32>(args, 0) != PAD_1) {
         return HOOK_CONTINUE;
     }
 
     auto* status = const_cast<PADStatus*>(mods::arg<const PADStatus*>(args, 1));
+    s_touchMapLRawHeld = status != nullptr && (status->button & PAD_TRIGGER_L) != 0;
     if (status != nullptr) {
         status->button &= ~PAD_TRIGGER_Z;
     }
     return HOOK_CONTINUE;
+}
+
+HookAction before_pad_clear_virtual_status(ModContext*, void* args, void*, void*) {
+    if (mods::arg<u32>(args, 0) == PAD_1) {
+        s_touchMapLRawHeld = false;
+    }
+    return HOOK_CONTINUE;
+}
+
+void observe_map_touch_input(ModContext*, void*, void*, void*) {
+    // Observe the host's accepted input before TPHD's Fixed mode rebuilds L/R
+    // from physical triggers. Requiring both sources respects input blocking
+    // and prevents a physical L press from becoming a second portal shortcut.
+    const auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
+    const bool held = dawnlight_touch_ui_active() && dMeter2Info_getWindowStatus() == 4 &&
+        s_touchMapLRawHeld && (pad.mButtonFlags & PAD_TRIGGER_L) != 0;
+    s_touchMapLPressed = held && !s_touchMapLHeld;
+    s_touchMapLHeld = held;
+}
+
+HookAction before_touch_fmap_move(ModContext*, void*, void*, void*) {
+    if (!dawnlight_touch_ui_active() || dMeter2Info_getWindowStatus() != 4) {
+        return HOOK_CONTINUE;
+    }
+
+    // TPHD maps only physical L to native Z and clears other Z input here.
+    // Add touch L after that mapping, scoped to the field-map update only.
+    auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
+    s_touchMapZHeldOriginal = pad.mButtonFlags & PAD_TRIGGER_Z;
+    s_touchMapZPressedOriginal = pad.mPressedButtonFlags & PAD_TRIGGER_Z;
+    s_touchMapPortalInputActive = true;
+    if (s_touchMapLHeld) pad.mButtonFlags |= PAD_TRIGGER_Z;
+    if (s_touchMapLPressed) pad.mPressedButtonFlags |= PAD_TRIGGER_Z;
+    s_touchMapLPressed = false;
+    return HOOK_CONTINUE;
+}
+
+void after_touch_fmap_move(ModContext*, void*, void*, void*) {
+    if (!s_touchMapPortalInputActive) return;
+    auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
+    pad.mButtonFlags = (pad.mButtonFlags & ~PAD_TRIGGER_Z) | s_touchMapZHeldOriginal;
+    pad.mPressedButtonFlags =
+        (pad.mPressedButtonFlags & ~PAD_TRIGGER_Z) | s_touchMapZPressedOriginal;
+    s_touchMapPortalInputActive = false;
 }
 
 HookAction before_touch_sync_control_displays(ModContext*, void*, void*, void*) {
@@ -3540,98 +3750,18 @@ HookAction before_rml_set_class(ModContext*, void* args, void*, void*) {
 }
 #endif
 
-HookAction before_touch_sync_action_bar(ModContext*, void* args, void*, void*) {
-#if defined(__ANDROID__)
-    auto* controls = mods::arg<dusk::ui::TouchControls*>(args, 0);
-    if (controls != nullptr) {
-        s_skipTouchElement = controls->mControlElements[
-            static_cast<std::size_t>(dusk::ui::Control::SKIP)].root;
-    }
-#else
-    (void)args;
-#endif
-
-    if (s_skipTouchMidnaPressed) {
-        s_inTouchActionBarSync = false;
-        return HOOK_SKIP_ORIGINAL;
-    }
-
-    s_inTouchActionBarSync = true;
-    return HOOK_CONTINUE;
-}
-
-void after_touch_sync_action_bar(ModContext*, void*, void*, void*) {
-    Rml::Element* skipElement = s_skipTouchElement;
-    const bool canShowMidna = skip_touch_can_be_midna();
-
-    s_inTouchActionBarSync = false;
-
-    if (canShowMidna && skipElement != nullptr) {
-        set_skip_touch_hidden(skipElement, false);
-        sync_skip_touch_midna_button(skipElement);
-    } else if (s_skipTouchMidnaPressed && skipElement != nullptr) {
-        set_skip_touch_hidden(skipElement, false);
-    } else if (s_skipTouchMidnaMode) {
-        restore_skip_touch_button(skipElement);
-    }
-}
-
-HookAction before_rml_set_pseudo_class(ModContext*, void* args, void*, void*) {
-    if (!s_inTouchActionBarSync) {
-        return HOOK_CONTINUE;
-    }
-
-    auto* element = mods::arg<Rml::Element*>(args, 0);
-    const auto* pseudoClass = mods::arg<const Rml::String*>(args, 1);
-    const bool active = mods::arg<bool>(args, 2);
-    if (pseudoClass == nullptr || *pseudoClass != "hidden") {
-        return HOOK_CONTINUE;
-    }
-
-    if (element == nullptr || element != s_skipTouchElement) {
-        return HOOK_CONTINUE;
-    }
-
-    if (!skip_touch_can_be_midna()) {
-        return HOOK_CONTINUE;
-    }
-
-    s_skipTouchElement = element;
-    return active ? HOOK_SKIP_ORIGINAL : HOOK_CONTINUE;
-}
-
 HookAction before_touch_set_control_pressed(ModContext*, void* args, void*, void*) {
     const auto control = mods::arg<dusk::ui::Control>(args, 1);
     const bool pressed = mods::arg<bool>(args, 2);
+    if (control == dusk::ui::Control::R) fierce_deity_touch_button(PAD_TRIGGER_R, pressed);
+    if (control == dusk::ui::Control::A) fierce_deity_touch_button(PAD_BUTTON_A, pressed);
     if (control == dusk::ui::Control::Z) {
-        s_touchZItemTrig = pressed && !s_touchZItemHeld;
+        fierce_deity_touch_button(PAD_TRIGGER_Z, pressed);
+        s_touchZItemTrig |= pressed && !s_touchZItemHeld;
         s_touchZItemHeld = pressed;
         return HOOK_CONTINUE;
     }
-    if (control != dusk::ui::Control::SKIP) {
-        return HOOK_CONTINUE;
-    }
-
-    const bool midnaTouch =
-        s_skipTouchMidnaMode || s_skipTouchMidnaPressed || s_touchMidnaBlockStartFrames != 0;
-    if (pressed) {
-        if (!skip_touch_can_be_midna()) {
-            return midnaTouch && !cutscene_skip_touch_visible() ? HOOK_SKIP_ORIGINAL :
-                HOOK_CONTINUE;
-        }
-
-        s_skipTouchMidnaPressed = true;
-        s_touchMidnaTrig = true;
-        s_touchMidnaBlockStartFrames = 4;
-        return HOOK_SKIP_ORIGINAL;
-    }
-
-    if (!midnaTouch) {
-        return HOOK_CONTINUE;
-    }
-
-    s_skipTouchMidnaPressed = false;
-    return cutscene_skip_touch_visible() ? HOOK_CONTINUE : HOOK_SKIP_ORIGINAL;
+    return HOOK_CONTINUE;
 }
 
 void after_midna_icon_source(ModContext*, void*, void* retval, void*) {
@@ -3654,8 +3784,19 @@ ModResult add_hook(ModResult result, ModError* error) {
 
 }  // namespace
 
+const char* z_item_slot_provider_notice() { return z_slot_provider_notice(); }
+
+bool midna_touch_button_available() { return midna_touch_button_ready(); }
+std::string midna_touch_button_icon() {
+#if defined(__ANDROID__)
+    return true_midna_icon_source();
+#else
+    return {};
+#endif
+}
+
 ModResult install_item_slot_hooks(ModError* error) {
-    s_zItemSlotSessionEnabled = z_item_slot_enabled();
+    s_zItemSlotSessionEnabled = select_dawnlight_z_slot();
 #if defined(__ANDROID__)
     s_dawnlightTouchUiSessionEnabled = dawnlight_touch_ui_enabled();
 #else
@@ -3670,6 +3811,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     minimapPreOptions.priority = -100;
     HookOptions minimapPostOptions = HOOK_OPTIONS_INIT;
     minimapPostOptions.priority = 100;
+    HookOptions hdGlyphPreOptions = HOOK_OPTIONS_INIT;
+    hdGlyphPreOptions.priority = -101;
+    HookOptions hdGlyphPostOptions = HOOK_OPTIONS_INIT;
+    hdGlyphPostOptions.priority = 101;
     HookOptions finalGaugePreOptions = HOOK_OPTIONS_INIT;
     finalGaugePreOptions.priority = -100;
     HookOptions finalGaugePostOptions = HOOK_OPTIONS_INIT;
@@ -3741,6 +3886,22 @@ ModResult install_item_slot_hooks(ModError* error) {
     }
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ScreenDrawHook>(
+            svc_hook, before_round_xy_screen_draw, &sharedHudApplyOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ScreenDrawHook>(
+            svc_hook, before_hd_hud_glyph_draw, &hdGlyphPreOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ScreenDrawHook>(
+            svc_hook, after_hd_hud_glyph_draw, &hdGlyphPostOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<ScreenDrawHook>(
+            svc_hook, after_round_xy_screen_draw, &sharedHudRestoreOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<ScreenDrawHook>(
             svc_hook, before_gauge_screen_draw, &finalGaugePreOptions);
     }
     if (result == MOD_OK) {
@@ -3767,6 +3928,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK) {
         result = mods::hook_add_post<MeterMapDrawHook>(
             svc_hook, after_meter_map_draw, &minimapPostOptions);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<MinimapPictureDrawHook>(
+            svc_hook, before_minimap_picture_draw, &minimapPreOptions);
     }
     if (result == MOD_OK && (s_zItemSlotSessionEnabled || s_dawnlightTouchUiSessionEnabled)) {
         result = mods::hook_add_pre<RingSetActiveCursorHook>(svc_hook, before_ring_set_active_cursor);
@@ -3814,7 +3979,47 @@ ModResult install_item_slot_hooks(ModError* error) {
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_post<MeterButtonDrawHook>(svc_hook, after_meter_button_draw);
     }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<NativeQuickTransformHook>(svc_hook, before_native_shortcut);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<NativeQuickTransformHook>(svc_hook, after_native_shortcut);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<NativeWolfHowlHook>(svc_hook, before_native_shortcut);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<NativeWolfHowlHook>(svc_hook, after_native_shortcut);
+    }
 #if defined(__ANDROID__)
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        // Optional lookup: avoid depending on UserSettings offsets in forks.
+        (void)resolve_z_touch_symbol("dusk::config::GetConfigVar", s_touchGetConfigVar);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<PadClearVirtualStatusHook>(
+            svc_hook, before_pad_clear_virtual_status, &touchInputObserveOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_post<PadReadHook>(
+            svc_hook, observe_map_touch_input, &touchInputObserveOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<TouchFmapMoveHook>(
+            svc_hook, before_touch_fmap_move, &touchInputApplyOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_post<TouchFmapMoveHook>(
+            svc_hook, after_touch_fmap_move, &touchInputObserveOptions);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<TouchSetControlOverrideHook>(
+            svc_hook, before_touch_set_control_override);
+    }
+    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+        result = mods::hook_add_pre<TouchSyncVisualStateHook>(
+            svc_hook, before_touch_sync_visual_state);
+    }
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         result = mods::hook_add_pre<PadSetVirtualStatusHook>(
             svc_hook, before_pad_set_virtual_status, &touchInputObserveOptions);
@@ -3843,18 +4048,14 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_pre<RmlSetClassHook>(svc_hook, before_rml_set_class);
     }
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
-        result = mods::hook::install<UpdateMidnaIconTextureHook>(svc_hook);
+        result = mods::hook_add_pre<UpdateMidnaIconTextureHook>(svc_hook, before_midna_icon_capture);
     }
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
-        result = mods::hook_add_pre<TouchSyncActionBarHook>(svc_hook, before_touch_sync_action_bar);
+        result = mods::hook_add_post<UpdateMidnaIconTextureHook>(svc_hook, after_midna_icon_capture);
     }
-    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
-        result = mods::hook_add_post<TouchSyncActionBarHook>(svc_hook, after_touch_sync_action_bar);
-    }
-    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
-        result = mods::hook_add_pre<RmlSetPseudoClassHook>(svc_hook, before_rml_set_pseudo_class);
-    }
-    if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
+    if (result == MOD_OK) {
+        // Fierce Deity shortcuts also need native touch input when our custom
+        // touch layout is off. This observer never changes the host UI input.
         result = mods::hook_add_pre<TouchSetControlPressedHook>(
             svc_hook, before_touch_set_control_pressed);
     }
@@ -3873,21 +4074,26 @@ ModResult install_item_slot_hooks(ModError* error) {
 }
 
 void shutdown_item_slot_hooks() {
+    s_hdHudGetConfigVar = nullptr;
+    s_hdHudConfigLookupAttempted = false;
     clear_ring_z_prompt_refs();
     clear_shared_hud_layout_cache();
     s_zItemSlotSessionEnabled = false;
     s_dawnlightTouchUiSessionEnabled = false;
     s_dpadArrowVisibility = {};
     s_dpadShadowVisibility = {};
+    after_native_shortcut(nullptr, nullptr, nullptr, nullptr);
 #if defined(__ANDROID__)
+    s_touchGetConfigVar = nullptr;
+    sync_map_l_touch_override();
+    after_touch_fmap_move(nullptr, nullptr, nullptr, nullptr);
+    s_touchMapLRawHeld = false;
+    s_touchMapLHeld = false;
+    s_touchMapLPressed = false;
+    s_hostLTouchOverride = dusk::ui::ControlOverride::Default;
+    s_mapLTouchOverrideActive = false;
     s_touchZItemHeld = false;
     s_touchZItemTrig = false;
-    s_inTouchActionBarSync = false;
-    s_skipTouchElement = nullptr;
-    s_skipTouchRmlElement = nullptr;
-    s_skipTouchMidnaMode = false;
-    s_skipTouchMidnaPressed = false;
-    s_skipTouchMidnaSource.clear();
     s_zTouchDisplayButton = nullptr;
     s_zTouchMeterButton = nullptr;
     s_zTouchMeterContainer = nullptr;

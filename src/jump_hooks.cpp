@@ -1,59 +1,85 @@
 #include "bullet_time.hpp"
 #include "config.hpp"
+#include "fierce_deity.hpp"
+#include "gale_counter.hpp"
+#include "jump_abilities.hpp"
+#include "glider_visual.hpp"
+#include "glider_bmd.hpp"
 #include "service_imports.hpp"
 #include "stamina.hpp"
+#include "twilit_stamina.hpp"
+#include "touch_buttons.hpp"
 
 #include "global.h"
 #include "d/actor/d_a_alink.h"
+#include "d/actor/d_a_ni.h"
 #include "d/d_com_inf_game.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <vector>
+#include "enemy_spawner.hpp"
+#include "f_pc/f_pc_create_req.h"
+#include "f_pc/f_pc_leaf.h"
+#include "f_pc/f_pc_method.h"
+#include "f_pc/f_pc_name.h"
+#include "JSystem/J3DGraphAnimator/J3DJoint.h"
+#include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
+#include "Z2AudioLib/Z2AudioMgr.h"
+#include "res/Object/AlAnm.h"
+
 namespace dawnlight {
 namespace {
 
+DEFINE_HOOK(&mDoCPd_c::read, JumpPadRead);
 DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, CheckAutoJumpAction);
 DEFINE_HOOK(&daAlink_c::procAutoJump, ProcAutoJump);
+DEFINE_HOOK(&daAlink_c::procFallInit, LedgeFallInit);
+DEFINE_HOOK(&daAlink_c::procWolfFallInit, WolfLedgeFallInit);
 DEFINE_HOOK(&daAlink_c::procMove, ProcMoveSprint);
+DEFINE_HOOK(&daAlink_c::setSpeedAndAngleWolf, WolfSprintMovement);
+DEFINE_HOOK(&daAlink_c::procWolfDash, WolfSprintDash);
+DEFINE_HOOK(&daAlink_c::procWolfAutoJumpInit, WolfSprintJump);
 DEFINE_HOOK(&daAlink_c::getMainBckData, GetMainBckDataSprint);
+DEFINE_HOOK(&daAlink_c::setDoubleAnime, SetDoubleAnimeSprint);
+DEFINE_HOOK(&daAlink_c::execute, JumpAbilitiesExecute);
+DEFINE_HOOK_SYMBOL("dusk::processGameCombos", void(), JumpGameCombos);
+DEFINE_HOOK(&daAlink_c::draw, JumpAbilitiesDraw);
+DEFINE_HOOK(&daAlink_c::setDrawHand, GliderDrawHand);
+DEFINE_HOOK(&fpcLf_Delete, JumpAbilitiesDelete);
+DEFINE_HOOK(&fpcLf_Draw, GlideCarrierDraw);
+#if defined(__APPLE__)
+DEFINE_HOOK(&fpcMtd_Method, GlideCarrierExecute);
+#else
+DEFINE_HOOK(&fpcMtd_Execute, GlideCarrierExecute);
+#endif
+// MSVC cannot const-initialize metadata from these virtual member pointers.
+// Resolve the concrete implementations by name (receiver first in the ABI).
+DEFINE_HOOK_SYMBOL("Z2SoundObjSimple::startSound",
+    Z2SoundHandlePool*(Z2SoundObjSimple*, JAISoundID, u32, s8), GlideCarrierSound);
+DEFINE_HOOK_SYMBOL("Z2SoundObjSimple::startLevelSound",
+    Z2SoundHandlePool*(Z2SoundObjSimple*, JAISoundID, u32, s8), GlideCarrierLevelSound);
 DEFINE_HOOK(&daAlink_c::commonProcInit, CommonProcInit);
 DEFINE_HOOK(&daAlink_c::setBodyAngleXReadyAnime, SetBodyAngleXReadyAnime);
 
-enum class JumpBinding {
-    LockR,
-};
-
 constexpr u16 kSwordItem = 0x103;
-constexpr float kSprintSpeedMultiplier = 1.5f;
 
 const daAlink_c* s_manualJumpOwner = nullptr;
 daAlink_c* s_slowSpeedOwner = nullptr;
 float s_previousNormalSpeed = 0.0f;
 daAlink_c* s_sprintOwner = nullptr;
+bool s_galeInputCancelled = false;
+bool s_galeChargeCancelledThisTick = false;
 
-JumpBinding active_jump_binding() {
-    return JumpBinding::LockR;
-}
-
-bool jump_pressed(JumpBinding binding) {
-    switch (binding) {
-    case JumpBinding::LockR:
-        return mDoCPd_c::getTrigLockR(PAD_1) != 0;
-    }
-    return false;
-}
-
-bool jump_held(JumpBinding binding) {
-    switch (binding) {
-    case JumpBinding::LockR:
-        return mDoCPd_c::getHoldLockR(PAD_1) != 0;
-    }
-    return false;
-}
+#include "jump_input.inc"
 
 bool sprint_requested(daAlink_c* link) {
+    if (twilit_sprint_enabled()) return false;
     if (link == nullptr || !sprint_enabled() || !link->doButton()) {
         return false;
     }
@@ -144,12 +170,12 @@ bool r_action_context_active(daAlink_c* link) {
     return target_or_shield_context_active(link) || chain_context_active(link);
 }
 
-bool jump_state_ready(daAlink_c* link) {
-    if (link == nullptr || !r_jump_enabled() || !jump_pressed(active_jump_binding())) {
-        return false;
-    }
-
+bool ground_movement_proc(daAlink_c* link) {
     switch (link->mProcID) {
+    case daAlink_c::PROC_GRAB_WAIT:
+        // Native carry idle state; moving and turning use the ordinary procs below.
+        return !link->checkWolf() && link->checkGrabAnime() &&
+            link->mGrabItemAcKeep.getActor() != nullptr;
     case daAlink_c::PROC_WAIT:
     case daAlink_c::PROC_MOVE:
     case daAlink_c::PROC_ATN_MOVE:
@@ -157,13 +183,29 @@ bool jump_state_ready(daAlink_c* link) {
     case daAlink_c::PROC_ATN_ACTOR_MOVE:
     case daAlink_c::PROC_WAIT_TURN:
     case daAlink_c::PROC_MOVE_TURN:
-        break;
+    case daAlink_c::PROC_WOLF_WAIT:
+    case daAlink_c::PROC_WOLF_MOVE:
+    case daAlink_c::PROC_WOLF_DASH:
+    case daAlink_c::PROC_WOLF_WAIT_TURN:
+    case daAlink_c::PROC_WOLF_ATN_AC_MOVE:
+        return true;
     default:
         return false;
     }
+}
 
-    return !link->checkWolf()
-        && link->mGndPolyAtt1 != 0xFF
+bool ground_jump_context_ready(daAlink_c* link) {
+    if (!link || !ground_movement_proc(link)) return false;
+
+    // Human and wolf carrying retain their upper animation across locomotion.
+    // Wolf mouth carrying uses the ordinary wolf wait/move/turn procs; the
+    // allowlist still excludes both forms' pickup, throw and put-down actions.
+    const bool humanCarrying = !link->checkWolf() && link->checkGrabAnime() &&
+        link->mGrabItemAcKeep.getActor() != nullptr;
+    const bool wolfCarrying = link->checkWolf() && link->checkWolfGrabAnime() &&
+        link->mGrabItemAcKeep.getActor() != nullptr;
+    const bool carrying = humanCarrying || wolfCarrying;
+    return link->mGndPolyAtt1 != 0xFF
         && !link->checkFlyAtnWait()
         && !link->checkModeFlg(0x70C12)
         && link->mProcID != daAlink_c::PROC_DOOR_OPEN
@@ -175,10 +217,25 @@ bool jump_state_ready(daAlink_c* link) {
         && !link->checkMagneBootsFly()
         && !link->checkMagneBootsOn()
         && !link->checkNotJumpSinkLimit()
-        && !link->checkGrabAnime()
-        && link->mGrabItemAcKeep.getActor() == nullptr
+        && (!link->checkGrabAnime() || humanCarrying)
+        && (!link->checkWolf() || !link->checkWolfGrabAnime() || wolfCarrying)
+        && (link->mGrabItemAcKeep.getActor() == nullptr || carrying)
         && link->mLinkAcch.ChkGroundHit()
         && !r_action_context_active(link);
+}
+
+#include "wolf_sprint.inc"
+
+bool jump_state_ready(daAlink_c* link) {
+    return link && !s_galeInputCancelled &&
+        r_jump_enabled() &&
+        jump_pressed(active_jump_binding()) &&
+        ground_jump_context_ready(link);
+}
+
+void apply_manual_jump_height(daAlink_c* link, float heightMultiplier) {
+    // Height is proportional to launch velocity squared, not velocity itself.
+    link->speed.y *= std::sqrt(heightMultiplier);
 }
 
 void set_manual_jump_direction(daAlink_c* link) {
@@ -186,6 +243,54 @@ void set_manual_jump_direction(daAlink_c* link) {
         link->shape_angle.y = link->mMoveAngle;
     }
     link->current.angle.y = link->shape_angle.y;
+}
+
+float sprint_jump_speed_multiplier(daAlink_c* link) {
+    if (!sprint_requested(link) || link->mpHIO == nullptr) {
+        return 1.0f;
+    }
+    const f32 runSpeed = link->mpHIO->mMove.m.mMaxSpeed;
+    if (runSpeed <= 0.0f) {
+        return 1.0f;
+    }
+    // Carry only the sprint bonus already reached on the ground. Holding Roll
+    // at a standstill must not grant a full-speed launch; native indoor limits
+    // and acceleration still matter. Snapshot before jump init replaces speed.
+    return std::clamp(link->mNormalSpeed / runSpeed, 1.0f, sprint_speed_multiplier());
+}
+
+float twilit_sprint_jump_speed(daAlink_c* link) {
+    if (!link || !link->mpHIO || !twilit_sprint_enabled() ||
+        link->mProcID != daAlink_c::PROC_MOVE || !link->checkInputOnR() ||
+        !link->mLinkAcch.ChkGroundHit() || link->checkWolf() ||
+        link->checkEventRun() || dComIfGp_event_runCheck() ||
+        link->checkMagneBootsOn() || link->getSumouMode() ||
+        link->mGrabItemAcKeep.getActor() != nullptr) return 0.0f;
+
+    const float base = link->mpHIO->mMove.m.mMaxSpeed;
+    // TE has its own input binding and masks the native Roll button. Carry
+    // actual ground momentum, independently of Dawnlight's toggle/speed cap.
+    return std::isfinite(base) && base > 0.0f &&
+        std::isfinite(link->mNormalSpeed) && link->mNormalSpeed > base
+        ? link->mNormalSpeed : 0.0f;
+}
+
+void apply_twilit_sprint_jump_speed(daAlink_c* link, float speed) {
+    // TE's auto-jump hook may already have applied its jump-distance setting.
+    // Keep the greater horizontal speed; never multiply the two bonuses.
+    if (speed <= 0.0f) return;
+    link->mNormalSpeed = std::max(link->mNormalSpeed, speed);
+    link->speedF = std::max(link->speedF, speed);
+    link->mMaxSpeed = std::max(link->mMaxSpeed, link->mNormalSpeed);
+}
+
+void apply_sprint_jump_speed(daAlink_c* link, const float multiplier) {
+    // The native initializer has already calculated vertical speed/gravity.
+    // Scale horizontal motion once, then leave airborne steering and collision
+    // to the existing jump procedure (including Bullet Time).
+    link->mNormalSpeed *= multiplier;
+    link->speedF *= multiplier;
+    link->mMaxSpeed *= multiplier;
 }
 
 void apply_manual_jump_movement(daAlink_c* link) {
@@ -204,8 +309,21 @@ bool start_ground_jump(daAlink_c* link) {
     }
 
     set_manual_jump_direction(link);
+    if (link->checkWolf()) {
+        // Use wolf animations, dash parameters and landing/collision handling.
+        // Human sword attacks and Bullet Time do not own wolf jumps.
+        if (!link->procWolfAutoJumpInit(1)) return false;
+        apply_manual_jump_movement(link);
+        apply_manual_jump_height(link, jump_height_multiplier());
+        s_manualJumpOwner = nullptr;
+        clear_manual_jump(link);
+        return true;
+    }
+    const float sprintJumpMultiplier = sprint_jump_speed_multiplier(link);
+    const float twilitSprintSpeed = twilit_sprint_jump_speed(link);
 
-    if (link->mEquipItem == kSwordItem &&
+    if (link->mGrabItemAcKeep.getActor() == nullptr &&
+        link->mEquipItem == kSwordItem &&
         (mDoCPd_c::getHoldB(PAD_1) || mDoCPd_c::getTrigB(PAD_1)))
     {
         if (link->procCutJumpInit(FALSE)) {
@@ -219,6 +337,9 @@ bool start_ground_jump(daAlink_c* link) {
 
     if (link->procAutoJumpInit(1)) {
         apply_manual_jump_movement(link);
+        apply_sprint_jump_speed(link, sprintJumpMultiplier);
+        apply_twilit_sprint_jump_speed(link, twilitSprintSpeed);
+        apply_manual_jump_height(link, jump_height_multiplier());
         s_manualJumpOwner = link;
         mark_manual_jump_started(link);
         return true;
@@ -230,7 +351,8 @@ bool start_air_jump_attack(daAlink_c* link) {
     if (!r_jump_enabled() || s_manualJumpOwner != link ||
         !jump_held(active_jump_binding()) ||
         !mDoCPd_c::getTrigB(PAD_1) ||
-        link->mEquipItem != kSwordItem)
+        link->mEquipItem != kSwordItem ||
+        link->mGrabItemAcKeep.getActor() != nullptr)
     {
         return false;
     }
@@ -245,9 +367,64 @@ bool start_air_jump_attack(daAlink_c* link) {
     return true;
 }
 
+#include "jump_abilities.inc"
+
+struct AutoJumpFlagScope {
+    daAlink_c* link;
+    bool added = false;
+    float forwardSpeed = 0.0f;
+    s16 moveAngle = 0;
+};
+thread_local std::vector<AutoJumpFlagScope> s_autoJumpFlagScopes;
+
+void suppress_ledge_auto_jump(daAlink_c* link) {
+    if (!disable_auto_jump_enabled() || !link ||
+        link->checkPlayerDemoMode() || link->checkEventRun() || dComIfGp_event_runCheck() ||
+        link->checkEndResetFlg0(daPy_py_c::ERFLG0_FORCE_AUTO_JUMP) ||
+        link->checkEndResetFlg0(daPy_py_c::ERFLG0_NOT_AUTO_JUMP)) return;
+    // The native edge check still handles falling, hanging, climbing and water.
+    // Set only its existing auto-jump veto, after manual jump/Gale handling.
+    link->onEndResetFlg0(daPy_py_c::ERFLG0_NOT_AUTO_JUMP);
+    auto& scope = s_autoJumpFlagScopes.back();
+    scope.added = true;
+    // speedF includes ground/slope modifiers and the earned sprint bonus.
+    scope.forwardSpeed = link->speedF;
+    scope.moveAngle = link->current.angle.y;
+}
+
+HookAction before_ledge_fall_init(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!link || s_autoJumpFlagScopes.empty()) return HOOK_CONTINUE;
+    const auto& scope = s_autoJumpFlagScopes.back();
+    if (!scope.added || scope.link != link || mods::arg<int>(args, 1) != 1 ||
+        link->mLinkAcch.ChkGroundHit() || !ground_movement_proc(link)) return HOOK_CONTINUE;
+
+    // Mode 1 explicitly zeroes horizontal speed. Mode 2 preserves it and lets
+    // native fall initialization choose the correct moving-fall collision state.
+    // Keep the ordinary zero vertical launch: this is a fall, not a jump.
+    mods::arg_ref<int>(args, 1) = 2;
+    link->mNormalSpeed = scope.forwardSpeed;
+    link->current.angle.y = scope.moveAngle;
+    link->speed.y = 0.0f;
+    return HOOK_CONTINUE;
+}
+
+void after_check_auto_jump(ModContext*, void*, void*, void*) {
+    if (s_autoJumpFlagScopes.empty()) return;
+    const auto scope = s_autoJumpFlagScopes.back();
+    s_autoJumpFlagScopes.pop_back();
+    if (scope.added) scope.link->mEndResetFlg0 &= ~daPy_py_c::ERFLG0_NOT_AUTO_JUMP;
+}
+
 HookAction before_check_auto_jump(ModContext*, void* args, void* retval, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
+    s_autoJumpFlagScopes.push_back({link});
+    if (handle_jump_abilities(link)) {
+        *static_cast<BOOL*>(retval) = TRUE;
+        return HOOK_SKIP_ORIGINAL;
+    }
     if (!start_ground_jump(link)) {
+        suppress_ledge_auto_jump(link);
         return HOOK_CONTINUE;
     }
 
@@ -287,16 +464,52 @@ HookAction before_proc_move_sprint(ModContext*, void* args, void*, void*) {
         return HOOK_CONTINUE;
     }
 
-    link->mMaxSpeed *= kSprintSpeedMultiplier;
+    link->mMaxSpeed *= sprint_speed_multiplier();
     s_sprintOwner = link;
     mark_sprint_stamina_active();
+    return HOOK_CONTINUE;
+}
+
+void after_proc_move_sprint(ModContext*, void*, void*, void*) {
+    // Animation substitutions belong only to this movement update. Do not
+    // leave the owner active for later actions or the next actor/frame.
+    s_sprintOwner = nullptr;
+}
+
+bool sprint_animation_active(const daAlink_c* link) {
+    return link != nullptr && s_sprintOwner == link && link->mProcID == daAlink_c::PROC_MOVE;
+}
+
+HookAction before_set_double_anime_sprint(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!sprint_animation_active(link) || link->mMaxSpeed <= 0.0f) {
+        return HOOK_CONTINUE;
+    }
+
+    // checkNextAction consumes the boosted limit for acceleration, then resets
+    // mMaxSpeed to the native movement limit before building the walk/run blend.
+    // Use its ground-adjusted speed ratio so acceleration, analog input, slopes
+    // and indoor limits affect cadence instead of immediately playing at the cap.
+    // Add half the earned speed bonus to playback: 150% movement -> 125%
+    // cadence. Indoor slowdown is already in the measured ratio, so do not
+    // apply a second room multiplier.
+    const f32 speedBonus = std::max(0.0f, link->getMoveGroundAngleSpeedRate() - 1.0f);
+    const f32 cadence = 1.0f + 0.5f * speedBonus;
+    for (int layer = 0; layer < 2; ++layer) {
+        const auto animation = mods::arg<daAlink_c::daAlink_ANM>(args, 4 + layer);
+        if (animation == daAlink_c::ANM_RUN || animation == daAlink_c::ANM_RUN_B) {
+            mods::arg_ref<f32>(args, 2 + layer) *= cadence;
+        }
+    }
+    // Let the native blend synchronize upper/lower animation and footstep
+    // timing. Adjust fresh arguments, never multiply persistent frame rates.
     return HOOK_CONTINUE;
 }
 
 HookAction before_get_main_bck_data_sprint(ModContext*, void* args, void*, void*) {
     const auto* link = mods::arg<const daAlink_c*>(args, 0);
     auto& animation = mods::arg_ref<daAlink_c::daAlink_ANM>(args, 1);
-    if (s_sprintOwner == link && animation == daAlink_c::ANM_RUN) {
+    if (sprint_animation_active(link) && animation == daAlink_c::ANM_RUN) {
         animation = daAlink_c::ANM_RUN_B;
     }
     return HOOK_CONTINUE;
@@ -305,6 +518,14 @@ HookAction before_get_main_bck_data_sprint(ModContext*, void* args, void*, void*
 HookAction before_common_proc_init(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     const auto nextProc = mods::arg<daAlink_c::daAlink_PROC>(args, 1);
+    jump_abilities_proc_change(link, nextProc);
+    if (s_wolfSprintOwner == link && nextProc != daAlink_c::PROC_WOLF_MOVE &&
+        nextProc != daAlink_c::PROC_WOLF_DASH && nextProc != daAlink_c::PROC_WOLF_WAIT) {
+        s_wolfSprintOwner = nullptr;
+    }
+    if (s_sprintOwner == link && nextProc != daAlink_c::PROC_MOVE) {
+        s_sprintOwner = nullptr;
+    }
     if (s_manualJumpOwner == link && nextProc != daAlink_c::PROC_AUTO_JUMP) {
         s_manualJumpOwner = nullptr;
         clear_manual_jump(link);
@@ -319,9 +540,35 @@ HookAction before_set_body_angle_x_ready_anime(ModContext*, void* args, void*, v
 
 }  // namespace
 
+bool gale_shortcut_priority_active(const daAlink_c* link) {
+    return link != nullptr && link == s_jumpAbilities.owner &&
+        s_galeChargeCancelledThisTick;
+}
+
+bool glide_active_for(daAlink_c* link) {
+    if (!owns_jump_abilities(link) || !s_jumpAbilities.attached || s_jumpAbilities.retiring)
+        return false;
+    auto* actor = glide_actor();
+    return actor != nullptr && link->mGrabItemAcKeep.getActor() == actor;
+}
+
 ModResult install_jump_hooks(ModError* error) {
+    init_glider_visual();
+    initialize_jump_input();
     ModResult result =
         mods::hook_add_pre<CheckAutoJumpAction>(svc_hook, before_check_auto_jump);
+    if (result == MOD_OK) {
+        HookOptions options = HOOK_OPTIONS_INIT;
+        options.priority = 1000;
+        result = mods::hook_add_post<JumpPadRead>(svc_hook, after_jump_pad_read, &options);
+    }
+    if (result == MOD_OK) result = mods::hook_add_post<CheckAutoJumpAction>(svc_hook, after_check_auto_jump);
+    if (result == MOD_OK) result = mods::hook_add_pre<WolfSprintMovement>(svc_hook, before_wolf_sprint_movement);
+    if (result == MOD_OK) result = mods::hook_add_pre<WolfSprintDash>(svc_hook, before_wolf_sprint_movement);
+    if (result == MOD_OK) result = mods::hook_add_pre<WolfSprintJump>(svc_hook, before_wolf_sprint_jump);
+    if (result == MOD_OK) result = mods::hook_add_post<WolfSprintJump>(svc_hook, after_wolf_sprint_jump);
+    if (result == MOD_OK) result = mods::hook_add_pre<LedgeFallInit>(svc_hook, before_ledge_fall_init);
+    if (result == MOD_OK) result = mods::hook_add_pre<WolfLedgeFallInit>(svc_hook, before_ledge_fall_init);
     if (result == MOD_OK) {
         result = mods::hook_add_pre<ProcAutoJump>(svc_hook, before_proc_auto_jump);
     }
@@ -335,6 +582,13 @@ ModResult install_jump_hooks(ModError* error) {
         result = mods::hook_add_pre<ProcMoveSprint>(svc_hook, before_proc_move_sprint);
     }
     if (result == MOD_OK) {
+        result = mods::hook_add_post<ProcMoveSprint>(svc_hook, after_proc_move_sprint);
+    }
+    if (result == MOD_OK) {
+        result = mods::hook_add_pre<SetDoubleAnimeSprint>(
+            svc_hook, before_set_double_anime_sprint);
+    }
+    if (result == MOD_OK) {
         result = mods::hook_add_pre<GetMainBckDataSprint>(
             svc_hook, before_get_main_bck_data_sprint);
     }
@@ -342,10 +596,27 @@ ModResult install_jump_hooks(ModError* error) {
         result = mods::hook_add_pre<SetBodyAngleXReadyAnime>(
             svc_hook, before_set_body_angle_x_ready_anime);
     }
+    if (result == MOD_OK) result = mods::hook_add_pre<JumpGameCombos>(svc_hook, before_jump_game_combos);
+    if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesExecute>(svc_hook, before_jump_abilities_execute);
+    if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesExecute>(svc_hook, after_jump_abilities_execute);
+    if (result == MOD_OK) result = mods::hook_add_post<JumpAbilitiesDraw>(svc_hook, after_jump_abilities_draw);
+    if (result == MOD_OK) result = mods::hook_add_post<GliderDrawHand>(svc_hook, after_glider_draw_hand);
+    if (result == MOD_OK) result = mods::hook_add_pre<JumpAbilitiesDelete>(svc_hook, before_jump_abilities_delete);
+    if (result == MOD_OK) result = mods::hook_add_post<GlideCarrierExecute>(svc_hook, after_glide_carrier_execute);
+    if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierDraw>(svc_hook, before_glide_carrier_draw);
+    if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierSound>(svc_hook, before_glide_carrier_sound);
+    if (result == MOD_OK) result = mods::hook_add_pre<GlideCarrierLevelSound>(svc_hook, before_glide_carrier_sound);
     if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to install Dawnlight R jump hooks");
+        return mods::set_error(error, result, "failed to install Dawnlight manual jump hooks");
     }
     return MOD_OK;
+}
+
+void shutdown_jump_hooks() {
+    s_jumpInputs = {};
+    s_jumpGamepadButton = nullptr;
+    reset_jump_abilities(daAlink_getAlinkActorClass());
+    shutdown_glider_bmd();
 }
 
 }  // namespace dawnlight

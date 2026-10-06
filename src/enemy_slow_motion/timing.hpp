@@ -5,6 +5,11 @@
 #include <cstdint>
 
 namespace dawnlight {
+inline int advance_boss_triangle(int frame, bool tick) {
+    if (!tick || frame >= 210) return frame;
+    return std::min(210, frame + (frame < 100 ? 2 : 1));
+}
+
 inline bool advance_enemy_timer(float& fraction, float scale) {
     fraction += scale;
     if (fraction < 1.0f - 0.000001f) return false;

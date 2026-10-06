@@ -1,0 +1,740 @@
+#include "dual_wield.hpp"
+#include "collection_dual_wield.hpp"
+#include "dual_wield_math.hpp"
+#include "dual_wield_animation.hpp"
+#include "config.hpp"
+#include "jump_abilities.hpp"
+#include "service_imports.hpp"
+#include "d/actor/d_a_alink.h"
+#include "d/d_com_inf_game.h"
+#include "f_pc/f_pc_leaf.h"
+#include "JSystem/J3DGraphLoader/J3DModelLoader.h"
+#include "JSystem/J3DGraphAnimator/J3DJoint.h"
+#include "JSystem/J3DGraphBase/J3DShape.h"
+#include "JSystem/JKernel/JKRExpHeap.h"
+#include "JSystem/JKernel/JKRArchive.h"
+#include "mods/svc/hook.hpp"
+#include <array>
+#include <memory>
+#include <optional>
+#include <cstring>
+#include <cstdio>
+#include <new>
+
+namespace dawnlight {
+namespace {
+using dual::Pose;using dual::Quat;using dual::Vec;
+DEFINE_HOOK(&daAlink_c::execute, DualExecute);
+DEFINE_HOOK(&daAlink_c::setMatrix, DualMatrix);
+DEFINE_HOOK(&daAlink_c::modelCalc, DualModelCalc);
+DEFINE_HOOK(&daAlink_c::setArmMatrix, DualArms);
+DEFINE_HOOK(&daAlink_c::setItemMatrix, DualItems);
+DEFINE_HOOK(&daAlink_c::setSwordPos, DualSwordPos);
+DEFINE_HOOK(&daAlink_c::checkShieldDraw, DualShieldDraw);
+DEFINE_HOOK(&daAlink_c::modelDraw, DualModelDraw);
+DEFINE_HOOK(&daAlink_c::statusWindowExecute, DualStatusExecute);
+DEFINE_HOOK(&daAlink_c::statusWindowDraw, DualStatusDraw);
+DEFINE_HOOK(&daAlink_c::procCutNormalInit, DualCut);
+DEFINE_HOOK(&daAlink_c::procCutFinishInit, DualFinish);
+DEFINE_HOOK(&daAlink_c::procGuardAttackInit, DualGuardAttack);
+DEFINE_HOOK(&daAlink_c::swordUnequip, DualUnequip);
+DEFINE_HOOK(&daAlink_c::swordEquip, DualEquip);
+DEFINE_HOOK(&daAlink_c::procSwordUnequipSpInit, DualFlourish);
+DEFINE_HOOK(&daAlink_c::setCollision, DualCollision);
+DEFINE_HOOK(&fpcLf_Delete, DualDelete);
+
+using ForgetModel=void(*)(J3DModel*);
+ForgetModel s_forget=nullptr;
+daAlink_c* s_failedOwner=nullptr;
+SecondSword s_failedSword=SecondSword::Ordon;
+struct State {
+    daAlink_c* owner=nullptr;
+    JKRExpHeap* heap=nullptr;
+    std::unique_ptr<u8[]> storage;
+    SecondSword swordType=SecondSword::Ordon;
+    J3DModel* sword=nullptr;
+    J3DModel* sheath=nullptr;
+    dual::Alternation attacks;
+    bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
+    float guard=0,draw=0,sheathTilt=0;
+    unsigned tick=0,poseTick=~0u;
+    Pose rightSword,hipSword,nativeShield;
+    unsigned shieldTick=~0u;
+    DualGuardBodyPose guardBody;
+    bool haveGuardBody=false;
+    dual::StowMotion stow;
+} s;
+struct Borrow {
+    mDoExt_AnmRatioPack* pack=nullptr;
+    J3DAnmTransform* original=nullptr;
+    std::optional<DualWieldAnimation> wrapper;
+};
+std::array<Borrow,6> s_borrow;
+bool s_calculating=false;
+
+Quat rotation(const Mtx m) {
+    float a[3][3];
+    for(int c=0;c<3;++c) {
+        float len=std::sqrt(m[0][c]*m[0][c]+m[1][c]*m[1][c]+m[2][c]*m[2][c]);
+        for(int r=0;r<3;++r) a[r][c]=len>1e-6f ? m[r][c]/len : (r==c ? 1.0f : 0.0f);
+    }
+    Quat q;float trace=a[0][0]+a[1][1]+a[2][2];
+    if(trace>0) {
+        float k=std::sqrt(trace+1)*2;
+        q={(a[2][1]-a[1][2])/k,(a[0][2]-a[2][0])/k,(a[1][0]-a[0][1])/k,k/4};
+    } else {
+        int i=a[1][1]>a[0][0] ? 1 : 0;if(a[2][2]>a[i][i]) i=2;
+        int j=(i+1)%3,k=(i+2)%3;float n=std::sqrt(std::max(0.0f,1+a[i][i]-a[j][j]-a[k][k]))*2;
+        if(n<1e-6f) return {};
+        float v[3]{};v[i]=n/4;v[j]=(a[j][i]+a[i][j])/n;v[k]=(a[k][i]+a[i][k])/n;
+        q={v[0],v[1],v[2],(a[k][j]-a[j][k])/n};
+    }
+    return dual::normalized(q);
+}
+Pose pose(const Mtx m) { return {rotation(m),{m[0][3],m[1][3],m[2][3]}}; }
+void matrix(Pose p,Mtx m) {
+    Quaternion q{p.q.x,p.q.y,p.q.z,p.q.w};MTXQuat(m,&q);
+    m[0][3]=p.p.x;m[1][3]=p.p.y;m[2][3]=p.p.z;
+}
+Pose local(float x,float y,float z,float rz=0,float ry=0) {
+    constexpr float half=3.14159265358979323846f/360;
+    return {dual::multiply({0,0,std::sin(rz*half),std::cos(rz*half)},
+                          {0,std::sin(ry*half),0,std::cos(ry*half)}),{x,y,z}};
+}
+void put(J3DModel* model,int joint,Pose p) { matrix(p,model->getAnmMtx(joint)); }
+void put(J3DModel* model,Pose p) { Mtx m;matrix(p,m);model->setBaseTRMtx(m);model->calc(); }
+
+void detach() {
+    for(auto& b:s_borrow) {
+        if(b.pack && b.wrapper && b.pack->getAnmTransform()==&*b.wrapper)
+            b.pack->setAnmTransform(b.original);
+        b.pack=nullptr;b.original=nullptr;b.wrapper.reset();
+    }
+    s_calculating=false;
+}
+void release_models() {
+    if(s_forget) { if(s.sword) s_forget(s.sword);if(s.sheath) s_forget(s.sheath); }
+    if(s.heap) s.heap->destroy();
+    s.heap=nullptr;s.sword=nullptr;s.sheath=nullptr;s.storage.reset();
+}
+bool models_ready() {
+    return s.sword && (s.swordType==SecondSword::Wooden || s.sheath);
+}
+void release() {
+    detach();
+    if(s.forcedBlade && s.owner && s.owner->mSwordModel && s.owner->mEquipItem!=0x103)
+        s.owner->offSwordModel();
+    release_models();
+    s=State{};
+}
+void model_failure(const char* name,const char* reason) {
+    if(!svc_log) return;
+    char message[256];
+    std::snprintf(message,sizeof(message),"Dual Wield: %s: %s",name,reason);
+    svc_log->warn(mod_ctx,message);
+}
+J3DModel* copy_model(JKRArchive* archive,const char* name,bool environment=false) {
+    // The one-argument overload is a path lookup relative to the archive's
+    // current directory. Alink's meshes live under bmwr/, not at its root.
+    // Type 0 searches by name across the archive, independent of that directory.
+    void* raw=archive->getResource(0,name);
+    if(!raw) { model_failure(name,"resource not found in archive");return nullptr; }
+    const u32 bytes=archive->getExpandedResSize(raw);
+    if(bytes<32 || bytes>4*1024*1024 || std::memcmp(raw,"J3D2bmd",7)!=0) {
+        model_failure(name,"invalid BMD header or resource size");return nullptr;
+    }
+    void* copy=s.heap->alloc(bytes,32);
+    if(!copy) { model_failure(name,"private model allocation failed");return nullptr; }
+    std::memcpy(copy,raw,bytes);
+    // BMWR/BMWE reserve the native warp stage and its texture matrix. As in
+    // Link's initModel, allocate dynamic display lists while it is enabled,
+    // then disable it immediately: an idle mask clips equipment by location.
+    const u32 type=environment ? 0x424D5745 : 0x424D5752; // BMWE / BMWR
+    auto* data=dRes_info_c::loaderBasicBmd(type,copy);
+    if(!data || !data->getJointNum() || !data->getMaterialNum()) {
+        model_failure(name,"native BMD loader failed");return nullptr;
+    }
+    auto* model=mDoExt_J3DModel__create(data,environment ? 0 : 0x80000,0x13000684);
+    dRes_info_c::offWarpMaterial(data);
+    if(!model) model_failure(name,"native model creation failed");
+    return model;
+}
+bool prepare(daAlink_c* link) {
+    if(s.owner!=link) release();
+    const auto selected=second_sword();
+    if(models_ready() && s.swordType==selected) return true;
+    // Rebuild only private equipment on a live setting change. Keep the current
+    // hand/guard/stow blend and alternation so the pose does not restart.
+    release_models();
+    s.swordType=selected;
+    const auto assets=second_sword_assets(selected);
+    constexpr u32 size=8*1024*1024;
+    s.storage.reset(new(std::nothrow) u8[size+31]);
+    if(!s.storage) { model_failure("heap","backing allocation failed");return false; }
+    auto* memory=reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(s.storage.get())+31)&~uintptr_t{31});
+    s.heap=JKRExpHeap::create(memory,size,JKRHeap::getRootHeap(),false);
+    if(!s.heap) { model_failure("heap","creation failed");release_models();return false; }
+    auto* previous=s.heap->becomeCurrentHeap();
+    // The live Alink archive has already had its vertex arrays byte-swapped
+    // by J3D. A distinct heap makes mount return a fresh archive, not that
+    // cached instance. Never feed the live resource through the loader twice.
+    auto* archive=JKRArchive::mount(assets.archive,JKRArchive::MOUNT_MEM,
+                                  s.heap,JKRArchive::MOUNT_DIRECTION_HEAD);
+    if(archive) {
+        s.sword=copy_model(archive,assets.sword,assets.environmentMapped);
+        if(assets.sheath) s.sheath=copy_model(archive,assets.sheath,assets.environmentMapped);
+        archive->unmount();
+    } else model_failure(assets.archive,"private archive mount failed");
+    previous->becomeCurrentHeap();
+    if(!models_ready()) { release_models();return false; }
+    s.owner=link;
+    s.seedBlade=true;
+    if(svc_log) {
+        char message[128];
+        std::snprintf(message,sizeof(message),"Dual Wield: private %s equipment ready",assets.name);
+        svc_log->info(mod_ctx,message);
+    }
+    return true;
+}
+bool human(daAlink_c* link) {
+    return link && !link->checkWolf() && link->mpLinkModel && link->field_0x2060 &&
+        link->mpLinkModel->getModelData()->getJointNum()==35 && link->mSwordModel &&
+        link->mSheathModel && link->checkSwordGet();
+}
+void show_guard_blade(daAlink_c* link) {
+    // The wooden sword's stowed duplicate is material 1. Drawing it hides
+    // that duplicate; metal swords instead reveal their blade at material 0.
+    auto* data=link->mSwordModel->getModelData();
+    const bool wooden=link->checkWoodSwordEquip();
+    const int material=wooden?1:0;
+    if(data->getMaterialNum()<=material) return;
+    auto* shape=data->getMaterialNodePointer(material)->getShape();
+    if(wooden) shape->hide();else shape->show();
+}
+bool ordinary(daAlink_c* link) {
+    if(link->mProcID==daAlink_c::PROC_CUT_NORMAL) return true;
+    if(link->mProcID!=daAlink_c::PROC_CUT_FINISH) return false;
+    return link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_LEFT ||
+        link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_RIGHT ||
+        link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_VERTICAL ||
+        link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_STAB;
+}
+bool sword_attack(daAlink_c* link) {
+    // Guard input can remain set throughout a technique. Its full-body clip
+    // owns the arms from charge/takeoff through landing, including recovery.
+    // Shield Attack deliberately remains eligible for the crossed thrust.
+    switch(link->mProcID) {
+    case daAlink_c::PROC_CUT_NORMAL:
+    case daAlink_c::PROC_CUT_FINISH:
+    case daAlink_c::PROC_CUT_FINISH_JUMP_UP:
+    case daAlink_c::PROC_CUT_FINISH_JUMP_UP_LAND:
+    case daAlink_c::PROC_CUT_REVERSE:
+    case daAlink_c::PROC_CUT_JUMP:
+    case daAlink_c::PROC_CUT_JUMP_LAND:
+    case daAlink_c::PROC_CUT_TURN:
+    case daAlink_c::PROC_CUT_TURN_CHARGE:
+    case daAlink_c::PROC_CUT_TURN_MOVE:
+    case daAlink_c::PROC_CUT_DOWN:
+    case daAlink_c::PROC_CUT_DOWN_LAND:
+    case daAlink_c::PROC_CUT_HEAD:
+    case daAlink_c::PROC_CUT_HEAD_LAND:
+    case daAlink_c::PROC_CUT_LARGE_JUMP_CHARGE:
+    case daAlink_c::PROC_CUT_LARGE_JUMP:
+    case daAlink_c::PROC_CUT_LARGE_JUMP_LAND:
+        return true;
+    default: return false;
+    }
+}
+bool sword_guard_equipment(daAlink_c* link) {
+    return link->mEquipItem==0x103 || link->mEquipItem==dItemNo_NONE_e;
+}
+bool item_guard_equipment(daAlink_c* link) {
+    // These items keep the left hand. Only the shield/right arm is replaced.
+    switch(link->mEquipItem) {
+    case dItemNo_PACHINKO_e:
+    case dItemNo_BOW_e:
+    case dItemNo_BOMB_ARROW_e:
+    case dItemNo_HAWK_ARROW_e:
+    case dItemNo_HOOKSHOT_e:
+    case dItemNo_W_HOOKSHOT_e:
+    case dItemNo_COPY_ROD_e:
+    case dItemNo_COPY_ROD_2_e:
+    case dItemNo_BOOMERANG_e:
+    case dItemNo_KANTERA_e:
+    case dItemNo_KANTERA2_e:
+        return true;
+    default: return false;
+    }
+}
+bool knocked_down(daAlink_c* link) {
+    // These processes own the full body from knockback through the get-up
+    // animation. Manual guard can still report true while Link is on the floor.
+    switch(link->mProcID) {
+    case daAlink_c::PROC_LARGE_DAMAGE:
+    case daAlink_c::PROC_LARGE_DAMAGE_WALL:
+    case daAlink_c::PROC_LARGE_DAMAGE_UP:
+    case daAlink_c::PROC_LAND_DAMAGE:
+        return true;
+    default: return false;
+    }
+}
+bool active(daAlink_c* link) { return s.owner==link && s.active && models_ready(); }
+J3DTexMtx* warp_texture(J3DModel* model) {
+    if(!model || !model->getModelData()->getMaterialNum()) return nullptr;
+    auto* material=model->getModelData()->getMaterialNodePointer(0);
+    auto* tev=material->getTevBlock();
+    const auto stages=tev->getTevStageNum();
+    if(!stages || tev->getTevOrder(stages-1)->getTexMap()!=3) return nullptr;
+    auto* tex=material->getTexGenBlock();
+    return tex->getTexGenNum() ? tex->getTexMtx(tex->getTexGenNum()-1) : nullptr;
+}
+bool equipment_visible(daAlink_c* link) {
+    // Keep the replacement equipment during dialogue and cutscenes too.
+    // Only combat/arm overrides depend on active(); events carry the second
+    // sword sheathed at the hip and retain their scripted body animation.
+    return s.owner==link && models_ready() &&
+        (link->checkStatusWindowDraw() ? dual_wield_equipped() && human(link) : s.enabled);
+}
+void sync_equipment_materials(daAlink_c* link) {
+    auto* warp=link->checkStatusWindowDraw() ? nullptr : warp_texture(link->mSheathModel);
+    for(auto* model:{s.sword,s.sheath}) {
+        if(!model) continue;
+        auto* data=model->getModelData();
+        if(warp) {
+            dRes_info_c::onWarpMaterial(data);
+            // Copy the final native projection/scroll at draw time, including
+            // arrival warps and models created after a warp has already begun.
+            // Never write to the shared native equipment material.
+            if(auto* target=warp_texture(model)) target->getTexMtxInfo()=warp->getTexMtxInfo();
+        } else dRes_info_c::offWarpMaterial(data);
+    }
+    const bool drawn=link->checkStatusWindowDraw() || (active(link) && s.draw>0);
+    auto* data=s.sword->getModelData();
+    // Native Wooden Sword has no scabbard: material 1 is its stowed portion.
+    // Metal swords instead hide blade material 0 once released in the sheath.
+    const bool wooden=s.swordType==SecondSword::Wooden;
+    const unsigned material=wooden ? 1 : 0;
+    if(material<data->getMaterialNum()) {
+        auto* shape=data->getMaterialNodePointer(material)->getShape();
+        if(wooden ? !drawn : drawn) shape->show();else shape->hide();
+    }
+}
+HookAction before_execute(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(s.owner && s.owner!=link) release();
+    if(!dual_wield_equipped() || s_failedSword!=second_sword()) s_failedOwner=nullptr;
+    if(dual_wield_equipped() && human(link) && s_failedOwner!=link && !prepare(link)) {
+        s_failedOwner=link;s_failedSword=second_sword();
+        if(svc_log) svc_log->warn(mod_ctx,"Dual Wield: could not prepare selected sword models; keeping native equipment");
+    }
+    if(s.owner==link) { ++s.tick;s.shieldTick=~0u; }
+    return HOOK_CONTINUE;
+}
+Pose hand_mount(daAlink_c* link,bool right) {
+    const auto& t=*link->field_0x2060->getOldFrameTransInfo(10);
+    // Euler fields retain an input clip's angles during native blending;
+    // the quaternion is the rotation actually used for the rendered joint.
+    const auto& q=*link->field_0x2060->getOldFrameQuaternion(10);
+    Pose mount{{q.x,q.y,q.z,q.w},{t.mTranslate.x,t.mTranslate.y,t.mTranslate.z}};
+    if(right) { mount.q.x=-mount.q.x;mount.q.y=-mount.q.y;mount.p.z=-mount.p.z; }
+    return mount;
+}
+Pose sword_at_hand(daAlink_c* link,bool right) {
+    return dual::compose(pose(link->mpLinkModel->getAnmMtx(right ? 14 : 9)),hand_mount(link,right));
+}
+void start_stow(daAlink_c* link,bool special) {
+    if(!active(link) || s.draw<=0) return;
+    s.stow={};s.stow.active=true;s.stow.special=special;
+    const auto& frame=special ? link->mUnderFrameCtrl[0] : link->mUpperFrameCtrl[2];
+    s.stow.lastFrame=frame.getFrame();
+    s.stow.duration=special ? 18.0f : std::max(1.0f,frame.getEnd()-frame.getFrame());
+    s.stow.phase=special ? link->field_0x3198 : 0;
+    s.stow.start=dual::compose(dual::inverse(pose(link->mpLinkModel->getBaseTRMtx())),s.rightSword);
+}
+void start_draw(daAlink_c* link,bool nativeClock) {
+    if(!active(link) || s.draw>0) return;
+    s.stow={};s.stow.active=true;s.stow.drawing=true;s.stow.nativeClock=nativeClock;
+    const auto& frame=link->mUpperFrameCtrl[2];
+    s.stow.lastFrame=frame.getFrame();
+    s.stow.duration=nativeClock ? std::max(1.0f,frame.getFrame()-frame.getStart()) : 20.0f;
+    s.stow.start=dual::compose(dual::inverse(pose(link->mpLinkModel->getBaseTRMtx())),sword_at_hand(link,true));
+}
+void after_equip(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(link->checkSwordEquipAnime() && link->mUpperFrameCtrl[2].getRate()<0) start_draw(link,true);
+}
+void after_unequip(ModContext*,void* args,void*,void*) {
+    start_stow(mods::arg<daAlink_c*>(args,0),false);
+}
+void after_flourish(ModContext*,void* args,void* result,void*) {
+    if(*static_cast<int*>(result)) start_stow(mods::arg<daAlink_c*>(args,0),true);
+}
+void update_stow(daAlink_c* link,bool guard) {
+    if(!s.active || sword_attack(link) || knocked_down(link) || link->checkHorseRide() || (guard && !s.stow.drawing) ||
+       (!sword_guard_equipment(link) && !item_guard_equipment(link))) {
+        s.stow={};return;
+    }
+    if(s.stow.active) {
+        const bool playing=!s.stow.nativeClock ? s.stow.progress<1 : s.stow.special ? link->mProcID==daAlink_c::PROC_SWORD_UNEQUIP_SP :
+            link->checkSwordEquipAnime() && (s.stow.drawing ? link->mUpperFrameCtrl[2].getRate()<0 : link->mUpperFrameCtrl[2].getRate()>0);
+        if(playing) {
+            const auto& frame=s.stow.special ? link->mUnderFrameCtrl[0] : link->mUpperFrameCtrl[2];
+            s.stow.advance(s.stow.nativeClock ? frame.getFrame() : s.stow.lastFrame+(s.stow.drawing ? -1 : 1),
+                           s.stow.special ? link->field_0x3198 : 0);
+        } else {
+            s.stow.active=false;
+            s.stow.release=(s.stow.drawing || link->mEquipItem==dItemNo_NONE_e || item_guard_equipment(link)) ? 1.0f : 0.0f;
+        }
+    } else s.stow.release=dual::approach(s.stow.release,0,1.0f/6);
+}
+void after_matrix(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);if(s.owner!=link) return;
+    const bool enabled=dual_wield_equipped() && human(link);
+    if(enabled!=s.enabled) {
+        s.attacks.reset();s.seedBlade=true;
+        if(human(link)) link->field_0x2060->initOldFrameMorf(6,1,16);
+    }
+    s.enabled=enabled;
+    const bool gliding=glide_active_for(link);
+    s.active=enabled && !link->checkEventRun() && !gliding;
+    if(gliding) {
+        // Glide deployment already skips the native sword's unequip animation.
+        // Stow the offhand immediately too, with no remaining arm/release blend.
+        // Keep the equipment visible at the hip while the native grab pose owns
+        // both arms, including when guard is still held during deployment.
+        s.stow={};s.guard=0;s.draw=0;s.sheathTilt=0;
+    }
+    if(!s.active || link->checkHorseRide() || !sword_guard_equipment(link) || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) s.haveGuardBody=false;
+    const bool mirror=s.active && ordinary(link) && s.attacks.right;
+    if(mirror!=s.mirror) s.seedBlade=true;
+    s.mirror=mirror;
+    if(s.poseTick==s.tick) return;
+    s.poseTick=s.tick;
+    const bool attacking=sword_attack(link);
+    // Mounted guard is a native sideways lean, not an on-foot sword block.
+    // It must also interrupt any draw/stow arm blend carried onto Epona.
+    const bool nativeArms=attacking || knocked_down(link) || link->checkHorseRide();
+    const bool canGuard=sword_guard_equipment(link) || item_guard_equipment(link);
+    const bool guard=s.active && !nativeArms && canGuard &&
+                     link->checkPlayerGuardAndAttack();
+    const bool drawn=s.active && (link->mEquipItem==0x103 || guard || attacking);
+    if(drawn && s.draw==0 && !s.stow.active && s.stow.release==0 && !nativeArms) start_draw(link,false);
+    if(s.active && !drawn && s.draw>0 && !s.stow.active && s.stow.release==0 && !nativeArms &&
+       (link->mEquipItem==dItemNo_NONE_e || item_guard_equipment(link))) {
+        start_stow(link,false);s.stow.nativeClock=false;s.stow.duration=24;
+    }
+    update_stow(link,guard);
+    const float tilt=s.active && s.stow.active ? dual::sheath_tilt_target(s.stow.progress,s.stow.drawing) : 0;
+    // Bound per-tick movement even when an attack/event interrupts the clip.
+    // Like the arm state, this advances only once, never per render/model pass.
+    s.sheathTilt=dual::approach(s.sheathTilt,tilt,1.0f/6);
+    // Attacks, knockdowns and horse riding take the arms immediately, including a guard
+    // already raised before the hit. Native morphing handles their transition.
+    s.guard=(!canGuard || nativeArms) ? 0.0f : dual::approach(s.guard,guard ? 1.0f : 0.0f,1.0f/5);
+    if(s.stow.active) {
+        if(!s.stow.drawing) s.guard=0;
+        const bool held=s.stow.drawing ? s.stow.progress>=dual::draw_grip_start : s.stow.progress<dual::stow_insert_end;
+        s.draw=held ? 1.0f : 0.0f;
+    } else s.draw=dual::approach(s.draw,drawn ? 1.0f : 0.0f,1.0f/8);
+}
+void after_cut(ModContext*,void* args,void* result,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(!active(link) || !ordinary(link) || !*static_cast<int*>(result)) return;
+    s.attacks.begin();s.seedBlade=true;
+    // Native quaternion/translation morphing sees the modified pose from the
+    // previous body calculation. It also blends an interrupted combination.
+    link->field_0x2060->initOldFrameMorf(4,1,16);
+}
+HookAction before_guard_attack(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(!active(link) || link->checkHorseRide() || (link->mEquipItem!=0x103 && link->mEquipItem!=dItemNo_NONE_e) ||
+       !link->field_0x2060->getOldFrameFlg()) return HOOK_CONTINUE;
+    // Capture before native init swaps in the shield-bash clip. The cache's
+    // quaternion contains the blended rotation; mRotation alone does not.
+    for(int joint=0;joint<17;++joint) {
+        s.guardBody[joint]=*link->field_0x2060->getOldFrameTransInfo(joint);
+        const auto& q=*link->field_0x2060->getOldFrameQuaternion(joint);
+        const Vec angles=dual::euler({q.x,q.y,q.z,q.w});
+        constexpr float units=32768/3.14159265358979323846f;
+        s.guardBody[joint].mRotation.x=static_cast<s16>(std::lround(angles.x*units));
+        s.guardBody[joint].mRotation.y=static_cast<s16>(std::lround(angles.y*units));
+        s.guardBody[joint].mRotation.z=static_cast<s16>(std::lround(angles.z*units));
+    }
+    s.haveGuardBody=true;
+    return HOOK_CONTINUE;
+}
+float guard_thrust(daAlink_c* link) {
+    if(link->mProcID!=daAlink_c::PROC_GUARD_ATTACK) return 0;
+    const float start=link->field_0x3478-4,end=link->field_0x347c+4;
+    const float t=std::clamp((link->mUnderFrameCtrl[0].getFrame()-start)/std::max(1.0f,end-start),0.0f,1.0f);
+    return std::sin(3.14159265358979323846f*dual::smooth(t));
+}
+HookAction before_model_calc(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    auto* model=mods::arg<J3DModel*>(args,1);
+    const bool thrust=s.haveGuardBody && sword_guard_equipment(link) && link->mProcID==daAlink_c::PROC_GUARD_ATTACK;
+    if(!active(link) || (!s.mirror && !thrust) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
+    // Reject nonstandard tracks as a group; never partly mirror a mixed rig.
+    for(int i=0;i<6;++i) {
+        auto& pack=i<3 ? link->mNowAnmPackUnder[i] : link->mNowAnmPackUpper[i-3];
+        auto* anm=pack.getAnmTransform();
+        if(anm && (anm->getKind()!=8 || anm->field_0x1e!=35)) { s.mirror=false;return HOOK_CONTINUE; }
+    }
+    s_calculating=true;
+    for(int i=0;i<6;++i) {
+        auto& b=s_borrow[i];b.pack=i<3 ? &link->mNowAnmPackUnder[i] : &link->mNowAnmPackUpper[i-3];
+        b.original=b.pack->getAnmTransform();if(!b.original) continue;
+        b.wrapper.emplace(*static_cast<J3DAnmTransformKey*>(b.original),s.mirror,
+                          thrust ? &s.guardBody : nullptr,guard_thrust(link));
+        b.pack->setAnmTransform(&*b.wrapper);
+    }
+    return HOOK_CONTINUE;
+}
+void after_model_calc(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(s_calculating && s.owner==link && mods::arg<J3DModel*>(args,1)==link->mpLinkModel) detach();
+}
+void solve_arm(daAlink_c* link,bool right,Pose sword,float weight,const Vec* elbowPole=nullptr) {
+    auto* model=link->mpLinkModel;int first=right ? 12 : 7;
+    dual::Arm arm{pose(model->getAnmMtx(first)),pose(model->getAnmMtx(first+1)),pose(model->getAnmMtx(first+2))};
+    const Pose item=dual::compose(dual::inverse(arm.hand),pose(model->getAnmMtx(first+3)));
+    const Pose mount=hand_mount(link,right);
+    Pose hand=dual::compose(sword,dual::inverse(mount));
+    const auto solved=dual::reach(arm,hand,weight,elbowPole);
+    put(model,first,solved.upper);put(model,first+1,solved.lower);put(model,first+2,solved.hand);
+    // Both item joints remain attached to their hands after the IK pass.
+    // The primary model is rendered from joint 10. Use the same grip mount
+    // as the hand solve, not a second animated item rotation that can fold
+    // the Master Sword sideways during the guard-attack morph.
+    put(model,first+3,dual::compose(solved.hand,right ? item : mount));
+}
+void after_arms(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);if(!equipment_visible(link)) return;
+    auto* model=link->mpLinkModel;
+    s.hipSword=dual::compose(pose(model->getAnmMtx(16)),local(-3,0,18,20));
+    // Roll around the blade's local X axis, preserving the grip position and
+    // blade direction. The sheath inherits this same pose in after_items.
+    constexpr float halfTurn90=.70710678118f;
+    s.hipSword=dual::compose(s.hipSword,Pose{{halfTurn90,0,0,halfTurn90},{}});
+    const Pose actor=pose(model->getBaseTRMtx());
+    s.hipSword=dual::compose(actor,dual::tilt_sheath(
+        dual::compose(dual::inverse(actor),s.hipSword),s.sheathTilt));
+    if(!active(link)) { s.rightSword=s.hipSword;s.shieldTick=~0u;return; }
+    // Save the shield's native attachment BEFORE sword IK changes the right
+    // item joint. Collision derives its facing from this hidden model, not
+    // from the rendered blades or simply Link's facing angle.
+    if(link->mRightItemJntNo<35 && !link->checkStatusWindowDraw()) {
+        s.nativeShield=pose(model->getAnmMtx(link->mRightItemJntNo));
+        s.shieldTick=s.tick;
+    } else s.shieldTick=~0u;
+    if(s.guard>0) {
+        Pose base=pose(model->getBaseTRMtx());
+        const Pose inverseBase=dual::inverse(base);
+        const float thrust=guard_thrust(link);
+        std::array<Pose,2> blades;
+        float plane=50+16*thrust;
+        // Follow the arm extension with the clavicles only during the thrust.
+        // This leaves the resting shoulder stance intact and supplies reach
+        // without folding the blades forward or pulling the grips back in.
+        for(bool right:{false,true}) {
+            if(!right && !sword_guard_equipment(link)) continue;
+            const int clavicle=right ? 11 : 6;
+            const Pose follow=dual::shoulder_follow(pose(model->getAnmMtx(clavicle)),
+                pose(model->getAnmMtx(clavicle+1)),dual::rotate(base.q,{0,0,1}),.5f,thrust*dual::smooth(s.guard));
+            for(int joint=clavicle;joint<=clavicle+4;++joint)
+                put(model,joint,dual::compose(follow,pose(model->getAnmMtx(joint))));
+        }
+        for(bool right:{false,true}) {
+            if(!right && !sword_guard_equipment(link)) continue;
+            const int first=right ? 12 : 7;
+            dual::Arm arm{dual::compose(inverseBase,pose(model->getAnmMtx(first))),
+                          dual::compose(inverseBase,pose(model->getAnmMtx(first+1))),
+                          dual::compose(inverseBase,pose(model->getAnmMtx(first+2)))};
+            // Keep the crossing in front of the face: lower the grips slightly,
+            // extend them forward, and lean the blades away from the head.
+            // The Ordon (right-hand) blade stays 12 units ahead of the Master
+            // Sword. When both are drawn, clamp them together so reach limits
+            // cannot reverse them; an item arm must not constrain the Ordon blade.
+            const float depth=right ? 6.0f : -6.0f;
+            blades[right]=dual::cross_guard_blade(right,thrust);
+            plane=std::min(plane,dual::max_sword_depth(arm,blades[right],hand_mount(link,right))-depth);
+        }
+        for(bool right:{false,true}) {
+            if(!right && !sword_guard_equipment(link)) continue;
+            blades[right].p.z=plane+(right ? 6.0f : -6.0f);
+            std::optional<Vec> elbowPole;
+            if(right && item_guard_equipment(link)) {
+                // The native shield-bash elbow rises above the wrist line.
+                // Keep the one-handed sword bend down/out in actor space for
+                // both guard and thrust, so entering/leaving the bash cannot
+                // flip its IK plane. The guard weight still blends the arm.
+                const Vec shoulder=dual::compose(inverseBase,pose(model->getAnmMtx(12))).p;
+                const float side=shoulder.x<0 ? -1.0f : 1.0f;
+                elbowPole=dual::compose(base,Pose{{},shoulder+Vec{24*side,-40,12}}).p;
+            }
+            solve_arm(link,right,dual::compose(base,blades[right]),dual::smooth(s.guard),
+                      elbowPole ? &*elbowPole : nullptr);
+        }
+    }
+    if(s.stow.active || s.stow.release>0) {
+        const Pose base=pose(model->getBaseTRMtx()),inverseBase=dual::inverse(base);
+        const float progress=s.stow.active ? s.stow.progress : 1.0f;
+        const Pose follow=dual::shoulder_follow(pose(model->getAnmMtx(11)),pose(model->getAnmMtx(12)),
+                                                dual::rotate(base.q,{0,0,1}),progress);
+        for(int joint=11;joint<=15;++joint) put(model,joint,dual::compose(follow,pose(model->getAnmMtx(joint))));
+        const Vec shoulder=dual::compose(inverseBase,pose(model->getAnmMtx(12))).p;
+        const float side=shoulder.x<0 ? -1.0f : 1.0f;
+        const Pose mount=hand_mount(link,true);
+        // Suppress the native shield-back arm motion for the whole clip.
+        // The same forward route is used by the empty hand after release.
+        Pose restHand=dual::compose(s.stow.start,dual::inverse(mount));
+        restHand.p={shoulder.x+14*side,shoulder.y-51,shoulder.z+2};
+        Pose rest=dual::compose(restHand,mount);
+        if(s.stow.drawing && s.guard>0) rest=dual::compose(inverseBase,sword_at_hand(link,true));
+        const Pose target=dual::sheath_hand_target(s.stow.start,dual::compose(inverseBase,s.hipSword),
+                                                  rest,mount,progress,s.stow.drawing);
+        // A stable pole in front of the right shoulder prevents the vanilla
+        // shield animation from dragging the elbow behind/through the torso.
+        const float poleWeight=dual::smooth(progress/.12f)*dual::smooth((1-progress)/.12f);
+        const Vec forwardPole=dual::compose(base,Pose{{},{shoulder.x,shoulder.y,shoulder.z+60}}).p;
+        const Vec pole=pose(model->getAnmMtx(13)).p*(1-poleWeight)+forwardPole*poleWeight;
+        solve_arm(link,true,dual::compose(base,target),s.stow.active ? 1.0f : s.stow.release,&pole);
+        const bool held=s.stow.drawing ? progress>=dual::draw_grip_start : progress<dual::stow_insert_end;
+        s.rightSword=held ? sword_at_hand(link,true) : s.hipSword;
+        return;
+    }
+    s.rightSword=s.draw>0 ? sword_at_hand(link,true) : s.hipSword;
+}
+HookAction before_status_execute(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    // Gameplay execute/setMatrix do not run while this menu owns Link's model.
+    // Create equipment on demand so selecting Dual Wield is visible immediately.
+    if(!dual_wield_equipped() || s_failedSword!=second_sword()) s_failedOwner=nullptr;
+    if(dual_wield_equipped() && human(link) && s_failedOwner!=link && !prepare(link)) {
+        s_failedOwner=link;s_failedSword=second_sword();
+        model_failure("Collection preview","could not prepare selected sword equipment");
+    }
+    return HOOK_CONTINUE;
+}
+void status_item_matrices(daAlink_c* link) {
+    auto* model=link->mpLinkModel;
+    // Use the preview's evaluated joints, not cached gameplay blend transforms.
+    Pose mount=dual::compose(dual::inverse(pose(model->getAnmMtx(9))),pose(model->getAnmMtx(10)));
+    mount.q.x=-mount.q.x;mount.q.y=-mount.q.y;mount.p.z=-mount.p.z;
+    put(s.sword,dual::secondary_sword_model_pose(dual::compose(pose(model->getAnmMtx(14)),mount)));
+    Pose hip=dual::compose(pose(model->getAnmMtx(16)),local(-3,0,18,20));
+    constexpr float halfTurn90=.70710678118f;
+    hip=dual::compose(hip,Pose{{halfTurn90,0,0,halfTurn90},{}});
+    if(s.sheath) put(s.sheath,dual::offset_secondary_sheath(
+        dual::compose(dual::secondary_sword_model_pose(hip),dual::inverse(local(-18.5f,.14f,12.2f,0,33.1f))),
+        pose(model->getBaseTRMtx()).q));
+}
+void after_status_draw(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(!link->checkStatusWindowDraw() || !equipment_visible(link) || link->mClothesChangeWaitTimer!=0) return;
+    sync_equipment_materials(link);
+    // StatusWindow uses basicModelDraw rather than the gameplay modelDraw path.
+    link->basicModelDraw(s.sword);if(s.sheath) link->basicModelDraw(s.sheath);
+}
+void after_items(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(s.owner!=link) return;
+    if(link->checkStatusWindowDraw()) {
+        if(equipment_visible(link)) status_item_matrices(link);
+        return;
+    }
+    if(s.forcedBlade && (!active(link) || s.guard<=0 || !sword_guard_equipment(link))) {
+        if(link->mEquipItem!=0x103) link->offSwordModel();
+        s.forcedBlade=false;
+    }
+    if(!equipment_visible(link)) return;
+    put(s.sword,dual::secondary_sword_model_pose(s.rightSword));
+    // Start with the native sword-in-sheath transform, then apply the
+    // estimated visual correction to the scabbard alone in actor space.
+    const Pose mount=local(-18.5f,.14f,12.2f,0,33.1f);
+    if(s.sheath) put(s.sheath,dual::offset_secondary_sheath(
+        dual::compose(dual::secondary_sword_model_pose(s.hipSword),dual::inverse(mount)),
+        pose(link->mpLinkModel->getBaseTRMtx()).q));
+    if(active(link) && s.guard>0 && link->mEquipItem==dItemNo_NONE_e) {
+        put(link->mSwordModel,sword_at_hand(link,false));
+        show_guard_blade(link);
+        s.forcedBlade=true;
+    }
+}
+void after_sword_pos(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);if(!active(link)) return;
+    if(s.mirror) {
+        const Pose blade=dual::secondary_sword_model_pose(sword_at_hand(link,true));
+        const Vec tip=blade.p+dual::rotate(blade.q,{second_sword_assets(s.swordType).bladeLength,0,0});
+        const bool reverse=link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_RIGHT;
+        const Vec direction=dual::rotate(blade.q,{0,0,reverse ? -1.0f : 1.0f});
+        link->field_0x3498.set(blade.p.x,blade.p.y,blade.p.z);
+        link->mSwordTopPos.set(tip.x,tip.y,tip.z);link->field_0x3720=link->mSwordTopPos;
+        link->field_0x34a4.set(direction.x,direction.y,direction.z);
+    }
+    if(s.seedBlade) {
+        link->field_0x34b0=link->mSwordTopPos;link->field_0x34bc=link->field_0x3498;s.seedBlade=false;
+    }
+}
+void after_shield_draw(ModContext*,void* args,void* result,void*) {
+    if(equipment_visible(mods::arg<daAlink_c*>(args,0))) *static_cast<bool*>(result)=false;
+}
+void after_model_draw(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(!equipment_visible(link) || mods::arg<J3DModel*>(args,1)!=link->mSwordModel) return;
+    sync_equipment_materials(link);
+    const int hidden=mods::arg<int>(args,2);
+    link->modelDraw(s.sword,hidden);if(s.sheath) link->modelDraw(s.sheath,hidden);
+}
+HookAction before_collision(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(active(link) && s.shieldTick==s.tick && link->mShieldModel &&
+       link->mShieldChangeWaitTimer==0 && !link->checkStatusWindowDraw() &&
+       link->checkPlayerGuardAndAttack()) {
+        // setItemMatrix attached the hidden shield to our sword-oriented hand.
+        // Restore the native shield basis before setCollision reads BaseZ into
+        // field_0x351c/field_0x306c. Keep all native cylinders, angle limits,
+        // shield flags, damage and Guard Break decisions exactly as they are.
+        matrix(s.nativeShield,link->mShieldModel->getBaseTRMtx());
+    }
+    return HOOK_CONTINUE;
+}
+void after_collision(ModContext*,void* args,void*,void*) {
+    auto* link=mods::arg<daAlink_c*>(args,0);
+    if(!active(link) || link->mProcID!=daAlink_c::PROC_GUARD_ATTACK || !link->mProcVar5.field_0x3012) return;
+    const Pose left=sword_at_hand(link,false),right=sword_at_hand(link,true);
+    const Vec a=left.p+dual::rotate(left.q,{35,0,0}),b=right.p+dual::rotate(right.q,{35,0,0});
+    link->mGuardAtCps.SetStartEnd(cXyz(a.x,a.y,a.z),cXyz(b.x,b.y,b.z));
+    // Keep Shield Attack's native type, timing and stun/Hidden Skill behavior.
+}
+HookAction before_delete(ModContext*,void* args,void*,void*) {
+    if(mods::arg<void*>(args,0)==s_failedOwner) s_failedOwner=nullptr;
+    if(mods::arg<void*>(args,0)==s.owner) release();return HOOK_CONTINUE;
+}
+} // namespace
+bool dual_wield_owns_model(const daAlink_c* link, const J3DModel* model) {
+    return link != nullptr && s.owner == link && model != nullptr &&
+        (model == s.sword || model == s.sheath);
+}
+ModResult install_dual_wield_hooks(ModError* error) {
+    void* address=nullptr;
+    if(svc_hook->resolve && svc_hook->resolve(mod_ctx,"J3DModel::forgetMtx",&address,nullptr)==MOD_OK)
+        s_forget=reinterpret_cast<ForgetModel>(address);
+    ModResult result=MOD_OK;
+#define PRE(H,F) if((result=mods::hook::add_pre<H>(svc_hook,F))!=MOD_OK) return mods::set_error(error,result,"Dual Wield: " #H)
+#define POST(H,F) if((result=mods::hook::add_post<H>(svc_hook,F))!=MOD_OK) return mods::set_error(error,result,"Dual Wield: " #H)
+    PRE(DualExecute,before_execute);POST(DualMatrix,after_matrix);
+    PRE(DualModelCalc,before_model_calc);POST(DualModelCalc,after_model_calc);
+    POST(DualArms,after_arms);POST(DualItems,after_items);POST(DualSwordPos,after_sword_pos);
+    POST(DualShieldDraw,after_shield_draw);POST(DualModelDraw,after_model_draw);
+    PRE(DualStatusExecute,before_status_execute);POST(DualStatusDraw,after_status_draw);
+    POST(DualCut,after_cut);POST(DualFinish,after_cut);PRE(DualCollision,before_collision);POST(DualCollision,after_collision);
+    PRE(DualGuardAttack,before_guard_attack);
+    POST(DualEquip,after_equip);POST(DualUnequip,after_unequip);POST(DualFlourish,after_flourish);
+    PRE(DualDelete,before_delete);
+#undef PRE
+#undef POST
+    return MOD_OK;
+}
+void shutdown_dual_wield() { release();s_failedOwner=nullptr; }
+} // namespace dawnlight

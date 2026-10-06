@@ -37,6 +37,7 @@ constexpr int kHudItemAnchorTop = 2;
 constexpr int kHudItemAnchorBottom = 3;
 constexpr int kHudTextAnchorLeft = 0;
 constexpr int kHudTextAnchorRight = 1;
+constexpr int kHudTextAnchorOriginal = 2;
 constexpr int kHudParentIndependent = 1;
 constexpr int kHudSlideLeftToRight = 1;
 constexpr int kHudSlideRightToLeft = 2;
@@ -604,6 +605,13 @@ inline DuskModHudTransform hud_layout_oxygen_transform() {
             .offset_y = 0.0f,
             .scale = 1.0f,
         };
+    }
+    return {};
+}
+
+inline DuskModHudTransform hud_layout_tears_of_light_transform() {
+    if (hud_layout() == HudLayout::Custom) {
+        return hud_custom_element_transform(HudElement::TearsOfLight);
     }
     return {};
 }

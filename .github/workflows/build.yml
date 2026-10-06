@@ -10,13 +10,42 @@ on:
 env:
   SYMGEN_VERSION: v1.2.4
 
+permissions:
+  contents: read
+
 jobs:
+  sources:
+    name: Resolve build sources
+    runs-on: ubuntu-latest
+    outputs:
+      variants: ${{steps.sources.outputs.variants}}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Pin source commits
+        id: sources
+        shell: bash
+        run: |
+          source_sha=$(git rev-parse HEAD)
+          variants=$(jq -cn --arg ref "$source_sha" '[{name: "main", ref: $ref}]')
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/* ]]; then
+            # Resolve Lite once so all platforms build the same source snapshot.
+            git fetch --no-tags --depth=1 origin refs/heads/dawnlight-lite
+            lite_sha=$(git rev-parse FETCH_HEAD)
+            variants=$(jq -c --arg ref "$lite_sha" '. + [{name: "lite", ref: $ref}]' <<< "$variants")
+          fi
+          echo "variants=$variants" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.name): `\(.ref)`"' <<< "$variants" >> "$GITHUB_STEP_SUMMARY"
+
   build:
-    name: Build ${{matrix.platform}}
+    name: Build ${{matrix.variant.name}} ${{matrix.platform}}
+    needs: sources
     runs-on: ${{matrix.runner}}
     strategy:
       fail-fast: false
       matrix:
+        variant: ${{fromJSON(needs.sources.outputs.variants)}}
+        platform: [linux-x86_64, linux-aarch64, macos-arm64, macos-x86_64, ios-arm64, windows-amd64, windows-arm64, android-aarch64]
         include:
           - platform: linux-x86_64
             runner: ubuntu-latest
@@ -45,6 +74,125 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{matrix.variant.ref}}
+
+      - name: Test Boss Rush clear timers
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror tests/clear_timer_state_test.cpp -o /tmp/clear-timer-test
+          /tmp/clear-timer-test
+          python3 tests/clear_timer_integration_test.py
+          python3 tests/clear_timer_variants_test.py
+          python3 tests/heroes_shade_native_hooks_test.py
+          python3 tests/bossrush_cave_routes_test.py
+          c++ -std=c++20 -Wall -Wextra -Werror tests/cave_boss_pool_test.cpp -o /tmp/cave-boss-pool-test
+          /tmp/cave-boss-pool-test
+          python3 tests/cave_boss_visits_test.py
+
+      - name: Test Cave of Ordeals placement and selection
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror tests/cave_randomizer_ground_test.cpp -o /tmp/cave-ground-test
+          /tmp/cave-ground-test
+          python3 tests/cave_randomizer_selection_test.py
+          python3 tests/cave_randomizer_stalhound_test.py
+
+      - name: Test Cave enemy spawner
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/cave_enemy_spawner_test.py
+          python3 tests/enemy_spawner_scene_test.py
+
+      - name: Test Cave enemy slow motion
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
+        run: |
+          python3 tests/cave_enemy_slow_test.py
+          python3 tests/boss_enemy_slow_test.py
+          c++ -std=c++20 -Wall -Wextra -Werror tests/enemy_slow_motion_timing.cpp -o /tmp/enemy-slow-test
+          /tmp/enemy-slow-test
+
+      - name: Test Z item provider guards
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
+        run: python3 tests/z_item_provider_guard_test.py
+
+      - name: Test Bullet Time gyro compatibility
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
+        run: python3 tests/bullet_time_gyro_compat_test.py
+
+      - name: Test native Enemy Hard Mode runtime
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'lite'
+        run: python3 tests/enemy_hard_mode_runtime_test.py
+
+      - name: Test mounted Bow and Slingshot reticles
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/mounted_bow_sight_test.py
+
+      - name: Test Dual Wield
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/dual_wield_test.py
+          python3 tests/second_sword_test.py
+
+      - name: Test Fierce Deity visuals and lifecycle
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/fierce_deity_lifecycle_test.py
+          python3 tests/fierce_deity_visual_test.py
+          python3 tests/fierce_deity_equipment_test.py
+          python3 tests/fierce_deity_transition_test.py
+          python3 tests/fierce_deity_particles_test.py
+          python3 tests/fierce_deity_activation_test.py
+          python3 tests/dark_link_settings_test.py
+          python3 tests/fierce_deity_movement_test.py
+          python3 tests/touch_midna_test.py
+          python3 tests/jump_abilities_test.py
+
+      - name: Test Collection Dual Wield
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/collection_dual_wield_test.py
+
+      - name: Test glider loading and deferred rendering
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/glider_bmd_test.py
+          python3 tests/glider_bmd_load_test.py
+          python3 tests/glider_bmd_draw_test.py
+
+      - name: Test Shield Attack and Flurry Rush prompts
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/shield_attack_prompt_test.py
+
+      - name: Test Boss Rush hook lifecycle
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/bossrush_hook_lifecycle_test.py
+
+      - name: Test configurable stamina and mode overrides
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/stamina_settings_test.py
+          python3 tests/mode_unlock_test.py
+          python3 tests/glide_stamina_test.py
+          python3 tests/wolf_sprint_test.py
+          python3 tests/sprint_speed_test.py
+          python3 tests/manual_jump_input_test.py
+
+      - name: Test HD HUD button glyph compatibility
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/hd_hud_glyph_test.py
+          python3 tests/hud_text_anchor_test.py
+          python3 tests/round_button_overlays_test.py
+
+      - name: Test HUD editor transforms
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
+        run: |
+          python3 tests/hud_editor_layout_test.py
+          python3 tests/hud_interaction_layout_test.py
+
+      - name: Test HUD fades
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/hud_fade_test.py
 
       - name: Read pinned Dusklight version
         id: dusklight
@@ -83,30 +231,73 @@ jobs:
           fi
           cmake -B build "${args[@]}"
 
+      - name: Test TE Collection service adapter
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
+        run: python3 tests/collection_service_test.py dusklight
+
+      - name: Test slow-motion stereo and surround audio
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
+        run: python3 tests/slow_motion_audio_test.py dusklight
+
+      - name: Test Midna stamina charge against native code
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/midna_charge_stamina_test.py --dusklight-dir dusklight
+
+      - name: Test Armos death particle fallback against native code
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/armos_death_fallback_test.py --dusklight-dir dusklight
+
+      - name: Test Touch Editor and Quick Access compatibility
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/touch_buttons_test.py
+          python3 tests/touch_lb_test.py
+          python3 tests/touch_midna_test.py
+          python3 tests/touch_midna_visual_test.py
+          python3 tests/touch_visibility_test.py
+          python3 tests/touch_button_editor_test.py
+          python3 tests/touch_editor_install_test.py
+
+      - name: Test HUD fade configuration persistence
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/hud_fade_config_test.py build
+
+      - name: Test Fierce Deity HUD service
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/fierce_deity_hud_test.py dusklight
+          python3 tests/kh2_hud_compat_test.py dusklight
+
       - name: Build
         run: cmake --build build --parallel
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: mod-${{matrix.platform}}
+          name: mod-${{matrix.variant.name}}-${{matrix.platform}}
           path: build/mods/*.dusk
           if-no-files-found: error
 
   combine:
-    name: Combine bundles
-    needs: build
+    name: Combine ${{matrix.variant.name}} bundles
+    needs: [sources, build]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{fromJSON(needs.sources.outputs.variants)}}
     permissions:
       actions: read
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{matrix.variant.ref}}
 
       - name: Download platform bundles
         uses: actions/download-artifact@v8
         with:
-          pattern: mod-*
+          pattern: mod-${{matrix.variant.name}}-*
           path: dist
 
       - name: Install symgen
@@ -116,20 +307,50 @@ jobs:
           chmod +x symgen
 
       - name: Merge bundles
+        env:
+          VARIANT: ${{matrix.variant.name}}
         run: |
-          name=$(basename dist/mod-linux-x86_64/*.dusk)
+          name=$(basename dist/mod-"$VARIANT"-linux-x86_64/*.dusk)
           python3 tools/merge_mod.py -o "combined/$name" --symgen ./symgen \
             dist/*/*.dusk
 
       - name: Upload combined bundle
         uses: actions/upload-artifact@v7
         with:
-          name: mod-combined
+          name: mod-combined-${{matrix.variant.name}}
           path: combined/*.dusk
           if-no-files-found: error
 
+  release:
+    name: Publish both release bundles
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: combine
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download combined bundles
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mod-combined-*
+          path: release-bundles
+
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{github.token}}
-        run: gh release create "$GITHUB_REF_NAME" combined/*.dusk --verify-tag --generate-notes
+        run: |
+          if notes=$(gh release view "$GITHUB_REF_NAME" --json body --jq '.body'); then
+            # Fill an empty release body using the same GitHub-generated
+            # format as --generate-notes, preserving existing written notes.
+            if [[ -z "${notes//[[:space:]]/}" ]]; then
+              gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+                -f tag_name="$GITHUB_REF_NAME" --jq '.body' > "$RUNNER_TEMP/release-notes.md"
+              gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+            fi
+            gh release upload "$GITHUB_REF_NAME" release-bundles/*/*.dusk --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-bundles/*/*.dusk --verify-tag --generate-notes
+          fi

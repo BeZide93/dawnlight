@@ -5,6 +5,9 @@
 #include "boss_portal_mirrors.hpp"
 #include "save_compat.hpp"
 #include "save_state.hpp"
+#include "clear_timer.hpp"
+#include "cave_boss_visits.hpp"
+#include "d/d_door_param2.h"
 #include "service_imports.hpp"
 
 #include "global.h"
@@ -12,6 +15,7 @@
 #include "Z2AudioLib/Z2SeqMgr.h"
 #include "Z2AudioLib/Z2SeMgr.h"
 #include "m_Do/m_Do_ext.h"
+#include "JSystem/JParticle/JPAEmitter.h"
 #include "m_Do/m_Do_Reset.h"
 class JPABaseEmitter;
 #include "d/actor/d_a_alink.h"
@@ -89,6 +93,7 @@ DEFINE_HOOK(&dStage_searchName, BossRushAreaActorNameHook);
 DEFINE_HOOK(&fopMsgM_messageSetDemo, MessageSetDemoHook);
 DEFINE_HOOK(&daObjBossWarp_c::execute, BossWarpExecuteHook);
 DEFINE_HOOK(&daObj_Oiltubo_c::wait, OilTuboWaitHook);
+DEFINE_HOOK(&JPABaseEmitter::deleteAllParticle, HubParticleDeleteHook);
 DEFINE_HOOK(&dMeter2_c::_execute, MeterExecuteHook);
 DEFINE_HOOK(&daAlink_c::dungeonReturnWarp, DungeonReturnWarpHook);
 DEFINE_HOOK(&daAlink_c::skipPortalObjWarp, SkipPortalObjWarpHook);
@@ -201,6 +206,7 @@ constexpr BossRushEntry kBossRushEntries[] = {
 };
 
 constexpr size_t kBossRushEntryCount = std::size(kBossRushEntries);
+static_assert(kBossRushEntryCount == timing::bosses);
 static_assert(kBossRushEntryCount <= 24, "Boss Rush defeated state exceeds SaveService capacity");
 constexpr const char* kBossRushRunName = "Boss Rush";
 constexpr const char* kBossRushGameModeId = "bossrush";
@@ -225,6 +231,7 @@ constexpr u8 kBossRushStateCaveOfOrdeals = 3;
 constexpr u8 kBossRushRunPortalIndex = static_cast<u8>(kBossRushEntryCount);
 constexpr u8 kBossRushCavePortalIndex = kBossRushRunPortalIndex + 1;
 constexpr u8 kBossRushHubPortalCount = kBossRushCavePortalIndex + 1;
+static_assert(kBossRushRunPortalIndex == timing::run && kBossRushCavePortalIndex == timing::cave);
 constexpr u8 kBossRushHubPortalCreateBatch = 1;
 constexpr u8 kBossRushHubWarpSceneListNo = 0;
 constexpr f32 kBossRushHubY = 1100.0f;
@@ -491,6 +498,7 @@ int bossrush_entry_index(const BossRushEntry& entry) {
 }
 
 void mark_bossrush_entry_defeated(const BossRushEntry& entry) {
+    finish_clear_timer(bossrush_entry_index(entry));
     const int index = bossrush_entry_index(entry);
     if (index >= 0) {
         mark_bossrush_portal_defeated(static_cast<u8>(index));
@@ -1763,6 +1771,7 @@ void advance_bossrush() {
     } while (index < kBossRushEntryCount && !kBossRushEntries[index].runSequence);
 
     if (index >= kBossRushEntryCount) {
+        finish_clear_timer(timing::run);
         index = 0;
         increment_boss_rush_loop();
         set_boss_rush_state(kBossRushStateHub);
@@ -1948,6 +1957,8 @@ void unregister_bossrush_hub_music_overlay() {
 }
 
 void prepare_midna_hub_warp_item() {
+    reset_cave_boss_visits();
+    cancel_clear_timer();
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
     set_bossrush_return_place();
@@ -1987,6 +1998,8 @@ void warp_to_bossrush_hub_from_midna(daMidna_c* midna) {
 }
 
 void prepare_darknut_area_entry() {
+    reset_cave_boss_visits();
+    cancel_clear_timer();
     // A positive spawn can still inherit a previous warp/demo mode unless
     // the restart override is cleared before dStage_playerInit runs.
     dComIfGs_setRestartRoomParam(0);
@@ -2001,6 +2014,8 @@ void prepare_darknut_area_entry() {
 }
 
 void prepare_cave_entrance_return() {
+    reset_cave_boss_visits();
+    cancel_clear_timer();
     set_boss_rush_state(kBossRushStateCaveOfOrdeals);
     set_boss_rush_index(0);
     set_bossrush_return_place();
@@ -2010,6 +2025,8 @@ void prepare_cave_entrance_return() {
 }
 
 void prepare_hub_return_from_cave() {
+    reset_cave_boss_visits();
+    cancel_clear_timer();
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
     set_bossrush_return_place();
@@ -2036,6 +2053,8 @@ const char* bossrush_portal_name(int portal) {
 }
 
 void start_cave_of_ordeals_warp() {
+    reset_cave_boss_visits();
+    begin_clear_timer(timing::cave);
     reset_direct_final_boss_state();
     delete_hub_actors();
     set_boss_rush_state(kBossRushStateCaveOfOrdeals);
@@ -2048,6 +2067,7 @@ void start_cave_of_ordeals_warp() {
 }
 
 void start_bossrush_entry(int portal) {
+    begin_clear_timer(portal);
     if (portal == kBossRushCavePortalIndex) {
         start_cave_of_ordeals_warp();
         return;
@@ -3521,6 +3541,19 @@ void update_bossrush_darknut_area() {
     refresh_midna_root_flow_mode();
 }
 
+void* cleared_final_cave_door(void* ptr, void*) {
+    if (!fopAcM_IsActor(ptr)) return nullptr;
+    auto* actor = static_cast<fopAc_ac_c*>(ptr);
+    if (fopAcM_GetName(actor) != fpcNm_DOOR20_e) return nullptr;
+    const bool front = door_param2_c::getFRoomNo(actor) == 48 &&
+                       door_param2_c::getFrontOption(actor) == 3;
+    const bool back = door_param2_c::getBRoomNo(actor) == 48 &&
+                      door_param2_c::getBackOption(actor) == 3;
+    if (!front && !back) return nullptr;
+    const auto sw = front ? door_param2_c::getSwbit(actor) : door_param2_c::getSwbit2(actor);
+    return sw != 0xff && dComIfGs_isSwitch(sw, 48) ? ptr : nullptr;
+}
+
 void update_bossrush() {
     if (!is_boss_rush()) {
         clear_pending_midna_flow_action();
@@ -3570,6 +3603,14 @@ void update_bossrush() {
     }
 
     if (boss_rush_state() == kBossRushStateCaveOfOrdeals) {
+        if (clear_timer_enabled() && is_current_stage_name(kCaveOfOrdealsStage)) {
+            const int room = dComIfGp_roomControl_getStayNo();
+            // Room 48 is the final combat floor; room 49 is the Great Fairy.
+            // Use the native door's completed clear switch (including its spawn grace period).
+            if ((!cave_boss_visits_enabled() || cave_boss_final_cleared()) &&
+                (room == 49 || (room == 48 && fpcM_Search(cleared_final_cave_door, nullptr))))
+                finish_clear_timer(timing::cave);
+        }
         reset_hub_runtime_when_away();
         reset_direct_final_boss_state();
         reset_bossrush_hazards();
@@ -3585,6 +3626,7 @@ void update_bossrush() {
     update_bossrush_hazards();
 
     if (bossrush_should_return_to_hub_after_death()) {
+        reset_cave_boss_visits();
         set_boss_rush_state(kBossRushStateHub);
         set_boss_rush_index(0);
         set_bossrush_return_place();
@@ -3611,6 +3653,7 @@ void update_bossrush() {
         mark_bossrush_entry_defeated(entry);
         if (boss_rush_state() == kBossRushStateReplay) {
             clear_boss_flags(entry);
+            if (return_from_cave_boss()) return;
             set_boss_rush_state(kBossRushStateHub);
             set_boss_rush_index(0);
             return_to_hub_after_replay_victory();
@@ -3886,6 +3929,19 @@ HookAction on_bosswarp_execute_pre(ModContext*, void* args, void* retval, void*)
     return HOOK_SKIP_ORIGINAL;
 }
 
+HookAction on_hub_particle_delete_pre(ModContext*, void* args, void*, void*) {
+    // Native fairy WaitAction dereferences getEmitter() without a null check
+    // when its lifetime expires (and when bottled). The hub may have no matching
+    // particle resource/emitter. There is nothing to delete in that case; let
+    // the rest of the native action retire/capture the fairy normally.
+    if (mods::arg<JPABaseEmitter*>(args, 0) == nullptr &&
+        is_boss_rush() && is_boss_hub_stage_name())
+    {
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
+}
+
 HookAction on_oiltubo_wait_pre(ModContext*, void* args, void* retval, void*) {
     auto* oilTub = mods::arg<daObj_Oiltubo_c*>(args, 0);
     if (!is_bossrush_hub_active() || oilTub == nullptr ||
@@ -3909,6 +3965,7 @@ bool redirect_replay_to_hub(const BossRushEntry& entry) {
 
     mark_bossrush_entry_defeated(entry);
     clear_boss_flags(entry);
+    if (return_from_cave_boss()) return true;
     set_boss_rush_state(kBossRushStateHub);
     set_boss_rush_index(0);
     dComIfGp_event_reset();
@@ -3949,6 +4006,7 @@ bool should_complete_direct_final_ganondorf(b_gnd_class* ganondorf) {
 }
 
 bool complete_bossrush_final_sequence() {
+    if (boss_rush_state() == kBossRushStateRun) finish_clear_timer(17);
     if (boss_rush_state() == kBossRushStateReplay) {
         return redirect_replay_to_hub(kBossRushEntries[boss_rush_index()]);
     }
@@ -3975,6 +4033,10 @@ bool should_handle_final_scene_change(int exitId, s8 roomNo) {
     const s8 activeRoom = roomNo == -1 ? dComIfGp_getStartStageRoomNo() : roomNo;
 
     if (entry.clearMode == BossRushEntry::FinalSequence) {
+        if (boss_rush_state() == kBossRushStateRun && is_current_stage_name("D_MN09A")) {
+            if (activeRoom == kFinalPuppetRoom && exitId == 1) finish_clear_timer(15);
+            if (activeRoom == kFinalBeastRoom && exitId == 2) finish_clear_timer(16);
+        }
         if (boss_rush_state() == kBossRushStateReplay && is_current_stage_name("D_MN09A") &&
             activeRoom == kFinalPuppetRoom && exitId == 1)
         {
@@ -4142,6 +4204,8 @@ HookAction on_ganondorf_barrier_execute_pre(ModContext*, void* args, void*, void
 }
 
 void reset_bossrush_runtime_state(bool deleteActors) {
+    reset_cave_boss_visits();
+    cancel_clear_timer();
     stop_bossrush_hub_music();
     sAdvancePending = false;
     sSavePromptId = fpcM_ERROR_PROCESS_ID_e;
@@ -4164,85 +4228,104 @@ void reset_bossrush_runtime_state(bool deleteActors) {
     reset_bossrush_hazards();
 }
 
+// HookService::uninstall removes every callback owned by this mod at the
+// target, including other features on Link::execute/draw and the HUD. Keep
+// runtime hooks until mod shutdown; mode switches only gate their callbacks.
+template <auto Callback>
+HookAction bossrush_pre(ModContext* ctx, void* args, void* result, void* user) {
+    return sBossRushGameModeActive ? Callback(ctx, args, result, user) : HOOK_CONTINUE;
+}
+
+template <auto Callback>
+void bossrush_post(ModContext* ctx, void* args, void* result, void* user) {
+    if (sBossRushGameModeActive) Callback(ctx, args, result, user);
+}
+
 ModResult install_bossrush_runtime_hooks(ModError* error) {
     if (sBossRushHooksInstalled) {
-        return MOD_OK;
+        // A mode switch releases the dialogue resources, not shared hooks.
+        return sMidnaRootFlowMode == MidnaRootFlowMode::None ? install_midna_flow(error) : MOD_OK;
     }
 
-    ModResult result = mods::hook_add_pre<StageChangeSceneHook>(svc_hook, on_stage_change_pre);
+    ModResult result = mods::hook_add_pre<StageChangeSceneHook>(svc_hook, bossrush_pre<on_stage_change_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush scene hook");
     }
 
-    result = mods::hook_add_pre<CaveGameOverCloseHook>(svc_hook, on_cave_gameover_close_pre);
+    result = mods::hook_add_pre<CaveGameOverCloseHook>(svc_hook, bossrush_pre<on_cave_gameover_close_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Boss Rush Cave continue hook");
     }
 
-    result = mods::hook_add_pre<MessageSetDemoHook>(svc_hook, on_message_set_demo_pre);
+    result = mods::hook_add_pre<MessageSetDemoHook>(svc_hook, bossrush_pre<on_message_set_demo_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight hub banner hook");
     }
-    result = mods::hook_add_post<MessageSetDemoHook>(svc_hook, on_message_set_demo_post);
+    result = mods::hook_add_post<MessageSetDemoHook>(svc_hook, bossrush_post<on_message_set_demo_post>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight hub banner result hook");
     }
 
-    result = mods::hook_add_pre<BossWarpExecuteHook>(svc_hook, on_bosswarp_execute_pre);
+    result = mods::hook_add_pre<BossWarpExecuteHook>(svc_hook, bossrush_pre<on_bosswarp_execute_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight bossrush portal hook");
     }
 
-    result = mods::hook_add_pre<OilTuboWaitHook>(svc_hook, on_oiltubo_wait_pre);
+    result = mods::hook_add_pre<HubParticleDeleteHook>(svc_hook, bossrush_pre<on_hub_particle_delete_pre>);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to install Dawnlight hub particle cleanup guard");
+    }
+
+    result = mods::hook_add_pre<OilTuboWaitHook>(svc_hook, bossrush_pre<on_oiltubo_wait_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight refill prompt hook");
     }
 
-    result = mods::hook_add_pre<DungeonReturnWarpHook>(svc_hook, on_dungeon_return_warp_pre);
+    result = mods::hook_add_pre<DungeonReturnWarpHook>(svc_hook, bossrush_pre<on_dungeon_return_warp_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Cave warp hook");
     }
 
-    result = mods::hook_add_pre<SkipPortalObjWarpHook>(svc_hook, on_skip_portal_obj_warp_pre);
+    result = mods::hook_add_pre<SkipPortalObjWarpHook>(svc_hook, bossrush_pre<on_skip_portal_obj_warp_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush warp destination hook");
     }
 
-    result = mods::hook_add_post<WarpPlayerCreateHook>(svc_hook, on_warp_player_create_post);
+    result = mods::hook_add_post<WarpPlayerCreateHook>(svc_hook, bossrush_post<on_warp_player_create_post>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight warp scene-boundary hook");
     }
-    result = mods::hook_add_pre<WarpPlayerExecuteHook>(svc_hook, on_warp_player_execute_pre);
+    result = mods::hook_add_pre<WarpPlayerExecuteHook>(svc_hook, bossrush_pre<on_warp_player_execute_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight warp arrival hook");
     }
-    result = mods::hook_add_pre<WarpPlayerDrawHook>(svc_hook, on_warp_player_draw_pre);
+    result = mods::hook_add_pre<WarpPlayerDrawHook>(svc_hook, bossrush_pre<on_warp_player_draw_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight warp visibility hook");
     }
 
-    result = mods::hook_add_pre<MeterExecuteHook>(svc_hook, before_meter_execute);
+    result = mods::hook_add_pre<MeterExecuteHook>(svc_hook, bossrush_pre<before_meter_execute>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Midna hub prompt meter hook");
     }
 
-    result = mods::hook_add_post<PlaySceneUpdateHook>(svc_hook, on_play_scene_update_post);
+    result = mods::hook_add_post<PlaySceneUpdateHook>(svc_hook, bossrush_post<on_play_scene_update_post>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush update hook");
     }
 
-    result = mods::hook_add_pre<PlaySceneDrawHook>(svc_hook, on_play_scene_draw_pre);
+    result = mods::hook_add_pre<PlaySceneDrawHook>(svc_hook, bossrush_pre<on_play_scene_draw_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Boss Rush draw hook");
     }
 
-    result = mods::hook_add_pre<GanondorfExecuteHook>(svc_hook, on_ganondorf_execute_pre);
+    result = mods::hook_add_pre<GanondorfExecuteHook>(svc_hook, bossrush_pre<on_ganondorf_execute_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Ganondorf direct-start hook");
     }
 
     result =
-        mods::hook_add_pre<GanondorfBarrierExecuteHook>(svc_hook, on_ganondorf_barrier_execute_pre);
+        mods::hook_add_pre<GanondorfBarrierExecuteHook>(svc_hook, bossrush_pre<on_ganondorf_barrier_execute_pre>);
     if (result != MOD_OK) {
         return mods::set_error(error, result, "failed to install Dawnlight Ganondorf barrier hook");
     }
@@ -4293,6 +4376,12 @@ ModResult uninstall_bossrush_runtime_hooks(ModError* error) {
     }
     if (const ModResult result = uninstall_bossrush_hook<BossWarpExecuteHook>(
             error, "failed to uninstall Dawnlight bossrush portal hook");
+        result != MOD_OK)
+    {
+        return result;
+    }
+    if (const ModResult result = uninstall_bossrush_hook<HubParticleDeleteHook>(
+            error, "failed to uninstall Dawnlight hub particle cleanup guard");
         result != MOD_OK)
     {
         return result;
@@ -4409,13 +4498,13 @@ ModResult on_bossrush_game_mode_activated(void*, ModError* error) {
     return result;
 }
 
-ModResult on_bossrush_game_mode_deactivated(void*, ModError* error) {
+ModResult on_bossrush_game_mode_deactivated(void*, ModError*) {
     sBossRushGameModeActive = false;
     reset_bossrush_runtime_state(true);
-    const ModResult result = uninstall_bossrush_runtime_hooks(error);
+    shutdown_midna_flow();
     unregister_bossrush_hub_banner();
     unregister_bossrush_title_logo();
-    return result;
+    return MOD_OK;
 }
 
 ModResult on_bossrush_game_mode_play(void*, ModError* error) {
@@ -4449,6 +4538,32 @@ ModResult on_bossrush_tick(void*, ModError*) {
     return MOD_OK;
 }
 
+bool sBossRushModeRegistered = false;
+ModResult register_bossrush_mode(ModError* error) {
+    const GameModeDesc bossRushMode = {
+        .struct_size = sizeof(GameModeDesc),
+        .game_mode_id = kBossRushGameModeId,
+        .full_name = "Boss Rush",
+        .save_name = "gczelda2-bossrush",
+        .user_data = nullptr,
+        .on_activated = on_bossrush_game_mode_activated,
+        .on_deactivated = on_bossrush_game_mode_deactivated,
+        .on_play = on_bossrush_game_mode_play,
+        .on_save_loaded = on_bossrush_save_loaded,
+        .on_new_save = on_bossrush_new_save,
+        .on_new_save_select = nullptr,
+        .on_game_reset = on_bossrush_game_reset,
+        .on_tick = on_bossrush_tick,
+    };
+    const auto result = svc_game_mode->register_game_mode(mod_ctx, &bossRushMode);
+    if (result != MOD_OK) {
+        return mods::set_error(error, result, "failed to register Dawnlight Boss Rush game mode");
+    }
+
+    sBossRushModeRegistered = true;
+    return MOD_OK;
+}
+
 }  // namespace
 
 bool get_boss_portal_symbol(unsigned index, BossPortalSymbolSurface& surface, bool& defeated) {
@@ -4459,6 +4574,82 @@ bool get_boss_portal_symbol(unsigned index, BossPortalSymbolSurface& surface, bo
         ui_document_visible() || sHubPortalIds[index] == fpcM_ERROR_PROCESS_ID_e) return false;
     if (!boss_portal_mirror_surface(sHubPortalIds[index], surface)) return false;
     defeated = bossrush_portal_defeated(static_cast<u8>(index));
+    return true;
+}
+
+bool cave_boss_warp_available() {
+    return is_bossrush_game_mode_active() && is_boss_rush() &&
+        boss_rush_state() == kBossRushStateCaveOfOrdeals && is_current_stage_name(kCaveOfOrdealsStage) &&
+        can_update_bossrush_gameplay() && !sBossRushWarpInFlight && !sBossRushWarpPending &&
+        !dComIfGp_isEnableNextStage() && !sCaveArrivalWarpPending && !sBossRushArrivalAnimating;
+}
+bool warp_to_cave_boss(unsigned boss) {
+    if (boss >= kBossRushEntryCount || !cave_boss_warp_available()) return false;
+    reset_direct_final_boss_state();
+    set_boss_rush_state(kBossRushStateReplay);
+    set_boss_rush_index(static_cast<u8>(boss));
+    set_bossrush_next_stage();
+    return true;
+}
+void warp_back_to_cave(const cXyz& position, short yaw, signed char room) {
+    set_boss_rush_state(kBossRushStateCaveOfOrdeals);
+    set_boss_rush_index(0);
+    reset_direct_final_boss_state();
+    reset_bossrush_hazards();
+    dComIfGp_event_reset();
+    dComIfGs_setRestartRoom(position, yaw, room);
+    dComIfGs_setRestartRoomParam(0);
+    sCaveArrivalWarpPending = true;
+    sBossRushArrivalReady = false;
+    sBossRushWarpInFlight = true;
+    dComIfGp_setNextStage(kCaveOfOrdealsStage, -1, room, kCaveOfOrdealsLayer);
+}
+
+ClearTimerContext clear_timer_context() {
+    ClearTimerContext context;
+    context.active = is_bossrush_game_mode_active() && is_boss_rush() &&
+                     can_update_bossrush_gameplay() && !is_reset_to_opening_transition();
+    if (!context.active) return context;
+    auto* player = daAlink_getAlinkActorClass();
+    // GameOverType 1 is also the inter-boss save prompt, not a player death.
+    context.dead = !player || player->checkDeadHP();
+    const auto state = boss_rush_state();
+    if (state == kBossRushStateCaveOfOrdeals && is_current_stage_name(kCaveOfOrdealsStage))
+        context.encounter = timing::cave;
+    else if (state == kBossRushStateHub && heroes_shade_timer_active())
+        context.encounter = timing::shade;
+    else if (state == kBossRushStateRun || state == kBossRushStateReplay) {
+        const auto index = boss_rush_index();
+        if (is_current_stage(kBossRushEntries[index])) context.encounter = index;
+        if (state == kBossRushStateRun && index == 15) {
+            if (is_current_stage_name("D_MN09A"))
+                context.encounter = dComIfGp_roomControl_getStayNo() == kFinalBeastRoom ? 16 : 15;
+            else if (is_current_stage_name("D_MN09C")) context.encounter = 17;
+            else if (is_current_stage_name("D_MN09B")) context.encounter = timing::run; // horseback leg, total only
+        }
+    }
+    context.counting = context.encounter >= 0 && !context.dead && dMeter2Info_getGameOverType() == 0 &&
+        !sAdvancePending &&
+        !sBossRushWarpPending && !sBossRushWarpInFlight && !sHubArrivalWarpPending &&
+        !sCaveArrivalWarpPending && !sBossRushArrivalAnimating &&
+        !dComIfGp_isEnableNextStage() && !fopOvlpM_IsPeek() &&
+        !dComIfGp_isPauseFlag() && !ui_document_visible() && !dComIfGp_event_runCheck();
+    return context;
+}
+
+bool clear_timer_anchor(unsigned index, cXyz& position) {
+    if (!is_bossrush_game_mode_active() || !is_boss_rush()) return false;
+    if (index == timing::shade) return heroes_shade_timer_anchor(position);
+    if (index >= kBossRushHubPortalCount || !is_bossrush_hub_active() ||
+        sHubPortalIds[index] == fpcM_ERROR_PROCESS_ID_e) return false;
+    if (!clear_timer_near(hub_portal_prompt_position(static_cast<u8>(index)))) return false;
+    if (index < kBossRushEntryCount) {
+        BossPortalSymbolSurface surface;
+        if (!boss_portal_mirror_surface(sHubPortalIds[index], surface)) return false;
+        position = surface.center + surface.up * 0.55f + cXyz(0, 55, 0);
+    } else {
+        position = hub_portal_position(index) + cXyz(0, 190, 0);
+    }
     return true;
 }
 
@@ -4524,25 +4715,14 @@ ModResult register_new_save_modes(ModError* error) {
         return mods::set_error(error, result, "failed to install Dawnlight new-save stage hook");
     }
 
-    const GameModeDesc bossRushMode = {
-        .struct_size = sizeof(GameModeDesc),
-        .game_mode_id = kBossRushGameModeId,
-        .full_name = "Boss Rush",
-        .save_name = "gczelda2-bossrush",
-        .user_data = nullptr,
-        .on_activated = on_bossrush_game_mode_activated,
-        .on_deactivated = on_bossrush_game_mode_deactivated,
-        .on_play = on_bossrush_game_mode_play,
-        .on_save_loaded = on_bossrush_save_loaded,
-        .on_new_save = on_bossrush_new_save,
-        .on_new_save_select = nullptr,
-        .on_game_reset = on_bossrush_game_reset,
-        .on_tick = on_bossrush_tick,
-    };
-    result = svc_game_mode->register_game_mode(mod_ctx, &bossRushMode);
-    if (result != MOD_OK) {
-        return mods::set_error(error, result, "failed to register Dawnlight Boss Rush game mode");
+    if (boss_rush_enabled()) {
+        result = register_bossrush_mode(error);
+        if (result != MOD_OK) return result;
     }
+    result = initialize_clear_timer(error);
+    if (result != MOD_OK) return result;
+    result = initialize_cave_boss_visits(error);
+    if (result != MOD_OK) return result;
 
     result = initialize_boss_portal_mirrors(error);
     if (result != MOD_OK) return result;
@@ -4553,10 +4733,24 @@ ModResult register_new_save_modes(ModError* error) {
 }
 
 void update_new_save_modes() {
+    if (boss_rush_enabled() != sBossRushModeRegistered) {
+        if (boss_rush_enabled()) {
+            ModError error = MOD_ERROR_INIT;
+            if (register_bossrush_mode(&error) != MOD_OK)
+                svc_log->warn(mod_ctx, "Dawnlight: failed to enable Boss Rush mode");
+        } else if (svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId) == MOD_OK) {
+            sBossRushModeRegistered = false;
+            cancel_clear_timer();
+        }
+    }
+    update_clear_timer();
+    update_heroes_shade_audio(); // Also finish deferred wave cleanup outside the arena.
     retry_pending_actor_deletes();
 }
 
 void shutdown_new_save_modes() {
+    shutdown_cave_boss_visits();
+    shutdown_clear_timer();
     shutdown_heroes_shade_encounter();
     shutdown_boss_portal_symbols();
     mods::hook_uninstall<BossRushAreaResourceHook>(svc_hook);
@@ -4565,7 +4759,8 @@ void shutdown_new_save_modes() {
     mods::hook_uninstall<BossRushAreaDungeonBitHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaSwitchHook>(svc_hook);
     mods::hook_uninstall<BossRushAreaActorNameHook>(svc_hook);
-    if (svc_game_mode != nullptr) {
+    if (svc_game_mode != nullptr && sBossRushModeRegistered) {
+        sBossRushModeRegistered = false;
         ModResult result = svc_game_mode->unregister_game_mode(mod_ctx, kBossRushGameModeId);
         if (result != MOD_OK) {
             svc_log->warn(mod_ctx, "Dawnlight Boss Rush: failed to unregister game mode");

@@ -58,6 +58,16 @@ constexpr std::array<ProfileName, kEnemySpawnerProfileLabels.size()> kEnemySpawn
     fpcNm_E_GB_e,  // Big Baba
     fpcNm_E_DB_e,  // Deku Baba
     fpcNm_E_SF_e,  // Stalfos
+    fpcNm_E_MM_e,  // Helmasaur
+    fpcNm_E_MM_e,  // Helmasaurus (argument 1)
+    fpcNm_E_KR_e,  // Kargarok
+    fpcNm_E_GE_e,  // Guay
+    fpcNm_E_AI_e,  // Armos
+    fpcNm_E_SM2_e, // Red Chu
+    fpcNm_E_SM2_e, // Blue Chu
+    fpcNm_E_SM2_e, // Yellow Chu
+    fpcNm_E_SM2_e, // Purple Chu
+    fpcNm_E_SM2_e, // Black Chu
 };
 
 // Darknut treats type 0 as its room-opening demo. Type 1 is the ordinary waitable
@@ -96,7 +106,20 @@ constexpr std::array<u32, kEnemySpawnerProfiles.size()> kEnemySpawnerParameters{
     0x00ffff00,  // Big Baba: no defeated/intro switches
     0xff000000,  // Deku Baba: no defeated switch
     0x0000ff00,  // Stalfos: normal standing variant, default detection radius
+    0x0000ff00,  // Helmasaur: no defeated switch
+    0x0000ff00,  // Helmasaurus: no defeated switch
+    0xffffff00,  // Kargarok: flying, no path
+    0x00ffff01,  // Guay: flying, no group/switch
+    0x00ff000a,  // Armos: no defeated switch, 1000-unit home radius
+    0xffff0010,  // Red Chu: small ground variant, no switch
+    0xffff0020,  // Blue Chu
+    0xffff0030,  // Yellow Chu
+    0xffff0040,  // Purple Chu
+    0xffff0060,  // Black Chu
 };
+
+constexpr int kHelmasaurusIndex = 34;
+static_assert(kEnemySpawnerProfiles[kHelmasaurusIndex] == fpcNm_E_MM_e);
 
 DEFINE_HOOK(&fpcMtd_Method, SpawnerProcessHook);
 DEFINE_HOOK(&fopAcM_createChild, SpawnerChildHook);
@@ -291,15 +314,16 @@ ModResult spawn_enemy_for_testing(int profileIndex) {
     if (groundY == -1.0e9f) return MOD_UNAVAILABLE;
     position.y = groundY;
     const auto profile = kEnemySpawnerProfiles[static_cast<std::size_t>(profileIndex)];
-    if (profile == fpcNm_E_BA_e || profile == fpcNm_E_BU_e || profile == fpcNm_B_GG_e) {
+    if (profile == fpcNm_E_BA_e || profile == fpcNm_E_BU_e || profile == fpcNm_B_GG_e ||
+        profile == fpcNm_E_KR_e || profile == fpcNm_E_GE_e) {
         position.y += 200.0f;
     }
-    // Stalfos encodes its defeated switch in angle.z and clears it in Create.
-    const s16 angleZ = profile == fpcNm_E_SF_e ? 0xff : 0;
+    // Stalfos and Kargarok encode their defeated switch in angle.z.
+    const s16 angleZ = (profile == fpcNm_E_SF_e || profile == fpcNm_E_KR_e) ? 0xff : 0;
     const csXyz angle{0, static_cast<s16>(facing + 0x8000), angleZ};
     const ActorSpawnParams params{
         .parameters = kEnemySpawnerParameters[static_cast<std::size_t>(profileIndex)],
-        .argument = -1,
+        .argument = static_cast<s8>(profileIndex == kHelmasaurusIndex ? 1 : -1),
         .room_num = fopAcM_GetRoomNo(link),
         .position = {position.x, position.y, position.z},
         .angle = {angle.x, angle.y, angle.z},

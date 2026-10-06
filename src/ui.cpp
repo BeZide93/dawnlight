@@ -1,4 +1,8 @@
+#include "touch_buttons.hpp"
 #include "config.hpp"
+#include "item_slot_compat.hpp"
+#include "stamina.hpp"
+#include "twilit_stamina.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
 #include "update_service.hpp"
@@ -6,12 +10,19 @@
 #include "mods/service.hpp"
 #include "mods/svc/ui.h"
 
+#include <map>
 #include <array>
 #include <string>
+#include <vector>
 
 namespace dawnlight {
 namespace {
 
+UiWindowHandle s_staminaWindow = 0;
+UiWindowHandle s_darkLinkWindow = 0;
+UiElementHandle s_teStaminaNote = 0;
+UiElementHandle s_teStaminaSettingsNote = 0, s_localStaminaHelp = 0;
+UiElementHandle s_teSprintNote = 0, s_teWolfSprintNote = 0, s_zItemsNote = 0;
 UiWindowHandle s_settingsWindow = 0;
 UiMenuTabHandle s_menuTab = 0;
 
@@ -20,6 +31,13 @@ constexpr const char* kAimModeOptions[] = {
     "3rd Person",
     "Cinema",
 };
+
+constexpr const char* kSecondSwordOptions[] = {"Wooden Sword", "Ordon Sword", "Master Sword"};
+constexpr const char* kJumpButtonOptions[] = {"R", "L (LB)", "R3", "L3"};
+constexpr const char* kGlideItemOptions[] = {"Cucco", "Glider"};
+constexpr const char* kBulletTimeOptions[] = {"Off", "Always", "BOTW"};
+constexpr const char* kFierceDeityVisualOptions[] = {"Magic Armor", "Dark", "Dark Magic", "White", "Gold"};
+constexpr const char* kFierceDeityActivationOptions[] = {"Spin Attack", "R+Z", "R+A", "L3", "R3"};
 
 constexpr const char* kNewSaveModeOptions[] = {
     "Vanilla",
@@ -49,6 +67,7 @@ constexpr const char* kHudItemAnchorOptions[] = {
 constexpr const char* kHudTextAnchorOptions[] = {
     "Left",
     "Right",
+    "Original",
 };
 
 constexpr const char* kMinimapSlideOptions[] = {
@@ -65,11 +84,12 @@ ModResult add_text(ModContext* ctx, UiElementHandle pane, const char* text) {
 }
 
 ModResult add_button(ModContext* ctx, UiElementHandle pane, const char* label,
-    UiPressedFn onPressed) {
+    UiPressedFn onPressed, UiPredicateFn isDisabled = nullptr) {
     UiControlDesc desc = UI_CONTROL_DESC_INIT;
     desc.kind = UI_CONTROL_BUTTON;
     desc.label = label;
     desc.on_pressed = onPressed;
+    desc.is_disabled = isDisabled;
     return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
 }
 
@@ -81,6 +101,83 @@ void push_toast(const char* title, const char* body, const char* type = nullptr)
     svc_ui->push_toast(mod_ctx, &toast);
 }
 
+bool twilit_owns_stamina_control(ConfigVarHandle var) {
+    if (!twilit_stamina_active()) return false;
+    if (var == stamina_config_var()) return true;
+    for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
+        const auto setting = static_cast<StaminaSetting>(i);
+        if (var == stamina_setting_config_var(setting)) return twilit_owns_stamina_setting(setting);
+    }
+    return false;
+}
+
+bool external_owns_control(ConfigVarHandle var) {
+    if (var == sprint_config_var() || var == sprint_speed_config_var()) return twilit_sprint_enabled();
+    if (var == wolf_sprint_config_var() || var == wolf_speed_config_var()) return twilit_sprint_enabled(true);
+    if (var == z_item_slot_config_var()) return z_item_slot_provider_notice() != nullptr;
+    return twilit_owns_stamina_control(var);
+}
+
+// Stable callback data survives tab rebuilds. Managed controls display the
+// effective value, while writes in Off mode still use ConfigService persistence.
+struct ModeControlBinding {
+    ConfigVarHandle var;
+    UiControlKind kind;
+    UiPredicateFn disabled;
+    UiElementHandle control = 0, unlock = 0;
+    std::string label, suffix, shownLabel;
+    std::vector<std::string> options;
+    bool initialized = false, shownLocked = false, focusAfterUnlock = false;
+    ModeControlBinding(ConfigVarHandle handle = 0, UiControlKind type = UI_CONTROL_TOGGLE,
+                       UiPredicateFn predicate = nullptr) : var(handle), kind(type), disabled(predicate) {}
+};
+std::map<ConfigVarHandle, ModeControlBinding> s_modeControls;
+
+bool mode_control_disabled(ModContext* ctx, void* data) {
+    const auto& binding = *static_cast<ModeControlBinding*>(data);
+    int64_t value = 0;
+    if (external_owns_control(binding.var)) return true;
+    return mode_config_override(binding.var, value) ||
+        (binding.disabled && binding.disabled(ctx, nullptr));
+}
+
+void mode_control_get(ModContext* ctx, void* data, UiControlValue* out) {
+    const auto& binding = *static_cast<ModeControlBinding*>(data);
+    int64_t value = 0;
+    if (mode_config_override(binding.var, value)) {
+        out->bool_value = value != 0;
+        out->int_value = value;
+    } else if (binding.kind == UI_CONTROL_TOGGLE) {
+        svc_config->get_bool(ctx, binding.var, &out->bool_value);
+    } else {
+        svc_config->get_int(ctx, binding.var, &out->int_value);
+    }
+}
+
+void mode_control_set(ModContext* ctx, void* data, const UiControlValue* value) {
+    if (mode_control_disabled(ctx, data)) return;
+    const auto& binding = *static_cast<ModeControlBinding*>(data);
+    if (binding.kind == UI_CONTROL_TOGGLE) {
+        svc_config->set_bool(ctx, binding.var, value->bool_value);
+    } else {
+        svc_config->set_int(ctx, binding.var, value->int_value);
+    }
+}
+
+void bind_mode_control(UiControlDesc& desc) {
+    if (mode_setting_for_config(desc.config_var) == ModeSetting::None &&
+        desc.config_var != z_item_slot_config_var()) return;
+    auto& binding = s_modeControls[desc.config_var];
+    binding = {desc.config_var, desc.kind, desc.is_disabled};
+    desc.binding = UI_BINDING_CALLBACKS;
+    desc.user_data = &binding;
+    desc.get = mode_control_get;
+    desc.set = mode_control_set;
+    desc.is_disabled = mode_control_disabled;
+}
+
+#include "mode_unlock_ui.inc"
+
 ModResult add_toggle(ModContext* ctx, UiElementHandle pane, const char* label,
     ConfigVarHandle var, const char* help = nullptr, UiPredicateFn isDisabled = nullptr) {
     UiControlDesc desc = UI_CONTROL_DESC_INIT;
@@ -90,7 +187,8 @@ ModResult add_toggle(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.binding = UI_BINDING_CONFIG_VAR;
     desc.config_var = var;
     desc.is_disabled = isDisabled;
-    return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
+    bind_mode_control(desc);
+    return add_mode_control(ctx, pane, desc);
 }
 
 ModResult add_number(ModContext* ctx, UiElementHandle pane, const char* label,
@@ -107,7 +205,21 @@ ModResult add_number(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.step = step;
     desc.suffix = suffix;
     desc.is_disabled = isDisabled;
-    return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
+    bind_mode_control(desc);
+    return add_mode_control(ctx, pane, desc);
+}
+
+// Compact UI indices map to stable persisted values (R=0, LB=5, R3=3, L3=4).
+void jump_button_get(ModContext*, void*, UiControlValue* out) {
+    const auto button = jump_button();
+    out->int_value = button == JumpButton::LB ? 1 :
+        button == JumpButton::R3 ? 2 : button == JumpButton::L3 ? 3 : 0;
+}
+
+void jump_button_set(ModContext* ctx, void*, const UiControlValue* value) {
+    if (value->int_value < 0 || value->int_value > 3) return;
+    svc_config->set_int(ctx, jump_button_config_var(),
+        value->int_value == 0 ? 0 : value->int_value == 1 ? 5 : value->int_value + 1);
 }
 
 ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
@@ -122,7 +234,31 @@ ModResult add_select(ModContext* ctx, UiElementHandle pane, const char* label,
     desc.options = options;
     desc.option_count = optionCount;
     desc.is_disabled = isDisabled;
-    return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
+    if (var == jump_button_config_var()) {
+        desc.binding = UI_BINDING_CALLBACKS;
+        desc.get = jump_button_get;
+        desc.set = jump_button_set;
+    }
+    bind_mode_control(desc);
+    return add_mode_control(ctx, pane, desc);
+}
+
+bool auto_jump_setting_disabled(ModContext*, void*) {
+    // Normalize persisted state before displaying an unavailable child toggle.
+    (void)disable_auto_jump_enabled();
+    return !r_jump_enabled();
+}
+
+bool fierce_deity_visual_disabled(ModContext*, void*) {
+    return !fierce_deity_enabled();
+}
+
+bool wolf_speed_disabled(ModContext*, void*) {
+    return !wolf_sprint_enabled();
+}
+
+bool sprint_speed_disabled(ModContext*, void*) {
+    return !sprint_enabled();
 }
 
 bool custom_hud_controls_disabled(ModContext*, void*) {
@@ -324,6 +460,35 @@ ModResult add_custom_button_controls(ModContext* ctx, UiElementHandle pane, cons
     return MOD_OK;
 }
 
+ModResult build_general_tab(
+    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
+    if (add_section(ctx, left, "General") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Dawnlight Mode", dawnlight_mode_config_var(),
+            "Enables the intended Dawnlight settings and story progression. Controlled settings "
+            "are locked while On. Off restores your saved personal settings, including after a restart.")
+        != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Progression System", progression_system_config_var(),
+            "Sprint stays independently toggleable. Give Talo the Wooden Sword to unlock the Glider, "
+            "free Ordona for Revali's Gale, and free Faron for Dark Link. Gale gains one charge "
+            "per three full heart containers. Each complete heart above the starting three adds 5 maximum stamina. Controlled settings are locked while On.")
+        != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Notifications", notifications_config_var(),
+            "Show Progression System unlock and Gale capacity notifications. Off by default. "
+            "Does not affect ability unlocks, item-acquisition scenes or other Dawnlight messages.")
+        != MOD_OK) return MOD_ERROR;
+    if (add_section(ctx, left, "New Saves") != MOD_OK) return MOD_ERROR;
+    if (add_select(ctx, left, "New Save Mode", new_save_mode_config_var(),
+            kNewSaveModeOptions, std::size(kNewSaveModeOptions),
+            "Changes how newly created empty save slots are initialized. Vanilla keeps upstream "
+            "behavior, and Intro Skip starts after the Faron intro setup.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+
+    return MOD_OK;
+}
+
 ModResult build_aiming_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "Aiming") != MOD_OK) return MOD_ERROR;
@@ -356,14 +521,65 @@ ModResult build_aiming_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "Bullet Time", bullet_time_config_var(),
-            "Slows gameplay while aiming the Bow during a manual R jump. Uses 20% stamina per "
-            "second and ends when stamina is empty. Press A to cancel it.")
+    if (add_select(ctx, left, "Bullet Time", bullet_time_config_var(), kBulletTimeOptions,
+            std::size(kBulletTimeOptions),
+            "Off disables Bullet Time. Always keeps the original airborne Bow aiming behavior. "
+            "BOTW requires twice the original jump height above the ground to activate, independent "
+            "of Jump Height and Gale Height. Stamina cost is configurable in Controls -> Stamina Settings (default 15 points/sec). Press A to cancel.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
     return MOD_OK;
+}
+
+bool stamina_settings_disabled(ModContext*, void*) {
+    return !twilit_stamina_active() && !stamina_enabled();
+}
+bool stamina_local_settings_disabled(ModContext*, void*) {
+    return twilit_stamina_active() || !stamina_enabled();
+}
+
+ModResult build_stamina_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
+    UiElementHandle, void*, ModError*) {
+    s_teStaminaSettingsNote = s_localStaminaHelp = 0;
+    if (svc_ui->pane_add_text(ctx, left,
+            "Twilit Essentials manages stamina and shared costs. Dawnlight costs below.",
+            &s_teStaminaSettingsNote) != MOD_OK) return MOD_ERROR;
+    if (svc_ui->pane_add_text(ctx, left,
+            "Values use stamina points; Exhaust Threshold does not scale with capacity. Progression adds 5 capacity per heart above three.",
+            &s_localStaminaHelp) != MOD_OK) return MOD_ERROR;
+    for (size_t i = 0; i < kStaminaSettings.size(); ++i) {
+        const auto& desc = kStaminaSettings[i];
+        const auto setting = static_cast<StaminaSetting>(i);
+        const bool shared = !twilit_owns_stamina_setting(setting);
+        if (add_number(ctx, left, desc.label,
+                stamina_setting_config_var(static_cast<StaminaSetting>(i)),
+                desc.min, desc.max, 1, desc.suffix, nullptr, shared ? stamina_settings_disabled : stamina_local_settings_disabled) != MOD_OK)
+            return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Stamina Bar Auto Fade", hud_custom_stamina_fade_when_full_config_var(),
+            "Fade the Stamina Bar when full. Applies to all HUD layouts; Twilit Essentials manages its own bar.",
+            stamina_local_settings_disabled) != MOD_OK) return MOD_ERROR;
+    update_stamina_ui();
+    return MOD_OK;
+}
+
+void stamina_window_closed(ModContext*, UiWindowHandle, void*) {
+    s_staminaWindow = 0;
+    s_teStaminaSettingsNote = s_localStaminaHelp = 0;
+}
+
+void open_stamina_settings(ModContext* ctx, void*) {
+    if (s_staminaWindow || stamina_settings_disabled(ctx, nullptr)) return;
+    UiTabDesc tab = UI_TAB_DESC_INIT;
+    tab.title = "Stamina Settings";
+    tab.build = build_stamina_tab;
+    UiWindowDesc desc = UI_WINDOW_DESC_INIT;
+    desc.tabs = &tab;
+    desc.tab_count = 1;
+    desc.on_closed = stamina_window_closed;
+    svc_ui->window_push(ctx, &desc, &s_staminaWindow);
 }
 
 ModResult build_controls_tab(
@@ -376,13 +592,67 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "R Jump", r_jump_config_var(),
-            "Uses R as a fallback jump button when no R interaction or targeting action is active. "
-            "Press R+B during the jump to start a jump attack.")
+    if (add_toggle(ctx, left, "Manual Jump", r_jump_config_var(),
+            "Enables manual jumping for human and wolf Link when no interaction or targeting action is active. "
+            "As human Link, hold the jump button and press B during the jump to start a jump attack.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
+    if (add_select(ctx, left, "Jump Button", jump_button_config_var(), kJumpButtonOptions,
+            std::size(kJumpButtonOptions),
+            "Button for Manual Jump, jump attacks, Glide and Revali's Gale. R (default) uses the game's R binding; "
+            "L (LB) uses the left bumper, not the camera/targeting trigger. "
+            "R3/L3 use stick clicks. Independent of Dawnlight Mode.") != MOD_OK)
+        return MOD_ERROR;
+    if (add_toggle(ctx, left, "Disable Auto Jump", disable_auto_jump_config_var(),
+            "Stops human and wolf Link from automatically jumping when running off a ledge. "
+            "Use the jump button to jump; walking off ledges keeps your forward momentum. Falling and ledge grabbing still work. "
+            "Independent of Dawnlight Mode. Turns off when Manual Jump is disabled.", auto_jump_setting_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_number(ctx, left, "Jump Height", jump_height_config_var(), 100, 500, 10, "%",
+            "Height of a manual jump. 100% is the original height; maximum 500%.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Glide", glide_config_var(),
+            "Press the jump button again in midair to deploy the selected glide item, including during ordinary falls. "
+            "It is put away when you land.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_select(ctx, left, "Glide Item", glide_item_config_var(), kGlideItemOptions,
+            std::size(kGlideItemOptions),
+            "Choose a Cucco or Dawnlight's cloth glider. Both use the same glide movement.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Revali's Gale", revalis_gale_config_var(),
+            "Requires Manual Jump. Press the jump button to jump immediately. Keep holding through landing to stop and crouch, then release for a "
+            "wind jump with Gale Height added to Jump Height, preserving your previous running speed and direction.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_number(ctx, left, "Gale Height", gale_height_config_var(), 100, 1000, 10, "%",
+            "Additional height for Revali's Gale, relative to the original jump height. "
+            "Default 500%; Jump Height 200% plus Gale Height 500% gives 700% total height.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Gale Counter", gale_counter_visible_config_var(),
+            "Shows remaining Gale charges. Hiding the counter does not remove the resource cost.") != MOD_OK ||
+        add_number(ctx, left, "Gale Charges", gale_counter_capacity_config_var(), 1, 12, 1, "",
+            "Maximum Gale charges. Default 3. A successful Gale launch consumes one charge.") != MOD_OK ||
+        add_number(ctx, left, "Gale Recovery Time", gale_recovery_config_var(), 1, 3600, 1, " sec",
+            "Seconds to restore one charge, one at a time. Default 120. Recovery continues through "
+            "cutscenes and scene changes; another use does not restart the timer.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (svc_ui->pane_add_text(ctx, left, "Stamina: Twilit Essentials.", &s_teStaminaNote) != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Stamina Bar", stamina_config_var(),
             "Enables shared stamina costs and the stamina meter. When disabled, Dawnlight moves "
             "do not consume stamina.")
@@ -390,35 +660,75 @@ ModResult build_controls_tab(
     {
         return MOD_ERROR;
     }
+    if (add_button(ctx, left, "Stamina Settings", open_stamina_settings, stamina_settings_disabled) != MOD_OK) return MOD_ERROR;
+    if (svc_ui->pane_add_text(ctx, left, "Sprint: Twilit Essentials.", &s_teSprintNote) != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Sprint", sprint_config_var(),
-            "Hold the Roll button while running to move 50% faster using the run animation. "
-            "Uses 5% stamina per second.")
+            "Hold the Roll button while running to sprint at the configured speed. "
+            "Stamina cost is configurable in Stamina Settings (default 5 points/sec).")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
+    if (svc_ui->pane_add_text(ctx, left, "Wolf Sprint: Twilit Essentials.", &s_teWolfSprintNote) != MOD_OK)
+        return MOD_ERROR;
+    if (add_toggle(ctx, left, "Wolf Sprint", wolf_sprint_config_var(),
+            "Hold the Dash button (B in the Dawnlight layout) while moving as wolf Link to keep dash speed. "
+            "Uses the assigned Dash action for controller and touch input. Stamina cost defaults to 5 points/sec.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_number(ctx, left, "Wolf Speed", wolf_speed_config_var(), 100, 300, 5, "%",
+            "Wolf sprint speed: 100% is native dash speed. Keeps native slow-area limits. "
+            "Earned momentum carries into wolf jumps and falls with Disable Auto Jump.",
+            wolf_speed_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_number(ctx, left, "Sprint Speed", sprint_speed_config_var(), 100, 300, 5, "%",
+            "Sprint speed relative to normal running. 150% keeps the original sprint speed. "
+            "Animation uses half the actual speed bonus (150% movement = 125% playback). "
+            "Manual jump distance follows your sprint momentum.",
+            sprint_speed_disabled)
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (svc_ui->pane_add_text(ctx, left, "Z Items: external provider.", &s_zItemsNote) != MOD_OK)
+        return MOD_ERROR;
     if (add_toggle(ctx, left, "Z Item Slot", z_item_slot_config_var(),
             "Adds an item slot on Z and moves Midna off the Z button. "
+            "Automatically skipped when Twilight HD HUD Z Items or "
+            "Twilit Essentials Custom Z Button is active. "
             "Restart the app after changing this setting.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
+    update_stamina_ui();
     if (add_toggle(ctx, left, "Dawnlight Touch UI", dawnlight_touch_ui_config_var(),
-            "Shows the third item on the touch Z button and moves Midna to the Skip button "
-            "outside cutscenes. This works independently from Dawnlight's Z Item Slot for "
+            "Shows the third item on the touch Z button. Enable a separate Midna button "
+            "under Touch Buttons. Keeps the L touch button available on the map. "
+            "This works independently from Dawnlight's Z Item Slot for "
             "compatibility with other third-item mods. Restart the app after changing this "
             "setting.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
+    if (add_button(ctx, left, "Touch Buttons", open_touch_buttons) != MOD_OK) return MOD_ERROR;
     return MOD_OK;
 }
 
 ModResult build_hud_tab(
     ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "HUD") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "HUD Auto Fade", hud_auto_fade_config_var(),
+            "Slowly fades the HUD after Link stands still for 3 seconds. Movement or actions "
+            "bring it back. Independent of HUD presets.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_select(ctx, left, "HUD Layout", hud_layout_config_var(), kHudLayoutOptions,
             std::size(kHudLayoutOptions),
             "GameCube keeps the original HUD. X-Box, Wii-U and Dawnlight apply fixed HUD layout "
@@ -428,7 +738,7 @@ ModResult build_hud_tab(
         return MOD_ERROR;
     }
     if (add_toggle(ctx, left, "Round X/Y Buttons", round_xy_buttons_config_var(),
-            "Draws X and Y with Dawnlight's round HUD button style.")
+            "Draws X and Y with Dawnlight's round HUD button style without the extra X/Y shine texture layers.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -573,32 +883,92 @@ ModResult build_hud_tab(
     if (add_custom_transform_controls(ctx, left, "Custom Oxygen", HudElement::Oxygen) != MOD_OK) {
         return MOD_ERROR;
     }
+    if (add_custom_transform_controls(ctx, left, "Custom Tears of Light", HudElement::TearsOfLight) != MOD_OK) {
+        return MOD_ERROR;
+    }
     if (add_custom_transform_controls(
             ctx, left, "Custom Stamina Bar", HudElement::StaminaBar) != MOD_OK)
     {
         return MOD_ERROR;
     }
     if (add_custom_transform_controls(
-            ctx, left, "Custom Fierce Deity Bar", HudElement::FierceDeityBar) != MOD_OK)
+            ctx, left, "Custom Dark Link Bar", HudElement::FierceDeityBar) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    if (add_custom_transform_controls(ctx, left, "Custom Gale Counter", HudElement::GaleCounter) != MOD_OK)
     {
         return MOD_ERROR;
     }
     return MOD_OK;
 }
 
-ModResult build_gameplay_tab(
-    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
-    if (add_section(ctx, left, "New Saves") != MOD_OK) return MOD_ERROR;
-    if (add_select(ctx, left, "New Save Mode", new_save_mode_config_var(),
-            kNewSaveModeOptions, std::size(kNewSaveModeOptions),
-            "Changes how newly created empty save slots are initialized. Vanilla keeps upstream "
-            "behavior, and Intro Skip starts after the Faron intro setup.")
-        != MOD_OK)
+ModResult build_dark_link_tab(ModContext* ctx, UiWindowHandle, UiElementHandle left,
+    UiElementHandle, void*, ModError*) {
+    if (add_select(ctx, left, "Dark Link Visual", fierce_deity_visual_config_var(),
+            kFierceDeityVisualOptions, std::size(kFierceDeityVisualOptions),
+            "Magic Armor uses the armor model. Dark (default) applies a shadow appearance "
+            "and red eyes to your current outfit. Dark Magic combines Magic Armor with that effect. "
+            "White inverts white surfaces to black and other colors to white, with amber eyes. "
+            "Gold uses a golden appearance with white eyes. Both keep your current outfit. "
+            "Changes apply when gameplay resumes; requires Dark Link.",
+            fierce_deity_visual_disabled) != MOD_OK)
     {
         return MOD_ERROR;
     }
+    if (add_select(ctx, left, "Dark Link Activation", fierce_deity_activation_config_var(),
+            kFierceDeityActivationOptions, std::size(kFierceDeityActivationOptions),
+            "Activate at full power with a charged Spin Attack, R+Z, R+A (default), L3, or R3. "
+            "Hold R, then press Z or A; Manual Jump remains available on its selected button. Press Z or A again "
+            "while holding R to end early. L3/R3 use the left/right stick click without R; click again "
+            "to end early and preserve power for refilling. Requires Dark Link.",
+            fierce_deity_visual_disabled) != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
+    for (size_t i = 0; i < kDarkLinkSettings.size(); ++i) {
+        const auto& setting = kDarkLinkSettings[i];
+        if (add_number(ctx, left, setting.label, dark_link_setting_config_var(static_cast<DarkLinkSetting>(i)),
+                setting.min, setting.max, 1, setting.suffix, setting.help,
+                fierce_deity_visual_disabled) != MOD_OK) return MOD_ERROR;
+    }
+    if (add_toggle(ctx, left, "Gauge Auto Fade", hud_custom_fierce_deity_fade_when_empty_config_var(),
+            "Fade the gauge when empty and show it again when it gains charge. Applies to all HUD layouts.",
+            fierce_deity_visual_disabled) != MOD_OK) return MOD_ERROR;
+    return MOD_OK;
+}
 
+void dark_link_window_closed(ModContext*, UiWindowHandle, void*) {
+    s_darkLinkWindow = 0;
+}
+void open_dark_link_settings(ModContext* ctx, void*) {
+    if (s_darkLinkWindow || fierce_deity_visual_disabled(ctx, nullptr)) return;
+    UiTabDesc tab = UI_TAB_DESC_INIT;
+    tab.title = "Dark Link Settings";
+    tab.build = build_dark_link_tab;
+    UiWindowDesc desc = UI_WINDOW_DESC_INIT;
+    desc.tabs = &tab;
+    desc.tab_count = 1;
+    desc.on_closed = dark_link_window_closed;
+    svc_ui->window_push(ctx, &desc, &s_darkLinkWindow);
+}
+
+ModResult build_gameplay_tab(
+    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
     if (add_section(ctx, left, "Combat") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Dual Wield", dual_wield_config_var(),
+            "Add a second-sword option to the right of the shields in the Collection menu. "
+            "Select it there to equip Dual Wield, or select a shield to return to shield combat. Alternate "
+            "hands during ordinary sword attacks, cross both blades to guard, and push "
+            "them forward for Shield Attack. Turning this off restores normal equipment.")
+        != MOD_OK) return MOD_ERROR;
+    if (add_select(ctx, left, "2nd Sword", second_sword_config_var(), kSecondSwordOptions,
+            std::size(kSecondSwordOptions),
+            "Choose the sword used in the right hand by Dual Wield. Updates its Collection icon, "
+            "name and Link preview. Ordon Sword is the default.") != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     if (add_toggle(ctx, left, "Arrow Modes", arrow_modes_config_var(),
             "Press ZR while aiming the Bow to cycle Normal, Fire (2 arrows, +50% damage), "
             "and Triple Shot (3 arrows). Fire arrows ignite lantern-compatible objects. "
@@ -611,21 +981,23 @@ ModResult build_gameplay_tab(
             "Perfectly evade a locked enemy attack with a side jump or backflip to slow the "
             "dodge and enemies for three seconds. A sword attack closes to melee range and "
             "restores Link's speed. Link cannot be hit while the effect is active. Releasing "
-            "the lock-on ends the effect early. Uses 25% stamina.")
+            "the lock-on ends the effect early. Uses the configured Flurry Rush cost (default 50 stamina points per activation).")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
-    if (add_toggle(ctx, left, "Fierce Deity", fierce_deity_config_var(),
-            "Builds power with damaging sword attacks. Use a charged Spin Attack at full power "
-            "to transform, deal double sword damage, and consume the meter over time.")
+    if (add_toggle(ctx, left, "Dark Link", fierce_deity_config_var(),
+            "Build power and activate at full charge to transform. Configure appearance, activation, "
+            "gauge gains, depletion and sword damage in Dark Link Settings.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
+    if (add_button(ctx, left, "Dark Link Settings", open_dark_link_settings,
+            fierce_deity_visual_disabled) != MOD_OK) return MOD_ERROR;
     if (add_toggle(ctx, left, "Great Spin Projectile", great_spin_projectile_config_var(),
             "Launches the Great Spin trail forward as a damaging sword projectile at full "
-            "health. Uses 40% stamina.")
+            "health. Uses the configured Great Spin Projectile cost (default 40 stamina points).")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -641,19 +1013,30 @@ ModResult build_gameplay_tab(
     }
     if (add_button(ctx, left, "SPAWN", spawn_selected_enemy) != MOD_OK) return MOD_ERROR;
 
-    if (add_section(ctx, left, "Compatibility") != MOD_OK) return MOD_ERROR;
-    if (add_toggle(ctx, left, "Save Compatibility Repairs", save_compatibility_config_var(),
-            "Repairs known Dawnlight save-state issues while loading or progressing saves.")
-        != MOD_OK)
-    {
+    return MOD_OK;
+}
+
+ModResult build_boss_rush_tab(
+    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
+    if (add_section(ctx, left, "Boss Rush") != MOD_OK) return MOD_ERROR;
+    if (add_toggle(ctx, left, "Boss Rush", boss_rush_config_var(),
+            "Enable the Boss Rush game mode. Turning it off while active returns to the "
+            "mode selection; save your progress first. Existing saves are kept.") != MOD_OK)
         return MOD_ERROR;
-    }
-    if (add_toggle(ctx, left, "Item Integrity Fixes", item_integrity_config_var(),
-            "Keeps bottle contents and item combinations from turning into invalid items.")
-        != MOD_OK)
-    {
+    if (add_toggle(ctx, left, "Cave Fairy Boss Warps", cave_boss_visits_config_var(),
+            "In Boss Rush's Cave of Ordeals, fairy mist sends you to a random boss instead "
+            "of summoning the fairy. Defeat it to return to the same room and open the way "
+            "onward. One boss per fairy room, without repeats during the run.") != MOD_OK)
         return MOD_ERROR;
-    }
+    if (add_toggle(ctx, left, "Clear Timer", clear_timer_config_var(),
+            "Time new boss fights, complete Boss Rush runs and Cave of Ordeals runs. "
+            "The last clear time floats above each mirror, portal or Hero's Shade sword. "
+            "Pauses, loading and cutscenes do not count. Save the game to keep records "
+            "after restarting. Normal and Hard Mode records are separate; challenge records "
+            "are red, with a separate purple Cave record when both Boss Hard Mode and "
+            "the Cave Randomizer are enabled. Changing the difficulty or "
+            "switching this off cancels the current timed attempt.") != MOD_OK)
+        return MOD_ERROR;
     return MOD_OK;
 }
 
@@ -670,7 +1053,7 @@ ModResult build_hard_mode_tab(
     if (add_toggle(ctx, left, "No Normal-Hit Invulnerability",
             remove_normal_hit_invulnerability_config_var(),
             "Removes Link's invulnerability after normal hits. Knockdowns keep their full "
-            "invulnerability window.")
+            "invulnerability window. Independent of Dawnlight Mode.")
         != MOD_OK)
     {
         return MOD_ERROR;
@@ -683,21 +1066,22 @@ ModResult build_hard_mode_tab(
         return MOD_ERROR;
     }
 
-    if (add_section(ctx, left, "Enemy Scaling") != MOD_OK) return MOD_ERROR;
-    if (add_number(ctx, left, "HP Scaling", health_scale_config_var(), 1, 9999, 10, "%",
-            "Scales enemy health when enemies spawn. New Game Plus can raise the effective value "
-            "above this setting when automatic scaling is enabled.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    if (add_toggle(ctx, left, "NG+ Auto HP Scaling", automatic_health_scale_config_var(),
-            "Applies Dawnlight's NG+ health floor based on the NG+ counter.")
+    if (add_toggle(ctx, left, "Cave of Ordeals Randomizer", cave_randomizer_config_var(),
+            "Randomizes Cave of Ordeals enemy spawns while preserving the number of placed enemies. "
+            "Ceiling spawns are moved to safe ground. Applies when a room loads; reload the Cave "
+            "after changing this option. Independent of Enemy Hard Mode and Dawnlight Mode.")
         != MOD_OK)
     {
         return MOD_ERROR;
     }
 
+    if (add_section(ctx, left, "Enemy Scaling") != MOD_OK) return MOD_ERROR;
+    if (add_number(ctx, left, "HP Scaling", health_scale_config_var(), 1, 9999, 10, "%",
+            "Scales enemy health when enemies spawn. Independent of Dawnlight Mode.")
+        != MOD_OK)
+    {
+        return MOD_ERROR;
+    }
     return MOD_OK;
 }
 
@@ -810,20 +1194,8 @@ ModResult build_models_tab(
     return MOD_OK;
 }
 
-ModResult build_deferred_tab(
-    ModContext* ctx, UiWindowHandle, UiElementHandle left, UiElementHandle, void*, ModError*) {
-    if (add_section(ctx, left, "Waiting For Services") != MOD_OK) return MOD_ERROR;
-    if (add_text(ctx, left,
-            "New Game+ is not enabled in this upstream-main package yet because it needs a "
-            "source-save selection flow.")
-        != MOD_OK)
-    {
-        return MOD_ERROR;
-    }
-    return MOD_OK;
-}
-
 void settings_closed(ModContext*, UiWindowHandle, void*) {
+    s_teStaminaNote = s_teSprintNote = s_teWolfSprintNote = s_zItemsNote = 0;
     s_settingsWindow = 0;
 }
 
@@ -832,24 +1204,26 @@ void open_settings(ModContext* ctx, void*) {
         return;
     }
 
-    std::array<UiTabDesc, 7> tabs{};
+    std::array<UiTabDesc, 8> tabs{};
     for (auto& tab : tabs) {
         tab = UI_TAB_DESC_INIT;
     }
-    tabs[0].title = "Aiming";
-    tabs[0].build = build_aiming_tab;
-    tabs[1].title = "Controls";
-    tabs[1].build = build_controls_tab;
-    tabs[2].title = "HUD";
-    tabs[2].build = build_hud_tab;
-    tabs[3].title = "Gameplay";
-    tabs[3].build = build_gameplay_tab;
-    tabs[4].title = "Hard Mode";
-    tabs[4].build = build_hard_mode_tab;
-    tabs[5].title = "Models";
-    tabs[5].build = build_models_tab;
-    tabs[6].title = "Deferred";
-    tabs[6].build = build_deferred_tab;
+    tabs[0].title = "General";
+    tabs[0].build = build_general_tab;
+    tabs[1].title = "Aiming";
+    tabs[1].build = build_aiming_tab;
+    tabs[2].title = "Controls";
+    tabs[2].build = build_controls_tab;
+    tabs[3].title = "HUD";
+    tabs[3].build = build_hud_tab;
+    tabs[4].title = "Gameplay";
+    tabs[4].build = build_gameplay_tab;
+    tabs[5].title = "Hard Mode";
+    tabs[5].build = build_hard_mode_tab;
+    tabs[6].title = "Models";
+    tabs[6].build = build_models_tab;
+    tabs[7].title = "Boss Rush";
+    tabs[7].build = build_boss_rush_tab;
 
     UiWindowDesc desc = UI_WINDOW_DESC_INIT;
     desc.tabs = tabs.data();
@@ -874,13 +1248,13 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
     if (add_text(ctx, panel, "Aim Movement, Aim Modes, and Bullet Time") != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Flurry Rush, Fierce Deity, and Great Spin Projectile") != MOD_OK) {
+    if (add_text(ctx, panel, "Flurry Rush, Dark Link, and Great Spin Projectile") != MOD_OK) {
         return MOD_ERROR;
     }
     if (add_text(ctx, panel, "Shared Stamina and Lazy Tweaks compatibility") != MOD_OK) {
         return MOD_ERROR;
     }
-    if (add_text(ctx, panel, "Manual Shielding, R Jump, and Sprint") != MOD_OK) {
+    if (add_text(ctx, panel, "Manual Shielding, Manual Jump, and Sprint") != MOD_OK) {
         return MOD_ERROR;
     }
     if (add_text(ctx, panel, "Z Item Slot and Dawnlight Touch UI") != MOD_OK) return MOD_ERROR;
@@ -899,7 +1273,47 @@ ModResult build_mod_panel(ModContext* ctx, UiElementHandle panel, void*, ModErro
 
 }  // namespace
 
+void update_stamina_ui() {
+    if (!s_teStaminaNote && !s_teStaminaSettingsNote && !s_teSprintNote &&
+        !s_teWolfSprintNote && !s_zItemsNote) return;
+    const bool external = twilit_stamina_active();
+    const auto sync = [](ConfigVarHandle var) {
+        const auto entry = s_modeControls.find(var);
+        if (entry != s_modeControls.end()) sync_mode_control(mod_ctx, entry->second);
+    };
+    if (s_teStaminaNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teStaminaNote, external);
+        sync(stamina_config_var());
+    }
+    if (s_teSprintNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teSprintNote, twilit_sprint_enabled());
+        sync(sprint_config_var());
+        sync(sprint_speed_config_var());
+    }
+    if (s_teWolfSprintNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teWolfSprintNote, twilit_sprint_enabled(true));
+        sync(wolf_sprint_config_var());
+        sync(wolf_speed_config_var());
+    }
+    if (s_zItemsNote) {
+        const char* notice = z_item_slot_provider_notice();
+        if (notice) svc_ui->elem_set_text(mod_ctx, s_zItemsNote, notice);
+        svc_ui->elem_set_visible(mod_ctx, s_zItemsNote, notice != nullptr);
+        sync(z_item_slot_config_var());
+    }
+    if (s_teStaminaSettingsNote) {
+        svc_ui->elem_set_visible(mod_ctx, s_teStaminaSettingsNote, external);
+        svc_ui->elem_set_visible(mod_ctx, s_localStaminaHelp, !external);
+        for (size_t i = 0; i < kStaminaSettings.size(); ++i)
+            sync(stamina_setting_config_var(static_cast<StaminaSetting>(i)));
+    }
+}
+
 ModResult register_ui(ModError* error) {
+    UiStyleHandle style = 0;
+    if (const auto result = svc_ui->register_styles(mod_ctx, UI_SCOPE_WINDOW,
+            ".dawnlight-locked-setting { opacity: 0.5; }", &style); result != MOD_OK)
+        return mods::set_error(error, result, "failed to style Dawnlight locked settings");
     UiModsPanelDesc panel = UI_MODS_PANEL_DESC_INIT;
     panel.build = build_mod_panel;
     ModResult result = svc_ui->register_mods_panel(mod_ctx, &panel);

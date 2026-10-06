@@ -6,6 +6,7 @@
 #include "global.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_arrow.h"
+#include "d/actor/d_a_boomerang.h"
 #include "d/actor/d_a_obj_swhang.h"
 #include "d/d_camera.h"
 #include "d/d_com_inf_game.h"
@@ -458,6 +459,14 @@ bool fixed_bow_aim_active(daAlink_c* link) {
         (dComIfGp_checkPlayerStatus0(0, 0x1000) || bullet_time_active_for(link));
 }
 
+bool custom_slingshot_sight_active(daAlink_c* link) {
+    // Sight only: keep the Slingshot out of the Bow pose/arrow correction hooks.
+    return link != nullptr && use_scope_suppress_camera() &&
+        link->mEquipItem == dItemNo_PACHINKO_e &&
+        !link->checkWolf() && !link->checkAttentionLock() && !link->checkEventRun() &&
+        dComIfGp_checkPlayerStatus0(0, 0x40);
+}
+
 bool fixed_clawshot_aim_active(daAlink_c* link) {
     return link != nullptr && use_scope_suppress_camera() &&
         link->checkHookshotItem(link->mEquipItem) && !link->checkWolf() &&
@@ -539,15 +548,12 @@ int find_hookshot_actor_target(void* actorPtr, void* dataPtr) {
     return 0;
 }
 
-bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward,
-    fopAc_ac_c** hookshotActorTarget = nullptr) {
-    if (hookshotActorTarget != nullptr) {
-        *hookshotActorTarget = nullptr;
-    }
+bool camera_aim_ray(daAlink_c* link, cXyz& eye, cXyz& forward) {
+    if (link == nullptr) return false;
     auto* actor = dComIfGp_getCamera(link->field_0x317c);
     if (actor == nullptr) return false;
     // Run's post-hook sees the new camera before camera_class::view is updated.
-    cXyz eye = actor->mCamera.mEye;
+    eye = actor->mCamera.mEye;
     forward = actor->mCamera.mCenter - eye;
     if (forward.abs() <= 0.001f) return false;
     forward.normalize();
@@ -572,6 +578,16 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward,
             }
         }
     }
+    return true;
+}
+
+bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward,
+    fopAc_ac_c** hookshotActorTarget = nullptr) {
+    if (hookshotActorTarget != nullptr) {
+        *hookshotActorTarget = nullptr;
+    }
+    cXyz eye;
+    if (!camera_aim_ray(link, eye, forward)) return false;
     target = eye + forward * 10000.0f;
     if (link->checkHookshotItem(link->mEquipItem)) {
         // Clawshot targets can use polygons which arrows deliberately pass
@@ -609,8 +625,45 @@ bool camera_bow_target(daAlink_c* link, cXyz& target, cXyz& forward,
 bool bow_target_direction(const cXyz& origin, const cXyz& target,
     const cXyz& cameraForward, cXyz& direction);
 
+void draw_boomerang_camera_sight(daAlink_c* link) {
+    if (link == nullptr || link->mItemAcKeep.getActor() == nullptr ||
+        link->checkBoomerangThrowAnime()) {
+        return;
+    }
+
+    cXyz eye, forward;
+    if (!camera_aim_ray(link, eye, forward)) return;
+
+    // Preserve setBoomerangSight's gameplay side effects, not just its cursor.
+    // Terrain locks use the boomerang-specific polygon filter and native range.
+    cXyz target = eye + forward * link->getBoomLockMax();
+    link->mBoomerangLinChk.Set(&eye, &target, link);
+    const bool backgroundHit = dComIfG_Bgsp().LineCross(&link->mBoomerangLinChk);
+    link->offResetFlg0(daPy_py_c::RFLG0_ITEM_SIGHT_BG_HIT);
+    if (backgroundHit) {
+        target = link->mBoomerangLinChk.GetCross();
+        link->onResetFlg0(daPy_py_c::RFLG0_ITEM_SIGHT_BG_HIT);
+    }
+
+    // procWait consumes this position and the background-hit flag on lock input.
+    link->mHeldItemRootPos = target;
+    link->mSight.setPos(&target);
+    link->mSight.onDrawFlg();
+    auto* boomerang = static_cast<daBoomerang_c*>(link->mItemAcKeep.getActor());
+    if (boomerang->getLockReserve() || (backgroundHit && !boomerang->getLockCntMax())) {
+        link->setItemActionButtonStatus(BUTTON_STATUS_LOCK);
+        link->itemActionTrigger();
+    }
+    remember_custom_cinema_sight();
+}
+
 void draw_fixed_camera_sight(daAlink_c* link) {
     if (link == nullptr) {
+        return;
+    }
+
+    if (link->mEquipItem == dItemNo_BOOMERANG_e) {
+        draw_boomerang_camera_sight(link);
         return;
     }
 
@@ -1107,7 +1160,11 @@ HookAction replace_boomerang_subject(ModContext*, void* args, void* retval, void
 
     if (!link->checkNextAction(0)) {
         if (!update_subject_aim(link, AimItem::Boomerang) && link->setBodyAngleToCamera()) {
-            link->setBoomerangSight();
+            if (fixed_camera_sight_active(link)) {
+                draw_fixed_camera_sight(link);
+            } else {
+                link->setBoomerangSight();
+            }
         }
     } else {
         link->mSight.offDrawFlg();
@@ -1261,6 +1318,12 @@ void after_camera_run(ModContext*, void* args, void*, void*) {
     const bool subjectAiming = dComIfGp_checkPlayerStatus0(camera->mPadID, 0x1040);
     if (dCamera_c::isAimActive() && fixed_camera_sight_active(link)) {
         draw_fixed_camera_sight(link);
+    } else if (dCamera_c::isAimActive() &&
+        (fixed_bow_aim_active(link) || custom_slingshot_sight_active(link))) {
+        // Mounted Bow/Slingshot aiming bypasses replace_bow_subject, so no earlier hook
+        // may have activated our sight. Draw from the current aim state after
+        // the camera has updated, including the first aiming frame on Epona.
+        draw_bow_trajectory_sight(link);
     } else if (s_customCinemaSightActive && subjectAiming && should_keep_cinema_bow_sight(link)) {
         draw_bow_trajectory_sight(link);
     }

@@ -48,14 +48,19 @@ add_mod(dawnlight_mod
     FEATURES game webgpu
     SOURCES
         src/aim_hooks.cpp
+        src/dual_wield.cpp
+        src/collection_dual_wield.cpp
+        src/collection_service.cpp
         src/bow_modes.cpp
         src/bow_fire_resource.cpp
         src/bullet_time.cpp
         src/enemy_slow_motion.cpp
         src/enemy_hard_mode.cpp
         src/boss_hard_mode.cpp
+        src/cave_randomizer.cpp
         src/player_hard_mode.cpp
         src/enemy_spawner.cpp
+        src/enemy_slow_motion/boss.cpp
         src/enemy_slow_motion/darknut.cpp
         src/enemy_slow_motion/bokoblin.cpp
         src/enemy_slow_motion/mini_freezard.cpp
@@ -84,26 +89,74 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/big_baba.cpp
         src/enemy_slow_motion/deku_baba.cpp
         src/enemy_slow_motion/stalfos.cpp
+        src/enemy_slow_motion/helmasaur.cpp
+        src/enemy_slow_motion/kargarok.cpp
+        src/enemy_slow_motion/guay.cpp
+        src/enemy_slow_motion/armos.cpp
+        src/enemy_slow_motion/chu.cpp
+        src/enemy_slow_motion/baby_gohma.cpp
+        src/enemy_slow_motion/young_gohma.cpp
+        src/enemy_slow_motion/diababa_head.cpp
+        src/enemy_slow_motion/blizzeta_ice.cpp
+        src/enemy_slow_motion/zant_magic.cpp
+        src/enemy_slow_motion/zant_mobile.cpp
+        src/enemy_slow_motion/darkhammer_ball.cpp
+        src/enemy_slow_motion/morpheel.cpp
+        src/enemy_slow_motion/heroes_shade.cpp
+        src/enemy_slow_motion/argorok.cpp
+        src/enemy_slow_motion/stallord.cpp
+        src/enemy_slow_motion/fyrus.cpp
+        src/enemy_slow_motion/diababa.cpp
+        src/enemy_slow_motion/armogohma.cpp
+        src/enemy_slow_motion/puppet_zelda.cpp
+        src/enemy_slow_motion/ganondorf.cpp
+        src/enemy_slow_motion/king_bulblin.cpp
+        src/enemy_slow_motion/ook_boomerang.cpp
+        src/enemy_slow_motion/ook.cpp
+        src/enemy_slow_motion/phantom_zant.cpp
+        src/enemy_slow_motion/death_sword.cpp
+        src/enemy_slow_motion/blizzeta.cpp
+        src/enemy_slow_motion/beast_ganon.cpp
+        src/enemy_slow_motion/zant.cpp
+        src/enemy_slow_motion/skull_kid.cpp
+        src/enemy_slow_motion/deku_toad.cpp
+        src/enemy_slow_motion/toado.cpp
+        src/enemy_slow_motion/darkhammer.cpp
+        src/enemy_slow_motion/dangoro.cpp
+        src/hud_fade.cpp
         src/combat_meter.cpp
+        src/gale_counter.cpp
         src/config.cpp
+        src/progression.cpp
         src/deferred_features.cpp
         src/enemy_scaling.cpp
         src/eye_movement.cpp
         src/fierce_deity.cpp
+        src/fierce_deity_hud.cpp
+        src/kh2_hud_compat.cpp
+        src/fierce_deity_visual.cpp
         src/great_spin_projectile.cpp
         src/item_integrity.cpp
         src/item_slot_hooks.cpp
         src/jump_hooks.cpp
+        src/glider_bmd.cpp
+        src/glider_visual.cpp
+        src/glider_reward.cpp
+        src/glider_reward_icon.cpp
         src/manual_shield_hooks.cpp
         src/mod.cpp
         src/model_overlays.cpp
         src/new_save_modes.cpp
+        src/clear_timer.cpp
+        src/cave_boss_visits.cpp
         src/boss_portal_symbols.cpp
         src/boss_portal_mirrors.cpp
         src/heroes_shade_encounter.cpp
         src/save_compat.cpp
         src/save_state.cpp
         src/stamina.cpp
+        src/twilit_stamina.cpp
+        src/touch_buttons.cpp
         src/ui.cpp
         src/update_service.cpp
     MOD_JSON mod.json
@@ -115,6 +168,11 @@ target_include_directories(dawnlight_mod PRIVATE
 )
 
 target_compile_definitions(dawnlight_mod PRIVATE DAWNLIGHT_VERSION="${DAWNLIGHT_VER}")
+
+# Cross-mod Z-slot, KH2 gauge and TE stamina guards read live ConfigVars on every platform.
+# Keep private host headers scoped to these sources on non-touch builds.
+set_property(SOURCE src/item_slot_hooks.cpp src/kh2_hud_compat.cpp src/twilit_stamina.cpp APPEND PROPERTY
+    INCLUDE_DIRECTORIES "${DUSKLIGHT_DIR}/src")
 
 if(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS)
     target_include_directories(dawnlight_mod PRIVATE

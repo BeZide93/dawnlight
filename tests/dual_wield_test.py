@@ -501,7 +501,11 @@ int main() {
                     assert(std::abs(dual::length(posed[2].p-posed[1].p)-29)<.003f);
                     assert(std::abs(dual::length(posed[3].p-posed[2].p)-26.5f)<.003f);
                     const Vec offset=dual::rotate(dual::conjugate(dual::from_euler({0,yaw,0})),posed[3].p-posed[1].p);
-                    assert(offset.x<-10&&offset.y<-25&&offset.z>20); // hand below/outside/in front
+                    assert(offset.x<-10&&offset.y<0&&offset.y>-20&&offset.z>35); // clear of the thigh
+                    // Shoulder swing advances/lifts the complete chain without
+                    // changing the accepted local elbow and wrist rotations.
+                    const Vec previous{-15.155f,-32.500f,25.597f};
+                    assert(offset.z>previous.z+10&&offset.y>previous.y+15);
                     const Pose relative=dual::compose(dual::inverse(posed[1]),posed[2]);
                     samePose(relative,{elbow,{29,0,0}});
                 }

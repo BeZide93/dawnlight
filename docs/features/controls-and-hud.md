@@ -68,6 +68,12 @@ Dusklight, and `IMPORT HUD` reads the same file from there. Existing exports in
 the old `mods` folder are migrated automatically. The copy buttons can seed
 Custom from the GameCube, X-Box, Wii-U, or Dawnlight presets.
 
+**Custom Tears of Light** provides X/Y position and scale for Wolf Link's
+Vessel of Light and its tears. Select the **Custom** layout to edit it. These
+values are included in HUD save, preset copy/reset, and import/export; all
+presets default to the existing position at 100% scale. The game still controls
+when the vessel appears and how collection animations run.
+
 The `hud_layout_settings.json` format is compatible with the Dawnlight fork's
 HUD layout export where the same fields are available.
 

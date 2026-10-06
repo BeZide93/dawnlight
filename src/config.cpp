@@ -213,6 +213,7 @@ constexpr HudElementDefaultArray kGameCubeHudElementDefaults = {{
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
     {"gale-counter", 25, 0, 100},
+    {"tears-of-light", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kGameCubeHudButtonDefaults = {{
@@ -241,6 +242,7 @@ constexpr std::array<HudElementDefaults, kHudElementCount> kHudElementDefaults =
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
     {"gale-counter", 25, 0, 100},
+    {"tears-of-light", 0, 0, 100},
 }};
 
 constexpr std::array<HudButtonDefaults, kHudButtonCount> kHudButtonDefaults = {{
@@ -269,6 +271,7 @@ constexpr HudElementDefaultArray kWiiUHudElementDefaults = {{
     {"stamina-bar", 0, 0, 100},
     {"fierce-deity-bar", 0, 0, 100},
     {"gale-counter", 25, 0, 100},
+    {"tears-of-light", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kWiiUHudButtonDefaults = {{
@@ -297,6 +300,7 @@ constexpr HudElementDefaultArray kDawnlightHudElementDefaults = {{
     {"stamina-bar", 100, 0, 100},
     {"fierce-deity-bar", 100, 0, 100},
     {"gale-counter", 25, 0, 100},
+    {"tears-of-light", 0, 0, 100},
 }};
 
 constexpr HudButtonDefaultArray kDawnlightHudButtonDefaults = {{
@@ -325,6 +329,7 @@ constexpr std::array<const char*, kHudElementCount> kHudElementJsonNames = {{
     "Stamina Bar",
     "Dark Link Bar",
     "Gale Counter",
+    "Tears of Light",
 }};
 
 constexpr std::array<const char*, kHudButtonCount> kHudButtonJsonNames = {{

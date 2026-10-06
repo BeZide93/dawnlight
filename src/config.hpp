@@ -67,6 +67,7 @@ enum class HudElement : int {
     StaminaBar,
     FierceDeityBar,
     GaleCounter,
+    TearsOfLight,
     Count,
 };
 

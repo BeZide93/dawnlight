@@ -138,6 +138,10 @@ jobs:
           python3 tests/hud_text_anchor_test.py
           python3 tests/round_button_overlays_test.py
 
+      - name: Test HUD editor transforms
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/hud_editor_layout_test.py
+
       - name: Test HUD fades
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/hud_fade_test.py

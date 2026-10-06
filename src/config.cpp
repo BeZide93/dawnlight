@@ -1890,6 +1890,7 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
     out << "    \"version\": 15\n";
     out << "}\n";
 
+    out.close(); // Surface buffered write/close errors before opening the export dialog.
     return out.good() ? HudSettingsIoResult::Ok : HudSettingsIoResult::WriteFailed;
 }
 
@@ -1913,6 +1914,11 @@ HudSettingsIoResult import_custom_hud_settings(std::string& outPath) {
     buffer << in.rdbuf();
     const std::string json = buffer.str();
 
+    if (in.bad()) return HudSettingsIoResult::ReadFailed;
+    return import_custom_hud_settings_json(json);
+}
+
+HudSettingsIoResult import_custom_hud_settings_json(const std::string& json) {
     std::string elementsObject;
     if (!read_json_object(json, "elements", elementsObject)) {
         return HudSettingsIoResult::InvalidFormat;
@@ -1982,11 +1988,11 @@ const char* hud_settings_io_result_message(HudSettingsIoResult result) {
     case HudSettingsIoResult::PathUnavailable:
         return "Dawnlight's data folder path is currently unavailable.";
     case HudSettingsIoResult::ReadFailed:
-        return "Unable to read hud_layout_settings.json.";
+        return "Unable to read the HUD layout file.";
     case HudSettingsIoResult::WriteFailed:
         return "Unable to write hud_layout_settings.json.";
     case HudSettingsIoResult::InvalidFormat:
-        return "hud_layout_settings.json is not a valid Dawnlight HUD layout file.";
+        return "The selected file is not a valid Dawnlight HUD layout (maximum 1 MiB).";
     case HudSettingsIoResult::ConfigFailed:
         return "Unable to apply the HUD layout settings.";
     default:

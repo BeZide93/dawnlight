@@ -265,23 +265,112 @@ bool custom_hud_controls_disabled(ModContext*, void*) {
     return !custom_hud_layout_enabled();
 }
 
-void export_hud_settings(ModContext*, void*) {
-    std::string path;
-    const HudSettingsIoResult result = export_custom_hud_settings(path);
-    if (result == HudSettingsIoResult::Ok) {
-        push_toast("HUD Exported", "Exported hud_layout_settings.json to Dawnlight's data folder.");
+// The host owns picker lifetime and invokes completion on the game thread.
+// Keep export staging unchanged while either of our dialogs is outstanding.
+bool s_hudFilePickPending = false;
+constexpr uint64_t kMaxHudImportBytes = 1024 * 1024;
+
+void hud_file_pick_error(const char* title, ModResult status, const char* error = nullptr) {
+    const char* message = error != nullptr && *error != '\0' ? error :
+        status == MOD_CONFLICT ? "Another file dialog is already open." :
+        status == MOD_UNSUPPORTED ? "File dialogs are not supported on this platform." :
+        "Unable to open the file dialog or access the selected file.";
+    push_toast(title, message, "warning");
+}
+
+void hud_export_complete(ModContext*, ModResult status, const char* const*,
+    uint32_t, const char* error, void*) {
+    s_hudFilePickPending = false;
+    if (status == MOD_UNAVAILABLE) return; // User canceled.
+    if (status == MOD_OK) {
+        push_toast("HUD Exported", "Saved the HUD layout to the selected destination.");
     } else {
+        hud_file_pick_error("HUD Export Failed", status, error);
+    }
+}
+
+HudSettingsIoResult import_selected_hud_file(const char* location) {
+    FileStreamHandle stream = 0;
+    if (svc_file->open(mod_ctx, location, FILE_OPEN_READ, &stream) != MOD_OK)
+        return HudSettingsIoResult::ReadFailed;
+    uint64_t size = 0;
+    HudSettingsIoResult result = HudSettingsIoResult::ReadFailed;
+    std::string json;
+    if (svc_file->size(mod_ctx, stream, &size) == MOD_OK) {
+        if (size == 0 || size > kMaxHudImportBytes) {
+            result = HudSettingsIoResult::InvalidFormat;
+        } else {
+            json.resize(static_cast<size_t>(size));
+            uint64_t offset = 0;
+            while (offset < size) {
+                uint64_t count = 0;
+                if (svc_file->read(mod_ctx, stream, json.data() + offset, size - offset, &count) != MOD_OK ||
+                    count == 0 || count > size - offset) break;
+                offset += count;
+            }
+            if (offset == size) result = HudSettingsIoResult::Ok;
+        }
+    }
+    if (svc_file->close(mod_ctx, stream) != MOD_OK) result = HudSettingsIoResult::ReadFailed;
+    // Apply settings only after the entire file has been read and closed.
+    return result == HudSettingsIoResult::Ok ? import_custom_hud_settings_json(json) : result;
+}
+
+void hud_import_complete(ModContext*, ModResult status, const char* const* locations,
+    uint32_t count, const char* error, void*) {
+    s_hudFilePickPending = false;
+    if (status == MOD_UNAVAILABLE) return; // User canceled.
+    if (status != MOD_OK || locations == nullptr || count != 1 ||
+        locations[0] == nullptr || *locations[0] == '\0') {
+        hud_file_pick_error("HUD Import Failed", status, error);
+        return;
+    }
+    // Locations are opaque: use the service for paths and Android content URIs alike.
+    const auto result = import_selected_hud_file(locations[0]);
+    if (result == HudSettingsIoResult::Ok) {
+        push_toast("HUD Imported", "Imported the selected HUD layout.");
+    } else {
+        push_toast("HUD Import Failed", hud_settings_io_result_message(result), "warning");
+    }
+}
+
+void export_hud_settings(ModContext*, void*) {
+    if (s_hudFilePickPending) return;
+    if (!SERVICE_HAS(svc_file, FileService, export_file) || !svc_file->export_file) {
+        hud_file_pick_error("HUD Export Failed", MOD_UNSUPPORTED);
+        return;
+    }
+    std::string path;
+    const auto result = export_custom_hud_settings(path);
+    if (result != HudSettingsIoResult::Ok) {
         push_toast("HUD Export Failed", hud_settings_io_result_message(result), "warning");
+        return;
+    }
+    s_hudFilePickPending = true;
+    const auto status = svc_file->export_file(mod_ctx, path.c_str(), "hud_layout_settings.json",
+        hud_export_complete, nullptr);
+    if (status != MOD_OK) {
+        s_hudFilePickPending = false;
+        hud_file_pick_error("HUD Export Failed", status);
     }
 }
 
 void import_hud_settings(ModContext*, void*) {
-    std::string path;
-    const HudSettingsIoResult result = import_custom_hud_settings(path);
-    if (result == HudSettingsIoResult::Ok) {
-        push_toast("HUD Imported", "Imported hud_layout_settings.json from Dawnlight's data folder.");
-    } else {
-        push_toast("HUD Import Failed", hud_settings_io_result_message(result), "warning");
+    if (s_hudFilePickPending) return;
+    if (!SERVICE_HAS(svc_file, FileService, close) || !svc_file->pick_file ||
+        !svc_file->open || !svc_file->size || !svc_file->read || !svc_file->close) {
+        hud_file_pick_error("HUD Import Failed", MOD_UNSUPPORTED);
+        return;
+    }
+    const FileFilter filter{"HUD layout (JSON)", "json"};
+    FilePickOptions options = FILE_PICK_OPTIONS_INIT;
+    options.filters = &filter;
+    options.filter_count = 1;
+    s_hudFilePickPending = true;
+    const auto status = svc_file->pick_file(mod_ctx, &options, hud_import_complete, nullptr);
+    if (status != MOD_OK) {
+        s_hudFilePickPending = false;
+        hud_file_pick_error("HUD Import Failed", status);
     }
 }
 
@@ -1310,6 +1399,8 @@ void update_stamina_ui() {
 }
 
 ModResult register_ui(ModError* error) {
+    // The host discards picker callbacks when a mod is disabled.
+    s_hudFilePickPending = false;
     UiStyleHandle style = 0;
     if (const auto result = svc_ui->register_styles(mod_ctx, UI_SCOPE_WINDOW,
             ".dawnlight-locked-setting { opacity: 0.5; }", &style); result != MOD_OK)

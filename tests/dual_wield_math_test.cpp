@@ -56,6 +56,42 @@ int main() {
     near(reach(original,{{},{1,1,1}},0).hand.p,original.hand.p);
     Arm zero{};near(reach(zero,{{},{100,100,100}},1).hand.p,{});
 
+    // Bone directions alone are insufficient: transporting both native elbow
+    // normals to the new bend plane must also remove mismatched axial twist.
+    // Use nontrivial bone orientations, not identity-only skeletal fixtures.
+    Arm charged{{from_euler({.7f,-.4f,1.1f}),{-18,130,-10}},
+                {from_euler({-.6f,.9f,-.2f}),{6,138,30}},
+                {from_euler({.2f,.5f,-.8f}),{26,148,35}}};
+    const Vec nativeNormal=unit(cross(charged.lower.p-charged.upper.p,charged.hand.p-charged.lower.p));
+    const Vec localUpperNormal=rotate(conjugate(charged.upper.q),nativeNormal);
+    const Vec localLowerNormal=rotate(conjugate(charged.lower.q),nativeNormal);
+    const Pose chargeTarget{from_euler({.3f,-.2f,.6f}),{-30,100,14}};
+    const Vec chargePole{-53,105,-10};
+    const auto oldSolve=reach(charged,chargeTarget,1,&chargePole);
+    assert(length(rotate(oldSolve.upper.q,localUpperNormal)-rotate(oldSolve.lower.q,localLowerNormal))>.1f);
+    for(Vec angles:{Vec{},Vec{.2f,1.7f,-.3f},Vec{-.4f,-2.8f,.6f}}) {
+        const Pose world{from_euler(angles),{70,20,-90}};
+        const Arm moved{compose(world,charged.upper),compose(world,charged.lower),compose(world,charged.hand)};
+        const Pose target=compose(world,chargeTarget);
+        const Vec pole=compose(world,Pose{{},chargePole}).p;
+        for(int frame=0;frame<=20;++frame) {
+            const auto solved=reach(moved,target,frame/20.f,&pole,true);
+            assert(std::abs(length(solved.lower.p-solved.upper.p)-length(moved.lower.p-moved.upper.p))<.003f);
+            assert(std::abs(length(solved.hand.p-solved.lower.p)-length(moved.hand.p-moved.lower.p))<.003f);
+            if(frame==0) near(solved.hand.p,moved.hand.p);
+            if(frame==20) {
+                near(solved.hand.p,target.p);
+                const Vec normal=unit(cross(solved.lower.p-solved.upper.p,solved.hand.p-solved.lower.p));
+                near(rotate(solved.upper.q,localUpperNormal),normal);
+                near(rotate(solved.lower.q,localLowerNormal),normal);
+            }
+        }
+    }
+    // A straight source arm has no defined plane: retain the ordinary swing
+    // without NaNs or stretched limbs, even for an unreachable target.
+    Arm straight{{{},{}},{{},{29,0,0}},{{},{55.5f,0,0}}};
+    lengths(reach(straight,{{},{1000,-300,0}},1,&chargePole,true));
+
     // Use the native left/right grip mounts and the asymmetric guard stance.
     // The right shoulder leads, so Ordon must remain ahead after reach limits.
     Arm arms[2];Pose blades[2];

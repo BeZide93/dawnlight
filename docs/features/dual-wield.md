@@ -58,7 +58,9 @@ During the victory flourish, the right-hand grip keeps a stable orientation
 through sheathing and the empty-hand return instead of following the main
 sword's spinning item track. Jump Strike charging uses a separate right-arm
 stance: the second sword stays forward and outside the body while the primary
-sword remains raised. This also covers holding/moving with the fully charged
+sword remains raised. Both right-arm bones follow the same elbow bend plane
+to avoid carrying the native two-handed twist into this stance. This also
+covers holding/moving with the fully charged
 attack; attacks, damage, riding and Glide retain their normal transitions.
 
 The feature uses the game's native sword models and Link animations, with native

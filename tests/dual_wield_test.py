@@ -443,6 +443,14 @@ int main() {
                 const float lower=dual::length(before[14].p-before[13].p);
                 after_arms(nullptr,&args,nullptr,nullptr);
                 const auto& joints=link.model.joints;
+                // Both elbow surfaces must follow the same new bend plane,
+                // not just land at the correct shoulder/elbow/wrist positions.
+                const Vec oldNormal=dual::unit(dual::cross(before[13].p-before[12].p,before[14].p-before[13].p));
+                const Vec newNormal=dual::unit(dual::cross(joints[13].p-joints[12].p,joints[14].p-joints[13].p));
+                for(int bone:{12,13}) {
+                    const Vec localNormal=dual::rotate(dual::conjugate(before[bone].q),oldNormal);
+                    assert(dual::length(dual::rotate(joints[bone].q,localNormal)-newNormal)<.003f);
+                }
                 const Vec hand=dual::compose(dual::inverse(world),joints[14]).p;
                 assert(hand.x<-18&&hand.y<130&&hand.z>-10);
                 const Vec elbow=dual::compose(dual::inverse(world),joints[13]).p;

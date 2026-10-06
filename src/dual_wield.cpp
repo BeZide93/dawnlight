@@ -514,13 +514,14 @@ void after_model_calc(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(s_calculating && s.owner==link && mods::arg<J3DModel*>(args,1)==link->mpLinkModel) detach();
 }
-void solve_arm(daAlink_c* link,bool right,Pose sword,float weight,const Vec* elbowPole=nullptr) {
+void solve_arm(daAlink_c* link,bool right,Pose sword,float weight,const Vec* elbowPole=nullptr,
+               bool alignBendPlane=false) {
     auto* model=link->mpLinkModel;int first=right ? 12 : 7;
     dual::Arm arm{pose(model->getAnmMtx(first)),pose(model->getAnmMtx(first+1)),pose(model->getAnmMtx(first+2))};
     const Pose item=dual::compose(dual::inverse(arm.hand),pose(model->getAnmMtx(first+3)));
     const Pose mount=hand_mount(link,right);
     Pose hand=dual::compose(sword,dual::inverse(mount));
-    const auto solved=dual::reach(arm,hand,weight,elbowPole);
+    const auto solved=dual::reach(arm,hand,weight,elbowPole,alignBendPlane);
     put(model,first,solved.upper);put(model,first+1,solved.lower);put(model,first+2,solved.hand);
     // Both item joints remain attached to their hands after the IK pass.
     // The primary model is rendered from joint 10. Use the same grip mount
@@ -553,7 +554,9 @@ void after_arms(ModContext*,void* args,void*,void*) {
         const float side=shoulder.x<0 ? -1.0f : 1.0f;
         const Pose target=dual::jump_charge_blade(shoulder,hand_mount(link,true));
         const Vec pole=dual::compose(actor,Pose{{},shoulder+Vec{35*side,-25,0}}).p;
-        solve_arm(link,true,dual::compose(actor,target),dual::smooth(s.charge),&pole);
+        // Move the native elbow's bend plane with both bones. Independent
+        // swings leave opposite axial twists and pinch the elbow skin.
+        solve_arm(link,true,dual::compose(actor,target),dual::smooth(s.charge),&pole,true);
     }
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());

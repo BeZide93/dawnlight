@@ -338,6 +338,7 @@ enum class HudPaneSlot : std::size_t {
     Rupee1,
     Rupee2,
     Keys,
+    TearsOfLight,
     Count,
 };
 
@@ -1479,6 +1480,17 @@ void apply_midna_hud_layout(dMeter2Draw_c* meter) {
         midnaTransform.scale);
 }
 
+void apply_tears_of_light_hud_layout(dMeter2Draw_c* meter) {
+    if (meter == nullptr) {
+        return;
+    }
+    // Transform the complete vessel after native presentation / HUD mods.
+    // Leave its visibility, collection progress and animation state untouched.
+    const DuskModHudTransform transform = hud_layout_tears_of_light_transform();
+    apply_hud_pane_transform(HudPaneSlot::TearsOfLight, meter->mpLightDropParent,
+        hardcoded_hud_layout_enabled(), transform.offset_x, transform.offset_y, transform.scale);
+}
+
 void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
     if (meter == nullptr) {
         return;
@@ -1585,6 +1597,7 @@ void apply_wii_u_hud_layout(dMeter2Draw_c* meter) {
         zTransform.offset_y + zLayout.item_offset_y, hud_item_scale(zTransform, zLayout));
 
     apply_midna_hud_layout(meter);
+    apply_tears_of_light_hud_layout(meter);
 
     const DuskModHudTransform backingTransform = hud_layout_backing_transform();
     apply_hud_pane_transform(HudPaneSlot::Backing, meter->mpUzu, enabled,

@@ -45,6 +45,7 @@ IMPORT_OPTIONAL_SERVICE(Kh2HudDriveService, svc_kh2hud_drive);
 IMPORT_OPTIONAL_SERVICE_VERSION(TwilitEssentialsStaminaService, svc_te_stamina, 0);
 IMPORT_OPTIONAL_SERVICE(TwilitEssentialsCollectionService, svc_te_collection);
 IMPORT_SERVICE(ConfigService, svc_config);
+IMPORT_OPTIONAL_SERVICE(FileService, svc_file);
 IMPORT_SERVICE(FlowService, svc_flow);
 IMPORT_SERVICE(GameModeService, svc_game_mode);
 IMPORT_SERVICE(GfxService, svc_gfx);
@@ -82,6 +83,7 @@ extern "C" {
 
 MOD_EXPORT ModResult mod_initialize(ModError* error) {
     (void)&mod_meta_import_svc_te_collection;
+    (void)&mod_meta_import_svc_file;
     if (const ModResult result = dawnlight::register_config(error); result != MOD_OK) {
         return result;
     }

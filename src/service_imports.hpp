@@ -2,6 +2,7 @@
 
 #include "mods/svc/actor.h"
 #include "mods/svc/config.h"
+#include "mods/svc/file.h"
 #include "mods/svc/flow.h"
 #include "mods/svc/game.h"
 #include "mods/svc/game_mode.h"
@@ -17,6 +18,7 @@
 
 extern const ActorService* svc_actor;
 extern const ConfigService* svc_config;
+extern const FileService* svc_file;
 extern const FlowService* svc_flow;
 extern const GameService* svc_game;
 extern const GameModeService* svc_game_mode;

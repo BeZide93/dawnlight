@@ -78,10 +78,12 @@ The HUD layout setting has five modes:
 - Custom: editable layout, initialized from the X-Box preset.
 
 The Custom layout can move and scale supported HUD elements and can adjust item,
-text, ammo, and button-backing offsets on the HUD buttons. `EXPORT HUD` writes
-`hud_layout_settings.json` into Dawnlight's mod data directory provided by
-Dusklight, and `IMPORT HUD` reads the same file from there. Existing exports in
-the old `mods` folder are migrated automatically. The copy buttons can seed
+text, ammo, and button-backing offsets on the HUD buttons. `EXPORT HUD` opens
+Dusklight's native export dialog to save `hud_layout_settings.json` to a destination
+you choose. `IMPORT HUD` opens a JSON file picker and applies the selected layout,
+including files selected through Android's document picker. Canceling either
+dialog leaves the current HUD settings unchanged. Existing JSON exports remain
+compatible; imports are limited to 1 MiB. The copy buttons can seed
 Custom from the GameCube, X-Box, Wii-U, or Dawnlight presets.
 
 **Custom Tears of Light** provides X/Y position and scale for Wolf Link's

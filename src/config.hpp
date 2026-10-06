@@ -266,6 +266,7 @@ ConfigVarHandle hud_custom_minimap_slide_direction_config_var();
 
 HudSettingsIoResult export_custom_hud_settings(std::string& outPath);
 HudSettingsIoResult import_custom_hud_settings(std::string& outPath);
+HudSettingsIoResult import_custom_hud_settings_json(const std::string& json);
 HudSettingsIoResult copy_hud_preset_to_custom(HudLayout layout);
 HudSettingsIoResult reset_custom_hud_settings();
 const char* hud_settings_io_result_message(HudSettingsIoResult result);

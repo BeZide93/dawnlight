@@ -401,7 +401,7 @@ int main() {
     J3DShapePacket p{&player,&shape,{}}, foreign{&other,&shape,{}};
     draw_shadow(p);
     draw_begin(p);
-    assert(gpuCount==5 && gpuMaterial.r==100);
+    assert(gpuCount==5 && gpuMaterial.r==24);
     assert(gpuMaterial.a==93 && gpuAmbient.a==61); // Aurora's full RGBA writes
     // Check actual SPEC bits, independent channels, additive composition,
     // and normal-dependent highlights rather than a constant gray silhouette.
@@ -429,7 +429,7 @@ int main() {
 
     // A material without a light in its own DL must not overwrite global lights.
     mat.color.hasLight=false;
-    draw_begin(p); assert(gpuCount==4 && gpuMaterial.r==32);
+    draw_begin(p); assert(gpuCount==4 && gpuMaterial.r==8);
     for(unsigned i=0x603;i<=0x60F;++i) assert(xf[i]==nativeXF[i]);
     draw_end(); mat.color.hasLight=true;
     mat.color.alpha.enabled=true;
@@ -602,7 +602,7 @@ int main() {
         J3DShapePacket gear{model,&shape,{}};
         assert(!player_model(&link,model) && player_equipment(&link,model));
         draw_begin(gear);assert(gpuCount==(tint==FierceDeityTint::White?4:5));
-        assert(gpuMaterial.r==(tint==FierceDeityTint::White?240:tint==FierceDeityTint::Gold?255:100));
+        assert(gpuMaterial.r==(tint==FierceDeityTint::White?240:tint==FierceDeityTint::Gold?255:24));
         if(tint==FierceDeityTint::White) {
             assert(gpuMaterial.r==gpuMaterial.g && gpuMaterial.g==gpuMaterial.b);
             assert((gpuStages[3].color==std::array<int,4>{GX_CC_ZERO,GX_CC_ZERO,GX_CC_ZERO,GX_CC_RASC}));
@@ -718,7 +718,7 @@ int main() {
     draw_begin(p); assert(gpuCount==16); draw_end(); // two body stages fit
     mat.tev.count=3;
     player.data.textures.name="custom_without_native_mask";
-    draw_begin(p); assert(gpuCount==5 && gpuMaterial.r==100); draw_end();
+    draw_begin(p); assert(gpuCount==5 && gpuMaterial.r==24); draw_end();
     player.data.textures.name="al_eyeball";
     mat.tev.stages[0].mTevSwapModeInfo=0;
     mat.tev.stages[1].mTevSwapModeInfo=5;

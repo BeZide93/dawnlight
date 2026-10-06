@@ -54,6 +54,9 @@ jump button instead. Walking off a ledge carries the actual forward speed and
 direction into the fall, including sprint/dash speed, without an upward jump
 impulse. Normal fall physics and ledge grabbing remain available.
 Scripted/forced jumps, Midna's targeted jumps, manual jumps and Revali's Gale are preserved.
+During the Sacred Grove guardian statue puzzle, automatic jumps remain enabled
+regardless of this toggle. The saved preference is unchanged and applies again
+after the puzzle ends.
 Turning **Manual Jump** off also resets this option to off and greys it out;
 re-enabling Manual Jump does not automatically re-enable it.
 

@@ -87,14 +87,6 @@ inline Pose cross_guard_blade(bool right,float thrust) {
     if(!right) rotation=multiply(rotation,{1,0,0,0});
     return {rotation,{18*side,112,50+16*thrust+(right ? 6.0f : -6.0f)}};
 }
-// Jump Strike keeps the main sword raised. The offhand stays below/outside
-// the right shoulder, pointing forward and up instead of reaching for its grip.
-inline Pose jump_charge_blade(Vec shoulder,Pose mount) {
-    const float side=shoulder.x<0 ? -1.0f : 1.0f;
-    const Quat blade=between({1,0,0},unit({.35f*side,.65f,.68f}));
-    const Pose hand{multiply(blade,conjugate(mount.q)),shoulder+Vec{12*side,-30,24}};
-    return compose(hand,mount);
-}
 constexpr float stow_insert_end=.75f;
 constexpr float draw_grip_start=.30f;
 inline float sheath_tilt_target(float progress,bool drawing) {
@@ -176,22 +168,7 @@ inline float max_sword_depth(Arm arm,Pose sword,Pose mount) {
     const float dx=hand.x-arm.upper.p.x,dy=hand.y-arm.upper.p.y;
     return arm.upper.p.z+std::sqrt(std::max(0.0f,radius*radius-dx*dx-dy*dy))-offset.z;
 }
-// A shortest-arc swing fixes a bone's direction but retains its old axial
-// twist. Transport the native bend normal too, so both sides of the elbow
-// keep their original relationship when a two-handed pose moves to the side.
-inline Quat swing_in_plane(Vec from,Vec to,Vec sourceNormal,Vec targetNormal) {
-    const Quat swing=between(from,to);
-    const Vec axis=unit(to);
-    Vec a=rotate(swing,sourceNormal),b=targetNormal;
-    a=a-axis*dot(a,axis);b=b-axis*dot(b,axis);
-    if(length(a)<1e-4f || length(b)<1e-4f) return swing;
-    a=unit(a);b=unit(b);
-    const float half=.5f*std::atan2(dot(axis,cross(a,b)),std::clamp(dot(a,b),-1.0f,1.0f));
-    const float sine=std::sin(half);
-    return multiply(Quat{axis.x*sine,axis.y*sine,axis.z*sine,std::cos(half)},swing);
-}
-inline Arm reach(Arm source,Pose target,float weight,const Vec* elbowPole=nullptr,
-                 bool alignBendPlane=false) {
+inline Arm reach(Arm source,Pose target,float weight,const Vec* elbowPole=nullptr) {
     const float l1=length(source.lower.p-source.upper.p),l2=length(source.hand.p-source.lower.p);
     if(l1<1e-3f || l2<1e-3f || weight<=0) return source;
     Vec delta=target.p-source.upper.p;Vec direction=unit(delta);
@@ -204,14 +181,8 @@ inline Arm reach(Arm source,Pose target,float weight,const Vec* elbowPole=nullpt
     float along=(l1*l1-l2*l2+d*d)/(2*d);
     Vec elbow=source.upper.p+direction*along+pole*std::sqrt(std::max(0.0f,l1*l1-along*along));
     Vec hand=source.upper.p+direction*d;
-    const Vec upperBone=source.lower.p-source.upper.p,lowerBone=source.hand.p-source.lower.p;
-    const Vec sourceNormal=cross(unit(upperBone),unit(lowerBone));
-    const Vec targetNormal=cross(unit(elbow-source.upper.p),unit(hand-elbow));
-    const auto turn=[&](Vec from,Vec to) {
-        return alignBendPlane ? swing_in_plane(from,to,sourceNormal,targetNormal) : between(from,to);
-    };
-    Quat upper=multiply(turn(upperBone,elbow-source.upper.p),source.upper.q);
-    Quat lower=multiply(turn(lowerBone,hand-elbow),source.lower.q);
+    Quat upper=multiply(between(source.lower.p-source.upper.p,elbow-source.upper.p),source.upper.q);
+    Quat lower=multiply(between(source.hand.p-source.lower.p,hand-elbow),source.lower.q);
     Vec localLower=rotate(conjugate(source.upper.q),source.lower.p-source.upper.p);
     Vec localHand=rotate(conjugate(source.lower.q),source.hand.p-source.lower.p);
     Arm out=source;

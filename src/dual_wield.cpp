@@ -58,6 +58,7 @@ struct State {
     bool enabled=false,active=false,mirror=false,seedBlade=false,forcedBlade=false;
     float guard=0,draw=0,sheathTilt=0,charge=0;
     Pose chargeMount;
+    DualChargeArmPose chargeArm;
     unsigned tick=0,poseTick=~0u;
     Pose rightSword,hipSword,nativeShield;
     unsigned shieldTick=~0u;
@@ -493,19 +494,28 @@ HookAction before_model_calc(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     auto* model=mods::arg<J3DModel*>(args,1);
     const bool thrust=s.haveGuardBody && sword_guard_equipment(link) && link->mProcID==daAlink_c::PROC_GUARD_ATTACK;
-    if(!active(link) || (!s.mirror && !thrust) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
+    if(!active(link) || (!s.mirror && !thrust && s.charge==0) || model!=link->mpLinkModel || s_calculating) return HOOK_CONTINUE;
     // Reject nonstandard tracks as a group; never partly mirror a mixed rig.
     for(int i=0;i<6;++i) {
         auto& pack=i<3 ? link->mNowAnmPackUnder[i] : link->mNowAnmPackUpper[i-3];
         auto* anm=pack.getAnmTransform();
         if(anm && (anm->getKind()!=8 || anm->field_0x1e!=35)) { s.mirror=false;return HOOK_CONTINUE; }
     }
+    if(s.charge>0) {
+        // Build an anatomical local chain from this model's bind pose, rather
+        // than preserving the twist of the native two-handed charge through IK.
+        // +X runs along each arm bone; the elbow bends around local +Z.
+        for(int joint=11;joint<=14;++joint)
+            s.chargeArm[joint-11]=model->getModelData()->getJointNodePointer(joint)->getTransformInfo();
+        pose_jump_charge_arm(s.chargeArm);
+    }
     s_calculating=true;
     for(int i=0;i<6;++i) {
         auto& b=s_borrow[i];b.pack=i<3 ? &link->mNowAnmPackUnder[i] : &link->mNowAnmPackUpper[i-3];
         b.original=b.pack->getAnmTransform();if(!b.original) continue;
         b.wrapper.emplace(*static_cast<J3DAnmTransformKey*>(b.original),s.mirror,
-                          thrust ? &s.guardBody : nullptr,guard_thrust(link));
+                          thrust ? &s.guardBody : nullptr,guard_thrust(link),
+                          s.charge>0 ? &s.chargeArm : nullptr,dual::smooth(s.charge));
         b.pack->setAnmTransform(&*b.wrapper);
     }
     return HOOK_CONTINUE;
@@ -514,14 +524,13 @@ void after_model_calc(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     if(s_calculating && s.owner==link && mods::arg<J3DModel*>(args,1)==link->mpLinkModel) detach();
 }
-void solve_arm(daAlink_c* link,bool right,Pose sword,float weight,const Vec* elbowPole=nullptr,
-               bool alignBendPlane=false) {
+void solve_arm(daAlink_c* link,bool right,Pose sword,float weight,const Vec* elbowPole=nullptr) {
     auto* model=link->mpLinkModel;int first=right ? 12 : 7;
     dual::Arm arm{pose(model->getAnmMtx(first)),pose(model->getAnmMtx(first+1)),pose(model->getAnmMtx(first+2))};
     const Pose item=dual::compose(dual::inverse(arm.hand),pose(model->getAnmMtx(first+3)));
     const Pose mount=hand_mount(link,right);
     Pose hand=dual::compose(sword,dual::inverse(mount));
-    const auto solved=dual::reach(arm,hand,weight,elbowPole,alignBendPlane);
+    const auto solved=dual::reach(arm,hand,weight,elbowPole);
     put(model,first,solved.upper);put(model,first+1,solved.lower);put(model,first+2,solved.hand);
     // Both item joints remain attached to their hands after the IK pass.
     // The primary model is rendered from joint 10. Use the same grip mount
@@ -548,16 +557,6 @@ void after_arms(ModContext*,void* args,void*,void*) {
         s.nativeShield=pose(model->getAnmMtx(link->mRightItemJntNo));
         s.shieldTick=s.tick;
     } else s.shieldTick=~0u;
-    if(s.charge>0) {
-        const Pose inverseActor=dual::inverse(actor);
-        const Vec shoulder=dual::compose(inverseActor,pose(model->getAnmMtx(12))).p;
-        const float side=shoulder.x<0 ? -1.0f : 1.0f;
-        const Pose target=dual::jump_charge_blade(shoulder,hand_mount(link,true));
-        const Vec pole=dual::compose(actor,Pose{{},shoulder+Vec{35*side,-25,0}}).p;
-        // Move the native elbow's bend plane with both bones. Independent
-        // swings leave opposite axial twists and pinch the elbow skin.
-        solve_arm(link,true,dual::compose(actor,target),dual::smooth(s.charge),&pole,true);
-    }
     if(s.guard>0) {
         Pose base=pose(model->getBaseTRMtx());
         const Pose inverseBase=dual::inverse(base);

@@ -7,7 +7,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 sdk = Path(sys.argv[1] if len(sys.argv) > 1 else root / "dusklight")
 source = (root / "src/ui.cpp").read_text()
-body = source[source.index("bool s_hudFilePickPending"):source.index("void copy_hud_preset_settings")]
+body = source[source.index("bool s_settingsFilePickPending"):source.index("void copy_hud_preset_settings")]
 fixture = r'''
 #include "mods/svc/file.h"
 #include <algorithm>
@@ -17,11 +17,11 @@ fixture = r'''
 #include <vector>
 ModContext* mod_ctx = nullptr;
 const FileService* svc_file = nullptr;
-enum class HudSettingsIoResult {Ok, ReadFailed, WriteFailed, InvalidFormat};
+enum class HudSettingsIoResult {Ok, ReadFailed, WriteFailed, InvalidFormat, ConfigFailed};
 std::vector<std::string> toasts;
 void push_toast(const char* title, const char*, const char* = nullptr) { toasts.emplace_back(title); }
 const char* hud_settings_io_result_message(HudSettingsIoResult) { return "IO error"; }
-int staged=0, applied=0, opened=0, closed=0;
+int staged=0, applied=0, opened=0, closed=0, allStaged=0, allApplied=0;
 std::string contents=R"({"elements":{}})", imported;
 HudSettingsIoResult stageResult=HudSettingsIoResult::Ok;
 HudSettingsIoResult export_custom_hud_settings(std::string& path) {
@@ -32,6 +32,10 @@ HudSettingsIoResult import_custom_hud_settings_json(const std::string& json) {
     if (json!=contents || json.empty()) return HudSettingsIoResult::InvalidFormat;
     ++applied; return HudSettingsIoResult::Ok;
 }
+HudSettingsIoResult export_all_settings(std::string& path) {
+    ++allStaged;path="/mod-data/dawnlight_settings.json";return stageResult;
+}
+HudSettingsIoResult import_all_settings_json(const std::string&) { ++allApplied;return HudSettingsIoResult::Ok; }
 FilePickFn callback=nullptr;
 void* callbackData=nullptr;
 ModResult startResult=MOD_OK, openResult=MOD_OK, sizeResult=MOD_OK, readResult=MOD_OK, closeResult=MOD_OK;
@@ -45,8 +49,8 @@ ModResult pick(ModContext*, const FilePickOptions* options, FilePickFn fn, void*
     return startResult;
 }
 ModResult export_file(ModContext*, const char* path, const char* name, FilePickFn fn, void* data) {
-    assert(std::string(path)=="/mod-data/hud_layout_settings.json");
-    assert(std::string(name)=="hud_layout_settings.json");
+    assert(std::string(path)=="/mod-data/"+std::string(name));
+    assert(std::string(name)=="hud_layout_settings.json" || std::string(name)=="dawnlight_settings.json");
     if(startResult==MOD_OK) { callback=fn; callbackData=data; }
     return startResult;
 }
@@ -82,17 +86,17 @@ int main() {
     assert(staged==1 && callback && toasts.empty());
     export_hud_settings(nullptr,nullptr);import_hud_settings(nullptr,nullptr);
     assert(staged==1 && opened==0);
-    finish(MOD_UNAVAILABLE);assert(toasts.empty() && !s_hudFilePickPending);
+    finish(MOD_UNAVAILABLE);assert(toasts.empty() && !s_settingsFilePickPending);
     export_hud_settings(nullptr,nullptr);finish(MOD_OK);
     assert(toasts.back()=="HUD Exported");
     export_hud_settings(nullptr,nullptr);finish(MOD_ERROR);
     assert(toasts.back()=="HUD Export Failed");
     stageResult=HudSettingsIoResult::WriteFailed;
-    export_hud_settings(nullptr,nullptr);assert(!callback && !s_hudFilePickPending);
+    export_hud_settings(nullptr,nullptr);assert(!callback && !s_settingsFilePickPending);
     stageResult=HudSettingsIoResult::Ok;
     for(auto status:{MOD_CONFLICT,MOD_UNSUPPORTED,MOD_ERROR}) {
-        startResult=status;import_hud_settings(nullptr,nullptr);assert(!s_hudFilePickPending);
-        export_hud_settings(nullptr,nullptr);assert(!s_hudFilePickPending);
+        startResult=status;import_hud_settings(nullptr,nullptr);assert(!s_settingsFilePickPending);
+        export_hud_settings(nullptr,nullptr);assert(!s_settingsFilePickPending);
     }
     startResult=MOD_OK;toasts.clear();
     import_hud_settings(nullptr,nullptr);finish(MOD_UNAVAILABLE);
@@ -104,7 +108,7 @@ int main() {
     // Read opaque locations through the service, including partial reads.
     picked="C:/Users/test/HUD layouts/custom.json";
     import_hud_settings(nullptr,nullptr);finish(MOD_OK);assert(applied==2 && closed==2);
-    for(auto bytes:{uint64_t(0),kMaxHudImportBytes+1}) {
+    for(auto bytes:{uint64_t(0),kMaxSettingsImportBytes+1}) {
         reportedSize=bytes;import_hud_settings(nullptr,nullptr);finish(MOD_OK);
         assert(applied==2);
     }
@@ -115,7 +119,13 @@ int main() {
     closeResult=MOD_ERROR;import_hud_settings(nullptr,nullptr);finish(MOD_OK);closeResult=MOD_OK;
     assert(applied==2 && closed==opened);
     openResult=MOD_UNAVAILABLE;import_hud_settings(nullptr,nullptr);finish(MOD_OK);
-    assert(applied==2 && closed==opened-1 && !s_hudFilePickPending);
+    assert(applied==2 && closed==opened-1 && !s_settingsFilePickPending);
+    openResult=MOD_OK;export_settings(nullptr,nullptr);
+    export_hud_settings(nullptr,nullptr);import_settings(nullptr,nullptr);
+    assert(allStaged==1);finish(MOD_OK);assert(toasts.back()=="Settings Exported");
+    import_settings(nullptr,nullptr);finish(MOD_UNAVAILABLE);assert(allApplied==0);
+    import_settings(nullptr,nullptr);finish(MOD_OK);
+    assert(allApplied==1 && applied==2 && toasts.back()=="Settings Imported");
 }
 '''.replace("// PRODUCTION", body)
 with tempfile.TemporaryDirectory() as tmp:

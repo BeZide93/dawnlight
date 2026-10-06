@@ -150,7 +150,7 @@ ModResult register_touch_button_config(ModError* error) {
             desc.type = f == 0 ? CONFIG_VAR_BOOL : CONFIG_VAR_INT;
             desc.default_bool = false;
             desc.default_int = defaults[f];
-            const auto result = svc_config->register_var(mod_ctx, &desc, handles[f]);
+            const auto result = register_owned_setting(&desc, handles[f]);
             if (result != MOD_OK) return mods::set_error(error, result, "failed to register touch button setting");
         }
         const auto key = std::string("touch-button-") + touch::Keys[i] + "-layout";
@@ -158,14 +158,14 @@ ModResult register_touch_button_config(ModError* error) {
         desc.name = key.c_str();
         desc.type = CONFIG_VAR_STRING;
         desc.default_string = "";
-        const auto result = svc_config->register_var(mod_ctx, &desc, &c.layout);
+        const auto result = register_owned_setting(&desc, &c.layout);
         if (result != MOD_OK) return mods::set_error(error, result, "failed to register touch button layout");
     }
     ConfigVarDesc desc = CONFIG_VAR_DESC_INIT;
     desc.name = "touch-button-twe-quick-access-layout";
     desc.type = CONFIG_VAR_STRING;
     desc.default_string = "";
-    const auto result = svc_config->register_var(mod_ctx, &desc, &s_quickAccessLayout);
+    const auto result = register_owned_setting(&desc, &s_quickAccessLayout);
     if (result != MOD_OK) return mods::set_error(error, result, "failed to register Quick Access touch layout");
     return MOD_OK;
 }

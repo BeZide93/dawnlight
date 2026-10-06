@@ -92,6 +92,9 @@ enum class HudSettingsIoResult {
     ConfigFailed,
 };
 
+ModResult register_owned_setting(const ConfigVarDesc* desc, ConfigVarHandle* handle);
+HudSettingsIoResult export_all_settings(std::string& outPath);
+HudSettingsIoResult import_all_settings_json(const std::string& json);
 ModResult register_config(ModError* error);
 bool dawnlight_mode_enabled();
 bool edit_requires_progression_off(ConfigVarHandle var);

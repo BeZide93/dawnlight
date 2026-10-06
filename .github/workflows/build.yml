@@ -235,9 +235,13 @@ jobs:
         if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
         run: python3 tests/collection_service_test.py dusklight
 
-      - name: Test HUD import and export file dialogs
+      - name: Test HUD and full settings import/export
         if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
-        run: python3 tests/hud_file_picker_test.py dusklight
+        run: |
+          python3 tests/hud_file_picker_test.py dusklight
+          c++ -std=c++20 -Wall -Wextra -Werror tests/settings_snapshot_test.cpp -o /tmp/settings-snapshot-test
+          /tmp/settings-snapshot-test
+          python3 tests/settings_io_test.py build
 
       - name: Test slow-motion stereo and surround audio
         if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'

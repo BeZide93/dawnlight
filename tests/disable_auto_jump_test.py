@@ -14,6 +14,7 @@ fixture=r'''
 #include <vector>
 using ConfigVarHandle=int;struct ConfigVarValue {};struct ModContext {};
 ModContext* mod_ctx=nullptr;constexpr int MOD_OK=0;int s_disableAutoJump=1;
+bool s_importingSettings=false;
 bool parentEnabled=true,childStored=false;int configWrites=0;
 void on_jump_setting_changed(ModContext*,ConfigVarHandle,const ConfigVarValue*,const ConfigVarValue*,void*);
 struct Config {

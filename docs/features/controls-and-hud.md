@@ -77,6 +77,17 @@ The HUD layout setting has five modes:
 - Dawnlight: Dawnlight's compact custom layout with hidden button backing.
 - Custom: editable layout, initialized from the X-Box preset.
 
+The mod panel provides **Import Settings** and **Export Settings** directly below
+**Open Dawnlight Settings**. Both use Dusklight's native file dialogs. The
+`dawnlight_settings.json` export contains all registered Dawnlight settings,
+including gameplay options, model selections, HUD settings, touch buttons and
+their saved editor layouts. It contains configuration values, not model assets
+or game save data. Restart the game after importing to apply startup-only options.
+The importer validates the entire file and known setting types before applying
+values. Missing settings keep their current values; unknown settings are ignored
+for compatibility between versions. Full-settings files and HUD-only files are
+separate formats; use their corresponding import buttons.
+
 The Custom layout can move and scale supported HUD elements and can adjust item,
 text, ammo, and button-backing offsets on the HUD buttons. `EXPORT HUD` opens
 Dusklight's native export dialog to save `hud_layout_settings.json` to a destination

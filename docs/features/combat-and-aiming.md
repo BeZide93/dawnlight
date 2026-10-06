@@ -101,6 +101,10 @@ the appearance effect and sound on entry, and the disappearance effect and sound
 on exit. Each sound plays once when its visual transition starts. The material
 continues to build from top to bottom and recede from bottom to top.
 
+The **Dark** and **Dark Magic** appearances also loop the native black
+wolf-to-human transformation particles on Link's body while the form is active.
+The aura stops during visual transitions, cutscenes, death and area changes.
+
 Both selectors are disabled while Dark Link is unavailable/off, including
 its Progression lock. Its saved selection is retained. Changing it during a
 transformation applies when gameplay resumes, waits for any pending model load,

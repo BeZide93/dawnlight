@@ -242,7 +242,7 @@ int main() {
     assert(s_state.meter==50&&gauge_percentage()==100);
     settings[static_cast<size_t>(DarkLinkSetting::Gauge)]=200;input(0);
     assert(s_state.meter==50&&gauge_percentage()==25);
-    // Save replacement/deletion still clears partial charge and input ownership.
+    // Loading a slot without a meter blob starts empty and clears input ownership.
     s_state.meter=40; on_save_started(nullptr,0,nullptr); assert(s_state.meter==0 && !s_state.link);
     currentLink=nullptr; input(0); assert(!fierce_deity_input_consumed());
 }

@@ -40,6 +40,11 @@ Bullet Time, Flurry Rush and the Great Spin projectile share the
 
 **Dark Link** adds a charge meter, a temporary transformation and configurable sword
 damage (double by default). Open **Gameplay -> Dark Link Settings** below its toggle.
+Charge survives area changes, death/respawn and switching to wolf form; these
+transitions end the transformation without emptying its remaining charge.
+Saving the game stores the current charge for that save slot. Loading restores
+the saved charge with the transformation inactive. New saves and older saves
+without stored charge start empty; Boss Rush charge is kept separate.
 **Dark Link Visual** selects the appearance:
 
 | Visual | Appearance during the transformation |
@@ -135,4 +140,3 @@ Manual Shielding provides optional manual guard controls.
 uses a crossed-sword guard and Shield Attack.
 
 For enemy and boss difficulty settings, see [Hard Mode](hard-mode.md).
-

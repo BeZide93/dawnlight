@@ -142,6 +142,7 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: |
           python3 tests/fierce_deity_lifecycle_test.py
+          python3 tests/fierce_deity_persistence_test.py
           python3 tests/fierce_deity_visual_test.py
           python3 tests/fierce_deity_equipment_test.py
           python3 tests/fierce_deity_transition_test.py

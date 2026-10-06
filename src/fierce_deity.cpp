@@ -25,8 +25,11 @@
 #include "mods/service.hpp"
 #include "mods/svc/hook.h"
 #include "mods/svc/save.h"
+#include "mods/svc/game_mode.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -203,7 +206,9 @@ void reset_for_link(daAlink_c* link) {
     // into the current save; equipment restoration belongs to its deletion hook.
     fierce_deity_transition_cancel(nullptr);
     cancel_preload();
+    const float meter = s_state.meter;
     s_state = {};
+    s_state.meter = meter;
     s_state.link = link;
     s_state.linkId = link != nullptr ? fopAcM_GetID(link) : fpcM_ERROR_PROCESS_ID_e;
 }
@@ -212,10 +217,44 @@ bool same_link(daAlink_c* link) {
     return link != nullptr && s_state.link == link && s_state.linkId == fopAcM_GetID(link);
 }
 
+const char* meter_blob_name() {
+    bool bossRush = false;
+    const bool active = svc_game_mode &&
+        svc_game_mode->is_active(mod_ctx, "bossrush", &bossRush) == MOD_OK && bossRush;
+    return active ? "bossrush-fierce-deity-meter" : "fierce-deity-meter";
+}
+
+float load_saved_meter() {
+    // Versioned little-endian millipoints: independent of host float layout,
+    // preserves partial charge and cannot deserialize NaN/Infinity.
+    std::array<uint8_t, 5> data{};
+    size_t size = data.size();
+    if (!svc_save || svc_save->get_blob(mod_ctx, meter_blob_name(), data.data(), &size) != MOD_OK ||
+        size != data.size() || data[0] != 1) return 0.0f;
+    uint32_t points = 0;
+    for (unsigned i = 0; i < 4; ++i) points |= uint32_t(data[i + 1]) << (8 * i);
+    if (points > 10000000) return 0.0f; // maximum supported gauge: 10,000 points
+    return std::min(points / 1000.0f, maximum_gauge());
+}
+
+void on_save_written(ModContext*, uint32_t, void*) {
+    // Dusklight notifies observers before flushing the mod sidecars. Write the
+    // live charge now, including saves made while transformed or between actors.
+    if (!svc_save) return;
+    const float meter = std::isfinite(s_state.meter) ?
+        std::clamp(s_state.meter, 0.0f, maximum_gauge()) : 0.0f;
+    const auto points = static_cast<uint32_t>(std::lround(meter * 1000.0f));
+    std::array<uint8_t, 5> data{{1}};
+    for (unsigned i = 0; i < 4; ++i) data[i + 1] = static_cast<uint8_t>(points >> (8 * i));
+    if (svc_save->set_blob(mod_ctx, meter_blob_name(), data.data(), data.size()) != MOD_OK && svc_log)
+        svc_log->warn(mod_ctx, "Dawnlight: failed to save Fierce Deity charge");
+}
+
 void on_save_started(ModContext*, uint32_t, void*) {
-    // SaveService runs after the new slot has been installed, including reloading
-    // the same slot. Drop every transient flag without touching save equipment.
+    // New/load callbacks run after the destination slot is current. Never carry
+    // the previous slot's meter or cosmetic state into it (even on same-slot reload).
     reset_for_link(nullptr);
+    s_state.meter = load_saved_meter();
 }
 
 HookAction before_player_delete(ModContext*, void* args, void*, void*) {
@@ -473,12 +512,11 @@ void update_drain(daAlink_c* link) {
         s_state.modelReloadFrame = false;
         s_state.modelSwapState = ModelSwapState::None;
         s_state.spinChargeArmed = false;
-        s_state.meter = 0.0f;
         s_state.lastDrainTime = {};
         return;
     }
     if (link->checkDeadHP() || link->checkWolf()) {
-        deactivate(link, true);
+        deactivate(link, false);
         return;
     }
 
@@ -531,7 +569,7 @@ HookAction before_player_execute(ModContext*, void* args, void* retval, void*) {
 
     s_state.meter = std::clamp(s_state.meter, 0.0f, maximum_gauge());
     if (!fierce_deity_enabled()) {
-        deactivate(link, true);
+        deactivate(link, false);
     }
 
     if (s_state.modelSwapState == ModelSwapState::None &&
@@ -652,11 +690,13 @@ ModResult add_post(ModError* error, void (*callback)(ModContext*, void*, void*, 
 
 ModResult initialize_fierce_deity(ModError* error) {
     ModResult result = svc_save->observe_saves(
-        mod_ctx, on_save_started, on_save_started, nullptr, nullptr, &s_saveObserver);
+        mod_ctx, on_save_started, on_save_started, on_save_written, nullptr, &s_saveObserver);
     if (result != MOD_OK) {
         return mods::set_error(error, result,
             "failed to observe Dawnlight Fierce Deity save lifecycle");
     }
+    // observe_saves does not replay the current slot when a mod is loaded in-game.
+    on_save_started(nullptr, 0, nullptr);
     result = mods::hook::add_pre<FiercePlayerDeleteHook>(svc_hook, before_player_delete);
     if (result != MOD_OK) {
         return mods::set_error(error, result,

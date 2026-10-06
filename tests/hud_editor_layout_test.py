@@ -40,7 +40,7 @@ struct J2DPane {
 struct J2DPicture : J2DPane {};
 struct CPaneMgr {J2DPane* pane;};
 J2DPane* pane_ptr(CPaneMgr* p){return p?p->pane:nullptr;}
-struct dMeter2Draw_c {CPaneMgr* mpButtonMidona=nullptr;};
+struct dMeter2Draw_c {CPaneMgr* mpButtonMidona=nullptr;CPaneMgr* mpLightDropParent=nullptr;};
 struct dMeterMap_c {
     J2DPicture* mMapJ2DPicture;
     f32 mDrawPosX=35,mDrawPosY=250,mSizeW=200,mSizeH=160;
@@ -53,9 +53,10 @@ struct DuskModHudTransform {
 constexpr int kHudSlideRightToLeft=2;
 bool enabled=true;
 bool hardcoded_hud_layout_enabled(){return enabled;}
-DuskModHudTransform mapTransform,midnaTransform;
+DuskModHudTransform mapTransform,midnaTransform,tearsTransform;
 auto hud_layout_minimap_transform(){return mapTransform;}
 auto hud_layout_midna_transform(){return midnaTransform;}
+auto hud_layout_tears_of_light_transform(){return tearsTransform;}
 struct ModContext {};
 enum HookAction {HOOK_CONTINUE};
 namespace mods {
@@ -149,6 +150,26 @@ int main(){
         close(midna.sx,0.9f*(enabled?1.5f:1));
         restore_hud_layout_base();close(midna.x,baseX);close(midna.y,30);close(midna.sx,0.9f);
     }
+    // Native presentation may animate the vessel base between draw calls.
+    // Repeated renders and live edits must never accumulate offsets or scales.
+    J2DPane vessel; CPaneMgr vesselManager{&vessel}; meter.mpLightDropParent=&vesselManager;
+    for(int frame=0;frame<1000;++frame){
+        restore_hud_layout_base();
+        const f32 bx=frame%13,by=frame%17,bs=0.5f+(frame%3)*0.25f;
+        vessel.translate(bx,by);vessel.scale(bs,bs);
+        enabled=frame%11!=0;
+        tearsTransform={float(frame%7-3)*40,float(frame%9-4)*20,1.5f,0};
+        for(int redraw=0;redraw<3;++redraw){
+            apply_tears_of_light_hud_layout(&meter);
+            close(vessel.x,bx+(enabled?tearsTransform.offset_x:0));
+            close(vessel.y,by+(enabled?tearsTransform.offset_y:0));
+            close(vessel.sx,bs*(enabled?1.5f:1));close(vessel.sy,vessel.sx);
+        }
+        enabled=false;apply_tears_of_light_hud_layout(&meter);
+        close(vessel.x,bx);close(vessel.y,by);close(vessel.sx,bs);
+    }
+    apply_tears_of_light_hud_layout(nullptr);
+    meter.mpLightDropParent=nullptr;apply_tears_of_light_hud_layout(&meter);
     apply_midna_hud_layout(nullptr);meter.mpButtonMidona=nullptr;apply_midna_hud_layout(&meter);
 }
 '''
@@ -156,7 +177,7 @@ names = ['bool nearly_equal', 'HudPaneTransformState& hud_pane_state',
          'void remove_applied_hud_pane_transform', 'void restore_applied_hud_pane_transform',
          'void restore_hud_layout_base', 'void apply_hud_pane_transform',
          'void apply_hud_item_secondary_transform', 'void apply_midna_hud_layout',
-         'void apply_wii_u_minimap_layout', 'void restore_wii_u_minimap_layout',
+         'void apply_tears_of_light_hud_layout', 'void apply_wii_u_minimap_layout', 'void restore_wii_u_minimap_layout',
          'HookAction before_minimap_picture_draw']
 functions = '\n'.join(function(n) for n in names)
 # Include the CPaneMgr overload used by the actual Midna call.
@@ -169,6 +190,7 @@ fixture = fixture.replace('// FUNCTIONS', functions)
 # Verify the tested helpers are wired into the final HUD pass for all slots.
 layout = function('void apply_wii_u_hud_layout')
 assert 'apply_midna_hud_layout(meter)' in layout
+assert 'apply_tears_of_light_hud_layout(meter)' in layout
 for slot in 'XYZ':
     assert f'apply_hud_item_secondary_transform(HudPaneSlot::Item{slot}Secondary' in layout
 assert 'hud_layout_z_' not in function('void layout_z_hud_item')
@@ -180,4 +202,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('HUD editor regression passed: minimap X/slide, Midna, and X/Y/Z item layers')
+print('HUD editor regression passed: minimap X/slide, Midna, Tears of Light, and X/Y/Z item layers')

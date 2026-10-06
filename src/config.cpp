@@ -1,5 +1,6 @@
 #include "touch_buttons.hpp"
 #include "config.hpp"
+#include "settings_snapshot.hpp"
 #include "progression.hpp"
 #include "enemy_spawner.hpp"
 #include "service_imports.hpp"
@@ -132,7 +133,15 @@ ConfigVarHandle s_hudDpadHideArrows = 0;
 ConfigVarHandle s_hudDpadHideShadows = 0;
 std::array<ConfigVarHandle, kCustomModelCount> s_customModels = {};
 
+struct RegisteredSetting {
+    ConfigVarType type;
+    ConfigVarHandle handle;
+};
+std::map<std::string, RegisteredSetting> s_registeredSettings;
+bool s_importingSettings = false;
+
 void enforce_auto_jump_dependency() {
+    if (s_importingSettings) return;
     bool enabled = false;
     if (s_disableAutoJump && !r_jump_enabled() &&
         svc_config->get_bool(mod_ctx, s_disableAutoJump, &enabled) == MOD_OK && enabled) {
@@ -361,7 +370,7 @@ ModResult register_bool(const char* name, bool defaultValue, ConfigVarHandle& ha
     desc.name = name;
     desc.type = CONFIG_VAR_BOOL;
     desc.default_bool = defaultValue;
-    const auto result = svc_config->register_var(mod_ctx, &desc, &handle);
+    const auto result = register_owned_setting(&desc, &handle);
     if (result == MOD_OK) s_configTypes[handle] = CONFIG_VAR_BOOL;
     return result;
 }
@@ -371,7 +380,7 @@ ModResult register_int(const char* name, int64_t defaultValue, ConfigVarHandle& 
     desc.name = name;
     desc.type = CONFIG_VAR_INT;
     desc.default_int = defaultValue;
-    const auto result = svc_config->register_var(mod_ctx, &desc, &handle);
+    const auto result = register_owned_setting(&desc, &handle);
     if (result == MOD_OK) s_configTypes[handle] = CONFIG_VAR_INT;
     return result;
 }
@@ -892,7 +901,15 @@ ModResult register_custom_hud_config() {
 
 }  // namespace
 
+ModResult register_owned_setting(const ConfigVarDesc* desc, ConfigVarHandle* handle) {
+    const auto result = svc_config->register_var(mod_ctx, desc, handle);
+    if (result == MOD_OK) s_registeredSettings[desc->name] = {desc->type, *handle};
+    return result;
+}
+
 ModResult register_config(ModError* error) {
+    s_registeredSettings.clear();
+    s_importingSettings = false;
     s_configTypes.clear();
     for (size_t i = 0; i < kDarkLinkSettings.size(); ++i) {
         const auto& desc = kDarkLinkSettings[i];
@@ -1817,6 +1834,7 @@ HudSettingsIoResult export_custom_hud_settings(std::string& outPath) {
     out << "    \"version\": 15\n";
     out << "}\n";
 
+    out.close(); // Surface buffered write/close errors before opening the export dialog.
     return out.good() ? HudSettingsIoResult::Ok : HudSettingsIoResult::WriteFailed;
 }
 
@@ -1840,6 +1858,11 @@ HudSettingsIoResult import_custom_hud_settings(std::string& outPath) {
     buffer << in.rdbuf();
     const std::string json = buffer.str();
 
+    if (in.bad()) return HudSettingsIoResult::ReadFailed;
+    return import_custom_hud_settings_json(json);
+}
+
+HudSettingsIoResult import_custom_hud_settings_json(const std::string& json) {
     std::string elementsObject;
     if (!read_json_object(json, "elements", elementsObject)) {
         return HudSettingsIoResult::InvalidFormat;
@@ -1867,6 +1890,98 @@ HudSettingsIoResult import_custom_hud_settings(std::string& outPath) {
     }
 
     return HudSettingsIoResult::Ok;
+}
+
+namespace {
+bool read_setting(const RegisteredSetting& setting, settings::Value& value) {
+    switch (setting.type) {
+    case CONFIG_VAR_BOOL: {
+        bool v=false;
+        if (svc_config->get_bool(mod_ctx, setting.handle, &v)!=MOD_OK) return false;
+        value=v;return true;
+    }
+    case CONFIG_VAR_INT: {
+        int64_t v=0;
+        if (svc_config->get_int(mod_ctx, setting.handle, &v)!=MOD_OK) return false;
+        value=v;return true;
+    }
+    case CONFIG_VAR_STRING: {
+        size_t size=0;
+        if (svc_config->get_string(mod_ctx, setting.handle, nullptr, 0, &size)!=MOD_OK ||
+            size>settings::MaxBytes) return false;
+        std::string v(size+1, '\0');
+        if (svc_config->get_string(mod_ctx, setting.handle, v.data(), v.size(), &size)!=MOD_OK ||
+            size>=v.size()) return false;
+        v.resize(size);value=std::move(v);return true;
+    }
+    default: return false;
+    }
+}
+
+bool setting_type_matches(const RegisteredSetting& setting, const settings::Value& value) {
+    return (setting.type==CONFIG_VAR_BOOL && std::holds_alternative<bool>(value)) ||
+        (setting.type==CONFIG_VAR_INT && std::holds_alternative<int64_t>(value)) ||
+        (setting.type==CONFIG_VAR_STRING && std::holds_alternative<std::string>(value));
+}
+
+bool write_setting(const RegisteredSetting& setting, const settings::Value& value) {
+    if (auto* v=std::get_if<bool>(&value)) return svc_config->set_bool(mod_ctx,setting.handle,*v)==MOD_OK;
+    if (auto* v=std::get_if<int64_t>(&value)) return svc_config->set_int(mod_ctx,setting.handle,*v)==MOD_OK;
+    return svc_config->set_string(mod_ctx,setting.handle,std::get<std::string>(value).c_str())==MOD_OK;
+}
+} // namespace
+
+HudSettingsIoResult export_all_settings(std::string& outPath) {
+    settings::Values values;
+    for (const auto& [name,setting] : s_registeredSettings) {
+        if (!read_setting(setting, values[name])) return HudSettingsIoResult::ConfigFailed;
+    }
+    if (values.empty()) return HudSettingsIoResult::ConfigFailed;
+    const auto json=settings::encode(values);
+    if (json.size()>settings::MaxBytes) return HudSettingsIoResult::WriteFailed;
+    const char* directory=nullptr;
+    if (!svc_host || svc_host->data_dir(mod_ctx,&directory)!=MOD_OK || !directory || !*directory)
+        return HudSettingsIoResult::PathUnavailable;
+    const auto path=std::filesystem::u8path(directory)/"dawnlight_settings.json";
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(),ec);
+    if (ec) return HudSettingsIoResult::WriteFailed;
+    std::ofstream out(path,std::ios::binary|std::ios::trunc);
+    out.write(json.data(),static_cast<std::streamsize>(json.size()));
+    out.close();
+    if (!out.good()) return HudSettingsIoResult::WriteFailed;
+    const auto utf8=path.generic_u8string();
+    outPath.assign(utf8.begin(),utf8.end());
+    return HudSettingsIoResult::Ok;
+}
+
+HudSettingsIoResult import_all_settings_json(const std::string& json) {
+    settings::Values values, previous;
+    if (!settings::Reader(json).decode(values)) return HudSettingsIoResult::InvalidFormat;
+    // Resolve only our registered names; never write arbitrary host or other-mod config keys.
+    // Missing keys retain their current values, unknown keys allow cross-version imports.
+    for (const auto& [name,value] : values) {
+        const auto setting=s_registeredSettings.find(name);
+        if (setting==s_registeredSettings.end()) continue;
+        if (!setting_type_matches(setting->second,value)) return HudSettingsIoResult::InvalidFormat;
+        if (!read_setting(setting->second,previous[name])) return HudSettingsIoResult::ConfigFailed;
+    }
+    if (previous.empty()) return HudSettingsIoResult::InvalidFormat;
+    // Jump dependencies must see the complete snapshot rather than alphabetical write order.
+    s_importingSettings=true;
+    bool applied=true;
+    for (const auto& [name,old] : previous) {
+        if (!write_setting(s_registeredSettings.at(name),values.at(name))) { applied=false;break; }
+    }
+    if (!applied) {
+        bool restored=true;
+        for (const auto& [name,value] : previous)
+            if (!write_setting(s_registeredSettings.at(name),value)) restored=false;
+        if (!restored && svc_log) svc_log->warn(mod_ctx,"Settings import failed; some previous values could not be restored.");
+    }
+    s_importingSettings=false;
+    enforce_auto_jump_dependency();
+    return applied ? HudSettingsIoResult::Ok : HudSettingsIoResult::ConfigFailed;
 }
 
 HudSettingsIoResult copy_hud_preset_to_custom(HudLayout layout) {
@@ -1909,11 +2024,11 @@ const char* hud_settings_io_result_message(HudSettingsIoResult result) {
     case HudSettingsIoResult::PathUnavailable:
         return "Dawnlight's data folder path is currently unavailable.";
     case HudSettingsIoResult::ReadFailed:
-        return "Unable to read hud_layout_settings.json.";
+        return "Unable to read the HUD layout file.";
     case HudSettingsIoResult::WriteFailed:
         return "Unable to write hud_layout_settings.json.";
     case HudSettingsIoResult::InvalidFormat:
-        return "hud_layout_settings.json is not a valid Dawnlight HUD layout file.";
+        return "The selected file is not a valid Dawnlight HUD layout (maximum 1 MiB).";
     case HudSettingsIoResult::ConfigFailed:
         return "Unable to apply the HUD layout settings.";
     default:

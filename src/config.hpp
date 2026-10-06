@@ -89,6 +89,9 @@ enum class HudSettingsIoResult {
     ConfigFailed,
 };
 
+ModResult register_owned_setting(const ConfigVarDesc* desc, ConfigVarHandle* handle);
+HudSettingsIoResult export_all_settings(std::string& outPath);
+HudSettingsIoResult import_all_settings_json(const std::string& json);
 ModResult register_config(ModError* error);
 bool dawnlight_mode_enabled();
 bool edit_requires_progression_off(ConfigVarHandle var);
@@ -256,6 +259,7 @@ ConfigVarHandle hud_custom_minimap_slide_direction_config_var();
 
 HudSettingsIoResult export_custom_hud_settings(std::string& outPath);
 HudSettingsIoResult import_custom_hud_settings(std::string& outPath);
+HudSettingsIoResult import_custom_hud_settings_json(const std::string& json);
 HudSettingsIoResult copy_hud_preset_to_custom(HudLayout layout);
 HudSettingsIoResult reset_custom_hud_settings();
 const char* hud_settings_io_result_message(HudSettingsIoResult result);

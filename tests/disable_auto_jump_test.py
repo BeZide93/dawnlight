@@ -14,6 +14,7 @@ fixture=r'''
 #include <vector>
 using ConfigVarHandle=int;struct ConfigVarValue {};struct ModContext {};
 ModContext* mod_ctx=nullptr;constexpr int MOD_OK=0;int s_disableAutoJump=1;
+bool s_importingSettings=false;
 bool parentEnabled=true,childStored=false;int configWrites=0;
 void on_jump_setting_changed(ModContext*,ConfigVarHandle,const ConfigVarValue*,const ConfigVarValue*,void*);
 struct Config {
@@ -31,8 +32,10 @@ using BOOL=int;constexpr BOOL TRUE=1;
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods {template<class T>T& arg_ref(void* args,int i){return *static_cast<T*>(static_cast<void**>(args)[i]);}
 template<class T>T arg(void* args,int i){return *static_cast<T*>(static_cast<void**>(args)[i]);}}
-struct daPy_py_c{enum {ERFLG0_NOT_AUTO_JUMP=0x20,ERFLG0_FORCE_AUTO_JUMP=0x40};};
+struct daPy_py_c{enum {ERFLG0_NOT_AUTO_JUMP=0x20,ERFLG0_FORCE_AUTO_JUMP=0x40,SMODE_WOLF_PUZZLE=0x27};};
 struct daAlink_c:daPy_py_c {
+ enum {PROC_WOLF_GIANT_PUZZLE=0x137};
+ int mMode=0,mProcID=0;
  bool locomotion=true;
  struct Ground {bool hit=false;bool ChkGroundHit(){return hit;}}mLinkAcch;
  struct Angle {s16 y=0;};struct {Angle angle;}current;
@@ -88,6 +91,22 @@ int main(){
   assert(link.mNormalSpeed==velocity&&link.current.angle.y==1234&&link.speed.y==0);
   end();assert(!link.mEndResetFlg0);
  }
+ // Puzzle movement and jump/landing transitions must retain native auto-jump.
+ // The preference stays stored and resumes immediately after leaving the puzzle.
+ for(bool enabled: {false,true}) for(int phase=0;phase<3;++phase) {
+  link={};link.wolf=true;childStored=enabled;
+  link.mMode=phase!=2?daPy_py_c::SMODE_WOLF_PUZZLE:0;
+  link.mProcID=phase!=1?daAlink_c::PROC_WOLF_GIANT_PUZZLE:0;
+  link.speedF=20;link.mNormalSpeed=3;link.speed.y=-5;mode=1;
+  const int writes=configWrites;
+  assert(begin()==HOOK_CONTINUE&&!link.mEndResetFlg0);
+  fall();assert(mode==1&&link.mNormalSpeed==3&&link.speed.y==-5);
+  end();assert(childStored==enabled&&configWrites==writes);
+  link.mMode=link.mProcID=0;begin();
+  assert(link.checkEndResetFlg0(daPy_py_c::ERFLG0_NOT_AUTO_JUMP)==enabled);
+  end();assert(!link.mEndResetFlg0);
+ }
+ childStored=true;
  // No momentum intervention outside our ledge check, when disabled, when another
  // system supplied the veto, or for scripted/special/airborne/grounded actions.
  for(int i=0;i<9;++i) {
@@ -117,4 +136,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp,exe=Path(tmp)/'test.cpp',Path(tmp)/'test';cpp.write_text(fixture)
     subprocess.run(['c++','-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print('Disable Auto Jump passed: default/dependency/reset, scoped veto, nested calls, preserved flags, human/wolf momentum and veto, manual/Gale and demo/forced-jump exemptions')
+print('Disable Auto Jump passed: default/dependency/reset, scoped veto, nested calls, preserved flags, human/wolf momentum and veto, manual/Gale, guardian puzzle and demo/forced-jump exemptions')

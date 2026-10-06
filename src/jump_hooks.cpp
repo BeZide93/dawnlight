@@ -371,6 +371,10 @@ thread_local std::vector<AutoJumpFlagScope> s_autoJumpFlagScopes;
 
 void suppress_ledge_auto_jump(daAlink_c* link) {
     if (!disable_auto_jump_enabled() || !link ||
+        // Sacred Grove's guardian puzzle advances through native wolf auto-jumps.
+        // The mode survives jumping/landing; the proc also covers entry/exit frames.
+        link->mMode == daPy_py_c::SMODE_WOLF_PUZZLE ||
+        link->mProcID == daAlink_c::PROC_WOLF_GIANT_PUZZLE ||
         link->checkPlayerDemoMode() || link->checkEventRun() || dComIfGp_event_runCheck() ||
         link->checkEndResetFlg0(daPy_py_c::ERFLG0_FORCE_AUTO_JUMP) ||
         link->checkEndResetFlg0(daPy_py_c::ERFLG0_NOT_AUTO_JUMP)) return;

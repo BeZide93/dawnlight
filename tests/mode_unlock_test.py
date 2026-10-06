@@ -335,8 +335,9 @@ int main(){
     assert(uiService.body.find("could not be adopted")!=std::string::npos);
 }
 '''
-production='\n'.join(f'ConfigVarHandle {name}={i+1};' for i,name in enumerate(variables))
-for name in ('register_bool','register_int','dawnlight_mode_enabled','progression_system_enabled',
+production=config[config.index('struct RegisteredSetting {'):config.index('bool s_importingSettings')]+'\n'
+production+='\n'.join(f'ConfigVarHandle {name}={i+1};' for i,name in enumerate(variables))
+for name in ('register_owned_setting','register_bool','register_int','dawnlight_mode_enabled','progression_system_enabled',
              'mode_setting_for_config','mode_config_override','edit_requires_progression_off','leave_dawnlight_mode_for_edit'):
     production+='\n'+function(config,name)
 production+='\n'+function(config,'stamina_config_var')+'\n'+function(config,'stamina_setting_config_var')

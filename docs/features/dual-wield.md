@@ -54,6 +54,16 @@ timing, and Hidden Skill interactions. Blocking still requires an equipped
 shield in the inventory. Other tools and special sword techniques retain their
 native actions.
 
+During the victory flourish, the right-hand grip keeps a stable orientation
+through sheathing and the empty-hand return instead of following the main
+sword's spinning item track. Jump Strike charging uses a separate right-arm
+stance: the second sword stays forward and outside the body while the primary
+sword remains raised. The right shoulder, elbow and wrist form one local
+animation pose using the model's bind axes, with a pure elbow bend instead of
+post-animation IK. Native animation blending also covers holding/moving with
+the fully charged attack; attacks, damage, riding and Glide retain their
+normal transitions.
+
 The feature uses the game's native sword models and Link animations, with native
 animation blending and arm IK for the hip draw and cross guard. No replacement
 game archives are installed. Turning it off restores normal shield rendering
@@ -73,6 +83,7 @@ controller repeat input, pointer handling, menu sounds, shared cursor placement,
 frame restoration, page handoff, and save isolation.
 `python3 tests/dual_wield_test.py` covers pose math, animation
 borrowing/restoration, alternation, blade contact history, menu-preview
-equipment transforms/materials, and mode boundaries.
+equipment transforms/materials, victory-flourish grip stability, Jump Strike
+charge/moving-charge arm isolation, and mode boundaries.
 Visual transitions still require an in-game check, particularly interrupted
 combos, guarding from a holstered stance, and equipment changes.

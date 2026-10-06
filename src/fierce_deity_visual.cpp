@@ -274,7 +274,7 @@ public:
         const GXColor eyeColor = tint == FierceDeityTint::Gold ? GXColor{255,255,255,materialAlpha} :
             tint == FierceDeityTint::White ? GXColor{255,176,24,materialAlpha} : GXColor{255,28,20,materialAlpha};
         const GXColor bodyColor = tint == FierceDeityTint::Gold ? GXColor{210,145,24,materialAlpha} :
-            tint == FierceDeityTint::White ? GXColor{240,240,240,materialAlpha} : GXColor{32,36,42,materialAlpha};
+            tint == FierceDeityTint::White ? GXColor{240,240,240,materialAlpha} : GXColor{8,9,11,materialAlpha};
         xf(0x100D, rgba(eye ? eyeColor : bodyColor));
         // COLOR1 only: register sources, clamp diffuse, no attenuation, light0
         // on the body; self-lit eyes and monochrome surfaces ignore room lighting.
@@ -285,15 +285,17 @@ public:
     void specular_lighting(FierceDeityTint tint, u8 ambientAlpha0, u8 materialAlpha0,
                            u8 ambientAlpha1, u8 materialAlpha1) {
         xf(0x1009, 2);
-        // Dark diffuse base on COLOR0; preserve both native alpha channels.
+        // Near-black diffuse base on COLOR0; preserve both native alpha channels.
         xf(0x100A, rgba({64, 64, 64, ambientAlpha0}));
         xf(0x100C, rgba(tint == FierceDeityTint::Gold ? GXColor{190,115,18,materialAlpha0} :
-                        GXColor{32,36,42,materialAlpha0}));
+                        GXColor{8,9,11,materialAlpha0}));
         xf(0x100E, (1u << 10) | (u32(GX_DF_CLAMP) << 7) | (1u << 1) | (1u << 2));
+        // Keep Dark highlights subdued so the key light reveals contours without
+        // washing the surface gray. Gold retains its bright metallic response.
         // COLOR1 uses GX_AF_SPEC: attenuation enabled, diffuse disabled.
         xf(0x100B, rgba({0, 0, 0, ambientAlpha1}));
         xf(0x100D, rgba(tint == FierceDeityTint::Gold ? GXColor{255,221,120,materialAlpha1} :
-                        GXColor{100,112,128,materialAlpha1}));
+                        GXColor{24,28,32,materialAlpha1}));
         xf(0x100F, (1u << 9) | (1u << 1) | (1u << 2));
 
         // A soft camera-space key light keeps the black surface readable in

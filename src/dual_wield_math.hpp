@@ -137,7 +137,9 @@ struct StowMotion {
     bool active=false,special=false,drawing=false,nativeClock=true;
     int phase=0;
     float elapsed=0,lastFrame=0,duration=22,progress=0,release=0;
-    Pose start;
+    // Keep the grip basis from the start of the motion. ANM_FINISH animates
+    // the main sword's item joint; it must not spin the offhand wrist through IK.
+    Pose start,mount;
     void advance(float frame,int nextPhase) {
         // Equip runs backwards; flourish changes clip and resets its controller.
         if(nextPhase==phase) elapsed+=std::max(0.0f,drawing ? lastFrame-frame : frame-lastFrame);

@@ -1,4 +1,5 @@
 #include "collection_dual_wield.hpp"
+#include "collection_service.hpp"
 #include "collection_dual_wield_state.hpp"
 #include "config.hpp"
 #include "save_state.hpp"
@@ -39,6 +40,7 @@ DEFINE_HOOK(&J2DScreen::draw, CollectionSwordCursorScreen);
 DEFINE_HOOK(&Z2SeMgr::seStart, CollectionSwordEquipSound);
 
 collection::Selection s_selection;
+bool s_serviceBackend=false;
 bool s_changingToSword=false;
 SaveObserverHandle s_saveObserver=0;
 ConfigSubscriptionHandle s_settingObserver=0;
@@ -350,6 +352,7 @@ void activate(dMenu_Collect2D_c* menu) {
     mDoAud_seStart(Z2SE_SY_ITEM_SET_X,nullptr,0,0);show_name(menu);
 }
 HookAction before_equip_sound(ModContext*,void* args,void* result,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     if(!s_changingToSword) return HOOK_CONTINUE;
     const auto id=mods::arg<JAISoundID>(args,1);
     if(id!=Z2SE_SY_ITEM_SET_X && id!=Z2SE_SY_ITEM_COMBINE_OFF) return HOOK_CONTINUE;
@@ -358,6 +361,7 @@ HookAction before_equip_sound(ModContext*,void* args,void* result,void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 HookAction capture_icon(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     if(s_menu.owner==menu && s_menu.screen) return HOOK_CONTINUE;
     s_menu.release();
@@ -503,12 +507,14 @@ void present_equipment(dMenu_Collect2D_c* menu) {
     }
 }
 HookAction before_draw(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     if(s_menu.owner==mods::arg<dMenu_Collect2D_c*>(args,0)) {
         s_menu.restore_tints();s_menu.drawing=true;
     }
     return HOOK_CONTINUE;
 }
 void after_layout(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return;
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     layout(menu);
 }
@@ -519,11 +525,13 @@ void draw_icon() {
     s_menu.screen->draw(0,0,graf);s_menu.drawn=true;
 }
 void after_draw(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return;
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     if(s_menu.owner!=menu) return;
     draw_icon();s_menu.restore_tints();
 }
 HookAction before_cursor_screen_draw(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     if(!s_menu.owner || !s_menu.drawing) return HOOK_CONTINUE;
     if(mods::arg<J2DScreen*>(args,0)==s_menu.owner->mpScreen) {
         // Final boundary: HUD layout/visibility updates have finished. Transfer
@@ -554,6 +562,7 @@ HookAction before_delete(ModContext*,void* args,void*,void*) {
     return HOOK_CONTINUE;
 }
 HookAction before_wait(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);layout(menu);
     // Let page-owning mods consume shoulder-button input, including simultaneous A.
     if(mDoCPd_c::getTrigL(PAD_1) || mDoCPd_c::getTrigR(PAD_1)) {
@@ -566,10 +575,12 @@ HookAction before_wait(ModContext*,void* args,void*,void*) {
     return HOOK_CONTINUE;
 }
 void after_wait(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return;
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     finish_shield_choice(menu);layout(menu);show_name(menu);
 }
 HookAction before_navigate(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     if(s_menu.owner!=menu||!s_menu.visible||!menu->mpStick) return HOOK_CONTINUE;
     const STControl previous=*menu->mpStick;
@@ -601,6 +612,7 @@ HookAction before_navigate(ModContext*,void* args,void*,void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 HookAction before_pointer(ModContext*,void* args,void* result,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     if(s_menu.owner!=menu||!s_menu.visible||!s_pointer.hit) return HOOK_CONTINUE;
     s_pointer.begin(4); // host Context::Collection; no private C++ ABI dependency
@@ -616,19 +628,25 @@ HookAction before_pointer(ModContext*,void* args,void* result,void*) {
     return HOOK_CONTINUE;
 }
 HookAction before_click(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     auto* menu=mods::arg<dMenu_Collect2D_c*>(args,0);
     if(own_focus(menu)) {activate(menu);return HOOK_SKIP_ORIGINAL;}
     begin_shield_choice(menu);
     return HOOK_CONTINUE;
 }
 HookAction before_shield(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return HOOK_CONTINUE;
     begin_shield_choice(mods::arg<dMenu_Collect2D_c*>(args,0));
     return HOOK_CONTINUE;
 }
 void after_shield_choice(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return;
     finish_shield_choice(mods::arg<dMenu_Collect2D_c*>(args,0));
 }
-void after_name(ModContext*,void* args,void*,void*) {show_name(mods::arg<dMenu_Collect2D_c*>(args,0));}
+void after_name(ModContext*,void* args,void*,void*) {
+    if(s_serviceBackend) return;
+    show_name(mods::arg<dMenu_Collect2D_c*>(args,0));
+}
 template<class T> bool resolve(const char* name,T& fn) {
     void* address=nullptr;
     if(!svc_hook->resolve || svc_hook->resolve(mod_ctx,name,&address,nullptr)!=MOD_OK || !address) return false;
@@ -636,9 +654,21 @@ template<class T> bool resolve(const char* name,T& fn) {
 }
 }
 bool dual_wield_equipped() {
+    if(s_serviceBackend) return collection_service_equipped();
     return s_selection.active(dual_wield_enabled(),save_state_boss_rush_active());
 }
+void update_collection_dual_wield() {
+    update_collection_service();
+    const bool active=collection_service_active();
+    if(active && !s_serviceBackend) {
+        if(s_shieldChoice.menu) finish_shield_choice(s_shieldChoice.menu);
+        if(s_menu.owner && s_menu.focused) restore_name(s_menu.owner);
+        s_menu.release();
+    }
+    s_serviceBackend=active;
+}
 ModResult install_collection_dual_wield(ModError* error) {
+    if(const auto result=initialize_collection_service(error); result!=MOD_OK) return result;
     auto result=svc_save->observe_saves(mod_ctx,load_selection,load_selection,nullptr,nullptr,&s_saveObserver);
     if(result!=MOD_OK) return mods::set_error(error,result,"Dual Wield: save selection observer");
     load_selection(nullptr,0,nullptr);
@@ -678,6 +708,7 @@ ModResult install_collection_dual_wield(ModError* error) {
     return MOD_OK;
 }
 void shutdown_collection_dual_wield() {
+    shutdown_collection_service();s_serviceBackend=false;
     if(s_shieldChoice.menu) finish_shield_choice(s_shieldChoice.menu);
     if(s_menu.owner && s_menu.focused) restore_name(s_menu.owner);
     s_menu.release();s_selection={};

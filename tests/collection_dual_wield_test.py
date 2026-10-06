@@ -37,6 +37,9 @@ enum HookAction {HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 constexpr int MOD_OK=0,dItemNo_NONE_e=255,PAD_1=0;
 using ConfigVarHandle=int;
 struct ConfigVarValue {bool bool_value;};
+bool s_serviceBackend=false;
+bool teEquipped=false;
+bool collection_service_equipped(){return teEquipped;}
 bool enabled=true,boss=false,pressA=false,pageLeft=false,pageRight=false;
 bool dual_wield_enabled(){return enabled;}
 bool save_state_boss_rush_active(){return boss;}
@@ -226,6 +229,20 @@ void draw_icon(){
 }
 // REGISTRATION
 int main(){
+    // Once TE owns the slot, the legacy backend must not consume pointer,
+    // controller or shield actions, render ornaments, or reuse its saved choice.
+    s_serviceBackend=true;s_selection.chosen=true;s_selection.boss=false;
+    assert(!dual_wield_equipped());teEquipped=true;assert(dual_wield_equipped());
+    assert(before_wait(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(before_navigate(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(before_pointer(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(before_click(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(before_shield(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(before_draw(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    assert(before_cursor_screen_draw(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+    after_layout(nullptr,nullptr,nullptr,nullptr);after_draw(nullptr,nullptr,nullptr,nullptr);
+    after_shield_choice(nullptr,nullptr,nullptr,nullptr);after_wait(nullptr,nullptr,nullptr,nullptr);
+    s_serviceBackend=false;teEquipped=false;s_selection={};
     // Native slots, remapped Essentials indices, then the HD HUD shield row.
     // Hylian's unavailable reserved position must still precede our sword.
     for(auto cells:std::vector<std::vector<collection::Cell>>{

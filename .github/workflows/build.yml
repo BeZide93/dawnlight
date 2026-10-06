@@ -229,6 +229,10 @@ jobs:
           fi
           cmake -B build "${args[@]}"
 
+      - name: Test TE Collection service adapter
+        if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
+        run: python3 tests/collection_service_test.py dusklight
+
       - name: Test slow-motion stereo and surround audio
         if: matrix.platform == 'linux-x86_64' && matrix.variant.name == 'main'
         run: python3 tests/slow_motion_audio_test.py dusklight

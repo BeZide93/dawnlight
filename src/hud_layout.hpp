@@ -609,6 +609,13 @@ inline DuskModHudTransform hud_layout_oxygen_transform() {
     return {};
 }
 
+inline DuskModHudTransform hud_layout_tears_of_light_transform() {
+    if (hud_layout() == HudLayout::Custom) {
+        return hud_custom_element_transform(HudElement::TearsOfLight);
+    }
+    return {};
+}
+
 inline DuskModHudTransform hud_layout_minimap_transform() {
     switch (hud_layout()) {
     case HudLayout::XBox:

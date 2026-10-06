@@ -28,6 +28,8 @@ fixture = r'''
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cmath>
+#include <vector>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -49,6 +51,34 @@ enum class FierceDeityTint { None, Dark, White, Gold };
 FierceDeityVisual selectedVisual = FierceDeityVisual::MagicArmor;
 FierceDeityVisual fierce_deity_visual() { return selectedVisual; }
 struct ModContext {};
+ModContext* mod_ctx = nullptr;
+constexpr int MOD_OK = 0, MOD_UNAVAILABLE = 1;
+bool bossRush = false;
+struct GameModeFixture {
+    int is_active(ModContext*, const char*, bool* active) { *active=bossRush; return MOD_OK; }
+} gameModeService;
+auto* svc_game_mode = &gameModeService;
+struct SaveFixture {
+    int slot = 0;
+    bool failWrite = false;
+    std::map<int, std::map<std::string, std::vector<uint8_t>>> slots;
+    int get_blob(ModContext*, const char* name, void* out, size_t* size) {
+        const auto it = slots[slot].find(name);
+        if (it == slots[slot].end() || it->second.size() > *size) return MOD_UNAVAILABLE;
+        *size = it->second.size();
+        std::memcpy(out, it->second.data(), *size);
+        return MOD_OK;
+    }
+    int set_blob(ModContext*, const char* name, const void* bytes, size_t size) {
+        if (failWrite) return MOD_UNAVAILABLE;
+        const auto* p = static_cast<const uint8_t*>(bytes);
+        slots[slot][name] = std::vector<uint8_t>(p, p + size);
+        return MOD_OK;
+    }
+} saveService;
+auto* svc_save = &saveService;
+struct LogFixture { int warnings=0; void warn(ModContext*, const char*) { ++warnings; } } logService;
+auto* svc_log = &logService;
 enum HookAction { HOOK_CONTINUE, HOOK_SKIP_ORIGINAL };
 using process_method_func = int(*)(void*);
 struct process_method_class { process_method_func execute_method; };
@@ -190,7 +220,7 @@ callbacks = "".join(function(name) for name in (
     "maximum_gauge", "gauge_percentage", "same_archive", "release_preload", "poll_preload", "cancel_preload",
     "outfit_archive", "prepare_outfit", "is_sword_attack", "restore_equipment_selection",
     "deactivate", "can_transform", "activate", "update_visual_selection",
-    "reset_for_link", "same_link", "on_save_started", "before_player_delete",
+    "reset_for_link", "same_link", "meter_blob_name", "load_saved_meter", "on_save_written", "on_save_started", "before_player_delete",
     "after_damage_check", "visual_uses_magic", "visual_tint", "service_model_swap", "before_magic_armor_ability",
     "dispatched_player", "before_player_execute", "after_player_execute",
     "fierce_deity_active", "fierce_deity_dark_visual_active", "fierce_deity_displayed_tint", "fierce_deity_model_reload_active",

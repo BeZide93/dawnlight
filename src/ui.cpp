@@ -1008,6 +1008,9 @@ ModResult build_hud_tab(
     if (add_custom_transform_controls(ctx, left, "Custom Oxygen", HudElement::Oxygen) != MOD_OK) {
         return MOD_ERROR;
     }
+    if (add_custom_transform_controls(ctx, left, "Custom Epona Spurs", HudElement::EponaSpurs) != MOD_OK) {
+        return MOD_ERROR;
+    }
     if (add_custom_transform_controls(ctx, left, "Custom Tears of Light", HudElement::TearsOfLight) != MOD_OK) {
         return MOD_ERROR;
     }

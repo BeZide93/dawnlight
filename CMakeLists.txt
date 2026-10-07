@@ -124,6 +124,7 @@ add_mod(dawnlight_mod
         src/enemy_slow_motion/darkhammer.cpp
         src/enemy_slow_motion/dangoro.cpp
         src/hud_fade.cpp
+        src/epona_spurs_hud.cpp
         src/combat_meter.cpp
         src/gale_counter.cpp
         src/config.cpp

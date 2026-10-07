@@ -97,6 +97,13 @@ dialog leaves the current HUD settings unchanged. Existing JSON exports remain
 compatible; imports are limited to 1 MiB. The copy buttons can seed
 Custom from the GameCube, X-Box, Wii-U, or Dawnlight presets.
 
+**Custom Epona Spurs** moves the complete horse spur display with X/Y offsets
+and scales it around the first spur, including spacing, used spurs, refill/use
+flashes, and its A-button prompt. Select **Custom** to edit it. Values are saved
+and included in HUD import/export and preset copy/reset; every preset starts
+at the existing position and 100% scale. Spur counts and refill timing remain
+controlled by the game.
+
 **Custom Tears of Light** provides X/Y position and scale for Wolf Link's
 Vessel of Light and its tears. Select the **Custom** layout to edit it. These
 values are included in HUD save, preset copy/reset, and import/export; all

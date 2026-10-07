@@ -609,6 +609,11 @@ inline DuskModHudTransform hud_layout_oxygen_transform() {
     return {};
 }
 
+inline DuskModHudTransform hud_layout_epona_spurs_transform() {
+    return custom_hud_layout_enabled() ?
+        hud_custom_element_transform(HudElement::EponaSpurs) : DuskModHudTransform{};
+}
+
 inline DuskModHudTransform hud_layout_tears_of_light_transform() {
     if (hud_layout() == HudLayout::Custom) {
         return hud_custom_element_transform(HudElement::TearsOfLight);

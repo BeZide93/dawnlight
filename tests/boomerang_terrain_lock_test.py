@@ -66,7 +66,8 @@ struct daAlink_c {
     void setShapeAngleToAtnActor(int){}bool checkNextAction(int){return next;}
     bool setBodyAngleToCamera(){return bodyReady;}
 };
-struct Camera {struct {cXyz mEye{10,20,30},mCenter{10,20,130};} mCamera;} camera;
+struct Camera {struct {cXyz mEye{10,20,30},mCenter{10,20,130};
+    cXyz Up(){return {0,1,0};}} mCamera;} camera;
 Camera* dComIfGp_getCamera(int){return cameraAvailable?&camera:nullptr;}
 bool use_third_person_camera_for(daAlink_c*){return mode==1;}
 int third_person_reticle_offset_y(){return offset;}

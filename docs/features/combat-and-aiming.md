@@ -6,6 +6,9 @@
 
 **Aim Movement** allows movement while aiming. **Aim Mode** offers Vanilla,
 3rd Person and Cinema options, with touch and gyro support for the modded modes.
+3rd Person keeps its shoulder view on magnetic walls and ceilings with Iron Boots;
+Cinema keeps its native close aim view. Camera offsets and reticle aiming follow
+Link's magnetic orientation.
 The Bow and Slingshot reticles also appear when aiming from Epona in either custom mode,
 including when starting to aim on horseback without first aiming on foot.
 The Gale Boomerang can lock onto terrain in both custom camera modes, using its

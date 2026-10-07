@@ -222,6 +222,11 @@ bool ordinary(daAlink_c* link) {
         link->getCutType()==daPy_py_c::CUT_TYPE_FINISH_STAB;
 }
 bool sword_attack(daAlink_c* link) {
+    // Running cuts also power Lazy Tweaks' crouch attacks. They only replace
+    // the upper animation: PROC_WAIT/MOVE and held guard input can persist.
+    // Release guard/stow IK for the whole cut or charge so the native item
+    // joint stays with the attacking hand, just like a full-body technique.
+    if(link->checkCutDashAnime() || link->checkCutDashChargeAnime()) return true;
     // Guard input can remain set throughout a technique. Its full-body clip
     // owns the arms from charge/takeoff through landing, including recovery.
     // Shield Attack deliberately remains eligible for the crossed thrust.
@@ -561,6 +566,11 @@ void after_arms(ModContext*,void* args,void*,void*) {
         Pose base=pose(model->getBaseTRMtx());
         const Pose inverseBase=dual::inverse(base);
         const float thrust=guard_thrust(link);
+        // Follow the evaluated pelvis height, including crouch interpolation.
+        // Compare in actor space with this rig's neutral root, so world height
+        // and facing do not affect the guard. No Lazy Tweaks-only ABI is needed.
+        const float height=dual::compose(inverseBase,pose(model->getAnmMtx(0))).p.y-
+            model->getModelData()->getJointNodePointer(0)->getTransformInfo().mTranslate.y;
         std::array<Pose,2> blades;
         float plane=50+16*thrust;
         // Follow the arm extension with the clavicles only during the thrust.
@@ -587,6 +597,7 @@ void after_arms(ModContext*,void* args,void*,void*) {
             // cannot reverse them; an item arm must not constrain the Ordon blade.
             const float depth=right ? 6.0f : -6.0f;
             blades[right]=dual::cross_guard_blade(right,thrust);
+            blades[right].p.y+=height;
             plane=std::min(plane,dual::max_sword_depth(arm,blades[right],hand_mount(link,right))-depth);
         }
         for(bool right:{false,true}) {

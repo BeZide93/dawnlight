@@ -100,6 +100,7 @@ struct daAlink_c {
         PROC_LARGE_DAMAGE,PROC_LARGE_DAMAGE_WALL,PROC_LARGE_DAMAGE_UP,PROC_LAND_DAMAGE};
     int mProcID=PROC_WAIT,cut=0,mEquipItem=0x103;
     bool event=false,guard=false,human=true,equipping=false,horse=false;
+    bool upperCut=false,upperCutCharge=false;
     int field_0x3198=0;
     struct {int field_0x300c=0;} mProcVar2;
     Morph morph;Morph* field_0x2060=&morph;
@@ -114,6 +115,8 @@ struct daAlink_c {
     bool checkPlayerGuardAndAttack(){return guard;}
     bool checkHorseRide(){return horse;}
     bool checkSwordEquipAnime(){return equipping;}
+    bool checkCutDashAnime(){return upperCut;}
+    bool checkCutDashChargeAnime(){return upperCutCharge;}
     J3DModel* mSwordModel=nullptr;int swordShown=0,swordHidden=0;
     J3DModel* mShieldModel=nullptr;unsigned mRightItemJntNo=15;int mShieldChangeWaitTimer=0;
     bool checkStatusWindowDraw(){return false;}
@@ -408,6 +411,7 @@ int main() {
     J3DModel offhand,scabbard,primary;s.sword=&offhand;s.sheath=&scabbard;link.mSwordModel=&primary;
     link.mProcID=daAlink_c::PROC_WAIT;
     for(int joint=0;joint<35;++joint)link.model.joints[joint]={{},{float(joint),100.f,0}};
+    link.model.data.joints[0].transform.mTranslate.y=100;
     link.model.joints[12]={{},{-18,130,-10}};
     link.model.joints[13]={{},{-32,105,0}};
     link.model.joints[14]={{},{-24,93,22}};
@@ -418,6 +422,73 @@ int main() {
         for(Vec axis:{Vec{1,0,0},Vec{0,1,0},Vec{0,0,1}})
             assert(dual::length(dual::rotate(a.q,axis)-dual::rotate(b.q,axis))<.003f);
     };
+    {
+        // Crouch can start on the first guarded frame. The targets must follow
+        // the animated root without caching a preceding standing guard pose.
+        const auto saved=s;
+        daAlink_c crouch;Args crouchArgs{&crouch,crouch.mpLinkModel};
+        J3DModel second,mainSword;crouch.mSwordModel=&mainSword;
+        crouch.guard=true;crouch.model.data.joints[0].transform.mTranslate.y=103;
+        auto standing=nativeJoints;standing[0].p={0,103,0};
+        standing[7].p={18,130,-10};standing[8].p={32,105,0};standing[9].p={24,93,22};
+        const auto evaluate=[&](Pose base,float drop) {
+            crouch.model.base=base;
+            for(int j=0;j<35;++j) {
+                auto joint=standing[j];joint.p.y-=drop;
+                crouch.model.joints[j]=dual::compose(base,joint);
+            }
+        };
+        s={};s.owner=&crouch;s.sword=&second;s.draw=1;s.guard=1;
+        evaluate({},0);
+        ++s.tick;after_matrix(nullptr,&crouchArgs,nullptr,nullptr);
+        after_arms(nullptr,&crouchArgs,nullptr,nullptr);
+        const auto leftStanding=crouch.model.joints[10],rightStanding=s.rightSword;
+        // Include lowering/rising, translated world origins and tilted actors.
+        for(const Pose base:{Pose{},Pose{dual::from_euler({.2f,1.3f,-.1f}),{200,800,-300}}}) {
+            for(float drop:{60.f,35.f,10.f,0.f,10.f,35.f,60.f,0.f}) {
+                s={};s.owner=&crouch;s.sword=&second;s.draw=1;s.guard=1;
+                evaluate(base,drop);
+                ++s.tick;after_matrix(nullptr,&crouchArgs,nullptr,nullptr);
+                after_arms(nullptr,&crouchArgs,nullptr,nullptr);
+                auto left=leftStanding,right=rightStanding;
+                left.p.y-=drop;right.p.y-=drop;
+                samePose(crouch.model.joints[10],dual::compose(base,left));
+                samePose(s.rightSword,dual::compose(base,right));
+            }
+        }
+        // Lazy Tweaks uses an upper-body running cut while PROC_WAIT and
+        // held block remain active. Charge and attack must release all IK
+        // immediately, including an interrupted sword draw/stow blend.
+        for(bool charge:{false,true}) {
+            crouch.upperCut=!charge;crouch.upperCutCharge=charge;
+            s.guard=1;s.stow.active=true;s.stow.release=1;s.charge=1;
+            for(int frame=0;frame<4;++frame) {
+                evaluate({},60);
+                crouch.model.joints[9]={{},{float(frame*12),65,25}};
+                crouch.model.joints[10]={dual::from_euler({0,float(frame),.3f}),{float(frame*12+9),67,28}};
+                const auto native=crouch.model.joints;
+                ++s.tick;after_matrix(nullptr,&crouchArgs,nullptr,nullptr);
+                assert(s.guard==0&&!s.stow.active&&s.stow.release==0&&s.charge==0&&!s.mirror);
+                after_arms(nullptr,&crouchArgs,nullptr,nullptr);
+                // Native setItemMatrix attaches the primary mesh to joint 10.
+                mainSword.base=crouch.model.joints[10];
+                after_items(nullptr,&crouchArgs,nullptr,nullptr);
+                for(int j=0;j<35;++j)samePose(crouch.model.joints[j],native[j]);
+                samePose(mainSword.base,native[10]);
+                samePose(second.base,dual::secondary_sword_model_pose(sword_at_hand(&crouch,true)));
+            }
+        }
+        crouch.upperCut=crouch.upperCutCharge=false;
+        for(int frame=0;frame<5;++frame) {
+            evaluate({},60);
+            ++s.tick;after_matrix(nullptr,&crouchArgs,nullptr,nullptr);
+            after_arms(nullptr,&crouchArgs,nullptr,nullptr);
+        }
+        assert(s.guard==1);
+        auto left=leftStanding,right=rightStanding;left.p.y-=60;right.p.y-=60;
+        samePose(crouch.model.joints[10],left);samePose(s.rightSword,right);
+        s=saved;
+    }
     // ANM_FINISH spins the main sword's item track. Hold all other inputs
     // fixed and rotate that track through full turns: the offhand wrist and
     // sword must stay identical during insertion, empty-hand rest and release.

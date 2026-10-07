@@ -54,6 +54,12 @@ timing, and Hidden Skill interactions. Blocking still requires an equipped
 shield in the inventory. Other tools and special sword techniques retain their
 native actions.
 
+The crossed guard follows Link's animated body height, including Lazy Tweaks'
+crouch shield and its transitions. Upper-body running cuts (also used for
+crouch attacks) and their charge animations release the guard pose immediately,
+so the primary sword follows the attacking hand. Holding block returns to the
+lowered cross guard when the attack animation ends.
+
 During the victory flourish, the right-hand grip keeps a stable orientation
 through sheathing and the empty-hand return instead of following the main
 sword's spinning item track. Jump Strike charging uses a separate right-arm
@@ -84,6 +90,6 @@ frame restoration, page handoff, and save isolation.
 `python3 tests/dual_wield_test.py` covers pose math, animation
 borrowing/restoration, alternation, blade contact history, menu-preview
 equipment transforms/materials, victory-flourish grip stability, Jump Strike
-charge/moving-charge arm isolation, and mode boundaries.
+charge/moving-charge arm isolation, crouch guard height/attack handoff, and mode boundaries.
 Visual transitions still require an in-game check, particularly interrupted
 combos, guarding from a holstered stance, and equipment changes.

@@ -118,6 +118,7 @@ bool player_equipment(daAlink_c* link, const J3DModel* model) {
 }
 
 #include "fierce_deity_transition.inc"
+#include "fierce_deity_aura.inc"
 
 HookAction before_packet_draw(ModContext*, void* args, void*, void*) {
     auto* packet = mods::arg<J3DShapePacket*>(args, 0);
@@ -546,6 +547,7 @@ void after_player_draw(ModContext*, void* args, void*, void*) {
 bool fierce_deity_transition_busy() { return s_transition.owner != nullptr; }
 
 void fierce_deity_transition_prepare(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
+    stop_dark_aura();
     prepare_transition(link, fromTint, toTint, entering);
 }
 
@@ -569,11 +571,13 @@ void fierce_deity_transition_commit(daAlink_c* link) {
 }
 
 void fierce_deity_transition_tint(daAlink_c* link, FierceDeityTint fromTint, FierceDeityTint toTint, bool entering) {
+    stop_dark_aura();
     prepare_tint_transition(link, fromTint, toTint, entering);
     fierce_deity_transition_commit(link);
 }
 
 void fierce_deity_transition_tick(daAlink_c* link) {
+    update_dark_aura(link);
     if (!transition_owner(link) || !s_transition.committed) return;
     if (link->checkWolf() || link->checkDeadHP() || link->checkSceneChangeAreaStart() ||
         link->checkEventRun() || !tint_sources_live(link) || s_transition.wipe.advance()) {
@@ -584,6 +588,7 @@ void fierce_deity_transition_tick(daAlink_c* link) {
 }
 
 void fierce_deity_transition_cancel(daAlink_c* link) {
+    stop_dark_aura();
     reset_observed_equipment();
     if (s_transition.owner == nullptr) return;
     // reset_for_link can run after the old actor is gone; only touch a live owner.
@@ -607,6 +612,7 @@ ModResult initialize_fierce_deity_visual(ModError* error) {
         (result = mods::hook::add_pre<FierceShapeDrawHook>(svc_hook, before_shape_draw)) != MOD_OK ||
         (result = mods::hook::add_post<FierceShapeDrawHook>(svc_hook, after_shape_draw)) != MOD_OK ||
         (result = mods::hook::add_pre<FiercePrimitiveDrawHook>(svc_hook, before_primitive_draw)) != MOD_OK ||
+        (result = mods::hook::add_pre<FierceWarpParticleCalcHook>(svc_hook, before_dark_aura_calc)) != MOD_OK ||
         (result = mods::hook::add_post<FierceWarpParticleCalcHook>(svc_hook, after_warp_particle_calc)) != MOD_OK ||
         (result = mods::hook::add_pre<FierceEquipmentUpdateHook>(svc_hook, observe_equipment_model)) != MOD_OK ||
         (result = mods::hook::add_pre<FierceEquipmentEntryHook>(svc_hook, observe_equipment_model)) != MOD_OK ||

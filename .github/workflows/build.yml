@@ -108,6 +108,7 @@ jobs:
           python3 tests/fierce_deity_equipment_test.py
           python3 tests/fierce_deity_transition_test.py
           python3 tests/fierce_deity_particles_test.py
+          python3 tests/fierce_deity_aura_test.py
           python3 tests/fierce_deity_activation_test.py
           python3 tests/dark_link_settings_test.py
           python3 tests/fierce_deity_movement_test.py

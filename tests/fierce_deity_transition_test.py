@@ -216,6 +216,8 @@ int dComIfG_deleteObjectResMain(const char* arc) {
 }
 daAlink_c* current=nullptr;
 void update_warp_particles(daAlink_c*) {}
+void update_dark_aura(daAlink_c*) {}
+void stop_dark_aura() {}
 daAlink_c* daAlink_getAlinkActorClass() {return current;}
 unsigned fopAcM_GetID(daAlink_c* p) {return p->id;}
 using OutfitModels=std::array<J3DModel*,6>;

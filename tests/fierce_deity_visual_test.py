@@ -7,6 +7,7 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'src/fierce_deity_visual.cpp').read_text()
 callbacks = source[source.index('struct DrawScope'):source.index('void after_player_draw')]
 callbacks = callbacks.replace('#include "fierce_deity_transition.inc"', '')
+callbacks = callbacks.replace('#include "fierce_deity_aura.inc"', '')
 callbacks = callbacks.replace('#include "fierce_deity_equipment.inc"', '')
 dual_source = (root / 'src/dual_wield.cpp').read_text()
 dual_start = dual_source.index('bool dual_wield_owns_model(')

@@ -62,6 +62,9 @@ int main(int argc,char** argv) {
     HostService host{};host.data_dir=data_dir;svc_host=&host;
     UiService ui{};ui.push_toast=toast;svc_ui=&ui;
     assert(register_config(nullptr)==MOD_OK);
+    assert(!dark_link_free_transform());
+    set_bool(nullptr,dark_link_free_transform_config_var(),true);
+    assert(dark_link_free_transform());
     assert(names.contains("touch-button-twe-quick-access-layout"));
     for(auto& [h,v]:values) if(std::holds_alternative<std::string>(v)) v=std::string("{\"x\":42,\"text\":\"UTF-8 \xc3\xa4\"}\n");
     set_bool(nullptr,names.at("r-jump"),true);

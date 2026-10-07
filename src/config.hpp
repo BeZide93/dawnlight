@@ -121,6 +121,8 @@ bool bullet_time_enabled();
 bool flurry_rush_enabled();
 enum class FierceDeityVisual : int { MagicArmor = 0, Dark = 1, DarkMagic = 2, White = 3, Gold = 4 };
 bool fierce_deity_enabled();
+bool dark_link_free_transform();
+ConfigVarHandle dark_link_free_transform_config_var();
 FierceDeityVisual fierce_deity_visual();
 ConfigVarHandle fierce_deity_visual_config_var();
 enum class FierceDeityActivation : int { SpinAttack = 0, RZ = 1, RA = 2, L3 = 3, R3 = 4 };

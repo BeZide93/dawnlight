@@ -88,7 +88,7 @@ ModResult build_button_choices(ModContext* ctx, UiWindowHandle, UiElementHandle 
         if (i == touch::Midna) desc.help_rml = "Call Midna with a dedicated touch button. Shown when Midna is available; move and resize it in the Touch Layout Editor.";
         if (i == touch::L3 || i == touch::R3) desc.help_rml = "Virtual left/right stick click for the game and compatible mods.";
         if (i == touch::Jump) desc.help_rml = "Jump, hold to charge Revali's Gale, or hold in the air to glide. Independent of Jump Button; normal feature settings and stamina costs apply.";
-        if (i == touch::DarkLink) desc.help_rml = "Toggle Dark Link directly, independent of its activation binding. Requires the feature to be unlocked/enabled and a full meter to activate.";
+        if (i == touch::DarkLink) desc.help_rml = "Toggle Dark Link directly, independent of its activation binding. Requires the feature to be unlocked/enabled and a full meter unless Free Transform is enabled.";
         if (svc_ui->pane_add_control(ctx, left, &desc, nullptr) != MOD_OK) return MOD_ERROR;
     }
     return MOD_OK;

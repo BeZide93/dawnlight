@@ -209,6 +209,8 @@ struct dCcU_AtInfo {
 fixture = fixture.replace('// SETTINGS', (root/'src/dark_link_settings.hpp').read_text().replace('#pragma once', '') + r'''
 using namespace dawnlight;
 std::array<int, kDarkLinkSettings.size()> settings=[] {std::array<int,kDarkLinkSettings.size()> a{};for(size_t i=0;i<a.size();++i)a[i]=kDarkLinkSettings[i].standard;return a;}();
+bool freeTransform=false;
+bool dark_link_free_transform(){return freeTransform;}
 int dark_link_setting(DarkLinkSetting s){return settings[static_cast<size_t>(s)];}
 ''')
 

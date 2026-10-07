@@ -56,7 +56,7 @@ without stored charge start empty; Boss Rush charge is kept separate.
 | Gold | Current outfit with warm golden shading/specular highlights and fully white glowing eyes. |
 
 **Dark Link Activation**, below the visual selector, offers **Spin Attack**
-(charged), **R+Z**, **R+A** (default), **L3**, or **R3**. Activation requires a full meter. With
+(charged), **R+Z**, **R+A** (default), **L3**, or **R3**. Activation requires a full meter unless **Free Transform** is enabled. With
 either R shortcut, hold R and then press Z or A, just like native R+Y Quick
 Transform. The initial R press can still trigger a manual jump; the shortcut also
 works during that jump. Keep holding R and press Z or A again to end early. The
@@ -84,12 +84,21 @@ Raising capacity preserves existing points; lowering it clamps charge to the new
 | Depletion Rate | 0–1,000 points/sec | 5 |
 | Damage Multiplier | 0–1,000% sword damage | 200% |
 | Gauge Auto Fade | Off / On | Off |
+| Free Transform | Off / On | Off |
 
 Both gain options apply while Dark Link is inactive. Received damage must actually
 reduce pending health: blocked hits, armor-only costs, healing and carried-over
 scene-entry damage do not grant points. Wolf-form damage does not charge the gauge.
 Zero depletion keeps the form active until manually stopped or otherwise interrupted.
 Fractional sword damage rounds up and is capped to the native damage field.
+
+**Free Transform** hides the gauge, including compatible replacement HUDs, and
+lets every activation binding toggle Dark Link with any charge. With Spin Attack
+selected, a new charged spin toggles the mode on or off. Charge neither fills
+nor drains while Free Transform is enabled, and transforming preserves stored
+charge. Turning it off restores normal gauge rules and depletion; an active form
+with no charge ends on the next gameplay update. The Dark Link feature and its
+normal gameplay restrictions still apply.
 
 Gauge Auto Fade hides an empty bar on every HUD preset. HUD preset import/reset
 no longer changes this setting. Registered HUD replacements receive its fading alpha;

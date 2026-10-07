@@ -349,6 +349,21 @@ bool touch_context_bounds(Rml::Vector2i& dimensions, float& scale) {
 }
 #endif
 
+// Native subject yaw/pitch are relative to Link's magnetic surface, not world Y.
+cXyz aim_vector_to_local(daAlink_c* link, cXyz vector) {
+    if (link->checkMagneBootsOn()) {
+        mDoMtx_multVecSR(link->getMagneBootsInvMtx(), &vector, &vector);
+    }
+    return vector;
+}
+
+cXyz aim_vector_to_world(daAlink_c* link, cXyz vector) {
+    if (link->checkMagneBootsOn()) {
+        mDoMtx_multVecSR(link->getMagneBootsMtx(), &vector, &vector);
+    }
+    return vector;
+}
+
 BOOL face_camera_view_yaw(daAlink_c* link) {
     if (link == nullptr) {
         return FALSE;
@@ -359,7 +374,8 @@ BOOL face_camera_view_yaw(daAlink_c* link) {
         return FALSE;
     }
 
-    const cXyz direction = *fopCamM_GetCenter_p(camera) - *fopCamM_GetEye_p(camera);
+    const cXyz direction = aim_vector_to_local(
+        link, *fopCamM_GetCenter_p(camera) - *fopCamM_GetEye_p(camera));
     const f32 horizontal = JMAFastSqrt(SQUARE(direction.x) + SQUARE(direction.z));
     if (horizontal <= 0.001f) {
         return FALSE;
@@ -565,7 +581,12 @@ bool camera_aim_ray(daAlink_c* link, cXyz& eye, cXyz& forward) {
             const float halfFov = s_thirdPersonFovy * static_cast<float>(M_PI) / 360.0f;
             const float screenOffset = (2.0f * offset / 448.0f) * std::tan(halfFov);
             const float pitchOffset = std::atan(screenOffset);
-            cXyz right(forward.z, 0.0f, -forward.x);
+            // Follow the rendered camera's up vector on magnetic walls/ceilings.
+            const cXyz cameraUp = actor->mCamera.Up();
+            cXyz right(
+                cameraUp.y * forward.z - cameraUp.z * forward.y,
+                cameraUp.z * forward.x - cameraUp.x * forward.z,
+                cameraUp.x * forward.y - cameraUp.y * forward.x);
             if (right.abs() > 0.001f) {
                 right.normalize();
                 cXyz up(
@@ -961,7 +982,7 @@ void normalize_forward_aim_speed(daAlink_c* link) {
 
 void prepare_third_person_aim(daAlink_c* link) {
     if (link == nullptr || !use_third_person_camera_for(link) || is_hawkeye_bow(link) ||
-        link->checkMagneBootsOn() || s_thirdPersonAimActive)
+        s_thirdPersonAimActive)
     {
         return;
     }
@@ -971,13 +992,14 @@ void prepare_third_person_aim(daAlink_c* link) {
     }
 
     auto& camera = actor->mCamera;
-    const cXyz direction = camera.mCenter - camera.mEye;
+    const cXyz direction = aim_vector_to_local(link, camera.mCenter - camera.mEye);
     link->mBodyAngle.x = cM_atan2s(-direction.y, direction.absXZ());
     link->checkBodyAngleX(link->mBodyAngle.x);
     link->field_0x310a = link->mBodyAngle.x;
     s_thirdPersonDistance = std::clamp(direction.abs(), 200.0f, 600.0f);
     s_thirdPersonFovy = camera.mFovy;
-    s_thirdPersonHeight = std::clamp(camera.mCenter.y - link->current.pos.y, 100.0f, 180.0f);
+    const cXyz centerOffset = aim_vector_to_local(link, camera.mCenter - link->current.pos);
+    s_thirdPersonHeight = std::clamp(centerOffset.y, 100.0f, 180.0f);
     s_thirdPersonAimActive = true;
 }
 
@@ -1260,7 +1282,7 @@ void after_subject_camera(ModContext*, void* args, void*, void*) {
     auto* link = daAlink_getAlinkActorClass();
     if (!use_third_person_camera_for(link) || !s_thirdPersonAimActive || camera == nullptr ||
         link == nullptr || !player_in_supported_aim_state(camera) ||
-        is_hawkeye_bow(link) || link->checkMagneBootsOn() || camera->mCurMode != 8)
+        is_hawkeye_bow(link) || camera->mCurMode != 8)
     {
         return;
     }
@@ -1269,14 +1291,15 @@ void after_subject_camera(ModContext*, void* args, void*, void*) {
     const s16 yaw = link->getCameraAngleY();
     const s16 pitch = link->getCameraAngleX();
     const float horizontal = s_thirdPersonDistance * cM_scos(pitch);
-    cXyz center = link->current.pos;
-    center.y += s_thirdPersonHeight;
+    cXyz center = link->current.pos +
+        aim_vector_to_world(link, cXyz(0.0f, s_thirdPersonHeight, 0.0f));
     // Translate eye and center together so framing does not rotate the aim direction.
     constexpr float shoulderLeft = 60.0f;
     constexpr float shoulderUp = 40.0f;
-    const cXyz offset(shoulderLeft * cM_scos(yaw) + shoulderUp * cM_ssin(yaw) * cM_ssin(pitch),
-        shoulderUp * cM_scos(pitch),
-        -shoulderLeft * cM_ssin(yaw) + shoulderUp * cM_scos(yaw) * cM_ssin(pitch));
+    const cXyz offset = aim_vector_to_world(link,
+        cXyz(shoulderLeft * cM_scos(yaw) + shoulderUp * cM_ssin(yaw) * cM_ssin(pitch),
+            shoulderUp * cM_scos(pitch),
+            -shoulderLeft * cM_ssin(yaw) + shoulderUp * cM_scos(yaw) * cM_ssin(pitch)));
     cXyz shiftedCenter = center + offset;
     dBgS_CamLinChk shoulderCheck;
     if (camera->lineBGCheck(&center, &shiftedCenter, &shoulderCheck, 0x40b7)) {
@@ -1284,8 +1307,8 @@ void after_subject_camera(ModContext*, void* args, void*, void*) {
         shiftedCenter = center + offset * (distance / offset.abs());
     }
     center = shiftedCenter;
-    cXyz eye = center + cXyz(-horizontal * cM_ssin(yaw),
-        s_thirdPersonDistance * cM_ssin(pitch), -horizontal * cM_scos(yaw));
+    cXyz eye = center + aim_vector_to_world(link, cXyz(-horizontal * cM_ssin(yaw),
+        s_thirdPersonDistance * cM_ssin(pitch), -horizontal * cM_scos(yaw)));
 
     // Native subject mode disables the chase-camera bump check.
     dBgS_CamLinChk check;
@@ -1298,6 +1321,13 @@ void after_subject_camera(ModContext*, void* args, void*, void*) {
     camera->mViewCache.mEye = eye;
     camera->mViewCache.mDirection.Val(eye - center);
     camera->mViewCache.mFovy = s_thirdPersonFovy;
+    if (link->checkMagneBootsOn()) {
+        // Keep the native magnetic camera's orientation/distance queries in sync.
+        camera->mUpOverride.field_0x0 = center;
+        camera->mUpOverride.field_0xc = eye;
+        camera->mUpOverride.field_0x24 = camera->mViewCache.mDirection;
+        camera->mUpOverride.field_0x18 = *link->getMagneBootsTopVec();
+    }
 }
 
 void after_camera_run(ModContext*, void* args, void*, void*) {

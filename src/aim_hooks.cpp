@@ -1377,6 +1377,16 @@ void after_camera_next_mode(ModContext*, void* args, void* retval, void*) {
     }
 }
 
+bool camera_type_supports_subject_aim(dCamera_c* camera, int type) {
+    if (type < 0 || type >= camera->mCamTypeNum) {
+        return false;
+    }
+    const auto& modes = camera->mCamTypeData[type].field_0x18[camera->mIsWolf];
+    // Native nextMode first selects 7 for the Bow; our post-hook selects 8.
+    // Both must exist, and mode 8 must actually dispatch subjectCamera.
+    return modes[7] >= 0 && modes[8] >= 0 && camera->mCamParam.Algorythmn(modes[8]) == 4;
+}
+
 void after_camera_next_type(ModContext*, void* args, void* retval, void*) {
     auto* camera = mods::arg<dCamera_c*>(args, 0);
     auto* result = static_cast<s32*>(retval);
@@ -1392,6 +1402,31 @@ void after_camera_next_type(ModContext*, void* args, void* retval, void*) {
     const int scopeType = camera->GetCameraTypeFromCameraName("Scope");
     if (*result == scopeType) {
         *result = camera->mMapToolType;
+        return;
+    }
+
+    auto* link = daAlink_getAlinkActorClass();
+    if (link == nullptr || !link->checkMagneBootsOn() ||
+        link->checkAttentionLock() || link->checkEventRun()) {
+        return;
+    }
+    const bool magneticType = *result == camera->GetCameraTypeFromCameraName("MagneRoof") ||
+        *result == camera->GetCameraTypeFromCameraName("MagneWall") ||
+        *result == camera->GetCameraTypeFromCameraName("MagneBoots");
+    if (!magneticType) {
+        return;
+    }
+
+    // Run selects the type BEFORE nextMode and rejects unsupported mode changes.
+    // Leaving the magnetic chase type selected can bypass subjectCamera entirely.
+    // Use a regular subject-capable type only while custom item aiming is active;
+    // native nextType restores the magnetic chase camera when aiming ends.
+    int aimType = camera->mMapToolType;
+    if (!camera_type_supports_subject_aim(camera, aimType)) {
+        aimType = camera->GetCameraTypeFromCameraName("FieldS");
+    }
+    if (camera_type_supports_subject_aim(camera, aimType)) {
+        *result = aimType;
     }
 }
 

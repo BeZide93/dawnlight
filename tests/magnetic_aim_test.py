@@ -19,8 +19,10 @@ fixture = r'''
 #include <vector>
 #include <cstdio>
 #include <source_location>
+#include <cstring>
 using f32 = float;
 using s16 = short;
+using s32 = int;
 using BOOL = bool;
 constexpr bool TRUE = true, FALSE = false;
 #define SQUARE(x) ((x) * (x))
@@ -47,7 +49,9 @@ cXyz rotate(int turns, cXyz v) {
 }
 void mDoMtx_multVecSR(int turns, cXyz* in, cXyz* out) { *out = rotate(turns,*in); }
 struct daAlink_c {
-    bool magnetic = false, hawkeye = false;
+    bool magnetic = false, hawkeye = false, locked = false, event = false;
+    bool checkAttentionLock() { return locked; }
+    bool checkEventRun() { return event; }
     int rotation = 0, field_0x317c = 0;
     struct { s16 x = 0, y = 0; } shape_angle, mBodyAngle;
     s16 field_0x310a = 0, field_0x310c = 0;
@@ -63,7 +67,16 @@ struct daAlink_c {
 } player;
 struct dBgS_CamLinChk { cXyz cross; cXyz GetCross() { return cross; } };
 struct Globe { cXyz v; void Val(cXyz p) { v = p; } };
+enum { Map, Scope, MagneRoof, MagneWall, MagneBoots, FieldS, Event, Tagged, TypeCount };
 struct dCamera_c {
+    int mCurType = MagneRoof, mMapToolType = Map, mCamTypeNum = TypeCount, mIsWolf = 0;
+    struct Type { int field_0x18[2][11] = {}; } mCamTypeData[TypeCount];
+    struct Params { int Algorythmn(int style) { return style; } } mCamParam;
+    int GetCameraTypeFromCameraName(const char* name) {
+        const char* names[] = {"Map","Scope","MagneRoof","MagneWall","MagneBoots","FieldS","Event","Tagged"};
+        for (int i=0;i<TypeCount;++i) if (std::strcmp(name,names[i])==0) return i;
+        return 0xff;
+    }
     cXyz mEye, mCenter, up;
     float mFovy = 50;
     int mCurMode = 8;
@@ -88,6 +101,7 @@ Actor* dComIfGp_getCamera(int) { return cameraAvailable ? &actor : nullptr; }
 cXyz* fopCamM_GetCenter_p(Actor* a) { return &a->mCamera.mCenter; }
 cXyz* fopCamM_GetEye_p(Actor* a) { return &a->mCamera.mEye; }
 daAlink_c* daAlink_getAlinkActorClass() { return &player; }
+bool use_scope_suppress_camera() { return mode != Vanilla; }
 bool use_third_person_camera_for(daAlink_c*) { return mode == ThirdPerson; }
 bool is_hawkeye_bow(daAlink_c* p) { return p->hawkeye; }
 bool player_in_supported_aim_state(dCamera_c*) { return supported; }
@@ -108,6 +122,12 @@ void setup(int rotation, s16 yaw, s16 pitch) {
     player.rotation = rotation; player.magnetic = rotation != 0;
     player.current.pos = {700,900,-200}; player.up = rotate(rotation,{0,1,0});
     auto& cam = actor.mCamera; cam.up = player.up;
+    for (auto& type : cam.mCamTypeData) for (auto& modes : type.field_0x18) {
+        // Magnetic chase type has mode 7 but no usable mode 8.
+        modes[7]=4; modes[8]=-1;
+    }
+    cam.mCamTypeData[Map].field_0x18[0][8]=4;
+    cam.mCamTypeData[FieldS].field_0x18[0][8]=4;
     cam.mCenter = player.current.pos + rotate(rotation,{0,145,0});
     cXyz backward(-320*cM_scos(pitch)*cM_ssin(yaw),320*cM_ssin(pitch),
                   -320*cM_scos(pitch)*cM_scos(yaw));
@@ -117,7 +137,63 @@ void frame() {
     auto* cam = &actor.mCamera;
     after_subject_camera(nullptr,&cam,nullptr,nullptr);
 }
+int routed_type(int nativeType) {
+    auto* cam = &actor.mCamera;
+    after_camera_next_type(nullptr,&cam,&nativeType,nullptr);
+    return nativeType;
+}
+void routing_tests() {
+    for (int aimMode : {Cinema,ThirdPerson}) for (int nativeType : {MagneRoof,MagneWall,MagneBoots}) {
+        setup(2,0,0); mode=aimMode;
+        auto* cam=&actor.mCamera;
+        cam->mCurMode=0;
+        // Mirror Run ordering: nextType -> nextMode -> validate mode -> dispatch.
+        cam->mCurType=routed_type(nativeType);
+        assert(cam->mCurType==Map);
+        int nextMode=cam->mCamTypeData[cam->mCurType].field_0x18[0][7]>=0 ? 7 : cam->mCurMode;
+        after_camera_next_mode(nullptr,&cam,&nextMode,nullptr);
+        assert(nextMode==8);
+        int style=cam->mCamTypeData[cam->mCurType].field_0x18[0][nextMode];
+        assert(style>=0 && cam->mCamParam.Algorythmn(style)==4);
+        cam->mCurMode=nextMode;
+        // Native subject framing precedes our callback; Cinema retains it.
+        cam->mViewCache.mCenter=cam->mCenter; cam->mViewCache.mEye=cam->mEye;
+        cXyz nativeEye=cam->mEye;
+        frame();
+        if (aimMode==ThirdPerson) {
+            assert(s_thirdPersonAimActive && cam->starts.size()==2);
+            assert((cam->mViewCache.mEye-nativeEye).abs()>50);
+        } else { near(cam->mViewCache.mEye,nativeEye); assert(cam->starts.empty()); }
+        // Repeated frames do not switch back to the magnetic chase type.
+        assert(routed_type(nativeType)==Map);
+        supported=false; assert(routed_type(nativeType)==nativeType);
+    }
+    for (int excluded=0;excluded<7;++excluded) {
+        setup(2,0,0);
+        if (excluded==0) mode=Vanilla;
+        if (excluded==1) player.hawkeye=true;
+        if (excluded==2) player.locked=true;
+        if (excluded==3) player.event=true;
+        if (excluded==4) supported=false;
+        if (excluded==5) player.magnetic=false;
+        int type=excluded==6 ? Event : MagneRoof;
+        assert(routed_type(type)==type);
+    }
+    setup(2,0,0);
+    assert(routed_type(Tagged)==Tagged); // Preserve stage/event camera choices.
+    assert(routed_type(Scope)==Map); // Existing Scope suppression.
+    for (int invalid : {-1,0xff,int(MagneRoof)}) {
+        actor.mCamera.mMapToolType=invalid;
+        assert(routed_type(MagneRoof)==FieldS);
+    }
+    actor.mCamera.mMapToolType=Map;
+    actor.mCamera.mCamTypeData[Map].field_0x18[0][8]=9; // Non-subject algorithm.
+    assert(routed_type(MagneRoof)==FieldS);
+    actor.mCamera.mCamTypeData[FieldS].field_0x18[0][7]=-1;
+    assert(routed_type(MagneRoof)==MagneRoof); // Never select an unusable type.
+}
 int main() {
+    routing_tests();
     // Initial yaw/pitch and height must be identical in the surface's local frame.
     for (int rotation : {0,2,1}) for (s16 yaw : {s16(0),s16(6000),s16(-12000)})
     for (s16 pitch : {s16(0),s16(3500),s16(-4500)}) {
@@ -190,6 +266,8 @@ production = "\n\n".join(function(name) for name in (
     "cXyz aim_vector_to_local", "cXyz aim_vector_to_world",
     "BOOL face_camera_view_yaw", "bool camera_aim_ray",
     "void prepare_third_person_aim", "void after_subject_camera",
+    "void after_camera_next_mode", "bool camera_type_supports_subject_aim",
+    "void after_camera_next_type",
 ))
 with tempfile.TemporaryDirectory(prefix="dawnlight-magnetic-aim-") as directory:
     test = Path(directory) / "test.cpp"

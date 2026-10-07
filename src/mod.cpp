@@ -12,6 +12,7 @@
 #include "dawnlight/kh2_hud_drive.h"
 #include "gale_counter.hpp"
 #include "hud_fade.hpp"
+#include "epona_spurs_hud.hpp"
 #include "great_spin_projectile.hpp"
 #include "model_overlays.hpp"
 #include "player_hard_mode.hpp"
@@ -142,6 +143,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         return result;
     }
     if (const ModResult result = dawnlight::register_new_save_modes(error); result != MOD_OK) {
+        return result;
+    }
+    if (const ModResult result = dawnlight::initialize_epona_spurs_hud(error); result != MOD_OK) {
         return result;
     }
     if (const ModResult result = dawnlight::initialize_hud_fade(error); result != MOD_OK) {

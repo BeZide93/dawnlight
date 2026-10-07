@@ -52,55 +52,56 @@ int main(int argc, char** argv) {
         values[handle]=d.max+1;assert(dark_link_setting(setting)==d.max);
         values[handle]=d.standard;
     }
-    const auto tears = HudElement::TearsOfLight;
-    assert(hud_custom_element_x(tears)==0 && hud_custom_element_y(tears)==0);
-    assert(hud_custom_element_scale_percent(tears)==100);
     assert(!hud_auto_fade_enabled());
     assert(!hud_custom_stamina_fade_when_full());
     assert(!hud_custom_fierce_deity_fade_when_empty());
-    for (bool autoFade : {false, true}) {
-        set_bool(nullptr, hud_auto_fade_config_var(), autoFade);
-        for (auto preset : {HudLayout::GameCube, HudLayout::XBox, HudLayout::WiiU, HudLayout::Dawnlight}) {
+    for (const auto element : {HudElement::TearsOfLight, HudElement::EponaSpurs}) {
+        assert(hud_custom_element_x(element)==0 && hud_custom_element_y(element)==0);
+        assert(hud_custom_element_scale_percent(element)==100);
+        for (bool autoFade : {false, true}) {
+            set_bool(nullptr, hud_auto_fade_config_var(), autoFade);
+            for (auto preset : {HudLayout::GameCube, HudLayout::XBox, HudLayout::WiiU, HudLayout::Dawnlight}) {
+                set_bool(nullptr, hud_custom_stamina_fade_when_full_config_var(), true);
+                set_bool(nullptr, hud_custom_fierce_deity_fade_when_empty_config_var(), true);
+                set_int(nullptr,hud_custom_element_x_config_var(element),123);
+                set_int(nullptr,hud_custom_element_y_config_var(element),-45);
+                set_int(nullptr,hud_custom_element_scale_config_var(element),175);
+                assert(copy_hud_preset_to_custom(preset) == HudSettingsIoResult::Ok);
+                assert(hud_custom_element_x(element)==0 && hud_custom_element_y(element)==0);
+                assert(hud_custom_element_scale_percent(element)==100);
+                assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
+                assert(hud_auto_fade_enabled() == autoFade);
+            }
+            std::string path;
             set_bool(nullptr, hud_custom_stamina_fade_when_full_config_var(), true);
             set_bool(nullptr, hud_custom_fierce_deity_fade_when_empty_config_var(), true);
-            set_int(nullptr,hud_custom_element_x_config_var(tears),123);
-            set_int(nullptr,hud_custom_element_y_config_var(tears),-45);
-            set_int(nullptr,hud_custom_element_scale_config_var(tears),175);
-            assert(copy_hud_preset_to_custom(preset) == HudSettingsIoResult::Ok);
-            assert(hud_custom_element_x(tears)==0 && hud_custom_element_y(tears)==0);
-            assert(hud_custom_element_scale_percent(tears)==100);
+            set_int(nullptr,hud_custom_element_x_config_var(element),123);
+            set_int(nullptr,hud_custom_element_y_config_var(element),-45);
+            set_int(nullptr,hud_custom_element_scale_config_var(element),175);
+            assert(export_custom_hud_settings(path) == HudSettingsIoResult::Ok);
+            assert(reset_custom_hud_settings() == HudSettingsIoResult::Ok);
+            assert(hud_custom_element_x(element)==0 && hud_custom_element_y(element)==0);
+            assert(hud_custom_element_scale_percent(element)==100);
             assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
             assert(hud_auto_fade_enabled() == autoFade);
+            assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
+            assert(hud_custom_element_x(element)==123 && hud_custom_element_y(element)==-45);
+            assert(hud_custom_element_scale_percent(element)==175);
+            assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
+            assert(hud_auto_fade_enabled() == autoFade);
+            // Old presets leave both independent gameplay fade settings intact.
+            { std::ofstream out(path); out << R"({"version":14,"elements":{}})"; }
+            assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
+            assert(hud_custom_element_x(element)==0 && hud_custom_element_y(element)==0);
+            assert(hud_custom_element_scale_percent(element)==100);
+            assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
+            assert(hud_auto_fade_enabled() == autoFade);
+            // Legacy layout fade fields cannot override the relocated settings.
+            { std::ofstream out(path); out << R"({"version":14,"elements":{"stamina-bar":{"fadeWhenFull":false},"fierce-deity-bar":{"fadeWhenEmpty":false}}})"; }
+            assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
+            assert(hud_custom_element_x(element)==0 && hud_custom_element_y(element)==0);
+            assert(hud_custom_element_scale_percent(element)==100);
+            assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
         }
-        std::string path;
-        set_bool(nullptr, hud_custom_stamina_fade_when_full_config_var(), true);
-        set_bool(nullptr, hud_custom_fierce_deity_fade_when_empty_config_var(), true);
-        set_int(nullptr,hud_custom_element_x_config_var(tears),123);
-        set_int(nullptr,hud_custom_element_y_config_var(tears),-45);
-        set_int(nullptr,hud_custom_element_scale_config_var(tears),175);
-        assert(export_custom_hud_settings(path) == HudSettingsIoResult::Ok);
-        assert(reset_custom_hud_settings() == HudSettingsIoResult::Ok);
-        assert(hud_custom_element_x(tears)==0 && hud_custom_element_y(tears)==0);
-        assert(hud_custom_element_scale_percent(tears)==100);
-        assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
-        assert(hud_auto_fade_enabled() == autoFade);
-        assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
-        assert(hud_custom_element_x(tears)==123 && hud_custom_element_y(tears)==-45);
-        assert(hud_custom_element_scale_percent(tears)==175);
-        assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
-        assert(hud_auto_fade_enabled() == autoFade);
-        // Old presets leave both independent gameplay fade settings intact.
-        { std::ofstream out(path); out << R"({"version":14,"elements":{}})"; }
-        assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
-        assert(hud_custom_element_x(tears)==0 && hud_custom_element_y(tears)==0);
-        assert(hud_custom_element_scale_percent(tears)==100);
-        assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
-        assert(hud_auto_fade_enabled() == autoFade);
-        // Legacy layout fade fields cannot override the relocated settings.
-        { std::ofstream out(path); out << R"({"version":14,"elements":{"stamina-bar":{"fadeWhenFull":false},"fierce-deity-bar":{"fadeWhenEmpty":false}}})"; }
-        assert(import_custom_hud_settings(path) == HudSettingsIoResult::Ok);
-        assert(hud_custom_element_x(tears)==0 && hud_custom_element_y(tears)==0);
-        assert(hud_custom_element_scale_percent(tears)==100);
-        assert(hud_custom_stamina_fade_when_full() && hud_custom_fierce_deity_fade_when_empty());
     }
 }

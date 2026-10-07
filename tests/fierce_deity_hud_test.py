@@ -36,6 +36,7 @@ float capacity=100;float maximum_gauge(){return capacity;}
 void* daAlink_getAlinkActorClass(){return player?&player:nullptr;}
 bool same_link(void* ptr){return ptr!=nullptr;}
 bool fierce_deity_enabled(){return setting;}
+bool freeTransform=false;bool dark_link_free_transform(){return freeTransform;}
 bool menu_or_pause_active(){return hidden;}
 // QUERY
 }
@@ -64,6 +65,8 @@ int main(){
     s_state.meter=25;
     assert(s_service.get_state(&owner,&state)==MOD_OK);
     assert(state.enabled&&state.visible&&!state.active&&state.percentage==25);
+    freeTransform=true;s_state.active=true;s_service.get_state(&owner,&state);
+    assert(state.enabled&&!state.visible&&state.active&&state.percentage==25);freeTransform=false;
     hidden=true;s_state.active=true;s_service.get_state(&owner,&state);
     assert(!state.visible&&state.active);hidden=false;
     setting=false;s_service.get_state(&owner,&state);assert(!state.enabled&&!state.visible);

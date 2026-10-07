@@ -72,6 +72,7 @@ struct {float meter=0;} s_state;
 float gauge_percentage(){return s_state.meter;}
 bool deityEnabled=true;
 bool fierce_deity_enabled(){return deityEnabled;}
+bool freeTransform=false;bool dark_link_free_transform(){return freeTransform;}
 bool same_link(daAlink_c* p){return p!=nullptr;}
 bool menu_or_pause_active(){return !visible;}
 bool stamina_meter_visible(){return true;}
@@ -97,6 +98,7 @@ int main(){
     draw_fierce_meter(&meter);assert(meterDraws==1);
     visible=false;draw_fierce_meter(&meter);assert(meterDraws==1);visible=true;
     deityEnabled=false;draw_fierce_meter(&meter);assert(meterDraws==1);deityEnabled=true;
+    freeTransform=true;draw_fierce_meter(&meter);assert(meterDraws==1);freeTransform=false;
     // Three seconds visible, one-second fade at different rendering rates.
     for(int fps:{20,30,60,144}) {
         shutdown_hud_fade();

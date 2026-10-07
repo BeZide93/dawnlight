@@ -47,6 +47,8 @@ int main(){
   s_state.active=false;paused=false;enabled=true;link.wolf=link.dead=link.sceneChange=false;
   damageArgs[4]=nullptr;damageArgs[1]=reinterpret_cast<void*>(1);
  }
+ freeTransform=true;damage(-1);assert(s_state.meter==0);
+ after_damage_check(nullptr,swordArgs,nullptr,nullptr);assert(s_state.meter==0);freeTransform=false;
  daAlink_c other;damageArgs[0]=&other;damage(-1);assert(s_state.meter==0);damageArgs[0]=&link;
  // Nested calls must not credit their damage again to the enclosing hook.
  before_received_damage(nullptr,damageArgs,nullptr,nullptr);

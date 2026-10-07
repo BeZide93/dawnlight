@@ -242,6 +242,62 @@ int main() {
     assert(s_state.meter==50&&gauge_percentage()==100);
     settings[static_cast<size_t>(DarkLinkSetting::Gauge)]=200;input(0);
     assert(s_state.meter==50&&gauge_percentage()==25);
+    // Free Transform supports every binding and the dedicated touch button
+    // with empty/partial charge. A new charged spin also toggles it back off.
+    settings[static_cast<size_t>(DarkLinkSetting::Depletion)]=5;
+    for(int mode=0;mode<6;++mode) for(float stored:{0.f,37.f}) {
+        binding=static_cast<FierceDeityActivation>(mode<5?mode:2);
+        fresh(link);freeTransform=true;s_state.meter=stored;
+        const auto toggle=[&] {
+            if(mode==0) {
+                link.mProcID=daAlink_c::PROC_CUT_TURN_CHARGE;update_spin_activation(&link);
+                link.mProcID=daAlink_c::PROC_CUT_TURN;link.cut=true;update_spin_activation(&link);
+                const bool active=s_state.active;
+                for(int i=0;i<5;++i)update_spin_activation(&link);
+                assert(s_state.active==active); // no repeat during the same spin
+            } else if(mode<3) {
+                const u32 button=mode==1?PAD_TRIGGER_Z:PAD_BUTTON_A;
+                input(0);input(PAD_TRIGGER_R|button,button);
+                const bool active=s_state.active;input(PAD_TRIGGER_R|button);
+                assert(s_state.active==active);
+            } else if(mode<5) {
+                JUTGamePad::mPadStatus[0].extButton=0;input(0);
+                JUTGamePad::mPadStatus[0].extButton=mode==3?PAD_BUTTON_LEFT_STICK:PAD_BUTTON_RIGHT_STICK;
+                input(0);const bool active=s_state.active;input(0);assert(s_state.active==active);
+            } else {directTouch=true;input(0);}
+        };
+        toggle();assert(s_state.active&&s_state.meter==stored);
+        s_state.lastDrainTime=Clock::now()-std::chrono::seconds(30);
+        update_drain(&link);assert(s_state.active&&s_state.meter==stored);
+        toggle();assert(!s_state.active&&s_state.meter==stored);
+        hit(link);assert(s_state.meter==stored); // hidden gauge does not fill
+        toggle();assert(s_state.active&&s_state.meter==stored);
+        freeTransform=false;
+        s_state.lastDrainTime=Clock::now()-std::chrono::milliseconds(200);
+        update_drain(&link);
+        if(stored==0)assert(!s_state.active&&s_state.meter==0);
+        else assert(s_state.active&&s_state.meter<stored&&s_state.meter>stored-1.5f);
+        deactivate(&link,false);
+        const float remaining=s_state.meter;
+        directTouch=true;input(0);assert(!s_state.active&&s_state.meter==remaining);
+    }
+    // Free mode bypasses charge only: menus/forms/events/feature gates remain.
+    for(int gate=0;gate<7;++gate) {
+        fresh(link);freeTransform=true;s_state.meter=0;
+        if(gate==0)paused=true;
+        if(gate==1)enabled=false;
+        if(gate==2)link.wolf=true;
+        if(gate==3)link.dead=true;
+        if(gate==4)link.event=true;
+        if(gate==5)link.sceneChange=true;
+        if(gate==6)link.riding=true;
+        directTouch=true;input(0);assert(!s_state.active&&!directTouch);
+        paused=false;enabled=true;link.wolf=link.dead=link.event=link.sceneChange=link.riding=false;
+        input(0);assert(!s_state.active); // no queued activation
+        directTouch=true;input(0);assert(s_state.active&&s_state.meter==0);
+        link.dead=true;update_drain(&link);assert(!s_state.active); // lifecycle still owns form
+        freeTransform=false;
+    }
     // Loading a slot without a meter blob starts empty and clears input ownership.
     s_state.meter=40; on_save_started(nullptr,0,nullptr); assert(s_state.meter==0 && !s_state.link);
     currentLink=nullptr; input(0); assert(!fierce_deity_input_consumed());

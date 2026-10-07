@@ -285,7 +285,7 @@ bool can_transform(daAlink_c* link) {
 void activate(daAlink_c* link) {
     if (!can_transform(link)) return;
     s_state.active = true;
-    s_state.meter = maximum_gauge();
+    if (!dark_link_free_transform()) s_state.meter = maximum_gauge();
     s_state.spinChargeArmed = false;
     s_state.lastDrainTime = Clock::now();
     s_state.visual = fierce_deity_visual();
@@ -398,7 +398,8 @@ bool service_model_swap(daAlink_c* link) {
 
 void update_spin_activation(daAlink_c* link) {
     if (fierce_deity_activation() != FierceDeityActivation::SpinAttack ||
-        menu_or_pause_active() || s_state.active || s_state.meter < maximum_gauge()) {
+        menu_or_pause_active() || !can_transform(link) ||
+        (!dark_link_free_transform() && (s_state.active || s_state.meter < maximum_gauge()))) {
         s_state.spinChargeArmed = false;
         return;
     }
@@ -413,7 +414,8 @@ void update_spin_activation(daAlink_c* link) {
     if (s_state.spinChargeArmed && link->mProcID == daAlink_c::PROC_CUT_TURN &&
         link->getCutAtFlg())
     {
-        activate(link);
+        if (s_state.active) deactivate(link, false);
+        else activate(link);
         return;
     }
 
@@ -461,7 +463,7 @@ HookAction before_fierce_game_combos(ModContext*, void*, void*, void*) {
         binding == FierceDeityActivation::R3 ? PAD_BUTTON_RIGHT_STICK : 0;
     if (directTouch || combo || (stickPressed & stick) != 0) {
         if (s_state.active) deactivate(link, false);
-        else if (s_state.meter >= maximum_gauge()) activate(link);
+        else if (dark_link_free_transform() || s_state.meter >= maximum_gauge()) activate(link);
         if (combo) s_state.consumedPartner |= partner;
         s_state.activationInputConsumed = true;
     }
@@ -521,7 +523,9 @@ void update_drain(daAlink_c* link) {
     }
 
     const Clock::time_point now = Clock::now();
-    if (menu_or_pause_active()) {
+    // Keep the drain clock current so leaving Free Transform cannot charge
+    // time spent in the free mode against the preserved gauge.
+    if (menu_or_pause_active() || dark_link_free_transform()) {
         s_state.lastDrainTime = now;
         return;
     }
@@ -629,7 +633,7 @@ void after_attack_power_check(ModContext*, void* args, void*, void*) {
 void after_damage_check(ModContext*, void* args, void*, void*) {
     auto* enemy = mods::arg<fopAc_ac_c*>(args, 0);
     auto* attack = mods::arg<dCcU_AtInfo*>(args, 1);
-    if (!fierce_deity_enabled() || s_state.active || enemy == nullptr || attack == nullptr ||
+    if (!fierce_deity_enabled() || dark_link_free_transform() || s_state.active || enemy == nullptr || attack == nullptr ||
         attack->mAttackPower == 0 ||
         !same_link(daAlink_getAlinkActorClass()) ||
         !is_sword_attack(attack) || attack->mpActor != s_state.link ||
@@ -645,7 +649,7 @@ HookAction before_received_damage(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
     // Compare pending health damage inside this call, before the meter applies
     // it later. Armor rupee costs, blocked hits and healing do not qualify.
-    const bool eligible = fierce_deity_enabled() && same_link(link) && !s_state.active &&
+    const bool eligible = fierce_deity_enabled() && !dark_link_free_transform() && same_link(link) && !s_state.active &&
         !menu_or_pause_active() && !link->checkWolf() && !link->checkDeadHP() &&
         !link->checkSceneChangeAreaStart() && mods::arg<int>(args, 1) > 0 &&
         mods::arg<int>(args, 4) == 0; // Ignore carried-over damage during scene initialization.
@@ -660,12 +664,12 @@ void after_received_damage(ModContext*, void* args, void*, void*) {
     // Nested damage calls own their gain, not their enclosing call's gain.
     if (!s_damageSamples.empty()) s_damageSamples.back().pendingLife += delta;
     if (sample.eligible && delta < 0.0f && same_link(sample.link) &&
-        fierce_deity_enabled() && !s_state.active)
+        fierce_deity_enabled() && !dark_link_free_transform() && !s_state.active)
         s_state.meter = std::min(maximum_gauge(), s_state.meter + dark_link_setting(DarkLinkSetting::DamageGain));
 }
 
 void draw_fierce_meter(dMeter2Draw_c* meter) {
-    if (!fierce_deity_enabled() || !same_link(daAlink_getAlinkActorClass()) ||
+    if (!fierce_deity_enabled() || dark_link_free_transform() || !same_link(daAlink_getAlinkActorClass()) ||
         menu_or_pause_active())
     {
         return;
@@ -768,7 +772,7 @@ DawnlightFierceDeityHudState fierce_deity_hud_state() {
     const bool hasPlayer = same_link(daAlink_getAlinkActorClass());
     const bool enabled = fierce_deity_enabled();
     return {sizeof(DawnlightFierceDeityHudState), enabled,
-        enabled && hasPlayer && !menu_or_pause_active(),
+        enabled && !dark_link_free_transform() && hasPlayer && !menu_or_pause_active(),
         hasPlayer && s_state.active, hasPlayer ? gauge_percentage() : 0.0f};
 }
 

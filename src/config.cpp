@@ -50,6 +50,7 @@ ConfigVarHandle s_bulletTime = 0; // Legacy boolean, read only for migration.
 ConfigVarHandle s_bulletTimeMode = 0;
 ConfigVarHandle s_flurryRush = 0;
 ConfigVarHandle s_fierceDeity = 0;
+ConfigVarHandle s_darkLinkFreeTransform = 0;
 ConfigVarHandle s_fierceDeityVisual = 0;
 ConfigVarHandle s_fierceDeityActivation = 0;
 std::array<ConfigVarHandle, kDarkLinkSettings.size()> s_darkLinkSettings{};
@@ -974,6 +975,7 @@ ModResult register_config(ModError* error) {
         register_int("bullet-time-mode", -1, s_bulletTimeMode) != MOD_OK ||
         register_bool("flurry-rush", false, s_flurryRush) != MOD_OK ||
         register_bool("fierce-deity", false, s_fierceDeity) != MOD_OK ||
+        register_bool("dark-link-free-transform", false, s_darkLinkFreeTransform) != MOD_OK ||
         register_int("fierce-deity-visual", 1, s_fierceDeityVisual) != MOD_OK ||
         register_int("fierce-deity-activation", 2, s_fierceDeityActivation) != MOD_OK ||
         register_bool("great-spin-projectile", true, s_greatSpinProjectile) != MOD_OK ||
@@ -1323,6 +1325,9 @@ bool flurry_rush_enabled() {
 bool fierce_deity_enabled() {
     return get_bool(s_fierceDeity, false);
 }
+
+bool dark_link_free_transform() { return get_bool(s_darkLinkFreeTransform, false); }
+ConfigVarHandle dark_link_free_transform_config_var() { return s_darkLinkFreeTransform; }
 
 FierceDeityVisual fierce_deity_visual() {
     return static_cast<FierceDeityVisual>(get_int(s_fierceDeityVisual, 1, 0, 4));

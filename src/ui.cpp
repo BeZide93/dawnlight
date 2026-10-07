@@ -1054,6 +1054,9 @@ ModResult build_dark_link_tab(ModContext* ctx, UiWindowHandle, UiElementHandle l
     {
         return MOD_ERROR;
     }
+    if (add_toggle(ctx, left, "Free Transform", dark_link_free_transform_config_var(),
+            "Hide the gauge and toggle Dark Link without charge or depletion. Keeps your stored charge while enabled.",
+            fierce_deity_visual_disabled) != MOD_OK) return MOD_ERROR;
     for (size_t i = 0; i < kDarkLinkSettings.size(); ++i) {
         const auto& setting = kDarkLinkSettings[i];
         if (add_number(ctx, left, setting.label, dark_link_setting_config_var(static_cast<DarkLinkSetting>(i)),

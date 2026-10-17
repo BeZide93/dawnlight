@@ -26,6 +26,8 @@ fixture=r'''
 #include "stamina_settings.hpp"
 #include "twilit_stamina.hpp"
 using namespace dawnlight;
+bool testSurvivors=false;
+bool survivors_active(){return testSurvivors;}
 namespace dawnlight { bool teActive=false;bool twilit_stamina_active(){return teActive;} }
 namespace dawnlight {
 bool teHumanSprint=false,teWolfSprint=false;
@@ -338,6 +340,19 @@ int main(){
     auto confirm=uiService.actions[1];confirm.on_pressed(nullptr,uiService.dialog,confirm.user_data);
     assert(s_modeUnlockDialog&&dawnlight_mode_enabled());
     assert(uiService.body.find("could not be adopted")!=std::string::npos);
+    // Survivors overrides win over persisted presets without modifying them.
+    reset();const auto beforeSurvivors=configService.values;testSurvivors=true;
+    assert(!dawnlight_mode_enabled()&&!progression_system_enabled());
+    int64_t effective=999;
+    for(auto var:{s_enemyHardMode,s_bossrushHardmodeHazards,s_bulletTimeMode,s_flurryRush,
+                 s_greatSpinProjectile,s_fierceDeity,s_dualWield,s_stamina,s_sprint}){
+        assert(mode_config_override(var,effective)&&effective==0);
+    }
+    assert(mode_config_override(s_healthScale,effective)&&effective==100);
+    assert(mode_config_override(s_rJump,effective)&&effective==1);
+    assert(configService.values==beforeSurvivors);
+    testSurvivors=false;assert(dawnlight_mode_enabled());
+
 }
 '''
 production=config[config.index('struct RegisteredSetting {'):config.index('bool s_importingSettings')]+'\n'

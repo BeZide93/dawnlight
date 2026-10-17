@@ -80,6 +80,7 @@ ModResult install_item_slot_hooks(ModError*) {
 }
 void update_cave_randomizer() {}
 void update_new_save_modes() { ++otherUpdates; }
+void update_survivors() {}
 void update_progression() {}
 void update_collection_dual_wield() {}
 void bullet_time_tick() {}

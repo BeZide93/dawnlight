@@ -30,6 +30,8 @@ fixture = r'''
 #include "stamina_settings.hpp"
 #include "twilit_stamina.hpp"
 using namespace dawnlight;
+bool testSurvivors=false;
+bool survivors_active(){return testSurvivors;}
 namespace dawnlight {bool teActive=false;bool twilit_stamina_active(){return teActive;}}
 namespace dawnlight {
 bool teHumanSprint=false,teWolfSprint=false;

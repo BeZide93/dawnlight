@@ -1,3 +1,4 @@
+#include "survivors.hpp"
 #include "touch_buttons.hpp"
 #include "config.hpp"
 #include "settings_snapshot.hpp"
@@ -1153,6 +1154,7 @@ ModResult register_config(ModError* error) {
 }
 
 bool dawnlight_mode_enabled() {
+    if (survivors_active()) return false;
     bool enabled = false;
     if (s_dawnlightMode) svc_config->get_bool(mod_ctx, s_dawnlightMode, &enabled);
     return enabled;
@@ -1165,6 +1167,7 @@ bool notifications_enabled() {
 }
 
 bool progression_system_enabled() {
+    if (survivors_active()) return false;
     bool enabled = false;
     if (s_progressionSystem) svc_config->get_bool(mod_ctx, s_progressionSystem, &enabled);
     return dawnlight_mode_enabled() || enabled;
@@ -1206,6 +1209,23 @@ ModeSetting mode_setting_for_config(ConfigVarHandle var) {
 bool mode_config_override(ConfigVarHandle var, int64_t& value) {
     const auto setting = mode_setting_for_config(var);
     if (setting == ModeSetting::None) return false;
+    if (survivors_active()) {
+        switch (setting) {
+        case ModeSetting::JumpHeight:
+        case ModeSetting::HealthScale:
+        case ModeSetting::SprintSpeed:
+        case ModeSetting::WolfSpeed: value = 100; return true;
+        case ModeSetting::Jump: value = 1; return true;
+        case ModeSetting::Progression: case ModeSetting::Sprint: case ModeSetting::WolfSprint:
+        case ModeSetting::FlurryRush: case ModeSetting::BulletTime: case ModeSetting::EnemyHardMode:
+        case ModeSetting::BossHardMode: case ModeSetting::ManualShielding: case ModeSetting::ArrowModes:
+        case ModeSetting::GreatSpin: case ModeSetting::NoNormalHitInvulnerability:
+        case ModeSetting::Glide: case ModeSetting::Gale: case ModeSetting::FierceDeity:
+        case ModeSetting::Stamina: case ModeSetting::DualWield: case ModeSetting::DisableAutoJump:
+            value = 0; return true;
+        default: return false;
+        }
+    }
     const bool dawnlight = dawnlight_mode_enabled();
     if (setting == ModeSetting::StaminaSettings) {
         if (!dawnlight) return false;
@@ -1273,6 +1293,7 @@ int health_scale_percent() {
 }
 
 bool automatic_ngplus_health_scaling() {
+    if (survivors_active()) return false;
     return get_bool(s_automaticHealthScale, true);
 }
 
@@ -1456,6 +1477,7 @@ ConfigVarHandle boss_rush_config_var() { return s_bossRushEnabled; }
 ConfigVarHandle clear_timer_config_var() { return s_clearTimer; }
 
 bool cave_randomizer_enabled() {
+    if (survivors_active()) return false;
     return get_bool(s_caveRandomizer, false);
 }
 

@@ -78,6 +78,8 @@ constexpr s8 kBossRushReturnRoom=0, kBossRushReturnLayer=0;
 constexpr s8 kBossRushDarknutAreaRoom=51, kBossRushDarknutAreaLayer=0;
 constexpr s8 kCaveOfOrdealsRoom=0, kCaveOfOrdealsLayer=-1, kIntroSkipRoom=0;
 bool active=true, resetting=false;
+bool survivors=false;
+bool survivors_arena_active(){return survivors;}
 bool sHubArrivalWarpPending=false, sBossRushArrivalReady=true;
 int state=3, bossIndex=0, stay=0;
 unsigned restartParam=0;
@@ -201,6 +203,11 @@ int main() {
         on_bossrush_area_actor_name_post(nullptr,nullptr,&actor,nullptr);
         assert(actor==nullptr);
     }
+    // The new mode reuses room admission without requiring Boss Rush state.
+    active=false;survivors=true;
+    assert(is_bossrush_darknut_area_active());
+    survivors=false;assert(!is_bossrush_darknut_area_active());
+    active=true;
     // Fairy exits on every tenth floor, including alternate fountain choices.
     for (int floor : {9,19,29,39,49}) {
         for (const char* spring : {"F_SP108","F_SP115","F_SP116","F_SP113"}) {

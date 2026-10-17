@@ -1,3 +1,4 @@
+#include "survivors.hpp"
 #include "config.hpp"
 #include "enemy_spawner.hpp"
 #include "heroes_shade_encounter.hpp"
@@ -712,8 +713,8 @@ bool is_bossrush_hub_active() {
 }
 
 bool is_bossrush_darknut_area_active() {
-    return is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
-           is_bossrush_darknut_area_stage();
+    return survivors_arena_active() || (is_boss_rush() && boss_rush_state() == kBossRushStateHub &&
+           is_bossrush_darknut_area_stage());
 }
 
 // Supply the cleared-room state before native actors are created. This also
@@ -3681,7 +3682,7 @@ dFile_select_c* name_scene_file_select(void* nameScene) {
 }
 
 void apply_selected_new_save_mode() {
-    if (is_bossrush_game_mode_active()) {
+    if (survivors_active() || is_bossrush_game_mode_active()) {
         return;
     }
 

@@ -19,6 +19,7 @@ controls, and a Boss Rush mode. Dawnlight is a mod for
 | [Arrow Modes](docs/features/arrow-modes.md) | Normal arrows, fire arrows and triple shots, switched while aiming. |
 | [Hard Mode](docs/features/hard-mode.md) | Enemy and boss behavior changes, HP/damage scaling and optional invulnerability changes. |
 | [Boss Rush](docs/features/boss-rush.md) | Game-mode toggle, Garden of Twilight hub, boss portals, complete runs, saved Clear Timers and custom hub music. |
+| [Hyrule Survivors](docs/features/hyrule-survivors.md) | Separate survival mode with automatic weapons, purchasable item chests, experience, random upgrades and ten-minute arena runs. |
 | [Controls & HUD](docs/features/controls-and-hud.md) | Third item slot, Android touch buttons, HUD presets/editor and custom model support. |
 
 Each guide covers the relevant settings, controls and details. Intro Skip and

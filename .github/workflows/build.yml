@@ -46,6 +46,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Test Hyrule Survivors rules and lifecycle
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror tests/survivors_rules_test.cpp -o /tmp/survivors-rules-test
+          /tmp/survivors-rules-test
+          python3 tests/survivors_lifecycle_test.py
+          python3 tests/survivors_ranged_test.py
+          python3 tests/survivors_treasure_test.py
+          python3 tests/survivors_loot_test.py
+          python3 tests/survivors_loot_resources_test.py
+
       - name: Test Boss Rush clear timers
         if: matrix.platform == 'linux-x86_64'
         run: |
@@ -215,6 +226,14 @@ jobs:
                    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28)
           fi
           cmake -B build "${args[@]}"
+
+      - name: Test Survivors combat and native combo selection
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/survivors_combat_test.py dusklight
+
+      - name: Test Survivors HUD native vertex layout
+        if: matrix.platform == 'linux-x86_64'
+        run: python3 tests/survivors_hud_test.py dusklight
 
       - name: Test native item-ring combine input ownership
         if: matrix.platform == 'linux-x86_64'

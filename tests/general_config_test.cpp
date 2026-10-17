@@ -12,6 +12,7 @@ ModContext* mod_ctx = nullptr;
 const ConfigService* svc_config = nullptr;
 const UiService* svc_ui = nullptr;
 namespace dawnlight {
+bool survivors_active() { return false; }
 bool g_configCheckForUpdatesEnabled = false;
 // Touch UI registration is outside this config/UI binding test.
 ModResult register_touch_button_config(ModError*) { return MOD_OK; }

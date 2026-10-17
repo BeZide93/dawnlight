@@ -1,3 +1,4 @@
+#include "survivors.hpp"
 #include "touch_buttons.hpp"
 #include "bow_modes.hpp"
 #include "bullet_time.hpp"
@@ -145,6 +146,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (const ModResult result = dawnlight::register_new_save_modes(error); result != MOD_OK) {
         return result;
     }
+    if (const ModResult result = dawnlight::initialize_survivors(error); result != MOD_OK) {
+        return result;
+    }
     if (const ModResult result = dawnlight::initialize_epona_spurs_hud(error); result != MOD_OK) {
         return result;
     }
@@ -198,6 +202,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
     }
     dawnlight::update_cave_randomizer();
     dawnlight::update_new_save_modes();
+    dawnlight::update_survivors();
     dawnlight::update_progression();
     dawnlight::update_collection_dual_wield();
     dawnlight::bullet_time_tick();
@@ -209,6 +214,7 @@ MOD_EXPORT ModResult mod_update(ModError* error) {
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
     s_itemSlotHooksInstalled = false;
+    dawnlight::shutdown_survivors();
     dawnlight::shutdown_cave_randomizer();
     dawnlight::shutdown_collection_dual_wield();
     dawnlight::shutdown_dual_wield();

@@ -22,6 +22,7 @@
 #include "d/d_menu_item_explain.h"
 #include "d/d_pane_class.h"
 #include "d/d_msg_object.h"
+#include "f_pc/f_pc_profile_lst.h"
 #include "JSystem/J2DGraph/J2DPane.h"
 #include "JSystem/J2DGraph/J2DScreen.h"
 #include "JSystem/J2DGraph/J2DPicture.h"
@@ -276,9 +277,8 @@ bool hd_item_slot_active() {
 }
 
 bool dawnlight_combine_active() {
-    // Keep the same provider ownership rules as Z Items, including missing
-    // feature settings and a failed provider lookup. Each provider owns its
-    // controller mapping and Touch-L; Dawnlight must not interpret either.
+    // Our custom dispatcher must not take over another provider's slots.
+    // This does not prove that provider replaces the native combine input.
     return z_slot_provider_notice() == nullptr;
 }
 
@@ -291,6 +291,40 @@ bool select_dawnlight_z_slot() {
 
 bool z_item_slot_active() {
     return s_zItemSlotSessionEnabled;
+}
+
+bool external_ring_combine_active() {
+    void* address = nullptr;
+    if (svc_hook == nullptr || svc_hook->resolve == nullptr ||
+        svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) != MOD_OK ||
+        address == nullptr) {
+        // An unknown slot owner is not evidence of a replacement combine path.
+        return false;
+    }
+    const auto getVar = reinterpret_cast<ZSlotGetConfigVarFn>(address);
+    if (z_slot_provider_enabled(getVar,
+            "mod.org_twilight_hd__hud.enabled", "mod.org_twilight_hd__hud.third-item-slot")) {
+        // HD HUD leaves the ring to hosts that supply native companion slots.
+        // Match DualScreenHost::owns_item_slots(), not whether its HUD is visible.
+        void* slotTrigger = nullptr;
+        void* slotHold = nullptr;
+        const bool nativeSlots =
+            svc_hook->resolve(mod_ctx, "dusk::companion::slotTriggerBits", &slotTrigger, nullptr) == MOD_OK &&
+            slotTrigger != nullptr &&
+            svc_hook->resolve(mod_ctx, "dusk::companion::slotHoldBits", &slotHold, nullptr) == MOD_OK &&
+            slotHold != nullptr;
+        if (!nativeSlots) return true;
+    }
+    if (z_slot_provider_enabled(getVar, "mod.com_dusklight_twilit__essentials.enabled",
+            "mod.com_dusklight_twilit__essentials.customZButtonEnabled")) {
+        // TE's init_z_button returns before installing its ring hooks on Lazy
+        // Tweaks. Match both its current CVar marker and legacy actor-size probe.
+        const bool nativeZ = getVar("game.zItemScale") != nullptr ||
+            static_cast<size_t>(g_profile_ALINK.base.base.process_size) ==
+                sizeof(daAlink_c) + sizeof(daPy_anmHeap_c);
+        if (!nativeZ) return true;
+    }
+    return false;
 }
 
 bool dawnlight_touch_ui_active() {
@@ -3339,7 +3373,7 @@ void after_meter_map_draw(ModContext*, void* args, void*, void*) {
 
 HookAction before_ring_native_combine(ModContext*, void*, void*, void*) {
     s_ringNativeRPressed = 0;
-    if (!dawnlight_combine_active()) {
+    if (external_ring_combine_active()) {
         // External providers have already handled their own L/Z inputs. The
         // original setActiveCursor still accepts R for X/Y combinations, even
         // when Dawnlight's dispatcher is disabled. Mask only that native read.

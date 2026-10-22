@@ -1775,6 +1775,9 @@ ModResult initialize_survivors(ModError* error) {
     POST(SurvivorsConcurrentHit, after_player_contact);
     PRE(SurvivorsProcess, before_enemy_attack_process);
     POST(SurvivorsEnemyArrow, after_enemy_attack_spawn);
+    // Post callbacks run in registration order. Boss aim/volley setup needs
+    // the child's ownership and attack budget established by the two above.
+    POST(SurvivorsEnemyArrow, after_boss_child_spawn);
     PRE(SurvivorsBokoblinHit, before_enemy_hit); POST(SurvivorsBokoblinHit, after_enemy_hit);
     PRE(SurvivorsBokoblinTargets, before_bokoblin_targets);
     PRE(SurvivorsRatRecovery, before_rat_recovery);

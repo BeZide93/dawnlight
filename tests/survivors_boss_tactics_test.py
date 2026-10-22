@@ -4,6 +4,10 @@ import os,re,subprocess,tempfile
 root=Path(__file__).resolve().parents[1]
 state=(root/'src/survivors_boss_tactics_state.inc').read_text()
 source=(root/'src/survivors_boss_tactics.inc').read_text()
+registration=(root/'src/survivors.cpp').read_text()
+registration=registration[registration.index('ModResult initialize_survivors('):registration.index('void shutdown_survivors()')]
+registration=registration.replace('#include "survivors_roster_hooks.inc"',(root/'src/survivors_roster_hooks.inc').read_text())
+spawn_posts=re.findall(r'POST\(SurvivorsEnemyArrow,\s*(\w+)\);',registration)
 profiles=sorted(set(re.findall(r'fpcNm_\w+_e',source+state)))
 fixture=r'''
 #include <algorithm>
@@ -92,8 +96,21 @@ unsigned spawns=0;std::vector<unsigned> spawnTicks;ActorId nextSpawnId=kNone;
 ActorId fopAcM_createChild(int,ActorId,u32,const cXyz*,int,const csXyz*,const cXyz*,int,void*){++spawns;spawnTicks.push_back(s_run.ticks);return nextSpawnId;}
 void summon_ghost_riders(Native*,const Enemy&){}
 void encounter_animation(Morph* m,const char*,int,int){m->frame=0;}
+// Boundary stubs for the tracking/budget stages; dispatch their real production
+// registration order, then execute the actual boss callback and flight code.
+void after_enemy_arrow(ModContext*,void* args,void* result,void*){
+ const ActorId id=*static_cast<ActorId*>(result);
+ if(id!=kNone)s_enemyArrows[0]={id,mods::arg<ActorId>(args,1),false,false};
+}
+void after_enemy_attack_spawn(ModContext*,void* args,void* result,void*){
+ const ActorId id=*static_cast<ActorId*>(result);if(!active_enemy_arrow(id))return;
+ auto& cycle=s_enemyHitSources[mods::arg<ActorId>(args,1)].cycle;cycle.observe(1,1,1);
+ s_enemyHitSources[id].projectile=cycle.current();
+}
 '''
 source='void clear_zelda_light_orbs(ActorId){}\n'+source
+source+='\nvoid dispatch_child_spawn(void* args,ActorId* id){\n'+''.join(
+    f'{callback}(nullptr,args,id,nullptr);\n' for callback in spawn_posts)+'}\n'
 main=r'''
 void reset(){s_enemies={};s_enemyArrows={};s_bossTactics.clear();actors.clear();s_enemyHitSources.clear();s_run={};
  player={};player.id=100;floorValid=pathValid=playing=arena=true;blocked=false;probes=spawns=0;spawnTicks.clear();nextSpawnId=kNone;}
@@ -189,9 +206,11 @@ int main(){
   auto& volleyState=s_bossTactics[owner.id];volleyState.sequence=volley-1;
   const cXyz origin=skull.mMouthPos,aim=target+cXyz(0,60,0);
   const csXyz wrongPose(0x2000,0x1000,0);
-  s_enemyArrows[0]={10,owner.id,false,false};ActorId originalId=10;
+  ActorId originalId=10;
   std::any fireArgs[]={s16(fpcNm_B_DS_e),owner.id,u32(type),&origin,0,&wrongPose};
-  after_boss_child_spawn(nullptr,fireArgs,&originalId,nullptr);
+  dispatch_child_spawn(fireArgs,&originalId);
+  assert(volleyState.queuedShots==2 && volleyState.sequence==unsigned(volley));
+  assert((s_bossTactics[10].target-aim).abs()==0 && volleyState.volley);
   player.current.pos={5000,2000,-5000}; // Committed projectiles do not home.
   volleyState.target=player.current.pos; // Other boss phases may update their own target.
   for(int lane=0;lane<3;++lane) {

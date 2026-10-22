@@ -79,6 +79,13 @@ native entry/animation setup. State is cleared on actor deletion, missing-child
 cleanup, run reset and restart. Skipped Execute calls do not advance post-Execute
 tactics or initialize projectiles.
 
+Child-spawn post hooks register ownership first, attack budgets second, and boss
+aim/volley setup last. The dispatcher runs equal-priority callbacks in registration
+order. Running boss setup before ownership skipped it entirely, leaving Stallord's
+fireballs with a horizontal default heading. The Stallord regression now dispatches
+the callbacks in the order extracted from production registration, starting with
+an untracked child, before checking all three shots across directions and heights.
+
 The deterministic native fixtures cover the inactivity clock, pause/damage reset,
 failed geometry retries, spawn suppression/resumption, stagger immunity, accepted
 contact timing, major-attack reservations, two-hit/guard boundaries, committed

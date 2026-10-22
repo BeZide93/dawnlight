@@ -58,7 +58,6 @@
     PRE(BossGNDCharge,before_boss_gnd_charge);
     POST(BossYMBAction,after_boss_ymb_move);
 
-    POST(SurvivorsEnemyArrow,after_boss_child_spawn);
     POST(BossTNThrow,after_boss_sword_throw);
     PRE(SurvivorsEnemyArrow,before_boss_rider_arrow);
     PRE(SurvivorsEnemySpeed,before_boss_path);

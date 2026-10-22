@@ -70,7 +70,7 @@ void initialize_extended_enemy(Enemy& enemy,fopAc_ac_c* actor) {
     }
     // Dedicated bosses may exceed the ordinary elite baseline (Stallord's head
     // arrives at 20 minutes, when a single upgraded critical can exceed 120 HP).
-    actor->health=actor->field_0x560=s16(s_run.enemy_health(native.hp,enemy.elite,s_map,enemy.eliteSlot==int(timed_elite_count-1)));
+    actor->health=actor->field_0x560=s16(s_run.spawn_enemy_health(native.hp,enemy.elite,s_map,enemy.eliteSlot));
     // Only these doubled elites omit actor scale in their native model matrix.
     if (enemy.elite && (enemy.profile==fpcNm_E_TT_e || enemy.profile==fpcNm_E_GI_e ||
         enemy.profile==fpcNm_E_FS_e || enemy.profile==fpcNm_E_BU_e ||

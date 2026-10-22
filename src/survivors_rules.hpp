@@ -649,6 +649,13 @@ struct Run {
             std::max(120*scale,32*factor) : std::clamp(base,1u,32767u)*factor;
         return unsigned(std::min(32767.0,std::floor(double(hp)*std::clamp(options.enemy_hp,1u,10u)*endless_factor()/scale+.5)));
     }
+    // Only the four scheduled encounter slots get the boss HP multiplier.
+    // Guards and ordinary actors of the same species keep their existing HP.
+    unsigned spawn_enemy_health(unsigned base, bool elite, unsigned map, int eliteSlot) const {
+        const bool timedBoss=elite && eliteSlot>=0 && unsigned(eliteSlot)<timed_elite_count;
+        const unsigned hp=enemy_health(base,elite,map,timedBoss && unsigned(eliteSlot)==timed_elite_count-1);
+        return timedBoss ? std::min(32767u,hp*2) : hp;
+    }
     // Fixed population ceiling; time and Horde difficulty only affect spawn cadence/batches.
     unsigned target_population() const { return 345u; }
     unsigned spawn_batch() const { return options.horde * (horde_remaining ? 3 : 1); }

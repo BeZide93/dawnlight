@@ -130,6 +130,14 @@ int main(){
   actor->health=maximum-1;initialize_enemy(&e,actor);
   assert(actor->health==maximum-1&&actor->field_0x560==maximum);
  }
+ // The ordinary actor path must double timed boss HP exactly once.
+ for(int slot=0;slot<4;++slot) {
+  s_run.ticks=(slot+1)*elite_interval;Enemy timed;timed.profile=fpcNm_E_OC_e;timed.elite=true;timed.eliteSlot=slot;
+  initialize_enemy(&timed,&bok);
+  const int maximum=std::min(32767u,2*s_run.enemy_health(native_roster[0].hp,true,s_map,slot==3));
+  assert(bok.health==maximum&&bok.field_0x560==maximum);
+  --bok.health;initialize_enemy(&timed,&bok);assert(bok.health==maximum-1&&bok.field_0x560==maximum);
+ }
  // Untouched waiting guards remain relevant on discovery, then stop growing
  // on damage or activation. Repeated updates never compound HP or heal wounds.
  s_run.ticks=0;Enemy guard;guard.profile=fpcNm_E_OC_e;guard.elite=guard.dormant=true;

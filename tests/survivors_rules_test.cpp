@@ -24,6 +24,18 @@ int main() {
         hp.options.enemy_hp=1;hp.ticks=~0u;
         assert(hp.enemy_health(8,false,map)==normalEnd[map]);
     }
+    // All timed slots, map curves, difficulty and Endless; never multiply guards.
+    for(unsigned map=0;map<5;++map)for(bool endless:{false,true})for(unsigned difficulty:{1u,10u}) {
+        hp.start(1);hp.endless=endless;hp.options.enemy_hp=difficulty;
+        for(int slot=0;slot<4;++slot) {
+            hp.ticks=(slot+1)*elite_interval+(endless?duration:0);
+            const auto baseline=hp.enemy_health(8,true,map,slot==3);
+            assert(hp.spawn_enemy_health(8,true,map,slot)==std::min(32767u,baseline*2));
+            assert(hp.spawn_enemy_health(8,false,map,slot)==hp.enemy_health(8,false,map));
+        }
+        for(int slot:{-1,4,5,6,7})assert(hp.spawn_enemy_health(8,true,map,slot)==hp.enemy_health(8,true,map));
+    }
+    hp.start(1);
     hp.ticks=1800;hp.options.enemy_hp=3;assert(hp.enemy_health(8,false,1)==26);
     hp.ticks=duration;hp.options.enemy_hp=10;assert(hp.enemy_health(~0u,false)==32767);
     hp.start(1);hp.phase=Phase::Upgrade;for(unsigned i=0;i<1800;++i)hp.tick(true);

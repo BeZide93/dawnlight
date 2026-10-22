@@ -2,7 +2,10 @@
 
 The combat director applies to run-owned bosses and promoted elites on every
 map, including Endless. It changes movement, attack selection, readiness,
-projectile patterns and recovery; it does not increase damage or HP. Native
+projectile patterns and recovery. A subsequent balance change doubles the HP of
+all four timed bosses, including final bosses and Endless respawns, after the
+existing map/time/difficulty calculation (native cap: 32,767). Stationary guards
+and ordinary enemies keep their previous HP; damage is unchanged. Native
 animations, effects and collision remain in use. Dormant map guards stay dormant
 and awakened guards use single-action versions of the ordinary elite combos.
 
@@ -96,4 +99,4 @@ cues and weapon reach, all maps' cliffs/slopes/ceilings, rider-before-dive timin
 teleport/structural-child visuals, simultaneous bosses in Endless, and late-wave
 frame cost. No claim of device-tested balance or platform loader success is made
 by the native fixture tests. Tune timings only after these checks; preserve the
-unchanged HP/damage, readable tells, safe relocation and finite summon budgets.
+documented HP budgets, unchanged damage, readable tells, safe relocation and finite summon budgets.

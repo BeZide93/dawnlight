@@ -7,7 +7,9 @@ KI-Adapter sowie die nativen Dusklight-Aktoren, SDK-Revision
 Die nativen Tabellen bleiben als Ausgangsbasis erhalten. Die zusätzlichen
 Angriffsfolgen, Projektile, Spawnpause und 10-s-Rücksetzung aus PR #148 stehen im
 [aktuellen Boss-Taktik-Referenzblatt](hyrule-survivors-boss-tactics.md). Diese
-Änderungen erhöhen weder Schaden noch HP.
+Taktikänderungen erhöhen den Schaden nicht. Ein nachfolgender Balance-Patch
+verdoppelt die HP aller vier zeitgesteuerten Bosse einschließlich Finalboss und
+Endless-Wiederholungen; stationäre Wächter behalten ihre bisherigen HP.
 
 ## Zeiten und Schadenseinheiten
 

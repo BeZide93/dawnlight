@@ -1,7 +1,7 @@
 #pragma once
 #include "mods/svc/ui.h"
 #include <cstddef>
-struct fopAc_ac_c;
+class fopAc_ac_c;
 namespace dawnlight::enemy_hud {
 ModResult initialize();
 ModResult build(UiElementHandle pane);

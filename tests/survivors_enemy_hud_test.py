@@ -63,7 +63,7 @@ struct cXyz {float x=0,y=0,z=0;cXyz()=default;cXyz(float a,float b,float c):x(a)
  cXyz operator+(cXyz b)const{return{x+b.x,y+b.y,z+b.z};}cXyz operator-(cXyz b)const{return{x-b.x,y-b.y,z-b.z};}
  cXyz operator*(float n)const{return{x*n,y*n,z*n};}float abs()const{return std::sqrt(x*x+y*y+z*z);}};
 constexpr unsigned fopAcStts_NODRAW_e=1,fopAcCnd_NODRAW_e=1;
-struct fopAc_ac_c {unsigned id=1,actor_status=0,actor_condition=0;int health=100,field_0x560=100;
+class fopAc_ac_c {public: unsigned id=1,actor_status=0,actor_condition=0;int health=100,field_0x560=100;
  struct{cXyz pos{200,100,10};}current;struct{cXyz position{200,155,10};}attention_info;cXyz eyePos{200,155,10};};
 unsigned fopAcM_GetID(const fopAc_ac_c* actor){return actor->id;}
 fopAc_ac_c player;

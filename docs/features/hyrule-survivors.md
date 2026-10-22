@@ -55,6 +55,19 @@ native scene exits are disabled during runs. The hub retains its usable exit doo
 Enemy and chest placement reject other rooms and paths across these barriers.
 If collision is not ready, combat does not begin. Story mode and Boss Rush retain their own rules.
 
+On every arena, falling more than 500 units below the last safe position checks
+for dry, valid ground beneath Link before triggering recovery. Tall cliff jumps
+can land naturally on lower floors; missing ground, void/exit floor codes, water
+and floors in another room still trigger recovery. Each fall recovery during a run costs one heart on every map. The Palace returns
+Link to its entrance; other arenas return to the last safe position. Normal
+landings, loading recovery and room-boundary corrections do not incur this cost.
+Recovery checkpoints require dry ground under Link and the four corners of a
+40-unit half-width footprint, so lingering edge contact cannot move the checkpoint
+onto a hole. Every recovery uses the native position setter, clears collision push,
+horizontal/vertical speed and fall history, cancels active attacks/jump abilities,
+returns Link to idle and refreshes ground collision. Native void-restart events
+are suppressed while custom recovery owns the running arena on every map.
+
 ## Run
 
 Call Midna during a run on any arena, including the throne room, using the usual

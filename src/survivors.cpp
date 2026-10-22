@@ -549,8 +549,8 @@ void detach_pot_attacks();
 #include "survivors_enemy_archives.inc"
 #include "survivors_boss_ring.inc"
 void retire_enemies() {
-    retire_boss_ring();
     release_enemy_archives();
+    retire_boss_ring();
     clear_zelda_light_orbs();
     retire_pots(); retire_pickups(); retire_enemy_arrows();
     clear_enemy_effects();

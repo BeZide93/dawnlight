@@ -10,7 +10,7 @@ def function(text, signature):
         if not depth:return text[start:end+1]
     raise AssertionError(signature)
 native=function((sdk/'src/d/actor/d_a_obj_gb.cpp').read_text(),'static int daObj_Gb_Execute(')
-shared=(root/'src/ganondorf_barrier.hpp').read_text().replace('#pragma once','').replace('#include "d/actor/d_a_obj_gb.h"','')
+shared=(root/'src/ganondorf_barrier.hpp').read_text().replace('#pragma once','').replace('#include "d/actor/d_a_obj_gb.h"','').replace('#include "m_Do/m_Do_ext.h"','')
 production=(root/'src/survivors_boss_ring.inc').read_text()
 core=(root/'src/survivors.cpp').read_text()
 assert 'if(id==s_bossRing.id)return process_boss_ring(actor,args,result);' in function(core,'HookAction before_process(')

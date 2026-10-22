@@ -88,14 +88,14 @@ struct Body{Morph* morph;};Body extended_body(fopAc_ac_c* a,int){return {&static
 Enemy* encounter_owner(fopAc_ac_c* a){return tracked(a->id);}
 bool structural_enemy_child(s16 p){return p==fpcNm_E_TH_BALL_e;}
 bool s_spawningEnemyArrows=false;
-unsigned spawns=0;std::vector<unsigned> spawnTicks;
-ActorId fopAcM_createChild(int,ActorId,u32,const cXyz*,int,const csXyz*,const cXyz*,int,void*){++spawns;spawnTicks.push_back(s_run.ticks);return kNone;}
+unsigned spawns=0;std::vector<unsigned> spawnTicks;ActorId nextSpawnId=kNone;
+ActorId fopAcM_createChild(int,ActorId,u32,const cXyz*,int,const csXyz*,const cXyz*,int,void*){++spawns;spawnTicks.push_back(s_run.ticks);return nextSpawnId;}
 void summon_ghost_riders(Native*,const Enemy&){}
 void encounter_animation(Morph* m,const char*,int,int){m->frame=0;}
 '''
 main=r'''
 void reset(){s_enemies={};s_enemyArrows={};s_bossTactics.clear();actors.clear();s_enemyHitSources.clear();s_run={};
- player={};player.id=100;floorValid=pathValid=playing=arena=true;blocked=false;probes=spawns=0;spawnTicks.clear();}
+ player={};player.id=100;floorValid=pathValid=playing=arena=true;blocked=false;probes=spawns=0;spawnTicks.clear();nextSpawnId=kNone;}
 Enemy& own(Native& a,int profile,int slot=0){a.profile=profile;actors[a.id]=&a;auto& e=s_enemies[a.id-1];e.id=a.id;e.profile=profile;e.eliteSlot=slot;return e;}
 int main(){
  reset();Native boss;auto& e=own(boss,fpcNm_B_TN_e);
@@ -177,6 +177,71 @@ int main(){
  // Salves delay side shots 9 ticks and stop during retirement (caller contract).
  reset();Native head;auto& he=own(head,fpcNm_B_DS_e);auto& ht=s_bossTactics[he.id];ht.queuedShots=2;ht.shotDelay=9;
  for(unsigned i=0;i<=18;++i){s_run.ticks=i;boss_queue_shots(he,&head);}assert(spawns==2&&spawnTicks[0]==9&&spawnTicks[1]==18);
+ // Stallord: stale head pose must not determine flight, including every third
+ // fan. Native create() initializes mode 2 before the first process Execute.
+ // Model executeBullet's Y*X rotation of (0,0,speedF), then native posMove.
+ for(int type:{Native::TYPE_BULLET_B,Native::TYPE_BULLET_C})
+ for(int volley=1;volley<=3;++volley)
+ for(cXyz target:{cXyz(900,0,1200),cXyz(-900,700,1200),cXyz(900,-300,-1200),cXyz(-900,0,-1200)}) {
+  reset();Native skull;auto& owner=own(skull,fpcNm_B_DS_e);
+  skull.mMouthPos={100,400,50};player.current.pos=target;
+  auto& volleyState=s_bossTactics[owner.id];volleyState.sequence=volley-1;
+  const cXyz origin=skull.mMouthPos,aim=target+cXyz(0,60,0);
+  const csXyz wrongPose(0x2000,0x1000,0);
+  s_enemyArrows[0]={10,owner.id,false,false};ActorId originalId=10;
+  std::any fireArgs[]={s16(fpcNm_B_DS_e),owner.id,u32(type),&origin,0,&wrongPose};
+  after_boss_child_spawn(nullptr,fireArgs,&originalId,nullptr);
+  player.current.pos={5000,2000,-5000}; // Committed projectiles do not home.
+  volleyState.target=player.current.pos; // Other boss phases may update their own target.
+  for(int lane=0;lane<3;++lane) {
+   Native bullet;bullet.id=10+lane;bullet.profile=fpcNm_B_DS_e;bullet.arg0=type;
+   bullet.mMode=2;bullet.speedF=100;bullet.current.angle=wrongPose;
+   bullet.current.pos=skull.mMouthPos;
+   if(lane) {
+    skull.mMouthPos+=cXyz(70,20,-50);bullet.current.pos=skull.mMouthPos;
+    s_enemyArrows[lane]={bullet.id,owner.id,false,false};
+    nextSpawnId=bullet.id;volleyState.shotDelay=0;boss_queue_shots(owner,&skull);
+   }
+   auto& flight=s_bossTactics[bullet.id];
+   update_boss_projectile(&bullet,false);
+   assert(flight.projectileReady && bullet.speedF==125);
+   const cXyz d=aim-bullet.current.pos;
+   s16 yaw=cM_atan2s(d.x,d.z);
+   cXyz expected=aim;
+   if(volley==3) {
+    assert(s16(bullet.current.angle.y-yaw)==s16((lane-1)*0x1000));
+    assert(bullet.current.angle.x==-cM_atan2s(d.y,d.absXZ()));
+   } else {
+    if(lane)expected+=cXyz(cM_scos(yaw)*(lane==1?-180.f:180.f),0,-cM_ssin(yaw)*(lane==1?-180.f:180.f));
+   }
+   const csXyz fixed=bullet.current.angle;
+   const cXyz before=bullet.current.pos;
+   for(int tick=0;tick<4;++tick) {
+    const float horizontal=cM_scos(bullet.current.angle.x)*bullet.speedF;
+    bullet.speed={cM_ssin(bullet.current.angle.y)*horizontal,-cM_ssin(bullet.current.angle.x)*bullet.speedF,cM_scos(bullet.current.angle.y)*horizontal};
+    bullet.current.pos+=bullet.speed;
+    update_boss_projectile(&bullet,true);update_boss_projectile(&bullet,false);
+    assert(bullet.current.angle.x==fixed.x && bullet.current.angle.y==fixed.y);
+   }
+   if(volley!=3) {
+    const cXyz delta=expected-before;
+    assert((bullet.speed-delta*(125.f/delta.abs())).abs()<.1f);
+    assert((expected-bullet.current.pos).abs()<(expected-before).abs());
+   }
+  }
+ }
+ // Native/unowned bullets must retain their own movement.
+ reset();Native unrelated;unrelated.profile=fpcNm_B_DS_e;unrelated.arg0=Native::TYPE_BULLET_C;
+ unrelated.mMode=2;unrelated.speedF=100;unrelated.current.angle={123,456,789};
+ update_boss_projectile(&unrelated,false);assert(unrelated.speedF==100&&unrelated.current.angle.y==456);
+ // Deferred native initialization: don't disturb mode 1, commit on its exit.
+ reset();Native waitingHead,waitingBullet;own(waitingHead,fpcNm_B_DS_e);
+ waitingBullet.id=10;waitingBullet.profile=fpcNm_B_DS_e;waitingBullet.arg0=Native::TYPE_BULLET_C;
+ s_enemyArrows[0]={10,waitingHead.id,false,false};
+ auto& pending=s_bossTactics[10];pending.targetLocked=true;pending.target={1000,0,0};
+ waitingBullet.mMode=1;update_boss_projectile(&waitingBullet,false);assert(!pending.projectileReady);
+ waitingBullet.mMode=2;update_boss_projectile(&waitingBullet,true);
+ assert(pending.projectileReady&&waitingBullet.current.angle.y==0x4000&&waitingBullet.speedF==125);
  // Zelda's fixed ten-way selector is 40/30/30; triangle placement does not follow Link.
  reset();Native zelda;auto& ze=own(zelda,fpcNm_E_HZELDA_e);int counts[4]{};
  for(unsigned i=0;i<10;++i){s_run.roll=i;zelda.mAction=1;zelda.mMode=0;s_bossTactics[ze.id].motionMode=0;boss_after_patterns(ze,&zelda);++counts[zelda.mAction];}

@@ -16,7 +16,7 @@ struct BossTactics {
     unsigned queuedShots=0, shotDelay=0, shotIndex=0;
     u32 shotParams=0;
     csXyz shotAngle{};
-    cXyz shotPosition{};
+    cXyz shotPosition{}, shotTarget{};
     EnemyAttackUsePtr volley;
     cXyz target{}, origin{}, direction{};
     s16 yaw=0;

@@ -223,6 +223,11 @@ void after_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
 }
 
 bool s_bossExtraShot=false;
+csXyz boss_fireball_angle(const cXyz& position,const cXyz& target) {
+    const cXyz d=target-position;
+    // Native B/C bullets rotate +Z by Y then X: positive pitch points down.
+    return csXyz(-cM_atan2s(d.y,d.absXZ()),cM_atan2s(d.x,d.z),0);
+}
 void after_boss_child_spawn(ModContext*,void* args,void* result,void*) {
     const ActorId id=*static_cast<ActorId*>(result);
     if(id==kNone||!active_enemy_arrow(id))return;
@@ -254,8 +259,9 @@ void after_boss_child_spawn(ModContext*,void* args,void* result,void*) {
     }
     if(profile==fpcNm_B_DS_e) {
         t.queuedShots=2;t.shotDelay=9;t.shotIndex=0;++t.sequence;
-        t.target=shot.target;t.shotPosition=*mods::arg<const cXyz*>(args,3);
-        t.shotParams=mods::arg<u32>(args,2);if(angle)t.shotAngle=*angle;
+        t.shotTarget=shot.target;t.shotPosition=*mods::arg<const cXyz*>(args,3);
+        t.shotParams=mods::arg<u32>(args,2);
+        t.shotAngle=shot.shotAngle=boss_fireball_angle(t.shotPosition,t.shotTarget);
         if(t.sequence%3==0) {shot.shotAngle.y-=0x1000;shot.targetLocked=false;}
         t.volley=s_enemyHitSources[owner->id].cycle.current();
     } else if(owner->profile==fpcNm_E_RD_e && owner->arrowVolley%2==0) {
@@ -269,9 +275,10 @@ void boss_queue_shots(Enemy& e,fopAc_ac_c* actor) {
     if(t.shotDelay){--t.shotDelay;return;}
     ++t.shotIndex;--t.queuedShots;t.shotDelay=8;
     const bool head=e.profile==fpcNm_B_DS_e;
-    csXyz angle=t.shotAngle;
-    if(head)angle.y+=t.sequence%3==0?s16((int(t.shotIndex)-1)*0x1000):s16(t.shotIndex==1?-0x600:0x600);
     cXyz pos=head?static_cast<daB_DS_c*>(actor)->mMouthPos:actor->current.pos+cXyz(0,130,0);
+    csXyz angle=head?boss_fireball_angle(pos,t.shotTarget):t.shotAngle;
+    const s16 centerYaw=angle.y;
+    if(head&&t.sequence%3==0)angle.y+=s16((int(t.shotIndex)-1)*0x1000);
     s_bossExtraShot=true;
     const bool oldSpread=s_spawningEnemyArrows;s_spawningEnemyArrows=true;
     const ActorId id=fopAcM_createChild(head?fpcNm_B_DS_e:fpcNm_E_ARROW_e,e.id,t.shotParams,
@@ -279,8 +286,8 @@ void boss_queue_shots(Enemy& e,fopAc_ac_c* actor) {
     s_spawningEnemyArrows=oldSpread;s_bossExtraShot=false;
     if(id!=kNone&&head) {
         auto& child=s_bossTactics[id];child.shotAngle=angle;
-        child.target=t.target+cXyz(cM_scos(angle.y)*(t.shotIndex==1?-180.f:180.f),0,
-                                   -cM_ssin(angle.y)*(t.shotIndex==1?-180.f:180.f));
+        child.target=t.shotTarget+cXyz(cM_scos(centerYaw)*(t.shotIndex==1?-180.f:180.f),0,
+                                   -cM_ssin(centerYaw)*(t.shotIndex==1?-180.f:180.f));
         child.targetLocked=t.sequence%3!=0;
     }
     if(id!=kNone && t.volley)s_enemyHitSources[id].projectile=t.volley;
@@ -299,9 +306,12 @@ void update_boss_projectile(fopAc_ac_c* actor,bool after) {
         }
     } else if(profile==fpcNm_B_DS_e) {
         auto* a=static_cast<daB_DS_c*>(actor);
-        if(after&&!t.projectileReady&&a->mMode==2) {
-            if(t.targetLocked){const cXyz d=t.target-actor->current.pos;actor->current.angle.y=cM_atan2s(d.x,d.z);actor->current.angle.x=-cM_atan2s(d.y,d.absXZ());}
-            else actor->current.angle=t.shotAngle;
+        if((a->arg0==daB_DS_c::TYPE_BULLET_B||a->arg0==daB_DS_c::TYPE_BULLET_C)&&
+           !t.projectileReady&&a->mMode==2) {
+            // Create executes the native initialization inline. Aim before the
+            // first mode-2 movement, not after it has flown along the head pose.
+            // The post pass also handles a deferred mode-1 -> mode-2 transition.
+            actor->current.angle=t.targetLocked?boss_fireball_angle(actor->current.pos,t.target):t.shotAngle;
             actor->speedF=125.f;t.projectileReady=true;
         }
     } else if(profile==fpcNm_E_TH_BALL_e) {

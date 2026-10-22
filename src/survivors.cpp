@@ -27,6 +27,7 @@
 #include "survivors_items.hpp"
 #include "survivors_maps.hpp"
 #include "survivors_barriers.hpp"
+#include "ganondorf_barrier.hpp"
 #include "survivors_locomotion.hpp"
 #include "dual_wield_animation.hpp"
 #include "enemy_spawner.hpp"
@@ -546,7 +547,9 @@ void retire_pots();
 void cleanup_pots();
 void detach_pot_attacks();
 #include "survivors_enemy_archives.inc"
+#include "survivors_boss_ring.inc"
 void retire_enemies() {
+    retire_boss_ring();
     release_enemy_archives();
     clear_zelda_light_orbs();
     retire_pots(); retire_pickups(); retire_enemy_arrows();
@@ -554,6 +557,7 @@ void retire_enemies() {
     for (auto& e : s_enemies) if (e.id != kNone) e.retiring = true;
 }
 void cleanup_enemies() {
+    cleanup_boss_ring();
     cleanup_enemy_arrows();
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
@@ -1265,6 +1269,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     if (!process || !is_actor_process(process)) return HOOK_CONTINUE;
     auto* actor = static_cast<fopAc_ac_c*>(process);
     const auto id = fopAcM_GetID(actor);
+    if(id==s_bossRing.id)return process_boss_ring(actor,args,result);
     auto* enemy = tracked(id);
     auto* pot = tracked_pot(id);
     auto* pickup = tracked_pickup(id);
@@ -1684,6 +1689,7 @@ void update_survivors() {
     update_survivors_integrity(s_run.modded);
     update_enemy_archives();
     cleanup_enemies();
+    update_boss_ring();
     cleanup_pots(); cleanup_pickups();
     if (s_treasure.retiring) retire_treasure_actor();
     if (!s_active || !s_gameStarted) return;

@@ -11,6 +11,23 @@ and awakened guards use single-action versions of the ordinary elite combos.
 
 ## Encounter flow and recovery
 
+Every live scheduled boss starts the native Ganondorf light-wall circle around
+Link's grounded position, using the same actor, resources and 1,500-unit radius
+as the Boss Rush hub. Awakened stationary elites join the same encounter; dormant
+guards do not start it. The ring stays fixed while Link moves. Concurrent bosses
+share one circle, which disappears when the final active boss dies or retires.
+The native moving-background wall supplies collision. No room/save switch writes
+are needed in Survivors; Boss Rush retains its own existing switch behavior.
+
+Pause/upgrade/chest menus keep the ring and pause its animation. End, defeat,
+restart and scene departure retire it through native Delete. Pending creation
+IDs stay tracked until they can be deleted; failed spawns retry at most once per
+30 active updates. A distant awakened boss outside the ring rejoins through the
+existing checked relocation path with one-second outgoing-damage grace; recovery
+positions stay inside the circle. Native geometry on uneven/narrow maps still
+needs device validation.
+
+
 - Ordinary wave spawning stops while any scheduled boss is alive or still being
   created, or while an awakened stationary elite is alive. Existing enemies stay.
   Dormant guards do not stop waves. Boss summons remain part of their attack;

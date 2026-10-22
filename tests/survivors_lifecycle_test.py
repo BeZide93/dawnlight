@@ -83,6 +83,7 @@ unsigned s_meleeCooldown=0; bool s_wavePending=false;
 unsigned s_map=0,s_requestedMap=0;
 const Arena& arena(){return arenas[s_map];}
 void clear_arena_geometry(){}
+void retire_boss_ring(){}void cleanup_boss_ring(){}
 void reset_midna_dialog(){}
 void reset_elite_encounters(){}
 void reset_gale_charges(){}

@@ -103,11 +103,17 @@ void update_boss_watchdogs(daAlink_c* link) {
         auto& t=s_bossTactics[e.id];
         if(t.grace)--t.grace;
         if(t.recovery)--t.recovery;
+        // A remotely awakened guard or a boss escaping the native wall must
+        // rejoin this arena. Reuse the bounded, collision-checked recovery.
+        if(!inside_boss_ring(actor->current.pos)) {
+            t.watchdog.health=actor->health;t.watchdog.quiet=300;
+        }
         if(!t.watchdog.tick(actor->health))continue;
         for(unsigned attempt=0;attempt<12;++attempt) {
             const s16 yaw=s16(s_run.next_random());
             const float radius=600.f+float(s_run.next_random()%450);
             cXyz ground=link->current.pos+cXyz(cM_ssin(yaw)*radius,0,cM_scos(yaw)*radius);
+            if(!inside_boss_ring(ground,150.f))continue;
             if(!walkable_spawn_path(link->current.pos,ground,100.f)||!elite_floor_position(ground))continue;
             bool occupied=false;
             for(const auto& other:s_enemies)if(other.id!=e.id&&boss_tactics_owned(other))

@@ -35,6 +35,8 @@ using process_method_func=int(*)(void*);
 int execute(void*){return 1;} int destroy(void*){return 1;} int create(void*){return 1;}
 struct process_method_class {process_method_func execute_method=execute,delete_method=destroy;} methods;
 struct fopAc_ac_c {ActorId id;void* sub_method=&methods;bool actor=true;};
+struct{ActorId id=kNone;}s_bossRing;
+HookAction process_boss_ring(fopAc_ac_c*,void*,void*){return HOOK_CONTINUE;}
 struct daE_OC_c:fopAc_ac_c {int mMoveRange=0,field_0x6e3=0;int getActionMode(){return 0;}void setActionMode(int,int){}};
 constexpr int fpcNm_E_OC_e=42;
 bool is_actor_process(void* p){return static_cast<fopAc_ac_c*>(p)->actor;}

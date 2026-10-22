@@ -39,7 +39,8 @@ struct fopAc_ac_c;
 struct cCcD_Obj{fopAc_ac_c* actor=nullptr;bool at=false;cXyz center;float radius=0;
  auto* GetAc(){return actor;}void OffAtSetBit(){at=false;}void OnAtSetBit(){at=true;}void SetC(cXyz p){center=p;}void SetR(float r){radius=r;}};
 struct Morph{float frame=0,rate=1;float getFrame(){return frame;}void setPlaySpeed(float r){rate=r;}};
-bool floorValid=true,pathValid=true,blocked=false;unsigned probes=0;
+bool floorValid=true,pathValid=true,blocked=false,ringActive=false;unsigned probes=0;
+bool inside_boss_ring(const cXyz& p,float margin=0.f){return !ringActive||p.absXZ()<=1500.f-margin;}
 struct BG{bool LineCross(void*){return blocked;}}bg;BG& dComIfG_Bgsp(){return bg;}
 struct Acch{fopAc_ac_c* actor=nullptr;auto* getMyAc(){return actor;}void OnLineCheck(){}void CrrPos(BG&){}bool ChkGroundHit(){return true;}};
 using dBgS_Acch=Acch;
@@ -126,7 +127,7 @@ source+='\nvoid dispatch_child_spawn(void* args,ActorId* id){\n'+''.join(
     f'{callback}(nullptr,args,id,nullptr);\n' for callback in spawn_posts)+'}\n'
 main=r'''
 void reset(){s_enemies={};s_enemyArrows={};s_bossTactics.clear();actors.clear();s_enemyHitSources.clear();s_run={};
- std::destroy_at(&player);std::construct_at(&player);player.id=100;floorValid=pathValid=playing=arena=true;blocked=false;probes=spawns=0;spawnTicks.clear();nextSpawnId=kNone;}
+ std::destroy_at(&player);std::construct_at(&player);player.id=100;floorValid=pathValid=playing=arena=true;blocked=ringActive=false;probes=spawns=0;spawnTicks.clear();nextSpawnId=kNone;}
 Enemy& own(Native& a,int profile,int slot=0){a.profile=profile;actors[a.id]=&a;auto& e=s_enemies[a.id-1];e.id=a.id;e.profile=profile;e.eliteSlot=slot;return e;}
 int main(){
  reset();Native boss;auto& e=own(boss,fpcNm_B_TN_e);
@@ -191,6 +192,11 @@ int main(){
   if(gate==6)excluded.stagger=1;
   before_boss_tactics(excluded,&beast);assert(beast.current.pos.z==-550);
   if(gate!=6)assert(beast.mAction==2&&beast.speedF==20);
+ }
+ // A distant awakened guard joins the ring immediately through safe recovery.
+ {reset();Native guard;auto& boss=own(guard,fpcNm_E_SF_e);guard.current.pos={3000,0,0};
+  ringActive=true;update_boss_watchdogs(&player);
+  assert(inside_boss_ring(guard.current.pos,150)&&s_bossTactics[boss.id].grace==30);
  }
  // Ordinary two-hit combo boundaries and shorter single-action guard variant.
  reset();Native bok;auto& bo=own(bok,fpcNm_E_OC_e);bok.mActionMode=4;bok.mOcState=1;

@@ -27,7 +27,7 @@ struct Morf{float rate=1;void setPlaySpeed(float v){rate=v;}};
 struct Native:fopAc_ac_c {
  Morf morf;Morf* mpModelMorf=&morf;
  fopAc_ac_c& enemy=*this;
- enum{ACTION_OPACI_CHASE_e=15,ACTION_OPACI_FLY_e=12,ACTION_WAIT_e=2,ACT_CHANGEDEMO=8};
+ enum{ACTION_OPACI_CHASE_e=15,ACTION_OPACI_FLY_e=12,ACTION_WAIT_e=2,ACTION_ATTACK_e=3,ACT_CHANGEDEMO=8};
  int mAction=0,mMode=0,mDemoMode=0,mNoDraw=1,mDemoCamMode=0,mNoDrawTimer=0,mActionMode=0,mMoveMode=0,mGakeChkType=0;
  int field_0x1e08=0,field_0x1e0a=0,field_0xc44[10]{},field_0xc7d=0,field_0x2740=0,field_0x3969=0;bool mDrawHorse=true;
  cXyz field_0x2710,field_0x69c;int mTimers[4]{},field_0x5dc=0;float mPlayerDist=0; s16 mPlayerAngleY=0;
@@ -81,6 +81,15 @@ ActorId childOwner=kNone;unsigned childParams=0,childCreates=0;
 ActorId fopAcM_createChild(int,ActorId parent,u32 param,const cXyz*,int,const csXyz*,const cXyz*,s8,void*){
  childOwner=parent;childParams=param;++childCreates;return 88;}
 '''
+fixture+=r'''
+struct Tactics{unsigned pattern=0,summons=0,recovery=0;int pzStage=0;ActorId summoner=kNone;};
+std::map<ActorId,Tactics>s_bossTactics;
+bool boss_attack_paused(const Enemy&){return false;}
+bool boss_major_ready(Enemy&,unsigned){return true;}
+bool boss_pz_minion(Enemy&,int){return true;}
+cXyz boss_lead_target(float){return player.current.pos;}
+s16 boss_target_yaw(fopAc_ac_c*,const cXyz&){return 0;}
+'''
 main=r'''
 int main(){
  player.current.pos={100,500,200};Native boss;boss.profile=fpcNm_E_PZ_e;
@@ -112,9 +121,9 @@ int main(){
  owner.encounterReady=false;before_boss_ymb(nullptr,args,nullptr,nullptr);
  assert(boss.mAction==2&&boss.field_0x6d8==255&&boss.field_0x764==1&&boss.field_0x6d0+550==600);
  boss.mAction=2;boss.mMode=3;before_boss_ymb(nullptr,args,nullptr,nullptr);assert(boss.mAction==2&&boss.mMode==3);
- // A distant chase reaches magic after four active seconds, without resetting attacks.
+ // A distant chase reaches magic after 2.5 active seconds, without resetting attacks.
  boss.mAction=15;boss.mMode=12;owner.encounterTick=0;distanceToPlayer=1000;
- for(int i=0;i<119;++i)before_boss_va(nullptr,args,nullptr,nullptr);
+ for(int i=0;i<74;++i)before_boss_va(nullptr,args,nullptr,nullptr);
  assert(boss.mAction==15);before_boss_va(nullptr,args,nullptr,nullptr);
  assert(boss.mAction==12&&boss.mMode==10&&owner.encounterTick==0);
  boss.mMode=12;before_boss_va(nullptr,args,nullptr,nullptr);assert(boss.mMode==12);
@@ -127,8 +136,9 @@ int main(){
  boss.mAction=1;before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==1);
  // Ganondorf's distant trigger and independent eight-second summons.
  boss.mActionMode=10;owner.specialCooldown=0;owner.summonCooldown=0;distanceToPlayer=1000;
- before_boss_gnd_execute(nullptr,args,&result,nullptr);assert(boss.mActionMode==11&&boss.mMoveMode==10&&summons==1&&owner.summonCooldown==240);
- boss.mMoveMode=12;before_boss_gnd_execute(nullptr,args,&result,nullptr);assert(boss.mMoveMode==12&&summons==1);
+ before_boss_gnd_execute(nullptr,args,&result,nullptr);assert(boss.mActionMode==11&&boss.mMoveMode==10&&summons==0&&owner.summonCooldown==0);
+ boss.mActionMode=10;owner.specialCooldown=150;before_boss_gnd_execute(nullptr,args,&result,nullptr);assert(summons==1&&owner.summonCooldown==240);
+ boss.mActionMode=11;boss.mMoveMode=12;before_boss_gnd_execute(nullptr,args,&result,nullptr);assert(boss.mMoveMode==12&&summons==1);
  s_run.phase=Phase::Upgrade;boss.mActionMode=10;owner.summonCooldown=0;
  before_boss_gnd_execute(nullptr,args,&result,nullptr);assert(boss.mActionMode==10&&summons==1);s_run.phase=Phase::Running;
  // Zelda attack clocks and animations run at an absolute 2x, without compounding.
@@ -141,8 +151,8 @@ int main(){
  // Native teleport selection receives only valid points; no empty point table.
  owner.encounterReady=false;before_boss_pz(nullptr,args,nullptr,nullptr);assert(boss.mPointNum==9);
  floorValid=false;before_boss_pz(nullptr,args,nullptr,nullptr);assert(boss.mPointNum==1);floorValid=true;
- boss.mMoveMode=2;boss.field_0x7d8=5;after_boss_pz_attack(nullptr,args,nullptr,nullptr);assert(boss.field_0x7d8==5);
- boss.field_0x7d8=2;after_boss_pz_attack(nullptr,args,nullptr,nullptr);assert(boss.field_0x7d8==0);
+ s_bossTactics[owner.id].pattern=1;boss.mMoveMode=2;boss.field_0x7d8=5;after_boss_pz_attack(nullptr,args,nullptr,nullptr);assert(boss.field_0x7d8==5);
+ s_bossTactics[owner.id].pattern=6;s_bossTactics[owner.id].pzStage=1;boss.field_0x7d8=2;after_boss_pz_attack(nullptr,args,nullptr,nullptr);assert(boss.field_0x7d8==3);
  // Portal minions are tracked ordinary enemies and respect pause/full/floor gates.
  owner.profile=fpcNm_E_PZ_e;children[20]={owner.id,false};cXyz pos{1,1500,2};ActorId id=0;
  std::any summon[]={s16(fpcNm_E_YK_e),ActorId(20),u32(0),static_cast<const cXyz*>(&pos)};

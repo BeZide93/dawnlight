@@ -23,6 +23,7 @@ fixture = r'''
 #include <array>
 #include <cassert>
 #include <vector>
+#include <unordered_map>
 #include "actor_slot_index.hpp"
 using dawnlight::ActorSlotIndex;
 using ActorId=unsigned;
@@ -52,7 +53,7 @@ bool arena=false,paused=false,s_victory=false;
 bool in_arena(){return arena;}
 ActorId s_player=99;
 enum class Phase {Running};struct {Phase phase=Phase::Running;} s_run;
-struct Frame {void* args;ActorId id;};std::vector<Frame>s_processFrames;
+struct Frame {void* args;ActorId id;bool executed=false;};std::vector<Frame>s_processFrames;
 unsigned retained=0,meshes=0,moves=0,engages=0;
 void retain_treasure_actor(fopAc_ac_c*,void*){++retained;}
 void collect_arena_mesh(fopAc_ac_c*){++meshes;}
@@ -64,6 +65,10 @@ void engage_enemy(fopAc_ac_c*,Enemy&){++engages;}
 void track_enemy_facing(fopAc_ac_c*){}
 bool extended_enemy(int){return false;}bool update_extended_enemy(fopAc_ac_c*,Enemy&){return true;}
 void advance_elite_cooldowns(fopAc_ac_c*,Enemy&){}
+struct BossState{struct{void tick(){}}stagger;};std::unordered_map<ActorId,BossState>s_bossTactics;
+bool boss_tactics_owned(const Enemy&){return false;}
+void before_boss_tactics(Enemy&,fopAc_ac_c*){}
+void update_boss_projectile(fopAc_ac_c*,bool){}
 '''
 
 cases = r'''
@@ -84,10 +89,11 @@ int main(){
         assert(tracked(7)&&!tracked(7)->initialized);
         args[0]=process_method_func(execute);
         before_process(nullptr,args,&result,nullptr);
-        assert(tracked(7)->initialized);
+        assert(tracked(7)->initialized&&s_processFrames.back().executed);
         // Retirement must still freeze Execute after leaving the arena.
         tracked(7)->retiring=true;
         assert(before_process(nullptr,args,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==1);
+        assert(!s_processFrames.back().executed);
         args[0]=process_method_func(destroy);
         before_process(nullptr,args,&result,nullptr);
         assert(!tracked(7)&&s_enemies[slot].id==kNone);

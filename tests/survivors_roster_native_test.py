@@ -121,6 +121,10 @@ unsigned armorCreates=0;ActorId createdArmor=kNone;int armorArgument=0;ActorId a
 template<class Angle>ActorId fopAcM_createChild(int,ActorId parent,unsigned params,cXyz*,int room,Angle*,cXyz*,int argument,void*){
  ++armorCreates;assert(params==0&&room==7);armorArgument=argument;armorParent=parent;return createdArmor;}
 '''
+fixture+=r'''
+bool boss_accept_stagger(Enemy&){return true;}
+void boss_received_damage(Enemy&,int){}
+'''
 main=r'''
 int main(){
  for(int phase:{0,1,2,3}){

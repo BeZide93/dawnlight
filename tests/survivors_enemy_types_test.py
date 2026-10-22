@@ -61,6 +61,7 @@ int create_standalone_actor(ProfileName p,const ActorSpawnParams& params,ActorId
 float cM_ssin(s16 a){return std::sin(a*3.14159265f/32768);}float cM_scos(s16 a){return std::cos(a*3.14159265f/32768);}
 bool dryPath=true,lootFloor=true;bool loot_floor_position(cXyz& p){if(!lootFloor)return false;p.y=30;return true;}
 bool walkable_spawn_path(cXyz,cXyz& p,float){if(dryPath)p.y=30;return dryPath;}
+std::map<ActorId,int>s_bossTactics;
 std::map<ActorId,fopAc_ac_c*>actors;std::set<ActorId>creating,deleted;
 fopAc_ac_c* actor_by_id(ActorId id){auto it=actors.find(id);return it==actors.end()?nullptr:it->second;}
 bool fpcM_IsCreating(ActorId id){return creating.contains(id);}

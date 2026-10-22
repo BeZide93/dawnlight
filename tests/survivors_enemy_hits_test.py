@@ -57,6 +57,7 @@ fixture += r'''
 bool native_boss_profile(int p){return p==fpcNm_B_TN_e||p==fpcNm_E_PZ_e||p==fpcNm_B_GND_e;}
 bool structural_enemy_child(int p){return p==fpcNm_E_MM_MT_e||p==fpcNm_E_TH_BALL_e||p==fpcNm_E_RDY_e;}
 '''
+fixture += '\nvoid boss_record_contact(cCcD_Obj*){}\n'
 main = r'''
 fopAc_ac_c boss,other,projectileA,projectileB;
 cCcD_Obj target,secondTarget,weapon,secondWeapon;

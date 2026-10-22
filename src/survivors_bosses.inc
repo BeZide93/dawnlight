@@ -61,8 +61,8 @@ HookAction before_boss_th(ModContext*,void* args,void*,void*) {
             e->mBallID=fopAcM_createChild(fpcNm_E_TH_BALL_e,owner->id,0,&e->current.pos,fopAcM_GetRoomNo(e),&e->shape_angle,nullptr,-1,nullptr);
         return HOOK_SKIP_ORIGINAL;
     }
-    if(e->mAction==2&&e->mMode==3&&e->field_0x5dc>80&&e->mPlayerDist>200) {
-        e->mMode=4;e->mTimers[0]=40; // no corridor-only flank requirement for a throw
+    if(e->mAction==2&&e->mMode==3&&e->field_0x5dc>45&&e->mPlayerDist>200) {
+        e->mMode=4;e->mTimers[0]=18; // no corridor-only flank requirement for a throw
     }
     return HOOK_CONTINUE; // native ball spin, throw and retrieval
 }
@@ -92,7 +92,7 @@ HookAction before_boss_gnd_execute(ModContext*,void* args,void* result,void*) {
         if(!owner->specialCooldown&&e->mActionMode==10&&fopAcM_searchPlayerDistance(e)>550.f) {
             e->mActionMode=11;e->mMoveMode=10; // Charge hook starts the shared cooldown.
         }
-        if(!owner->summonCooldown) {
+        if(!owner->summonCooldown && e->mActionMode==10 && !boss_attack_paused(*owner) && boss_major_ready(*owner,120)) {
             summon_ghost_riders(e,*owner);owner->summonCooldown=240;
         }
     }
@@ -111,7 +111,7 @@ HookAction before_boss_va(ModContext*,void* args,void*,void*) {
     // A distant player must not prevent the magic phase indefinitely. Only
     // transition out of chase; an active sword/magic animation is never reset.
     if(encounter_running(*owner)&&e->mAction==daE_VA_c::ACTION_OPACI_CHASE_e&&e->mMode==12&&
-       ++owner->encounterTick>=120&&fopAcM_searchPlayerDistance(e)>600.f)
+       ++owner->encounterTick>=75&&fopAcM_searchPlayerDistance(e)>600.f)
         e->setActionMode(daE_VA_c::ACTION_OPACI_FLY_e,0);
     // Fly modes 0..4 and chase modes 0..11 orbit the old world origin.
     // Keep native chase/strike and the complete two-projectile attack instead.
@@ -137,7 +137,7 @@ HookAction before_boss_ymb(ModContext*,void* args,void*,void*) {
     }
     if(e->mAction==0||e->mAction>=5)e->setActionMode(1,0);
     e->field_0x70c=0;
-    if(e->mAction==1&&encounter_running(*owner))e->setActionMode(2,0);
+    if(e->mAction==1&&encounter_running(*owner)&&!boss_attack_paused(*owner)&&boss_major_ready(*owner,170))e->setActionMode(2,0);
     return HOOK_CONTINUE; // retain the native telegraph, charge and recovery
 }
 HookAction before_boss_hzelda(ModContext*,void* args,void*,void*) {
@@ -172,6 +172,9 @@ HookAction before_boss_pz(ModContext*,void* args,void*,void*) {
         e->attention_info.flags=fopAc_AttnFlag_BATTLE_e;
         e->setActionMode(daE_PZ_c::ACTION_WAIT_e,0);owner->encounterReady=true;
     }
+    if(e->mActionMode==daE_PZ_c::ACTION_ATTACK_e&&e->mMoveMode==0&&!boss_major_ready(*owner,100)) {
+        e->setActionMode(daE_PZ_c::ACTION_WAIT_e,0);s_bossTactics[owner->id].recovery=15;
+    }
     if(e->mActionMode==daE_PZ_c::ACTION_WAIT_e&&e->mMoveMode==0&&e->field_0x7d3==0) {
         // Native teleport animation/selection, supplied with reachable map points.
         e->mPointNum=1;e->mPointPos[0]=e->current.pos;e->field_0x780[0]=1;
@@ -190,7 +193,21 @@ void after_boss_pz_attack(ModContext*,void* args,void*,void*) {
     if(!owner)return;
     // Keep native portals and volleys. Summon the two native minion types
     // supported by this map's roster, avoiding dungeon-only Baba seed scripts.
-    if(e->mMoveMode==2&&e->field_0x7d8!=5&&e->field_0x7d8!=3)e->field_0x7d8=0;
+    if(e->mMoveMode==1) {
+        auto& t=s_bossTactics[owner->id];
+        if(t.pzStage!=1) {
+            const bool summon=t.pattern++%3==2;
+            e->setBck(summon?0xB:0xA,0,3.f,1.f);
+            t.summons=0;t.pzStage=1;
+        }
+    } else if(e->mMoveMode==2) {
+        auto& t=s_bossTactics[owner->id];
+        if(t.pzStage!=2) {
+            if((t.pattern-1)%3==2)e->field_0x7d8=((t.pattern/3)%2)?0:3;
+            else e->field_0x7d8=5;
+            t.pzStage=2;
+        }
+    } else s_bossTactics[owner->id].pzStage=0;
     e->current.angle.y=fopAcM_searchPlayerAngleY(e);
 }
 
@@ -204,22 +221,29 @@ HookAction before_boss_summon(ModContext*,void* args,void* result,void*) {
     const auto profile=mods::arg<s16>(args,0);
     if(!owner||(profile!=fpcNm_E_YK_e&&profile!=fpcNm_E_S1_e))return HOOK_CONTINUE;
     *static_cast<ActorId*>(result)=kNone;
-    if(owner->retiring||owner->credited||s_run.phase!=Phase::Running)return HOOK_SKIP_ORIGINAL;
+    if(owner->retiring||owner->credited||s_run.phase!=Phase::Running||!boss_pz_minion(*owner,profile))return HOOK_SKIP_ORIGINAL;
     auto slot=std::find_if(s_enemies.begin(),s_enemies.end(),[](const auto& e){return e.id==kNone;});
     if(slot==s_enemies.end())return HOOK_SKIP_ORIGINAL;
     const auto type=profile==fpcNm_E_YK_e?Species::ShadowKeese:Species::ShadowBeast;
     cXyz pos=*mods::arg<const cXyz*>(args,3);
     if(!dry_arena_floor(pos,500,2000))return HOOK_SKIP_ORIGINAL;
     if(type==Species::ShadowKeese)pos.y+=180;
-    if(create_enemy_at(pos,0,unsigned(type),false))*static_cast<ActorId*>(result)=slot->id;
+    if(create_enemy_at(pos,0,unsigned(type),false)){*static_cast<ActorId*>(result)=slot->id;s_bossTactics[slot->id].summoner=owner->id;++s_bossTactics[owner->id].summons;}
     return HOOK_SKIP_ORIGINAL;
 }
 HookAction before_boss_pz_bullet(ModContext*,void* args,void* result,void*) {
     if(!boss_script_scope())return HOOK_CONTINUE;
     auto* owner=phantom_child_owner(s_bossScopes.back().id);
     if(!owner||mods::arg<s16>(args,0)!=fpcNm_E_PZ_e||(mods::arg<u32>(args,1)&0xff)!=40)return HOOK_CONTINUE;
+    const auto* sourceAngle=mods::arg<const csXyz*>(args,4);
+    csXyz angle=sourceAngle?*sourceAngle:csXyz{};
+    if(auto* portal=actor_by_id(s_bossScopes.back().id)) {
+        const s16 offset=s16(angle.y-fopAcM_searchPlayerAngleY(portal));
+        const bool narrow=s_bossTactics[owner->id].pattern%3==1;
+        angle.y=boss_target_yaw(portal,boss_lead_target(12.f))+s16(narrow?offset/2:offset);
+    }
     *static_cast<ActorId*>(result)=fopAcM_createChild(fpcNm_E_PZ_e,owner->id,mods::arg<u32>(args,1),
-        mods::arg<const cXyz*>(args,2),mods::arg<int>(args,3),mods::arg<const csXyz*>(args,4),
+        mods::arg<const cXyz*>(args,2),mods::arg<int>(args,3),&angle,
         mods::arg<const cXyz*>(args,5),mods::arg<s8>(args,6),nullptr);
     return HOOK_SKIP_ORIGINAL;
 }

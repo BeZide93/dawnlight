@@ -318,13 +318,20 @@ do not inherit those two generic factors. Explicit damage overrides are Darknut
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
 King Bulblin can spin every six seconds at a safe chase boundary. Darknut repeats
 his sword throw every 3 active seconds outside melee range in either phase.
-Death Sword can enter ranged combat after four seconds of distant pursuit;
+Death Sword can enter ranged combat after 2.5 seconds of distant pursuit;
 Stallord can start breath out to 6,000 units without Link's damage-protection gate.
 Bloat can attack immediately while retaining its telegraph. Ganondorf charges
 from distant WAIT with a shared five-second cooldown and summons five native
 ghost riders every eight active seconds. Summons/riders retire with their boss;
 all owned children pause and clean up with the run. Full native baselines and
 current overrides: [boss attack reference](hyrule-survivors-boss-attacks.md).
+
+PR #148 adds the full [boss tactics director](hyrule-survivors-boss-tactics.md):
+combos, committed movement, delayed volleys and recovery across the complete boss
+roster. Normal waves pause for scheduled bosses and awakened stationary elites;
+existing enemies and bounded boss summons remain. After ten active seconds
+without damage, the boss relocates to a validated position inside Link's normal
+spawn ring, retaining HP. The tactics reference lists each boss and device checks.
 
 Dodongo armor flags are also normalized after Execute, because its native code
 sets them after collision registration. Only owned target objects are changed;

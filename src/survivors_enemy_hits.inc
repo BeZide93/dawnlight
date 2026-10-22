@@ -244,5 +244,6 @@ void after_enemy_attack_contact(ModContext*,void* args,void*,void*) {
     if(frame.target->ChkTgHit()&&frame.target->GetTgHitObj()==frame.attack) {
         frame.use->contacted=true;
         frame.use->contactTick=s_run.ticks;
+        boss_record_contact(frame.attack);
     }
 }

@@ -209,11 +209,12 @@ bool update_extended_enemy(fopAc_ac_c* actor,Enemy& enemy) {
         cc_at_check(actor,&info); // Existing power, material, Crit and status hooks run once.
         if(actor->health<before) {
             enemy.hitCooldown=0;
+            boss_received_damage(enemy,actor->health);
             if(enemy.profile==fpcNm_E_GI_e) {
                 auto* gibdo=reinterpret_cast<daE_GI_c*>(actor);
                 gibdo->mPlayerStunTimer=0;gibdo->mCryTimer=20;
             }
-            if(causes_stagger(attack) && !phantom_projectile_charge(actor,enemy))enemy.stagger=8;
+            if(causes_stagger(attack) && !phantom_projectile_charge(actor,enemy) && boss_accept_stagger(enemy))enemy.stagger=8;
         }
         effect.injected=false;effect.damage=0;effect.fixedDamage=0;effect.critical=false;effect.stagger=false;
     }

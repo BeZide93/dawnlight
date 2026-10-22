@@ -16,6 +16,7 @@
 #include "survivors_hud_layout.hpp"
 #include "survivors_multistrike.hpp"
 #include "survivors_enemy_hits.hpp"
+#include "survivors_boss_tactics.hpp"
 #include "d/d_msg_scrn_explain.h"
 #include "d/d_msg_scrn_3select.h"
 #include "d/d_lib.h"
@@ -79,6 +80,7 @@
 #include "d/actor/d_a_e_ymb.h"
 #include "d/actor/d_a_e_pz.h"
 #include "d/actor/d_a_e_th.h"
+#include "d/actor/d_a_e_th_ball.h"
 #include "d/actor/d_a_e_hzelda.h"
 #include "d/actor/d_a_b_gnd.h"
 #include "d/actor/d_a_mant.h"
@@ -181,6 +183,7 @@ DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ms.cpp#e_ms_damage", void(e_ms_class*), Su
 DEFINE_HOOK(&daE_OC_c::searchPlayer, SurvivorsBokoblinAggro);
 DEFINE_HOOK(&daE_OC_c::executeWait, SurvivorsBokoblinWait);
 DEFINE_HOOK(&fopAcM_searchActorDistance, SurvivorsEliteDistance);
+DEFINE_HOOK(&fopAcM_searchActorAngleY, SurvivorsBossAim);
 DEFINE_HOOK(&daObjCarry_c::obj_break, SurvivorsPotBreak);
 DEFINE_HOOK(&daItem_c::itemGetNextExecute, SurvivorsKeyPickup);
 DEFINE_HOOK(&renderingAmap_c::afterDrawPath, SurvivorsEliteMinimap);
@@ -387,7 +390,7 @@ void update_knockback(Enemy&, fopAc_ac_c*);
 void initialize_extended_enemy(Enemy&,fopAc_ac_c*);
 void drop_elite_chest(Enemy&, fopAc_ac_c*);
 std::array<unsigned, 3> s_choices{0, 1, 2};
-struct ProcessFrame { void* args; ActorId id; };
+struct ProcessFrame { void* args; ActorId id; bool executed=false; };
 std::vector<ProcessFrame> s_processFrames;
 
 struct Enemy {
@@ -479,6 +482,7 @@ Enemy* tracked(ActorId id) {
 }
 #include "survivors_enemy_types.inc"
 #include "survivors_enemy_balance.inc"
+#include "survivors_boss_tactics_state.inc"
 #include "survivors_enemy_arrows.inc"
 #include "survivors_enemy_hits.inc"
 #include "survivors_collision.inc"
@@ -551,7 +555,7 @@ void cleanup_enemies() {
         if (e.id == kNone) continue;
         auto* actor = actor_by_id(e.id);
         if (!actor && !fpcM_IsCreating(e.id)) {
-            s_enemyIndex.erase(e.id);
+            s_enemyIndex.erase(e.id); s_bossTactics.erase(e.id);
             e = {}; continue;
         }
         // Pending creation is not completion or a kill. Keep its ID until the scene
@@ -604,7 +608,7 @@ void detach_attack_references() {
 void reset_runtime() {
     clear_player_contacts();
     restore_gear_collection();close_gear_window();s_gear={};s_gearWritable=true;clear_gear_notices();
-    s_enemyHitSources.clear(); s_enemyContactFrames.clear();
+    s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     stop_survivors_music();
     end_survivors_integrity();
     reset_ending();
@@ -818,6 +822,7 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
 #include "survivors_pots.inc"
 #include "survivors_minimap.inc"
 void update_spawns(daAlink_c* link) {
+    update_boss_watchdogs(link);
     unsigned population = 0;
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
@@ -834,6 +839,7 @@ void update_spawns(daAlink_c* link) {
     if (s_spawnCooldown) { --s_spawnCooldown; return; }
     s_spawnCooldown = s_run.spawn_interval();
     update_elite_spawns(link);
+    if(active_boss_encounter()){s_spawnFailures=0;return;}
     if ((!s_run.endless && s_run.ticks >= s_run.run_duration()) || population>=s_run.target_population()) { s_spawnFailures=0; return; }
     for (unsigned i=0; i<s_run.spawn_batch() && population<s_run.target_population(); ++i) {
         if (spawn_enemy(link,false)) { ++population; s_spawnFailures=0; }
@@ -1232,6 +1238,7 @@ HookAction before_sword_attack(ModContext* ctx, void* args, void* result, void* 
 #include "survivors_encounters.inc"
 #include "survivors_elite_scale.inc"
 #include "survivors_bosses.inc"
+#include "survivors_boss_tactics.inc"
 bool pause_run_actor(bool enemy) {
     if(save_modal_active())return true;
     if (!in_arena() || s_run.phase == Phase::Loading) return false;
@@ -1263,6 +1270,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     if (!methods) return HOOK_CONTINUE;
     const auto method = mods::arg<process_method_func>(args, 0);
     if (method == methods->delete_method) {
+        s_bossTactics.erase(id);
         if (pickup) { s_pickupIndex.erase(id); pickup->id=kNone; }
         if (arrow) { s_enemyArrowIndex.erase(id); arrow->id=kNone; }
         // Never award XP here: cancellation, unloading and despawning also delete.
@@ -1292,7 +1300,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
         if (pickup->retiring) { *static_cast<int*>(result)=1; return HOOK_SKIP_ORIGINAL; }
     }
     if (pot) pot->initialized=true;
-    if (enemy) s_processFrames.push_back({args, id});
+    if (enemy || arrow) s_processFrames.push_back({args, id});
     if (enemy) initialize_enemy(enemy,actor);
     if (enemy && enemy->dormant && enemy->profile == fpcNm_E_OC_e) {
         auto* guard = static_cast<daE_OC_c*>(actor);
@@ -1304,14 +1312,18 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
         *static_cast<int*>(result) = 1;
         return HOOK_SKIP_ORIGINAL;
     }
+    if(enemy && boss_tactics_owned(*enemy))s_bossTactics[id].stagger.tick();
     if (enemy && extended_enemy(enemy->profile) && !update_extended_enemy(actor,*enemy)) {
         *static_cast<int*>(result)=1; return HOOK_SKIP_ORIGINAL;
     }
+    if(arrow)update_boss_projectile(actor,false);
     if(enemy) {
+        before_boss_tactics(*enemy,actor);
         advance_elite_cooldowns(actor,*enemy);
         if(enemy->specialCooldown)--enemy->specialCooldown;
         if(enemy->summonCooldown)--enemy->summonCooldown;
     }
+    if(enemy || arrow)s_processFrames.back().executed=true;
     return HOOK_CONTINUE;
 }
 void after_process(ModContext*, void* args, void*, void*) {
@@ -1322,9 +1334,11 @@ void after_process(ModContext*, void* args, void*, void*) {
     if (!in_arena() || s_victory || s_run.phase != Phase::Running || transitioning()) return;
     auto* enemy = tracked(frame.id);
     auto* actor = actor_by_id(frame.id);
+    if(frame.executed && actor && !enemy && active_enemy_arrow(frame.id))update_boss_projectile(actor,true);
     scale_elite_colliders(enemy,actor);
     finish_extended_targets(enemy,actor);
     if (enemy && actor) {
+        if(frame.executed)after_boss_tactics(*enemy,actor);
         confine_arena_actor(actor, enemy->elite ? 80.f : 35.f);
         if (enemy->elite && actor->health > 0 && enemy->age % 15 == 0) {
             cXyz floor = actor->current.pos;
@@ -1474,7 +1488,7 @@ void select_upgrade(ModContext*, void* data) {
 }
 void begin_run() {
     if (s_run.phase != Phase::Ready || !s_arenaMeshReady || s_restart || s_progressSaving) return;
-    s_enemyHitSources.clear(); s_enemyContactFrames.clear();
+    s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     reset_ending();
     load_option_config();
     close_window(); clear_attacks(); clear_loot(); prepare_save();
@@ -1731,6 +1745,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsCamera, before_run_camera); POST(SurvivorsCamera, after_run_camera);
     PRE(SurvivorsArenaExit, before_arena_exit);
     PRE(SurvivorsArenaRestart, before_arena_restart);
+    POST(SurvivorsBossAim,after_boss_aim);
     PRE(SurvivorsProcess, before_contact_owner_delete);
     PRE(SurvivorsProcess, before_process); POST(SurvivorsProcess, after_process);
     POST(SurvivorsPlayer, after_player); POST(SurvivorsDraw, after_draw);
@@ -1746,6 +1761,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsBulblinHit, before_bulblin_hit); POST(SurvivorsBulblinHit, after_bulblin_hit);
     PRE(SurvivorsBulblinAggro, before_bulblin_aggro);
     PRE(SurvivorsEnemyArrow, before_enemy_arrow); POST(SurvivorsEnemyArrow, after_enemy_arrow);
+    PRE(SurvivorsConcurrentHit,before_boss_attack_safety);
     PRE(SurvivorsConcurrentHit, before_enemy_attack_contact); POST(SurvivorsConcurrentHit, after_enemy_attack_contact);
     PRE(SurvivorsConcurrentHit, before_concurrent_hit);
     POST(SurvivorsConcurrentHit, after_player_contact);

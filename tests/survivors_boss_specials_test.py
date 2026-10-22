@@ -12,7 +12,7 @@ fixture=r'''
 #include <map>
 #include <set>
 #include <vector>
-struct { double endless_factor()const{return 1.0;} }s_run;
+struct { unsigned ticks=0; double endless_factor()const{return 1.0;} }s_run;
 using ActorId=unsigned;using ProfileName=int;using s16=short;constexpr ActorId kNone=~0u;
 struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods{template<class T>T arg(void* a,unsigned i){return std::any_cast<T>(static_cast<std::any*>(a)[i]);}}
@@ -34,7 +34,7 @@ struct Model{int writes=0;void setBaseTRMtx(int){++writes;}};
 namespace mDoMtx_stack_c{void transS(cXyz){}void YrotM(s16){}int get(){return 0;}}
 struct Native:fopAc_ac_c{
  fopAc_ac_c& actor=*this;ActorId mRiderID=kNone,mKargarokID=kNone;int mRideState=0,mDemoMode=3,mIFrameTimer=0,mKargarokDeleteTimer=0,mFadeTimer=0,field_0xa6e=0;
- int mAction=0,mMode=0,mAnm=0,mMoveMode=0,mActionMode1=0,mActionMode=0,mStates[16]{};
+ s16 mPlayerAngleY=0;int mAction=0,mMode=0,mAnm=0,mMoveMode=0,mActionMode1=0,mActionMode=0,mStates[16]{};
  int action=0,mode=0,field_0x676=0,field_0x678=0,field_0x6c2=0,field_0x6c0=0;
  int timer[6]{},timers[6]{},mTimer[6]{},mTimers[6]{},field_0x69c[6]{},field_0x698[6]{};
  int* mpMorf=nullptr;const char* mpArcName="rider";Model model;Model* mpPartModels[16]{};cXyz mPositions[16];int swordBit=1;
@@ -66,6 +66,15 @@ struct Spawn{int profile;ActorId parent;unsigned params;cXyz pos;};std::vector<S
 ActorId fopAcM_createChild(int profile,ActorId parent,unsigned params,const cXyz* pos,int,const csXyz*,const cXyz*,int,void*){
  spawns.push_back({profile,parent,params,*pos});pending.insert(100+spawns.size());return 100+spawns.size();}
 '''
+fixture+=r'''
+struct Tactics{bool waitingVolley=false;unsigned pendingRiders=0,riderDelay=0,ridersUntil=0;int swordState=0,volley=0;s16 yaw=0;cXyz target{},throwTarget{};};
+struct HitSource{int riders=0;};std::map<ActorId,HitSource>s_enemyHitSources;
+std::map<ActorId,Tactics>s_bossTactics;
+bool boss_attack_paused(const Enemy&){return false;}
+bool boss_major_ready(Enemy&,unsigned){return true;}
+cXyz boss_lead_target(float){return player.current.pos;}
+s16 boss_target_yaw(fopAc_ac_c*,const cXyz&){return 0;}
+'''
 main=r'''
 int main(){
  Native boss;actors[1]=&boss;std::any args[]={&boss};
@@ -82,13 +91,14 @@ int main(){
  children[rider.id].retiring=true;assert(!prepare_carrier_rider(&rider));children[rider.id].retiring=false;
  pending.insert(1);assert(!prepare_carrier_rider(&rider));pending.clear();
  // Five native variants on safe ground; invalid sites and missing Link do not spawn.
- owner.profile=fpcNm_B_GND_e;spawns.clear();summon_ghost_riders(&boss,owner);assert(spawns.size()==5);
+ owner.profile=fpcNm_B_GND_e;spawns.clear();summon_ghost_riders(&boss,owner);assert(spawns.size()==3&&s_bossTactics[owner.id].pendingRiders==2);
+ summon_ghost_riders(&boss,owner);assert(spawns.size()==5&&s_bossTactics[owner.id].pendingRiders==0);
  for(unsigned i=0;i<5;++i)assert(spawns[i].profile==fpcNm_E_FK_e&&spawns[i].parent==1&&(spawns[i].params&255)==i&&spawns[i].pos.y==25);
  floorValid=false;summon_ghost_riders(&boss,owner);assert(spawns.size()==5);floorValid=true;
- playerPresent=false;summon_ghost_riders(&boss,owner);assert(spawns.size()==5);playerPresent=true;
+ playerPresent=false;summon_ghost_riders(&boss,owner);assert(spawns.size()==5);playerPresent=true;s_bossTactics[owner.id].pendingRiders=0;s_bossTactics[owner.id].ridersUntil=0;
  // All native entries into charge share one cooldown; running animations survive.
  boss.mMoveMode=10;owner.specialCooldown=0;before_boss_gnd_charge(nullptr,args,nullptr,nullptr);assert(owner.specialCooldown==150);
- boss.mMoveMode=10;before_boss_gnd_charge(nullptr,args,nullptr,nullptr);assert(boss.mMoveMode==15);
+ boss.mMoveMode=10;before_boss_gnd_charge(nullptr,args,nullptr,nullptr);assert(boss.mMoveMode==0&&boss.mActionMode==10);
  boss.mMoveMode=12;before_boss_gnd_charge(nullptr,args,nullptr,nullptr);assert(boss.mMoveMode==12);
  // Repeat throws run in both armor phases and do not reset the body action.
  owner.profile=fpcNm_B_TN_e;

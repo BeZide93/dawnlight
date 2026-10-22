@@ -75,8 +75,9 @@ void spawn_enemy_arrow_spread(void* args) {
     if (!source) return;
     // Count successful original shots only; recursive side arrows never count.
     // Enemy slot lifetime owns the cadence, so replacement archers start fresh.
-    owner->arrowVolley=(owner->arrowVolley+1)%3;
-    if (!s_run.endless && owner->arrowVolley!=0) return;
+    owner->arrowVolley=(owner->arrowVolley+1)%(owner->elite?2:3);
+    if(owner->elite) {if(owner->profile!=fpcNm_E_YC_e && owner->arrowVolley==0)return;}
+    else if (!s_run.endless && owner->arrowVolley!=0) return;
     struct SpreadScope { SpreadScope(){s_spawningEnemyArrows=true;} ~SpreadScope(){s_spawningEnemyArrows=false;} } scope;
     // Same native +/-0x900 yaw fan as enemy_slow_motion/bulblin.cpp Hard Mode,
     // every third normal shot and every Endless shot. Child hooks retain ownership/capacity.
@@ -107,7 +108,7 @@ void cleanup_enemy_arrows() {
         }
         auto* actor=actor_by_id(arrow.id);
         if (!actor && !fpcM_IsCreating(arrow.id)) {
-            s_enemyArrowIndex.erase(arrow.id); arrow={};
+            s_enemyArrowIndex.erase(arrow.id); s_bossTactics.erase(arrow.id); arrow={};
         }
         else if (actor && arrow.retiring) svc_actor->delete_actor(mod_ctx,arrow.id);
     }

@@ -1,7 +1,6 @@
 """Exercise production contact lifetime guards with freed and reused peers."""
 from pathlib import Path
 import os
-import re
 import subprocess
 import tempfile
 
@@ -12,9 +11,7 @@ assert source.index('PRE(SurvivorsBlock, before_player_contacts)') < source.inde
 assert 'PRE(SurvivorsPlayer, before_player_contacts)' in source
 assert 'POST(SurvivorsConcurrentHit, after_player_contact)' in source
 assert 'clear_player_contacts();' in source
-# Keep dispatch tied to production registration: the pre-fix code has no
-# observer at Link's native callback boundary and must fail the incoming case.
-native_hit_pre = re.findall(r'PRE\(SurvivorsPlayerHit,\s*(\w+)\)', source)
+assert 'SurvivorsPlayerHit' not in source
 program = r'''
 #include <array>
 #include <cassert>
@@ -52,7 +49,15 @@ struct cCcD_Obj : cCcD_ObjHitInf {
 struct dCcD_GObjInf : cCcD_Obj {
     bool shield=false; unsigned atResets=0,tgResets=0;
     void ResetAtHit() {attack=nullptr;shield=false;++atResets;}
-    void ResetTgHit() {target=nullptr;++tgResets;}
+    struct NativePeer {ActorId mApid=kNone;fopAc_ac_c* mAc=nullptr;};
+protected:
+    NativePeer mGObjTg;
+public:
+    bool noActor=false;
+    bool ChkTgHitNoActor(){return noActor;}
+    void SetTgHitApid(ActorId id){mGObjTg.mApid=id;mGObjTg.mAc=nullptr;}
+    void cacheTargetActor(fopAc_ac_c* actor){mGObjTg.mAc=actor;}
+    void ResetTgHit() {target=nullptr;mGObjTg={};noActor=false;++tgResets;}
 };
 struct daAlink_c : fopAc_ac_c {
     std::array<dCcD_GObjInf,3> mAtCps{},mTgCyls{};
@@ -66,17 +71,16 @@ bool in_arena(){return arena;}
 struct Attack {dCcD_GObjInf collider;};
 std::array<Attack,2> s_attacks;
 #include "survivors_contacts.inc"
-void dispatch_native_hit(void*);
 void native_incoming(dCcD_GObjInf& attack,dCcD_GObjInf& target) {
-    // dCcS::SetAtTgGObjInf invokes the installed target callback after SetTgHit.
-    // No outer SetAtTgCommonHitInf post detour is required for a native hit.
+    // Native SetAtTgCommonHitInf/SetAtTgGObjInf write raw contact and actor ID.
+    // Intentionally invoke NO mod contact observer, including the failed #1178 hook.
     target.target=&attack;
-    std::any args[]{target.owner,&target,attack.owner,&attack};
-    dispatch_native_hit(args);
+    target.SetTgHitApid(attack.owner?attack.owner->id:kNone);
+    target.noActor=attack.owner==nullptr;
 }
 void remember(dCcD_GObjInf& attack, dCcD_GObjInf& target, bool at=true, bool tg=false) {
     if(at) attack.attack=&target;
-    if(tg) target.target=&attack;
+    if(tg) native_incoming(attack,target);
     std::any args[]{std::any{},static_cast<cCcD_Obj*>(&attack),static_cast<cCcD_Obj*>(&target)};
     after_player_contact(nullptr,args,nullptr,nullptr);
 }
@@ -108,26 +112,27 @@ int main() {
     native_incoming(*target,link.mTgCyls[0]);
     native_incoming(*missile,link.mTgCyls[0]);validate();
     assert(link.mTgCyls[0].target==missile.get());
-    // A later callback which does not own the actual accepted raw contact
-    // cannot overwrite its identity, nor can a foreign recipient.
-    std::any mismatch[]{static_cast<fopAc_ac_c*>(&link),&link.mTgCyls[0],&enemy,target.get()};
-    dispatch_native_hit(mismatch);validate();
-    assert(link.mTgCyls[0].target==missile.get());
-    clear_player_contacts();
-    link.mTgCyls[0].target=target.get();
-    std::any foreign[]{&enemy,&link.mTgCyls[0],&enemy,target.get()};
-    dispatch_native_hit(foreign);validate();assert(!link.mTgCyls[0].target);
-    arena=false;
-    native_incoming(*target,link.mTgCyls[0]);assert(s_contactPeers.empty());
-    arena=true;link.mTgCyls[0].ResetTgHit();
-    native_incoming(*missile,link.mTgCyls[0]);
-    remove_actor(projectile);missile.reset();actors.erase(9);validate();
-    assert(!link.mTgCyls[0].target);
-    // Native-callback capture still rejects a peer freed without deletion hook.
-    native_incoming(*target,link.mTgCyls[0]);actors.erase(2);target.reset();validate();
-    assert(!link.mTgCyls[0].target);
+    assert(s_contactPeers.empty()); // Incoming damage has no observer dependency.
+    remove_actor(projectile);
+    assert(!link.mTgCyls[0].target); // Clear BEFORE destruction, even with no snapshots.
+    missile.reset();actors.erase(9);validate();
+    // A missed deletion callback and a stale native actor cache must be safe.
+    native_incoming(*target,link.mTgCyls[0]);link.mTgCyls[0].cacheTargetActor(&enemy);
+    actors.erase(2);target.reset();validate();assert(!link.mTgCyls[0].target);
     actors[2]=&enemy;target=std::make_unique<dCcD_GObjInf>();target->owner=&enemy;
-    clear_player_contacts();
+    // Reused ID with a different actor cannot validate the cached old actor.
+    native_incoming(*target,link.mTgCyls[0]);link.mTgCyls[0].cacheTargetActor(&enemy);
+    fopAc_ac_c recycled;recycled.id=2;actors[2]=&recycled;
+    target.reset();validate();assert(!link.mTgCyls[0].target);
+    actors[2]=&enemy;target=std::make_unique<dCcD_GObjInf>();target->owner=&enemy;
+    // The native no-actor flag allows engine-owned environmental colliders.
+    dCcD_GObjInf hazard;native_incoming(hazard,link.mTgCyls[1]);validate();
+    assert(link.mTgCyls[1].target==&hazard);
+    clear_player_contacts();assert(!link.mTgCyls[1].target&&s_contactPeers.empty());
+    // Story mode is not filtered, including stale incoming native metadata.
+    arena=false;native_incoming(*target,link.mTgCyls[0]);actors.erase(2);validate();
+    assert(link.mTgCyls[0].target==target.get());
+    arena=true;validate();assert(!link.mTgCyls[0].target);actors[2]=&enemy;
     // Live contacts retain electrical checks, shield flags and combo contact.
     remember(link.mAtCps[0],*target);link.mAtCps[0].shield=true;
     validate();assert(link.mAtCps[0].attack==target.get()&&link.mAtCps[0].shield);
@@ -178,8 +183,6 @@ int main() {
     assert(s_contactPeers.empty());
 }
 '''
-program += '\nvoid dispatch_native_hit(void* args){(void)args;\n'+''.join(
-    f'assert({callback}(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);\n' for callback in native_hit_pre)+'}\n'
 with tempfile.TemporaryDirectory() as temp:
     cpp=Path(temp)/'contacts.cpp';exe=Path(temp)/'contacts';cpp.write_text(program)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',

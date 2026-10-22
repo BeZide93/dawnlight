@@ -58,8 +58,9 @@ If collision is not ready, combat does not begin. Story mode and Boss Rush retai
 On every arena, falling more than 500 units below the last safe position checks
 for dry, valid ground beneath Link before triggering recovery. Tall cliff jumps
 can land naturally on lower floors; missing ground, void/exit floor codes, water
-and floors in another room still trigger recovery. The Palace retains its entrance
-respawn and one-heart penalty; other arenas return to the last safe position.
+and floors in another room still trigger recovery. Each fall recovery during a run costs one heart on every map. The Palace returns
+Link to its entrance; other arenas return to the last safe position. Normal
+landings, loading recovery and room-boundary corrections do not incur this cost.
 Recovery checkpoints require dry ground under Link and the four corners of a
 40-unit half-width footprint, so lingering edge contact cannot move the checkpoint
 onto a hole. Every recovery uses the native position setter, clears collision push,

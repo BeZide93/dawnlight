@@ -192,9 +192,9 @@ int main(){
  // Victory remains settled if Link falls while collecting the boss rewards.
  s_victory=true;life=1;link.current.pos.y=-501;link.mLinkAcch.hit=false;update_arena_safety(&link);
  assert(life==1&&finished==1&&damageWrites==4);s_victory=false;
- // Other arenas retain their existing free return to the last safe floor.
+ // Other arenas apply the same one-heart cost at their last safe floor.
  s_map=0;link.room=arena().room;life=12;link.current.pos.y=-501;update_arena_safety(&link);
- assert(life==12&&damageWrites==4);
+ assert(life==8&&damageWrites==5);
 
  // High and low cliff jumps must keep falling toward valid lower floors on
  // every map, even with stale actor collision data. Preserve native velocity
@@ -235,7 +235,7 @@ int main(){
    life=12;const int before=damageWrites;
    update_arena_safety(&link);
    assert(link.current.pos.y==2000&&link.current.pos.x==10);
-   assert(damageWrites==before+(map==3?1:0)&&life==(map==3?8:12));
+   assert(damageWrites==before+1&&life==8);
   }
   // Bridges are safe even when water exists below their floor.
   landingCode=0;landingRoom=arena().room;landingFloor=0;wet=true;waterY=-100;
@@ -273,11 +273,20 @@ int main(){
    update_arena_safety(&link);
   }
   assert(link.teleports==teleports+1&&link.current.pos.x==0&&link.current.pos.y==0);
-  assert(damageWrites==writes+(map==3?1:0)&&life==(map==3?8:12));
+  assert(damageWrites==writes+1&&life==8);
   // A native void polygon also recovers before reaching the height threshold.
   link.current.pos={200,-100,0};link.mLinkAcch.hit=true;link.mGroundCode=10;
   update_arena_safety(&link);
   assert(link.teleports==teleports+2&&link.current.pos.x==0&&link.mGroundCode==0);
+  assert(damageWrites==writes+2&&life==4);
+  // Correcting a room boundary alone must not charge another heart.
+  ++link.room;update_arena_safety(&link);
+  assert(link.room==arena().room&&damageWrites==writes+2&&life==4);
+  // Less than one heart is lethal on every map, without underflow.
+  life=3;const int defeats=finished;
+  link.current.pos={200,-600,0};link.mLinkAcch.hit=false;
+  update_arena_safety(&link);
+  assert(life==0&&finished==defeats+1&&damageWrites==writes+3);
  }
  pit=false;
  clear_arena_geometry();assert(!s_arenaSpawn&&!s_arenaSafe);

@@ -205,11 +205,6 @@ void update_arena_safety(daAlink_c* link) {
     if (palace && fallen) {
         restore_arena_player(link,s_arenaSpawnPosition,s_arenaSpawnYaw);
         s_arenaSafePosition=s_arenaSpawnPosition;
-        // Life is stored in quarter hearts; this environmental cost ignores
-        // enemy damage scaling, shields, Dodge and ordinary hit invulnerability.
-        const int life=std::max(s_victory ? 1 : 0,int(dComIfGs_getLife())-4);
-        dComIfGs_setLife(life);
-        if (!life) begin_defeat();
     } else if (s_arenaSafe && (room!=arena().room || fallen)) {
         // Last safe floor position, not a scene reload that would discard a run.
         restore_arena_player(link,s_arenaSafePosition,link->shape_angle.y);
@@ -218,6 +213,15 @@ void update_arena_safety(daAlink_c* link) {
         if (!s_arenaSpawn) {
             s_arenaSpawnPosition=link->current.pos;s_arenaSpawnYaw=link->shape_angle.y;s_arenaSpawn=true;
         }
+    }
+    // Charge once per actual fall recovery during a run, on every map.
+    // Loading and room-boundary corrections are not damaging falls.
+    if (fallen && s_run.phase==Phase::Running) {
+        // Life is stored in quarter hearts; this environmental cost ignores
+        // enemy damage scaling, shields, Dodge and ordinary hit invulnerability.
+        const int life=std::max(s_victory ? 1 : 0,int(dComIfGs_getLife())-4);
+        dComIfGs_setLife(life);
+        if (!life) begin_defeat();
     }
 }
 void draw_arena_barriers() {

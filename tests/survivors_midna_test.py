@@ -71,7 +71,7 @@ void equip_gear_notice(){++gearEquips;gearOffer=false;}
 unsigned fopAcM_GetID(daAlink_c* a){return a->id;}
 unsigned s_player=7,s_midnaRequestFrames=0;bool s_midnaTalking=false,s_midnaEndPending=false,s_midnaRestartPending=false;
 bool s_hub=false,s_hubDeparture=false,s_hubDoorStarted=false;Run s_run;bool arena=true,transition=false,pause=false,event=false,message=false,ui=false;
-unsigned s_map=0,s_requestedMap=0,closed=0;bool s_restart=false;
+unsigned s_map=0,s_requestedMap=0,closed=0;bool s_restart=false,s_arrivingRun=false;
 void close_window(){++closed;}
 unsigned map=0;std::string stage=arenas[0].stage;int room=51;
 bool save_modal_active(){return false;}
@@ -151,7 +151,7 @@ int main(){
  arena=true;assert(before_midna_order(nullptr,nullptr,&orderResult,nullptr)==HOOK_SKIP_ORIGINAL&&orderResult==0);
  before_midna_flow(nullptr,flowArgs,&node,nullptr);endEvent(nullptr,nullptr,nullptr);transition=true;update_midna_dialog();
  assert(!midna_dialog_busy()&&ended==1); // No pending End Run leaks into a new scene.
- // Restart waits for native closure, credits once and reuses the same-map replay.
+ // Restart waits for native closure, credits once and requests direct same-map startup.
  for(map=0;map<arenas.size();++map) {
   stage=arenas[map].stage;room=arenas[map].room;s_map=map;s_requestedMap=99;s_restart=false;
   transition=false;s_run.start(7);reset_midna_dialog();const auto before=ended,closures=closed;
@@ -162,7 +162,7 @@ int main(){
   update_midna_dialog();assert(!s_restart&&ended==before);
   event=message=false;update_midna_dialog();assert(!s_restart&&ended==before);
   midna.eventInfo.talk=false;update_midna_dialog();
-  assert(s_restart&&s_requestedMap==map&&ended==before+1&&closed==closures+1&&s_run.phase==Phase::Defeat);
+  assert(s_restart&&s_arrivingRun&&s_requestedMap==map&&ended==before+1&&closed==closures+1&&s_run.phase==Phase::Defeat);
   assert(!midna_dialog_busy()&&!s_midnaRestartPending);
   update_midna_dialog();assert(ended==before+1&&closed==closures+1);
  }
@@ -177,7 +177,7 @@ native=(sdk/'src/d/actor/d_a_midna.cpp').read_text()
 assert 'mMsgFlow.init(this, 0xbb9, 0, NULL)' in native
 assert 'dComIfGs_onEventBit(dSv_event_flag_c::M_067)' in core
 assert core.index('PRE(SurvivorsPlayer, before_chest_action)')<core.index('PRE(SurvivorsPlayer, before_midna_call)')
-functions='\n'.join(extract(n) for n in ['midna_dialog_busy','reset_midna_dialog','playable','pause_run_actor','replay'])
+functions='\n'.join(extract(n) for n in ['midna_dialog_busy','reset_midna_dialog','playable','pause_run_actor','replay','restart_run'])
 with tempfile.TemporaryDirectory() as tmp:
     cpp,binary=Path(tmp)/'test.cpp',Path(tmp)/'test'
     cpp.write_text(fixture+functions+(root/'src/survivors_midna.inc').read_text()+main)

@@ -365,6 +365,7 @@ void interrupt_auto_actions(daAlink_c*);
 void finish(bool won);
 void continue_endless(ModContext*,void*);
 void replay(ModContext*, void*);
+void restart_run(ModContext*, void*);
 void clear_enemy_effects();
 bool effect_collider(const cCcD_Obj*);
 bool native_sword_collider(const cCcD_Obj*);
@@ -1539,7 +1540,23 @@ void continue_endless(ModContext*,void*) {
     begin_survivors_integrity(s_run.options.allow_cheats,s_run.modded);
     s_run.modded=s_run.modded||wasModded;
 }
-void replay(ModContext*, void*) { close_window(); s_requestedMap = s_map; s_restart = true; }
+// Results return to the hub; Midna's restart bypasses it and starts on arrival.
+void replay(ModContext*, void*) { close_window(); s_requestedMap = s_map; s_arrivingRun=false; s_restart = true; }
+void restart_run(ModContext*, void*) { replay(nullptr,nullptr); s_arrivingRun=true; }
+void reload_run_scene() {
+    end_survivors_integrity();
+    reset_ending();
+    // Always reload to destroy old actors, pending spawns, collision and native
+    // damage state. Keep direct restart intent until the destination is ready.
+    retire_enemies(); clear_attacks(); clear_loot(); clear_arena_geometry();
+    s_hub=!s_arrivingRun; s_hubMenu=HubMenu::None; s_hubDeparture=s_hubDoorStarted=false;
+    s_hubDoor=kNone; s_hubSaveRequested=false;
+    s_map=s_arrivingRun?s_requestedMap:0;
+    prepare_save();
+    dComIfGp_setNextStage(arena().stage, arena().point, arena().room, 0);
+    s_run = {}; s_orbs = {}; s_restart = false; s_player = kNone;
+    s_resultsStored = false; s_spawnFailures = 0;
+}
 #include "survivors_post_run_save.inc"
 void save_results(ModContext*, void*) {
     if(s_saveRequested || s_savePrompt!=kNone)return;
@@ -1674,18 +1691,7 @@ void update_survivors() {
     auto* link = daAlink_getAlinkActorClass();
     if (!link || !dComIfGp_getStageStagInfo()) return;
     if (s_restart) {
-        end_survivors_integrity();
-        reset_ending();
-        // Always use a scene reload: destroys old actors, pending spawns, collision,
-        // damage animations and native drop actors before another run starts.
-        retire_enemies(); clear_attacks(); clear_loot(); clear_arena_geometry();
-        s_hub=true; s_hubMenu=HubMenu::None; s_hubDeparture=s_hubDoorStarted=s_arrivingRun=false;
-        s_hubDoor=kNone; s_hubSaveRequested=false;
-        s_map = 0;
-        prepare_save();
-        dComIfGp_setNextStage(arena().stage, arena().point, arena().room, 0);
-        s_run = {}; s_orbs = {}; s_restart = false; s_player = kNone;
-        s_resultsStored = false; s_spawnFailures = 0;
+        reload_run_scene();
         return;
     }
     if (s_player != fopAcM_GetID(link)) {

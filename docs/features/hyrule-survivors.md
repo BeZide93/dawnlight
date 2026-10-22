@@ -25,7 +25,20 @@ Selecting maps updates the description and high score while Link stays in the hu
 then orders the original native door event. The door opens and Link walks through;
 only the event's final scene change is redirected to the chosen map. Combat and
 the timer start after arrival, grounding and collision preparation. Cancelling the
-menu leaves Link in the hub. **New run** returns to the hub with the last arena selected.
+menu leaves Link in the hub. **Return to hub** on the results screen returns to
+the hub with the last arena selected. Midna's **Restart Run** instead reloads the
+current arena and starts a fresh run automatically after grounding, warm-up and
+collision preparation. Keep the selected difficulty/settings and saved progression;
+reset the run timer, kills, weapons, enemies and pickups. The Starting Item talent
+offers its normal new-run choice again. The interrupted run is credited once,
+after Midna's native dialog closes. A full scene reload retains the existing
+cleanup of pending actors, native collisions and Link's damage state.
+
+The restart and hub-return callbacks now set distinct arrival intent. Previously
+both used the hub-return path, which reset the destination to map 0 and cleared
+the automatic-start flag. Regression coverage follows production callbacks,
+scene routing and arrival gates on all five maps, including delayed geometry,
+airborne/paused arrival, one-time startup and subsequent hub return.
 
 The **Survivors** tab beside **Boss Rush** in Dawnlight Settings mirrors the same
 Survivors Settings controls. Camera distance, Reticle Y, attack/lock-on swap,

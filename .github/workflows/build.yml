@@ -96,6 +96,8 @@ jobs:
           python3 tests/survivors_minimap_test.py
           python3 tests/survivors_hook_install_test.py
           CXX=clang++ python3 tests/survivors_hook_install_test.py
+          python3 tests/survivors_restart_test.py
+          CXX=clang++ python3 tests/survivors_restart_test.py
           python3 tests/survivors_lifecycle_test.py
           CXX=clang++ python3 tests/survivors_lifecycle_test.py
           python3 tests/survivors_hub_test.py

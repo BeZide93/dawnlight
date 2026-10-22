@@ -123,11 +123,11 @@ int main(){
  assert(contact(axe,target)&&!contact(axe,secondTarget)); // Normal axe swing.
  // Darknut heavy throw is independent of his simultaneous sword swing.
  reset(fpcNm_B_TN_e);boss.mActionMode1=4;boss.mActionMode2=1;
- enemies[0].specialCooldown=45;observe();
+ enemies[0].specialCooldown=90;observe();
  assert(contact(enemies[0].extraAttack,target));assert(!contact(enemies[0].extraAttack,secondTarget));
  assert(contact(weapon,target));assert(!contact(secondWeapon,target));assert(damage==2);
- for(unsigned cooldown=44;cooldown>0;--cooldown){enemies[0].specialCooldown=cooldown;observe();assert(!contact(enemies[0].extraAttack,target));}
- enemies[0].specialCooldown=45;observe();assert(contact(enemies[0].extraAttack,target)&&damage==3);
+ for(unsigned cooldown=89;cooldown>0;--cooldown){enemies[0].specialCooldown=cooldown;observe();assert(!contact(enemies[0].extraAttack,target));}
+ enemies[0].specialCooldown=90;observe();assert(contact(enemies[0].extraAttack,target)&&damage==3);
  assert(!contact(weapon,target)); // New throw must not rearm the old melee attack.
  // Structural Helmasaur shell follows each dash, not shell actor lifetime.
  reset(fpcNm_E_MM_e);boss.action=1;boss.mode=3;projectileA={};projectileA.id=20;actors[20]=&projectileA;

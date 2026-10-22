@@ -93,7 +93,7 @@ int main(){
  // Repeat throws run in both armor phases and do not reset the body action.
  owner.profile=fpcNm_B_TN_e;
  for(int phase:{3,9}){boss.mActionMode1=phase;owner.throwLife=0;owner.specialCooldown=0;boss.mStates[13]=phase==3?1:7;
-  before_boss_tn_throw(nullptr,args,nullptr,nullptr);assert(boss.mStates[13]==2&&owner.specialCooldown==45&&owner.throwLife==44&&boss.mActionMode1==phase);
+  before_boss_tn_throw(nullptr,args,nullptr,nullptr);assert(boss.mStates[13]==2&&owner.specialCooldown==90&&owner.throwLife==44&&boss.mActionMode1==phase);
   boss.mStates[13]=3;boss.mPositions[13]={20,30,40};boss.mStates[15]=phase==9?1:0;boss.swordBit=1;
   after_boss_tn_throw_collision(nullptr,args,nullptr,nullptr);assert(owner.extraAttackReady&&owner.extraAttack.pos.x==20&&boss.swordBit==(phase==9?1:0));
   for(int i=0;i<44;++i)before_boss_tn_throw(nullptr,args,nullptr,nullptr);

@@ -83,7 +83,7 @@ HookAction before_boss_tn_throw(ModContext*,void* args,void*,void*) {
         mDoMtx_stack_c::transS(e->current.pos+cXyz(0,180,0));
         mDoMtx_stack_c::YrotM(e->shape_angle.y);
         e->mpPartModels[13]->setBaseTRMtx(mDoMtx_stack_c::get());
-        e->mStates[13]=2;owner->specialCooldown=45;owner->throwLife=44;
+        e->mStates[13]=2;owner->specialCooldown=90;owner->throwLife=44;
     }
     return HOOK_CONTINUE;
 }

@@ -317,7 +317,7 @@ do not inherit those two generic factors. Explicit damage overrides are Darknut
 ×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
 King Bulblin can spin every six seconds at a safe chase boundary. Darknut repeats
-his sword throw every 1.5 active seconds outside melee range in either phase.
+his sword throw every 3 active seconds outside melee range in either phase.
 Death Sword can enter ranged combat after four seconds of distant pursuit;
 Stallord can start breath out to 6,000 units without Link's damage-protection gate.
 Bloat can attack immediately while retaining its telegraph. Ganondorf charges
@@ -1352,7 +1352,7 @@ contact once. New attack uses and different attackers remain independent; there
 is no global player immunity window. Damage amounts and cooldowns are unchanged.
 
 Darknut's repeated heavy-sword throw has a separate budget from his simultaneous
-melee attack and renews for each 1.5-second throw. Death Sword's two magic orbs
+melee attack and renews for each 3-second throw. Death Sword's two magic orbs
 share their cast even if his next melee action begins. Stallord/Phantom Zant
 projectiles and nested portals retain their original cast, and Ganondorf's five
 ghost riders share one summon. Carrier claw strikes and its rider's individual

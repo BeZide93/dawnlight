@@ -132,15 +132,15 @@ std::string difficulty_summary() {
         result_decimal(s_options.score_percent()/100.0/s_options.horde,2)+
         ". Normal-enemy run XP and loot per kill: x"+result_decimal(1.0/s_options.horde,2)+
         "; elite run XP: x1.00. More enemies offset the Horde reward reduction.</p>"
-        "<p>Rank adds all five multiplier increments above x1, including Boss HP. Each +0.5 adds 0.5 rank. Score bonuses per +0.5: HP and Boss HP +5%, Damage +7.5%, Speed +12.5%, Horde +5%. Changes apply to the next run.</p>";
+        "<p>Rank is the sum of all five multipliers (5 to 25). Score and meta XP equal Rank / 5. Higher rank improves equipment drop chance and rarity. At Rank 25: guaranteed equipment from bosses/elites, 75% Epic and 25% Legendary. Changes apply to the next run.</p>";
 }
 struct RunOptionControl { const char* label; float RunOptions::*field; float min,max,step; const char* help; };
 std::array<RunOptionControl,6> s_runControls{{
-    {"Enemy HP",&RunOptions::enemy_hp,1,10,.5f,"Multiplies normal enemy health only; bosses and stationary elites use Boss HP."},
-    {"Enemy Damage",&RunOptions::enemy_damage,1,10,.5f,"Multiplies enemy damage to Link."},
-    {"Enemy Speed",&RunOptions::enemy_speed,1,3,.5f,"Multiplies normal enemy locomotion only; attack movement and knockback remain native."},
+    {"Enemy HP",&RunOptions::enemy_hp,1,5,.5f,"Multiplies normal enemy health only; bosses and stationary elites use Boss HP."},
+    {"Enemy Damage",&RunOptions::enemy_damage,1,5,.5f,"Multiplies enemy damage to Link."},
+    {"Enemy Speed",&RunOptions::enemy_speed,1,5,.5f,"Multiplies normal enemy locomotion only; attack movement and knockback remain native."},
     {"Horde",&RunOptions::horde,1,5,.5f,"More enemies. At x5, every fifth normal kill rolls loot and drops XP. Elite rewards and pots are unchanged."},
-    {"Boss HP",&RunOptions::boss_hp,1,10,.5f,"Multiplies health of timed bosses and stationary elites, including Endless. Default: x1. Each +0.5 adds 0.5 Twilit Rank and +5% score/talent XP."},
+    {"Boss HP",&RunOptions::boss_hp,1,5,.5f,"Multiplies health of timed bosses and stationary elites, including Endless. Default: x1. Each +0.5 adds 0.5 Twilit Rank and +10% score/meta XP."},
     {"Camera distance",&RunOptions::camera_distance,100,500,25,"100% is the normal distance. Default: 200%. Walls can limit the distance; event cameras remain native."}
 }};
 struct DifficultyButton {unsigned setting;float delta;};
@@ -209,7 +209,7 @@ ModResult build_run_controls(UiElementHandle left, UiElementHandle right, unsign
         if (result!=MOD_OK) return result;
     }
     return svc_ui->pane_add_text(mod_ctx,right,first==0 ?
-        "Use - and + to change multipliers by 0.5. Each +0.5 adds 0.5 Twilit Rank. Score bonuses per +0.5: Enemy/Boss HP +5%, Damage +7.5%, Speed +12.5%, Horde +5%. Bonuses add together (x1.00 to x5.05). Normal kill points are divided by Horde. Settings apply to the next run." :
+        "Use - and + to change each multiplier from x1 to x5 in 0.5 steps. Rank 5 gives x1 score/meta XP; Rank 25 gives x5. Equipment drops and rarity scale toward 100% drops with 75% Epic / 25% Legendary at Rank 25. Equipment talents help below the cap. Normal kill points are divided by Horde. Settings apply to the next run." :
         "Shared with Dawnlight Settings and saved automatically. Settings apply to the next run; edit them outside a run.",nullptr);
 }
 ModResult build_difficulty(ModContext*,UiWindowHandle,UiElementHandle left,UiElementHandle right,void*,ModError*) {

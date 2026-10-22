@@ -41,7 +41,7 @@ int main(){
  assert(!s_options.allow_cheats);s_options.allow_cheats=true;
  assert(settings_editable()); // Mirrored tab is editable in ordinary Dawnlight saves.
  s_options.camera_distance=375;s_options.reticle_y=-17;s_options.switch_attack_lock=true;s_options.gyro_aim=false;
- s_options.enemy_hp=7.5;s_options.boss_hp=6.5;s_options.enemy_damage=8.5;s_options.enemy_speed=2.5;s_options.horde=4.5;
+ s_options.enemy_hp=3.5;s_options.boss_hp=4.5;s_options.enemy_damage=2.5;s_options.enemy_speed=2.5;s_options.horde=4.5;
  for(unsigned i=0;i<s_options.manual_aim.size();++i)s_options.manual_aim[i]=i%2;
  store_option_config();s_run.start(123,s_options);
  s_options={};load_option_config();
@@ -52,17 +52,17 @@ int main(){
  persisted[configNames.at("survivors-allow-cheats")]=0;load_option_config();
  assert(!s_options.allow_cheats&&s_run.options.allow_cheats);
  assert(s_options.camera_distance==375&&s_options.reticle_y==-17&&s_options.switch_attack_lock&&!s_options.gyro_aim);
- assert(s_options.boss_hp==6.5&&s_run.options.boss_hp==6.5);
- assert(s_options.enemy_hp==7.5&&s_options.enemy_damage==8.5&&s_options.enemy_speed==2.5&&s_options.horde==4.5);
+ assert(s_options.boss_hp==4.5&&s_run.options.boss_hp==4.5);
+ assert(s_options.enemy_hp==3.5&&s_options.enemy_damage==2.5&&s_options.enemy_speed==2.5&&s_options.horde==4.5);
  for(unsigned i=0;i<s_options.manual_aim.size();++i)assert(s_options.manual_aim[i]==bool(i%2));
  // Host imports and malformed config values use the same bounded readers.
  persisted[configNames.at("survivors-camera-distance")]=9999;
  persisted[configNames.at("survivors-reticle-y")]=-900;
  persisted[configNames.at("survivors-enemy-speed")]=-9;
  persisted[configNames.at("survivors-boss-hp")]=100;
- load_option_config();assert(s_options.boss_hp==10&&s_run.options.boss_hp==6.5);
+ load_option_config();assert(s_options.boss_hp==5&&s_run.options.boss_hp==4.5);
  persisted[configNames.at("survivors-boss-hp")]=-2;
- load_option_config();assert(s_options.boss_hp==1&&s_run.options.boss_hp==6.5);
+ load_option_config();assert(s_options.boss_hp==1&&s_run.options.boss_hp==4.5);
  assert(s_options.camera_distance==500&&s_options.reticle_y==-40&&s_options.enemy_speed==1);
  assert(s_run.options.camera_distance==375&&s_run.options.reticle_y==-17&&s_run.options.enemy_speed==2.5);
  s_active=true;assert(!settings_editable());s_run.phase=Phase::Ready;assert(settings_editable());

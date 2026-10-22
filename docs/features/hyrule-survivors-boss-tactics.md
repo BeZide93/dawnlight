@@ -227,12 +227,14 @@ Debug remains enabled; final device confirmation is pending.
 
 ### Independent boss HP difficulty
 
-Boss HP is configurable from x1 to x10 in 0.5 steps (default x1) for timed bosses and
+Boss HP is configurable from x1 to x5 in 0.5 steps (default x1) for timed bosses and
 stationary elites on every map, including Endless. Enemy HP now applies only
 to ordinary enemies. The timed-boss fixed x2 budget remains in addition to the
 selected boss multiplier; the native 32,767 HP ceiling still applies.
 Settings are persisted for the next run and do not mutate current enemy HP.
-Each +0.5 Boss HP adds 0.5 Twilit Rank and 5 percentage points to score/XP.
+Each +0.5 Boss HP adds 0.5 Twilit Rank and 10 percentage points to score/meta XP.
+All five settings cap at x5: Rank 25 grants x5 score/meta XP and guaranteed
+equipment, 75% Epic / 25% Legendary.
 Difficulty rows use the same minus/plus buttons as Talents. Historical results
 retain their previous rank/rewards. Rules/native-roster/config/UI and
 record-migration tests cover the separation and fractional values.

@@ -4,6 +4,7 @@ import os, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
 source=r'''
 #include "survivors_rules.hpp"
+#include "survivors_legacy_records.hpp"
 #include <cassert>
 #include <algorithm>
 #include <tuple>
@@ -30,23 +31,52 @@ int main() {
    if(item.kind==GearKind::HurricaneBoomerang)assert(item.second==(roll<90-2*rank?1:2));
   }
  }
+ // Twilit rank preserves baseline odds, reaches guaranteed drops, and
+ // uses exact Epic/Legendary tiers for every family and talent rank.
+ for(unsigned talent=0;talent<=10;++talent) {
+  Run run;run.start(91);run.talents.ranks[unsigned(Talent::EquipmentDropRate)]=talent;
+  assert(run.equipment_drop_basis_points()==2000+500*talent);
+  unsigned previous=run.equipment_drop_basis_points();
+  for(float multiplier=1;multiplier<=5;multiplier+=.5f) {
+   run.options.enemy_hp=run.options.boss_hp=run.options.enemy_damage=run.options.enemy_speed=run.options.horde=multiplier;
+   assert(run.equipment_drop_basis_points()>=previous);previous=run.equipment_drop_basis_points();
+  }
+  assert(previous==10000);
+  for(unsigned kind=1;kind<unsigned(GearKind::Count);++kind)for(unsigned rarity:{3u,4u}) {
+   for(unsigned edge:{0u,1u}) {
+    auto edgeRandom=[&](unsigned n){assert(n);return edge?n-1:0;};
+    const auto item=GearInventory::roll_quality(GearKind(kind),rarity,talent,edgeRandom);
+    assert(item.valid()&&item.rarity()==rarity);
+   }
+  }
+ }
+ for(unsigned talent:{0u,10u}) {
+  Run rng;rng.start(12345);unsigned legendary=0,weapons=0;
+  auto random=[&](unsigned n){assert(n);return rng.next_random()%n;};
+  for(unsigned n=0;n<20000;++n) {
+   auto item=GearInventory::roll(random,talent,false,10000);
+   assert(item.valid()&&item.rarity()>=3);legendary+=item.rarity()==4;weapons+=item.is_weapon();
+   if(item.is_weapon())assert(item.perk!=GearPerk::None);
+  }
+  assert(legendary>4700&&legendary<5300&&weapons>15600&&weapons<16400);
+ }
  // v12 preserves score offsets and map clears, appending the new talent ranks.
  Records perks;perks.total_xp=meta_threshold(119);perks.cleared_maps=31;
  for(unsigned i=0;i<unsigned(Talent::Count);++i)while(perks.talents.can_buy(Talent(i)))assert(perks.buy(Talent(i)));
  assert(perks.talents.spent()==119&&!perks.available_points());
  Run scored;scored.start(42);scored.end(true);perks.finish(scored,2);
- auto encoded=perks.encode();assert(encoded[4]==14);
+ auto encoded=perks.encode();assert(encoded[4]==16);
  Records read;assert(read.decode(encoded)&&read.encode()==encoded);
  for(auto t:{Talent::EquipmentDropRate,Talent::EquipmentRarity}) {
   auto copy=read;assert(copy.talents.refund(t)&&copy.available_points()==read.available_points()+1);
  }
  // v11 has no equipment ranks; clear-map bits and first score words are not ranks.
- auto v12=encoded;v12[4]=12;assert(read.decode(std::span(v12.data(),Records::v12_byte_count)));
+ auto v12=legacy_records(perks);v12[4]=12;assert(read.decode(std::span(v12.data(),Records::v12_byte_count)));
  assert(!read.ranked[2].run.chain_spin&&read.talents.rank(Talent::EquipmentRarity)==10);
- auto legacyPerks=encoded;legacyPerks[4]=11;
+ auto legacyPerks=legacy_records(perks);legacyPerks[4]=11;
  assert(read.decode(std::span(legacyPerks.data(),Records::v11_byte_count)));
  assert(!read.talents.rank(Talent::EquipmentDropRate)&&!read.talents.rank(Talent::EquipmentRarity));
- assert(read.cleared_maps==31&&read.ranked[2].encode()==perks.ranked[2].encode());
+ assert(read.cleared_maps==31&&read.ranked[2].score==perks.ranked[2].score&&read.ranked[2].run.twilit_rank()==0);
  assert(read.total_xp==perks.total_xp&&read.available_points()==perks.available_points()+20);
  assert(!read.decode(legacyPerks)); // Version/length mismatch.
  const auto intact=read.encode();
@@ -328,6 +358,6 @@ int main() {
 '''
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test';cpp.write_text(source)
- subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
+ subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),'-I',str(root/'tests'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
 print('Survivors equipment: distributions, all rarities, capacity, selection, corruption and combat bonuses passed')

@@ -42,7 +42,7 @@ int main(){
  const std::string stylesheet=kResultsStyle;
  for(const auto& name:classes)assert(stylesheet.find("."+name+" {")!=std::string::npos);
  auto table=texts[0];assert(table.find("VICTORY")!=std::string::npos&&table.find("02:00")!=std::string::npos);
- assert(table.find("Twilit Rank 0")!=std::string::npos);
+ assert(table.find("Twilit Rank 5")!=std::string::npos);
  assert(table.find("Hero's Bow")<table.find("Sword Attack"));
  assert(table.find("90.0%")!=std::string::npos&&table.find("7.5")!=std::string::npos&&table.find("1,000")!=std::string::npos);
  assert(table.find("Fire Edge")==std::string::npos&&texts[1].find("Power-ups")==std::string::npos);

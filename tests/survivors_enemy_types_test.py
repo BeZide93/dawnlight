@@ -108,16 +108,16 @@ int main(){
  assert(!create_enemy_at({},0,species_count,false));
  s_run.ticks=900;
  // Elite HP applies to every species, once, including difficulty; sizes do not accumulate.
- s_run.options.enemy_hp=10;s_run.options.boss_hp=10;
+ s_run.options.enemy_hp=5;s_run.options.boss_hp=5;
  daE_OC_c bok;e_ba_class bat;e_ms_class rat;e_rd_class bulblin;
  fopAc_ac_c* bases[]={&rat,&bat.enemy,&bulblin.enemy,&bok};
  for(unsigned i=0;i<4;++i){Enemy e;e.elite=true;e.profile=profiles[i];initialize_enemy(&e,bases[i]);
-  assert(e.initialized&&bases[i]->health==1200&&bases[i]->field_0x560==1200);
+  assert(e.initialized&&bases[i]->health==600&&bases[i]->field_0x560==600);
   bases[i]->health=800;initialize_enemy(&e,bases[i]);assert(bases[i]->health==800);
   for(unsigned n=0;n<3;++n)scale_elite_colliders(&e,bases[i]);}
  assert(bok.model.scale.x==2&&rat.morph.model.scale.x==2&&bat.morph.model.scale.x==2);
  assert(rat.mSph1.radius==70&&rat.mSph2.radius==40&&bat.mSph.radius==60&&bulblin.cc_sph[2].radius==70);
- Enemy regular;regular.profile=fpcNm_E_RD_e;initialize_enemy(&regular,&bulblin.enemy);assert(bulblin.enemy.health==80);
+ Enemy regular;regular.profile=fpcNm_E_RD_e;initialize_enemy(&regular,&bulblin.enemy);assert(bulblin.enemy.health==40);
  // Every original species scales, and previously spawned/injured actors keep
  // both their remaining HP and original max HP as the run advances.
  s_run.options.enemy_hp=1;s_run.options.boss_hp=1;

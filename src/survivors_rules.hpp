@@ -164,6 +164,7 @@ struct RunOptions {
     float camera_distance = 200;
     float boss_hp = 1;
     bool legacy_difficulty = false; // Historical snapshots retain pre-Boss-HP rank/rewards.
+    bool weighted_difficulty = false; // v15 five-setting weighted rewards, before the x5 cap.
     DebugOptions debug{};
     int reticle_y = 0;
     bool switch_attack_lock = false;
@@ -181,20 +182,27 @@ struct RunOptions {
         return std::isfinite(value)?std::clamp(std::round(value*2.f)*.5f,1.f,maximum):1.f;
     }
     float twilit_rank() const {
-        return difficulty(enemy_hp,10)+difficulty(enemy_damage,10)+difficulty(enemy_speed,3)+difficulty(horde,5)-4+
-            (legacy_difficulty?0.f:difficulty(boss_hp,10)-1.f);
+        if(legacy_difficulty||weighted_difficulty)
+            return difficulty(enemy_hp,10)+difficulty(enemy_damage,10)+difficulty(enemy_speed,3)+difficulty(horde,5)-4+
+                (legacy_difficulty?0.f:difficulty(boss_hp,10)-1.f);
+        return difficulty(enemy_hp,5)+difficulty(enemy_damage,5)+difficulty(enemy_speed,5)+difficulty(horde,5)+difficulty(boss_hp,5);
     }
     float score_percent() const {
-        return 100+10*(difficulty(enemy_hp,10)-1)+15*(difficulty(enemy_damage,10)-1)+
-            25*(difficulty(enemy_speed,3)-1)+10*(difficulty(horde,5)-1)+
-            (legacy_difficulty?0.f:10*(difficulty(boss_hp,10)-1));
+        if(legacy_difficulty||weighted_difficulty)
+            return 100+10*(difficulty(enemy_hp,10)-1)+15*(difficulty(enemy_damage,10)-1)+
+                25*(difficulty(enemy_speed,3)-1)+10*(difficulty(horde,5)-1)+
+                (legacy_difficulty?0.f:10*(difficulty(boss_hp,10)-1));
+        return twilit_rank()*20;
+    }
+    unsigned equipment_progress() const {
+        return unsigned(std::clamp((twilit_rank()-5.f)*500.f,0.f,10000.f));
     }
     void clamp() {
         debug.clamp();
-        boss_hp=difficulty(boss_hp,10);
+        boss_hp=difficulty(boss_hp,5);
         reticle_y=std::clamp(reticle_y,-40,40);
-        enemy_hp=difficulty(enemy_hp,10); enemy_damage=difficulty(enemy_damage,10);
-        enemy_speed=difficulty(enemy_speed,3); horde=difficulty(horde,5);
+        enemy_hp=difficulty(enemy_hp,5); enemy_damage=difficulty(enemy_damage,5);
+        enemy_speed=difficulty(enemy_speed,5); horde=difficulty(horde,5);
         camera_distance=std::isfinite(camera_distance)?std::clamp(camera_distance,100.f,500.f):200.f;
     }
 };
@@ -246,7 +254,7 @@ struct Run {
         return random;
     }
     void start(uint32_t seed, RunOptions settings = {}, Talents perks = {}) {
-        *this={}; options=settings; options.legacy_difficulty=false; options.clamp(); talents=perks;
+        *this={}; options=settings; options.legacy_difficulty=false; options.weighted_difficulty=false; options.clamp(); talents=perks;
         debug_run=debug_enabled && debug_session_enabled;
         if(!debug_run)options.debug={};
         maximum_hearts=talents.starting_hearts();
@@ -278,6 +286,10 @@ struct Run {
             uint64_t(timed_elites)*500+uint64_t(guard_elites)*250+uint64_t(level ? level-1 : 0)*50+
             (phase==Phase::Victory || endless ? 3000 : 0);
         return unsigned(std::min<double>(UINT32_MAX,base*options.score_percent()/100));
+    }
+    unsigned equipment_drop_basis_points() const {
+        const unsigned base=talents.equipment_drop_basis_points();
+        return base+(10000-base)*options.equipment_progress()/10000;
     }
     unsigned earned_meta_xp() const { return debug_run?0:score()-std::min(score(),endless?normal_score:0u); }
     unsigned required_xp() const { return 5 + level * 3; }
@@ -658,7 +670,7 @@ struct Run {
             (time-times[i-1]*ticks_per_second)/((times[i]-times[i-1])*ticks_per_second);
         const uint64_t hp=finalBoss ? uint64_t(finalHp[map])*scale*(endless?double(factor)/curves[map][5]:1.0) : elite ?
             std::max(120*scale,32*factor) : std::clamp(base,1u,32767u)*factor;
-        return unsigned(std::min(32767.0,std::floor(double(hp)*RunOptions::difficulty(elite || finalBoss ? options.boss_hp : options.enemy_hp,10)*endless_factor()/scale+.5)));
+        return unsigned(std::min(32767.0,std::floor(double(hp)*RunOptions::difficulty(elite || finalBoss ? options.boss_hp : options.enemy_hp,5)*endless_factor()/scale+.5)));
     }
     // Only the four scheduled encounter slots get the fixed doubled HP budget.
     // Boss difficulty applies to all elites; ordinary actors use enemy difficulty.
@@ -765,7 +777,7 @@ struct HighScoreRun {
         for(float value:{run.options.enemy_hp,run.options.enemy_damage,run.options.enemy_speed,run.options.horde})
             halves|=(unsigned(value*2)&1u)<<bit++;
         put(unsigned(run.options.allow_cheats)|(unsigned(run.modded)<<1)|(unsigned(run.red_potion)<<2)|(unsigned(run.endless)<<3)|
-            (unsigned(run.options.legacy_difficulty)<<4)|(halves<<8)|(unsigned(run.options.boss_hp*2)<<16));
+            (unsigned(run.options.legacy_difficulty)<<4)|(unsigned(run.options.weighted_difficulty)<<5)|(halves<<8)|(unsigned(run.options.boss_hp*2)<<16));
         put(run.ticks);put(run.kills);put(run.level);put(run.timed_elites);put(run.guard_elites);put(run.chests_opened);
         put(run.master_sword);put(run.shield);put(run.dual_wield);put(run.dark_link);
         put(run.options.enemy_hp);put(run.options.enemy_damage);put(run.options.enemy_speed);put(run.options.horde);
@@ -775,12 +787,12 @@ struct HighScoreRun {
         put(unsigned(run.twilit_rank()*2));put(run.endless_start);put(run.normal_score);
         return words;
     }
-    bool decode(std::span<const uint32_t,word_count> words, unsigned version=15) {
+    bool decode(std::span<const uint32_t,word_count> words, unsigned version=16) {
         if(!words[0]) {
             if(std::any_of(words.begin(),words.end(),[](auto word){return word!=0;}))return false;
             *this={};return true;
         }
-        if(words[0]>2 || !words[2] || words[3]>=words[2] || (words[4]&~(version>=15?0x001f0f1fu:15u)))return false;
+        if(words[0]>2 || !words[2] || words[3]>=words[2] || (words[4]&~(version>=16?0x001f0f3fu:version==15?0x001f0f1fu:15u)))return false;
         HighScoreRun next;auto& r=next.run;
         unsigned i=0;const auto get=[&](){return words[i++];};
         r.phase=get()==2?Phase::Victory:Phase::Defeat;next.score=get();next.meta_level=get();next.unlock_points=get();
@@ -790,15 +802,18 @@ struct HighScoreRun {
         r.options.enemy_hp=get();r.options.enemy_damage=get();r.options.enemy_speed=get();r.options.horde=get();
         r.options.debug.run_minutes=get();
         r.options.legacy_difficulty=version<15||(flags&16u);
+        r.options.weighted_difficulty=version==15?!r.options.legacy_difficulty:version>=16&&(flags&32u);
+        if(r.options.legacy_difficulty&&r.options.weighted_difficulty)return false;
+        const bool historical=r.options.legacy_difficulty||r.options.weighted_difficulty;
         if(version>=15) {
             unsigned bit=8;
             for(float* value:{&r.options.enemy_hp,&r.options.enemy_damage,&r.options.enemy_speed,&r.options.horde})
                 *value+=((flags>>bit++)&1u)*.5f;
             r.options.boss_hp=float((flags>>16)&31u)*.5f;
-            if(r.options.boss_hp<1||r.options.boss_hp>10)return false;
+            if(r.options.boss_hp<1||r.options.boss_hp>(historical?10:5))return false;
         }
-        if(r.options.enemy_hp<1 || r.options.enemy_hp>10 || r.options.enemy_damage<1 || r.options.enemy_damage>10 ||
-           r.options.enemy_speed<1 || r.options.enemy_speed>3 || r.options.horde<1 || r.options.horde>5 ||
+        if(r.options.enemy_hp<1 || r.options.enemy_hp>(historical?10:5) || r.options.enemy_damage<1 || r.options.enemy_damage>(historical?10:5) ||
+           r.options.enemy_speed<1 || r.options.enemy_speed>(historical?3:5) || r.options.horde<1 || r.options.horde>5 ||
            (r.options.debug.run_minutes!=5 && r.options.debug.run_minutes!=10 && r.options.debug.run_minutes!=20))return false;
         for(auto& rank:r.ranks)rank=get();
         uint64_t total=0;
@@ -882,7 +897,7 @@ struct Records {
         if(!best.present() || run.score()>best.score)best={run,run.score(),level(),available_points()};
     }
     std::array<uint8_t,byte_count> encode() const {
-        std::array<uint32_t,word_count> words{0x56525348,15,runs,wins,best_ticks,best_kills,best_level};
+        std::array<uint32_t,word_count> words{0x56525348,16,runs,wins,best_ticks,best_kills,best_level};
         for(unsigned i=0;i<5;++i)words[7+i]=high_scores[i];
         words[12]=uint32_t(total_xp);words[13]=uint32_t(total_xp>>32);
         for(unsigned i=0;i<legacy_talent_count;++i)words[14+i]=talents.ranks[i];
@@ -905,7 +920,7 @@ struct Records {
         std::array<uint32_t,word_count> words{};
         for(unsigned i=0;i<bytes.size()/4;++i)for(unsigned b=0;b<4;++b)words[i]|=uint32_t(bytes[i*4+b])<<(8*b);
         if(words[0]!=0x56525348 || words[3]>words[2])return false;
-        if(!((words[1]==1 && bytes.size()==28)||(words[1]==2 && bytes.size()==100)||(words[1]==3 && bytes.size()==104)||(words[1]==4 && bytes.size()==108)||(words[1]==5 && bytes.size()==124)||(words[1]==6 && bytes.size()==132)||(words[1]==7 && bytes.size()==136)||(words[1]==8 && bytes.size()==v8_byte_count)||(words[1]==9 && bytes.size()==v9_byte_count)||((words[1]==10 || words[1]==11) && bytes.size()==v11_byte_count)||(words[1]==12 && bytes.size()==v12_byte_count)||(words[1]==13 && bytes.size()==v13_byte_count)||((words[1]==14 || words[1]==15) && bytes.size()==byte_count)))return false;
+        if(!((words[1]==1 && bytes.size()==28)||(words[1]==2 && bytes.size()==100)||(words[1]==3 && bytes.size()==104)||(words[1]==4 && bytes.size()==108)||(words[1]==5 && bytes.size()==124)||(words[1]==6 && bytes.size()==132)||(words[1]==7 && bytes.size()==136)||(words[1]==8 && bytes.size()==v8_byte_count)||(words[1]==9 && bytes.size()==v9_byte_count)||((words[1]==10 || words[1]==11) && bytes.size()==v11_byte_count)||(words[1]==12 && bytes.size()==v12_byte_count)||(words[1]==13 && bytes.size()==v13_byte_count)||((words[1]==14 || words[1]==15 || words[1]==16) && bytes.size()==byte_count)))return false;
         Records next;
         // Legacy saves have aggregate wins only; scores also include defeats.
         if(words[1]>=7){

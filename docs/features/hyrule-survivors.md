@@ -46,26 +46,33 @@ gyro and all ten manual-ability switches share persistent config values; difficu
 is persisted too. They participate in Dawnlight settings export/import. Edit outside
 a run; active runs keep their snapshot. Talents remain specific to each save slot.
 
-Difficulty has separate **Enemy HP** and **Boss HP** controls, each x1–x10.
-Enemy HP affects ordinary enemies only; Boss HP affects all timed bosses and
-stationary elites, across all maps and Endless. Boss HP defaults to x1 and is
-saved as `survivors-boss-hp`; old configs keep their normal-enemy HP choice.
-The existing doubled timed-boss budget, map/time curves, Endless scaling and
-32,767 native HP cap still apply. Neither control compounds during updates or
-changes actors already spawned. All five difficulty multipliers use 0.5 steps,
-with the same minus/plus buttons and disabled states as Talents. Boss HP now
-contributes to Twilit Rank and rewards like Enemy HP: each +0.5 adds 0.5 rank
-and 5 percentage points to the score/talent-XP multiplier. Damage adds 7.5,
-Speed 12.5 and Horde 5 percentage points per half step. Total rank ranges from
-0 to 33, and the reward multiplier from x1 to x5.05. Fractional Horde settings
-carry spawn/drop remainders, preserving proportional populations and rewards.
-Settings persist/export/import as decimal values; old integer configs still load.
+Difficulty has five controls: **Enemy HP**, **Boss HP**, **Enemy Damage**,
+**Enemy Speed** and **Horde**, each x1–x5 in 0.5 steps. Rows use the same
+minus/plus buttons and disabled states as Talents. Enemy HP affects ordinary
+enemies; Boss HP affects timed bosses and stationary elites across all maps and
+Endless. Existing doubled timed-boss budgets, map/time curves and the 32,767
+native HP cap still apply. Active runs keep their original snapshot.
 
-Records v15 preserves half steps, Boss HP and half ranks without changing the
-record size. v14 introduced independent Boss HP; older results recover it from
-Enemy HP. Historical results retain their original four-setting rank/reward
-formula, awarded scores, talents and progression, including rank-zero results.
-New runs always use the five-setting formula.
+Twilit Rank is the sum of the five multipliers, from 5 to 25. Score/meta XP
+multiply by Rank / 5: x1 at defaults, x5 at maximum. Every +0.5 setting adds
+0.5 rank and 10 percentage points to rewards. Fractional Horde settings carry
+spawn/drop remainders. Settings persist/export/import as decimal values; old
+integer configs still load and are clamped to the new x5 cap.
+
+Equipment difficulty progress is `(Rank - 5) / 20`. Boss/elite drop chance
+interpolates from the talent-adjusted baseline (20–70%) to 100%. That same
+fraction of gear rolls uses a 75% Epic / 25% Legendary distribution instead of
+the existing stat-roll distribution. At Rank 25 every eligible boss/elite kill
+therefore awards equipment, exclusively Epic (75%) or Legendary (25%). The
+rarity talent weights valid stat combinations within the selected rarity;
+selection is bounded to 125 candidates without retry loops. Weapon/Tunic odds
+remain 80%/20%, with family perks and debug overrides unchanged.
+
+Records v16 preserves half steps and the new rank/reward formula without
+changing record size. v14 introduced independent Boss HP; v15 introduced half
+steps and five-setting weighted rewards. Historical results retain their
+original formulas, awarded scores and progression, including rank-zero results.
+New runs always use the five-setting sum and x5 limits.
 
 | Arena | Native area | Layout |
 | --- | --- | --- |
@@ -948,8 +955,8 @@ and repeat contacts with Survivors enabled and after returning to story mode.
 ## Run options
 
 The preparation window has Maps, Difficulty and Settings tabs. Session-local
-options survive map changes/replays and are copied into the run at Start. HP and
-damage range from x1–x10; movement and Horde from x1–x5. Native enemy HP is scaled
+options survive map changes/replays and are copied into the run at Start. All
+five difficulty settings range from x1–x5 in 0.5 steps. Native enemy HP is scaled
 once at initialization. Movement is scaled before native ground/wall correction,
 excluding dormant, dying and knocked-back actors. Enemy damage scales at Link's
 native damage entry, restricted to owned enemy contacts.
@@ -1546,7 +1553,7 @@ then continue, repeated bosses and drops, pause during minute boundary, death/Ga
 Over and voluntary End Run, reload all four records, D-pad/touch score navigation.
 
 
-Records v11 normalizes Twilit Rank to the sum of difficulty increments above x1
+Historical Records v11 normalizes Twilit Rank to the sum of difficulty increments above x1
 (0–24). v10 snapshots are validated against the old sum and converted by subtracting
 four; v8/v9 snapshots derive the new rank from their stored options. Scores, XP,
 map clears and all four record categories remain unchanged. HUD rank/skull are
@@ -1652,9 +1659,9 @@ Runtime verification remains required: visible hub chest placement, all controll
 
 Equipment Drop Rate and Equipment Rarity are appended talent IDs, each capped at
 10 ranks. Drop chance uses the run snapshot: 2,000 + 500 basis points per drop
-rank, capped at 7,000. Rarity shifts independent stat weights linearly from
+rank at Twilit Rank 5, then interpolates toward 10,000 at Rank 25. Rarity shifts independent stat weights linearly from
 50/25/15/8/2% to 20/25/25/20/10%; count-affix +2 odds rise from 10% to 30%.
-Rank-zero stat rolls retain their probabilities; new Epic/Legendary weapons make one additional family-perk roll after all stats.
+At baseline difficulty, rank-zero stat rolls retain their probabilities; new Epic/Legendary weapons make one additional family-perk roll after all stats.
 See `SURVIVORS.md` for the midpoint and the distinction between stat tiers and
 final item rarity. Luck and Legendary Chance do not modify these gear rolls.
 

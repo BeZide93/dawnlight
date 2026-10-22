@@ -6,14 +6,14 @@ using namespace dawnlight::survivors;
 int main() {
     // Every half step affects rewards; Boss HP follows the Enemy HP weight.
     float RunOptions::* const fields[]{&RunOptions::enemy_hp,&RunOptions::boss_hp,&RunOptions::enemy_damage,&RunOptions::enemy_speed,&RunOptions::horde};
-    constexpr float maxima[]{10,10,10,3,5},weights[]{10,10,15,25,10};
+    constexpr float maxima[]{5,5,5,5,5},weights[]{20,20,20,20,20};
     for(unsigned i=0;i<5;++i)for(float multiplier=1;multiplier<=maxima[i];multiplier+=.5f) {
         RunOptions setting;setting.*fields[i]=multiplier;
-        assert(setting.twilit_rank()==multiplier-1);
+        assert(setting.twilit_rank()==multiplier+4);
         assert(setting.score_percent()==100+(multiplier-1)*weights[i]);
     }
-    RunOptions maxDifficulty{10,10,3,5,200};maxDifficulty.boss_hp=10;
-    assert(maxDifficulty.twilit_rank()==33&&maxDifficulty.score_percent()==505);
+    RunOptions maxDifficulty{5,5,5,5,200};maxDifficulty.boss_hp=5;
+    assert(maxDifficulty.twilit_rank()==25&&maxDifficulty.score_percent()==500);
     Run half;half.start(1);half.options.enemy_hp=half.options.boss_hp=half.options.enemy_damage=1.5f;
     assert(half.enemy_health(8,false)==12&&half.enemy_health(8,true)==180&&half.incoming_damage(4)==6);
     // Half Horde multipliers preserve fractional spawn and reward remainders.
@@ -39,7 +39,7 @@ int main() {
             unsigned now=hp.enemy_health(8,false,map);assert(now>=previous);previous=now;}
         assert(hp.enemy_health(8,false,map)==normalEnd[map]);
         assert(hp.enemy_health(8,true,map)==eliteEnd[map]);
-        for(unsigned multiplier:{1u,3u,10u}) {
+        for(unsigned multiplier:{1u,3u,5u}) {
             hp.options.boss_hp=multiplier;
             assert(hp.enemy_health(1200,true,map,true)==std::min(32767u,bosses[map]*multiplier));
         }
@@ -68,9 +68,9 @@ int main() {
         for(int slot:{-1,0,1,2,3,4,5,6,7})
             assert(hp.spawn_enemy_health(8,true,map,slot)==expected.spawn_enemy_health(8,true,map,slot));
     }
-    hp.start(1);hp.options.enemy_hp=10;assert(hp.enemy_health(8,false)==80&&hp.enemy_health(8,true)==120);
-    hp.options.boss_hp=10;hp.options.enemy_hp=1;assert(hp.enemy_health(8,false)==8&&hp.enemy_health(8,true)==1200);
-    hp.options.boss_hp=0;assert(hp.enemy_health(8,true)==120);hp.options.boss_hp=100;assert(hp.enemy_health(8,true)==1200);
+    hp.start(1);hp.options.enemy_hp=10;assert(hp.enemy_health(8,false)==40&&hp.enemy_health(8,true)==120);
+    hp.options.boss_hp=10;hp.options.enemy_hp=1;assert(hp.enemy_health(8,false)==8&&hp.enemy_health(8,true)==600);
+    hp.options.boss_hp=0;assert(hp.enemy_health(8,true)==120);hp.options.boss_hp=100;assert(hp.enemy_health(8,true)==600);
     hp.start(1);
     hp.ticks=1800;hp.options.enemy_hp=3;assert(hp.enemy_health(8,false,1)==26);
     hp.ticks=duration;hp.options.enemy_hp=10;assert(hp.enemy_health(~0u,false)==32767);
@@ -533,8 +533,8 @@ int main() {
     Run ending;ending.start(3);ending.ticks=duration-1;ending.horde_remaining=300;ending.tick(true);
     assert(!ending.horde_remaining&&ending.spawn_batch()==1);
     ending.start(5);assert(!ending.horde_remaining);
-    RunOptions invalid{0,100,100,0,1000};invalid.boss_hp=0;invalid.clamp();assert(invalid.boss_hp==1);invalid.boss_hp=100;invalid.clamp();assert(invalid.boss_hp==10);
-    assert(invalid.enemy_hp==1&&invalid.enemy_damage==10&&invalid.enemy_speed==3&&invalid.horde==1&&invalid.camera_distance==500);
+    RunOptions invalid{0,100,100,0,1000};invalid.boss_hp=0;invalid.clamp();assert(invalid.boss_hp==1);invalid.boss_hp=100;invalid.clamp();assert(invalid.boss_hp==5);
+    assert(invalid.enemy_hp==1&&invalid.enemy_damage==5&&invalid.enemy_speed==5&&invalid.horde==1&&invalid.camera_distance==500);
     assert(RunOptions{}.camera_distance==200);
     // Shield and Ordon Sword use independent equipment slots and retain ranks.
     Run slots;slots.start(51);slots.ranks.fill(1);slots.ranks[unsigned(Upgrade::Ball)]=0;

@@ -45,19 +45,20 @@ using ActorId=unsigned; using s16=short;using BOOL=int;constexpr BOOL TRUE=1,FAL
 struct cXyz {float x=0,y=0,z=0; cXyz()=default; cXyz(float a,float b,float c):x(a),y(b),z(c){} void set(float a,float b,float c){x=a;y=b;z=c;} cXyz operator+(cXyz b)const{return{x+b.x,y+b.y,z+b.z};}};
 struct csXyz {short x=0,y=0,z=0;};
 struct fopAc_ac_c {unsigned id=7; int room=51; struct{cXyz pos;}current,old;cXyz speed;csXyz shape_angle;float speedF=0;};
-struct daAlink_c:fopAc_ac_c {struct{int m_gnd=0;bool hit=false;float floor=-1e9f;bool ChkGroundHit(){return hit;}float GetGroundH(){return floor;}void CrrPos(int){hit=true;floor=0;}}mLinkAcch;
- int mGroundCode=0;float mNormalSpeed=0,mFallHeight=0,field_0x33c8=0;cXyz mLastJumpPos;
+float correctedHeight=0;
+struct daAlink_c:fopAc_ac_c {struct{int m_gnd=0;bool hit=false;float floor=-1e9f;bool ChkGroundHit(){return hit;}float GetGroundH(){return floor;}void CrrPos(int){hit=true;floor=correctedHeight;}}mLinkAcch;
+ int mGroundCode=0;float mNormalSpeed=0,mFallHeight=0,field_0x33c8=0;cXyz mLastJumpPos,field_0x3798,collisionPush;bool falling=false;
  unsigned teleports=0,waits=0;
- void setPlayerPosAndAngle(const cXyz* p,s16 yaw,BOOL force){assert(force);++teleports;current.pos=old.pos=*p;shape_angle.y=yaw;}
- void procWaitInit(){++waits;}
+ void setPlayerPosAndAngle(const cXyz* p,s16 yaw,BOOL force){assert(force);++teleports;current.pos=old.pos=field_0x3798=*p;collisionPush={};correctedHeight=p->y;shape_angle.y=yaw;}
+ void procWaitInit(){++waits;falling=false;}
 };
 int life=12,damageWrites=0,finished=0,cleared=0,interrupted=0,cancelled=0;
 struct dBgS_ObjGndChk{cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 struct dBgS_WtrChk{float bottom=0,top=0,height=0;void Set(cXyz p,float y){bottom=p.y;top=y;}float GetHeight(){return height;}};
-float landingFloor=-1.e9f,waterY=0;int landingRoom=0,landingCode=0,groundProbes=0;bool wet=false;
+float landingFloor=-1.e9f,waterY=0;int landingRoom=0,landingCode=0,groundProbes=0;bool wet=false,pit=false;
 struct BG{
  operator int()const{return 0;}int GetGroundCode(int){return 0;}
- float GroundCross(dBgS_ObjGndChk* q){++groundProbes;return !std::isfinite(landingFloor)||landingFloor<=q->pos.y?landingFloor:-1.e9f;}
+ float GroundCross(dBgS_ObjGndChk* q){++groundProbes;if(pit&&q->pos.x>100)return -1.e9f;return !std::isfinite(landingFloor)||landingFloor<=q->pos.y?landingFloor:-1.e9f;}
  int GetRoomId(dBgS_ObjGndChk&){return landingRoom;}
  int GetGroundCode(dBgS_ObjGndChk&){return landingCode;}
  bool WaterChk(dBgS_WtrChk* q){q->height=waterY;return wet&&waterY>=q->bottom&&waterY<=q->top;}
@@ -140,14 +141,14 @@ int main(){
   assert(s_run.phase==Phase::Loading&&s_warmup==0);
  }
  creating=event=false;link.room=51;link.current.pos={100,0,0};
- link.mLinkAcch.hit=true;link.mLinkAcch.floor=0;s_arenaSafe=false;
+ link.mLinkAcch.hit=true;link.mLinkAcch.floor=0;s_arenaSafe=false;landingFloor=0;landingRoom=51;
  for(int frame=0;frame<14;++frame){load_frame(&link);assert(s_run.phase==Phase::Loading);}
  // Capture native floor contact even if the derived barrier mesh is not ready.
  assert(s_arenaSafe&&!s_arenaMeshReady);
  load_frame(&link);assert(s_run.phase==Phase::Ready&&recordsLoaded==1);
  // Falling during loading must restore the recorded floor, not freeze below it.
  s_run.phase=Phase::Loading;link.current.pos.y=-600;link.mLinkAcch.hit=false;
- link.mLinkAcch.floor=-1e9f;link.speed.y=-50;load_frame(&link);
+ link.mLinkAcch.floor=-1e9f;landingFloor=-1e9f;link.speed.y=-50;load_frame(&link);
  assert(link.current.pos.y==0&&link.old.pos.y==0&&link.speed.y==0);
  assert(s_run.phase==Phase::Loading);
  // Replacement players cannot inherit the previous player's rescue position.
@@ -156,20 +157,22 @@ int main(){
  // Capture the Palace entrance once; walking never moves its respawn point.
  creating=false;link.id=s_player=7;s_map=3;clear_arena_geometry();link.room=arena().room;
  link.current.pos={10,0,20};link.shape_angle.y=1234;link.mLinkAcch.hit=true;link.mLinkAcch.floor=0;
- s_run.phase=Phase::Loading;update_arena_safety(&link);assert(s_arenaSpawn);
- link.current.pos={900,100,800};link.mLinkAcch.floor=100;update_arena_safety(&link);
+ s_run.phase=Phase::Loading;landingRoom=arena().room;landingFloor=0;
+ link.teleports=link.waits=0;cleared=interrupted=cancelled=0;
+ update_arena_safety(&link);assert(s_arenaSpawn);
+ link.current.pos={900,100,800};link.mLinkAcch.floor=100;landingFloor=100;update_arena_safety(&link);
  assert(s_arenaSpawnPosition.x==10&&s_arenaSafePosition.x==900);
  s_run.start(5);s_run.ticks=789;s_run.kills=50;
  // Native void handling must not apply a second cost or start a blocked event.
  BOOL restart=TRUE;assert(before_arena_restart(nullptr,moveArgs,&restart,nullptr)==HOOK_SKIP_ORIGINAL&&!restart);
  for(int gate=0;gate<5;++gate){
-  active=gate!=0;transition=gate==1;s_map=gate==2?0:3;s_run.phase=gate==3?Phase::Ready:Phase::Running;
+  active=gate!=0;transition=gate==1;s_arenaSafe=gate!=2;s_map=3;s_run.phase=gate==3?Phase::Ready:Phase::Running;
   link.id=gate==4?8:s_player;
   assert(before_arena_restart(nullptr,moveArgs,&restart,nullptr)==HOOK_CONTINUE);
  }
- active=true;transition=false;s_map=3;s_run.phase=Phase::Running;link.id=s_player;
+ active=s_arenaSafe=true;transition=false;s_map=3;s_run.phase=Phase::Running;link.id=s_player;
  // Ordinary jumps / air below the edge but above the cutoff are not falls.
- link.mLinkAcch.hit=false;link.current.pos.y=-390;update_arena_safety(&link);assert(!damageWrites);
+ landingFloor=-1e9f;link.mLinkAcch.hit=false;link.current.pos.y=-390;update_arena_safety(&link);assert(!damageWrites);
  link.current.pos.y=-401;link.speed={5,-50,6};link.speedF=20;link.mNormalSpeed=20;
  link.mFallHeight=5000;update_arena_safety(&link);
  assert(life==8&&damageWrites==1&&link.teleports==1&&link.waits==1);
@@ -199,7 +202,7 @@ int main(){
  for(unsigned map=0;map<arenas.size();++map){
   s_map=map;clear_arena_geometry();link.room=landingRoom=arena().room;
   s_run.phase=Phase::Running;link.current.pos={10,2000,20};
-  link.mLinkAcch.hit=true;link.mLinkAcch.floor=2000;link.mGroundCode=0;
+  link.mLinkAcch.hit=true;link.mLinkAcch.floor=2000;link.mGroundCode=0;landingFloor=2000;
   update_arena_safety(&link);assert(s_arenaSafePosition.y==2000);
   const int writes=damageWrites;const auto teleports=link.teleports;
   landingFloor=-4000;link.mLinkAcch.hit=false;link.mLinkAcch.floor=-1.e9f;
@@ -219,8 +222,8 @@ int main(){
   // preceding frame cannot mask a later move out over the void.
   for(int bad=0;bad<8;++bad){
    link.current.pos={10,2000,20};link.mLinkAcch.hit=true;link.mLinkAcch.floor=2000;
-   landingCode=0;landingRoom=arena().room;wet=false;landingFloor=0;
-   update_arena_safety(&link);
+   landingCode=0;landingRoom=arena().room;wet=false;landingFloor=2000;
+   update_arena_safety(&link);landingFloor=0;
    link.mLinkAcch.hit=false;link.current.pos={100,1400,200};
    update_arena_safety(&link);assert(link.current.pos.y==1400);
    if(bad==0)landingFloor=-1.e9f;
@@ -240,6 +243,43 @@ int main(){
   update_arena_safety(&link);assert(link.current.pos.y==1400);
   wet=false;
  }
+ // Gerudo-style pit: native contact lingers while Link steps over the lip.
+ // Do not replace the inland checkpoint with an edge/unsupported position.
+ for(unsigned map=0;map<arenas.size();++map){
+  s_map=map;clear_arena_geometry();s_run.phase=Phase::Running;
+  pit=true;landingFloor=0;landingCode=0;link.room=landingRoom=arena().room;
+  link.current.pos={0,0,0};link.mLinkAcch.hit=true;link.mLinkAcch.floor=0;link.mGroundCode=0;
+  update_arena_safety(&link);assert(s_arenaSafePosition.x==0);
+  link.current.pos.x=80;update_arena_safety(&link);assert(s_arenaSafePosition.x==0);
+  link.current.pos.x=110;update_arena_safety(&link);assert(s_arenaSafePosition.x==0);
+  link.current.pos={200,-600,0};link.old.pos={190,-550,0};link.field_0x3798=link.current.pos;
+  link.collisionPush={100,0,0};link.speed={20,-50,0};link.speedF=link.mNormalSpeed=30;
+  link.mLastJumpPos={110,0,0};link.mFallHeight=link.field_0x33c8=900;link.falling=true;
+  link.mLinkAcch.hit=false;link.mLinkAcch.floor=-1e9f;
+  // Custom recovery owns void handling on every map; no blocked native event.
+  restart=TRUE;
+  assert(before_arena_restart(nullptr,moveArgs,&restart,nullptr)==HOOK_SKIP_ORIGINAL&&!restart);
+  const auto teleports=link.teleports;const int writes=damageWrites;life=12;
+  update_arena_safety(&link);
+  assert(link.teleports==teleports+1&&link.current.pos.x==0&&link.current.pos.y==0);
+  assert(link.old.pos.x==0&&link.field_0x3798.x==0&&link.field_0x3798.y==0);
+  assert(link.collisionPush.x==0&&link.speed.y==0&&link.speed.x==0&&link.speedF==0&&link.mNormalSpeed==0);
+  assert(!link.falling&&link.mLastJumpPos.x==0&&link.mFallHeight==0&&link.field_0x33c8==0);
+  assert(link.mLinkAcch.ChkGroundHit()&&link.mLinkAcch.GetGroundH()==0&&link.mGroundCode==0);
+  for(int frame=0;frame<60;++frame){
+   // Residual motion would put Link back across the lip on the next frame.
+   link.current.pos.x+=link.speed.x+link.speedF+link.collisionPush.x;
+   link.current.pos.y+=link.speed.y;
+   update_arena_safety(&link);
+  }
+  assert(link.teleports==teleports+1&&link.current.pos.x==0&&link.current.pos.y==0);
+  assert(damageWrites==writes+(map==3?1:0)&&life==(map==3?8:12));
+  // A native void polygon also recovers before reaching the height threshold.
+  link.current.pos={200,-100,0};link.mLinkAcch.hit=true;link.mGroundCode=10;
+  update_arena_safety(&link);
+  assert(link.teleports==teleports+2&&link.current.pos.x==0&&link.mGroundCode==0);
+ }
+ pit=false;
  clear_arena_geometry();assert(!s_arenaSpawn&&!s_arenaSafe);
  std::cout<<"Survivors spawn: native entry, barrier timing, grounding, recovery and actor replacement passed\n";
 }
@@ -248,7 +288,7 @@ int main(){
 ground = (root/'src/survivors_ground.inc').read_text()
 dry_floor = ground[:ground.index('bool walkable_spawn_path')]
 functions = dry_floor+'\n'+'\n'.join(extract(n) for n in ['add_exit_box','arena_story_actor','before_arena_stage_actor',
-    'confine_arena_actor','after_arena_position','before_arena_restart','arena_grounded','arena_fallen','update_arena_safety'])
+    'confine_arena_actor','after_arena_position','before_arena_restart','arena_grounded','arena_fallen','arena_safe_footprint','restore_arena_player','update_arena_safety'])
 globals = source[source.index('std::vector<barriers::Wall>'):source.index('void add_exit_box')]
 with tempfile.TemporaryDirectory() as tmp:
     cpp,binary=Path(tmp)/'test.cpp',Path(tmp)/'test'

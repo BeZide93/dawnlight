@@ -145,7 +145,7 @@ HookAction before_arena_exit(ModContext*, void*, void* result, void*) {
 }
 HookAction before_arena_restart(ModContext*, void* args, void* result, void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
-    if (!in_arena() || transitioning() || s_map!=3 || !s_arenaSpawn ||
+    if (!in_arena() || transitioning() || !s_arenaSafe || !s_arenaSpawn ||
         s_run.phase!=Phase::Running || !link || fopAcM_GetID(link)!=s_player) return HOOK_CONTINUE;
     // Native void returns set an event/damage before setNextStage is blocked.
     // Our local rescue owns the penalty and never reloads the active run.
@@ -167,6 +167,32 @@ bool arena_fallen(daAlink_c* link) {
     cXyz landing=link->current.pos;
     return !dry_arena_floor(landing,20,1.e8f);
 }
+// Native ground contact can persist at an edge with most of Link over the void.
+// Only promote positions with a supported footprint to recovery checkpoints.
+bool arena_safe_footprint(const cXyz& position) {
+    cXyz center=position;
+    if (!dry_arena_floor(center,20,40)) return false;
+    for (const auto& offset : std::array<cXyz,4>{cXyz(-40,0,-40),cXyz(40,0,-40),
+            cXyz(-40,0,40),cXyz(40,0,40)}) {
+        cXyz edge=center+offset;
+        if (!dry_arena_floor(edge,40,40)) return false;
+    }
+    return true;
+}
+void restore_arena_player(daAlink_c* link, const cXyz& position, s16 yaw) {
+    s_warmup=0;
+    clear_attacks();interrupt_auto_actions(link);cancel_jump_abilities_for(link);
+    // The native setter also resets the movement anchor and collision push.
+    // Assigning current/old alone leaves these pointing into the hole.
+    link->setPlayerPosAndAngle(&position,yaw,TRUE);
+    link->speed.set(0,0,0);link->speedF=link->mNormalSpeed=0;
+    link->mLastJumpPos=position;
+    link->mFallHeight=link->field_0x33c8=position.y;
+    fopAcM_SetRoomNo(link,arena().room);
+    link->procWaitInit();
+    link->mLinkAcch.CrrPos(dComIfG_Bgsp());
+    link->mGroundCode=dComIfG_Bgsp().GetGroundCode(link->mLinkAcch.m_gnd);
+}
 void update_arena_safety(daAlink_c* link) {
     // Native ground contact is available before our derived barrier mesh. Keep
     // the first safe position during Loading as well, not just after warmup.
@@ -174,18 +200,10 @@ void update_arena_safety(daAlink_c* link) {
     const int room=fopAcM_GetRoomNo(link);
     const bool palace=s_map==3 && s_arenaSpawn && s_run.phase==Phase::Running;
     const bool fallen=s_arenaSafe && (arena_fallen(link) ||
-        (palace && link->mLinkAcch.ChkGroundHit() &&
+        (link->mLinkAcch.ChkGroundHit() &&
          (link->mGroundCode==4 || link->mGroundCode==5 || link->mGroundCode==10)));
     if (palace && fallen) {
-        clear_attacks();interrupt_auto_actions(link);cancel_jump_abilities_for(link);
-        link->setPlayerPosAndAngle(&s_arenaSpawnPosition,s_arenaSpawnYaw,TRUE);
-        link->speed.set(0,0,0);link->speedF=link->mNormalSpeed=0;
-        link->mLastJumpPos=s_arenaSpawnPosition;
-        link->mFallHeight=link->field_0x33c8=s_arenaSpawnPosition.y;
-        fopAcM_SetRoomNo(link,arena().room);
-        link->procWaitInit();
-        link->mLinkAcch.CrrPos(dComIfG_Bgsp());
-        link->mGroundCode=dComIfG_Bgsp().GetGroundCode(link->mLinkAcch.m_gnd);
+        restore_arena_player(link,s_arenaSpawnPosition,s_arenaSpawnYaw);
         s_arenaSafePosition=s_arenaSpawnPosition;
         // Life is stored in quarter hearts; this environmental cost ignores
         // enemy damage scaling, shields, Dodge and ordinary hit invulnerability.
@@ -194,10 +212,8 @@ void update_arena_safety(daAlink_c* link) {
         if (!life) begin_defeat();
     } else if (s_arenaSafe && (room!=arena().room || fallen)) {
         // Last safe floor position, not a scene reload that would discard a run.
-        link->current.pos=link->old.pos=s_arenaSafePosition;
-        link->speed.set(0,0,0);
-        fopAcM_SetRoomNo(link,arena().room);
-    } else if (arena_grounded(link)) {
+        restore_arena_player(link,s_arenaSafePosition,link->shape_angle.y);
+    } else if (arena_grounded(link) && arena_safe_footprint(link->current.pos)) {
         s_arenaSafePosition=link->current.pos; s_arenaSafe=true;
         if (!s_arenaSpawn) {
             s_arenaSpawnPosition=link->current.pos;s_arenaSpawnYaw=link->shape_angle.y;s_arenaSpawn=true;

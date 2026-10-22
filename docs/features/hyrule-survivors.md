@@ -60,6 +60,12 @@ for dry, valid ground beneath Link before triggering recovery. Tall cliff jumps
 can land naturally on lower floors; missing ground, void/exit floor codes, water
 and floors in another room still trigger recovery. The Palace retains its entrance
 respawn and one-heart penalty; other arenas return to the last safe position.
+Recovery checkpoints require dry ground under Link and the four corners of a
+40-unit half-width footprint, so lingering edge contact cannot move the checkpoint
+onto a hole. Every recovery uses the native position setter, clears collision push,
+horizontal/vertical speed and fall history, cancels active attacks/jump abilities,
+returns Link to idle and refreshes ground collision. Native void-restart events
+are suppressed while custom recovery owns the running arena on every map.
 
 ## Run
 

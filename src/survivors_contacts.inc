@@ -46,15 +46,26 @@ bool live_native_target_peer(dCcD_GObjInf& collider) {
     return actor && (!peer.mAc || peer.mAc==actor);
 }
 void validate_player_contacts() {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Contacts);
+#endif
     visit_player_contacts([](dCcD_GObjInf& collider) {
         const auto found = s_contactPeers.find(&collider);
         const ContactPeer empty{};
         const auto& peer = found == s_contactPeers.end() ? empty : found->second;
-        if (raw_attack_peer(collider) && !live_contact_peer(raw_attack_peer(collider), peer))
+        if (raw_attack_peer(collider) && !live_contact_peer(raw_attack_peer(collider), peer)) {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+            freeze_diag::rejected_contact(false);
+#endif
             collider.ResetAtHit();
+        }
         // Missing observer bookkeeping must not cancel accepted native damage.
-        if (raw_target_peer(collider) && !live_native_target_peer(collider))
+        if (raw_target_peer(collider) && !live_native_target_peer(collider)) {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+            freeze_diag::rejected_contact(true);
+#endif
             collider.ResetTgHit();
+        }
     });
 }
 void clear_player_contacts() {
@@ -77,6 +88,9 @@ void after_player_contact(ModContext*, void* args, void*, void*) {
     auto* link = daAlink_getAlinkActorClass();
     if (!link || actor_by_id(s_player) != link ||
         attack->GetAc() != link) return;
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::ContactDispatch);
+#endif
     // Both arguments are alive during collision dispatch. Record only accepted
     // contacts, including our skip-original multihit and boss-block paths.
     visit_player_contacts([&](dCcD_GObjInf& collider) {
@@ -98,6 +112,9 @@ HookAction before_contact_owner_delete(ModContext*, void* args, void*, void*) {
     if (!methods || mods::arg<process_method_func>(args, 0) != methods->delete_method)
         return HOOK_CONTINUE;
     const auto id = fopAcM_GetID(actor);
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::ContactDelete);
+#endif
     // Run before the native destructor, including untracked child actors such
     // as Helmasaur armor and enemy arrows. Never inspect a dying peer's vtable.
     visit_player_contacts([&](dCcD_GObjInf& collider) {

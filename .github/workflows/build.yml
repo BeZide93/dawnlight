@@ -49,6 +49,8 @@ jobs:
       - name: Test Hyrule Survivors rules and lifecycle
         if: matrix.platform == 'linux-x86_64'
         run: |
+          python3 tests/survivors_freeze_diagnostics_test.py
+          CXX=clang++ python3 tests/survivors_freeze_diagnostics_test.py
           python3 tests/survivors_enemy_archives_test.py
           CXX=clang++ python3 tests/survivors_enemy_archives_test.py
           python3 tests/survivors_process_index_test.py
@@ -282,7 +284,7 @@ jobs:
       - name: Configure CMake
         shell: bash
         run: |
-          args=(-G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{matrix.cmake_args}})
+          args=(-G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DDAWNLIGHT_FREEZE_DIAGNOSTICS=ON ${{matrix.cmake_args}})
           if [[ -n "${{matrix.android_ndk}}" ]]; then
             args+=(-DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/${{matrix.android_ndk}}/build/cmake/android.toolchain.cmake"
                    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28)

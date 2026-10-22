@@ -185,8 +185,10 @@ int main() {
 '''
 with tempfile.TemporaryDirectory() as temp:
     cpp=Path(temp)/'contacts.cpp';exe=Path(temp)/'contacts';cpp.write_text(program)
-    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',
-                    '-fsanitize=address,undefined','-fno-omit-frame-pointer','-g',
-                    '-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
-    subprocess.run([str(exe)],check=True)
+    for diagnostics in (0,1):
+        subprocess.run([os.environ.get('CXX','c++'),'-std=c++20',f'-DDAWNLIGHT_FREEZE_DIAGNOSTICS={diagnostics}','-include',str(root/'tests/survivors_freeze_fixture.hpp'),'-Wall','-Wextra','-Werror',
+                        '-fsanitize=address,undefined','-fno-omit-frame-pointer','-g',
+                        '-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
+        subprocess.run([str(exe)],check=True)
+
 print('Survivors contact lifetime regressions passed')

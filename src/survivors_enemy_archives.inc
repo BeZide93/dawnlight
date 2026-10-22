@@ -25,6 +25,9 @@ void release_enemy_archives() {
         const bool owned=info && info->getArchive()==hold.archive;
         const auto name=hold.name;
         hold={};
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+        freeze_diag::cache(freeze_diag::CacheEvent::Release);
+#endif
         if(owned)dComIfG_deleteObjectResMain(name.data());
     }
 }
@@ -54,14 +57,27 @@ void after_enemy_archive_ready(ModContext*,void* args,void* result,void*) {
     if(dComIfG_getObjectResInfo(canonical)!=info)return;
     EnemyArchiveHold* available=nullptr;
     for(auto& hold:s_enemyArchives) {
-        if(hold.archive==info->getArchive() && std::strcmp(hold.name.data(),canonical)==0)return;
+        if(hold.archive==info->getArchive() && std::strcmp(hold.name.data(),canonical)==0) {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+            freeze_diag::cache(freeze_diag::CacheEvent::Reuse);
+#endif
+            return;
+        }
         if(!hold.archive && !available)available=&hold;
     }
-    if(!available)return;
+    if(!available) {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+        freeze_diag::cache(freeze_diag::CacheEvent::Full);
+#endif
+        return;
+    }
     // The successful native load already mounted and prepared the archive.
     // setObjectRes now only increments its reference count: no second load,
     // phase request, polling, recursion or change to the actor's phase state.
     if(!dComIfG_setObjectRes(canonical,u8(0),nullptr))return;
     std::memcpy(available->name.data(),canonical,length+1);
     available->archive=info->getArchive();
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    freeze_diag::cache(freeze_diag::CacheEvent::Acquire);
+#endif
 }

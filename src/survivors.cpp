@@ -2,6 +2,7 @@
 #include "platform_compat.hpp"
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
+#include "survivors_freeze_diagnostics.hpp"
 #include "survivors_enemy_hud.hpp"
 #include "survivors_integrity.hpp"
 #include "d/d_door_param2.h"
@@ -1204,6 +1205,9 @@ void after_power(ModContext*, void* args, void*, void*) {
 }
 void after_player(ModContext*, void* args, void*, void*) {
     if (!s_active || s_run.phase != Phase::Running || !playable()) return;
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Player);
+#endif
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!link || fopAcM_GetID(link) != s_player) return;
     if (dComIfGs_getLife() == 0 && !s_victory) { begin_defeat(); return; }
@@ -1699,6 +1703,13 @@ bool survivors_dark_link_active() {
         s_run.phase == Phase::Upgrade || s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Treasure);
 }
 void update_survivors() {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    freeze_diag::context({s_active,s_hub,in_arena(),transitioning(),bool(dComIfGp_isPauseFlag()),
+        bool(dComIfGp_event_runCheck()),ui_visible()||dMeter2Info_getWindowStatus()!=0||dMeter2Info_getPauseStatus()!=0,
+        s_map,unsigned(s_run.phase),s_run.ticks});
+    freeze_diag::pulse();
+    const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Update);
+#endif
     enemy_hud::refresh();
     update_survivors_registration();
     update_survivors_music();

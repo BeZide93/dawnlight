@@ -62,7 +62,7 @@ and awakened guards use single-action versions of the ordinary elite combos.
 | Bow Bulblin | Alternating fan and two quick individual arrows, with projectile speed ×1.15. Each fan/pair shares an attack budget. Ordinary archers retain their single/single/triple normal-run cadence and existing Endless volleys. |
 | Bokoblin | Faster gap closing at medium range, two swings, then 0.8-second recovery. Stationary guards get a smaller approach step and no forced second swing. |
 | Kargarok | Two warned dives, repositioning toward a different side between them. Attack entry no longer requires the narrow native 300–400-unit distance window. The damaging pass follows a committed line; recovery follows the pair. |
-| Stalhound | Sampled pounce direction and an alternating short second pounce; recovery after the sequence. |
+| Stalhound | Sampled pounce direction and an alternating short second pounce; recovery after the sequence. Native alignment follows Link until the pounce tell starts (attack phase 2). Only then is aim locked, and general facing stops overriding it. |
 | Stalfos | Native attack animations alternate, with a forward step and 25% shorter late wind-up. The native exact-frame jump cue is preserved. |
 | Shadow Beast | Short advance into a two-arm sequence, with the second attack selecting the other native animation and limited late turning. |
 
@@ -83,6 +83,13 @@ flight, Bloat's pair, delayed shots, Zelda's selection and summon caps. They als
 retain the existing native-roster, projectile ownership, special-attack, hook
 registration and process-lifetime regressions. CI runs the new director fixture
 with GCC and Clang.
+
+The Stalhound regression also executes the SDK's actual `e_sh_attack` with the
+production facing and boss-aim hooks. Previously the ten-tick aim lock returned
+a cached heading while general facing kept resetting the body toward live Link;
+native phase 1 could never satisfy its yaw-alignment check. The test reproduces
+that stall before the fix and verifies preparation, tell, launch, bite and landing
+after it, plus ordinary/unowned actor and stagger boundaries.
 
 In-game validation is still required on Windows, Android and Switch: animation
 cues and weapon reach, all maps' cliffs/slopes/ceilings, rider-before-dive timing,

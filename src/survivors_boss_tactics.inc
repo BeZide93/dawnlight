@@ -525,8 +525,13 @@ void after_boss_aim(ModContext*,void* args,void* result,void*) {
     const auto it=s_bossTactics.find(e->id);if(it==s_bossTactics.end())return;
     const auto& t=it->second;bool locked=false;
     switch(e->profile) {
-    case fpcNm_E_DN_e:case fpcNm_E_MF_e:case fpcNm_E_S1_e:case fpcNm_E_SH_e:
+    case fpcNm_E_DN_e:case fpcNm_E_MF_e:case fpcNm_E_S1_e:
         locked=t.attacking&&t.phaseTick>=10;break;
+    case fpcNm_E_SH_e:{const auto* a=reinterpret_cast<const e_sh_class*>(actor);
+        // Phase 1 must align with the same live heading as general facing.
+        // Lock only once native AI has accepted alignment and started the tell;
+        // a tick-based lock here can keep its <0x800 yaw check false forever.
+        locked=t.attacking&&a->field_0x676==3&&a->field_0x678>=2;break;}
     case fpcNm_B_GND_e:{const auto* a=reinterpret_cast<const b_gnd_class*>(actor);
         locked=a->mActionMode==11&&a->mMoveMode>=11&&a->mMoveMode<=13;break;}
     default:break;

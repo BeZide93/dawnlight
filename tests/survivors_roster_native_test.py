@@ -348,7 +348,7 @@ int main(){
   {fpcNm_E_GE_e,unsigned(Species::Guay),&NativeActor::mActionMode,2,&NativeActor::mMode,2,3},
   {fpcNm_E_KR_e,unsigned(Species::Kargarok),&NativeActor::mCurAction,3,&NativeActor::field_0x672,0,11},
   {fpcNm_E_YK_e,unsigned(Species::ShadowKeese),&NativeActor::mAction,ACT_ATTACK,&NativeActor::mActionPhase,2,3},
-  {fpcNm_E_SH_e,unsigned(Species::Stalhound),&NativeActor::field_0x676,3,&NativeActor::field_0x678,3,4},
+  {fpcNm_E_SH_e,unsigned(Species::Stalhound),&NativeActor::field_0x676,3,&NativeActor::field_0x678,2,4},
   {fpcNm_E_SM2_e,unsigned(Species::BlackChu),&NativeActor::action,ACTION_ATTACK,&NativeActor::mode,0,2},
   {fpcNm_E_DN_e,unsigned(Species::Lizalfos),&NativeActor::action,5,&NativeActor::mode,0,1},
   {fpcNm_E_DN_e,unsigned(Species::Lizalfos),&NativeActor::action,6,&NativeActor::mode,0,1},

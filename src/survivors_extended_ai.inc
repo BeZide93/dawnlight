@@ -144,7 +144,9 @@ bool committed_enemy_motion(fopAc_ac_c* actor,ProfileName profile) {
         const auto* e=reinterpret_cast<e_yk_class*>(actor);return e->mAction==ACT_ATTACK && e->mActionPhase>=2;
     }
     case fpcNm_E_SH_e: {
-        const auto* e=reinterpret_cast<e_sh_class*>(actor);return e->field_0x676==3 && e->field_0x678>=3;
+        // The pounce tell already owns its heading. Phase 1 still follows Link
+        // so native alignment can complete before the boss aim lock starts.
+        const auto* e=reinterpret_cast<e_sh_class*>(actor);return e->field_0x676==3 && e->field_0x678>=2;
     }
     case fpcNm_E_SM2_e:return reinterpret_cast<e_sm2_class*>(actor)->action==ACTION_ATTACK;
     case fpcNm_E_DN_e: {

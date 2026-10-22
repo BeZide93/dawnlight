@@ -176,6 +176,13 @@ bosses replace that prerequisite with a world line-of-sight check while retainin
 native range, pitch, readiness and attack selection. Existing doubled spacing and
 halved waits remain.
 
+The iOS v2.0.3 manifest does not export `player_way_check`. Use the existing
+`action` and `damage_check` hooks instead: after native metrics refresh, temporarily
+mask a ready chase timer and defer selection to action completion. Retain native
+chase/notice movement, loss-of-target transitions, the 50% selection roll and
+10–29-tick retry timer. Select at most once per action and start the native attack
+on the next Execute. No added private hook declaration or iOS audit bypass.
+
 The native automatic guard selector also interrupts active sword swings; its two
 random branches use the same mask. Suppress that selector only during the owned
 actor's action call, restoring its shield parameter before rendering/collision.

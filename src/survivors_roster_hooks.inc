@@ -1,6 +1,6 @@
     PRE(RosterTargets,before_roster_targets);
     PRE(RosterSFAction,before_stalfos_action); POST(RosterSFAction,after_stalfos_action);
-    PRE(RosterSFPlayerWay,before_stalfos_player_way);
+    PRE(RosterSF,before_stalfos_readiness);
     PRE(RosterTargets,before_elite_attack_scale);
     PRE(RosterTargets,before_boss_ball_collision);
     PRE(SurvivorsProcess,before_elite_scale_scope); POST(SurvivorsProcess,after_elite_scale_scope);

@@ -11,7 +11,7 @@ def extract(signature):
   if not depth:return text[start:end+1]
  raise AssertionError(signature)
 enums=extract('enum Action {')+';'+extract('enum Action_Phase {')+';'
-way=extract('static BOOL player_way_check(').replace('player_way_check(', 'native_player_way_check(')
+way=extract('static BOOL player_way_check(')
 native=extract('static void e_sf_fight_run(')+extract('static int e_sf_guard(')
 start=text.index('    if (i_this->arg3 != 0xFF && unkFlag1')
 end=text.index('    cLib_addCalcAngleS2(&a_this->shape_angle.y',start)
@@ -49,13 +49,13 @@ u16 cut=0;u16 cc_pl_cut_bit_get(){return cut;}
 s16 cM_atan2s(float x,float z){return s16(std::atan2(x,z)*32768/3.14159265);}
 struct J3DFrameCtrl{enum{EMode_LOOP=2,EMode_NONE=0};};
 void anm_init(e_sf_class* a,int,float,int,float speed){a->morph.frame=0;a->morph.stopped=false;a->morph.speed=speed;}
-float cM_rndF(float){return 0;}float cM_rndFX(float){return 0;}int KREG_S(int){return 0;}
+float attackRoll=0;unsigned attackRolls=0;float cM_rndF(float n){if(n==1){++attackRolls;return attackRoll;}return 0;}float cM_rndFX(float){return 0;}int KREG_S(int){return 0;}
 void cLib_addCalc0(float* value,float,float step){if(*value>0)*value=std::max(0.f,*value-step);else *value=std::min(0.f,*value+step);}
 void cLib_addCalc2(float* value,float target,float,float step){*value+=std::clamp(target-*value,-step,step);}
 void cLib_addCalcAngleS2(s16* value,s16 target,int,int){*value=target;}
 struct{float charge_spd=10,move_spd=5,combat_start_range=250,attack_start_range=300,defense_recognize_range=300;}l_HIO;
-int pl_check(e_sf_class*,float,s16){return 1;}
-BOOL player_way_check(e_sf_class*);
+bool recognized=true;int pl_check(e_sf_class*,float,s16){return recognized;}
+static BOOL player_way_check(e_sf_class*);
 '''
 main=r'''
 int main(){
@@ -63,12 +63,21 @@ int main(){
  // Native attack selection fails with Link facing away despite valid range.
  for(s16 yaw:{s16(0),s16(0x4000),s16(-0x4000),s16(-0x8000)}){
   sf.mAction=3;sf.mActionPhase=1;sf.mTimers[2]=0;player.shape_angle.y=yaw;
-  if(yaw==0)assert(!native_player_way_check(&sf));
-  e_sf_fight_run(&sf);assert(sf.mAction==5); // Native readiness/animation selection still owns the attack.
+  if(yaw==0)assert(!player_way_check(&sf));
+  const auto rolls=attackRolls;owned_fight(&sf);assert(sf.mAction==5&&sf.mTimers[2]==10&&attackRolls==rolls+1);
  }
- blocked=true;sf.mAction=3;sf.mActionPhase=1;sf.mTimers[2]=0;e_sf_fight_run(&sf);assert(sf.mAction==3);blocked=false;
- sf.mPlayerDistanceXZ=301;sf.mAction=3;sf.mTimers[2]=0;e_sf_fight_run(&sf);assert(sf.mAction==3);sf.mPlayerDistanceXZ=250;
- sf.mTimers[2]=2;e_sf_fight_run(&sf);assert(sf.mAction==3);sf.mTimers[2]=0;
+ blocked=true;sf.mAction=3;sf.mActionPhase=1;sf.mTimers[2]=0;owned_fight(&sf);assert(sf.mAction==3&&sf.mTimers[2]==0);blocked=false;
+ player.current.pos.z=602;sf.mAction=3;sf.mTimers[2]=0;owned_fight(&sf);assert(sf.mAction==3);player.current.pos.z=500;
+ sf.mTimers[2]=2;owned_fight(&sf);assert(sf.mAction==3&&sf.mTimers[2]==2);sf.mTimers[2]=0;
+ // Pitch boundaries, both native weapon variants, and failed selection retries.
+ for(s16 pitch:{s16(-0x1000),s16(0x1000)}){sf.mPlayerAngleX=pitch;owned_fight(&sf);assert(sf.mAction==3&&sf.mTimers[2]==0);}
+ sf.mPlayerAngleX=0;sf.mType=1;owned_fight(&sf);assert(sf.mAction==4&&sf.mTimers[2]==10);sf.mType=0;
+ sf.mAction=3;sf.mTimers[2]=0;attackRoll=0.75f;const auto rolls=attackRolls;
+ owned_fight(&sf);assert(sf.mAction==3&&sf.mTimers[2]==10&&attackRolls==rolls+1);attackRoll=0;
+ // Native loss-of-target transition must win; standalone damage hooks do nothing.
+ recognized=false;sf.mAction=3;sf.mTimers[0]=sf.mTimers[2]=0;owned_fight(&sf);
+ assert(sf.mAction==0&&sf.mTimers[2]==0);recognized=true;
+ sf.mAction=3;before_stalfos_readiness(nullptr,args,nullptr,nullptr);assert(sf.mTimers[2]==0);
  // The actual native selector cancels active attacks; the scoped shield mask prevents it.
  player.shape_angle.y=s16(-0x8000);cut=1;sf.mAction=5;native_guard_selector(&sf);assert(sf.mAction==7);
  for(int action:{4,5}){sf.mAction=action;sf.mActionPhase=1;
@@ -101,17 +110,33 @@ int main(){
  for(int gate=0;gate<6;++gate){owner={};playing=true;sf.actor.health=100;sf.mAction=3;
   if(gate==0)owner.elite=false;if(gate==1)owner.dormant=true;if(gate==2)owner.stagger=true;
   if(gate==3)owner.retiring=true;if(gate==4)playing=false;if(gate==5)sf.actor.health=0;
-  const auto calls=s_run.calls;BOOL result=0;
-  assert(before_stalfos_player_way(nullptr,args,&result,nullptr)==HOOK_CONTINUE);
+  const auto calls=s_run.calls;
+  sf.mTimers[2]=0;assert(before_stalfos_readiness(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE&&sf.mTimers[2]==0);
   before_stalfos_action(nullptr,args,nullptr,nullptr);assert(sf.arg3==0&&s_run.calls==calls&&s_stalfosActionFrames.empty());
  }
 }
 '''
 source=(root/'src/survivors_stalfos.inc').read_text()
-wrapper='BOOL player_way_check(e_sf_class* a){std::any args[]={a};BOOL result=0;if(before_stalfos_player_way(nullptr,args,&result,nullptr)==HOOK_SKIP_ORIGINAL)return result;return native_player_way_check(a);}'
+# Check the real registration order: our observer must run before the existing
+# damage callback returns SKIP_ORIGINAL. Both symbols are already exported on iOS.
+hooks=(root/'src/survivors_roster_hooks.inc').read_text()
+assert hooks.index('PRE(RosterSF,before_stalfos_readiness)')<hooks.index('PRE(RosterSF,before_roster_native_damage)')
+assert 'RosterSFPlayerWay' not in (root/'src/survivors_roster_native.inc').read_text()
+action=extract('static void action(')
+assert action.index('mPlayerAngleX =')<action.index('damage_check(i_this)')<action.index('e_sf_fight_run(i_this)')
+wrapper=r'''void owned_fight(e_sf_class* a){
+ std::any args[]={a};before_stalfos_action(nullptr,args,nullptr,nullptr);
+ // Native action refreshes metrics before damage_check. The existing owned
+ // damage adapter normalizes the distance for native chase after our observer.
+ a->mPlayerDistanceXZ=(player.current.pos-a->actor.current.pos).absXZ();
+ before_stalfos_readiness(nullptr,args,nullptr,nullptr);
+ a->mPlayerDistanceXZ/=a->actor.scale.x;
+ e_sf_fight_run(a);native_guard_selector(a);
+ after_stalfos_action(nullptr,args,nullptr,nullptr);
+}'''
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(fixture+enums+'enum{'+','.join(symbols)+'};'+source+way+wrapper+native+selector+main)
+ cpp.write_text(fixture+enums+'enum{'+','.join(symbols)+'};'+source+way+native+selector+wrapper+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-unused-variable','-Wno-misleading-indentation','-Wno-implicit-fallthrough',str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
 print('Stalfos: native facing/readiness, guard cancellation/hold, chance cooldown, nested restoration and scope passed')

@@ -1,4 +1,15 @@
-// Development-only, last tab in the Ready menu. No debug options enter saves.
+// Development-only, last tab in the Ready menu. Run overrides are session-only;
+// the explicit Meta Level editor updates ordinary saved progression.
+UiElementHandle s_debugProgressSummary=0;
+std::string debug_progress_summary() {
+    const char* status=s_progressSaving ? "Saving..." : s_storeFailed ? "Save failed. Retry the edit or Save progress." :
+        s_progressSaved ? "Progress saved." : "Progress saves when you close this menu, or choose Save progress.";
+    return "Meta Level "+number(s_records.level())+" | Unlock Points: "+number(s_records.available_points())+"\n"+status;
+}
+ModResult update_debug_tab(ModContext*,void*,ModError*) {
+    if(!s_debugProgressSummary)return MOD_OK;
+    return svc_ui->elem_set_text(mod_ctx,s_debugProgressSummary,debug_progress_summary().c_str());
+}
 struct DebugControl { const char* label; unsigned DebugOptions::*field; const char* const* choices; unsigned count; };
 constexpr const char* kDebugRarities[]{"Common","Uncommon","Rare","Epic","Legendary"};
 constexpr const char* kDebugSwitch[]{"Off","On"};
@@ -13,6 +24,7 @@ std::array<DebugControl,7> s_debugControls{{
     {"Always Legendary Equipment",&DebugOptions::always_legendary_equipment,kDebugSwitch,2}
 }};
 ModResult build_debug(ModContext*,UiWindowHandle,UiElementHandle left,UiElementHandle right,void*,ModError*) {
+    s_debugProgressSummary=0;
     s_options.debug.clamp();s_run.options.debug.clamp();
     if (!debug_enabled) return MOD_OK;
     UiControlDesc enable=UI_CONTROL_DESC_INIT;
@@ -80,6 +92,26 @@ ModResult build_debug(ModContext*,UiWindowHandle,UiElementHandle left,UiElementH
     unlock.is_disabled=[](ModContext*,void*){return !debug_enabled || !debug_session_enabled || !settings_editable();};
     auto result=svc_ui->pane_add_control(mod_ctx,left,&unlock,nullptr);
     if(result!=MOD_OK)return result;
+    UiControlDesc level=UI_CONTROL_DESC_INIT;
+    level.kind=UI_CONTROL_NUMBER;level.label="Meta Level";
+    level.min=1;level.max=1+meta_levels(max_meta_xp);level.step=1;
+    level.help_rml="Permanently sets your saved Meta Level and its Unlock Points. A changed level starts at 0 XP toward the next level. Persists after disabling Debug, restarting or using a build without the Debug tab. Normal runs continue earning XP. Purchased talents are kept; refund talents first to go below their required level. Save progress or close this menu to save to disk.";
+    level.get=[](ModContext*,void*,UiControlValue* value){value->int_value=s_records.level();};
+    level.is_disabled=[](ModContext*,void*){return !debug_enabled || !debug_session_enabled || !settings_editable() || s_run.phase!=Phase::Ready;};
+    level.set=[](ModContext*,void*,const UiControlValue* value){
+        if(!debug_enabled || !debug_session_enabled || !settings_editable() || s_run.phase!=Phase::Ready)return;
+        auto next=s_records;
+        if(!next.set_meta_level(unsigned(std::clamp<int64_t>(value->int_value,1,1+meta_levels(max_meta_xp)))))return;
+        const auto bytes=next.encode();
+        s_storeFailed=svc_save->set_blob(mod_ctx,kBlob,bytes.data(),bytes.size())!=MOD_OK;
+        if(!s_storeFailed){s_records=next;s_progressSaved=false;}
+    };
+    result=svc_ui->pane_add_control(mod_ctx,left,&level,nullptr);if(result!=MOD_OK)return result;
+    UiControlDesc save=UI_CONTROL_DESC_INIT;save.label="Save progress";save.on_pressed=save_progress;
+    save.is_disabled=[](ModContext*,void*){return !settings_editable() || s_run.phase!=Phase::Ready;};
+    result=svc_ui->pane_add_control(mod_ctx,left,&save,nullptr);if(result!=MOD_OK)return result;
+    result=svc_ui->pane_add_text(mod_ctx,left,debug_progress_summary().c_str(),&s_debugProgressSummary);
+    if(result!=MOD_OK)return result;
     return svc_ui->pane_add_text(mod_ctx,right,
-        "Enable Debug to edit these options. Debug runs earn no high scores, Survivors XP or permanent map unlocks, including in Endless Mode. The toggle is session-only and starts Off after restarting the game. Debug options apply to the next run. Minimum Rarity covers level-ups and treasures. Player damage includes all attacks and burns. Infinite rerolls are free; chest prices still apply. Four bosses arrive at 25%, 50%, 75% and 100% of the run timer. Other progression uses real elapsed time.",nullptr);
+        "Enable Debug to edit these options. Debug runs earn no high scores, Survivors XP or permanent map unlocks, including in Endless Mode. The toggle is session-only and starts Off after restarting the game. Meta Level edits change saved progression permanently; disable Debug before starting a run to earn XP normally again. Other debug options apply to the next run. Minimum Rarity covers level-ups and treasures. Player damage includes all attacks and burns. Infinite rerolls are free; chest prices still apply. Four bosses arrive at 25%, 50%, 75% and 100% of the run timer. Other progression uses real elapsed time.",nullptr);
 }

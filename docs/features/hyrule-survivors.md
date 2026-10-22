@@ -898,7 +898,7 @@ observer map. Outgoing electrical/shield-contact lifetime protection remains.
 The regression accepts native incoming hits with no mod observer at all and
 covers all body cylinders, wolf target, repeat/projectile hits, deleted/reused
 actors, actorless hazards and cleanup. ASan/UBSan checks cover stale pointers;
-confirming restored damage in game still requires testing the corrected build.
+the user confirmed restored damage in game after the #1179 correction.
 
 Regression coverage includes enemy facing, text lifecycle/projection, applied
 crit feedback, Dodge probabilities, v2 migration, scoped hit reactions, setting
@@ -1096,7 +1096,8 @@ Hurricane wind and Shockwave visuals, boss burns, restart and map transitions.
 migration are required. `DebugOptions::clamp` resets all debug fields when off;
 effective getters also neutralize stale values, including an existing run.
 Menu/reset/start boundaries sanitize stored options. Debug is the rightmost,
-Ready-only tab, and values are copied into a new run, never into records/config.
+Ready-only tab. Run overrides are copied into a new run, never into records/config.
+The explicit Meta Level editor below instead updates normal saved progression.
 
 The shared rarity sampler applies the chosen floor after its normal roll.
 Outgoing damage scales once in the final owned damage hook, after cache reuse
@@ -1525,6 +1526,32 @@ Records::finish rejects a debug_run before touching scores, XP, clear bits or an
 lifetime aggregate. HighScoreRun::encode also refuses debug snapshots. Endless
 continuation preserves eligibility; the results screen shows zero awarded XP and
 explicitly labels the excluded run. Existing snapshots/save format are unchanged.
+
+### Persistent Meta Level editor
+
+The Ready menu's Debug tab includes a native numeric **Meta Level** control.
+Editing requires Enable Debug and an idle, editable hub; running, restarting,
+departing or saving blocks changes. The value comes from the current save's
+`Records`, not from `DebugOptions`. Changing it sets total XP to the chosen
+level's threshold (zero XP toward the next level). Setting the current level
+again preserves partial XP. Unlock Points follow the ordinary level calculation.
+Purchased talents remain intact: the minimum effective level is one plus spent
+points; refund talents in the Talents menu before choosing a lower level. The
+upper bound follows the existing saved-XP cap.
+
+Changes are staged through SaveService with rollback on failure, then persisted
+by the existing menu-close autosave or the Debug tab's **Save progress** button.
+A live summary shows the effective level, remaining points and save status.
+Level, XP and talents survive disabling Enable Debug, restarting and builds with
+`DAWNLIGHT_SURVIVORS_DEBUG=0`; there is no permanent level override. Normal runs
+continue earning XP from the edited value. Debug runs retain their usual zero-XP
+rule, so disable Enable Debug before starting a progression run. No save-format
+change is needed. Existing scores, clears, lifetime totals and equipment remain.
+
+Regression coverage checks UI edits and gates, failed storage, numeric bounds,
+talent budgets, partial-XP no-ops, encode/decode and subsequent normal level-ups
+with both compile-time Debug configurations. Device UI/save verification remains
+pending.
 
 ### Archer volleys and late Endless healing
 

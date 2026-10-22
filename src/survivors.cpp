@@ -1597,7 +1597,7 @@ void open_window() {
             tabs[1].title="Difficulty";tabs[1].build=build_difficulty;
             tabs[2].title="Settings";tabs[2].build=build_run_settings;
             desc.tab_count=3;
-            if(debug_enabled){tabs[3].title="Debug";tabs[3].build=build_debug;desc.tab_count=4;}
+            if(debug_enabled){tabs[3].title="Debug";tabs[3].build=build_debug;tabs[3].update=update_debug_tab;desc.tab_count=4;}
         }
     }
     if (s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Upgrade) desc.rcss = kTreasureStyle;

@@ -95,6 +95,7 @@ auto build_difficulty=build_window,build_talents=build_window,build_run_settings
 const char* kResultsStyle="results";
 ModResult update_arena_tab(ModContext*,void*,ModError*){return MOD_OK;}
 ModResult update_talent_tab(ModContext*,void*,ModError*){return MOD_OK;}
+ModResult update_debug_tab(ModContext*,void*,ModError*){return MOD_OK;}
 constexpr char kTreasureStyle[]="",kArenaStyle[]="";
 '''
 main=r'''

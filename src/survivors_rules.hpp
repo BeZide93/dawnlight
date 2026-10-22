@@ -825,6 +825,14 @@ struct Records {
     unsigned available_points() const { return meta_levels(total_xp)-std::min(meta_levels(total_xp),talents.spent()); }
     uint64_t level_xp() const { return total_xp-meta_threshold(level()-1); }
     unsigned next_level_xp() const { return 2000+500*(level()-1); }
+    bool set_meta_level(unsigned requested) {
+        // Preserve purchased talents and the save's XP bounds. This changes
+        // ordinary progression, not a run override or a locked debug level.
+        const auto target=std::clamp(requested,1+talents.spent(),1+meta_levels(max_meta_xp));
+        if(target==level())return false;
+        total_xp=meta_threshold(target-1);
+        return true;
+    }
     bool buy(Talent t) { if(!available_points() || !talents.can_buy(t))return false;++talents.ranks[unsigned(t)];return true; }
     void finish(const Run& run, unsigned map=0) {
         if (run.debug_run || (run.phase != Phase::Victory && run.phase != Phase::Defeat)) return;

@@ -30,6 +30,8 @@ end = runtime.index('    open_powerup_window();', start)
 loading = 'void load_frame(daAlink_c* link) {\n'+runtime[start:end]+'}\n'
 names = sorted(set(re.findall(r'fpcNm_\w+', source)))
 fixture = r'''
+namespace enemy_hud {void reset(){}}
+
 bool s_victory=false,s_deathPending=false,s_resultsStored=false;void prepare_victory_wave(){}
 
 #include <any>

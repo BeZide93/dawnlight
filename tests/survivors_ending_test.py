@@ -12,6 +12,8 @@ def function(text,signature):
     raise AssertionError(signature)
 
 fixture=r'''
+namespace enemy_hud {void tick(){}}
+
 #include <array>
 #include <any>
 #include <cassert>

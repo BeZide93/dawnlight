@@ -60,6 +60,8 @@ void MTXIdentity(Mtx){}
 prefix += 'enum { GX_MAX_TEVSTAGE=16, ' + ', '.join(constants) + ' };\n'
 prefix += '\n'.join('template<class... T> void '+name+'(T...){}' for name in noops)
 stubs = r'''
+namespace enemy_hud {void draw(){}}
+
 unsigned packetBytes=0, expectedBytes=0, boxes=0, labels=0, texGens=0;
 bool textureCoordinates=false;std::vector<std::array<float,2>> vertices;
 void GXClearVtxDesc(){textureCoordinates=false;}

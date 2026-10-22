@@ -15,6 +15,8 @@ def extract(source,name):
         depth+=(source[end]=='{')-(source[end]=='}')
         if not depth:return source[m.start():end+1]
 fixture=r'''
+namespace enemy_hud {void tick(){}}
+
 bool s_victory=false;unsigned s_victoryTicks=0;void update_victory(){++s_victoryTicks;}
 
 #include <algorithm>

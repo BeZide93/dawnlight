@@ -17,6 +17,8 @@ def extract(name):
             return source[match.start():end + 1]
     raise AssertionError(name)
 stubs = r'''
+namespace enemy_hud {void reset(){}template<class T>void forget(T){}}
+
 void stop_survivors_music(){}
 unsigned archiveBegins=0,archiveReleases=0;
 void begin_enemy_archives(){++archiveBegins;}

@@ -15,6 +15,7 @@ fixture=r'''
 #include "survivors_maps.hpp"
 #include "mods/svc/ui.h"
 #define svc_ui test_ui
+namespace enemy_hud {ModResult build(UiElementHandle){return MOD_OK;}}
 using namespace dawnlight::survivors;
 UiDialogHandle s_debugNotice=0;
 Records s_records;Run s_run;RunOptions s_options;

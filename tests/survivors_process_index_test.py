@@ -18,6 +18,8 @@ def function(text, signature):
     raise AssertionError(signature)
 
 fixture = r'''
+namespace enemy_hud {template<class... T>void observe(T...){}template<class T>void forget(T){}}
+
 #include <algorithm>
 #include <any>
 #include <array>
@@ -41,7 +43,7 @@ struct daE_OC_c:fopAc_ac_c {int mMoveRange=0,field_0x6e3=0;int getActionMode(){r
 constexpr int fpcNm_E_OC_e=42;
 bool is_actor_process(void* p){return static_cast<fopAc_ac_c*>(p)->actor;}
 ActorId fopAcM_GetID(fopAc_ac_c* p){return p->id;}
-struct Enemy {ActorId id=kNone;bool initialized=false,retiring=false,dormant=false;int profile=0;unsigned specialCooldown=0,summonCooldown=0;};
+struct Enemy {ActorId id=kNone;bool initialized=false,retiring=false,dormant=false,credited=false;int profile=0;unsigned specialCooldown=0,summonCooldown=0;};
 struct ArenaPot {ActorId id=kNone;bool initialized=false,retiring=false;};
 struct RunPickup {ActorId id=kNone;bool retiring=false;};
 struct EnemyArrow {ActorId id=kNone;bool retiring=false,shell=false;ActorId parent=kNone;};

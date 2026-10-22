@@ -60,7 +60,7 @@ struct Native:fopAc_ac_c{
  struct{cXyz m_pos[50],field_0x320[50];}field_0x65c;
  struct{cXyz m_pos[20],field_0x140[20],field_0x230[20];}field_0xdec,field_0x11d8;
  cCcD_Obj mMagicSphs[2],mAtSph;Morph morph;Morph* mpModelMorf1=&morph;Morph* mpModelMorf2=&morph;Morph* mpMorf=&morph;
- Acch mAcch;
+ Acch mAcch,objacch;
  enum{ACTION_OPACI_CHASE_e=15,ACTION_WAIT_e=2,ACT_F_FLY=10,ACT_ATTACK=11,ACT_B2_WAIT=1,TYPE_BULLET_B=2,TYPE_BULLET_C=3,ANM_FLY_BRAKE=7,ANM_CATCH_START=6,ANM_FLY=9};
  void setActionMode(int a,int m){mAction=mActionMode=mActionMode1=a;mMode=mMoveMode=mOcState=mActionMode2=m;}
  void setBck(int,int,float,float){}
@@ -198,6 +198,37 @@ int main(){
   assert(sf.mAction==(sequence==0?5:4));sf.mAction=3;after_boss_tactics(sk,&sf);
   assert(s_bossTactics[sk.id].recovery==12);s_bossTactics[sk.id].recovery=0;
  }}
+ // King Bulblin halves the director recovery after either native attack.
+ for(int action:{3,4}) {reset();Native king;auto& kb=own(king,fpcNm_E_RDB_e);
+  king.mAction=action;king.mMode=2;before_boss_tactics(kb,&king);
+  king.mAction=1;king.mMode=0;after_boss_tactics(kb,&king);
+  assert(s_bossTactics[kb.id].recovery==12);
+ }
+ // Lizalfos clamps the full movement segment, including crossings and scaled bosses.
+ for(float scale:{1.f,2.f})for(int action:{3,4,5,6}) {
+  reset();Native liz;auto& dn=own(liz,fpcNm_E_DN_e);liz.objacch.actor=&liz;
+  liz.scale={scale,scale,scale};liz.action=action;liz.mode=1;liz.current.pos={0,0,-800};
+  before_boss_tactics(dn,&liz);liz.current.pos={0,35,800};liz.speedF=25;
+  std::any args[]={static_cast<dBgS_Acch*>(&liz.objacch)};
+  before_boss_path(nullptr,args,nullptr,nullptr);
+  assert(std::abs(liz.current.pos.z+(action==3?250.f:190.f)*scale)<.01f);
+  assert(liz.current.pos.y==35&&liz.speedF==0&&liz.action==action);
+ }
+ {reset();Native liz;auto& dn=own(liz,fpcNm_E_DN_e);liz.objacch.actor=&liz;liz.action=3;
+  liz.current.pos={0,0,-100};before_boss_tactics(dn,&liz);assert(liz.current.pos.z==-118);
+  pathValid=false;before_boss_tactics(dn,&liz);assert(liz.current.pos.z==-118);
+ }
+ // Moving away is allowed. Guards, jumps, unowned actors, pauses and stagger are excluded.
+ for(int gate=0;gate<9;++gate){
+  reset();Native liz;auto& dn=own(liz,fpcNm_E_DN_e);liz.objacch.actor=&liz;liz.action=3;
+  liz.current.pos={0,0,-800};before_boss_tactics(dn,&liz);liz.current.pos.z=-50;
+  if(gate==0)liz.action=7;if(gate==1)liz.action=8;if(gate==2)dn.elite=false;
+  if(gate==3)dn.stagger=1;if(gate==4)s_run.phase=Phase::Upgrade;
+  if(gate==5)s_bossTactics[dn.id].recovery=12;if(gate==6)liz.health=0;
+  if(gate==7)player.current.pos.y=500;if(gate==8)liz.current.pos.z=-900;
+  std::any args[]={static_cast<dBgS_Acch*>(&liz.objacch)};
+  before_boss_path(nullptr,args,nullptr,nullptr);assert(liz.current.pos.z==(gate==8?-900:-50));
+ }
  // Stalhound samples at the native alignment -> tell boundary, not entry.
  {reset();Native hound;auto& sh=own(hound,fpcNm_E_SH_e);hound.field_0x676=3;hound.field_0x678=1;
  player.current.pos=player.old.pos={0,0,500};before_boss_tactics(sh,&hound);

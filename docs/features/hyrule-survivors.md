@@ -355,7 +355,10 @@ half attack-readiness/recovery timers and double damage; native bosses/minibosse
 do not inherit those two generic factors. Explicit damage overrides are Darknut
 ×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
-King Bulblin can spin every six seconds at a safe chase boundary. Darknut repeats
+King Bulblin can spin every six seconds at a safe chase boundary. His native
+20–29-tick idle readiness runs at double speed, and the director recovery after
+axe/spin attacks is 12 ticks instead of 24. Spin duration, animation hit windows
+and the 15-tick (0.5-second) repeat-hit limit stay unchanged. Darknut repeats
 his sword throw every 3 active seconds outside melee range in either phase.
 Death Sword can enter ranged combat after 2.5 seconds of distant pursuit;
 Stallord can start breath out to 6,000 units without Link's damage-protection gate.
@@ -1753,3 +1756,16 @@ equally likely (8% each of all drops); old items are untouched.
 This explicit override allows saved equipment in Debug at the normal talent
 drop chance; combining Max Equipment Drop Rate guarantees one per boss.
 Debug score, permanent XP and map-unlock exclusions remain in effect.
+
+
+### Lizalfos melee spacing (PR #148)
+
+Owned elite Lizalfos retain the existing size-normalized native attack range.
+The full movement segment (native motion, director hop and speed bonuses) stops
+at 250 units times model scale while chasing, or 190 while attacking. Segment
+intersection also catches steps crossing completely through Link. Chase overlap
+below 220 scaled units retreats by up to 18 units along checked ground. Vertical
+motion, sword/tail collision windows, guards and gap jumps retain native behavior.
+Regression fixtures cover scaled movement, crossings, retreat/path failure,
+excluded states and King Bulblin's wait/recovery boundaries. On-device melee
+reach and pacing still need a playtest.

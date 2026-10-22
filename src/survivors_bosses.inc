@@ -43,6 +43,10 @@ HookAction before_boss_rdb(ModContext*,void* args,void*,void*) {
         e->enemy.current.pos=e->enemy.old.pos=owner->spawnPosition;
         e->mAction=1;e->mMode=0;e->mDemoMode=0;owner->encounterReady=true;
     }
+    // One extra readiness tick halves the idle wait. The same native timer
+    // controls spin duration in action 4, so never accelerate it there.
+    if(encounter_running(*owner)&&e->mAction==1&&e->mMode>0&&e->field_0x6b8[0]>0)
+        --e->field_0x6b8[0];
     if(encounter_running(*owner)&&!owner->specialCooldown&&e->mAction==1&&fopAcM_searchPlayerDistance(&e->enemy)<900.f) {
         e->mAction=4;e->mMode=0;owner->specialCooldown=180; // six seconds, safe attack boundary
     }

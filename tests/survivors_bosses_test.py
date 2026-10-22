@@ -37,7 +37,7 @@ struct Native:fopAc_ac_c {
  float field_0x6cc=0,field_0x6d0=0,field_0x6d4=0;
  int mMsgSetTimer=30,mMissedBallCount=1;bool mDrawTriangleAt=false;cXyz mTrianglePos;
  int field_0x7d3=3,field_0x844=0,mPointNum=0,mCurrentPoint=0,field_0x846=0,field_0x7d8=1;
- cXyz mPointPos[10];int field_0x780[10]{};
+ cXyz mPointPos[10];int field_0x780[10]{},field_0x6b8[4]{};
  struct{struct{s16 y=0;}angle;}dummy;
  int mActionMode1=0,mNextBreakPart=0,changes=0;
  void setActionMode(int a,int m){mAction=mActionMode=mActionMode1=a;mMode=mMoveMode=m;}
@@ -135,6 +135,24 @@ int main(){
  before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==4&&owner.specialCooldown==180);
  boss.mMode=2;before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mMode==2);
  boss.mAction=1;before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==1);
+ // Halve only King Bulblin's idle timer: 20 native ticks become 10.
+ boss.mAction=1;boss.mMode=1;boss.field_0x6b8[0]=20;owner.specialCooldown=180;
+ for(int tick=0;tick<10;++tick){
+  if(boss.field_0x6b8[0]>0)--boss.field_0x6b8[0]; // native Execute tick
+  before_boss_rdb(nullptr,args,nullptr,nullptr);
+  assert(boss.field_0x6b8[0]==18-tick*2);
+ }
+ before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.field_0x6b8[0]==0);
+ for(int action:{1,2,3,4,5}) {
+  boss.mAction=action;boss.mMode=0;boss.field_0x6b8[0]=102;
+  before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.field_0x6b8[0]==102);
+  boss.mMode=2;before_boss_rdb(nullptr,args,nullptr,nullptr);
+  assert(boss.field_0x6b8[0]==(action==1?101:102));
+ }
+ boss.mAction=1;s_run.phase=Phase::Upgrade;boss.field_0x6b8[0]=20;
+ before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.field_0x6b8[0]==20);
+ s_run.phase=Phase::Running;arena=false;
+ before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.field_0x6b8[0]==20);arena=true;
  // Ganondorf's distant trigger and independent eight-second summons.
  boss.mActionMode=10;owner.specialCooldown=0;owner.summonCooldown=0;distanceToPlayer=1000;
  before_boss_gnd_execute(nullptr,args,&result,nullptr);assert(boss.mActionMode==11&&boss.mMoveMode==10&&summons==0&&owner.summonCooldown==0);

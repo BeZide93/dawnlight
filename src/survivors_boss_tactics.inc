@@ -205,6 +205,20 @@ void before_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
         prepare_shadow_beast_melee(reinterpret_cast<e_s1_class*>(actor));
         t.origin=actor->current.pos;
     }
+    if(e.profile==fpcNm_E_DN_e&&!e.stagger&&actor->health>0) {
+        t.origin=actor->current.pos;
+        auto* a=reinterpret_cast<e_dn_class*>(actor);
+        auto* link=daAlink_getAlinkActorClass();
+        if(link&&a->action==3) {
+            const auto delta=link->current.pos-actor->current.pos;
+            const float distance=delta.absXZ(),scale=std::max(1.f,actor->scale.x);
+            if(std::abs(delta.y)<=180.f&&distance<220.f*scale) {
+                const auto away=distance>1.f?delta*(-1.f/distance):
+                    cXyz(-cM_ssin(actor->shape_angle.y),0,-cM_scos(actor->shape_angle.y));
+                boss_ground_step(actor,link->current.pos+away*(250.f*scale),18.f);
+            }
+        }
+    }
     boss_mobile_patterns(e,actor);
     const bool entry=view.active&&!t.attacking;
     if(entry) {
@@ -281,7 +295,7 @@ void after_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
         if(e.eliteSlot>=int(timed_elite_count))follow=false;
         if(follow&&!t.combo&&fopAcM_searchPlayerDistance(actor)<900.f) {
             t.combo=1;boss_followup(e,actor);t.attacking=false;
-        } else {t.combo=0;t.recovery=e.profile==fpcNm_E_SF_e?12:24;t.attacking=false;}
+        } else {t.combo=0;t.recovery=(e.profile==fpcNm_E_SF_e||e.profile==fpcNm_E_RDB_e)?12:24;t.attacking=false;}
     }
 }
 
@@ -644,6 +658,33 @@ HookAction before_boss_path(ModContext*,void* args,void*,void*) {
     if(e->profile==fpcNm_E_S1_e) {
         auto* beast=reinterpret_cast<e_s1_class*>(actor);
         if(acch==&beast->mAcch)limit_shadow_beast_approach(beast,t.origin);
+        return HOOK_CONTINUE;
+    }
+    if(e->profile==fpcNm_E_DN_e) {
+        auto* lizalfos=reinterpret_cast<e_dn_class*>(actor);
+        auto* link=daAlink_getAlinkActorClass();
+        if(!link||acch!=&lizalfos->objacch||lizalfos->action<3||lizalfos->action>6||
+           std::abs(link->current.pos.y-t.origin.y)>180.f)return HOOK_CONTINUE;
+        // Limit the complete native + director + movement-bonus segment at its
+        // first entry into melee spacing, including a step that crosses Link.
+        // Leave vertical motion and native weapon/tail hit windows untouched.
+        cXyz offset=t.origin-link->current.pos,step=actor->current.pos-t.origin;
+        offset.y=step.y=0;
+        const float radius=(lizalfos->action==3?250.f:190.f)*std::max(1.f,actor->scale.x);
+        const float length2=step.x*step.x+step.z*step.z;
+        const float outside=offset.x*offset.x+offset.z*offset.z-radius*radius;
+        const float along=offset.x*step.x+offset.z*step.z;
+        if(length2<.001f||along>=0)return HOOK_CONTINUE;
+        float fraction=0;
+        if(outside>0) {
+            const float discriminant=along*along-length2*outside;
+            if(discriminant<0)return HOOK_CONTINUE;
+            fraction=(-along-std::sqrt(discriminant))/length2;
+            if(fraction<0||fraction>1)return HOOK_CONTINUE;
+        }
+        actor->current.pos.x=t.origin.x+step.x*fraction;
+        actor->current.pos.z=t.origin.z+step.z*fraction;
+        actor->speedF=actor->speed.x=actor->speed.z=0;
         return HOOK_CONTINUE;
     }
     if(e->profile!=fpcNm_E_KR_e)return HOOK_CONTINUE;

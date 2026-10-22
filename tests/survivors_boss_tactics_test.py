@@ -15,6 +15,7 @@ fixture=r'''
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 #include "survivors_enemy_hits.hpp"
@@ -46,6 +47,7 @@ struct fopAc_ac_c{int id=1,profile=0,health=100;struct Pos{cXyz pos;csXyz angle;
  csXyz shape_angle;cXyz speed,eyePos,scale{1,1,1};float speedF=0,gravity=0;struct{cXyz position;}attention_info;
 };
 struct Native:fopAc_ac_c{
+ fopAc_ac_c& enemy=*this;
  ActorId mRiderID=kNone;int mIsSlowAttack=0;int action=0,mode=0,mAction=0,mMode=0,mActionMode=0,mActionMode1=0,mActionMode2=0,mMoveMode=0,mOcState=0;
  int field_0x5b4=0,field_0x676=0,field_0x678=0,mCurAction=0,field_0x672=0,mActionPhase=0;
  int field_0x1228[2]{},mStates[16]{},arg0=0,mAnm=0;
@@ -113,7 +115,7 @@ source+='\nvoid dispatch_child_spawn(void* args,ActorId* id){\n'+''.join(
     f'{callback}(nullptr,args,id,nullptr);\n' for callback in spawn_posts)+'}\n'
 main=r'''
 void reset(){s_enemies={};s_enemyArrows={};s_bossTactics.clear();actors.clear();s_enemyHitSources.clear();s_run={};
- player={};player.id=100;floorValid=pathValid=playing=arena=true;blocked=false;probes=spawns=0;spawnTicks.clear();nextSpawnId=kNone;}
+ std::destroy_at(&player);std::construct_at(&player);player.id=100;floorValid=pathValid=playing=arena=true;blocked=false;probes=spawns=0;spawnTicks.clear();nextSpawnId=kNone;}
 Enemy& own(Native& a,int profile,int slot=0){a.profile=profile;actors[a.id]=&a;auto& e=s_enemies[a.id-1];e.id=a.id;e.profile=profile;e.eliteSlot=slot;return e;}
 int main(){
  reset();Native boss;auto& e=own(boss,fpcNm_B_TN_e);

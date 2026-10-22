@@ -138,14 +138,15 @@ void boss_followup(Enemy& e,fopAc_ac_c* actor) {
 void prepare_stalhound_pounce(Enemy& e,e_sh_class* actor) {
     auto& t=s_bossTactics[e.id];
     if(actor->field_0x676!=3 || actor->field_0x678<2)return;
+    auto* body=&actor->enemy;
     if(!t.targetLocked) {
         // Alignment can take many ticks. Commit when the visible tell begins,
         // not to the old direction sampled before native alignment started.
-        t.target=boss_lead_target(6.f);t.yaw=boss_target_yaw(actor,t.target);
+        t.target=boss_lead_target(6.f);t.yaw=boss_target_yaw(body,t.target);
         t.targetLocked=true;
     }
     actor->field_0x68c=t.yaw;
-    actor->current.angle.y=actor->shape_angle.y=t.yaw;
+    body->current.angle.y=body->shape_angle.y=t.yaw;
 }
 void before_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
     if(!boss_tactics_owned(e)||!playable())return;

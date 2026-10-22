@@ -41,8 +41,8 @@ struct cXyz {float x=0,y=0,z=0;cXyz operator-(cXyz b)const{return{x-b.x,y-b.y,z-
 struct fopAc_ac_c {ActorId id=1;struct{cXyz pos;struct{s16 y=0;}angle;}current;
  struct{s16 y=0;}shape_angle;cXyz scale{2,2,2},speed;float speedF=0;};
 struct Morph {unsigned frame=0,end=10;bool isStop(){return frame>=end;}};
-struct Native:fopAc_ac_c {
- fopAc_ac_c& enemy=*this;
+struct Native {
+ fopAc_ac_c enemy; // Native e_sh_class embeds its actor; it does not inherit it.
  int field_0x676=3,field_0x678=0,field_0x6aa=0,field_0x674=0,field_0xcea=1,field_0xce8=0;
  s16 field_0x68c=0,field_0x688=0,field_0x698[4]{};float field_0x690=300;
  Morph morph;Morph* mAnm_p=&morph;
@@ -84,21 +84,21 @@ void cLib_addCalcAngleS2(s16* angle,s16 target,int divisor,int step){
 '''
 main = r'''
 s16 aim(Native& hound){
- s16 yaw=cM_atan2s(player.current.pos.x-hound.current.pos.x,player.current.pos.z-hound.current.pos.z);
- std::any args[]={static_cast<const fopAc_ac_c*>(&hound),static_cast<const fopAc_ac_c*>(&player)};
+ s16 yaw=cM_atan2s(player.current.pos.x-hound.enemy.current.pos.x,player.current.pos.z-hound.enemy.current.pos.z);
+ std::any args[]={static_cast<const fopAc_ac_c*>(&hound.enemy),static_cast<const fopAc_ac_c*>(&player)};
  after_boss_aim(nullptr,args,&yaw,nullptr);return yaw;
 }
 void tick(Native& hound){
  // Production ordering: general facing, native action's searchPlayerAngle,
  // native wind-up, then generic post-movement facing. The director has already
  // sampled a different direction; moving Link must not deadlock the alignment.
- face_extended_enemy(&hound,owner);
- auto& t=s_bossTactics[hound.id];++t.phaseTick;
+ face_extended_enemy(&hound.enemy,owner);
+ auto& t=s_bossTactics[hound.enemy.id];++t.phaseTick;
  if(hound.field_0x698[0]>0)--hound.field_0x698[0];
  hound.field_0x68c=aim(hound);
  e_sh_attack(&hound);
  prepare_stalhound_pounce(owner,&hound);
- face_extended_enemy(&hound,owner);
+ face_extended_enemy(&hound.enemy,owner);
  ++hound.morph.frame;
 }
 int main(){
@@ -107,12 +107,12 @@ int main(){
  // facing resets yaw to 0x4000. Native phase 1 never passes its <0x800 test.
  for(int i=0;i<60 && hound.field_0x678<2;++i)tick(hound);
  assert(hound.field_0x678==2&&hound.animation==5);
- assert(s_bossTactics[1].yaw==0x4000&&hound.current.angle.y==0x4000&&hound.shape_angle.y==0x4000);
+ assert(s_bossTactics[1].yaw==0x4000&&hound.enemy.current.angle.y==0x4000&&hound.enemy.shape_angle.y==0x4000);
  player.current.pos={0,0,500}; // Dodging after the tell must not steer the airborne attack.
  // The tell still plays. Then the native launch and bite really run.
- assert(hound.speed.y==0);
+ assert(hound.enemy.speed.y==0);
  for(int i=0;i<20 && hound.field_0x678<3;++i)tick(hound);
- assert(hound.field_0x678==3&&hound.speedF==40&&hound.speed.y==20&&hound.animation==6);
+ assert(hound.field_0x678==3&&hound.enemy.speedF==40&&hound.enemy.speed.y==20&&hound.animation==6);
  tick(hound);assert(hound.field_0xce8==1);
  hound.mObjAcch.ground=true;tick(hound);assert(hound.field_0x678==4&&hound.animation==7);
  for(int i=0;i<20 && hound.field_0x676==3;++i)tick(hound);
@@ -120,16 +120,16 @@ int main(){
  player.current.pos={500,0,0};s_bossTactics[1].yaw=0;
  // Wind-up follows Link; telegraph/flight preserve the sampled direction.
  for(int mode=0;mode<=4;++mode){hound.field_0x676=3;hound.field_0x678=mode;
-  hound.current.angle.y=123;hound.shape_angle.y=456;
-  face_extended_enemy(&hound,owner);
-  assert(hound.current.angle.y==(mode<2?0x4000:123));
+  hound.enemy.current.angle.y=123;hound.enemy.shape_angle.y=456;
+  face_extended_enemy(&hound.enemy,owner);
+  assert(hound.enemy.current.angle.y==(mode<2?0x4000:123));
   assert(aim(hound)==(mode<2?0x4000:0));
  }
  owner.elite=false;hound.field_0x678=1;assert(aim(hound)==0x4000);owner.elite=true;
  arena=false;hound.field_0x678=3;assert(aim(hound)==0x4000);arena=true;
  owned=false;assert(aim(hound)==0x4000);owned=true;
- owner.stagger=1;hound.current.angle.y=123;hound.field_0x678=1;
- face_extended_enemy(&hound,owner);assert(hound.current.angle.y==123);
+ owner.stagger=1;hound.enemy.current.angle.y=123;hound.field_0x678=1;
+ face_extended_enemy(&hound.enemy,owner);assert(hound.enemy.current.angle.y==123);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

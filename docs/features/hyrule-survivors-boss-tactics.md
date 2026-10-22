@@ -164,3 +164,43 @@ not a replacement for collision-server ordering. Existing boss-state cleanup
 resets it; Debug-off builds compile out the state and calls. Collect a short log
 with the boss attacking stationary Link, then remove this temporary probe after
 the actual defect is fixed.
+
+## Device-confirmed Stalhound height and Stalfos guard follow-up
+
+The 2026-10-22 15:37:58 device log confirms an enabled Stalhound bite but zero
+geometric overlaps and zero contact attempts. One horizontally centered sample
+places the bite at Y=405.6 with radius 70, against a cylinder ending at Y=229.1:
+106.5 units of vertical separation. Four recorded near passes reproduce positive
+gaps of 93–109 units in the regression fixture.
+
+For enlarged Stalhound bosses, retain animated bite X/Z but remove the extra
+model-scale contribution to bite height above the root. Reconstruct Y from native
+joint 13, so repeated registration cannot compound. Preserve native activation,
+parked sentinel, trajectory and damage budgets. Include the native 1.15 base size
+in body/bite radii (bite 80.5 at scale 2). This moves the gameplay attack volume
+below the oversized animated jaw; it does not retarget Link or force damage.
+The recorded near passes now overlap, while lateral/elevated dodge cases remain
+misses. Keep the bounded passive probe as v2 until device confirmation, then remove
+it. Native animation and terrain validation still require a device run.
+
+Stalfos' native `player_way_check` tests Link's facing, not line of sight. Requiring
+opposing headings prevented attacks in Survivors' free-movement combat. Owned
+bosses replace that prerequisite with a world line-of-sight check while retaining
+native range, pitch, readiness and attack selection. Existing doubled spacing and
+halved waits remain.
+
+The native automatic guard selector also interrupts active sword swings; its two
+random branches use the same mask. Suppress that selector only during the owned
+actor's action call, restoring its shield parameter before rendering/collision.
+Instead, a frontal sword threat during chase gets one 20% guard roll per 60 active
+actor ticks, including failed rolls. Attacks are never interrupted by this roll.
+Limit the held guard phase to six ticks; ongoing slashes cannot hold/restart it
+forever. Block actual frontal sword/shield/projectile contacts during the visible
+raised-shield phases through the existing boss guard pipeline. Startup, release,
+rear hits and ordinary attacks remain vulnerable. Clear guard's native global
+body invulnerability so this directional rule is effective.
+
+Validation uses actual SDK fight-run, facing, guard and automatic selector code;
+it reproduces the original facing veto, attack cancellation and indefinitely held
+guard. Log-geometry, real block-response, ownership/lifecycle and hook tests pass.
+Debug remains enabled; final device confirmation is pending.

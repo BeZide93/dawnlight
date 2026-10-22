@@ -14,6 +14,7 @@ struct BossTactics {
     BossStagger stagger;
     unsigned majorUntil=0,ridersUntil=0,lastContact=0;bool hasContact=false,fanPending=false;
     unsigned grace=0, recovery=0, phaseTick=0, combo=0, sequence=0;
+    unsigned stalfosGuardCooldown=0,stalfosGuardHold=0;
     unsigned pattern=0, summons=0, pendingRiders=0, riderDelay=0;
     ActorId summoner=kNone;
     int swordState=0;

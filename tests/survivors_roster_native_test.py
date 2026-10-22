@@ -33,7 +33,7 @@ struct dCcD_GObjInf:cCcD_Obj {cCcD_Obj* hit=nullptr;bool shield=true;unsigned ty
  bool ChkTgHit(){return hit;}cCcD_Obj* GetTgHitObj(){return hit;}void ResetTgHit(){hit=nullptr;}
  void OnTgSetBit(){tg=true;}void SetTgType(unsigned t){type=t;}void OffTgShield(){shield=false;}
  void OffTgShieldFrontRange(){}float GetR(){return r;}void SetR(float n){r=n;}void SetH(float n){h=n;}
- void SetC(cXyz p){center=p;}cXyz center;
+ void SetC(cXyz p){center=p;}cXyz GetC()const{return center;}cXyz center;
  void Set(int){}void SetStts(dCcD_Stts*){}void SetAtType(unsigned){}void SetAtAtp(unsigned n){atp=n;}
  void SetAtMtrl(int){} };
 using dCcD_Sph=dCcD_GObjInf;using dCcD_Cyl=dCcD_GObjInf;
@@ -386,6 +386,44 @@ int main(){
  liz.action=3;face_extended_enemy(&liz,e);assert(liz.shape_angle.y==0x4000);e.stagger=1;liz.shape_angle.y=7;face_extended_enemy(&liz,e);assert(liz.shape_angle.y==7);
  NativeActor chu;e.stagger=0;e.profile=fpcNm_E_SM2_e;chu.action=ACTION_COMBINE;engage_extended_enemy(&chu,e);
  assert(chu.combine_off_timer==30000&&chu.action==ACTION_ATTACK);
+ // Device-log regression: the doubled jaw passes above stationary Link even
+ // with matching X/Z. Feed recorded native centers/root/target geometry through
+ // the actual registration hook; do not assume a synthetic 75-unit mouth.
+ {NativeActor sh;e.profile=fpcNm_E_SH_e;e.species=unsigned(Species::Stalhound);
+ e.elite=e.initialized=true;e.retiring=e.credited=e.dormant=false;e.stagger=0;
+ sh.id=e.id;sh.profile=e.profile;sh.field_0x676=3;sh.field_0x678=3;sh.scale={2,2,2};
+ sh.mSph2.owner=&sh;s_run.phase=Phase::Running;arena=true;stageChange=false;
+ struct Sample{cXyz bite,root,target;float height;};
+ const Sample samples[]{
+ {{64853.8f,405.6f,52077.1f},{64616.3f,162.8f,52184.2f},{64847.2f,169.1f,52070.3f},60.f},
+ {{64455.7f,447.5f,52596.7f},{64529.3f,176.9f,52352.7f},{64466.9f,197.2f,52536.3f},73.5f},
+ {{65885.6f,325.5f,52449.f},{65615.f,82.9f,52402.5f},{65855.1f,77.9f,52429.1f},72.f},
+ {{65713.7f,312.9f,52069.8f},{65566.3f,79.7f,52301.f},{65682.9f,81.1f,52128.5f},71.9f}};
+ auto gap=[](cXyz bite,float radius,const Sample& sample){const auto d=bite-sample.target;
+  const float xz=std::max(0.f,d.absXZ()-35.f),y=std::max({0.f,-d.y,d.y-sample.height});
+  return std::sqrt(xz*xz+y*y)-radius;};
+ std::any biteArgs[]={0,static_cast<cCcD_Obj*>(&sh.mSph2)};
+ for(const auto& sample:samples){
+  assert(gap(sample.bite,70,sample)>90);sh.current.pos=sample.root;sh.mSph2.center=sample.bite;
+  // Reconstruct joint 13 from the logged native (5,-10,0) transformed point.
+  sh.morph.model.matrix[1][0]=0;sh.morph.model.matrix[1][1]=2.3f;
+  sh.morph.model.matrix[1][3]=sample.bite.y+23.f;
+  for(int repeat=0;repeat<3;++repeat){before_roster_targets(nullptr,biteArgs,nullptr,nullptr);
+   assert(gap(sh.mSph2.center,sh.mSph2.r,sample)<0);
+   assert(sh.mSph2.center.x==sample.bite.x&&sh.mSph2.center.z==sample.bite.z&&sh.mSph2.at);
+  }
+  // A lateral dodge and a target above the attack remain misses.
+  Sample dodge=sample;dodge.target.x+=500;assert(gap(sh.mSph2.center,sh.mSph2.r,dodge)>0);
+  dodge=sample;dodge.target.y+=500;assert(gap(sh.mSph2.center,sh.mSph2.r,dodge)>0);
+ }
+ sh.mSph2.center={15000,-14000,23000};before_roster_targets(nullptr,biteArgs,nullptr,nullptr);
+ assert(sh.mSph2.center.y==-14000); // Never enable the parked native bite.
+ for(int mode:{0,1,2}){sh.field_0x678=mode;sh.mSph2.center={10,300,20};
+  before_roster_targets(nullptr,biteArgs,nullptr,nullptr);assert(sh.mSph2.center.y==300);}
+ sh.field_0x678=3;e.elite=false;sh.mSph2.center={10,300,20};
+ before_roster_targets(nullptr,biteArgs,nullptr,nullptr);assert(sh.mSph2.center.y==300);
+ e.elite=true;e.dormant=true;before_roster_targets(nullptr,biteArgs,nullptr,nullptr);assert(sh.mSph2.center.y==300);e.dormant=false;
+ }
  // The doubled Lizalfos must enter native battle spacing before body contact
  // can keep it beyond the ordinary 300/350-unit battle/attack thresholds.
  e.profile=fpcNm_E_DN_e;e.elite=true;e.initialized=true;e.retiring=e.credited=e.dormant=false;e.stagger=0;

@@ -109,7 +109,7 @@ HookAction before_roster_targets(ModContext*,void* args,void*,void*) {
             auto* e=reinterpret_cast<e_dd_class*>(actor);
             e->field_0xa74[0].SetR(60.f*scale);e->field_0xa74[1].SetR(75.f*scale);e->field_0xa74[2].SetR(50.f*scale);
         } else if(enemy->profile==fpcNm_E_SH_e) {
-            auto* e=reinterpret_cast<e_sh_class*>(actor);e->mSphArr[0].SetR(30.f*scale);e->mSphArr[1].SetR(40.f*scale);
+            auto* e=reinterpret_cast<e_sh_class*>(actor);e->mSphArr[0].SetR(34.5f*scale);e->mSphArr[1].SetR(46.f*scale);
         } else if(enemy->profile==fpcNm_E_RDY_e) {
             auto* e=reinterpret_cast<e_rdy_class*>(actor);for(auto& sphere:e->mCcSph)sphere.SetR(35.f*scale);
         } else if(enemy->profile==fpcNm_E_SF_e) {
@@ -127,7 +127,25 @@ HookAction before_roster_targets(ModContext*,void* args,void*,void*) {
     if(enemy->elite) {
         const float scale=elite_scale(Species(enemy->species));
         if(enemy->profile==fpcNm_E_SH_e) {
-            auto* e=reinterpret_cast<e_sh_class*>(actor);if(object==&e->mSph2)e->mSph2.SetR(35.f*scale);
+            auto* e=reinterpret_cast<e_sh_class*>(actor);
+            if(object==&e->mSph2) {
+                e->mSph2.SetR(40.25f*scale); // Native base size is 1.15.
+                auto center=e->mSph2.GetC();
+                const bool hidden=center.x==15000.f&&center.y==-14000.f&&center.z==23000.f;
+                if(scale>1.f&&!hidden&&e->field_0x676==3&&(e->field_0x678==3||e->field_0x678==4)&&
+                   !enemy->retiring&&!enemy->credited&&!enemy->dormant&&!enemy->stagger&&actor->health>0&&
+                   s_run.phase==Phase::Running&&!transitioning()&&e->mAnm_p) {
+                    // Device traces place the doubled jaw ~240-310 units above
+                    // the root, clearing Link even on horizontally centered bites.
+                    // Keep its animated X/Z and native height relative to the
+                    // root, with the enlarged radius. No target-following snap.
+                    // Reconstruct native Y from joint 13 for idempotent Set hooks.
+                    const auto m=e->mAnm_p->getModel()->getAnmMtx(13);
+                    const float nativeY=m[1][3]+5.f*m[1][0]-10.f*m[1][1];
+                    center.y=actor->current.pos.y+(nativeY-actor->current.pos.y)/scale;
+                    e->mSph2.SetC(center);
+                }
+            }
         } else if(enemy->profile==fpcNm_E_SF_e) {
             auto* e=reinterpret_cast<e_sf_class*>(actor);if(object==&e->mAtSph)e->mAtSph.SetR(60.f*scale);
         } else if(enemy->profile==fpcNm_E_S1_e) {

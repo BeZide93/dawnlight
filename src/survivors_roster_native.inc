@@ -59,6 +59,8 @@ ROSTER_HIT(RosterYC,"src/d/actor/d_a_e_yc.cpp#damage_check",e_yc_class);
 ROSTER_HIT(RosterHeadDamage,"daB_DS_c::mBattle2_spinner_damage_check",daB_DS_c);
 #undef ROSTER_HIT
 DEFINE_HOOK_SYMBOL("cCcS::Set",void(cCcS*,cCcD_Obj*),RosterTargets);
+DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_sf.cpp#action",void(e_sf_class*),RosterSFAction);
+DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_sf.cpp#player_way_check",BOOL(e_sf_class*),RosterSFPlayerWay);
 DEFINE_HOOK_SYMBOL("daE_GI_c::setCryStop",bool(daE_GI_c*),RosterGibdoCry);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_mm_mt.cpp#action",void(e_mm_mt_class*),RosterShell);
 DEFINE_HOOK_SYMBOL("daE_TT_c::checkPlayerSearch",bool(daE_TT_c*),RosterTTSearch);

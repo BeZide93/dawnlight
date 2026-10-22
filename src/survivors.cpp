@@ -20,6 +20,7 @@
 #include "d/d_msg_scrn_explain.h"
 #include "d/d_msg_scrn_3select.h"
 #include "d/d_lib.h"
+#include "d/d_cc_uty.h"
 #include "dusk/menu_pointer.h"
 #include "survivors_projectiles.hpp"
 #include "survivors_roster.hpp"
@@ -1247,6 +1248,7 @@ HookAction before_sword_attack(ModContext* ctx, void* args, void* result, void* 
 #include "survivors_elite_scale.inc"
 #include "survivors_bosses.inc"
 #include "survivors_boss_tactics.inc"
+#include "survivors_stalfos.inc"
 bool pause_run_actor(bool enemy) {
     if(save_modal_active())return true;
     if (!in_arena() || s_run.phase == Phase::Loading) return false;

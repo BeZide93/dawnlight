@@ -25,11 +25,13 @@ bool in_arena(){return arena;}bool transitioning(){return moving;}
 int s_player=1;unsigned s_map=4;
 enum class Phase{Ready,Loading,Running,Upgrade,Victory,Defeat};
 struct{struct{bool enemy_collision=false;}options;Phase phase=Phase::Running;}s_run;
-struct Enemy{int profile=0;};
+struct Enemy{int profile=0;bool elite=true,dormant=false,stagger=false;};
 bool enemy_child_root(int id){return id==2||id==3;}
-constexpr int fpcNm_B_TN_e=10,fpcNm_B_GND_e=11;
+constexpr int fpcNm_B_TN_e=10,fpcNm_B_GND_e=11,fpcNm_E_SF_e=12;
 struct daB_TN_c:fopAc_ac_c{enum{ACT_GUARDH=6,ACT_GUARDL=12};int mActionMode1=0;};
 struct b_gnd_class:fopAc_ac_c{int mActionMode=0;};
+struct e_sf_class:fopAc_ac_c{int arg3=0,mAction=7,mActionPhase=1;
+ struct Morph{float frame=2;float getFrame(){return frame;}}morph;Morph* mpModelMorf=&morph;};
 struct Attack{bool active=false;cCcD_Obj collider;cXyz position,velocity;};std::array<Attack,2>s_attacks;
 bool native_sword_collider(cCcD_Obj*c){return c==&player.sword;}
 constexpr u32 Z2BGM_VS_GANON_04=10;
@@ -67,6 +69,20 @@ int main(){
  darknut.mActionMode1=1;assert(!block_boss_contact(owner,&darknut,&player.sword,&target));
  b_gnd_class ganon;owner.profile=fpcNm_B_GND_e;ganon.mActionMode=12;
  assert(boss_blocks_from(owner,&ganon,{0,0,100}));ganon.mActionMode=10;assert(!boss_blocks_from(owner,&ganon,{0,0,100}));
+ // Stalfos blocks in its visible guard window, with a real native shield
+ // contact response. Rear hits, startup/release and ordinary attacks penetrate.
+ e_sf_class sf;sf.id=8;owner.profile=fpcNm_E_SF_e;target.owner=&sf;
+ for(int phase=0;phase<4;++phase){sf.mActionPhase=phase;
+  assert(block_boss_contact(owner,&sf,&player.sword,&target)==(phase==1||phase==2));
+  assert(!boss_blocks_from(owner,&sf,{0,0,-100}));
+ }
+ sf.mActionPhase=1;sf.morph.frame=1;assert(!boss_blocks_from(owner,&sf,{0,0,100}));
+ sf.morph.frame=2;assert(block_boss_contact(owner,&sf,&arrow.collider,&target));
+ assert(arrow.collider.shield&&arrow.collider.hit&&arrow.collider.target==8);
+ for(int action:{3,4,5}){sf.mAction=action;assert(!boss_blocks_from(owner,&sf,{0,0,100}));}
+ sf.mAction=7;sf.arg3=0xff;assert(!boss_blocks_from(owner,&sf,{0,0,100}));
+ sf.arg3=0;owner.dormant=true;assert(!boss_blocks_from(owner,&sf,{0,0,100}));
+ owner.dormant=false;owner.stagger=true;assert(!boss_blocks_from(owner,&sf,{0,0,100}));
  // One music start, pause continuity, departure cleanup, destination ownership.
  update_survivors_music();update_survivors_music();assert(audio.starts==1&&audio.stops==0);
  s_run.phase=Phase::Upgrade;update_survivors_music();assert(audio.starts==1);

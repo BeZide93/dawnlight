@@ -24,7 +24,7 @@ void trace_stalhound_frame(const Enemy& e,fopAc_ac_c* actor) {
     if(!p.frames&&!p.reports) {
         char message[256];
         std::snprintf(message,sizeof(message),
-            "Survivors SH probe v1 id=%u map=%u scale=%.2f action=%d mode=%d (passive; max 8 reports)",
+            "Survivors SH probe v2 id=%u map=%u scale=%.2f action=%d mode=%d (passive; max 8 reports)",
             unsigned(e.id),unsigned(s_map),double(actor->scale.x),int(action),int(mode));
         svc_log->info(mod_ctx,message);
     }
@@ -62,7 +62,7 @@ void trace_stalhound_frame(const Enemy& e,fopAc_ac_c* actor) {
     if(!ended&&p.frames<150)return;
     char message[768];
     std::snprintf(message,sizeof(message),
-        "Survivors SH probe v1 id=%u report=%u end=%d frames=%u action=%d mode=%d phases=0x%x "
+        "Survivors SH probe v2 id=%u report=%u end=%d frames=%u action=%d mode=%d phases=0x%x "
         "visible=%u enabled=%u overlap=%u attempts=%u safety=%u spent=%u accepted=%d nativeHitFrames=%u "
         "gap=%.2f bite=(%.1f,%.1f,%.1f) r=%.1f target=(%.1f,%.1f,%.1f) r=%.1f h=%.1f "
         "root=(%.1f,%.1f,%.1f) speed=%.1f ground=%d",

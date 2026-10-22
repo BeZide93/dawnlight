@@ -69,6 +69,29 @@ and awakened guards use single-action versions of the ordinary elite combos.
 | Stalfos | Native attack animations alternate, with a forward step and 25% shorter late wind-up. The native exact-frame jump cue is preserved. |
 | Shadow Beast | Short advance into a two-arm sequence, with the second attack selecting the other native animation and limited late turning. |
 
+## Melee accuracy follow-up
+
+Death Sword now stops in a 350–500-unit horizontal strike band before native
+attack startup. Its old chase could enter the band at speed 100 and then brake
+by only 3 each tick; the movement bonus carried it under or past Link before
+the swing. Bound the final approach using the current Endless movement factor,
+stop at attack entry and retreat if already closer than 350. If Link leaves the
+band while braking, resume chase. Active sword animations, native sword hitboxes,
+magic and story encounters are unchanged; no positional teleport is used.
+
+Stalhound previously locked aim at phase 2 but still used a direction sampled
+before the native alignment wait. Resample once when the visible pounce tell
+actually starts, using six ticks of capped horizontal lead. Align both movement
+and model heading so the mouth collider follows the same line. Keep that heading
+through the tell, flight and landing; a follow-up samples its own target. There
+is no airborne homing, and native bite timing/radius, jump impulse and shield
+rebound remain intact. General facing still leaves the committed tell alone.
+
+Native chase/braking and Stalhound attack fixtures plus director tests cover
+close/far approaches, high entry speed, Endless factors, moving targets during
+alignment, fixed flight heading, subsequent pounces and pause behavior. Actual
+blade and bite contact frequency still needs device verification.
+
 ## Implementation and validation
 
 `survivors_boss_tactics.hpp` contains the damage watchdog and stagger clock;

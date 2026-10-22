@@ -22,6 +22,7 @@ def function(path, signature):
 
 ai = root / 'src/survivors_extended_ai.inc'
 production = function(ai, 'bool committed_enemy_motion(') + function(ai, 'void face_extended_enemy(')
+production += function(root / 'src/survivors_boss_tactics.inc', 'void prepare_stalhound_pounce(')
 production += function(root / 'src/survivors_boss_tactics.inc', 'void after_boss_aim(')
 native = function(sdk / 'src/d/actor/d_a_e_sh.cpp', 'static void e_sh_attack(')
 profiles = sorted(set(re.findall(r'fpcNm_\w+_e', production)))
@@ -59,7 +60,7 @@ fixture += r'''
 constexpr int ACT_ATTACK=1,ACTION_ATTACK=1,Z2SE_EN_SH_V_BREATH=1,Z2SE_EN_SH_V_ATTACK=2;
 enum class Species{Stalhound,KingBulblin};
 struct Enemy{ActorId id=1;bool elite=true;int profile=fpcNm_E_SH_e;unsigned stagger=0,species=unsigned(Species::Stalhound);}owner;
-struct Tactics{bool attacking=true;unsigned phaseTick=0;s16 yaw=0;}tactics;
+struct Tactics{bool attacking=true;unsigned phaseTick=0;s16 yaw=0;bool targetLocked=false;cXyz target;}tactics;
 std::map<ActorId,Tactics>s_bossTactics;
 fopAc_ac_c player;bool arena=true,owned=true;
 bool in_arena(){return arena;}auto* daAlink_getAlinkActorClass(){return &player;}
@@ -69,6 +70,8 @@ Enemy* tracked(ActorId id){return owned&&id==1?&owner:nullptr;}
 bool boss_tactics_owned(const Enemy& e){return e.elite;}
 bool extended_enemy(int){return true;}
 s16 cM_atan2s(float x,float z){return s16(std::atan2(x,z)*32768/3.141592653589793);}
+cXyz boss_lead_target(float){return player.current.pos;}
+s16 boss_target_yaw(fopAc_ac_c* actor,const cXyz& target){return cM_atan2s(target.x-actor->current.pos.x,target.z-actor->current.pos.z);}
 int TREG_F(int){return 0;}int JREG_F(int){return 0;}float cM_rndF(float){return 0;}
 struct{float mCheck3=800;}l_HIO;
 void anm_init(Native* a,int animation,float,int,float){a->animation=animation;a->morph.frame=0;}
@@ -94,15 +97,18 @@ void tick(Native& hound){
  if(hound.field_0x698[0]>0)--hound.field_0x698[0];
  hound.field_0x68c=aim(hound);
  e_sh_attack(&hound);
+ prepare_stalhound_pounce(owner,&hound);
  face_extended_enemy(&hound,owner);
  ++hound.morph.frame;
 }
 int main(){
- Native hound;player.current.pos={500,0,0};s_bossTactics[1]={true,10,0};
+ Native hound;player.current.pos={500,0,0};s_bossTactics[1]={true,10,0,false,{}};
  // Red regression: old aim hook uses yaw 0 after ten ticks while general
  // facing resets yaw to 0x4000. Native phase 1 never passes its <0x800 test.
  for(int i=0;i<60 && hound.field_0x678<2;++i)tick(hound);
  assert(hound.field_0x678==2&&hound.animation==5);
+ assert(s_bossTactics[1].yaw==0x4000&&hound.current.angle.y==0x4000&&hound.shape_angle.y==0x4000);
+ player.current.pos={0,0,500}; // Dodging after the tell must not steer the airborne attack.
  // The tell still plays. Then the native launch and bite really run.
  assert(hound.speed.y==0);
  for(int i=0;i<20 && hound.field_0x678<3;++i)tick(hound);
@@ -111,6 +117,7 @@ int main(){
  hound.mObjAcch.ground=true;tick(hound);assert(hound.field_0x678==4&&hound.animation==7);
  for(int i=0;i<20 && hound.field_0x676==3;++i)tick(hound);
  assert(hound.field_0x676==2&&hound.field_0x678==0);
+ player.current.pos={500,0,0};s_bossTactics[1].yaw=0;
  // Wind-up follows Link; telegraph/flight preserve the sampled direction.
  for(int mode=0;mode<=4;++mode){hound.field_0x676=3;hound.field_0x678=mode;
   hound.current.angle.y=123;hound.shape_angle.y=456;

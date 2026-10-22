@@ -158,6 +158,22 @@ int main(){
  before_boss_tactics(bo,&bok);bok.mActionMode=3;after_boss_tactics(bo,&bok);assert(bok.mActionMode==4&&s_bossTactics[bo.id].combo==1);
  before_boss_tactics(bo,&bok);bok.mActionMode=3;after_boss_tactics(bo,&bok);assert(s_bossTactics[bo.id].recovery==24);
  s_bossTactics.clear();bo.eliteSlot=4;bok.mActionMode=4;before_boss_tactics(bo,&bok);bok.mActionMode=3;after_boss_tactics(bo,&bok);assert(s_bossTactics[bo.id].recovery==24&&bok.mActionMode==3);
+ // Stalhound samples at the native alignment -> tell boundary, not entry.
+ {reset();Native hound;auto& sh=own(hound,fpcNm_E_SH_e);hound.field_0x676=3;hound.field_0x678=1;
+ player.current.pos=player.old.pos={0,0,500};before_boss_tactics(sh,&hound);
+ assert(!s_bossTactics[sh.id].targetLocked);
+ for(int i=0;i<25;++i){player.old.pos=player.current.pos;player.current.pos.x+=10;before_boss_tactics(sh,&hound);}
+ hound.field_0x678=2;after_boss_tactics(sh,&hound);
+ auto& pounce=s_bossTactics[sh.id];assert(pounce.targetLocked&&pounce.target.x==310&&pounce.target.z==500);
+ const auto heading=boss_target_yaw(&hound,pounce.target);
+ assert(pounce.yaw==heading&&hound.current.angle.y==heading&&hound.shape_angle.y==heading);
+ player.current.pos={-500,0,0};before_boss_tactics(sh,&hound);hound.field_0x678=3;after_boss_tactics(sh,&hound);
+ assert(pounce.yaw==heading&&hound.current.angle.y==heading&&hound.shape_angle.y==heading);
+ // A fresh combo must sample anew, and pauses must not commit a new heading.
+ hound.field_0x676=2;after_boss_tactics(sh,&hound);
+ assert(hound.field_0x676==3);before_boss_tactics(sh,&hound);assert(!pounce.targetLocked);
+ playing=false;hound.field_0x678=2;after_boss_tactics(sh,&hound);assert(!pounce.targetLocked);
+ playing=true;after_boss_tactics(sh,&hound);assert(pounce.targetLocked&&pounce.yaw!=heading);}
  // Darkhammer's wait changes once, never compounds; Death Sword magic locks aim once.
  reset();Native hammer;auto& ha=own(hammer,fpcNm_E_TH_e);hammer.mAction=3;hammer.mMode=2;hammer.mTimers[0]=100;
  boss_mobile_patterns(ha,&hammer);assert(hammer.mTimers[0]==45);hammer.mTimers[0]=20;boss_mobile_patterns(ha,&hammer);assert(hammer.mTimers[0]==20);

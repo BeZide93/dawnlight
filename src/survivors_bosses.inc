@@ -98,6 +98,24 @@ HookAction before_boss_gnd_execute(ModContext*,void* args,void* result,void*) {
     }
     return HOOK_CONTINUE;
 }
+void prepare_death_sword_melee(daE_VA_c* actor) {
+    if(actor->mAction!=daE_VA_c::ACTION_OPACI_CHASE_e || actor->mMode<12 || actor->mMode>13)return;
+    auto* link=daAlink_getAlinkActorClass();if(!link)return;
+    const float distance=(link->current.pos-actor->current.pos).absXZ();
+    // Native chase enters its 200..500 strike band at up to 100 units/tick,
+    // then brakes by only 3. Survivors' movement bonus carries it past Link.
+    // Stop before the native wind-up; back out if already under the blade.
+    const float movement=1.5f*float(std::min(32767.0,s_run.endless_factor()));
+    if(distance<350.f) {
+        actor->mMode=12;
+        actor->speedF=-std::min(30.f,(400.f-distance)/movement);
+    } else if(distance<=500.f) {
+        actor->mMode=13;actor->speedF=0;
+    } else {
+        actor->mMode=12;
+        actor->speedF=std::clamp(actor->speedF,0.f,std::max(0.f,std::min(100.f,(distance-400.f)/movement-3.f)));
+    }
+}
 HookAction before_boss_va(ModContext*,void* args,void*,void*) {
     auto* e=mods::arg<daE_VA_c*>(args,0);auto* owner=encounter_owner(e);
     if(!owner)return HOOK_CONTINUE;
@@ -120,6 +138,7 @@ HookAction before_boss_va(ModContext*,void* args,void*,void*) {
         e->shape_angle.y=e->current.angle.y=fopAcM_searchPlayerAngleY(e);
         if(e->mMode<10) {e->setActionMode(daE_VA_c::ACTION_OPACI_CHASE_e,12);e->gravity=-5;e->setBck(30,2,3.f,1.f);}
     }
+    if(encounter_running(*owner)&&!owner->stagger&&!boss_attack_paused(*owner))prepare_death_sword_melee(e);
     return HOOK_CONTINUE;
 }
 HookAction before_boss_ymb(ModContext*,void* args,void*,void*) {

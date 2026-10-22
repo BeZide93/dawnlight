@@ -135,6 +135,18 @@ void boss_followup(Enemy& e,fopAc_ac_c* actor) {
     default:break;
     }
 }
+void prepare_stalhound_pounce(Enemy& e,e_sh_class* actor) {
+    auto& t=s_bossTactics[e.id];
+    if(actor->field_0x676!=3 || actor->field_0x678<2)return;
+    if(!t.targetLocked) {
+        // Alignment can take many ticks. Commit when the visible tell begins,
+        // not to the old direction sampled before native alignment started.
+        t.target=boss_lead_target(6.f);t.yaw=boss_target_yaw(actor,t.target);
+        t.targetLocked=true;
+    }
+    actor->field_0x68c=t.yaw;
+    actor->current.angle.y=actor->shape_angle.y=t.yaw;
+}
 void before_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
     if(!boss_tactics_owned(e)||!playable())return;
     auto& t=s_bossTactics[e.id];
@@ -145,7 +157,7 @@ void before_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
     const bool entry=view.active&&!t.attacking;
     if(entry) {
         t.phaseTick=0;t.target=boss_lead_target();t.yaw=boss_target_yaw(actor,t.target);
-        t.origin=actor->current.pos;t.targetLocked=true;
+        t.origin=actor->current.pos;t.targetLocked=e.profile!=fpcNm_E_SH_e;
         if(e.profile==fpcNm_E_SF_e) {
             auto* a=reinterpret_cast<e_sf_class*>(actor);
             a->mAction=(++t.sequence%2)?5:4;a->mActionPhase=0;
@@ -198,7 +210,7 @@ void before_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
         if(view.active&&frame>=58)a->mPlayerAngleY=t.yaw;
     } else if(e.profile==fpcNm_E_SH_e) {
         auto* a=reinterpret_cast<e_sh_class*>(actor);
-        if(view.active&&a->field_0x678>=2)a->field_0x68c=t.yaw;
+        if(view.active)prepare_stalhound_pounce(e,a);
         if(t.combo&&a->field_0x678==3)actor->speedF=std::min(actor->speedF,25.f);
     } else if(e.profile==fpcNm_E_S1_e) {
         if(view.active&&t.phaseTick<=9)boss_ground_step(actor,t.target,12.f);
@@ -482,7 +494,7 @@ void boss_after_patterns(Enemy& e,fopAc_ac_c* actor) {
         }
     } else if(e.profile==fpcNm_E_SH_e) {
         auto* a=reinterpret_cast<e_sh_class*>(actor);
-        if(a->field_0x676==3&&a->field_0x678>=2)actor->current.angle.y=t.yaw;
+        prepare_stalhound_pounce(e,a);
     }
 }
 

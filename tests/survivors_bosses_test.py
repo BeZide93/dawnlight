@@ -73,7 +73,7 @@ float cM_ssin(s16 a){return std::sin(a*3.14159265f/32768);}float cM_scos(s16 a){
 bool floorValid=true,pathValid=true;bool dry_arena_floor(cXyz& p,float,float){p.y=500;return floorValid;}
 bool elite_floor_position(cXyz& p){p.y=500;return floorValid;}
 bool walkable_spawn_path(cXyz,cXyz&,int){return pathValid;}
-enum class Species{ShadowKeese,ShadowBeast};enum class Phase{Running,Upgrade};struct{Phase phase=Phase::Running;}s_run;
+enum class Species{ShadowKeese,ShadowBeast};enum class Phase{Running,Upgrade};struct{Phase phase=Phase::Running;double endless_factor(){return 1.;}}s_run;
 bool encounter_running(Enemy& e){return e.initialized&&!e.retiring&&!e.credited&&s_run.phase==Phase::Running;}
 unsigned summons=0;void summon_ghost_riders(b_gnd_class*,const Enemy&){++summons;}
 unsigned spawned=0;bool create_enemy_at(cXyz,s16,unsigned,bool){for(auto& e:s_enemies)if(e.id==kNone){e.id=50+spawned++;return true;}return false;}
@@ -93,7 +93,7 @@ s16 boss_target_yaw(fopAc_ac_c*,const cXyz&){return 0;}
 '''
 main=r'''
 int main(){
- player.current.pos={100,500,200};Native boss;boss.profile=fpcNm_E_PZ_e;
+ player.current.pos={100,500,200};Native boss;boss.current.pos={1000,500,200};boss.profile=fpcNm_E_PZ_e;
  auto& owner=s_enemies[0];owner.id=boss.id;owner.profile=boss.profile;owner.spawnPosition={200,500,300};owner.lootPosition={200,0,300};
  std::any args[]={&boss};
  // Scoped flags during create/execute, including nested unrelated actors.
@@ -129,7 +129,7 @@ int main(){
  assert(boss.mAction==12&&boss.mMode==10&&owner.encounterTick==0);
  boss.mMode=12;before_boss_va(nullptr,args,nullptr,nullptr);assert(boss.mMode==12);
  boss.mAction=15;boss.mMode=13;owner.encounterTick=200;
- before_boss_va(nullptr,args,nullptr,nullptr);assert(boss.mAction==15&&boss.mMode==13);
+ before_boss_va(nullptr,args,nullptr,nullptr);assert(boss.mAction==15&&boss.mMode==12);
  // King spin only starts at a safe chase boundary; native bosses do not inherit elite clocks.
  boss.mAction=1;owner.specialCooldown=0;distanceToPlayer=500;
  before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==4&&owner.specialCooldown==180);

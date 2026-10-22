@@ -204,3 +204,12 @@ Validation uses actual SDK fight-run, facing, guard and automatic selector code;
 it reproduces the original facing veto, attack cancellation and indefinitely held
 guard. Log-geometry, real block-response, ownership/lifecycle and hook tests pass.
 Debug remains enabled; final device confirmation is pending.
+
+### Independent boss HP difficulty
+
+Boss HP is configurable from x1 to x10 (default x1) for timed bosses and
+stationary elites on every map, including Endless. Enemy HP now applies only
+to ordinary enemies. The timed-boss fixed x2 budget remains in addition to the
+selected boss multiplier; the native 32,767 HP ceiling still applies.
+Settings are persisted for the next run and do not mutate current enemy HP.
+Rules/native-roster/config/UI and record-migration tests cover the separation.

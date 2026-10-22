@@ -46,6 +46,19 @@ gyro and all ten manual-ability switches share persistent config values; difficu
 is persisted too. They participate in Dawnlight settings export/import. Edit outside
 a run; active runs keep their snapshot. Talents remain specific to each save slot.
 
+Difficulty has separate **Enemy HP** and **Boss HP** controls, each x1–x10.
+Enemy HP affects ordinary enemies only; Boss HP affects all timed bosses and
+stationary elites, across all maps and Endless. Boss HP defaults to x1 and is
+saved as `survivors-boss-hp`; old configs keep their normal-enemy HP choice.
+The existing doubled timed-boss budget, map/time curves, Endless scaling and
+32,767 native HP cap still apply. Neither control compounds during updates or
+changes actors already spawned. Boss HP does not add rank/score/XP bonuses;
+the existing four-setting reward formula remains unchanged.
+
+Records v14 appends Boss HP to each saved result without moving prior fields.
+Older results recover their boss multiplier from Enemy HP, which formerly
+applied to both groups; awarded scores, talents and progression are preserved.
+
 | Arena | Native area | Layout |
 | --- | --- | --- |
 | Darknut Arena | `D_DLBR0`, room 51 | Original compact arena |

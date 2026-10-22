@@ -162,6 +162,7 @@ constexpr ManualAbility manual_ability(Upgrade weapon) {
 struct RunOptions {
     unsigned enemy_hp = 1, enemy_damage = 1, enemy_speed = 1, horde = 1;
     unsigned camera_distance = 200;
+    unsigned boss_hp = 1;
     DebugOptions debug{};
     int reticle_y = 0;
     bool switch_attack_lock = false;
@@ -182,6 +183,7 @@ struct RunOptions {
     }
     void clamp() {
         debug.clamp();
+        boss_hp=std::clamp(boss_hp,1u,10u);
         reticle_y=std::clamp(reticle_y,-40,40);
         enemy_hp=std::clamp(enemy_hp,1u,10u); enemy_damage=std::clamp(enemy_damage,1u,10u);
         enemy_speed=std::clamp(enemy_speed,1u,3u); horde=std::clamp(horde,1u,5u);
@@ -647,10 +649,10 @@ struct Run {
             (time-times[i-1]*ticks_per_second)/((times[i]-times[i-1])*ticks_per_second);
         const uint64_t hp=finalBoss ? uint64_t(finalHp[map])*scale*(endless?double(factor)/curves[map][5]:1.0) : elite ?
             std::max(120*scale,32*factor) : std::clamp(base,1u,32767u)*factor;
-        return unsigned(std::min(32767.0,std::floor(double(hp)*std::clamp(options.enemy_hp,1u,10u)*endless_factor()/scale+.5)));
+        return unsigned(std::min(32767.0,std::floor(double(hp)*std::clamp(elite || finalBoss ? options.boss_hp : options.enemy_hp,1u,10u)*endless_factor()/scale+.5)));
     }
-    // Only the four scheduled encounter slots get the boss HP multiplier.
-    // Guards and ordinary actors of the same species keep their existing HP.
+    // Only the four scheduled encounter slots get the fixed doubled HP budget.
+    // Boss difficulty applies to all elites; ordinary actors use enemy difficulty.
     unsigned spawn_enemy_health(unsigned base, bool elite, unsigned map, int eliteSlot) const {
         const bool timedBoss=elite && eliteSlot>=0 && unsigned(eliteSlot)<timed_elite_count;
         const unsigned hp=enemy_health(base,elite,map,timedBoss && unsigned(eliteSlot)==timed_elite_count-1);
@@ -806,11 +808,13 @@ struct Records {
     // v12 appends the two equipment talents after the unchanged v10/v11
     // header and score snapshots; legacy offsets must never consume new ranks.
     // v13 appends one Chain Spin rank per snapshot after the v12 talent words.
+    // v14 appends independent boss HP settings; all prior offsets stay fixed.
     static constexpr unsigned legacy_talent_count=19;
     static constexpr unsigned v11_word_count=34+20*HighScoreRun::word_count;
     static constexpr unsigned v11_byte_count=4*v11_word_count;
     static constexpr unsigned v12_word_count=v11_word_count+2, v12_byte_count=4*v12_word_count;
-    static constexpr unsigned word_count=v12_word_count+20;
+    static constexpr unsigned v13_word_count=v12_word_count+20, v13_byte_count=4*v13_word_count;
+    static constexpr unsigned word_count=v13_word_count+20;
     static constexpr unsigned v9_byte_count=4*(34+10*HighScoreRun::legacy_word_count);
     static constexpr unsigned byte_count=4*word_count;
     static constexpr unsigned v8_score_words=20+30+2*18;
@@ -849,16 +853,17 @@ struct Records {
         if(!best.present() || run.score()>best.score)best={run,run.score(),level(),available_points()};
     }
     std::array<uint8_t,byte_count> encode() const {
-        std::array<uint32_t,word_count> words{0x56525348,13,runs,wins,best_ticks,best_kills,best_level};
+        std::array<uint32_t,word_count> words{0x56525348,14,runs,wins,best_ticks,best_kills,best_level};
         for(unsigned i=0;i<5;++i)words[7+i]=high_scores[i];
         words[12]=uint32_t(total_xp);words[13]=uint32_t(total_xp>>32);
         for(unsigned i=0;i<legacy_talent_count;++i)words[14+i]=talents.ranks[i];
         words[v11_word_count]=talents.rank(Talent::EquipmentDropRate);
         words[v11_word_count+1]=talents.rank(Talent::EquipmentRarity);
         words[33]=cleared_maps;
-        unsigned offset=34, extension=v12_word_count;
+        unsigned offset=34, extension=v12_word_count, bossExtension=v13_word_count;
         for(const auto* category:{&ranked,&cheated,&endless_ranked,&endless_cheated})for(const auto& best:*category) {
             words[extension++]=best.present()&&!best.run.debug_run?best.run.chain_spin:0;
+            words[bossExtension++]=best.present()&&!best.run.debug_run?best.run.options.boss_hp:0;
             const auto record=best.encode();
             std::copy(record.begin(),record.end(),words.begin()+offset);offset+=record.size();
         }
@@ -867,11 +872,11 @@ struct Records {
         return bytes;
     }
     bool decode(std::span<const uint8_t> bytes) {
-        if(bytes.size()!=28 && bytes.size()!=100 && bytes.size()!=104 && bytes.size()!=108 && bytes.size()!=124 && bytes.size()!=132 && bytes.size()!=136 && bytes.size()!=v8_byte_count && bytes.size()!=v9_byte_count && bytes.size()!=v11_byte_count && bytes.size()!=v12_byte_count && bytes.size()!=byte_count)return false;
+        if(bytes.size()!=28 && bytes.size()!=100 && bytes.size()!=104 && bytes.size()!=108 && bytes.size()!=124 && bytes.size()!=132 && bytes.size()!=136 && bytes.size()!=v8_byte_count && bytes.size()!=v9_byte_count && bytes.size()!=v11_byte_count && bytes.size()!=v12_byte_count && bytes.size()!=v13_byte_count && bytes.size()!=byte_count)return false;
         std::array<uint32_t,word_count> words{};
         for(unsigned i=0;i<bytes.size()/4;++i)for(unsigned b=0;b<4;++b)words[i]|=uint32_t(bytes[i*4+b])<<(8*b);
         if(words[0]!=0x56525348 || words[3]>words[2])return false;
-        if(!((words[1]==1 && bytes.size()==28)||(words[1]==2 && bytes.size()==100)||(words[1]==3 && bytes.size()==104)||(words[1]==4 && bytes.size()==108)||(words[1]==5 && bytes.size()==124)||(words[1]==6 && bytes.size()==132)||(words[1]==7 && bytes.size()==136)||(words[1]==8 && bytes.size()==v8_byte_count)||(words[1]==9 && bytes.size()==v9_byte_count)||((words[1]==10 || words[1]==11) && bytes.size()==v11_byte_count)||(words[1]==12 && bytes.size()==v12_byte_count)||(words[1]==13 && bytes.size()==byte_count)))return false;
+        if(!((words[1]==1 && bytes.size()==28)||(words[1]==2 && bytes.size()==100)||(words[1]==3 && bytes.size()==104)||(words[1]==4 && bytes.size()==108)||(words[1]==5 && bytes.size()==124)||(words[1]==6 && bytes.size()==132)||(words[1]==7 && bytes.size()==136)||(words[1]==8 && bytes.size()==v8_byte_count)||(words[1]==9 && bytes.size()==v9_byte_count)||((words[1]==10 || words[1]==11) && bytes.size()==v11_byte_count)||(words[1]==12 && bytes.size()==v12_byte_count)||(words[1]==13 && bytes.size()==v13_byte_count)||(words[1]==14 && bytes.size()==byte_count)))return false;
         Records next;
         // Legacy saves have aggregate wins only; scores also include defeats.
         if(words[1]>=7){
@@ -890,7 +895,7 @@ struct Records {
             if(next.total_xp>max_meta_xp || !next.talents.valid() || next.talents.spent()>meta_levels(next.total_xp))return false;
         }
         if(words[1]>=8) {
-            unsigned offset=34, extension=v12_word_count;
+            unsigned offset=34, extension=v12_word_count, bossExtension=v13_word_count;
             for(unsigned category=0;category<(words[1]>=10?4u:2u);++category)for(auto& best:category==0?next.ranked:category==1?next.cheated:category==2?next.endless_ranked:next.endless_cheated) {
                 HighScoreRun::Words snapshot{};
                 if(words[1]==8) {
@@ -899,6 +904,12 @@ struct Records {
                 } else std::copy_n(words.begin()+offset,words[1]==9?HighScoreRun::legacy_word_count:snapshot.size(),snapshot.begin());
                 if(!best.decode(snapshot,words[1]) || (best.present() && (best.cheated()!=bool(category%2) || best.run.endless!=(category>=2))))return false;
                 if(words[1]>=13) {const auto spin=words[extension++];if(spin>1||(!best.present()&&spin))return false;best.run.chain_spin=spin;}
+                if(best.present())best.run.options.boss_hp=best.run.options.enemy_hp; // Legacy HP applied to both.
+                if(words[1]>=14) {
+                    const auto bossHp=words[bossExtension++];
+                    if(best.present()?(bossHp<1 || bossHp>10):bossHp!=0)return false;
+                    if(best.present())best.run.options.boss_hp=bossHp;
+                }
                 offset+=words[1]==8?v8_score_words:words[1]==9?HighScoreRun::legacy_word_count:HighScoreRun::word_count;
             }
         }

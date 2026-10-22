@@ -29,10 +29,10 @@ struct Cylinder{cXyz center;float radius=30,height=120;bool enabled=true;
 struct Player:fopAc_ac_c{Cylinder mTgCyls[3];}player;
 struct e_sh_class{fopAc_ac_c enemy;int field_0x676=3,field_0x678=3;Sphere mSph2;
  struct{bool ChkGroundHit(){return false;}}mObjAcch;};
-constexpr int fpcNm_E_SH_e=1;
+[[maybe_unused]] constexpr int fpcNm_E_SH_e=1;
 struct Enemy{unsigned id=1;int profile=1;bool elite=true,initialized=true,retiring=false,credited=false,dormant=false;};
 bool playing=true,present=true;bool playable(){return playing;}Player* daAlink_getAlinkActorClass(){return present?&player:nullptr;}
-struct{unsigned ticks=100;}s_run;unsigned s_map=2;void* mod_ctx=nullptr;
+struct ProbeRun{unsigned ticks=100;};[[maybe_unused]] ProbeRun s_run;unsigned s_map=2;void* mod_ctx=nullptr;
 struct Log{std::vector<std::string> lines;void info(void*,const char* s){lines.emplace_back(s);}}logger;auto* svc_log=&logger;
 struct Source{struct{EnemyAttackUsePtr use;}cycle;};std::unordered_map<ActorId,Source>s_enemyHitSources;
 '''

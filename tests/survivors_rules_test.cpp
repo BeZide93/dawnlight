@@ -18,15 +18,15 @@ int main() {
         assert(hp.enemy_health(8,false,map)==normalEnd[map]);
         assert(hp.enemy_health(8,true,map)==eliteEnd[map]);
         for(unsigned multiplier:{1u,3u,10u}) {
-            hp.options.enemy_hp=multiplier;
+            hp.options.boss_hp=multiplier;
             assert(hp.enemy_health(1200,true,map,true)==std::min(32767u,bosses[map]*multiplier));
         }
-        hp.options.enemy_hp=1;hp.ticks=~0u;
+        hp.options.boss_hp=1;hp.ticks=~0u;
         assert(hp.enemy_health(8,false,map)==normalEnd[map]);
     }
     // All timed slots, map curves, difficulty and Endless; never multiply guards.
     for(unsigned map=0;map<5;++map)for(bool endless:{false,true})for(unsigned difficulty:{1u,10u}) {
-        hp.start(1);hp.endless=endless;hp.options.enemy_hp=difficulty;
+        hp.start(1);hp.endless=endless;hp.options.boss_hp=difficulty;
         for(int slot=0;slot<4;++slot) {
             hp.ticks=(slot+1)*elite_interval+(endless?duration:0);
             const auto baseline=hp.enemy_health(8,true,map,slot==3);
@@ -35,6 +35,20 @@ int main() {
         }
         for(int slot:{-1,4,5,6,7})assert(hp.spawn_enemy_health(8,true,map,slot)==hp.enemy_health(8,true,map));
     }
+    // Independent HP sliders across every map, timed slot, guard and Endless.
+    for(unsigned map=0;map<5;++map)for(bool endless:{false,true})
+    for(unsigned normal=1;normal<=10;++normal)for(unsigned boss=1;boss<=10;++boss) {
+        Run baseline;baseline.start(1);baseline.endless=endless;baseline.ticks=300*ticks_per_second;
+        hp=baseline;hp.options.enemy_hp=normal;hp.options.boss_hp=boss;
+        Run expected=baseline;expected.options.enemy_hp=normal;
+        assert(hp.spawn_enemy_health(8,false,map,-1)==expected.spawn_enemy_health(8,false,map,-1));
+        expected=baseline;expected.options.boss_hp=boss;
+        for(int slot:{-1,0,1,2,3,4,5,6,7})
+            assert(hp.spawn_enemy_health(8,true,map,slot)==expected.spawn_enemy_health(8,true,map,slot));
+    }
+    hp.start(1);hp.options.enemy_hp=10;assert(hp.enemy_health(8,false)==80&&hp.enemy_health(8,true)==120);
+    hp.options.boss_hp=10;hp.options.enemy_hp=1;assert(hp.enemy_health(8,false)==8&&hp.enemy_health(8,true)==1200);
+    hp.options.boss_hp=0;assert(hp.enemy_health(8,true)==120);hp.options.boss_hp=100;assert(hp.enemy_health(8,true)==1200);
     hp.start(1);
     hp.ticks=1800;hp.options.enemy_hp=3;assert(hp.enemy_health(8,false,1)==26);
     hp.ticks=duration;hp.options.enemy_hp=10;assert(hp.enemy_health(~0u,false)==32767);
@@ -497,7 +511,7 @@ int main() {
     Run ending;ending.start(3);ending.ticks=duration-1;ending.horde_remaining=300;ending.tick(true);
     assert(!ending.horde_remaining&&ending.spawn_batch()==1);
     ending.start(5);assert(!ending.horde_remaining);
-    RunOptions invalid{0,100,100,0,1000};invalid.clamp();
+    RunOptions invalid{0,100,100,0,1000};invalid.boss_hp=0;invalid.clamp();assert(invalid.boss_hp==1);invalid.boss_hp=100;invalid.clamp();assert(invalid.boss_hp==10);
     assert(invalid.enemy_hp==1&&invalid.enemy_damage==10&&invalid.enemy_speed==3&&invalid.horde==1&&invalid.camera_distance==500);
     assert(RunOptions{}.camera_distance==200);
     // Shield and Ordon Sword use independent equipment slots and retain ranks.

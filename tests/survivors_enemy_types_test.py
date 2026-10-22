@@ -108,7 +108,7 @@ int main(){
  assert(!create_enemy_at({},0,species_count,false));
  s_run.ticks=900;
  // Elite HP applies to every species, once, including difficulty; sizes do not accumulate.
- s_run.options.enemy_hp=10;
+ s_run.options.enemy_hp=10;s_run.options.boss_hp=10;
  daE_OC_c bok;e_ba_class bat;e_ms_class rat;e_rd_class bulblin;
  fopAc_ac_c* bases[]={&rat,&bat.enemy,&bulblin.enemy,&bok};
  for(unsigned i=0;i<4;++i){Enemy e;e.elite=true;e.profile=profiles[i];initialize_enemy(&e,bases[i]);
@@ -120,7 +120,7 @@ int main(){
  Enemy regular;regular.profile=fpcNm_E_RD_e;initialize_enemy(&regular,&bulblin.enemy);assert(bulblin.enemy.health==80);
  // Every original species scales, and previously spawned/injured actors keep
  // both their remaining HP and original max HP as the run advances.
- s_run.options.enemy_hp=1;
+ s_run.options.enemy_hp=1;s_run.options.boss_hp=1;
  fopAc_ac_c* speciesActors[]={&bok,&bat.enemy,&rat,&bulblin.enemy,&bulblin.enemy};
  for(unsigned kind=0;kind<5;++kind){
   s_run.ticks=duration;Enemy e;e.species=kind;e.profile=native_roster[kind].profile;

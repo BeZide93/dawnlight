@@ -124,20 +124,21 @@ ModResult build_arena_choices(UiElementHandle left, UiElementHandle right) {
 UiElementHandle s_difficultySummary=0;
 std::string difficulty_summary() {
     return "<h3>Twilit Rank "+number(s_options.twilit_rank())+"</h3><p>Enemy HP x"+number(s_options.enemy_hp)+
-        ", damage x"+number(s_options.enemy_damage)+", movement speed x"+number(s_options.enemy_speed)+
+        ", Boss HP x"+number(s_options.boss_hp)+", damage x"+number(s_options.enemy_damage)+", movement speed x"+number(s_options.enemy_speed)+
         ", spawn batch x"+number(s_options.horde)+".</p><p>Score and talent XP: x"+
         result_decimal(s_options.score_percent()/100.0,2)+". Normal-kill score: x"+
         result_decimal(s_options.score_percent()/100.0/s_options.horde,2)+
         ". Normal-enemy run XP and loot per kill: x"+result_decimal(1.0/s_options.horde,2)+
         "; elite run XP: x1.00. More enemies offset the Horde reward reduction.</p>"
-        "<p>Rank is the sum of these four multipliers. Score bonuses add: +10% per HP step, +15% per Damage step, +25% per Speed step, +10% per Horde step. Changes apply to the next run.</p>";
+        "<p>Rank is the sum of Enemy HP, Damage, Speed and Horde increments above x1. Boss HP does not change rank or score. Score bonuses add: +10% per HP step, +15% per Damage step, +25% per Speed step, +10% per Horde step. Changes apply to the next run.</p>";
 }
 struct RunOptionControl { const char* label; unsigned RunOptions::*field; unsigned min,max,step; const char* help; };
-std::array<RunOptionControl,5> s_runControls{{
-    {"Enemy HP",&RunOptions::enemy_hp,1,10,1,"Multiplies health of all enemies, including elites."},
+std::array<RunOptionControl,6> s_runControls{{
+    {"Enemy HP",&RunOptions::enemy_hp,1,10,1,"Multiplies normal enemy health only; bosses and stationary elites use Boss HP."},
     {"Enemy Damage",&RunOptions::enemy_damage,1,10,1,"Multiplies enemy damage to Link."},
     {"Enemy Speed",&RunOptions::enemy_speed,1,3,1,"Multiplies normal enemy locomotion only; attack movement and knockback remain native."},
     {"Horde",&RunOptions::horde,1,5,1,"More enemies. At x5, every fifth normal kill rolls loot and drops XP. Elite rewards and pots are unchanged."},
+    {"Boss HP",&RunOptions::boss_hp,1,10,1,"Multiplies health of timed bosses and stationary elites, including Endless. Default: x1. Does not change rank or score."},
     {"Camera distance",&RunOptions::camera_distance,100,500,25,"100% is the normal distance. Default: 200%. Walls can limit the distance; event cameras remain native."}
 }};
 ModResult build_run_controls(UiElementHandle left, UiElementHandle right, unsigned first, unsigned last) {
@@ -151,7 +152,7 @@ ModResult build_run_controls(UiElementHandle left, UiElementHandle right, unsign
         control.is_disabled=[](ModContext*,void*){return !settings_editable();};
         control.kind=UI_CONTROL_NUMBER; control.label=setting.label; control.help_rml=setting.help;
         control.user_data=&setting; control.min=setting.min; control.max=setting.max; control.step=setting.step;
-        control.prefix=i==4 ? nullptr : "x"; control.suffix=i==4 ? "%" : nullptr;
+        control.prefix=setting.field==&RunOptions::camera_distance ? nullptr : "x"; control.suffix=setting.field==&RunOptions::camera_distance ? "%" : nullptr;
         control.get=[](ModContext*,void* data,UiControlValue* value) {
             value->int_value=s_options.*static_cast<RunOptionControl*>(data)->field;
         };
@@ -166,12 +167,12 @@ ModResult build_run_controls(UiElementHandle left, UiElementHandle right, unsign
         if (result!=MOD_OK) return result;
     }
     return svc_ui->pane_add_text(mod_ctx,right,first==0 ?
-        "Score bonus: +10% per Enemy HP step, +15% per Enemy Damage step, +25% per Enemy Speed step and +10% per Horde step. Bonuses add together (x1.00 to x4.15). Normal kill points are divided by Horde. Settings apply to the next run." :
+        "Score bonus: +10% per Enemy HP step, +15% per Enemy Damage step, +25% per Enemy Speed step and +10% per Horde step. Bonuses add together (x1.00 to x4.15). Boss HP does not change rank or score. Normal kill points are divided by Horde. Settings apply to the next run." :
         "Shared with Dawnlight Settings and saved automatically. Settings apply to the next run; edit them outside a run.",nullptr);
 }
 ModResult build_difficulty(ModContext*,UiWindowHandle,UiElementHandle left,UiElementHandle right,void*,ModError*) {
     s_difficultySummary=0;
-    const auto result=build_run_controls(left,right,0,4);if(result!=MOD_OK)return result;
+    const auto result=build_run_controls(left,right,0,5);if(result!=MOD_OK)return result;
     return svc_ui->pane_add_rml(mod_ctx,left,difficulty_summary().c_str(),&s_difficultySummary);
 }
 struct ManualAimControl {const char* label;ManualAbility ability;};
@@ -217,7 +218,7 @@ void open_manual_aim_settings(ModContext*,void*) {
     if(svc_ui->window_push(mod_ctx,&window,&s_manualAimSettingsWindow)!=MOD_OK)s_manualAimSettingsWindow=0;
 }
 ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiElementHandle right,void*,ModError*) {
-    auto result=build_run_controls(left,right,4,5);
+    auto result=build_run_controls(left,right,5,6);
     if(result!=MOD_OK)return result;
     UiControlDesc control=UI_CONTROL_DESC_INIT;
     control.is_disabled=[](ModContext*,void*){return !settings_editable();};

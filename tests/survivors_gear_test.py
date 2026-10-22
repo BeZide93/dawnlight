@@ -35,7 +35,7 @@ int main() {
  for(unsigned i=0;i<unsigned(Talent::Count);++i)while(perks.talents.can_buy(Talent(i)))assert(perks.buy(Talent(i)));
  assert(perks.talents.spent()==119&&!perks.available_points());
  Run scored;scored.start(42);scored.end(true);perks.finish(scored,2);
- auto encoded=perks.encode();assert(encoded[4]==13);
+ auto encoded=perks.encode();assert(encoded[4]==14);
  Records read;assert(read.decode(encoded)&&read.encode()==encoded);
  for(auto t:{Talent::EquipmentDropRate,Talent::EquipmentRarity}) {
   auto copy=read;assert(copy.talents.refund(t)&&copy.available_points()==read.available_points()+1);

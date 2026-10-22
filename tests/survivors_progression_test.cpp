@@ -10,7 +10,7 @@ void high_score_tests(){
         run.options.allow_cheats=cheats;run.modded=modded;run.ticks=12345;run.kills=321;run.level=42;
         run.timed_elites=4;run.guard_elites=12;run.chests_opened=7;
         run.master_sword=3;run.shield=2;run.dual_wield=4;run.dark_link=5;run.red_potion=true;
-        run.options.enemy_hp=10;run.options.enemy_damage=9;run.options.enemy_speed=3;run.options.horde=5;
+        run.options.boss_hp=6;run.options.enemy_hp=10;run.options.enemy_damage=9;run.options.enemy_speed=3;run.options.horde=5;
         for(unsigned i=0;i<run.ranks.size();++i)run.ranks[i]=i;
         for(unsigned i=0;i<run.damage.dealt.size();++i)run.damage.dealt[i]=(uint64_t(1)<<35)+i;
         for(unsigned map=0;map<5;++map)records.finish(run,map);
@@ -26,6 +26,18 @@ void high_score_tests(){
         ++run.kills;records.finish(run,0);assert(records.high_score(0,assisted).run.damage.dealt[0]==0);
         Records restored;const auto bytes=records.encode();assert(restored.decode(bytes)&&restored.encode()==bytes);
         assert(restored.high_score(0,assisted).run.ranks==run.ranks);
+        assert(restored.high_score(0,assisted).run.options.boss_hp==6);
+        auto v13=bytes;v13[4]=13;Records migrated;
+        assert(migrated.decode(std::span(v13.data(),Records::v13_byte_count)));
+        assert(migrated.high_score(0,assisted).run.options.boss_hp==10);
+        assert(migrated.high_score(0,assisted).score==restored.high_score(0,assisted).score);
+        assert(migrated.decode(migrated.encode())&&migrated.high_score(0,assisted).run.options.boss_hp==10);
+        for(unsigned invalid:{0u,11u,255u}) {
+            auto badBoss=bytes;badBoss[4*(Records::v13_word_count+(assisted?5:0))]=invalid;
+            assert(!restored.decode(badBoss)&&restored.encode()==bytes);
+        }
+        auto absentBoss=bytes;absentBoss[4*(Records::v13_word_count+(assisted?0:5))]=1;
+        assert(!restored.decode(absentBoss)&&restored.encode()==bytes);
         const auto preserved=restored;
         restored.clear_high_scores();
         assert(restored.cleared_maps==31&&restored.total_xp==preserved.total_xp&&restored.runs==preserved.runs&&restored.wins==preserved.wins);

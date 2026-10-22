@@ -59,6 +59,22 @@ int main(){
   assert(test.debug_run&&test.earned_meta_xp()==0&&records.encode()==before);
  }
  test.start(3);test.end(true);records.finish(test,1);assert(!test.debug_run&&records.map_unlocked(2)&&records.total_xp>0);
+ // An explicit Meta Level edit is ordinary save data in both build configurations.
+ Records edited;edited.cleared_maps=3;edited.high_scores[0]=12345;edited.runs=7;
+ assert(edited.set_meta_level(30)&&edited.level()==30&&edited.level_xp()==0&&edited.available_points()==29);
+ assert(edited.buy(Talent::MaxHealth));edited.total_xp+=123;
+ assert(!edited.set_meta_level(30)&&edited.level_xp()==123); // UI no-op preserves partial XP.
+ assert(edited.set_meta_level(0)&&edited.level()==2&&edited.talents.spent()==1);
+ assert(edited.set_meta_level(~0u)&&edited.total_xp<=max_meta_xp);
+ Records loaded;assert(loaded.decode(edited.encode()));
+ assert(edited.set_meta_level(30));const auto saved=edited.encode();
+ debug_session_enabled=false;options.debug.clamp();assert(loaded.decode(saved)&&loaded.level()==30);
+ assert(loaded.cleared_maps==3&&loaded.high_scores[0]==12345&&loaded.runs==7&&loaded.talents.spent()==1);
+ Run normal;normal.start(4);normal.ticks=duration;normal.kills=5000;normal.end(true);
+ assert(!normal.debug_run&&normal.earned_meta_xp()>=loaded.next_level_xp());
+ const auto xp=loaded.total_xp;loaded.finish(normal);
+ assert(loaded.level()>30&&loaded.total_xp==xp+normal.earned_meta_xp());
+ assert(edited.decode(loaded.encode())&&edited.level()==loaded.level());
  DebugOptions invalid{99,0,5,5,7};invalid.clamp();assert(invalid.run_minutes==20&&invalid.player_damage==1);
 }
 '''

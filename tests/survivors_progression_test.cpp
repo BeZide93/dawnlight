@@ -1,5 +1,6 @@
 #include "../src/survivors_rules.hpp"
 #include <cassert>
+#include "survivors_legacy_records.hpp"
 #include <iostream>
 using namespace dawnlight;
 using namespace dawnlight::survivors;
@@ -10,7 +11,7 @@ void high_score_tests(){
         run.options.allow_cheats=cheats;run.modded=modded;run.ticks=12345;run.kills=321;run.level=42;
         run.timed_elites=4;run.guard_elites=12;run.chests_opened=7;
         run.master_sword=3;run.shield=2;run.dual_wield=4;run.dark_link=5;run.red_potion=true;
-        run.options.enemy_hp=10;run.options.enemy_damage=9;run.options.enemy_speed=3;run.options.horde=5;
+        run.options.boss_hp=4;run.options.enemy_hp=5;run.options.enemy_damage=4;run.options.enemy_speed=3;run.options.horde=5;
         for(unsigned i=0;i<run.ranks.size();++i)run.ranks[i]=i;
         for(unsigned i=0;i<run.damage.dealt.size();++i)run.damage.dealt[i]=(uint64_t(1)<<35)+i;
         for(unsigned map=0;map<5;++map)records.finish(run,map);
@@ -26,6 +27,18 @@ void high_score_tests(){
         ++run.kills;records.finish(run,0);assert(records.high_score(0,assisted).run.damage.dealt[0]==0);
         Records restored;const auto bytes=records.encode();assert(restored.decode(bytes)&&restored.encode()==bytes);
         assert(restored.high_score(0,assisted).run.ranks==run.ranks);
+        assert(restored.high_score(0,assisted).run.options.boss_hp==4);
+        auto v13=legacy_records(records);v13[4]=13;Records migrated;
+        assert(migrated.decode(std::span(v13.data(),Records::v13_byte_count)));
+        assert(migrated.high_score(0,assisted).run.options.boss_hp==5);
+        assert(migrated.high_score(0,assisted).score==restored.high_score(0,assisted).score);
+        assert(migrated.decode(migrated.encode())&&migrated.high_score(0,assisted).run.options.boss_hp==5);
+        for(unsigned invalid:{0u,11u,255u}) {
+            auto badBoss=bytes;badBoss[4*(Records::v13_word_count+(assisted?5:0))]=invalid;
+            assert(!restored.decode(badBoss)&&restored.encode()==bytes);
+        }
+        auto absentBoss=bytes;absentBoss[4*(Records::v13_word_count+(assisted?0:5))]=1;
+        assert(!restored.decode(absentBoss)&&restored.encode()==bytes);
         const auto preserved=restored;
         restored.clear_high_scores();
         assert(restored.cleared_maps==31&&restored.total_xp==preserved.total_xp&&restored.runs==preserved.runs&&restored.wins==preserved.wins);
@@ -54,7 +67,41 @@ void high_score_tests(){
     bad[damageStart]=bad[damageStart+1]=UINT32_MAX;bad[damageStart+2]=1;
     assert(!score.decode(bad)); // Refuse overflowing totals.
 }
+void half_step_records_tests() {
+    Records records;
+    for(bool assisted:{false,true})for(bool endless:{false,true})for(unsigned map=0;map<5;++map) {
+        Run run;RunOptions options{2.5f,3.5f,1.5f,4.5f,200};options.boss_hp=4.5f;options.allow_cheats=assisted;
+        run.start(1,options);run.end(true);
+        if(endless){assert(run.continue_endless());run.end(false);}
+        records.finish(run,map);
+    }
+    Records restored;const auto bytes=records.encode();assert(restored.decode(bytes)&&restored.encode()==bytes);
+    for(bool assisted:{false,true})for(bool endless:{false,true})for(unsigned map=0;map<5;++map) {
+        const auto& best=restored.high_score(map,assisted,endless);assert(best.present());
+        const auto& o=best.run.options;
+        assert(o.enemy_hp==2.5f&&o.enemy_damage==3.5f&&o.enemy_speed==1.5f&&o.horde==4.5f&&o.boss_hp==4.5f);
+        assert(best.run.twilit_rank()==16.5f&&o.score_percent()==330);
+        HighScoreRun alone;assert(alone.decode(best.encode())&&alone.run.options.boss_hp==4.5f);
+    }
+    // A historical rank zero stays zero despite its independent Boss HP setting.
+    Records historical;Run old;old.start(1);old.options.boss_hp=10;old.end(true);historical.finish(old,0);
+    assert(restored.decode(legacy_records(historical)));
+    assert(restored.ranked[0].run.twilit_rank()==0&&restored.ranked[0].run.options.score_percent()==100);
+    const auto oldScore=restored.ranked[0].score;
+    assert(restored.decode(restored.encode())&&restored.ranked[0].score==oldScore);
+    assert(restored.ranked[0].run.twilit_rank()==0&&restored.ranked[0].run.options.boss_hp==10);
+    // v15's temporary weighted formula and x10 caps remain readable.
+    Records weighted;Run prior;prior.start(2);prior.options={10,9.5f,2.5f,4.5f,200};
+    prior.options.boss_hp=6.5f;prior.options.weighted_difficulty=true;prior.end(true);weighted.finish(prior,1);
+    auto v15=weighted.encode();v15[4]=15;
+    for(unsigned n=0;n<20;++n)v15[4*(34+n*HighScoreRun::word_count+4)]&=~32u;
+    assert(restored.decode(v15)&&restored.ranked[1].run.twilit_rank()==28);
+    assert(restored.ranked[1].run.options.score_percent()==445);
+    assert(restored.decode(restored.encode())&&restored.ranked[1].run.options.boss_hp==6.5f);
+    Run fresh;fresh.start(1,old.options);assert(fresh.twilit_rank()==9);
+}
 int main(){
+    half_step_records_tests();
     high_score_tests();
     Records gates;Run finished;finished.start(1);
     assert(gates.map_unlocked(0)&&!gates.map_unlocked(1)&&!gates.map_unlocked(5)&&!gates.map_unlocked(~0u));
@@ -103,15 +150,15 @@ int main(){
     r.start(1);assert(!r.bonus_damage()&&r.melee_speed_percent()==100&&r.crit_damage_percent()==200);
     r.ticks=60*30;r.kills=100;r.level=5;assert(r.score()==1320);
     r.timed_elites=1;r.guard_elites=2;r.kills=103;assert(r.score()==2320);
-    r.options.horde=5;r.kills=503;assert(r.score()==3248); // Same normalized kills, +40% difficulty.
-    r.options={10,10,3,5,500};assert(r.options.score_percent()==415&&r.score()==9628);
-    r.end(true);assert(r.score()==22078);
-    Records records;records.finish(r,2);assert(records.high_scores[2]==22078&&records.total_xp==22078);
+    r.options.horde=5;r.kills=503;assert(r.score()==4176); // Same normalized kills, +80% difficulty.
+    r.options={5,5,5,5,500};r.options.boss_hp=5;assert(r.options.score_percent()==500&&r.score()==11600);
+    r.end(true);assert(r.score()==26600);
+    Records records;records.finish(r,2);assert(records.high_scores[2]==26600&&records.total_xp==26600);
     assert(records.high_scores[0]==0&&records.runs==1&&records.wins==1);
-    assert(records.level()==7&&records.available_points()==6&&records.level_xp()==2578&&records.next_level_xp()==5000);
+    assert(records.level()==8&&records.available_points()==7&&records.level_xp()==2100&&records.next_level_xp()==5500);
     Records untouched=records;r.start(1);records.finish(r,0);assert(records.encode()==untouched.encode());
     r.end(false);records.finish(r,5);assert(records.encode()==untouched.encode());
-    records.finish(r,2);assert(records.high_scores[2]==22078); // Never replace a higher score.
+    records.finish(r,2);assert(records.high_scores[2]==26600); // Never replace a higher score.
     records.total_xp=meta_threshold(99);assert(records.available_points()==99);
     assert(!records.buy(Talent::SprintSpeed)&&!records.buy(Talent::Glider)&&!records.buy(Talent::Gale)&&!records.buy(Talent::GaleCharges));
     for(unsigned i=0;i<unsigned(Talent::EquipmentDropRate);++i){

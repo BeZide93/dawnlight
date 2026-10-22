@@ -180,6 +180,14 @@ int main(){
  assert(boosted>20500&&boosted<21500);
  assert(topStats*100>allStats*9&&topStats*100<allStats*11);
  s_run.talents={};
+ // Production boss/elite path honors rank 25, even without either gear talent.
+ s_run.options.enemy_hp=s_run.options.boss_hp=s_run.options.enemy_damage=s_run.options.enemy_speed=s_run.options.horde=5;
+ unsigned topLegendary=0;
+ for(unsigned i=0;i<4000;++i){s_gear={};clear_gear_notices();drop_boss_gear();
+  assert(s_gearNoticeTicks&&s_gear.items[0].valid()&&s_gear.items[0].rarity()>=3);
+  topLegendary+=s_gear.items[0].rarity()==4;
+ }
+ assert(topLegendary>880&&topLegendary<1120);s_run.options={};
  // Eight active seconds per immutable drop, FIFO when bosses die together.
  clear_gear_notices();
  const GearItem firstNotice{GearKind::Sword,5,5,5,GearPerk::FireEdge},secondNotice{GearKind::Tunic,2,1,0};

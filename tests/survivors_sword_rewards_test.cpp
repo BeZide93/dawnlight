@@ -1,4 +1,5 @@
 #include "../src/survivors_rules.hpp"
+#include "survivors_legacy_records.hpp"
 #include "../src/survivors_multistrike.hpp"
 #include <cassert>
 #include <cmath>
@@ -74,7 +75,7 @@ int main() {
     for(unsigned i=0;i<30;++i)run.ranks[i]=i;
     for(unsigned i=0;i<18;++i)run.damage.dealt[i]=uint64_t(i+1)<<33;
     for(bool cheats:{false,true})for(unsigned map=0;map<5;++map){run.options.allow_cheats=cheats;records.finish(run,map);}
-    const auto bytes=records.encode();std::vector<uint8_t> old(bytes.begin(),bytes.begin()+136);old[4]=8;
+    const auto bytes=legacy_records(records);std::vector<uint8_t> old(bytes.begin(),bytes.begin()+136);old[4]=8;
     for(unsigned n=0;n<10;++n) {
         const auto start=136+n*HighScoreRun::word_count*4;
         old.insert(old.end(),bytes.begin()+start,bytes.begin()+start+50*4);

@@ -47,7 +47,7 @@ struct e_ba_class{fopAc_ac_c enemy;Morf morph;Morf* mpMorf=&morph;Sphere mSph;};
 struct e_ms_class:fopAc_ac_c{Morf morph;Morf* mpModelMorf=&morph;Sphere mSph1,mSph2;};
 struct e_rd_class{fopAc_ac_c enemy;Sphere cc_sph[3];};
 struct Enemy{ActorId id=kNone;ProfileName profile=0;bool initialized=false,credited=false,retiring=false,elite=false;
- unsigned age=0,endlessMinute=0;int eliteSlot=-1;bool dormant=false;cXyz lootPosition{},spawnPosition{};unsigned species=0;};
+ unsigned age=0,endlessMinute=0;int eliteSlot=-1;bool dormant=false;cXyz lootPosition{},spawnPosition{};unsigned species=0,arrowVolley=0;};
 std::array<Enemy,enemy_capacity>s_enemies;
 ActorSlotIndex<ActorId> s_enemyIndex;
 Enemy* tracked(ActorId id){for(auto& e:s_enemies)if(e.id!=kNone&&e.id==id)return &e;return nullptr;}
@@ -61,6 +61,7 @@ int create_standalone_actor(ProfileName p,const ActorSpawnParams& params,ActorId
 float cM_ssin(s16 a){return std::sin(a*3.14159265f/32768);}float cM_scos(s16 a){return std::cos(a*3.14159265f/32768);}
 bool dryPath=true,lootFloor=true;bool loot_floor_position(cXyz& p){if(!lootFloor)return false;p.y=30;return true;}
 bool walkable_spawn_path(cXyz,cXyz& p,float){if(dryPath)p.y=30;return dryPath;}
+std::map<ActorId,int>s_bossTactics;
 std::map<ActorId,fopAc_ac_c*>actors;std::set<ActorId>creating,deleted;
 fopAc_ac_c* actor_by_id(ActorId id){auto it=actors.find(id);return it==actors.end()?nullptr:it->second;}
 bool fpcM_IsCreating(ActorId id){return creating.contains(id);}
@@ -69,7 +70,7 @@ struct Service{void delete_actor(ModContext*,ActorId id){deleted.insert(id);}}se
 main=r'''
 std::vector<s16> spreadAngles;
 ActorId fopAcM_createChild(s16 profile,ActorId parent,u32 params,const cXyz* pos,int room,const csXyz* angle,const cXyz* scale,s8 arg,createFunc callback){
- if(s_spawningEndlessArrows)assert(profile==fpcNm_E_ARROW_e&&parent==42&&params==7&&room==0&&
+ if(s_spawningEnemyArrows)assert(profile==fpcNm_E_ARROW_e&&(parent==42||parent==43)&&params==7&&room==0&&
     angle->x==123&&angle->z==456&&scale->x==1&&pos->x==0&&arg==-1&&callback==nullptr);
  std::any args[]={profile,parent,params,pos,room,angle,scale,arg,callback};ActorId id=nextId++;
  if(before_enemy_arrow(nullptr,args,&id,nullptr)==HOOK_SKIP_ORIGINAL)return id;
@@ -107,19 +108,19 @@ int main(){
  assert(!create_enemy_at({},0,species_count,false));
  s_run.ticks=900;
  // Elite HP applies to every species, once, including difficulty; sizes do not accumulate.
- s_run.options.enemy_hp=10;
+ s_run.options.enemy_hp=5;s_run.options.boss_hp=5;
  daE_OC_c bok;e_ba_class bat;e_ms_class rat;e_rd_class bulblin;
  fopAc_ac_c* bases[]={&rat,&bat.enemy,&bulblin.enemy,&bok};
  for(unsigned i=0;i<4;++i){Enemy e;e.elite=true;e.profile=profiles[i];initialize_enemy(&e,bases[i]);
-  assert(e.initialized&&bases[i]->health==1200&&bases[i]->field_0x560==1200);
+  assert(e.initialized&&bases[i]->health==600&&bases[i]->field_0x560==600);
   bases[i]->health=800;initialize_enemy(&e,bases[i]);assert(bases[i]->health==800);
   for(unsigned n=0;n<3;++n)scale_elite_colliders(&e,bases[i]);}
  assert(bok.model.scale.x==2&&rat.morph.model.scale.x==2&&bat.morph.model.scale.x==2);
  assert(rat.mSph1.radius==70&&rat.mSph2.radius==40&&bat.mSph.radius==60&&bulblin.cc_sph[2].radius==70);
- Enemy regular;regular.profile=fpcNm_E_RD_e;initialize_enemy(&regular,&bulblin.enemy);assert(bulblin.enemy.health==80);
+ Enemy regular;regular.profile=fpcNm_E_RD_e;initialize_enemy(&regular,&bulblin.enemy);assert(bulblin.enemy.health==40);
  // Every original species scales, and previously spawned/injured actors keep
  // both their remaining HP and original max HP as the run advances.
- s_run.options.enemy_hp=1;
+ s_run.options.enemy_hp=1;s_run.options.boss_hp=1;
  fopAc_ac_c* speciesActors[]={&bok,&bat.enemy,&rat,&bulblin.enemy,&bulblin.enemy};
  for(unsigned kind=0;kind<5;++kind){
   s_run.ticks=duration;Enemy e;e.species=kind;e.profile=native_roster[kind].profile;
@@ -128,6 +129,14 @@ int main(){
   s_run.ticks+=18000;initialize_enemy(&e,actor);assert(actor->health==maximum);
   actor->health=maximum-1;initialize_enemy(&e,actor);
   assert(actor->health==maximum-1&&actor->field_0x560==maximum);
+ }
+ // The ordinary actor path must double timed boss HP exactly once.
+ for(int slot=0;slot<4;++slot) {
+  s_run.ticks=(slot+1)*elite_interval;Enemy timed;timed.profile=fpcNm_E_OC_e;timed.elite=true;timed.eliteSlot=slot;
+  initialize_enemy(&timed,&bok);
+  const int maximum=std::min(32767u,2*s_run.enemy_health(native_roster[0].hp,true,s_map,slot==3));
+  assert(bok.health==maximum&&bok.field_0x560==maximum);
+  --bok.health;initialize_enemy(&timed,&bok);assert(bok.health==maximum-1&&bok.field_0x560==maximum);
  }
  // Untouched waiting guards remain relevant on discovery, then stop growing
  // on damage or activation. Repeated updates never compound HP or heal wounds.
@@ -153,7 +162,7 @@ int main(){
  s_run.endless=false;
  // Native arrows are not enemies/loot sources. They remain owned after shooter deletion.
  s_enemies={};s_enemies[0].id=42;s_enemies[0].profile=fpcNm_E_RD_e;
- std::any args[]={s16(fpcNm_E_ARROW_e),ActorId(42)};ActorId arrowId=100;
+ std::any args[]={s16(fpcNm_E_ARROW_e),ActorId(42),u32(0),static_cast<const cXyz*>(nullptr),0,static_cast<const csXyz*>(nullptr)};ActorId arrowId=100;
  assert(before_enemy_arrow(nullptr,args,&arrowId,nullptr)==HOOK_CONTINUE);
  after_enemy_arrow(nullptr,args,&arrowId,nullptr);assert(active_enemy_arrow(100));
  after_enemy_arrow(nullptr,args,&arrowId,nullptr); // no duplicate entries
@@ -191,7 +200,7 @@ int main(){
  // Shadow arrows and Stallord fireballs share pause/teardown ownership.
  for(auto spec:{std::pair{fpcNm_E_RDY_e,fpcNm_E_ARROW_e},std::pair{fpcNm_B_DS_e,fpcNm_B_DS_e}}){
   s_enemyArrows={};s_enemies={};s_enemies[0].id=42;s_enemies[0].profile=spec.first;
-  std::any childArgs[]={s16(spec.second),ActorId(42),u32(daB_DS_c::TYPE_BULLET_B)};ActorId child=250;
+  std::any childArgs[]={s16(spec.second),ActorId(42),u32(daB_DS_c::TYPE_BULLET_B),static_cast<const cXyz*>(nullptr),0,static_cast<const csXyz*>(nullptr)};ActorId child=250;
   assert(before_enemy_arrow(nullptr,childArgs,&child,nullptr)==HOOK_CONTINUE);
   after_enemy_arrow(nullptr,childArgs,&child,nullptr);assert(active_enemy_arrow(child));
   s_enemies[0]={};assert(active_enemy_arrow(child));
@@ -232,7 +241,7 @@ int main(){
  std::any riderArgs[]={s16(fpcNm_E_RDY_e),ActorId(42)};ActorId rider=500;
  after_enemy_arrow(nullptr,riderArgs,&rider,nullptr);assert(enemy_damage_factor(rider)==4);
  fopAc_ac_c riderActor;riderActor.profile=fpcNm_E_RDY_e;actors[rider]=&riderActor;
- std::any mountedShot[]={s16(fpcNm_E_ARROW_e),ActorId(rider)};ActorId flyingArrow=501;
+ std::any mountedShot[]={s16(fpcNm_E_ARROW_e),ActorId(rider),u32(0),static_cast<const cXyz*>(nullptr),0,static_cast<const csXyz*>(nullptr)};ActorId flyingArrow=501;
  assert(before_enemy_arrow(nullptr,mountedShot,&flyingArrow,nullptr)==HOOK_CONTINUE);
  after_enemy_arrow(nullptr,mountedShot,&flyingArrow,nullptr);assert(enemy_damage_factor(flyingArrow)==4&&tracked_enemy_arrow(flyingArrow)->parent==42);
  carrier={};carrier.id=43;carrier.profile=fpcNm_E_OC_e;
@@ -247,19 +256,38 @@ int main(){
  s_enemies[0].credited=true;assert(!active_enemy_arrow(ghost));creating.insert(ghost);cleanup_enemy_arrows();
  assert(tracked_enemy_arrow(ghost));creating.clear();actors[ghost]=&player;cleanup_enemy_arrows();assert(deleted.contains(ghost));
  actors.clear();cleanup_enemy_arrows();assert(!tracked_enemy_arrow(ghost));s_enemies={};
- // Every Endless archer shot uses the Hard Mode fan, with recursive ownership
- // hooks still tracking exactly three arrows; normal runs and other species do not.
+ // Normal archers fire single, single, triple; Endless keeps every shot triple.
+ // Recursive side arrows do not advance the original-shot counter.
  for(int profile:{fpcNm_E_RD_e,fpcNm_E_RDY_e,fpcNm_E_OC_e})for(bool endless:{false,true}){
   s_enemyArrows={};s_enemies={};actors.clear();spreadAngles.clear();
   s_run.phase=Phase::Running;s_run.endless=endless;s_enemies[0].id=42;s_enemies[0].profile=profile;
   cXyz pos{},scale{1,1,1};csXyz angle{123,1000,456};
-  const auto id=fopAcM_createChild(s16(fpcNm_E_ARROW_e),42,7,&pos,0,&angle,&scale,s8(-1),nullptr);
-  const bool archer=profile!=fpcNm_E_OC_e;const unsigned count=endless&&archer?3:1;
-  assert(spreadAngles.size()==count&&angle.y==1000&&!s_spawningEndlessArrows);
-  if(count==3){assert(spreadAngles[1]==1000-0x900&&spreadAngles[2]==1000+0x900);
-   unsigned tracked=0;for(const auto& a:s_enemyArrows)if(a.id!=kNone){++tracked;assert(a.parent==42);}assert(tracked==3);
-   assert(active_enemy_arrow(id));retire_enemy_arrows();assert(!active_enemy_arrow(id));}
+  const bool archer=profile!=fpcNm_E_OC_e;unsigned total=0;
+  for(unsigned shot=1;shot<=6;++shot){
+   const auto before=spreadAngles.size();
+   const auto id=fopAcM_createChild(s16(fpcNm_E_ARROW_e),42,7,&pos,0,&angle,&scale,s8(-1),nullptr);
+   const unsigned count=archer&&(endless||shot%3==0)?3:1;total+=count;
+   assert(spreadAngles.size()==total&&angle.y==1000&&!s_spawningEnemyArrows);
+   if(count==3){assert(spreadAngles[before+1]==1000-0x900&&spreadAngles[before+2]==1000+0x900);}
+   if(archer){assert(active_enemy_arrow(id));assert(s_enemies[0].arrowVolley==shot%3);}
+  }
+  if(archer){unsigned tracked=0;for(const auto& a:s_enemyArrows)if(a.id!=kNone){++tracked;assert(a.parent==42);}assert(tracked==total);}
  }
+ s_run.endless=false;s_enemyArrows={};s_enemies={};actors.clear();spreadAngles.clear();
+ // Cadence belongs to each shooter; rejected/failed shots do not advance it.
+ s_enemies[0].id=42;s_enemies[0].profile=fpcNm_E_RD_e;
+ s_enemies[1].id=43;s_enemies[1].profile=fpcNm_E_RDY_e;
+ cXyz pos{},scale{1,1,1};csXyz angle{123,1000,456};
+ auto shoot=[&](ActorId parent){return fopAcM_createChild(s16(fpcNm_E_ARROW_e),parent,7,&pos,0,&angle,&scale,s8(-1),nullptr);};
+ shoot(42);shoot(43);shoot(42);assert(spreadAngles.size()==3);
+ s_run.phase=Phase::Upgrade;assert(shoot(42)==kNone&&s_enemies[0].arrowVolley==2);
+ s_run.phase=Phase::Running;ActorId failed=kNone;
+ after_enemy_arrow(nullptr,args,&failed,nullptr);assert(s_enemies[0].arrowVolley==2);
+ shoot(42);assert(spreadAngles.size()==6&&s_enemies[0].arrowVolley==0);
+ shoot(43);assert(spreadAngles.size()==7&&s_enemies[1].arrowVolley==2);
+ // Actor-slot reuse starts at the first shot, not a previous archer's third.
+ s_enemies[1]={};s_enemies[1].id=43;s_enemies[1].profile=fpcNm_E_RDY_e;
+ shoot(43);assert(spreadAngles.size()==8&&s_enemies[1].arrowVolley==1);
  s_run.endless=false;s_enemyArrows={};s_enemies={};actors.clear();
  // Foreign children and failed creates are ignored; capacity/pause reject new owned arrows.
  arrowId=101;after_enemy_arrow(nullptr,args,&arrowId,nullptr);assert(!tracked_enemy_arrow(101));
@@ -273,7 +301,7 @@ int main(){
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
  native=(root/'src/survivors_roster_native.inc').read_text().split('// Suppress only')[0]
- cpp.write_text(fixture+native+'void initialize_extended_enemy(Enemy&,fopAc_ac_c*){assert(false);}' +(root/'src/survivors_enemy_types.inc').read_text()+(root/'src/survivors_enemy_balance.inc').read_text().split('// Add one decrement')[0]+(root/'src/survivors_enemy_arrows.inc').read_text()+
+ cpp.write_text(fixture+native+'void initialize_extended_enemy(Enemy&,fopAc_ac_c*){assert(false);}' +(root/'src/survivors_enemy_types.inc').read_text()+(root/'src/survivors_enemy_balance.inc').read_text().split('void advance_elite_cooldowns')[0]+(root/'src/survivors_enemy_arrows.inc').read_text()+
   function('create_enemy_at')+function('spawn_enemy')+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

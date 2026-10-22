@@ -175,14 +175,41 @@ struct GearInventory {
         return roll<500-30*rank?1:roll<750-30*rank?2:
             roll<900-20*rank?3:roll<980-8*rank?4:5;
     }
-    template<class Random> static GearItem roll(Random&& random,unsigned rarityRank=0,bool legendary=false) {
+    // Bounded enumeration keeps the selected rarity exact while the talent
+    // still weights the stats inside that rarity. No rejection/retry loop.
+    template<class Random> static GearItem roll_quality(GearKind kind,unsigned rarity,unsigned rank,Random& random) {
+        rank=std::min(rank,10u);
+        const std::array<unsigned,5> weights{500-30*rank,250,150+10*rank,80+12*rank,20+8*rank};
+        std::array<GearItem,125> candidates{};std::array<unsigned,125> chances{};
+        unsigned count=0,total=0;
+        for(unsigned code=0;code<125;++code) {
+            GearItem item{kind};std::array<uint8_t*,3> values{&item.first,&item.second,&item.third};
+            unsigned remaining=code,weight=1;bool valid=true;
+            for(unsigned i=0;i<3;++i) {
+                const unsigned digit=remaining%5;remaining/=5;
+                const auto& affix=item.definition().affixes[i];
+                if(affix.stat==GearStat::None){if(digit)valid=false;continue;}
+                if(affix.count&&digit>1){valid=false;continue;}
+                *values[i]=uint8_t(digit+1);
+                weight*=affix.count?(digit?100+20*rank:900-20*rank):weights[digit];
+            }
+            if(!valid||item.rarity()!=rarity)continue;
+            candidates[count]=item;chances[count++]=weight;total+=weight;
+        }
+        unsigned choice=random(total);
+        for(unsigned i=0;i<count;++i){if(choice<chances[i])return candidates[i];choice-=chances[i];}
+        return candidates[0];
+    }
+    template<class Random> static GearItem roll(Random&& random,unsigned rarityRank=0,bool legendary=false,unsigned twilitProgress=0) {
         rarityRank=rarityRank>10?10:rarityRank;
         // 80% Weapon / 20% Tunic; five equally likely families, two variants each.
         static constexpr std::array kinds{GearKind::Sword,GearKind::Greatsword,GearKind::HerosBow,GearKind::SharpshooterBow,
             GearKind::StormBoomerang,GearKind::HurricaneBoomerang,GearKind::BombBag,GearKind::SiegeBombs,GearKind::IronBall,GearKind::BreakerBall};
         const auto kind=random(5)<4?kinds[random(kinds.size())]:GearKind::Tunic;
         GearItem item{kind};std::array<uint8_t*,3> values{&item.first,&item.second,&item.third};
-        for(unsigned i=0;i<values.size();++i) {
+        const bool promoted=!legendary&&twilitProgress&&random(10000)<std::min(twilitProgress,10000u);
+        if(promoted)item=roll_quality(kind,random(4)==0?4u:3u,rarityRank,random);
+        else for(unsigned i=0;i<values.size();++i) {
             const auto& affix=item.definition().affixes[i];
             if(affix.stat!=GearStat::None)*values[i]=uint8_t(legendary?(affix.count?2:5):affix.count?(random(100)<90-2*rarityRank?1:2):
                 rarityRank?quality_stat(random(1000),rarityRank):stat(random(100)));

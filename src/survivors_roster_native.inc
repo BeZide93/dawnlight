@@ -59,6 +59,7 @@ ROSTER_HIT(RosterYC,"src/d/actor/d_a_e_yc.cpp#damage_check",e_yc_class);
 ROSTER_HIT(RosterHeadDamage,"daB_DS_c::mBattle2_spinner_damage_check",daB_DS_c);
 #undef ROSTER_HIT
 DEFINE_HOOK_SYMBOL("cCcS::Set",void(cCcS*,cCcD_Obj*),RosterTargets);
+DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_sf.cpp#action",void(e_sf_class*),RosterSFAction);
 DEFINE_HOOK_SYMBOL("daE_GI_c::setCryStop",bool(daE_GI_c*),RosterGibdoCry);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_mm_mt.cpp#action",void(e_mm_mt_class*),RosterShell);
 DEFINE_HOOK_SYMBOL("daE_TT_c::checkPlayerSearch",bool(daE_TT_c*),RosterTTSearch);
@@ -110,3 +111,5 @@ DEFINE_HOOK_SYMBOL("daB_TN_c::calcSwordMoveA",void(daB_TN_c*),BossTNThrow);
 DEFINE_HOOK_SYMBOL("daB_TN_c::cc_set",void(daB_TN_c*),BossTNThrowCollision);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_rdy.cpp#e_rdy_yc_ride",void(e_rdy_class*),BossCarrierRide);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_b_gnd.cpp#b_gnd_g_attack",BOOL(b_gnd_class*),BossGNDCharge);
+
+DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_mf.cpp#action",void(e_mf_class*),RosterMFAction);

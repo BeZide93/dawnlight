@@ -12,7 +12,7 @@ fixture=r'''
 #include <map>
 #include <set>
 #include <vector>
-struct { double endless_factor()const{return 1.0;} }s_run;
+struct { unsigned ticks=0; double endless_factor()const{return 1.0;} }s_run;
 using ActorId=unsigned;using ProfileName=int;using s16=short;constexpr ActorId kNone=~0u;
 struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods{template<class T>T arg(void* a,unsigned i){return std::any_cast<T>(static_cast<std::any*>(a)[i]);}}
@@ -34,14 +34,14 @@ struct Model{int writes=0;void setBaseTRMtx(int){++writes;}};
 namespace mDoMtx_stack_c{void transS(cXyz){}void YrotM(s16){}int get(){return 0;}}
 struct Native:fopAc_ac_c{
  fopAc_ac_c& actor=*this;ActorId mRiderID=kNone,mKargarokID=kNone;int mRideState=0,mDemoMode=3,mIFrameTimer=0,mKargarokDeleteTimer=0,mFadeTimer=0,field_0xa6e=0;
- int mAction=0,mMode=0,mAnm=0,mMoveMode=0,mActionMode1=0,mActionMode=0,mStates[16]{};
+ s16 mPlayerAngleY=0;int mAction=0,mMode=0,mAnm=0,mMoveMode=0,mActionMode1=0,mActionMode=0,mStates[16]{};
  int action=0,mode=0,field_0x676=0,field_0x678=0,field_0x6c2=0,field_0x6c0=0;
  int timer[6]{},timers[6]{},mTimer[6]{},mTimers[6]{},field_0x69c[6]{},field_0x698[6]{};
  int* mpMorf=nullptr;const char* mpArcName="rider";Model model;Model* mpPartModels[16]{};cXyz mPositions[16];int swordBit=1;
  Native(){mpPartModels[13]=&model;}void setSwordAtBit(int n){swordBit=n;}
 };
 struct e_mf_class:Native{int field_0x6c0[6]{};};
-using e_dn_class=Native;using e_sf_class=Native;using e_kr_class=Native;using e_mm_class=Native;
+using e_bs_class=Native;using e_dn_class=Native;using e_sf_class=Native;using e_kr_class=Native;using e_mm_class=Native;
 using daE_OC_c=Native;using e_rd_class=Native;using e_sh_class=Native;using e_s1_class=Native;
 using e_rdy_class=Native;using e_yc_class=Native;using b_gnd_class=Native;using daE_YMB_c=Native;using daB_TN_c=Native;
 struct Enemy{ActorId id=1;ProfileName profile=0;bool elite=true,dormant=false,initialized=true,retiring=false,credited=false;
@@ -66,6 +66,15 @@ struct Spawn{int profile;ActorId parent;unsigned params;cXyz pos;};std::vector<S
 ActorId fopAcM_createChild(int profile,ActorId parent,unsigned params,const cXyz* pos,int,const csXyz*,const cXyz*,int,void*){
  spawns.push_back({profile,parent,params,*pos});pending.insert(100+spawns.size());return 100+spawns.size();}
 '''
+fixture+=r'''
+struct Tactics{bool waitingVolley=false;unsigned pendingRiders=0,riderDelay=0,ridersUntil=0;int swordState=0,volley=0;s16 yaw=0;cXyz target{},throwTarget{};};
+struct HitSource{int riders=0;};std::map<ActorId,HitSource>s_enemyHitSources;
+std::map<ActorId,Tactics>s_bossTactics;
+bool boss_attack_paused(const Enemy&){return false;}
+bool boss_major_ready(Enemy&,unsigned){return true;}
+cXyz boss_lead_target(float){return player.current.pos;}
+s16 boss_target_yaw(fopAc_ac_c*,const cXyz&){return 0;}
+'''
 main=r'''
 int main(){
  Native boss;actors[1]=&boss;std::any args[]={&boss};
@@ -82,18 +91,19 @@ int main(){
  children[rider.id].retiring=true;assert(!prepare_carrier_rider(&rider));children[rider.id].retiring=false;
  pending.insert(1);assert(!prepare_carrier_rider(&rider));pending.clear();
  // Five native variants on safe ground; invalid sites and missing Link do not spawn.
- owner.profile=fpcNm_B_GND_e;spawns.clear();summon_ghost_riders(&boss,owner);assert(spawns.size()==5);
+ owner.profile=fpcNm_B_GND_e;spawns.clear();summon_ghost_riders(&boss,owner);assert(spawns.size()==3&&s_bossTactics[owner.id].pendingRiders==2);
+ summon_ghost_riders(&boss,owner);assert(spawns.size()==5&&s_bossTactics[owner.id].pendingRiders==0);
  for(unsigned i=0;i<5;++i)assert(spawns[i].profile==fpcNm_E_FK_e&&spawns[i].parent==1&&(spawns[i].params&255)==i&&spawns[i].pos.y==25);
  floorValid=false;summon_ghost_riders(&boss,owner);assert(spawns.size()==5);floorValid=true;
- playerPresent=false;summon_ghost_riders(&boss,owner);assert(spawns.size()==5);playerPresent=true;
+ playerPresent=false;summon_ghost_riders(&boss,owner);assert(spawns.size()==5);playerPresent=true;s_bossTactics[owner.id].pendingRiders=0;s_bossTactics[owner.id].ridersUntil=0;
  // All native entries into charge share one cooldown; running animations survive.
  boss.mMoveMode=10;owner.specialCooldown=0;before_boss_gnd_charge(nullptr,args,nullptr,nullptr);assert(owner.specialCooldown==150);
- boss.mMoveMode=10;before_boss_gnd_charge(nullptr,args,nullptr,nullptr);assert(boss.mMoveMode==15);
+ boss.mMoveMode=10;before_boss_gnd_charge(nullptr,args,nullptr,nullptr);assert(boss.mMoveMode==0&&boss.mActionMode==10);
  boss.mMoveMode=12;before_boss_gnd_charge(nullptr,args,nullptr,nullptr);assert(boss.mMoveMode==12);
  // Repeat throws run in both armor phases and do not reset the body action.
  owner.profile=fpcNm_B_TN_e;
  for(int phase:{3,9}){boss.mActionMode1=phase;owner.throwLife=0;owner.specialCooldown=0;boss.mStates[13]=phase==3?1:7;
-  before_boss_tn_throw(nullptr,args,nullptr,nullptr);assert(boss.mStates[13]==2&&owner.specialCooldown==45&&owner.throwLife==44&&boss.mActionMode1==phase);
+  before_boss_tn_throw(nullptr,args,nullptr,nullptr);assert(boss.mStates[13]==2&&owner.specialCooldown==90&&owner.throwLife==44&&boss.mActionMode1==phase);
   boss.mStates[13]=3;boss.mPositions[13]={20,30,40};boss.mStates[15]=phase==9?1:0;boss.swordBit=1;
   after_boss_tn_throw_collision(nullptr,args,nullptr,nullptr);assert(owner.extraAttackReady&&owner.extraAttack.pos.x==20&&boss.swordBit==(phase==9?1:0));
   for(int i=0;i<44;++i)before_boss_tn_throw(nullptr,args,nullptr,nullptr);
@@ -106,6 +116,24 @@ int main(){
  owner.stagger=0;boss.current.pos={};boss.speed={4,6,8};after_boss_ymb_move(nullptr,args,nullptr,nullptr);
  assert(boss.current.pos.x==2&&boss.current.pos.y==3&&boss.current.pos.z==4);
  owner.stagger=1;after_boss_ymb_move(nullptr,args,nullptr,nullptr);assert(boss.current.pos.x==2);owner.stagger=0;
+ // Stalfos readiness takes half its former (2x native) duration.
+ owner.profile=fpcNm_E_SF_e;owner.elite=true;boss.mTimers[2]=28;
+ for(int i=0;i<7;++i){advance_elite_cooldowns(&boss,owner);if(boss.mTimers[2]>0)--boss.mTimers[2];}
+ assert(boss.mTimers[2]==0);
+ owner.elite=false;boss.mTimers[2]=28;advance_elite_cooldowns(&boss,owner);assert(boss.mTimers[2]==28);
+ // Ordinary Stalchildren: quarter readiness/close-range wait, no underflow;
+ // emergence, damage and attack animation clocks are not shortened.
+ owner.profile=fpcNm_E_BS_e;
+ for(bool elite:{false,true})for(int action=0;action<6;++action)for(int mode:{0,1,5}) {
+  owner.elite=elite;boss.action=action;boss.mode=mode;
+  boss.timers[0]=boss.timers[1]=boss.timers[2]=28;
+  for(int i=0;i<7;++i){advance_elite_cooldowns(&boss,owner);for(int j=0;j<3;++j)if(boss.timers[j]>0)--boss.timers[j];}
+  assert(boss.timers[2]==(action==2?0:21));
+  assert(boss.timers[0]==(action==2&&mode==5?0:21));assert(boss.timers[1]==21);
+ }
+ boss.action=2;boss.mode=5;
+ for(int value=0;value<4;++value){boss.timers[0]=boss.timers[2]=value;advance_elite_cooldowns(&boss,owner);assert(boss.timers[0]==0&&boss.timers[2]==0);}
+ owner.dormant=true;boss.timers[2]=10;advance_elite_cooldowns(&boss,owner);assert(boss.timers[2]==10);owner.dormant=false;
  // Halve readiness/recovery timers; do not shorten native attack windows.
  owner.profile=fpcNm_E_S1_e;boss.mAction=3;boss.mMode=1;boss.mTimers[0]=30;
  for(int i=0;i<15;++i){advance_elite_cooldowns(&boss,owner);if(boss.mTimers[0]>0)--boss.mTimers[0];}assert(boss.mTimers[0]==0);

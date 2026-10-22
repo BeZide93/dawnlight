@@ -111,6 +111,7 @@ void update_enemy_effects(){}void update_weapons(daAlink_c*){}void update_orbs(d
 void clear_attacks(){}void update_chests(daAlink_c*){}void update_pots(daAlink_c*){}
 
 '''
+fixture+='void update_boss_watchdogs(daAlink_c*){}\n'+extract((root/'src/survivors_boss_tactics_state.inc').read_text(),'timed_boss')+extract((root/'src/survivors_boss_tactics_state.inc').read_text(),'active_boss_encounter')
 main=r'''
 void fresh(unsigned map){s_victory=false;s_victoryTicks=0;s_arenaSpawnPosition={};s_arenaSpawn=true;rejectLongPath=narrowLanding=false;s_map=map;roomData={};stageData={};keepDoors={};keepRoomDoors={};s_run.start(42);s_enemies={};s_chests={};s_chestsExhausted=false;s_chestSequence=0;s_selectedChest=kChestCount;clear_elite_sites();player.current.pos={};reset_elite_encounters();
  groundMissing=wallBlocked=barrierBlocked=failCreate=false;groundRoom=-2;groundCode=0;s_spawnCooldown=s_spawnFailures=ordinarySpawns=0;}
@@ -187,7 +188,11 @@ int main(){
  assert(s_chests[0].fixed&&s_chests[0].position.x==99&&s_chests[0].spawnOrder==0);
  drop_elite_chest(replacement,&player);assert(s_chestSequence==oldSequence+1); // One reward per kill.
  // Exact milestone bypasses ordinary spawn cooldown, ordinary horde continues.
- fresh(0);s_run.ticks=elite_interval;s_spawnCooldown=30;update_spawns(&player);assert(waves()==1&&ordinarySpawns==1);
+ fresh(0);s_run.ticks=elite_interval;s_spawnCooldown=30;update_spawns(&player);assert(waves()==1&&ordinarySpawns==0);
+ for(int n=0;n<10;++n){s_spawnCooldown=0;update_spawns(&player);assert(ordinarySpawns==0);}
+ // Killing the timed boss resumes waves; already-spawned enemies survive the gate.
+ for(auto& e:s_enemies)if(timed_boss(e)){drop_elite_chest(e,&player);e.credited=true;}
+ s_spawnCooldown=0;update_spawns(&player);assert(ordinarySpawns==1);
  // Spawn warning counts consecutive failures and clears after recovery/cap/end.
  fresh(0);failCreate=true;
  for(unsigned i=0;i<10;++i){s_spawnCooldown=0;update_spawns(&player);}assert(s_spawnFailures==10);

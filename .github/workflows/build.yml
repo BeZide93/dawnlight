@@ -83,6 +83,10 @@ jobs:
           python3 tests/survivors_encounters_test.py
           python3 tests/survivors_bosses_test.py
           python3 tests/survivors_boss_specials_test.py
+          python3 tests/survivors_zelda_orbs_test.py
+          CXX=clang++ python3 tests/survivors_zelda_orbs_test.py
+          python3 tests/survivors_boss_tactics_test.py
+          CXX=clang++ python3 tests/survivors_boss_tactics_test.py
           python3 tests/survivors_enemy_hits_test.py
           CXX=clang++ python3 tests/survivors_enemy_hits_test.py
           python3 tests/survivors_enemy_types_test.py
@@ -92,6 +96,8 @@ jobs:
           python3 tests/survivors_minimap_test.py
           python3 tests/survivors_hook_install_test.py
           CXX=clang++ python3 tests/survivors_hook_install_test.py
+          python3 tests/survivors_restart_test.py
+          CXX=clang++ python3 tests/survivors_restart_test.py
           python3 tests/survivors_lifecycle_test.py
           CXX=clang++ python3 tests/survivors_lifecycle_test.py
           python3 tests/survivors_hub_test.py
@@ -328,6 +334,18 @@ jobs:
           CXX=clang++ python3 tests/survivors_midna_test.py dusklight
           python3 tests/survivors_aggro_test.py dusklight
           CXX=clang++ python3 tests/survivors_aggro_test.py dusklight
+          python3 tests/survivors_death_sword_spacing_test.py dusklight
+          CXX=clang++ python3 tests/survivors_death_sword_spacing_test.py dusklight
+          python3 tests/survivors_stalhound_attack_test.py dusklight
+          CXX=clang++ python3 tests/survivors_stalhound_attack_test.py dusklight
+          python3 tests/survivors_shadow_beast_test.py dusklight
+          CXX=clang++ python3 tests/survivors_shadow_beast_test.py dusklight
+          python3 tests/survivors_boss_ring_test.py dusklight
+          CXX=clang++ python3 tests/survivors_boss_ring_test.py dusklight
+          python3 tests/survivors_stalfos_test.py dusklight
+          CXX=clang++ python3 tests/survivors_stalfos_test.py dusklight
+          python3 tests/survivors_dynalfos_test.py dusklight
+          CXX=clang++ python3 tests/survivors_dynalfos_test.py dusklight
           CXX=clang++ python3 tests/survivors_potions_test.py
           CXX=clang++ python3 tests/survivors_defense_test.py
           CXX=clang++ python3 tests/survivors_feedback_test.py
@@ -341,6 +359,10 @@ jobs:
           CXX=clang++ python3 tests/survivors_encounters_test.py
           CXX=clang++ python3 tests/survivors_bosses_test.py
           python3 tests/survivors_boss_specials_test.py
+          python3 tests/survivors_zelda_orbs_test.py
+          CXX=clang++ python3 tests/survivors_zelda_orbs_test.py
+          python3 tests/survivors_boss_tactics_test.py
+          CXX=clang++ python3 tests/survivors_boss_tactics_test.py
           python3 tests/survivors_bulblin_test.py
           CXX=clang++ python3 tests/survivors_bulblin_test.py
           CXX=clang++ python3 tests/survivors_pots_test.py

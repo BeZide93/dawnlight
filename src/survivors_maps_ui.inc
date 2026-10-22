@@ -2,6 +2,7 @@
 // the confirmed native door transition loads a run map.
 constexpr const char* kArenaStyle=R"(
 window { background-color: transparent; backdrop-filter: none; }
+.survivors-difficulty-name { flex: 1 1 0; min-width: 0dp; font-size: 17dp; padding: 10dp; }
 window content pane.survivors-settings { background-color: #171d19f5; padding: 16dp; gap: 12dp; }
 window content pane.survivors-talents { flex: 1 1 100%; border-right-width: 0dp; overflow: hidden auto; background-color: #171d19f5; padding: 16dp; gap: 12dp; }
 .survivors-talent-row { width: 100%; flex-shrink: 0; align-items: center; gap: 8dp; }
@@ -122,43 +123,85 @@ ModResult build_arena_choices(UiElementHandle left, UiElementHandle right) {
 }
 
 UiElementHandle s_difficultySummary=0;
+std::string difficulty_number(float value) {return result_decimal(value,std::floor(value)==value?0:1);}
 std::string difficulty_summary() {
-    return "<h3>Twilit Rank "+number(s_options.twilit_rank())+"</h3><p>Enemy HP x"+number(s_options.enemy_hp)+
-        ", damage x"+number(s_options.enemy_damage)+", movement speed x"+number(s_options.enemy_speed)+
-        ", spawn batch x"+number(s_options.horde)+".</p><p>Score and talent XP: x"+
+    return "<h3>Twilit Rank "+difficulty_number(s_options.twilit_rank())+"</h3><p>Enemy HP x"+difficulty_number(s_options.enemy_hp)+
+        ", Boss HP x"+difficulty_number(s_options.boss_hp)+", damage x"+difficulty_number(s_options.enemy_damage)+", movement speed x"+difficulty_number(s_options.enemy_speed)+
+        ", spawn batch x"+difficulty_number(s_options.horde)+".</p><p>Score and talent XP: x"+
         result_decimal(s_options.score_percent()/100.0,2)+". Normal-kill score: x"+
         result_decimal(s_options.score_percent()/100.0/s_options.horde,2)+
         ". Normal-enemy run XP and loot per kill: x"+result_decimal(1.0/s_options.horde,2)+
         "; elite run XP: x1.00. More enemies offset the Horde reward reduction.</p>"
-        "<p>Rank is the sum of these four multipliers. Score bonuses add: +10% per HP step, +15% per Damage step, +25% per Speed step, +10% per Horde step. Changes apply to the next run.</p>";
+        "<p>Rank is the sum of all five multipliers (5 to 25). Score and meta XP equal Rank / 5. Higher rank improves equipment drop chance and rarity. At Rank 25: guaranteed equipment from bosses/elites, 75% Epic and 25% Legendary. Changes apply to the next run.</p>";
 }
-struct RunOptionControl { const char* label; unsigned RunOptions::*field; unsigned min,max,step; const char* help; };
-std::array<RunOptionControl,5> s_runControls{{
-    {"Enemy HP",&RunOptions::enemy_hp,1,10,1,"Multiplies health of all enemies, including elites."},
-    {"Enemy Damage",&RunOptions::enemy_damage,1,10,1,"Multiplies enemy damage to Link."},
-    {"Enemy Speed",&RunOptions::enemy_speed,1,3,1,"Multiplies normal enemy locomotion only; attack movement and knockback remain native."},
-    {"Horde",&RunOptions::horde,1,5,1,"More enemies. At x5, every fifth normal kill rolls loot and drops XP. Elite rewards and pots are unchanged."},
+struct RunOptionControl { const char* label; float RunOptions::*field; float min,max,step; const char* help; };
+std::array<RunOptionControl,6> s_runControls{{
+    {"Enemy HP",&RunOptions::enemy_hp,1,5,.5f,"Multiplies normal enemy health only; bosses and stationary elites use Boss HP."},
+    {"Enemy Damage",&RunOptions::enemy_damage,1,5,.5f,"Multiplies enemy damage to Link."},
+    {"Enemy Speed",&RunOptions::enemy_speed,1,5,.5f,"Multiplies normal enemy locomotion only; attack movement and knockback remain native."},
+    {"Horde",&RunOptions::horde,1,5,.5f,"More enemies. At x5, every fifth normal kill rolls loot and drops XP. Elite rewards and pots are unchanged."},
+    {"Boss HP",&RunOptions::boss_hp,1,5,.5f,"Multiplies health of timed bosses and stationary elites, including Endless. Default: x1. Each +0.5 adds 0.5 Twilit Rank and +10% score/meta XP."},
     {"Camera distance",&RunOptions::camera_distance,100,500,25,"100% is the normal distance. Default: 200%. Walls can limit the distance; event cameras remain native."}
 }};
+struct DifficultyButton {unsigned setting;float delta;};
+std::array<DifficultyButton,10> s_difficultyButtons{};
+std::array<UiElementHandle,5> s_difficultyValues{};
+void change_difficulty(ModContext*,void* data) {
+    if(!settings_editable())return;
+    const auto& button=*static_cast<DifficultyButton*>(data);
+    const auto& setting=s_runControls[button.setting];
+    s_options.*setting.field=RunOptions::difficulty(s_options.*setting.field+button.delta,setting.max);
+    store_option_config();
+    if(s_difficultyValues[button.setting])svc_ui->elem_set_text(mod_ctx,s_difficultyValues[button.setting],
+        ("x"+difficulty_number(s_options.*setting.field)).c_str());
+    if(s_difficultySummary)svc_ui->elem_set_rml(mod_ctx,s_difficultySummary,difficulty_summary().c_str());
+}
+ModResult add_difficulty_row(UiElementHandle pane,unsigned index) {
+    const auto& setting=s_runControls[index];UiRowDesc desc=UI_ROW_DESC_INIT;UiElementHandle row=0;
+    auto result=svc_ui->pane_add_row(mod_ctx,pane,&desc,&row);if(result!=MOD_OK)return result;
+    result=svc_ui->elem_set_class(mod_ctx,row,"survivors-talent-row",true);if(result!=MOD_OK)return result;
+    UiElementHandle name=0;
+    result=svc_ui->pane_add_text(mod_ctx,row,setting.label,&name);if(result!=MOD_OK)return result;
+    result=svc_ui->elem_set_class(mod_ctx,name,"survivors-difficulty-name",true);if(result!=MOD_OK)return result;
+    result=svc_ui->pane_add_text(mod_ctx,row,("x"+difficulty_number(s_options.*setting.field)).c_str(),&s_difficultyValues[index]);
+    if(result!=MOD_OK)return result;
+    result=svc_ui->elem_set_class(mod_ctx,s_difficultyValues[index],"survivors-talent-rank",true);if(result!=MOD_OK)return result;
+    for(unsigned side=0;side<2;++side) {
+        auto& button=s_difficultyButtons[index*2+side];button={index,side?.5f:-.5f};
+        UiControlDesc control=UI_CONTROL_DESC_INIT;
+        control.label=side?"+":"-";control.help_rml=setting.help;control.user_data=&button;
+        control.tooltip=side?"Increase by 0.5":"Decrease by 0.5";
+        control.on_pressed=change_difficulty;
+        control.is_disabled=[](ModContext*,void* data) {
+            const auto& b=*static_cast<DifficultyButton*>(data);const auto& setting=s_runControls[b.setting];
+            return !settings_editable()||(b.delta<0?s_options.*setting.field<=setting.min:s_options.*setting.field>=setting.max);
+        };
+        UiElementHandle handle=0;
+        result=svc_ui->pane_add_control(mod_ctx,row,&control,&handle);if(result!=MOD_OK)return result;
+        result=svc_ui->elem_set_class(mod_ctx,handle,"survivors-talent-adjust",true);if(result!=MOD_OK)return result;
+    }
+    return MOD_OK;
+}
 ModResult build_run_controls(UiElementHandle left, UiElementHandle right, unsigned first, unsigned last) {
     auto result=svc_ui->elem_set_class(mod_ctx,left,"survivors-settings",true);
     if (result!=MOD_OK) return result;
     result=svc_ui->elem_set_class(mod_ctx,right,"survivors-settings",true);
     if (result!=MOD_OK) return result;
     for (unsigned i=first;i<last;++i) {
+        if(i<5){result=add_difficulty_row(left,i);if(result!=MOD_OK)return result;continue;}
         auto& setting=s_runControls[i];
         UiControlDesc control=UI_CONTROL_DESC_INIT;
         control.is_disabled=[](ModContext*,void*){return !settings_editable();};
         control.kind=UI_CONTROL_NUMBER; control.label=setting.label; control.help_rml=setting.help;
         control.user_data=&setting; control.min=setting.min; control.max=setting.max; control.step=setting.step;
-        control.prefix=i==4 ? nullptr : "x"; control.suffix=i==4 ? "%" : nullptr;
+        control.prefix=setting.field==&RunOptions::camera_distance ? nullptr : "x"; control.suffix=setting.field==&RunOptions::camera_distance ? "%" : nullptr;
         control.get=[](ModContext*,void* data,UiControlValue* value) {
             value->int_value=s_options.*static_cast<RunOptionControl*>(data)->field;
         };
         control.set=[](ModContext*,void* data,const UiControlValue* value) {
             if (!settings_editable()) return;
             const auto& setting=*static_cast<RunOptionControl*>(data);
-            s_options.*setting.field=unsigned(std::clamp<int64_t>(value->int_value,setting.min,setting.max));
+            s_options.*setting.field=float(std::clamp<int64_t>(value->int_value,int64_t(setting.min),int64_t(setting.max)));
             store_option_config();
             if(s_difficultySummary)svc_ui->elem_set_rml(mod_ctx,s_difficultySummary,difficulty_summary().c_str());
         };
@@ -166,12 +209,12 @@ ModResult build_run_controls(UiElementHandle left, UiElementHandle right, unsign
         if (result!=MOD_OK) return result;
     }
     return svc_ui->pane_add_text(mod_ctx,right,first==0 ?
-        "Score bonus: +10% per Enemy HP step, +15% per Enemy Damage step, +25% per Enemy Speed step and +10% per Horde step. Bonuses add together (x1.00 to x4.15). Normal kill points are divided by Horde. Settings apply to the next run." :
+        "Use - and + to change each multiplier from x1 to x5 in 0.5 steps. Rank 5 gives x1 score/meta XP; Rank 25 gives x5. Equipment drops and rarity scale toward 100% drops with 75% Epic / 25% Legendary at Rank 25. Equipment talents help below the cap. Normal kill points are divided by Horde. Settings apply to the next run." :
         "Shared with Dawnlight Settings and saved automatically. Settings apply to the next run; edit them outside a run.",nullptr);
 }
 ModResult build_difficulty(ModContext*,UiWindowHandle,UiElementHandle left,UiElementHandle right,void*,ModError*) {
-    s_difficultySummary=0;
-    const auto result=build_run_controls(left,right,0,4);if(result!=MOD_OK)return result;
+    s_difficultySummary=0;s_difficultyValues={};
+    const auto result=build_run_controls(left,right,0,5);if(result!=MOD_OK)return result;
     return svc_ui->pane_add_rml(mod_ctx,left,difficulty_summary().c_str(),&s_difficultySummary);
 }
 struct ManualAimControl {const char* label;ManualAbility ability;};
@@ -217,7 +260,7 @@ void open_manual_aim_settings(ModContext*,void*) {
     if(svc_ui->window_push(mod_ctx,&window,&s_manualAimSettingsWindow)!=MOD_OK)s_manualAimSettingsWindow=0;
 }
 ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiElementHandle right,void*,ModError*) {
-    auto result=build_run_controls(left,right,4,5);
+    auto result=build_run_controls(left,right,5,6);
     if(result!=MOD_OK)return result;
     UiControlDesc control=UI_CONTROL_DESC_INIT;
     control.is_disabled=[](ModContext*,void*){return !settings_editable();};

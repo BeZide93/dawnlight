@@ -32,11 +32,13 @@ ModResult reg(ModContext*,const ConfigVarDesc* d,ConfigVarHandle* h) {
     assert(!names.contains(d->name));names[d->name]=*h=next++;
     if(d->type==CONFIG_VAR_BOOL) values[*h]=d->default_bool;
     else if(d->type==CONFIG_VAR_INT) values[*h]=d->default_int;
+    else if(d->type==CONFIG_VAR_FLOAT) values[*h]=d->default_float;
     else { assert(d->type==CONFIG_VAR_STRING);values[*h]=std::string(d->default_string?d->default_string:""); }
     return MOD_OK;
 }
 ModResult get_bool(ModContext*,ConfigVarHandle h,bool* v) { *v=std::get<bool>(values.at(h));return MOD_OK; }
 ModResult get_int(ModContext*,ConfigVarHandle h,int64_t* v) { *v=std::get<int64_t>(values.at(h));return MOD_OK; }
+ModResult get_float(ModContext*,ConfigVarHandle h,double* v) { *v=std::get<double>(values.at(h));return MOD_OK; }
 ModResult get_string(ModContext*,ConfigVarHandle h,char* out,size_t size,size_t* length) {
     const auto& s=std::get<std::string>(values.at(h));*length=s.size();
     if(out) {if(size<=s.size())return MOD_INVALID_ARGUMENT;std::memcpy(out,s.c_str(),s.size()+1);}return MOD_OK;
@@ -50,6 +52,7 @@ ModResult set(ConfigVarHandle h,Value value) {
 }
 ModResult set_bool(ModContext*,ConfigVarHandle h,bool v) { return set(h,v); }
 ModResult set_int(ModContext*,ConfigVarHandle h,int64_t v) { return set(h,v); }
+ModResult set_float(ModContext*,ConfigVarHandle h,double v) { return set(h,v); }
 ModResult set_string(ModContext*,ConfigVarHandle h,const char* v) { return set(h,std::string(v)); }
 ModResult subscribe(ModContext*,ConfigVarHandle h,ConfigChangedFn fn,void*,ConfigSubscriptionHandle*) {
     callbacks[h]=fn;return MOD_OK;
@@ -62,10 +65,13 @@ int main(int argc,char** argv) {
     assert(argc==2);directory=argv[1];
     ConfigService config{};config.register_var=reg;config.get_bool=get_bool;config.get_int=get_int;
     config.get_string=get_string;config.set_bool=set_bool;config.set_int=set_int;config.set_string=set_string;
-    config.subscribe=subscribe;svc_config=&config;
+    config.get_float=get_float;config.set_float=set_float;config.subscribe=subscribe;svc_config=&config;
     HostService host{};host.data_dir=data_dir;svc_host=&host;
     UiService ui{};ui.push_toast=toast;svc_ui=&ui;
     assert(register_config(nullptr)==MOD_OK);
+    ConfigVarDesc fractional=CONFIG_VAR_DESC_INIT;fractional.name="aaa-test-difficulty";
+    fractional.type=CONFIG_VAR_FLOAT;fractional.default_float=1.5;ConfigVarHandle difficulty=0;
+    assert(register_owned_setting(&fractional,&difficulty)==MOD_OK);
     assert(boss_rush_enabled()&&survivors_enabled());
     assert(names.at("survivors-enabled")==survivors_config_var());
     set_bool(nullptr,survivors_config_var(),false);assert(!survivors_enabled()&&boss_rush_enabled());
@@ -86,6 +92,7 @@ int main(int argc,char** argv) {
     for(auto& [h,v]:values) {
         if(auto* b=std::get_if<bool>(&v)) *b=!*b;
         else if(auto* i=std::get_if<int64_t>(&v)) *i=17;
+        else if(auto* f=std::get_if<double>(&v)) *f=9.5;
         else v=std::string("different");
     }
     assert(import_all_settings_json(json)==HudSettingsIoResult::Ok);assert(values==original);
@@ -94,14 +101,20 @@ int main(int argc,char** argv) {
     for(const auto& invalid : {std::string("{}"),std::string("{\"elements\":{}}"),json+"junk"}) {
         assert(import_all_settings_json(invalid)==HudSettingsIoResult::InvalidFormat);assert(values==original);
     }
-    auto bad=exported;bad["r-jump"]=int64_t(1);
+    settings::Values oldInteger{{"aaa-test-difficulty",int64_t(3)}};
+    assert(import_all_settings_json(settings::encode(oldInteger))==HudSettingsIoResult::Ok);
+    assert(std::get<double>(values.at(difficulty))==3.0);
+    assert(import_all_settings_json(json)==HudSettingsIoResult::Ok);
+    auto bad=exported;bad["aim-mode"]=1.5;
+    assert(import_all_settings_json(settings::encode(bad))==HudSettingsIoResult::InvalidFormat);assert(values==original);
+    bad=exported;bad["r-jump"]=int64_t(1);
     assert(import_all_settings_json(settings::encode(bad))==HudSettingsIoResult::InvalidFormat);assert(values==original);
     settings::Values partial{{"aim-mode",int64_t(0)},{"other-mod-option",true}};
     assert(import_all_settings_json(settings::encode(partial))==HudSettingsIoResult::Ok);
     assert(values.at(names.at("aim-mode"))==Value(int64_t(0)));
     assert(names.size()==exported.size());
     assert(import_all_settings_json(json)==HudSettingsIoResult::Ok);
-    auto changed=exported;changed["aim-mode"]=int64_t(0);changed["r-jump"]=false;
+    auto changed=exported;changed["aim-mode"]=int64_t(0);changed["aaa-test-difficulty"]=4.5;changed["r-jump"]=false;
     failOnce=names.at("r-jump");
     assert(import_all_settings_json(settings::encode(changed))==HudSettingsIoResult::ConfigFailed);
     assert(values==original);

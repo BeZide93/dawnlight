@@ -231,19 +231,19 @@ int main(){
     draw_gear_notice();assert(!gearIcons&&printed.size()==1&&printed[0]=="Inventory Full!");
     s_gearNoticeItem=noticeBefore;s_gearNotice="Weapon acquired";hudValues=hud_defaults;
     s_gearNoticeTicks=0;
-    // Baseline displays only the clock; the first difficulty step adds skull/rank.
-    s_run.start(42);hasFont=true;printed.clear();rubyLabels=boxes=0;
-    draw_run_rank_hud(304);assert(rubyLabels==1&&boxes==0&&skulls==0&&skullLookups==0);
+    // Rank 5 is the baseline; all five controls contribute through Rank 25.
+    s_run.start(42);hasFont=true;printed.clear();rubyLabels=boxes=skulls=skullLookups=0;
+    draw_run_rank_hud(304);assert(rubyLabels==2&&boxes==0&&skulls==1&&skullLookups==1&&printed[1]=="5");
     assert(printed[0].find("00:00")!=std::string::npos);
     s_run.options.enemy_hp=2;printed.clear();rubyLabels=boxes=0;
-    draw_run_rank_hud(304);assert(rubyLabels==2&&boxes==0&&skulls==1&&printed[1]=="1");
-    hasMapArchive=false;draw_run_rank_hud(304);assert(skulls==1&&skullLookups==1);hasMapArchive=true;
-    hasSkullTexture=false;draw_run_rank_hud(304);assert(skulls==1&&skullLookups==2);hasSkullTexture=true;
-    draw_run_rank_hud(304);assert(skulls==2&&skullLookups==3);
-    s_run.start(42);s_run.options.enemy_hp=10;s_run.options.enemy_damage=10;
-    s_run.options.enemy_speed=3;s_run.options.horde=5;s_run.phase=Phase::Victory;s_run.continue_endless();
+    draw_run_rank_hud(304);assert(rubyLabels==2&&boxes==0&&skulls==2&&printed[1]=="6");
+    hasMapArchive=false;draw_run_rank_hud(304);assert(skulls==2&&skullLookups==2);hasMapArchive=true;
+    hasSkullTexture=false;draw_run_rank_hud(304);assert(skulls==2&&skullLookups==3);hasSkullTexture=true;
+    draw_run_rank_hud(304);assert(skulls==3&&skullLookups==4);
+    s_run.start(42);s_run.options.enemy_hp=5;s_run.options.enemy_damage=5;s_run.options.boss_hp=5;
+    s_run.options.enemy_speed=5;s_run.options.horde=5;s_run.phase=Phase::Victory;s_run.continue_endless();
     printed.clear();rubyLabels=0;hasFont=true;draw_hud(nullptr,nullptr,nullptr,nullptr);
-    assert(rubyLabels==2&&printed[0].find("Endless")!=std::string::npos&&printed[1]=="24");
+    assert(rubyLabels==2&&printed[0].find("Endless")!=std::string::npos&&printed[1]=="25");
     s_run.start(42);
     // Victory uses the boss font, a red ceiling-rounded 10-second timer,
     // and restores GX vertex descriptors for the next native HUD element.
@@ -296,7 +296,7 @@ int main(){
     actors[1].health=25;assert(boss_hud_target()==&s_enemies[1]);
     hasFont=true;s_run.phase=Phase::Running;bossBars=rubyLabels=0;
     draw_hud(nullptr,nullptr,nullptr,nullptr);
-    assert(bossBars==1&&bossPercentage==25&&rubyLabels==3&&!textureCoordinates);
+    assert(bossBars==1&&bossPercentage==25&&rubyLabels==4&&!textureCoordinates);
     assert(!std::strcmp(boss_hud_name(s_enemies[1].species),"Darknut"));
     for(const auto& roster:map_rosters)for(auto species:roster.elites)
         assert(std::strcmp(boss_hud_name(unsigned(species)),"Elite"));
@@ -333,7 +333,7 @@ int main(){
         auto found=std::find_if(textPositions.rbegin(),textPositions.rend(),[&](const auto& t){return t.text.starts_with(prefix);});
         assert(found!=textPositions.rend());near(found->x,p.x+xOffset*p.scale);near(found->y,p.y+offset*p.scale);near(found->size,size*p.scale);
     };
-    checkText(HudPart::Timer,"00:00",18);checkText(HudPart::Rank,"1",18,0,10.5f);
+    checkText(HudPart::Timer,"00:00",18);checkText(HudPart::Rank,"5",18,0,10.5f);
     checkText(HudPart::Level,"Level",14);checkText(HudPart::Score,"Score",14);checkText(HudPart::ExpText,"XP",14);
     checkText(HudPart::Info,"Next chest:",14,54,-6.5f);checkText(HudPart::BossName,"Darknut",20);
     const auto xpPos=hud_position(HudPart::ExpBar,304);

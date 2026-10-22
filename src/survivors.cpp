@@ -16,15 +16,18 @@
 #include "survivors_hud_layout.hpp"
 #include "survivors_multistrike.hpp"
 #include "survivors_enemy_hits.hpp"
+#include "survivors_boss_tactics.hpp"
 #include "d/d_msg_scrn_explain.h"
 #include "d/d_msg_scrn_3select.h"
 #include "d/d_lib.h"
+#include "d/d_cc_uty.h"
 #include "dusk/menu_pointer.h"
 #include "survivors_projectiles.hpp"
 #include "survivors_roster.hpp"
 #include "survivors_items.hpp"
 #include "survivors_maps.hpp"
 #include "survivors_barriers.hpp"
+#include "ganondorf_barrier.hpp"
 #include "survivors_locomotion.hpp"
 #include "dual_wield_animation.hpp"
 #include "enemy_spawner.hpp"
@@ -79,6 +82,7 @@
 #include "d/actor/d_a_e_ymb.h"
 #include "d/actor/d_a_e_pz.h"
 #include "d/actor/d_a_e_th.h"
+#include "d/actor/d_a_e_th_ball.h"
 #include "d/actor/d_a_e_hzelda.h"
 #include "d/actor/d_a_b_gnd.h"
 #include "d/actor/d_a_mant.h"
@@ -181,6 +185,7 @@ DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ms.cpp#e_ms_damage", void(e_ms_class*), Su
 DEFINE_HOOK(&daE_OC_c::searchPlayer, SurvivorsBokoblinAggro);
 DEFINE_HOOK(&daE_OC_c::executeWait, SurvivorsBokoblinWait);
 DEFINE_HOOK(&fopAcM_searchActorDistance, SurvivorsEliteDistance);
+DEFINE_HOOK(&fopAcM_searchActorAngleY, SurvivorsBossAim);
 DEFINE_HOOK(&daObjCarry_c::obj_break, SurvivorsPotBreak);
 DEFINE_HOOK(&daItem_c::itemGetNextExecute, SurvivorsKeyPickup);
 DEFINE_HOOK(&renderingAmap_c::afterDrawPath, SurvivorsEliteMinimap);
@@ -362,6 +367,7 @@ void interrupt_auto_actions(daAlink_c*);
 void finish(bool won);
 void continue_endless(ModContext*,void*);
 void replay(ModContext*, void*);
+void restart_run(ModContext*, void*);
 void clear_enemy_effects();
 bool effect_collider(const cCcD_Obj*);
 bool native_sword_collider(const cCcD_Obj*);
@@ -387,7 +393,7 @@ void update_knockback(Enemy&, fopAc_ac_c*);
 void initialize_extended_enemy(Enemy&,fopAc_ac_c*);
 void drop_elite_chest(Enemy&, fopAc_ac_c*);
 std::array<unsigned, 3> s_choices{0, 1, 2};
-struct ProcessFrame { void* args; ActorId id; };
+struct ProcessFrame { void* args; ActorId id; bool executed=false; };
 std::vector<ProcessFrame> s_processFrames;
 
 struct Enemy {
@@ -408,6 +414,7 @@ struct Enemy {
     dCcD_Stts extraStatus{};
     dCcD_Sph extraAttack{};
     cXyz encounterTarget{};
+    unsigned arrowVolley=0;
 };
 std::array<Enemy, enemy_capacity> s_enemies;
 ActorSlotIndex<ActorId> s_enemyIndex;
@@ -478,8 +485,10 @@ Enemy* tracked(ActorId id) {
 }
 #include "survivors_enemy_types.inc"
 #include "survivors_enemy_balance.inc"
+#include "survivors_boss_tactics_state.inc"
 #include "survivors_enemy_arrows.inc"
 #include "survivors_enemy_hits.inc"
+#include "survivors_zelda_orbs.inc"
 #include "survivors_collision.inc"
 #include "survivors_elite_positions.inc"
 #include "survivors_maps.inc"
@@ -538,19 +547,26 @@ void retire_pots();
 void cleanup_pots();
 void detach_pot_attacks();
 #include "survivors_enemy_archives.inc"
+#include "survivors_boss_ring_terrain.inc"
+#include "survivors_boss_ring.inc"
 void retire_enemies() {
     release_enemy_archives();
+    retire_boss_ring();
+    clear_zelda_light_orbs();
     retire_pots(); retire_pickups(); retire_enemy_arrows();
     clear_enemy_effects();
     for (auto& e : s_enemies) if (e.id != kNone) e.retiring = true;
 }
 void cleanup_enemies() {
+    cleanup_boss_ring();
     cleanup_enemy_arrows();
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
         auto* actor = actor_by_id(e.id);
+        if(e.retiring||e.credited||(actor&&actor->health<=0))clear_zelda_light_orbs(e.id);
         if (!actor && !fpcM_IsCreating(e.id)) {
-            s_enemyIndex.erase(e.id);
+            clear_zelda_light_orbs(e.id);
+            s_enemyIndex.erase(e.id); s_bossTactics.erase(e.id);
             e = {}; continue;
         }
         // Pending creation is not completion or a kill. Keep its ID until the scene
@@ -562,6 +578,7 @@ bool own_collider(const cCcD_Obj* collider) {
     if (!collider) return false;
     if (effect_collider(collider)) return true;
     for (const auto& a : s_attacks) if (collider == &a.collider) return true;
+    for (const auto& orb : s_zeldaLightOrbs) if (collider == &orb.collider) return true;
     return false;
 }
 #include "survivors_contacts.inc"
@@ -603,7 +620,8 @@ void detach_attack_references() {
 void reset_runtime() {
     clear_player_contacts();
     restore_gear_collection();close_gear_window();s_gear={};s_gearWritable=true;clear_gear_notices();
-    s_enemyHitSources.clear(); s_enemyContactFrames.clear();
+    clear_zelda_light_orbs();
+    s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     stop_survivors_music();
     end_survivors_integrity();
     reset_ending();
@@ -817,6 +835,7 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
 #include "survivors_pots.inc"
 #include "survivors_minimap.inc"
 void update_spawns(daAlink_c* link) {
+    update_boss_watchdogs(link);
     unsigned population = 0;
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
@@ -833,8 +852,10 @@ void update_spawns(daAlink_c* link) {
     if (s_spawnCooldown) { --s_spawnCooldown; return; }
     s_spawnCooldown = s_run.spawn_interval();
     update_elite_spawns(link);
+    if(active_boss_encounter()){s_spawnFailures=0;return;}
     if ((!s_run.endless && s_run.ticks >= s_run.run_duration()) || population>=s_run.target_population()) { s_spawnFailures=0; return; }
-    for (unsigned i=0; i<s_run.spawn_batch() && population<s_run.target_population(); ++i) {
+    const unsigned batch=s_run.spawn_batch();
+    for (unsigned i=0; i<batch && population<s_run.target_population(); ++i) {
         if (spawn_enemy(link,false)) { ++population; s_spawnFailures=0; }
         else { ++s_spawnFailures; break; }
     }
@@ -1231,6 +1252,9 @@ HookAction before_sword_attack(ModContext* ctx, void* args, void* result, void* 
 #include "survivors_encounters.inc"
 #include "survivors_elite_scale.inc"
 #include "survivors_bosses.inc"
+#include "survivors_boss_tactics.inc"
+#include "survivors_stalfos.inc"
+#include "survivors_dynalfos.inc"
 bool pause_run_actor(bool enemy) {
     if(save_modal_active())return true;
     if (!in_arena() || s_run.phase == Phase::Loading) return false;
@@ -1247,6 +1271,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     if (!process || !is_actor_process(process)) return HOOK_CONTINUE;
     auto* actor = static_cast<fopAc_ac_c*>(process);
     const auto id = fopAcM_GetID(actor);
+    if(id==s_bossRing.id)return process_boss_ring(actor,args,result);
     auto* enemy = tracked(id);
     auto* pot = tracked_pot(id);
     auto* pickup = tracked_pickup(id);
@@ -1262,6 +1287,8 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     if (!methods) return HOOK_CONTINUE;
     const auto method = mods::arg<process_method_func>(args, 0);
     if (method == methods->delete_method) {
+        clear_zelda_light_orbs(id);
+        s_bossTactics.erase(id);
         if (pickup) { s_pickupIndex.erase(id); pickup->id=kNone; }
         if (arrow) { s_enemyArrowIndex.erase(id); arrow->id=kNone; }
         // Never award XP here: cancellation, unloading and despawning also delete.
@@ -1291,7 +1318,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
         if (pickup->retiring) { *static_cast<int*>(result)=1; return HOOK_SKIP_ORIGINAL; }
     }
     if (pot) pot->initialized=true;
-    if (enemy) s_processFrames.push_back({args, id});
+    if (enemy || arrow) s_processFrames.push_back({args, id});
     if (enemy) initialize_enemy(enemy,actor);
     if (enemy && enemy->dormant && enemy->profile == fpcNm_E_OC_e) {
         auto* guard = static_cast<daE_OC_c*>(actor);
@@ -1303,14 +1330,18 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
         *static_cast<int*>(result) = 1;
         return HOOK_SKIP_ORIGINAL;
     }
+    if(enemy && boss_tactics_owned(*enemy))s_bossTactics[id].stagger.tick();
     if (enemy && extended_enemy(enemy->profile) && !update_extended_enemy(actor,*enemy)) {
         *static_cast<int*>(result)=1; return HOOK_SKIP_ORIGINAL;
     }
+    if(arrow)update_boss_projectile(actor,false);
     if(enemy) {
+        before_boss_tactics(*enemy,actor);
         advance_elite_cooldowns(actor,*enemy);
         if(enemy->specialCooldown)--enemy->specialCooldown;
         if(enemy->summonCooldown)--enemy->summonCooldown;
     }
+    if(enemy || arrow)s_processFrames.back().executed=true;
     return HOOK_CONTINUE;
 }
 void after_process(ModContext*, void* args, void*, void*) {
@@ -1321,9 +1352,11 @@ void after_process(ModContext*, void* args, void*, void*) {
     if (!in_arena() || s_victory || s_run.phase != Phase::Running || transitioning()) return;
     auto* enemy = tracked(frame.id);
     auto* actor = actor_by_id(frame.id);
+    if(frame.executed && actor && !enemy && active_enemy_arrow(frame.id))update_boss_projectile(actor,true);
     scale_elite_colliders(enemy,actor);
     finish_extended_targets(enemy,actor);
     if (enemy && actor) {
+        if(frame.executed)after_boss_tactics(*enemy,actor);
         confine_arena_actor(actor, enemy->elite ? 80.f : 35.f);
         if (enemy->elite && actor->health > 0 && enemy->age % 15 == 0) {
             cXyz floor = actor->current.pos;
@@ -1473,7 +1506,8 @@ void select_upgrade(ModContext*, void* data) {
 }
 void begin_run() {
     if (s_run.phase != Phase::Ready || !s_arenaMeshReady || s_restart || s_progressSaving) return;
-    s_enemyHitSources.clear(); s_enemyContactFrames.clear();
+    clear_zelda_light_orbs();
+    s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     reset_ending();
     load_option_config();
     close_window(); clear_attacks(); clear_loot(); prepare_save();
@@ -1516,7 +1550,23 @@ void continue_endless(ModContext*,void*) {
     begin_survivors_integrity(s_run.options.allow_cheats,s_run.modded);
     s_run.modded=s_run.modded||wasModded;
 }
-void replay(ModContext*, void*) { close_window(); s_requestedMap = s_map; s_restart = true; }
+// Results return to the hub; Midna's restart bypasses it and starts on arrival.
+void replay(ModContext*, void*) { close_window(); s_requestedMap = s_map; s_arrivingRun=false; s_restart = true; }
+void restart_run(ModContext*, void*) { replay(nullptr,nullptr); s_arrivingRun=true; }
+void reload_run_scene() {
+    end_survivors_integrity();
+    reset_ending();
+    // Always reload to destroy old actors, pending spawns, collision and native
+    // damage state. Keep direct restart intent until the destination is ready.
+    retire_enemies(); clear_attacks(); clear_loot(); clear_arena_geometry();
+    s_hub=!s_arrivingRun; s_hubMenu=HubMenu::None; s_hubDeparture=s_hubDoorStarted=false;
+    s_hubDoor=kNone; s_hubSaveRequested=false;
+    s_map=s_arrivingRun?s_requestedMap:0;
+    prepare_save();
+    dComIfGp_setNextStage(arena().stage, arena().point, arena().room, 0);
+    s_run = {}; s_orbs = {}; s_restart = false; s_player = kNone;
+    s_resultsStored = false; s_spawnFailures = 0;
+}
 #include "survivors_post_run_save.inc"
 void save_results(ModContext*, void*) {
     if(s_saveRequested || s_savePrompt!=kNone)return;
@@ -1574,7 +1624,7 @@ void open_window() {
             tabs[1].title="Difficulty";tabs[1].build=build_difficulty;
             tabs[2].title="Settings";tabs[2].build=build_run_settings;
             desc.tab_count=3;
-            if(debug_enabled){tabs[3].title="Debug";tabs[3].build=build_debug;desc.tab_count=4;}
+            if(debug_enabled){tabs[3].title="Debug";tabs[3].build=build_debug;tabs[3].update=update_debug_tab;desc.tab_count=4;}
         }
     }
     if (s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Upgrade) desc.rcss = kTreasureStyle;
@@ -1641,6 +1691,7 @@ void update_survivors() {
     update_survivors_integrity(s_run.modded);
     update_enemy_archives();
     cleanup_enemies();
+    update_boss_ring();
     cleanup_pots(); cleanup_pickups();
     if (s_treasure.retiring) retire_treasure_actor();
     if (!s_active || !s_gameStarted) return;
@@ -1651,18 +1702,7 @@ void update_survivors() {
     auto* link = daAlink_getAlinkActorClass();
     if (!link || !dComIfGp_getStageStagInfo()) return;
     if (s_restart) {
-        end_survivors_integrity();
-        reset_ending();
-        // Always use a scene reload: destroys old actors, pending spawns, collision,
-        // damage animations and native drop actors before another run starts.
-        retire_enemies(); clear_attacks(); clear_loot(); clear_arena_geometry();
-        s_hub=true; s_hubMenu=HubMenu::None; s_hubDeparture=s_hubDoorStarted=s_arrivingRun=false;
-        s_hubDoor=kNone; s_hubSaveRequested=false;
-        s_map = 0;
-        prepare_save();
-        dComIfGp_setNextStage(arena().stage, arena().point, arena().room, 0);
-        s_run = {}; s_orbs = {}; s_restart = false; s_player = kNone;
-        s_resultsStored = false; s_spawnFailures = 0;
+        reload_run_scene();
         return;
     }
     if (s_player != fopAcM_GetID(link)) {
@@ -1718,6 +1758,8 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
 #include "survivors_roster_hooks.inc"
     PRE(SurvivorsEnemySpeed, before_enemy_speed); POST(SurvivorsEnemySpeed, after_enemy_facing);
+    PRE(SurvivorsEnemySpeed,before_boss_path); // Final position constraints after all movement boosts.
+    PRE(SurvivorsEnemySpeed,before_dynalfos_path);
     PRE(SurvivorsEnemyDamage, before_enemy_damage);
     PRE(SurvivorsPotionDrink, before_potion_drink); POST(SurvivorsPotionDrink, after_potion_drink);
     PRE(SurvivorsPotionHeal, before_potion_heal);
@@ -1730,6 +1772,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsCamera, before_run_camera); POST(SurvivorsCamera, after_run_camera);
     PRE(SurvivorsArenaExit, before_arena_exit);
     PRE(SurvivorsArenaRestart, before_arena_restart);
+    POST(SurvivorsBossAim,after_boss_aim);
     PRE(SurvivorsProcess, before_contact_owner_delete);
     PRE(SurvivorsProcess, before_process); POST(SurvivorsProcess, after_process);
     POST(SurvivorsPlayer, after_player); POST(SurvivorsDraw, after_draw);
@@ -1745,11 +1788,15 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsBulblinHit, before_bulblin_hit); POST(SurvivorsBulblinHit, after_bulblin_hit);
     PRE(SurvivorsBulblinAggro, before_bulblin_aggro);
     PRE(SurvivorsEnemyArrow, before_enemy_arrow); POST(SurvivorsEnemyArrow, after_enemy_arrow);
+    PRE(SurvivorsConcurrentHit,before_boss_attack_safety);
     PRE(SurvivorsConcurrentHit, before_enemy_attack_contact); POST(SurvivorsConcurrentHit, after_enemy_attack_contact);
     PRE(SurvivorsConcurrentHit, before_concurrent_hit);
     POST(SurvivorsConcurrentHit, after_player_contact);
     PRE(SurvivorsProcess, before_enemy_attack_process);
     POST(SurvivorsEnemyArrow, after_enemy_attack_spawn);
+    // Post callbacks run in registration order. Boss aim/volley setup needs
+    // the child's ownership and attack budget established by the two above.
+    POST(SurvivorsEnemyArrow, after_boss_child_spawn);
     PRE(SurvivorsBokoblinHit, before_enemy_hit); POST(SurvivorsBokoblinHit, after_enemy_hit);
     PRE(SurvivorsBokoblinTargets, before_bokoblin_targets);
     PRE(SurvivorsRatRecovery, before_rat_recovery);
@@ -1821,6 +1868,7 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    shutdown_boss_ring();
     stop_survivors_music();
     shutdown_survivors_integrity();
     before_survivors_pad(nullptr,nullptr,nullptr,nullptr);

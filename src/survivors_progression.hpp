@@ -27,8 +27,8 @@ inline constexpr std::array talent_help{
     "+10 percentage points critical damage per rank, up to +50%. Base x2 becomes x2.5; stacks with run Crit Damage upgrades.",
     "+0.6 percentage points base Legendary rarity chance per rank, up to +3 (1% to 4%) before Luck. Applies to item and power-up rarities.",
     "Regenerate 1/4 heart every 20 seconds of active play. Each rank shortens the interval by 1 second, down to 15 seconds. Pauses with the run.",
-    "+5 percentage points equipment drop chance per rank from timed and stationary bosses: 20% base, up to 70%. Independent of Luck. Applies from the next run.",
-    "Improves newly dropped equipment stats each rank. At rank 10, stat tiers 1/2/3/4/5 have 20%/25%/25%/20%/10% chances (base 50%/25%/15%/8%/2%). +2 piercing/hop rolls rise from 10% to 30%. Item rarity follows its stats; existing gear is unchanged. Independent of Luck and Legendary Chance."};
+    "+5 percentage points equipment drop chance per rank from timed and stationary bosses: 20% base, up to 70% at Twilit Rank 5. Twilit Rank raises this toward 100% at Rank 25. Independent of Luck. Applies from the next run.",
+    "Improves newly dropped equipment stats each rank. At rank 10, stat tiers 1/2/3/4/5 have 20%/25%/25%/20%/10% chances (base 50%/25%/15%/8%/2%). +2 piercing/hop rolls rise from 10% to 30%. Twilit Rank increasingly replaces these rolls with 75% Epic / 25% Legendary, guaranteed at Rank 25. This talent also weights stats within those rarities; existing gear is unchanged. Independent of Luck and Legendary Chance."};
 inline constexpr Talent talent_parent(Talent t) {
     switch(t) {
     case Talent::SprintSpeed: return Talent::Sprint;

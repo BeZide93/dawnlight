@@ -33,7 +33,7 @@ struct dCcD_GObjInf:cCcD_Obj {cCcD_Obj* hit=nullptr;bool shield=true;unsigned ty
  bool ChkTgHit(){return hit;}cCcD_Obj* GetTgHitObj(){return hit;}void ResetTgHit(){hit=nullptr;}
  void OnTgSetBit(){tg=true;}void SetTgType(unsigned t){type=t;}void OffTgShield(){shield=false;}
  void OffTgShieldFrontRange(){}float GetR(){return r;}void SetR(float n){r=n;}void SetH(float n){h=n;}
- void SetC(cXyz p){center=p;}cXyz center;
+ void SetC(cXyz p){center=p;}cXyz GetC()const{return center;}cXyz center;
  void Set(int){}void SetStts(dCcD_Stts*){}void SetAtType(unsigned){}void SetAtAtp(unsigned n){atp=n;}
  void SetAtMtrl(int){} };
 using dCcD_Sph=dCcD_GObjInf;using dCcD_Cyl=dCcD_GObjInf;
@@ -48,7 +48,7 @@ struct NativeActor:fopAc_ac_c {
  enum {ACT_WAIT=1,ACT_MOVE=2,ACT_CHASEH=3,ACTION_ATTACK_e=4,ACTION_WAIT_e=2};
  int mAction=0,mMode=0,mActionMode=0,mMoveMode=0,mActionMode1=0,action=0,mode=0,mActionPhase=0;
  int field_0x5b4=0,mCurAction=0,field_0x672=0,mCryTimer=0,combine_off_timer=0,mPlayerStunTimer=0,mPushButtonCount=0,field_0x6a0=0,animation=0;float speedF=0;
- float field_0x6d4=0,pl_range=0,pl_dir=0,field_0x6b8=0,mRecognizeDist=0,pl_recognize_dist=0,pl_search_range=0;
+ float mPlayerDistanceXZ=0,field_0x6d4=0,pl_range=0,pl_dir=0,field_0x6b8=0,mRecognizeDist=0,pl_recognize_dist=0,pl_search_range=0;
  s16 angle_target=0,mTargetAngleY=0,mCurrentAngleYTarget=0,field_0x6c0=0;int timers[4]{};
  ActorId armorChildId=kNone;int field_0xb99=0,m_action=0,m_mode=0;
  dCcD_Sph mSphere,mSphere2,mSphere3,cc_sph[3],tate_sph,mCcSphs[3],mTateSph;
@@ -121,6 +121,10 @@ unsigned armorCreates=0;ActorId createdArmor=kNone;int armorArgument=0;ActorId a
 template<class Angle>ActorId fopAcM_createChild(int,ActorId parent,unsigned params,cXyz*,int room,Angle*,cXyz*,int argument,void*){
  ++armorCreates;assert(params==0&&room==7);armorArgument=argument;armorParent=parent;return createdArmor;}
 '''
+fixture+=r'''
+bool boss_accept_stagger(Enemy&){return true;}
+void boss_received_damage(Enemy&,int){}
+'''
 main=r'''
 int main(){
  for(int phase:{0,1,2,3}){
@@ -141,8 +145,8 @@ int main(){
   enemy.elite=true;initialize_extended_enemy(enemy,&actor);
   assert(actor.health==int(s_run.enemy_health(native_roster[kind].hp,true,s_map)));
   s_run.ticks=0;
-  s_run.options.enemy_hp=3;enemy.elite=true;actor.scale={elite_scale(Species(kind)),elite_scale(Species(kind)),elite_scale(Species(kind))};
-  initialize_extended_enemy(enemy,&actor);assert(actor.health==360);s_run.options.enemy_hp=1;
+  s_run.options.boss_hp=3;enemy.elite=true;actor.scale={elite_scale(Species(kind)),elite_scale(Species(kind)),elite_scale(Species(kind))};
+  initialize_extended_enemy(enemy,&actor);assert(actor.health==360);s_run.options.boss_hp=1;
   actor.health=100;
   for(auto* target:body.targets)if(target){target->owner=&actor;target->hit=&sword;}
   const auto beforeCalls=calls;
@@ -219,28 +223,45 @@ int main(){
   finalEnemy.species=unsigned(map_roster(map).elites.back());finalEnemy.elite=true;finalEnemy.eliteSlot=3;s_map=map;
   finalEnemy.profile=native_roster[finalEnemy.species].profile;
   for(unsigned minute:{0u,10u,20u})for(unsigned multiplier:{1u,3u,10u}) {
-   s_run.ticks=minute*60*ticks_per_second;s_run.options.enemy_hp=multiplier;initialize_extended_enemy(finalEnemy,&finalBoss);
-   assert(finalBoss.health==int(s_run.enemy_health(1200,true,map,true))&&finalBoss.field_0x560==finalBoss.health);
+   s_run.ticks=minute*60*ticks_per_second;s_run.options.boss_hp=multiplier;initialize_extended_enemy(finalEnemy,&finalBoss);
+   assert(finalBoss.health==int(std::min(32767u,2*s_run.enemy_health(1200,true,map,true)))&&finalBoss.field_0x560==finalBoss.health);
   }
  }
- s_run.options.enemy_hp=1;
+ s_run.options.boss_hp=1;
+ // Shadow Beast radii include its native 1.3 size; never move the animated hand.
+ for(bool elite:{false,true}){
+  NativeActor beast;beast.profile=fpcNm_E_S1_e;s_enemies={};auto& shadow=s_enemies[0];
+  shadow.id=beast.id;shadow.profile=beast.profile;shadow.species=unsigned(Species::ShadowBeast);shadow.elite=elite;
+  actors={{beast.id,&beast}};const float scale=elite?2.f:1.f;
+  for(auto& sphere:beast.mCcSph)sphere.owner=&beast;
+  beast.mCcAtSph.owner=&beast;beast.mCcAtSph.r=52;beast.mCcAtSph.center={20000,50000,20000};
+  std::any targetArgs[]={0,static_cast<cCcD_Obj*>(&beast.mCcSph[0])};
+  before_roster_targets(nullptr,targetArgs,nullptr,nullptr);
+  assert(std::abs(beast.mCcSph[0].r-45.5f*scale)<.001f);
+  assert(beast.mCcSph[1].r==78*scale&&beast.mCcSph[2].r==65*scale);
+  std::any attackArgs[]={0,static_cast<cCcD_Obj*>(&beast.mCcAtSph)};
+  for(int repeat=0;repeat<3;++repeat)before_roster_targets(nullptr,attackArgs,nullptr,nullptr);
+  assert(beast.mCcAtSph.r==52*scale&&beast.mCcAtSph.center.y==50000);
+  beast.mAction=3;beast.mMode=2;assert(committed_enemy_motion(&beast,beast.profile));
+  beast.mMode=1;assert(!committed_enemy_motion(&beast,beast.profile));
+ }
  // Endgame criticals must not erase Stallord's entire boss health pool.
  NativeActor head;head.profile=fpcNm_B_DS_e;s_enemies={};effects={};
  auto& boss=s_enemies[0];boss.id=head.id;boss.profile=head.profile;
  boss.species=unsigned(Species::StallordHead);boss.elite=true;boss.eliteSlot=3;s_map=2;
  s_run.start(7);s_run.ticks=duration;s_run.ranks.fill(30);s_run.master_sword=10;
  s_run.dark_link=29;s_run.dark_remaining=100; // maximal direct-hit upgrade damage
- initialize_extended_enemy(boss,&head);assert(head.health==4800&&head.field_0x560==4800);
+ initialize_extended_enemy(boss,&head);assert(head.health==9600&&head.field_0x560==9600);
  power=s_run.attack_power(unsigned(Upgrade::Spin))*s_run.crit_damage_percent()/100*2;
  assert(power>120&&power<1200);
  auto targets=extended_body(&head,boss.profile);
  for(auto* target:targets.targets)if(target)target->hit=&sword;
  const unsigned beforeHeadHits=calls;
  assert(update_extended_enemy(&head,boss));
- assert(head.health==4800-int(power)&&calls==beforeHeadHits+1&&!boss.credited);
+ assert(head.health==9600-int(power)&&calls==beforeHeadHits+1&&!boss.credited);
  for(auto* target:targets.targets)if(target)target->hit=&sword;
- update_extended_enemy(&head,boss);assert(head.health==4800-2*int(power)); // Fresh next-frame contact; no shared lockout.
- s_run.options.enemy_hp=10;initialize_extended_enemy(boss,&head);assert(head.health==32767);
+ update_extended_enemy(&head,boss);assert(head.health==9600-2*int(power)); // Fresh next-frame contact; no shared lockout.
+ s_run.options.boss_hp=10;initialize_extended_enemy(boss,&head);assert(head.health==32767);
  s_run.start(5);power=7;
  // Owned screams have a short native stun and a shared cooldown across Gibdos.
  NativeActor gibdo;gibdo.profile=fpcNm_E_GI_e;s_enemies={};effects={};
@@ -254,7 +275,7 @@ int main(){
  }
  gi={};gi.id=gibdo.id;gi.profile=gibdo.profile;gibdo.health=100;stageChange=false;s_run.phase=Phase::Running;
  before_roster_cry(nullptr,cryArgs,&cry,nullptr);
- assert(cry&&gibdo.mPlayerStunTimer==60&&gibdo.mCryTimer==80&&gibdo.animation==10&&gibdo.field_0x6a0==3);
+ assert(cry&&gibdo.mPlayerStunTimer==30&&gibdo.mCryTimer==80&&gibdo.animation==10&&gibdo.field_0x6a0==3);
  assert(s_run.gibdo_scream_cooldown==180);
  NativeActor other;other.id=2;other.profile=fpcNm_E_GI_e;s_enemies[1]=gi;s_enemies[1].id=2;
  cryArgs[0]=static_cast<daE_GI_c*>(&other);before_roster_cry(nullptr,cryArgs,&cry,nullptr);
@@ -262,7 +283,7 @@ int main(){
  s_run.phase=Phase::Upgrade;s_run.tick(true);assert(s_run.gibdo_scream_cooldown==180);
  s_run.phase=Phase::Running;s_run.tick(false);assert(s_run.gibdo_scream_cooldown==180);
  for(int i=0;i<180;++i)s_run.tick(true);
- before_roster_cry(nullptr,cryArgs,&cry,nullptr);assert(cry&&other.mPlayerStunTimer==60);
+ before_roster_cry(nullptr,cryArgs,&cry,nullptr);assert(cry&&other.mPlayerStunTimer==30);
  auto gibdoBody=extended_body(&gibdo,gi.profile);gibdoBody.targets[0]->hit=&sword;
  update_extended_enemy(&gibdo,gi);assert(!gibdo.mPlayerStunTimer&&gibdo.mCryTimer==20);
  s_run.start(5);assert(!s_run.gibdo_scream_cooldown);
@@ -344,7 +365,7 @@ int main(){
   {fpcNm_E_GE_e,unsigned(Species::Guay),&NativeActor::mActionMode,2,&NativeActor::mMode,2,3},
   {fpcNm_E_KR_e,unsigned(Species::Kargarok),&NativeActor::mCurAction,3,&NativeActor::field_0x672,0,11},
   {fpcNm_E_YK_e,unsigned(Species::ShadowKeese),&NativeActor::mAction,ACT_ATTACK,&NativeActor::mActionPhase,2,3},
-  {fpcNm_E_SH_e,unsigned(Species::Stalhound),&NativeActor::field_0x676,3,&NativeActor::field_0x678,3,4},
+  {fpcNm_E_SH_e,unsigned(Species::Stalhound),&NativeActor::field_0x676,3,&NativeActor::field_0x678,2,4},
   {fpcNm_E_SM2_e,unsigned(Species::BlackChu),&NativeActor::action,ACTION_ATTACK,&NativeActor::mode,0,2},
   {fpcNm_E_DN_e,unsigned(Species::Lizalfos),&NativeActor::action,5,&NativeActor::mode,0,1},
   {fpcNm_E_DN_e,unsigned(Species::Lizalfos),&NativeActor::action,6,&NativeActor::mode,0,1},
@@ -382,6 +403,44 @@ int main(){
  liz.action=3;face_extended_enemy(&liz,e);assert(liz.shape_angle.y==0x4000);e.stagger=1;liz.shape_angle.y=7;face_extended_enemy(&liz,e);assert(liz.shape_angle.y==7);
  NativeActor chu;e.stagger=0;e.profile=fpcNm_E_SM2_e;chu.action=ACTION_COMBINE;engage_extended_enemy(&chu,e);
  assert(chu.combine_off_timer==30000&&chu.action==ACTION_ATTACK);
+ // Device-log regression: the doubled jaw passes above stationary Link even
+ // with matching X/Z. Feed recorded native centers/root/target geometry through
+ // the actual registration hook; do not assume a synthetic 75-unit mouth.
+ {NativeActor sh;e.profile=fpcNm_E_SH_e;e.species=unsigned(Species::Stalhound);
+ e.elite=e.initialized=true;e.retiring=e.credited=e.dormant=false;e.stagger=0;
+ sh.id=e.id;sh.profile=e.profile;sh.field_0x676=3;sh.field_0x678=3;sh.scale={2,2,2};
+ sh.mSph2.owner=&sh;s_run.phase=Phase::Running;arena=true;stageChange=false;
+ struct Sample{cXyz bite,root,target;float height;};
+ const Sample samples[]{
+ {{64853.8f,405.6f,52077.1f},{64616.3f,162.8f,52184.2f},{64847.2f,169.1f,52070.3f},60.f},
+ {{64455.7f,447.5f,52596.7f},{64529.3f,176.9f,52352.7f},{64466.9f,197.2f,52536.3f},73.5f},
+ {{65885.6f,325.5f,52449.f},{65615.f,82.9f,52402.5f},{65855.1f,77.9f,52429.1f},72.f},
+ {{65713.7f,312.9f,52069.8f},{65566.3f,79.7f,52301.f},{65682.9f,81.1f,52128.5f},71.9f}};
+ auto gap=[](cXyz bite,float radius,const Sample& sample){const auto d=bite-sample.target;
+  const float xz=std::max(0.f,d.absXZ()-35.f),y=std::max({0.f,-d.y,d.y-sample.height});
+  return std::sqrt(xz*xz+y*y)-radius;};
+ std::any biteArgs[]={0,static_cast<cCcD_Obj*>(&sh.mSph2)};
+ for(const auto& sample:samples){
+  assert(gap(sample.bite,70,sample)>90);sh.current.pos=sample.root;sh.mSph2.center=sample.bite;
+  // Reconstruct joint 13 from the logged native (5,-10,0) transformed point.
+  sh.morph.model.matrix[1][0]=0;sh.morph.model.matrix[1][1]=2.3f;
+  sh.morph.model.matrix[1][3]=sample.bite.y+23.f;
+  for(int repeat=0;repeat<3;++repeat){before_roster_targets(nullptr,biteArgs,nullptr,nullptr);
+   assert(gap(sh.mSph2.center,sh.mSph2.r,sample)<0);
+   assert(sh.mSph2.center.x==sample.bite.x&&sh.mSph2.center.z==sample.bite.z&&sh.mSph2.at);
+  }
+  // A lateral dodge and a target above the attack remain misses.
+  Sample dodge=sample;dodge.target.x+=500;assert(gap(sh.mSph2.center,sh.mSph2.r,dodge)>0);
+  dodge=sample;dodge.target.y+=500;assert(gap(sh.mSph2.center,sh.mSph2.r,dodge)>0);
+ }
+ sh.mSph2.center={15000,-14000,23000};before_roster_targets(nullptr,biteArgs,nullptr,nullptr);
+ assert(sh.mSph2.center.y==-14000); // Never enable the parked native bite.
+ for(int mode:{0,1,2}){sh.field_0x678=mode;sh.mSph2.center={10,300,20};
+  before_roster_targets(nullptr,biteArgs,nullptr,nullptr);assert(sh.mSph2.center.y==300);}
+ sh.field_0x678=3;e.elite=false;sh.mSph2.center={10,300,20};
+ before_roster_targets(nullptr,biteArgs,nullptr,nullptr);assert(sh.mSph2.center.y==300);
+ e.elite=true;e.dormant=true;before_roster_targets(nullptr,biteArgs,nullptr,nullptr);assert(sh.mSph2.center.y==300);e.dormant=false;
+ }
  // The doubled Lizalfos must enter native battle spacing before body contact
  // can keep it beyond the ordinary 300/350-unit battle/attack thresholds.
  e.profile=fpcNm_E_DN_e;e.elite=true;e.initialized=true;e.retiring=e.credited=e.dormant=false;e.stagger=0;
@@ -415,6 +474,23 @@ int main(){
   e.elite=e.initialized=true;e.retiring=e.credited=e.dormant=false;e.stagger=0;liz.health=100;
   s_run.phase=Phase::Running;stageChange=false;liz.action=3;liz.scale={2,2,2};arena=true;playerPresent=true;
  }
+ // Stalfos size, spacing and colliders use the same scale, with native 1.2 base.
+ NativeActor sf;sf.id=e.id;sf.profile=fpcNm_E_SF_e;sf.mAction=3;
+ e.profile=sf.profile;e.species=unsigned(Species::Stalfos);e.elite=true;
+ initialize_extended_enemy(e,&sf);assert(sf.scale.x==2&&sf.scale.y==2&&sf.scale.z==2);
+ std::any sfArgs[]={static_cast<fopAc_ac_c*>(&sf)};player.current.pos={0,0,590};
+ for(int frame=0;frame<4;++frame){before_roster_native_damage(nullptr,sfArgs,nullptr,nullptr);assert(sf.mPlayerDistanceXZ==295);}
+ sf.mAction=4;sf.mPlayerDistanceXZ=590;before_roster_native_damage(nullptr,sfArgs,nullptr,nullptr);assert(sf.mPlayerDistanceXZ==590);
+ sf.mAction=3;e.elite=false;before_roster_native_damage(nullptr,sfArgs,nullptr,nullptr);assert(sf.mPlayerDistanceXZ==590);e.elite=true;
+ for(auto* sphere:{&sf.mCcSphs[0],&sf.mCcSphs[1],&sf.mCcSphs[2],&sf.mTateSph,&sf.mAtSph}){
+  sphere->owner=&sf;sphere->center={1,-200000,3};sphere->at=false;
+  std::any collisionArgs[]={0,static_cast<cCcD_Obj*>(sphere)};
+  for(int frame=0;frame<4;++frame){before_roster_targets(nullptr,collisionArgs,nullptr,nullptr);
+   const float expected=sphere==&sf.mCcSphs[0]?72:sphere==&sf.mCcSphs[1]||sphere==&sf.mCcSphs[2]?84:120;
+   assert(sphere->r==expected&&sphere->center.y==-200000&&!sphere->at);
+  }
+ }
+ e.profile=fpcNm_E_DN_e;
  liz.id=kNone;liz.pl_dir=590;assert(before_roster_native_damage(nullptr,lizArgs,nullptr,nullptr)==HOOK_CONTINUE&&liz.pl_dir==590);
 }
 '''

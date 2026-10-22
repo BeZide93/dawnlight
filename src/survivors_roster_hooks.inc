@@ -1,5 +1,10 @@
+    PRE(RosterMFAction,before_dynalfos_action); POST(RosterMFAction,after_dynalfos_action);
+    PRE(RosterMF,before_dynalfos_readiness);
     PRE(RosterTargets,before_roster_targets);
+    PRE(RosterSFAction,before_stalfos_action); POST(RosterSFAction,after_stalfos_action);
+    PRE(RosterSF,before_stalfos_readiness);
     PRE(RosterTargets,before_elite_attack_scale);
+    PRE(RosterTargets,before_boss_ball_collision);
     PRE(SurvivorsProcess,before_elite_scale_scope); POST(SurvivorsProcess,after_elite_scale_scope);
     POST(SurvivorsEliteDistance,after_elite_melee_distance);
     PRE(SurvivorsEnemySpeed,before_elite_attack_motion);
@@ -36,6 +41,7 @@
     PRE(RosterYC,before_roster_native_damage); PRE(RosterHeadDamage,before_roster_native_damage);
     PRE(BossRDBAction,before_boss_rdb); PRE(BossTHAction,before_boss_th);
     PRE(BossGNDExecute,before_boss_gnd_execute); PRE(BossVAAction,before_boss_va);
+    POST(BossVAAction,after_death_sword_magic_launch);
     PRE(BossYMBAction,before_boss_ymb); PRE(BossZeldaAction,before_boss_hzelda); POST(BossZeldaAction,after_boss_hzelda);
     POST(BossZeldaTriangle,after_boss_hzelda_triangle);
     PRE(BossPZAction,before_boss_pz); POST(BossPZAttack,after_boss_pz_attack);
@@ -56,3 +62,6 @@
     PRE(BossCarrierRide,before_boss_carrier_ride); POST(BossCarrierRide,after_boss_carrier_ride);
     PRE(BossGNDCharge,before_boss_gnd_charge);
     POST(BossYMBAction,after_boss_ymb_move);
+
+    POST(BossTNThrow,after_boss_sword_throw);
+    PRE(SurvivorsEnemyArrow,before_boss_rider_arrow);

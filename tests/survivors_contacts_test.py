@@ -11,6 +11,7 @@ assert source.index('PRE(SurvivorsBlock, before_player_contacts)') < source.inde
 assert 'PRE(SurvivorsPlayer, before_player_contacts)' in source
 assert 'POST(SurvivorsConcurrentHit, after_player_contact)' in source
 assert 'clear_player_contacts();' in source
+assert 'SurvivorsPlayerHit' not in source
 program = r'''
 #include <array>
 #include <cassert>
@@ -48,7 +49,15 @@ struct cCcD_Obj : cCcD_ObjHitInf {
 struct dCcD_GObjInf : cCcD_Obj {
     bool shield=false; unsigned atResets=0,tgResets=0;
     void ResetAtHit() {attack=nullptr;shield=false;++atResets;}
-    void ResetTgHit() {target=nullptr;++tgResets;}
+    struct NativePeer {ActorId mApid=kNone;fopAc_ac_c* mAc=nullptr;};
+protected:
+    NativePeer mGObjTg;
+public:
+    bool noActor=false;
+    bool ChkTgHitNoActor(){return noActor;}
+    void SetTgHitApid(ActorId id){mGObjTg.mApid=id;mGObjTg.mAc=nullptr;}
+    void cacheTargetActor(fopAc_ac_c* actor){mGObjTg.mAc=actor;}
+    void ResetTgHit() {target=nullptr;mGObjTg={};noActor=false;++tgResets;}
 };
 struct daAlink_c : fopAc_ac_c {
     std::array<dCcD_GObjInf,3> mAtCps{},mTgCyls{};
@@ -62,9 +71,16 @@ bool in_arena(){return arena;}
 struct Attack {dCcD_GObjInf collider;};
 std::array<Attack,2> s_attacks;
 #include "survivors_contacts.inc"
+void native_incoming(dCcD_GObjInf& attack,dCcD_GObjInf& target) {
+    // Native SetAtTgCommonHitInf/SetAtTgGObjInf write raw contact and actor ID.
+    // Intentionally invoke NO mod contact observer, including the failed #1178 hook.
+    target.target=&attack;
+    target.SetTgHitApid(attack.owner?attack.owner->id:kNone);
+    target.noActor=attack.owner==nullptr;
+}
 void remember(dCcD_GObjInf& attack, dCcD_GObjInf& target, bool at=true, bool tg=false) {
     if(at) attack.attack=&target;
-    if(tg) target.target=&attack;
+    if(tg) native_incoming(attack,target);
     std::any args[]{std::any{},static_cast<cCcD_Obj*>(&attack),static_cast<cCcD_Obj*>(&target)};
     after_player_contact(nullptr,args,nullptr,nullptr);
 }
@@ -80,6 +96,43 @@ int main() {
     visit_player_contacts([&](dCcD_GObjInf& c){c.owner=&link;});
     fopAc_ac_c enemy;enemy.id=2;actors[2]=&enemy;
     auto target=std::make_unique<dCcD_GObjInf>();target->owner=&enemy;
+    // Incoming native hits survive both pre-Execute and pre-damage validation,
+    // starting with no remembered contact. Covers every human body cylinder,
+    // the wolf target, repeat hits and changing attacker/collider identities.
+    int life=12;
+    for(auto* body:{&link.mTgCyls[0],&link.mTgCyls[1],&link.mTgCyls[2],&link.mAtSph}) {
+        native_incoming(*target,*body);validate();validate();
+        assert(body->target==target.get());
+        if(body->target)--life;
+        body->ResetTgHit();
+    }
+    assert(life==8);
+    fopAc_ac_c projectile;projectile.id=9;actors[9]=&projectile;
+    auto missile=std::make_unique<dCcD_GObjInf>();missile->owner=&projectile;
+    native_incoming(*target,link.mTgCyls[0]);
+    native_incoming(*missile,link.mTgCyls[0]);validate();
+    assert(link.mTgCyls[0].target==missile.get());
+    assert(s_contactPeers.empty()); // Incoming damage has no observer dependency.
+    remove_actor(projectile);
+    assert(!link.mTgCyls[0].target); // Clear BEFORE destruction, even with no snapshots.
+    missile.reset();actors.erase(9);validate();
+    // A missed deletion callback and a stale native actor cache must be safe.
+    native_incoming(*target,link.mTgCyls[0]);link.mTgCyls[0].cacheTargetActor(&enemy);
+    actors.erase(2);target.reset();validate();assert(!link.mTgCyls[0].target);
+    actors[2]=&enemy;target=std::make_unique<dCcD_GObjInf>();target->owner=&enemy;
+    // Reused ID with a different actor cannot validate the cached old actor.
+    native_incoming(*target,link.mTgCyls[0]);link.mTgCyls[0].cacheTargetActor(&enemy);
+    fopAc_ac_c recycled;recycled.id=2;actors[2]=&recycled;
+    target.reset();validate();assert(!link.mTgCyls[0].target);
+    actors[2]=&enemy;target=std::make_unique<dCcD_GObjInf>();target->owner=&enemy;
+    // The native no-actor flag allows engine-owned environmental colliders.
+    dCcD_GObjInf hazard;native_incoming(hazard,link.mTgCyls[1]);validate();
+    assert(link.mTgCyls[1].target==&hazard);
+    clear_player_contacts();assert(!link.mTgCyls[1].target&&s_contactPeers.empty());
+    // Story mode is not filtered, including stale incoming native metadata.
+    arena=false;native_incoming(*target,link.mTgCyls[0]);actors.erase(2);validate();
+    assert(link.mTgCyls[0].target==target.get());
+    arena=true;validate();assert(!link.mTgCyls[0].target);actors[2]=&enemy;
     // Live contacts retain electrical checks, shield flags and combo contact.
     remember(link.mAtCps[0],*target);link.mAtCps[0].shield=true;
     validate();assert(link.mAtCps[0].attack==target.get()&&link.mAtCps[0].shield);

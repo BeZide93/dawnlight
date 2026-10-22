@@ -5,7 +5,7 @@
 // Development switch: set to 0 before merging a development PR or releasing.
 // Disabled builds hide the tab and forcibly neutralize every debug setting.
 #ifndef DAWNLIGHT_SURVIVORS_DEBUG
-#define DAWNLIGHT_SURVIVORS_DEBUG 0
+#define DAWNLIGHT_SURVIVORS_DEBUG 1
 #endif
 namespace dawnlight::survivors {
 inline constexpr bool debug_enabled = DAWNLIGHT_SURVIVORS_DEBUG != 0;

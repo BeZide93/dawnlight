@@ -70,7 +70,7 @@ void initialize_extended_enemy(Enemy& enemy,fopAc_ac_c* actor) {
     }
     // Dedicated bosses may exceed the ordinary elite baseline (Stallord's head
     // arrives at 20 minutes, when a single upgraded critical can exceed 120 HP).
-    actor->health=actor->field_0x560=s16(s_run.enemy_health(native.hp,enemy.elite,s_map,enemy.eliteSlot==int(timed_elite_count-1)));
+    actor->health=actor->field_0x560=s16(s_run.spawn_enemy_health(native.hp,enemy.elite,s_map,enemy.eliteSlot));
     // Only these doubled elites omit actor scale in their native model matrix.
     if (enemy.elite && (enemy.profile==fpcNm_E_TT_e || enemy.profile==fpcNm_E_GI_e ||
         enemy.profile==fpcNm_E_FS_e || enemy.profile==fpcNm_E_BU_e ||
@@ -144,7 +144,12 @@ bool committed_enemy_motion(fopAc_ac_c* actor,ProfileName profile) {
         const auto* e=reinterpret_cast<e_yk_class*>(actor);return e->mAction==ACT_ATTACK && e->mActionPhase>=2;
     }
     case fpcNm_E_SH_e: {
-        const auto* e=reinterpret_cast<e_sh_class*>(actor);return e->field_0x676==3 && e->field_0x678>=3;
+        // The pounce tell already owns its heading. Phase 1 still follows Link
+        // so native alignment can complete before the boss aim lock starts.
+        const auto* e=reinterpret_cast<e_sh_class*>(actor);return e->field_0x676==3 && e->field_0x678>=2;
+    }
+    case fpcNm_E_S1_e: {
+        const auto* e=reinterpret_cast<e_s1_class*>(actor);return e->mAction==3&&e->mMode==2;
     }
     case fpcNm_E_SM2_e:return reinterpret_cast<e_sm2_class*>(actor)->action==ACTION_ATTACK;
     case fpcNm_E_DN_e: {

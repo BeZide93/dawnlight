@@ -103,9 +103,9 @@ void update_midna_dialog() {
     if (dComIfGp_event_runCheck() || dMsgObject_isTalkNowCheck() ||
         (midna && midna->eventInfo.checkCommandTalk())) return;
     // Let Midna's native doFlow finish its message, animation and event reset.
-    // Credit the completed run once before using the existing same-map replay.
+    // Credit the completed run once before reloading and starting the same map.
     const bool end=s_midnaEndPending, restart=s_midnaRestartPending;
     reset_midna_dialog();
     if (end || restart) finish(false);
-    if (restart) replay(nullptr,nullptr);
+    if (restart) restart_run(nullptr,nullptr);
 }

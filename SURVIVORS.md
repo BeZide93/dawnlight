@@ -89,13 +89,15 @@ remain in control; your ordinary Dawnlight preferences are retained.
 
 | Setting | Range | Default |
 | --- | --- | --- |
-| Enemy HP | ×1–×10, including elites | ×1 |
-| Enemy Damage | ×1–×10 | ×1 |
-| Enemy Speed | ×1–×3 normal locomotion; attacks keep native movement | ×1 |
+| Enemy HP | ×1–×5, ordinary enemies only | ×1 |
+| Boss HP | ×1–×5, timed bosses and stationary elites | ×1 |
+| Enemy Damage | ×1–×5 | ×1 |
+| Enemy Speed | ×1–×5 normal locomotion; attacks keep native movement | ×1 |
 | Horde | ×1–×5 enemy population and spawn amount | ×1 |
 | Camera distance | 100–500%, walls may limit distance | 200% |
 
-At Horde ×N, every Nth normal kill gives XP and rolls a drop; pots and elite
+All five difficulty controls use 0.5 steps. At Horde ×N, one in N normal kills
+gives XP and rolls a drop (fractional remainders carry forward); pots and elite
 rewards are unchanged. Camera 100% is native distance; event cameras stay native.
 
 ## Score and permanent talents
@@ -130,8 +132,9 @@ Final score:
 | Run levels gained | 50 each after level 1 |
 | Complete the run | 3,000 |
 
-Difficulty multiplier: `1 + 0.10 × (HP−1) + 0.15 × (Damage−1) +
-0.25 × (Speed−1) + 0.10 × (Horde−1)` (×1–×4.15). Camera settings do not
+Difficulty multiplier: `(Enemy HP + Boss HP + Damage + Speed + Horde) / 5`
+(×1–×5). All five controls range from x1 to x5 in 0.5 steps, using the same
+minus/plus buttons as Talents. Camera settings do not
 change score. Final totals round down; normal kill points are normalized before
 applying difficulty. Example: a win at default difficulty with 400 normal kills,
 four timed elites and run level 20 earns **12,350 points**.
@@ -638,14 +641,19 @@ at the normal victory is subtracted from the later award; one continued run stil
 counts as one run/win. Reset High Scores clears all four categories without
 locking maps. Existing v8/v9 normal records migrate with no score changes.
 
-**Twilit Rank** is Enemy HP + Enemy Damage + Enemy Speed + Horde − 4 (0–24). Difficulty
-shows it below the four controls, followed by their effects and effective reward
-multipliers. The rank itself adds no extra bonus: score and talent XP keep the
-existing additive difficulty formula (x1.00–x4.15). Horde divides normal-kill score
-and normal-enemy run-XP/loot opportunities by its setting; elite run XP stays x1.
-The HUD shows elapsed time using the boss-name font; skull and rank appear only
-above rank 0. Four x1 settings give rank 0. Both
-Victory/Defeat results and all saved score snapshots retain the rank.
+**Twilit Rank** is Enemy HP + Boss HP + Enemy Damage + Enemy Speed + Horde
+(5–25). Five x1 settings give Rank 5 and x1 rewards; five x5 settings give Rank
+25 and x5 score/meta XP. Each half step adds 0.5 rank. Horde still divides
+normal-kill points and normal-enemy run-XP/loot opportunities; elite run XP
+stays x1. Results and historical score snapshots retain their original rank
+and reward formula.
+
+Equipment drop chance rises linearly from the talent-adjusted baseline (20–70%)
+at Rank 5 to **100% at Rank 25**, for timed and stationary bosses. Rarity also
+improves: `(Rank - 5) / 20` of equipment rolls use **75% Epic / 25% Legendary**
+instead of their normal stat rolls. At Rank 25 nothing below Epic drops.
+Equipment Rarity still improves the stat distribution within those rarities.
+The Weapon/Tunic split stays 80%/20%; existing items are unchanged.
 
 
 ### Session-only Debug gate
@@ -698,7 +706,7 @@ are hidden during native Collection, map/ring menus and pause transitions.
 
 ## Persistent boss equipment
 
-Every scheduled boss and stationary guard boss, including repeated Endless bosses and respawned guards, has a base 20% chance to award permanent equipment directly to the inventory. A successful drop is 80% Weapon / 20% Tunic. Weapons have five equally likely families (Sword, Bow, Boomerang, Bombs, Ball and Chain), each with two equally likely variants: each named weapon is 8% of equipment drops. Luck does not change these odds. Equipment Drop Rate adds 5 percentage points per rank (maximum 10), reaching 70%. Ordinary enemies and the victory cleanup wave do not award equipment. Debug runs award none unless **Max Equipment Drop Rate** or **Always Legendary Equipment** is enabled before the run. This session-only toggle defaults to Off and guarantees an equipment award per timed or stationary boss, with normal type rolls and the run's Equipment Rarity talent applied to stat rolls. **Always Legendary Equipment** also defaults to Off and applies from the next run: all new drops have maximum base stats (tier 5 or +2 for count stats), guaranteeing Legendary rarity. Weapons receive one random bonus from their full Legendary pool; Tunics have no perk. Used alone it preserves the normal talent-adjusted drop chance; combined with Max Equipment Drop Rate, every boss awards Legendary equipment. Existing items are unchanged. These items are saved; Debug score, permanent XP and map-unlock exclusions still apply. A successful award displays a small rarity-colored banner, initially centered vertically near the right screen edge; its position and size can be changed in the HUD-Editor. It slides in from the right toward the left, shows the equipment icon on the left and its name/stats on the right, and slides out after eight active gameplay seconds (including the short entrance/exit animation). Below an acquired-item banner, **Call Midna to Equip** offers immediate equipment replacement via the configured Midna input (including touch). This equips exactly the displayed drop in its Weapon/Tunic slot, preserving the replaced item in inventory. On successful storage the banner disappears immediately and the next queued drop appears. A failed equip save leaves the banner available to retry. Simultaneous awards queue in order until the current banner expires or is equipped. Menus pause the timer and hide the banner. Inventory-full and save-failure notices use the same banner without a misleading acquired item. A full inventory displays only **Inventory Full!** and never replaces an existing item.
+Every scheduled boss and stationary guard boss, including repeated Endless bosses and respawned guards, has a base 20% chance to award permanent equipment directly to the inventory. A successful drop is 80% Weapon / 20% Tunic. Weapons have five equally likely families (Sword, Bow, Boomerang, Bombs, Ball and Chain), each with two equally likely variants: each named weapon is 8% of equipment drops. Luck does not change these odds. Equipment Drop Rate adds 5 percentage points per rank (maximum 10), reaching 70% at Twilit Rank 5. Difficulty scales this toward guaranteed equipment at Rank 25, with 75% Epic and 25% Legendary. Ordinary enemies and the victory cleanup wave do not award equipment. Debug runs award none unless **Max Equipment Drop Rate** or **Always Legendary Equipment** is enabled before the run. This session-only toggle defaults to Off and guarantees an equipment award per timed or stationary boss, with normal type rolls and the run's Equipment Rarity talent applied to stat rolls. **Always Legendary Equipment** also defaults to Off and applies from the next run: all new drops have maximum base stats (tier 5 or +2 for count stats), guaranteeing Legendary rarity. Weapons receive one random bonus from their full Legendary pool; Tunics have no perk. Used alone it preserves the normal talent-adjusted drop chance; combined with Max Equipment Drop Rate, every boss awards Legendary equipment. Existing items are unchanged. These items are saved; Debug score, permanent XP and map-unlock exclusions still apply. A successful award displays a small rarity-colored banner, initially centered vertically near the right screen edge; its position and size can be changed in the HUD-Editor. It slides in from the right toward the left, shows the equipment icon on the left and its name/stats on the right, and slides out after eight active gameplay seconds (including the short entrance/exit animation). Below an acquired-item banner, **Call Midna to Equip** offers immediate equipment replacement via the configured Midna input (including touch). This equips exactly the displayed drop in its Weapon/Tunic slot, preserving the replaced item in inventory. On successful storage the banner disappears immediately and the next queued drop appears. A failed equip save leaves the banner available to retry. Simultaneous awards queue in order until the current banner expires or is equipped. Menus pause the timer and hide the banner. Inventory-full and save-failure notices use the same banner without a misleading acquired item. A full inventory displays only **Inventory Full!** and never replaces an existing item.
 
 Open the large equipment chest in the Darknut Arena hub with A. It is an independent hub actor at the side wall on the +X side of the Master Sword pedestal, with its front facing the center of the room. It does not depend on story chest flags, native appearance events, Link's draw or run-loot resources. The inventory contains **40 shared slots across two tabs**, **Equipment 1 (20 slots)** and **Equipment 2 (20 slots)**. Each page has four rows of five. New items occupy the first empty slot in page order, from top left to bottom right, filling page one before page two. Controller/keyboard navigation and touch/mouse activation use native UI controls. Confirm equips **one Weapon and one Tunic**, replacing the previous item in that slot. Both equipped items remain in the inventory and are marked **Equipped**, with one Weapon and one Tunic shared across both pages. **Tap/click an equipped item again, or select it again with A/Confirm, to unequip it without deleting it.** Toggle Banish, then select an item to open **Delete Equipment?**, showing the exact item and stats. **Cancel** and B/Escape keep it; only **Delete** permanently removes it and unequips it if necessary. A failed save keeps the confirmation open for retry. Closing the inventory, switching pages or leaving the editable hub clears pending confirmations; delayed or stale confirmations cannot delete a changed slot. Closing the inventory saves progress through the existing native background-save flow. A failed storage write leaves the previous inventory intact.
 

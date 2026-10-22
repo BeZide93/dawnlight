@@ -24,7 +24,7 @@ void draw_run_rank_hud(float x, bool preview=false) {
         }
     }
     graf->setup2D();
-    std::snprintf(text,sizeof(text),"%u",preview?std::max(1u,s_run.twilit_rank()):s_run.twilit_rank());
+    std::snprintf(text,sizeof(text),"%g",double(preview?std::max(1.f,s_run.twilit_rank()):s_run.twilit_rank()));
     J2DPrint rank(font,JUtility::TColor(255,240,210,255),JUtility::TColor(230,190,150,255));
     rank.setFontSize(18*counter.scale,18*counter.scale);
     rank.printReturn(text,45*counter.scale,26*counter.scale,HBIND_CENTER,VBIND_TOP,counter.x-12*counter.scale,counter.y,255);

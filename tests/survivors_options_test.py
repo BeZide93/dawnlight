@@ -28,9 +28,10 @@ int fopAcM_GetID(fopAc_ac_c* a){return a->id;}
 struct Target{fopAc_ac_c* actor=nullptr;bool ChkTgHit(){return actor;}auto* GetTgHitAc(){return actor;}};
 struct daAlink_c:fopAc_ac_c{Target mTgCyls[3];};
 struct daE_OC_c:fopAc_ac_c{int mActionMode=3,mOcState=4,animation=0x1e;bool checkBck(int n){return animation==n;}};
+struct e_bs_class{fopAc_ac_c enemy;int action=2;};
 struct e_ms_class:fopAc_ac_c{int mAction=1,mMode=2;};
 struct e_ba_class:fopAc_ac_c{enum{ACT_FIGHT_FLY=1,ACT_RETURN=4,ACT_FLY=5,ACT_PATH_FLY=6};bool mIsDying=false;float mKnockbackSpeed=0;int mAction=2;};
-constexpr int fpcNm_B_TN_e=5,fpcNm_E_YC_e=6,fpcNm_E_HZELDA_e=8,fpcNm_E_KR_e=9;
+constexpr int fpcNm_E_BS_e=10,fpcNm_B_TN_e=5,fpcNm_E_YC_e=6,fpcNm_E_HZELDA_e=8,fpcNm_E_KR_e=9;
 constexpr int fpcNm_E_OC_e=1,fpcNm_E_MS_e=2,fpcNm_E_BA_e=3,fpcNm_E_RD_e=4;
 struct e_rd_class{fopAc_ac_c enemy;int action=3,mode=1,anm=0x32;float jump_z=0,field_0x9f0=0;};
 bool arrowActive=false;bool active_enemy_arrow(int id){return arrowActive&&id==7;}
@@ -43,13 +44,16 @@ void suppress_player_reaction(daAlink_c*){}
 bool in_arena(){return active;}bool playable(){return active&&!paused;}bool transitioning(){return transition;}
 bool dComIfGp_event_runCheck(){return event;}
 void* s_menuDocument=nullptr;void remember_menu_document(bool){}
-Records s_records;bool s_storeFailed=false,s_progressSaved=false,s_hubSaveRequested=false;
-struct Save{ModResult set_blob(ModContext*,const char*,const void*,size_t){return MOD_OK;}}save;auto* svc_save=&save;
+Records s_records;bool s_storeFailed=false,s_progressSaved=false,s_hubSaveRequested=false,s_progressSaving=false;
+constexpr char kBlob[]="records";unsigned progressSaves=0;void save_progress(ModContext*,void*){++progressSaves;}
+struct Save{bool fail=false;unsigned writes=0;std::vector<uint8_t> blob;
+ ModResult set_blob(ModContext*,const char*,const void* data,size_t size){++writes;if(fail)return MOD_ERROR;
+ auto* bytes=static_cast<const uint8_t*>(data);blob.assign(bytes,bytes+size);return MOD_OK;}}save;auto* svc_save=&save;
 UiDialogHandle s_debugNotice=0;void close_debug_notice(){s_debugNotice=0;}
 Run s_run;RunOptions s_options;int s_player=1;bool s_restart=false;
 enum class HubMenu{None,Talents,Run};unsigned s_hubClosingWindow=0;HubMenu s_hubMenu=HubMenu::Run;
 void hub_menu_closed(){} void load_option_config(){} void store_option_config(){}
-bool settings_editable(){return s_run.phase==Phase::Ready&&!s_restart;}
+bool settings_editable(){return s_run.phase==Phase::Ready&&!s_restart&&!s_progressSaving;}
 
 struct dBgS_Acch{fopAc_ac_c* actor;bool line=false;auto* getMyAc(){return actor;}void OnLineCheck(){line=true;}};
 struct daB_TN_c:fopAc_ac_c{dBgS_Acch mAcch{this};};
@@ -78,6 +82,7 @@ void dismiss_treasure_choice(){}
 struct Log{void warn(ModContext*,const char*){assert(false);}}logger;auto* svc_log=&logger;
 unsigned notices=0;bool failNotice=false;std::string noticeBody;UiDialogAction noticeAction{};
 struct Service{
+ ModResult pane_add_row(ModContext*,UiElementHandle,const UiRowDesc*,UiElementHandle* h){*h=200;return MOD_OK;}
  ModResult dialog_push(ModContext*,const UiDialogDesc* d,UiDialogHandle* h){if(failNotice)return MOD_INVALID_ARGUMENT;++notices;noticeBody=d->body_rml;noticeAction=d->actions[0];*h=9;return MOD_OK;}
 
  ModResult window_push(ModContext*,const UiWindowDesc* desc,UiWindowHandle* handle){
@@ -86,11 +91,13 @@ struct Service{
   *handle=1;return MOD_OK;
  }
 
+ std::string summary;
+ ModResult elem_set_text(ModContext*,UiElementHandle,const char* text){summary=text;return MOD_OK;}
  ModResult elem_set_rml(ModContext*,UiElementHandle,const char*){return MOD_OK;}
  ModResult pane_add_rml(ModContext*,UiElementHandle,const char*,UiElementHandle* handle){if(handle)*handle=99;return MOD_OK;}
  ModResult elem_set_class(ModContext*,UiElementHandle,const char*,bool){return MOD_OK;}
  ModResult pane_add_control(ModContext*,UiElementHandle pane,const UiControlDesc* c,UiElementHandle*){controls.push_back(*c);controlPanes.push_back(pane);return MOD_OK;}
- ModResult pane_add_text(ModContext*,UiElementHandle,const char*,UiElementHandle*){return MOD_OK;}
+ ModResult pane_add_text(ModContext*,UiElementHandle,const char*,UiElementHandle* handle){if(handle)*handle=100;return MOD_OK;}
 }service;auto* svc_ui=&service;
 ModResult build_reset_scores(UiElementHandle){return MOD_OK;}
 '''
@@ -149,7 +156,23 @@ int main(){
  }
  bulblin.action=3;bulblin.mode=1;bulblin.jump_z=20;bulblin.enemy.current.pos={100,3,200};
  before_enemy_speed(nullptr,movement,nullptr,nullptr);assert(bulblin.enemy.current.pos.x==100);
- enemy={};acch.actor=&bok;
+ // Stalchild horizontal locomotion doubles and composes with difficulty,
+ // while attacks, falling velocity, pause and ownership remain protected.
+ e_bs_class child;acch.actor=&child.enemy;enemy={};enemy.profile=fpcNm_E_BS_e;
+ for(unsigned difficulty=1;difficulty<=3;++difficulty)for(int action=0;action<6;++action){
+  s_run.options.enemy_speed=difficulty;child.action=action;child.enemy.current.pos={100,3,200};
+  before_enemy_speed(nullptr,movement,nullptr,nullptr);
+  float extra=action==2?2.f*difficulty-1:0;
+  assert(child.enemy.current.pos.abs2({100+2*extra,3,200+4*extra})==0);
+  assert(child.enemy.speed.abs2({2,3,4})==0);
+ }
+ child.action=2;
+ for(int gate=0;gate<6;++gate){
+  owned=gate!=0;paused=gate==1;enemy.dormant=gate==2;enemy.retiring=gate==3;enemy.stagger=gate==4;enemy.credited=gate==5;
+  child.enemy.current.pos={100,3,200};before_enemy_speed(nullptr,movement,nullptr,nullptr);
+  assert(child.enemy.current.pos.abs2({100,3,200})==0);
+ }
+ owned=true;paused=false;enemy={};acch.actor=&bok;
  daAlink_c link;link.id=1;link.mTgCyls[0].actor=&bok;s_run.options.enemy_damage=10;
  std::any damage[]={&link,2,0,1,0};before_enemy_damage(nullptr,damage,nullptr,nullptr);assert(std::any_cast<int>(damage[1])==20);
  for(int reason=0;reason<4;++reason){
@@ -175,36 +198,48 @@ int main(){
  s_run.phase=Phase::Ready;s_options.camera_distance=300;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==300);
  before_run_camera(nullptr,cam,nullptr,nullptr);active=false;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==100);active=true;
  assert(build_difficulty(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
- assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==12);
+ assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==18);
  const auto manual=controls.back();
  assert(manual.kind==UI_CONTROL_GROUP&&std::string(manual.label)=="Manual aiming abilities"&&controlPanes.back()==1);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow&&std::string(pushedTab.title)==manual.label);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==22);
- for(unsigned i=12;i<22;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
- assert(controls[2].max==3);
- assert(std::string(controls[9].label)=="Allow Cheats");
- for(unsigned i=0;i<6;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_NUMBER&&c.get&&c.set);
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==28);
+ for(unsigned i=18;i<28;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
+ for(unsigned i=0;i<5;++i) {
+  auto& minus=controls[2*i];auto& plus=controls[2*i+1];auto& setting=s_runControls[i];
+  assert(std::string(minus.label)=="-"&&std::string(plus.label)=="+"&&!minus.get&&!plus.set);
+  s_options.*setting.field=1;assert(minus.is_disabled(nullptr,minus.user_data));
+  plus.on_pressed(nullptr,plus.user_data);assert(s_options.*setting.field==1.5f);
+  minus.on_pressed(nullptr,minus.user_data);assert(s_options.*setting.field==1);
+  for(unsigned n=0;n<30;++n)plus.on_pressed(nullptr,plus.user_data);
+  assert(s_options.*setting.field==setting.max&&plus.is_disabled(nullptr,plus.user_data));
+  s_run.phase=Phase::Running;minus.on_pressed(nullptr,minus.user_data);assert(s_options.*setting.field==setting.max);
+  s_run.phase=Phase::Ready;for(unsigned n=0;n<30;++n)minus.on_pressed(nullptr,minus.user_data);
+  assert(s_options.*setting.field==1);
+ }
+ assert(!controls[10].prefix&&std::string(controls[10].suffix)=="%");
+ assert(std::string(controls[15].label)=="Allow Cheats");
+ for(unsigned i=10;i<12;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_NUMBER&&c.get&&c.set);
   UiControlValue value=UI_CONTROL_VALUE_INIT;value.int_value=10000;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.int_value==c.max);
   value.int_value=-10000;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.int_value==c.min);
   s_run.phase=Phase::Running;value.int_value=c.max;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.int_value==c.min);s_run.phase=Phase::Ready;
  }
- for(unsigned i=6;i<10;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE);
-  UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value==(i==7));
-  value.bool_value=!(i==7);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==7));
-  s_run.phase=Phase::Running;value.bool_value=(i==7);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==7));
-  s_run.phase=Phase::Ready;s_restart=true;value.bool_value=(i==7);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==7));s_restart=false;
+ for(unsigned i=12;i<16;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE);
+  UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value==(i==13));
+  value.bool_value=!(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));
+  s_run.phase=Phase::Running;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));
+  s_run.phase=Phase::Ready;s_restart=true;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));s_restart=false;
  }
- for(unsigned i=12;i<22;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
+ for(unsigned i=18;i<28;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
   UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value);
   value.bool_value=false;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
-  assert(!s_options.manual_aim[i-12]);for(unsigned j=i-11;j<10;++j)assert(s_options.manual_aim[j]);
+  assert(!s_options.manual_aim[i-18]);for(unsigned j=i-17;j<10;++j)assert(s_options.manual_aim[j]);
   value.bool_value=true;s_run.phase=Phase::Running;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=true;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);s_restart=false;
  }
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);assert(!s_manualAimSettingsWindow);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==32);
- for(unsigned i=22;i<32;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==38);
+ for(unsigned i=28;i<38;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);
  s_run.start(1,s_options);for(bool enabled:s_run.options.manual_aim)assert(!enabled);
  s_options.manual_aim.fill(true);for(bool enabled:s_run.options.manual_aim)assert(!enabled);
@@ -214,9 +249,9 @@ int main(){
  controls.clear();s_options.debug={4,10,1,1,5};s_run.options.debug=s_options.debug;
  assert(build_debug(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
  if(debug_enabled){
-  assert(controls.size()==9&&std::string(controls[0].label)=="Enable Debug");
+  assert(controls.size()==11&&std::string(controls[0].label)=="Enable Debug");
   auto enable=controls[0];UiControlValue state=UI_CONTROL_VALUE_INIT;enable.get(nullptr,nullptr,&state);assert(!state.bool_value);
-  for(unsigned i=1;i<9;++i)assert(controls[i].is_disabled(nullptr,controls[i].user_data));
+  for(unsigned i=1;i<10;++i)assert(controls[i].is_disabled(nullptr,controls[i].user_data));
   auto deniedDebug=s_options.debug;UiControlValue deniedValue=UI_CONTROL_VALUE_INIT;deniedValue.int_value=2;
   controls[1].set(nullptr,controls[1].user_data,&deniedValue);assert(s_options.debug.minimum_rarity==deniedDebug.minimum_rarity);
   deniedValue.bool_value=true;controls[8].set(nullptr,nullptr,&deniedValue);assert(!s_options.debug.unlock_all_maps);
@@ -232,6 +267,28 @@ int main(){
    s_run.phase=Phase::Running;assert(c.is_disabled(nullptr,c.user_data));
    UiControlValue denied=UI_CONTROL_VALUE_INIT;c.set(nullptr,c.user_data,&denied);c.get(nullptr,c.user_data,&denied);assert(value.int_value==denied.int_value);s_run.phase=Phase::Ready;
   }
+  auto meta=controls[9];assert(std::string(meta.label)=="Meta Level"&&meta.kind==UI_CONTROL_NUMBER);
+  UiControlValue level=UI_CONTROL_VALUE_INIT;level.int_value=50;s_progressSaved=true;
+  save.fail=true;meta.set(nullptr,nullptr,&level);assert(s_storeFailed&&s_records.level()==1);
+  update_debug_tab(nullptr,nullptr,nullptr);assert(service.summary.find("Save failed")!=std::string::npos);
+  save.fail=false;meta.set(nullptr,nullptr,&level);assert(!s_storeFailed&&!s_progressSaved&&s_records.level()==50&&s_records.available_points()==49);
+  Records loaded;assert(loaded.decode(save.blob)&&loaded.encode()==s_records.encode());
+  update_debug_tab(nullptr,nullptr,nullptr);assert(service.summary.find("Meta Level 50")!=std::string::npos);
+  const auto previous=s_records.encode();const auto writes=save.writes;
+  for(unsigned gate=0;gate<4;++gate){
+   s_progressSaving=gate==0;s_restart=gate==1;s_run.phase=gate==2?Phase::Running:Phase::Ready;debug_session_enabled=gate!=3;
+   level.int_value=80;assert(meta.is_disabled(nullptr,nullptr));meta.set(nullptr,nullptr,&level);
+   assert(s_records.encode()==previous&&save.writes==writes);
+  }
+  s_progressSaving=s_restart=false;s_run.phase=Phase::Ready;debug_session_enabled=true;
+  assert(s_records.buy(Talent::MaxHealth));level.int_value=-1;meta.set(nullptr,nullptr,&level);
+  assert(s_records.level()==2&&s_records.talents.spent()==1&&s_records.available_points()==0);
+  assert(loaded.decode(save.blob)&&loaded.level()==2);
+  level.int_value=INT64_MAX;meta.set(nullptr,nullptr,&level);assert(s_records.level()==1+meta_levels(max_meta_xp));
+  assert(loaded.decode(save.blob));
+  level.int_value=50;meta.set(nullptr,nullptr,&level);assert(s_records.level()==50);
+  auto progress=controls[10];assert(std::string(progress.label)=="Save progress");
+  progress.on_pressed(nullptr,nullptr);assert(progressSaves==1);
   auto maximum=controls[6];assert(maximum.kind==UI_CONTROL_TOGGLE&&std::string(maximum.label)=="Max Equipment Drop Rate");
   UiControlValue maximumValue=UI_CONTROL_VALUE_INIT;maximumValue.bool_value=true;
   maximum.set(nullptr,maximum.user_data,&maximumValue);assert(s_options.debug.max_equipment_drop_rate==1);
@@ -244,8 +301,9 @@ int main(){
   assert(s_options.debug.run_minutes==5&&s_options.debug.player_damage==10);
   s_run.phase=Phase::Running;state.bool_value=false;enable.set(nullptr,nullptr,&state);assert(debug_session_enabled&&notices==1);
   s_run.phase=Phase::Ready;enable.set(nullptr,nullptr,&state);assert(!debug_session_enabled&&notices==2&&s_options.debug.run_minutes==20&&!s_options.debug.always_legendary_equipment);
+  assert(s_records.level()==50&&s_records.available_points()==48);
   assert(noticeBody.find("New runs")!=std::string::npos);noticeAction.on_pressed(nullptr,s_debugNotice,nullptr);
-  for(unsigned i=1;i<9;++i)assert(controls[i].is_disabled(nullptr,controls[i].user_data));
+  for(unsigned i=1;i<10;++i)assert(controls[i].is_disabled(nullptr,controls[i].user_data));
  }else{
   assert(controls.empty()&&s_options.debug.run_minutes==20&&s_options.debug.player_damage==1);
   assert(s_options.debug.minimum_rarity==0&&!s_options.debug.infinite_rerolls&&!s_options.debug.infinite_banishes);
@@ -259,7 +317,7 @@ window=core[core.index('void open_window() {'):core.index('ModResult activated('
 ui=(root/'src/survivors_maps_ui.inc').read_text().split('UiElementHandle s_difficultySummary',1)[1]
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(fixture+'bool extended_locomotion(fopAc_ac_c*,int){return false;}\n'+(root/'src/survivors_options.inc').read_text()+'UiElementHandle s_difficultySummary'+ui+(root/'src/survivors_debug_ui.inc').read_text()+window+main)
+ cpp.write_text(fixture+'bool extended_locomotion(fopAc_ac_c* a,int p){return p==fpcNm_E_BS_e&&reinterpret_cast<e_bs_class*>(a)->action==2;}\n'+(root/'src/survivors_options.inc').read_text()+'UiElementHandle s_difficultySummary'+ui+(root/'src/survivors_debug_ui.inc').read_text()+window+main)
  for enabled in [0,1]:
   subprocess.run([os.environ.get('CXX','c++'),f'-DDAWNLIGHT_SURVIVORS_DEBUG={enabled}','-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-attributes','-I',str(root/'src'),'-I',str(root/'dusklight/sdk/include'),str(cpp),'-o',str(exe)],check=True)
   subprocess.run([str(exe)],check=True)

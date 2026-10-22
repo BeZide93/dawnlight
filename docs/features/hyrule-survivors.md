@@ -25,13 +25,54 @@ Selecting maps updates the description and high score while Link stays in the hu
 then orders the original native door event. The door opens and Link walks through;
 only the event's final scene change is redirected to the chosen map. Combat and
 the timer start after arrival, grounding and collision preparation. Cancelling the
-menu leaves Link in the hub. **New run** returns to the hub with the last arena selected.
+menu leaves Link in the hub. **Return to hub** on the results screen returns to
+the hub with the last arena selected. Midna's **Restart Run** instead reloads the
+current arena and starts a fresh run automatically after grounding, warm-up and
+collision preparation. Keep the selected difficulty/settings and saved progression;
+reset the run timer, kills, weapons, enemies and pickups. The Starting Item talent
+offers its normal new-run choice again. The interrupted run is credited once,
+after Midna's native dialog closes. A full scene reload retains the existing
+cleanup of pending actors, native collisions and Link's damage state.
+
+The restart and hub-return callbacks now set distinct arrival intent. Previously
+both used the hub-return path, which reset the destination to map 0 and cleared
+the automatic-start flag. Regression coverage follows production callbacks,
+scene routing and arrival gates on all five maps, including delayed geometry,
+airborne/paused arrival, one-time startup and subsequent hub return.
 
 The **Survivors** tab beside **Boss Rush** in Dawnlight Settings mirrors the same
 Survivors Settings controls. Camera distance, Reticle Y, attack/lock-on swap,
 gyro and all ten manual-ability switches share persistent config values; difficulty
 is persisted too. They participate in Dawnlight settings export/import. Edit outside
 a run; active runs keep their snapshot. Talents remain specific to each save slot.
+
+Difficulty has five controls: **Enemy HP**, **Boss HP**, **Enemy Damage**,
+**Enemy Speed** and **Horde**, each x1–x5 in 0.5 steps. Rows use the same
+minus/plus buttons and disabled states as Talents. Enemy HP affects ordinary
+enemies; Boss HP affects timed bosses and stationary elites across all maps and
+Endless. Existing doubled timed-boss budgets, map/time curves and the 32,767
+native HP cap still apply. Active runs keep their original snapshot.
+
+Twilit Rank is the sum of the five multipliers, from 5 to 25. Score/meta XP
+multiply by Rank / 5: x1 at defaults, x5 at maximum. Every +0.5 setting adds
+0.5 rank and 10 percentage points to rewards. Fractional Horde settings carry
+spawn/drop remainders. Settings persist/export/import as decimal values; old
+integer configs still load and are clamped to the new x5 cap.
+
+Equipment difficulty progress is `(Rank - 5) / 20`. Boss/elite drop chance
+interpolates from the talent-adjusted baseline (20–70%) to 100%. That same
+fraction of gear rolls uses a 75% Epic / 25% Legendary distribution instead of
+the existing stat-roll distribution. At Rank 25 every eligible boss/elite kill
+therefore awards equipment, exclusively Epic (75%) or Legendary (25%). The
+rarity talent weights valid stat combinations within the selected rarity;
+selection is bounded to 125 candidates without retry loops. Weapon/Tunic odds
+remain 80%/20%, with family perks and debug overrides unchanged.
+
+Records v16 preserves half steps and the new rank/reward formula without
+changing record size. v14 introduced independent Boss HP; v15 introduced half
+steps and five-setting weighted rewards. Historical results retain their
+original formulas, awarded scores and progression, including rank-zero results.
+New runs always use the five-setting sum and x5 limits.
 
 | Arena | Native area | Layout |
 | --- | --- | --- |
@@ -279,7 +320,9 @@ and armor targets accept Survivors attacks; one shared damage pass applies power
 crit and status hooks, cooldowns, and Ball/Shield stagger. Defeat credits the enemy
 before requesting deletion and uses the native disappearance effect. This prevents
 armor HP resets, resurrection and Chu splitting from losing kills or duplicating
-loot. Chu merging and Gibdo paralysis are suppressed only for run-owned actors.
+loot. Chu merging is suppressed only for run-owned actors. Owned Gibdo screams
+stun Link for at most 30 ticks (1 second, previously 60 ticks); native button
+mashing can shorten this. Their shared 180-tick scream cooldown is unchanged.
 Helmasaur shell contacts route to parent HP regardless of parent/child execution
 order. Shells retire with their owner; Bomskit eggs and Bulblin arrows retain
 independent ownership for pause, difficulty, defense and deferred teardown.
@@ -327,15 +370,25 @@ half attack-readiness/recovery timers and double damage; native bosses/minibosse
 do not inherit those two generic factors. Explicit damage overrides are Darknut
 ×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
-King Bulblin can spin every six seconds at a safe chase boundary. Darknut repeats
-his sword throw every 1.5 active seconds outside melee range in either phase.
-Death Sword can enter ranged combat after four seconds of distant pursuit;
+King Bulblin can spin every six seconds at a safe chase boundary. His native
+20–29-tick idle readiness runs at double speed, and the director recovery after
+axe/spin attacks is 12 ticks instead of 24. Spin duration, animation hit windows
+and the 15-tick (0.5-second) repeat-hit limit stay unchanged. Darknut repeats
+his sword throw every 3 active seconds outside melee range in either phase.
+Death Sword can enter ranged combat after 2.5 seconds of distant pursuit;
 Stallord can start breath out to 6,000 units without Link's damage-protection gate.
 Bloat can attack immediately while retaining its telegraph. Ganondorf charges
 from distant WAIT with a shared five-second cooldown and summons five native
 ghost riders every eight active seconds. Summons/riders retire with their boss;
 all owned children pause and clean up with the run. Full native baselines and
 current overrides: [boss attack reference](hyrule-survivors-boss-attacks.md).
+
+PR #148 adds the full [boss tactics director](hyrule-survivors-boss-tactics.md):
+combos, committed movement, delayed volleys and recovery across the complete boss
+roster. Normal waves pause for scheduled bosses and awakened stationary elites;
+existing enemies and bounded boss summons remain. After ten active seconds
+without damage, the boss relocates to a validated position inside Link's normal
+spawn ring, retaining HP. The tactics reference lists each boss and device checks.
 
 Dodongo armor flags are also normalized after Execute, because its native code
 sets them after collision registration. Only owned target objects are changed;
@@ -875,6 +928,22 @@ hook order. Survivors forces No Normal-Hit Invulnerability without changing the
 saved setting. Interrupted sword draws retry using the actual equip animation;
 a newly drawn sword gets a ready melee opportunity before the next item handoff.
 
+The user confirmed build #1122 (`d6b9e72`) takes damage and #1123 (`1ec429f`)
+introduces permanent spawn-time immunity. The contact lifetime guard in #1123
+cleared valid incoming hits when our collision observer had not recorded them.
+The additional native-callback observer in #1178 did not fix the device report
+and has been removed. Incoming validation now reads the native hit actor ID and
+cached actor pointer from Link's own collider, independent of mod observers.
+Resolve the ID against live actors without dereferencing the borrowed collider
+or cached actor; reject missing actors and mismatched caches. Preserve native
+actorless environmental contacts marked with `ChkTgHitNoActor`. Actor deletion
+clears incoming contacts by native ID before destruction, even with an empty
+observer map. Outgoing electrical/shield-contact lifetime protection remains.
+The regression accepts native incoming hits with no mod observer at all and
+covers all body cylinders, wolf target, repeat/projectile hits, deleted/reused
+actors, actorless hazards and cleanup. ASan/UBSan checks cover stale pointers;
+the user confirmed restored damage in game after the #1179 correction.
+
 Regression coverage includes enemy facing, text lifecycle/projection, applied
 crit feedback, Dodge probabilities, v2 migration, scoped hit reactions, setting
 restoration and interrupted equip/item scheduling. In-game checks remain needed:
@@ -886,8 +955,8 @@ and repeat contacts with Survivors enabled and after returning to story mode.
 ## Run options
 
 The preparation window has Maps, Difficulty and Settings tabs. Session-local
-options survive map changes/replays and are copied into the run at Start. HP and
-damage range from x1–x10; movement and Horde from x1–x5. Native enemy HP is scaled
+options survive map changes/replays and are copied into the run at Start. All
+five difficulty settings range from x1–x5 in 0.5 steps. Native enemy HP is scaled
 once at initialization. Movement is scaled before native ground/wall correction,
 excluding dormant, dying and knocked-back actors. Enemy damage scales at Link's
 native damage entry, restricted to owned enemy contacts.
@@ -1071,7 +1140,8 @@ Hurricane wind and Shockwave visuals, boss burns, restart and map transitions.
 migration are required. `DebugOptions::clamp` resets all debug fields when off;
 effective getters also neutralize stale values, including an existing run.
 Menu/reset/start boundaries sanitize stored options. Debug is the rightmost,
-Ready-only tab, and values are copied into a new run, never into records/config.
+Ready-only tab. Run overrides are copied into a new run, never into records/config.
+The explicit Meta Level editor below instead updates normal saved progression.
 
 The shared rarity sampler applies the chosen floor after its normal roll.
 Outgoing damage scales once in the final owned damage hook, after cache reuse
@@ -1350,16 +1420,23 @@ find; they do not replace a signed-app installation or in-game test.
 
 ### One incoming hit per boss/elite attack use (PR #140)
 
-Each boss/elite attack has one accepted contact against Link. Extra weapon/body
+King Bulblin's active spinning axe is an exception: it can hit Link repeatedly,
+at most once every 15 playable ticks (0.5 seconds), measured from the previous
+accepted contact. Rejected contacts do not consume the interval; all of Link's
+colliders share it, while separate Kings have independent intervals. Normal axe swings, wind-up,
+recovery and other colliders retain the limit below.
+
+Each other boss/elite attack has one accepted contact against Link. Extra weapon/body
 colliders, subsequent active frames, leaving/re-entering the hitbox and looping
 animations do not grant more contacts. Native block/dodge is evaluated for that
 contact once. New attack uses and different attackers remain independent; there
 is no global player immunity window. Damage amounts and cooldowns are unchanged.
 
 Darknut's repeated heavy-sword throw has a separate budget from his simultaneous
-melee attack and renews for each 1.5-second throw. Death Sword's two magic orbs
-share their cast even if his next melee action begins. Stallord/Phantom Zant
-projectiles and nested portals retain their original cast, and Ganondorf's five
+melee attack and renews for each 3-second throw. Each Death Sword orb and each
+Stallord B/C fireball has its own one-contact budget. Orb slots reset only when
+the native action arms that slot; melee/cast transitions do not refresh a flying
+orb. Phantom Zant projectiles and nested portals retain their original cast, and Ganondorf's five
 ghost riders share one summon. Carrier claw strikes and its rider's individual
 bow shots remain independent. Helmasaur armor follows each dash; Darkhammer's
 ball shares one outbound/return throw, separate from his sustained spin.
@@ -1476,7 +1553,7 @@ then continue, repeated bosses and drops, pause during minute boundary, death/Ga
 Over and voluntary End Run, reload all four records, D-pad/touch score navigation.
 
 
-Records v11 normalizes Twilit Rank to the sum of difficulty increments above x1
+Historical Records v11 normalizes Twilit Rank to the sum of difficulty increments above x1
 (0–24). v10 snapshots are validated against the old sum and converted by subtracting
 four; v8/v9 snapshots derive the new rank from their stored options. Scores, XP,
 map clears and all four record categories remain unchanged. HUD rank/skull are
@@ -1495,10 +1572,39 @@ lifetime aggregate. HighScoreRun::encode also refuses debug snapshots. Endless
 continuation preserves eligibility; the results screen shows zero awarded XP and
 explicitly labels the excluded run. Existing snapshots/save format are unchanged.
 
-### Endless archer volleys and late healing
+### Persistent Meta Level editor
 
-Every E_RD/E_RDY arrow spawn in Endless adds two arrows at yaw +/-0x900, matching
-Hard Mode's fan. Preserve the complete native spawn arguments, child ownership,
+The Ready menu's Debug tab includes a native numeric **Meta Level** control.
+Editing requires Enable Debug and an idle, editable hub; running, restarting,
+departing or saving blocks changes. The value comes from the current save's
+`Records`, not from `DebugOptions`. Changing it sets total XP to the chosen
+level's threshold (zero XP toward the next level). Setting the current level
+again preserves partial XP. Unlock Points follow the ordinary level calculation.
+Purchased talents remain intact: the minimum effective level is one plus spent
+points; refund talents in the Talents menu before choosing a lower level. The
+upper bound follows the existing saved-XP cap.
+
+Changes are staged through SaveService with rollback on failure, then persisted
+by the existing menu-close autosave or the Debug tab's **Save progress** button.
+A live summary shows the effective level, remaining points and save status.
+Level, XP and talents survive disabling Enable Debug, restarting and builds with
+`DAWNLIGHT_SURVIVORS_DEBUG=0`; there is no permanent level override. Normal runs
+continue earning XP from the edited value. Debug runs retain their usual zero-XP
+rule, so disable Enable Debug before starting a progression run. No save-format
+change is needed. Existing scores, clears, lifetime totals and equipment remain.
+
+Regression coverage checks UI edits and gates, failed storage, numeric bounds,
+talent budgets, partial-XP no-ops, encode/decode and subsequent normal level-ups
+with both compile-time Debug configurations. Device UI/save verification remains
+pending.
+
+### Archer volleys and late Endless healing
+
+E_RD/E_RDY archers fire a three-arrow volley on every third successful shot in
+normal runs (single, single, triple). Endless keeps a triple volley on every shot.
+The two side arrows use yaw +/-0x900, matching Hard Mode's fan. The counter belongs
+to the owning enemy and resets on replacement; side arrows and failed/blocked
+spawns do not advance it. Preserve the complete native spawn arguments, child ownership,
 damage factors, pause/cleanup and capacity guards. A scoped recursion guard
 prevents multiplying the side arrows again; reserve one structural-child slot
 per enemy and capacity for three projectiles per enemy.
@@ -1553,9 +1659,9 @@ Runtime verification remains required: visible hub chest placement, all controll
 
 Equipment Drop Rate and Equipment Rarity are appended talent IDs, each capped at
 10 ranks. Drop chance uses the run snapshot: 2,000 + 500 basis points per drop
-rank, capped at 7,000. Rarity shifts independent stat weights linearly from
+rank at Twilit Rank 5, then interpolates toward 10,000 at Rank 25. Rarity shifts independent stat weights linearly from
 50/25/15/8/2% to 20/25/25/20/10%; count-affix +2 odds rise from 10% to 30%.
-Rank-zero stat rolls retain their probabilities; new Epic/Legendary weapons make one additional family-perk roll after all stats.
+At baseline difficulty, rank-zero stat rolls retain their probabilities; new Epic/Legendary weapons make one additional family-perk roll after all stats.
 See `SURVIVORS.md` for the midpoint and the distinction between stat tiers and
 final item rarity. Luck and Legendary Chance do not modify these gear rolls.
 
@@ -1666,3 +1772,41 @@ equally likely (8% each of all drops); old items are untouched.
 This explicit override allows saved equipment in Debug at the normal talent
 drop chance; combining Max Equipment Drop Rate guarantees one per boss.
 Debug score, permanent XP and map-unlock exclusions remain in effect.
+
+
+### Lizalfos melee spacing (PR #148)
+
+Owned elite Lizalfos retain the existing size-normalized native attack range.
+The full movement segment (native motion, director hop and speed bonuses) stops
+at 250 units times model scale while chasing, or 190 while attacking. Segment
+intersection also catches steps crossing completely through Link. Chase overlap
+below 220 scaled units retreats by up to 18 units along checked ground. Vertical
+motion, sword/tail collision windows, guards and gap jumps retain native behavior.
+Regression fixtures cover scaled movement, crossings, retreat/path failure,
+excluded states and King Bulblin's wait/recovery boundaries. On-device melee
+reach and pacing still need a playtest.
+
+
+### Stalfos advances and independent boss projectiles (PR #148)
+
+Stalfos attack advances stop at 250 units times model scale (500 for the doubled
+boss), after native motion and movement bonuses, before ground/wall correction.
+The complete segment is constrained, including crossing steps; existing close
+positions cannot advance further inward. Preserve both sword animations, native
+vertical motion, hit windows, chase and shield behavior.
+
+Death Sword's two inline orb slots now receive separate one-contact budgets at
+the existing action post hook, when state 1 arms that particular slot. Merely
+starting another cast or melee action does not refresh a still-flying orb.
+Stallord's original and queued B/C fireballs each receive a new budget at child
+creation; delayed shots no longer inherit the volley budget. Repeat overlaps
+with the same projectile remain suppressed, including across Link's colliders.
+Normal damage/invulnerability and the shared 15-tick boss contact spacing remain.
+
+Stallord B/C projectile collision uses radius 240, the native fully charged
+radius, at collider registration. Native flight outside the spinner path stays
+at radius 80 while rendering the large flame effect at scale 5; the correction
+also applies on the first tracked frame and cannot compound. Keep its center,
+damage, fixed trajectory and terrain handling. Type A breath, other colliders
+and story actors retain native collision. Exact particle-edge agreement and
+practical dodging still require visual validation on device.

@@ -20,7 +20,8 @@ HookAction before_enemy_speed(ModContext*, void* args, void*, void*) {
             actor->current.pos.y+=actor->speed.y*extra;
         acch->OnLineCheck();
     }
-    const float movement=float(std::min(32767.f,s_run.options.enemy_speed*(boss?1.f:endlessSpeed)));
+    const float speciesSpeed=enemy->profile==fpcNm_E_BS_e?2.f:1.f;
+    const float movement=float(std::min(32767.f,s_run.options.enemy_speed*(boss?1.f:endlessSpeed)*speciesSpeed));
     if(movement==1.f)return HOOK_CONTINUE;
     // Whitelist locomotion, not a numeric range which also contains attacks.
     // Bokoblin attack root motion is separate from speed and must stay native,

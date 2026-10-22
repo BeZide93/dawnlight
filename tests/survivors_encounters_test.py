@@ -65,6 +65,11 @@ struct Shot {ActorId parent;unsigned parameter;cXyz position;csXyz angle;};std::
 ActorId fopAcM_createChild(int profile,ActorId parent,unsigned parameter,cXyz* pos,int,csXyz* angle,void*,int,void*){
  assert(profile==fpcNm_B_DS_e);shots.push_back({parent,parameter,*pos,*angle});return shots.size()+50;}
 '''
+fixture+=r'''
+bool boss_attack_paused(const Enemy&){return false;}
+bool boss_major_ready(Enemy&,unsigned){return true;}
+HookAction boss_carrier_pass(e_yc_class*,Enemy&){return HOOK_SKIP_ORIGINAL;}
+'''
 main=r'''
 int main(){
  player.id=100;player.current.pos={1000,0,1000};
@@ -116,7 +121,7 @@ int main(){
  h.credited=true;after_roster_hand_collision(nullptr,handArgs,nullptr,nullptr);assert(!hand.field_0xc7c.at);h.credited=false;
  // Carrier follows native brake/telegraph/catch phases without a rider pointer.
  e_yc_class bird;bird.id=3;bird.profile=fpcNm_E_YC_e;bird.current.pos=player.current.pos+cXyz(0,260,0);
- auto& b=s_enemies[2];b.id=3;b.profile=bird.profile;std::any birdArgs[]={&bird};
+ auto& b=s_enemies[2];b.elite=false;b.id=3;b.profile=bird.profile;std::any birdArgs[]={&bird};
  before_roster_yc_action(nullptr,birdArgs,nullptr,nullptr);assert(bird.mRiderID==kNone);
  bird.mTimer[2]=0;before_roster_yc_action(nullptr,birdArgs,nullptr,nullptr);
  for(int i=0;i<45;++i)before_roster_yc_action(nullptr,birdArgs,nullptr,nullptr);

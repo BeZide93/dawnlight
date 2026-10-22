@@ -35,20 +35,20 @@ inline constexpr std::array<MapRoster,5> map_rosters{{
      {{Species::Darknut,Species::Darkhammer,Species::PuppetZelda,Species::Ganondorf}}}
 }};
 constexpr const MapRoster& map_roster(unsigned map) { return map_rosters[map<map_rosters.size()?map:0]; }
-constexpr unsigned ordinary_limit(Species type,unsigned horde) {
-    horde=std::clamp(horde,1u,5u);
+constexpr unsigned ordinary_limit(Species type,float horde) {
+    horde=std::clamp(horde,1.f,5.f);
     switch(type) {
-    case Species::ShadowBow:case Species::Bow:return std::min(12u,4*horde);
-    case Species::ShadowKargarok:case Species::Kargarok:return std::min(6u,2*horde);
-    case Species::Guay:return std::min(12u,4*horde);
-    case Species::Bomskit:return std::min(6u,2*horde);
-    case Species::ShadowBeast:case Species::Gibdo:case Species::Dynalfos:return std::min(4u,2*horde);
+    case Species::ShadowBow:case Species::Bow:return std::min(12u,unsigned(4*horde));
+    case Species::ShadowKargarok:case Species::Kargarok:return std::min(6u,unsigned(2*horde));
+    case Species::Guay:return std::min(12u,unsigned(4*horde));
+    case Species::Bomskit:return std::min(6u,unsigned(2*horde));
+    case Species::ShadowBeast:case Species::Gibdo:case Species::Dynalfos:return std::min(4u,unsigned(2*horde));
     default:return 345;
     }
 }
 // Filter before choosing; saturated specialists fall back to the basic pool.
 // Counts include pending actors so async creation cannot overbook a cap.
-inline Species choose_species(unsigned map,unsigned seconds,bool horde_event,unsigned horde,
+inline Species choose_species(unsigned map,unsigned seconds,bool horde_event,float horde,
                               const std::array<unsigned,species_count>& counts,unsigned group_roll,unsigned pick_roll) {
     const auto& roster=map_roster(map);
     std::array<Species,4> candidates{};unsigned count=0;
@@ -68,7 +68,7 @@ constexpr float elite_scale(Species type) {
     switch(type) {
     case Species::KingBulblin:case Species::DeathSword:case Species::TwilitBloat:
     case Species::PhantomZant:case Species::Darkhammer:case Species::PuppetZelda:case Species::Ganondorf:
-    case Species::Helmasaurus:case Species::Dynalfos:case Species::Stalfos:
+    case Species::Helmasaurus:case Species::Dynalfos:
     case Species::StallordHead:case Species::ZantHand:case Species::Aeralfos:case Species::Darknut:return 1.f;
     default:return 2.f;
     }

@@ -9,18 +9,25 @@ HookAction before_roster_native_damage(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<fopAc_ac_c*>(args,0);
     if(!roster_owned(actor))return HOOK_CONTINUE;
     const auto* enemy=tracked(fopAcM_GetID(actor));
-    if(enemy->profile==fpcNm_E_DN_e && enemy->elite && enemy->initialized &&
+    if((enemy->profile==fpcNm_E_DN_e||enemy->profile==fpcNm_E_SF_e) && enemy->elite && enemy->initialized &&
        !enemy->retiring && !enemy->credited && !enemy->dormant && !enemy->stagger &&
        actor->health>0 && s_run.phase==Phase::Running && !transitioning()) {
-        auto* lizalfos=reinterpret_cast<e_dn_class*>(actor);
         auto* link=daAlink_getAlinkActorClass();
-        // Native action() refreshes pl_dir immediately before damage_check(),
+        // Native action() refreshes its player distance before damage_check(),
         // then uses it for the fight-run spacing and attack selection. Express
         // that decision in model units so the doubled body cannot push Link
-        // away before reaching the unscaled 300/350-unit thresholds. Recompute
+        // away before reaching the unscaled combat thresholds. Recompute
         // from world positions, never divide a previous normalized value.
-        if(lizalfos->action==3 && link && actor->scale.x>1.f)
-            lizalfos->pl_dir=(link->current.pos-actor->current.pos).absXZ()/actor->scale.x;
+        if(link && actor->scale.x>1.f) {
+            const float distance=(link->current.pos-actor->current.pos).absXZ()/actor->scale.x;
+            if(enemy->profile==fpcNm_E_DN_e) {
+                auto* lizalfos=reinterpret_cast<e_dn_class*>(actor);
+                if(lizalfos->action==3)lizalfos->pl_dir=distance;
+            } else {
+                auto* stalfos=reinterpret_cast<e_sf_class*>(actor);
+                if(stalfos->mAction==3)stalfos->mPlayerDistanceXZ=distance;
+            }
+        }
     }
     return HOOK_SKIP_ORIGINAL;
 }
@@ -34,7 +41,7 @@ HookAction before_roster_cry(ModContext*,void* args,void* result,void*) {
         return HOOK_SKIP_ORIGINAL;
     // Keep native range/LOS checks, animation, button-mashing and Link's scream
     // pose. Avoid the native global/camera owner: run deaths bypass its cleanup.
-    actor->mPlayerStunTimer=60;actor->mCryTimer=80;actor->mPushButtonCount=0;
+    actor->mPlayerStunTimer=30;actor->mCryTimer=80;actor->mPushButtonCount=0;
     actor->speedF=0;actor->setBck(10,0,5.f,1.f);actor->field_0x6a0=3;
     s_run.gibdo_scream_cooldown=180;
     *static_cast<bool*>(result)=true;return HOOK_SKIP_ORIGINAL;
@@ -102,21 +109,47 @@ HookAction before_roster_targets(ModContext*,void* args,void*,void*) {
             auto* e=reinterpret_cast<e_dd_class*>(actor);
             e->field_0xa74[0].SetR(60.f*scale);e->field_0xa74[1].SetR(75.f*scale);e->field_0xa74[2].SetR(50.f*scale);
         } else if(enemy->profile==fpcNm_E_SH_e) {
-            auto* e=reinterpret_cast<e_sh_class*>(actor);e->mSphArr[0].SetR(30.f*scale);e->mSphArr[1].SetR(40.f*scale);
+            auto* e=reinterpret_cast<e_sh_class*>(actor);e->mSphArr[0].SetR(34.5f*scale);e->mSphArr[1].SetR(46.f*scale);
         } else if(enemy->profile==fpcNm_E_RDY_e) {
             auto* e=reinterpret_cast<e_rdy_class*>(actor);for(auto& sphere:e->mCcSph)sphere.SetR(35.f*scale);
+        } else if(enemy->profile==fpcNm_E_SF_e) {
+            // Native Stalfos uses a 1.2 base size; joint centers already scale.
+            auto* e=reinterpret_cast<e_sf_class*>(actor);
+            e->mCcSphs[0].SetR(36.f*scale);
+            e->mCcSphs[1].SetR(42.f*scale);e->mCcSphs[2].SetR(42.f*scale);
+            e->mTateSph.SetR(60.f*scale);
         } else if(enemy->profile==fpcNm_E_S1_e) {
             auto* e=reinterpret_cast<e_s1_class*>(actor);
-            e->mCcSph[0].SetR(35.f*scale);e->mCcSph[1].SetR(60.f*scale);e->mCcSph[2].SetR(50.f*scale);
+            e->mCcSph[0].SetR(45.5f*scale);e->mCcSph[1].SetR(78.f*scale);e->mCcSph[2].SetR(65.f*scale);
         } else if(enemy->profile==fpcNm_E_YC_e) reinterpret_cast<e_yc_class*>(actor)->mCcSph.SetR(80.f*scale);
         break;
     }
     if(enemy->elite) {
         const float scale=elite_scale(Species(enemy->species));
         if(enemy->profile==fpcNm_E_SH_e) {
-            auto* e=reinterpret_cast<e_sh_class*>(actor);if(object==&e->mSph2)e->mSph2.SetR(35.f*scale);
+            auto* e=reinterpret_cast<e_sh_class*>(actor);
+            if(object==&e->mSph2) {
+                e->mSph2.SetR(40.25f*scale); // Native base size is 1.15.
+                auto center=e->mSph2.GetC();
+                const bool hidden=center.x==15000.f&&center.y==-14000.f&&center.z==23000.f;
+                if(scale>1.f&&!hidden&&e->field_0x676==3&&(e->field_0x678==3||e->field_0x678==4)&&
+                   !enemy->retiring&&!enemy->credited&&!enemy->dormant&&!enemy->stagger&&actor->health>0&&
+                   s_run.phase==Phase::Running&&!transitioning()&&e->mAnm_p) {
+                    // Device traces place the doubled jaw ~240-310 units above
+                    // the root, clearing Link even on horizontally centered bites.
+                    // Keep its animated X/Z and native height relative to the
+                    // root, with the enlarged radius. No target-following snap.
+                    // Reconstruct native Y from joint 13 for idempotent Set hooks.
+                    const auto m=e->mAnm_p->getModel()->getAnmMtx(13);
+                    const float nativeY=m[1][3]+5.f*m[1][0]-10.f*m[1][1];
+                    center.y=actor->current.pos.y+(nativeY-actor->current.pos.y)/scale;
+                    e->mSph2.SetC(center);
+                }
+            }
+        } else if(enemy->profile==fpcNm_E_SF_e) {
+            auto* e=reinterpret_cast<e_sf_class*>(actor);if(object==&e->mAtSph)e->mAtSph.SetR(60.f*scale);
         } else if(enemy->profile==fpcNm_E_S1_e) {
-            auto* e=reinterpret_cast<e_s1_class*>(actor);if(object==&e->mCcAtSph)e->mCcAtSph.SetR(40.f*scale);
+            auto* e=reinterpret_cast<e_s1_class*>(actor);if(object==&e->mCcAtSph)e->mCcAtSph.SetR(52.f*scale); // Native base size is 1.3.
         } else if(enemy->profile==fpcNm_E_RDY_e) {
             auto* e=reinterpret_cast<e_rdy_class*>(actor);if(object==&e->mAtSph && e->mAtSph.GetR()>0)e->mAtSph.SetR(50.f*scale);
         }
@@ -209,11 +242,12 @@ bool update_extended_enemy(fopAc_ac_c* actor,Enemy& enemy) {
         cc_at_check(actor,&info); // Existing power, material, Crit and status hooks run once.
         if(actor->health<before) {
             enemy.hitCooldown=0;
+            boss_received_damage(enemy,actor->health);
             if(enemy.profile==fpcNm_E_GI_e) {
                 auto* gibdo=reinterpret_cast<daE_GI_c*>(actor);
                 gibdo->mPlayerStunTimer=0;gibdo->mCryTimer=20;
             }
-            if(causes_stagger(attack) && !phantom_projectile_charge(actor,enemy))enemy.stagger=8;
+            if(causes_stagger(attack) && !phantom_projectile_charge(actor,enemy) && boss_accept_stagger(enemy))enemy.stagger=8;
         }
         effect.injected=false;effect.damage=0;effect.fixedDamage=0;effect.critical=false;effect.stagger=false;
     }

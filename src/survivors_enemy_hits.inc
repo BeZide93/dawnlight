@@ -2,7 +2,8 @@
 // host symbols or global player invulnerability are needed.
 struct EnemyHitSource {
     EnemyAttackCycle cycle;
-    EnemyAttackUsePtr projectile, thrownSword, riders, magic;
+    EnemyAttackUsePtr projectile, thrownSword, riders, magic, spin;
+    EnemyAttackUsePtr deathSwordOrbs[2];
     unsigned throwCooldown = 0;
     bool summoning = false;
 };
@@ -62,7 +63,10 @@ void observe_enemy_attack(Enemy& enemy, fopAc_ac_c* actor) {
     }
     case fpcNm_E_S1_e: {
         auto* e=reinterpret_cast<e_s1_class*>(actor);action=e->mAction;mode=e->mMode;
-        if (action==3) key=action;
+        // The director queues the second swing as mode 1, hiding native mode 0.
+        // Only mode 2 is a swing: observing its intervening wind-up clears the
+        // cycle key so each arm gets one use, shared across all Link colliders.
+        if (action==3&&mode==2) key=action;
         break;
     }
     case fpcNm_B_TN_e: {
@@ -104,7 +108,8 @@ void observe_enemy_attack(Enemy& enemy, fopAc_ac_c* actor) {
     }
     case fpcNm_E_TH_e: {
         auto* e=reinterpret_cast<e_th_class*>(actor);action=e->mAction;mode=e->mMode;
-        // One sustained spin, then one throw including its return journey.
+        // Body contacts share a spin use; the rotating ball has its own cadence.
+        // One throw includes its return journey.
         if (action==1||action==2) key=1;
         if (action==3||action==4) key=2;
         break;
@@ -147,8 +152,17 @@ void observe_enemy_attack(Enemy& enemy, fopAc_ac_c* actor) {
     default:break;
     }
     source.cycle.observe(key,action,mode);
-    if(enemy.profile==fpcNm_E_VT_e&&action==daE_VA_c::ACTION_OPACI_FLY_e)
-        source.magic=source.cycle.current();
+}
+// action() arms a specific slot before calcMagicMove consumes state 1. Reset
+// that projectile only, even if the other orb outlives the casting animation.
+void after_death_sword_magic_launch(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daE_VA_c*>(args,0);
+    auto* owner=actor?tracked(fopAcM_GetID(actor)):nullptr;
+    if(!owner||owner->profile!=fpcNm_E_VT_e||!limited_enemy_attacks(owner)||
+       !owner->initialized||owner->retiring||owner->credited||!in_arena()||
+       s_run.phase!=Phase::Running||!playable())return;
+    for(unsigned i=0;i<2;++i)if(actor->field_0x1228[i]==1)
+        s_enemyHitSources[owner->id].deathSwordOrbs[i]=new_enemy_attack_use();
 }
 EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
     auto* actor=attack?attack->GetAc():nullptr;if(!actor)return {};
@@ -161,11 +175,33 @@ EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
     if(!root)return {};
     observe_enemy_attack(*owner,root);
     auto& source=s_enemyHitSources[owner->id];
+    if(owner->profile==fpcNm_E_HZELDA_e) {
+        if(auto use=zelda_light_orb_use(attack))return use;
+        auto* zelda=reinterpret_cast<e_hzelda_class*>(root);
+        if(attack==&zelda->mBallSphAt&&source.magic)return source.magic;
+    }
+    bool repeatingSpin=false;
+    if(owner->profile==fpcNm_E_RDB_e) {
+        auto* king=reinterpret_cast<e_rdb_class*>(root);
+        repeatingSpin=king->mAction==4 && king->mMode==2 && attack==&king->field_0xe64;
+    } else if(owner->profile==fpcNm_E_TH_e && id!=owner->id &&
+              fopAcM_GetName(actor)==fpcNm_E_TH_BALL_e) {
+        auto* ball=reinterpret_cast<e_th_ball_class*>(actor);
+        repeatingSpin=ball->mAction==1 && ball->mMode>=1 && ball->mMode<=3 && attack==&ball->mAtSph;
+    }
+    // One accepted spin contact per half-second of playable run time, per
+    // owner and shared across Link's colliders. Re-entry cannot reset the clock.
+    if(repeatingSpin) {
+        if(!source.spin || (source.spin->contacted &&
+           s_run.ticks-source.spin->contactTick>=ticks_per_second/2))
+            source.spin=new_enemy_attack_use();
+        return source.spin;
+    }
     if(owner->profile==fpcNm_E_VT_e) {
         auto* sword=reinterpret_cast<daE_VA_c*>(root);
-        if(attack==&sword->mMagicSphs[0]||attack==&sword->mMagicSphs[1]) {
-            if(!source.magic)source.magic=new_enemy_attack_use();
-            return source.magic;
+        for(unsigned i=0;i<2;++i)if(attack==&sword->mMagicSphs[i]) {
+            if(!source.deathSwordOrbs[i])source.deathSwordOrbs[i]=new_enemy_attack_use();
+            return source.deathSwordOrbs[i];
         }
     }
     if(owner->profile==fpcNm_B_TN_e&&attack==&owner->extraAttack) {
@@ -183,7 +219,10 @@ void after_enemy_attack_spawn(ModContext*,void* args,void* result,void*) {
     if(structural_enemy_child(profile))return; // Shell/ball follow the owner's current attack.
     if(auto* actor=actor_by_id(owner->id))observe_enemy_attack(*owner,actor);
     EnemyAttackUsePtr use;
-    if(profile==fpcNm_E_ARROW_e)use=new_enemy_attack_use(); // Each native bow shot is a new attack.
+    const bool headBullet=profile==fpcNm_B_DS_e&&
+        ((mods::arg<u32>(args,2)&0xff)==daB_DS_c::TYPE_BULLET_B||
+         (mods::arg<u32>(args,2)&0xff)==daB_DS_c::TYPE_BULLET_C);
+    if(profile==fpcNm_E_ARROW_e||headBullet)use=new_enemy_attack_use();
     else if(profile==fpcNm_E_FK_e) {
         auto& source=s_enemyHitSources[owner->id];
         if(!source.summoning){source.riders=new_enemy_attack_use();source.summoning=true;}
@@ -230,5 +269,9 @@ void after_enemy_attack_contact(ModContext*,void* args,void*,void*) {
     auto frame=std::move(s_enemyContactFrames.back());s_enemyContactFrames.pop_back();
     // Commit only a native accepted contact. The first block/dodge remains
     // effective for the whole attack instead of rerolling on every frame.
-    if(frame.target->ChkTgHit()&&frame.target->GetTgHitObj()==frame.attack)frame.use->contacted=true;
+    if(frame.target->ChkTgHit()&&frame.target->GetTgHitObj()==frame.attack) {
+        frame.use->contacted=true;
+        frame.use->contactTick=s_run.ticks;
+        boss_record_contact(frame.attack);
+    }
 }

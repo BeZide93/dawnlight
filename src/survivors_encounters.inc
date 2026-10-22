@@ -33,7 +33,10 @@ HookAction before_roster_yc_action(ModContext*,void* args,void*,void*) {
     }
     if(!encounter_running(*enemy))return HOOK_SKIP_ORIGINAL;
     auto* link=daAlink_getAlinkActorClass();if(!link)return HOOK_SKIP_ORIGINAL;
-    if(enemy->elite)maintain_carrier_rider(actor,*enemy);
+    if(enemy->elite) {
+        maintain_carrier_rider(actor,*enemy);
+        if(actor->mAction==e_yc_class::ACT_ATTACK)return boss_carrier_pass(actor,*enemy);
+    }
     const auto animate=[&](int anm,int loop) {
         actor->mAnm=anm;encounter_animation(actor->mpMorf,"E_yc",anm,loop);
     };
@@ -86,7 +89,7 @@ HookAction before_roster_head_action(ModContext*,void* args,void*,void*) {
         actor->home.pos=actor->current.pos;enemy->encounterReady=true;
     }
     if(encounter_running(*enemy)&&actor->mAction==daB_DS_c::ACT_B2_F_MOVE&&
-       (actor->mMode==1||actor->mMode==2)&&actor->mModeTimer<=1&&fopAcM_searchPlayerDistance(actor)<=6000.f) {
+       (actor->mMode==1||actor->mMode==2)&&actor->mModeTimer<=1&&fopAcM_searchPlayerDistance(actor)<=6000.f && !boss_attack_paused(*enemy) && boss_major_ready(*enemy,120)) {
         actor->setBck(daB_DS_c::ANM_HEAD_FATTACK_A,0,3.f,1.f);actor->mMode=3;
     }
     return HOOK_CONTINUE; // native breath telegraph, release, fireball and recovery

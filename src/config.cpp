@@ -2025,6 +2025,11 @@ bool read_setting(const RegisteredSetting& setting, settings::Value& value) {
         if (svc_config->get_int(mod_ctx, setting.handle, &v)!=MOD_OK) return false;
         value=v;return true;
     }
+    case CONFIG_VAR_FLOAT: {
+        double v=0;
+        if(svc_config->get_float(mod_ctx,setting.handle,&v)!=MOD_OK||!std::isfinite(v))return false;
+        value=v;return true;
+    }
     case CONFIG_VAR_STRING: {
         size_t size=0;
         if (svc_config->get_string(mod_ctx, setting.handle, nullptr, 0, &size)!=MOD_OK ||
@@ -2041,10 +2046,15 @@ bool read_setting(const RegisteredSetting& setting, settings::Value& value) {
 bool setting_type_matches(const RegisteredSetting& setting, const settings::Value& value) {
     return (setting.type==CONFIG_VAR_BOOL && std::holds_alternative<bool>(value)) ||
         (setting.type==CONFIG_VAR_INT && std::holds_alternative<int64_t>(value)) ||
+        (setting.type==CONFIG_VAR_FLOAT && (std::holds_alternative<double>(value)||std::holds_alternative<int64_t>(value))) ||
         (setting.type==CONFIG_VAR_STRING && std::holds_alternative<std::string>(value));
 }
 
 bool write_setting(const RegisteredSetting& setting, const settings::Value& value) {
+    if(setting.type==CONFIG_VAR_FLOAT) {
+        const double v=std::holds_alternative<double>(value)?std::get<double>(value):double(std::get<int64_t>(value));
+        return std::isfinite(v)&&svc_config->set_float(mod_ctx,setting.handle,v)==MOD_OK;
+    }
     if (auto* v=std::get_if<bool>(&value)) return svc_config->set_bool(mod_ctx,setting.handle,*v)==MOD_OK;
     if (auto* v=std::get_if<int64_t>(&value)) return svc_config->set_int(mod_ctx,setting.handle,*v)==MOD_OK;
     return svc_config->set_string(mod_ctx,setting.handle,std::get<std::string>(value).c_str())==MOD_OK;

@@ -62,20 +62,25 @@ HookAction before_enemy_arrow(ModContext*, void* args, void* result, void*) {
     }
     return HOOK_CONTINUE;
 }
-bool s_spawningEndlessArrows=false;
-void spawn_endless_arrow_spread(void* args) {
-    if (s_spawningEndlessArrows || !s_run.endless || s_run.phase!=Phase::Running ||
+bool s_spawningEnemyArrows=false;
+void spawn_enemy_arrow_spread(void* args) {
+    if (s_spawningEnemyArrows || s_run.phase!=Phase::Running ||
         mods::arg<s16>(args,0)!=fpcNm_E_ARROW_e) return;
-    const auto* owner=enemy_child_root(mods::arg<ActorId>(args,1));
+    auto* owner=enemy_child_root(mods::arg<ActorId>(args,1));
     if (!owner || owner->retiring || owner->credited) return;
     auto* parent=actor_by_id(mods::arg<ActorId>(args,1));
     const auto profile=parent?fopAcM_GetName(parent):owner->profile;
     if (profile!=fpcNm_E_RD_e && profile!=fpcNm_E_RDY_e) return;
     const auto* source=mods::arg<const csXyz*>(args,5);
     if (!source) return;
-    struct SpreadScope { SpreadScope(){s_spawningEndlessArrows=true;} ~SpreadScope(){s_spawningEndlessArrows=false;} } scope;
+    // Count successful original shots only; recursive side arrows never count.
+    // Enemy slot lifetime owns the cadence, so replacement archers start fresh.
+    owner->arrowVolley=(owner->arrowVolley+1)%(owner->elite?2:3);
+    if(owner->elite) {if(owner->profile!=fpcNm_E_YC_e && owner->arrowVolley==0)return;}
+    else if (!s_run.endless && owner->arrowVolley!=0) return;
+    struct SpreadScope { SpreadScope(){s_spawningEnemyArrows=true;} ~SpreadScope(){s_spawningEnemyArrows=false;} } scope;
     // Same native +/-0x900 yaw fan as enemy_slow_motion/bulblin.cpp Hard Mode,
-    // for every Endless volley. Recursive child hooks retain ownership/capacity.
+    // every third normal shot and every Endless shot. Child hooks retain ownership/capacity.
     for (const s16 offset:{-0x900,0x900}) {
         csXyz angle=*source;angle.y=static_cast<s16>(angle.y+offset);
         fopAcM_createChild(mods::arg<s16>(args,0),mods::arg<ActorId>(args,1),mods::arg<u32>(args,2),
@@ -89,7 +94,7 @@ void after_enemy_arrow(ModContext*, void* args, void* result, void*) {
     for (auto& arrow:s_enemyArrows) if (arrow.id==kNone) {const auto* owner=enemy_child_root(mods::arg<ActorId>(args,1));
         arrow={id,false,owner->id,attached_enemy_child(mods::arg<s16>(args,0)),enemy_attack_factor(*owner)};
         s_enemyArrowIndex.add(id,std::size_t(&arrow-s_enemyArrows.data()));
-        spawn_endless_arrow_spread(args);return;}
+        spawn_enemy_arrow_spread(args);return;}
 }
 void retire_enemy_arrows() {
     for (auto& arrow:s_enemyArrows) if (arrow.id!=kNone) arrow.retiring=true;
@@ -103,7 +108,7 @@ void cleanup_enemy_arrows() {
         }
         auto* actor=actor_by_id(arrow.id);
         if (!actor && !fpcM_IsCreating(arrow.id)) {
-            s_enemyArrowIndex.erase(arrow.id); arrow={};
+            s_enemyArrowIndex.erase(arrow.id); s_bossTactics.erase(arrow.id); arrow={};
         }
         else if (actor && arrow.retiring) svc_actor->delete_actor(mod_ctx,arrow.id);
     }

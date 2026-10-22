@@ -1,4 +1,5 @@
 #include "survivors.hpp"
+#include "ganondorf_barrier.hpp"
 #include "config.hpp"
 #include "enemy_spawner.hpp"
 #include "heroes_shade_encounter.hpp"
@@ -999,7 +1000,7 @@ void spawn_hub_actors() {
         dComIfGs_onOneZoneSwitch(kDirectFinalBarrierOnSwitch, kBossRushReturnRoom);
         dComIfGs_offOneZoneSwitch(kDirectFinalBarrierOffSwitch, kBossRushReturnRoom);
         sHubBarrierId = create_actor(
-            fpcNm_OBJ_GB_e, 0xF0069600, &center, kBossRushReturnRoom, &barrierAngle, NULL, -1);
+            fpcNm_OBJ_GB_e, ganondorf_barrier_parameters, &center, kBossRushReturnRoom, &barrierAngle, NULL, -1);
         if (sHubBarrierId == fpcM_ERROR_PROCESS_ID_e) {
             return;
         }
@@ -1480,11 +1481,7 @@ void arm_ganondorf_barrier(obj_gb_class* barrier) {
     dComIfGs_offOneZoneSwitch(kDirectFinalBarrierOffSwitch, roomNo);
     barrier->mSw1 = kDirectFinalBarrierOnSwitch;
     barrier->mSw2 = kDirectFinalBarrierOffSwitch;
-    barrier->mIsFinalBattle = 0;
-    barrier->mBrkFrame = 29.0f;
-    barrier->mColorAlpha = 0xF0;
-    barrier->scale.x = 1.5f;
-    barrier->scale.y = 1.0f;
+    configure_ganondorf_barrier(barrier);
 }
 
 void create_direct_final_barrier_if_needed(b_gnd_class* ganondorf) {
@@ -1496,7 +1493,7 @@ void create_direct_final_barrier_if_needed(b_gnd_class* ganondorf) {
     cXyz barrierPos(0.0f, kBossRushHubY, 0.0f);
     csXyz barrierAngle(kDirectFinalBarrierAngleX, 0, 0);
     sDirectFinalBarrierId = create_actor(
-        fpcNm_OBJ_GB_e, 0xF0069600, &barrierPos, fopAcM_GetRoomNo(actor), &barrierAngle, NULL,
+        fpcNm_OBJ_GB_e, ganondorf_barrier_parameters, &barrierPos, fopAcM_GetRoomNo(actor), &barrierAngle, NULL,
         -1);
     dComIfGs_onOneZoneSwitch(kDirectFinalBarrierOnSwitch, fopAcM_GetRoomNo(actor));
     dComIfGs_offOneZoneSwitch(kDirectFinalBarrierOffSwitch, fopAcM_GetRoomNo(actor));

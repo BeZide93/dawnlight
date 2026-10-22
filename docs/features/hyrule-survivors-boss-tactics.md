@@ -45,9 +45,9 @@ and awakened guards use single-action versions of the ordinary elite combos.
 | Boss | Changes |
 |---|---|
 | Darknut | Melee readiness timer ×0.7, attack animation speed ×1.2, short unarmored lunge and two-attack sequence. Repeated sword throw retains its 3-second cooldown and uses bounded sampled lead. |
-| King Bulblin | Normal swing wind-up ×0.75. Spin preparation includes a short advance, then limited steering while spinning. Existing 6-second spin cooldown and 0.5-second accepted-hit interval remain. |
-| Death Sword | Distant chase switches to ranged after 2.5 seconds instead of 4. Two native orbs travel at 65 rather than 50 units/tick; first aims directly and second uses sampled lead. |
-| Stallord | Three fireballs separated by nine ticks (0.3 seconds), speed 125 rather than 100. Every third volley forms a wider fan; the others cover the sampled target and two nearby lanes. Aim from the actual mouth position toward Link, including height, before the first flight step. Fan angles use that direction rather than the animated head pose. The volley keeps its sampled target even if Link moves or the boss changes phase; projectiles do not home. Native breath tell and recovery remain. |
+| King Bulblin | Idle readiness and added recovery halved (12 ticks / 0.4 seconds). Normal swing wind-up ×0.75. Spin preparation includes a short advance, then limited steering while spinning. Existing 6-second spin cooldown and 0.5-second accepted-hit interval remain. |
+| Death Sword | Distant chase switches to ranged after 2.5 seconds instead of 4. Each native orb has an independent one-contact budget, reset only when its slot launches. Both travel at 65 rather than 50 units/tick; first aims directly and second uses sampled lead. |
+| Stallord | Three fireballs separated by nine ticks (0.3 seconds), speed 125 rather than 100. Every third volley forms a wider fan; the others cover the sampled target and two nearby lanes. Aim from the actual mouth position toward Link, including height, before the first flight step. Fan angles use that direction rather than the animated head pose. The volley keeps its sampled target even if Link moves or the boss changes phase; projectiles do not home. Each B/C fireball has its own one-contact budget and a 240-unit collision radius matching the native fully charged size. Native breath tell and recovery remain. |
 | Twilit Bloat | Two electric charges, with a 0.7-second lateral reposition before the second native wind-up and 1.5-second recovery after the pair. Terrain line checks constrain lateral movement. |
 | Twilit Carrier | Rider fan precedes a warned, straight talon pass. Rider arrows stop during the pass; braking and catch poses provide its tell. The carrier commits to a sampled line and returns to flight afterward. Waiting for the rider is bounded to three seconds if an arrow cannot spawn. |
 | Phantom Zant | Repeating projectile / projectile / summon sequence. Alternating narrow/wide five-shot fans with projectile speed ×1.3. Summon casts allow up to six Shadow Keese or three Shadow Beasts, with at most six of this boss's summoned enemies alive. |
@@ -59,14 +59,14 @@ and awakened guards use single-action versions of the ordinary elite combos.
 
 | Boss | Changes |
 |---|---|
-| Lizalfos | Short forward hop/step during attack startup; alternating sequences can add a tail follow-up. At most two attacks per sequence. |
+| Lizalfos | Scaled melee spacing constrains the complete approach/attack step (250/190 units times scale); checked overlap retreat. Short forward hop/step during attack startup; alternating sequences can add a tail follow-up. At most two attacks per sequence. |
 | Helmasaur | Two committed straight charges, re-aiming between them, followed by recovery. Wall impact keeps a readable recovery rather than immediately retrying. |
 | Dynalfos | Blade/tail follow-up, attack animation speed ×1.2, bounded late turning. The native recursive tail/knife continuation is disabled. |
 | Bow Bulblin | Alternating fan and two quick individual arrows, with projectile speed ×1.15. Each fan/pair shares an attack budget. Ordinary archers retain their single/single/triple normal-run cadence and existing Endless volleys. |
 | Bokoblin | Faster gap closing at medium range, two swings, then 0.8-second recovery. Stationary guards get a smaller approach step and no forced second swing. |
 | Kargarok | Two warned dives, repositioning toward a different side between them. Attack entry no longer requires the narrow native 300–400-unit distance window. The damaging pass follows a committed line; recovery follows the pair. |
 | Stalhound | Sampled pounce direction and an alternating short second pounce; recovery after the sequence. Native alignment follows Link until the pounce tell starts (attack phase 2). Only then is aim locked, and general facing stops overriding it. |
-| Stalfos | Doubled model/weapon size, matching body/weapon radii and approach spacing. Readiness runs at 4× native rate (previously 2×); added recovery is 12 ticks / 0.4 seconds (previously 24 / 0.8). Native attack animations alternate, with a forward step and 25% shorter late wind-up. The native exact-frame jump cue is preserved. |
+| Stalfos | Doubled model/weapon size, matching body/weapon radii and approach spacing. Readiness runs at 4× native rate (previously 2×); added recovery is 12 ticks / 0.4 seconds (previously 24 / 0.8). Native attack animations alternate, with advances constrained to 250 units times scale and 25% shorter late wind-up. The native exact-frame jump cue is preserved. |
 | Shadow Beast | Short advance into a two-arm sequence, with the second attack selecting the other native animation and limited late turning. |
 
 ## Melee accuracy follow-up

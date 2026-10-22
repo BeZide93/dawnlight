@@ -18,7 +18,7 @@ fixture = r'''
 #include <vector>
 #include "survivors_enemy_hits.hpp"
 using namespace dawnlight::survivors;
-using ActorId=int;using s16=short;using ProfileName=int;
+using ActorId=int;using s16=short;using u32=unsigned;using ProfileName=int;
 constexpr int kNone=-1;enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};struct ModContext{};
 namespace mods{template<class T>T arg(void* p,unsigned n){return std::any_cast<T>(static_cast<std::any*>(p)[n]);}}
 using process_method_func=int;struct process_method_class{int execute_method=1,delete_method=2;};
@@ -30,9 +30,9 @@ struct cCcD_Obj {fopAc_ac_c* actor=nullptr;cCcD_Obj* hit=nullptr;unsigned power=
 struct fopAc_ac_c {int id=0,profile=0;void* sub_method=&methods;
  int mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
  field_0x672=0,field_0x676=0,field_0x678=0,mActionPhase=0,mActionMode1=0,mActionMode2=0,
- mMoveMode=0,mSubAction=0,field_0x68c=0,mTimers[4]{};
+ mMoveMode=0,mSubAction=0,field_0x68c=0,mTimers[4]{},field_0x1228[2]{};
  cCcD_Obj mMagicSphs[2],field_0xe64,mAtSph,mBallSphAt;
- static constexpr int ACTION_OPACI_ATTACK_e=16,ACTION_OPACI_FLY_e=12,ACT_B2_F_MOVE=2,ACT_ATTACK=4,ACTION_ATTACK_e=3;
+ static constexpr int TYPE_BULLET_B=3,TYPE_BULLET_C=4,ACTION_OPACI_ATTACK_e=16,ACTION_OPACI_FLY_e=12,ACT_B2_F_MOVE=2,ACT_ATTACK=4,ACTION_ATTACK_e=3;
 };
 int fopAcM_GetID(fopAc_ac_c* a){return a->id;}
 int fopAcM_GetName(fopAc_ac_c* a){return a->profile;}
@@ -88,7 +88,7 @@ void reset(int profile){
  arena=playing=nativeAccept=true;s_run.phase=Phase::Running;s_run.ticks=0;damage=nativeContacts=0;
 }
 void spawn(int id,int profile,int parent=10){
- children[id]=10;std::any args[]={s16(profile),parent};
+ children[id]=10;std::any args[]={s16(profile),parent,u32(fopAc_ac_c::TYPE_BULLET_C)};
  after_enemy_attack_spawn(nullptr,args,&id,nullptr);
 }
 int main(){
@@ -186,18 +186,38 @@ int main(){
  reset(fpcNm_E_HZELDA_e);boss.mAction=2;
  assert(contact(weapon,target));for(int mode=1;mode<=3;++mode){boss.mMode=mode;assert(!contact(weapon,target));}
  boss.mAction=0;observe();boss.mAction=2;observe();assert(contact(weapon,target));
- // Death Sword keeps both inline magic colliders on the original cast,
- // including if his next sword attack starts before an orb disappears.
+ // Death Sword: each real slot launch gets one use. Melee/new casting phases
+ // cannot replenish an old projectile, and launching slot 1 cannot reset slot 0.
  reset(fpcNm_E_VT_e);boss.mAction=12;boss.mMode=10;observe();
  for(auto& orb:boss.mMagicSphs)orb.actor=&boss;
- assert(contact(boss.mMagicSphs[0],target));assert(!contact(boss.mMagicSphs[1],target));
+ std::any magicArgs[]={static_cast<daE_VA_c*>(&boss)};
+ auto launch=[&](int slot){boss.field_0x1228[slot]=1;
+  after_death_sword_magic_launch(nullptr,magicArgs,nullptr,nullptr);
+  boss.field_0x1228[slot]=2;}; // Native calcMagicMove consumes state 1.
+ launch(0);assert(contact(boss.mMagicSphs[0],target));
+ launch(1);assert(!contact(boss.mMagicSphs[0],secondTarget));
+ nativeAccept=false;assert(contact(boss.mMagicSphs[1],target));nativeAccept=true;
+ assert(contact(boss.mMagicSphs[1],target)&&!contact(boss.mMagicSphs[1],secondTarget));
  boss.mAction=15;observe();boss.mAction=16;boss.mMode=0;observe();
  assert(contact(weapon,target)&&!contact(boss.mMagicSphs[1],target));
- boss.mAction=12;boss.mMode=10;observe();assert(contact(boss.mMagicSphs[1],target));
- assert(!contact(boss.mMagicSphs[0],target));
+ boss.mAction=12;boss.mMode=10;observe();
+ assert(!contact(boss.mMagicSphs[0],target)&&!contact(boss.mMagicSphs[1],target));
+ launch(0);assert(contact(boss.mMagicSphs[0],target)&&!contact(boss.mMagicSphs[1],target));
+ launch(1);assert(contact(boss.mMagicSphs[1],target));
+ // Excluded launches cannot refresh a spent budget.
+ for(int gate=0;gate<4;++gate){boss.field_0x1228[0]=1;
+  if(gate==0)arena=false;
+  if(gate==1)playing=false;
+  if(gate==2)enemies[0].retiring=true;
+  if(gate==3)s_run.phase=Phase::Ready;
+  auto old=s_enemyHitSources[10].deathSwordOrbs[0];
+  after_death_sword_magic_launch(nullptr,magicArgs,nullptr,nullptr);
+  assert(s_enemyHitSources[10].deathSwordOrbs[0]==old);
+  arena=playing=true;enemies[0].retiring=false;s_run.phase=Phase::Running;
+ }
  // Multi-projectile casts share their original use, even after another cast
  // starts or the root disappears. Nested Phantom portals retain that use.
- for(int profile:{fpcNm_B_DS_e,fpcNm_E_PZ_e}){
+ for(int profile:{fpcNm_E_PZ_e}){
   reset(profile);boss.mAction=profile==fpcNm_E_VT_e?12:2;boss.mActionMode=3;boss.mMode=11;
   projectileA={};projectileA.id=20;projectileB={};projectileB.id=21;actors[20]=&projectileA;actors[21]=&projectileB;
   const int childProfile=profile==fpcNm_B_DS_e?fpcNm_B_DS_e:fpcNm_E_PZ_e;
@@ -208,6 +228,21 @@ int main(){
   assert(!contact(second,target));
   assert(contact(weapon,target)); // new cast is allowed
   enemies[0].id=-1;actors.erase(10);assert(!contact(first,target));
+ }
+ // Stallord B/C fireballs are independent, retain their spent state after
+ // later casts/parent deletion, and reject repeat contacts on Link's cylinders.
+ for(unsigned type:{3u,4u}) {
+  reset(fpcNm_B_DS_e);boss.mAction=2;boss.mMode=11;observe();
+  projectileA={};projectileA.id=20;projectileB={};projectileB.id=21;
+  actors[20]=&projectileA;actors[21]=&projectileB;
+  for(int id:{20,21}){children[id]=10;std::any args[]={s16(fpcNm_B_DS_e),10,type};
+   after_enemy_attack_spawn(nullptr,args,&id,nullptr);}
+  cCcD_Obj first{&projectileA},second{&projectileB};
+  assert(contact(first,target)&&!contact(first,secondTarget));
+  nativeAccept=false;assert(contact(second,target));nativeAccept=true;
+  boss.mAction=0;observe();boss.mAction=2;observe();
+  assert(contact(second,target)&&!contact(second,secondTarget));
+  enemies[0].id=-1;actors.erase(10);assert(!contact(first,target)&&!contact(second,target));
  }
  // Five ghost riders are one summon, independent of Ganondorf's sword.
  reset(fpcNm_B_GND_e);boss.mActionMode=11;boss.mMoveMode=10;enemies[0].summonCooldown=0;

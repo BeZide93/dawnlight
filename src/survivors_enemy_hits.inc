@@ -3,6 +3,7 @@
 struct EnemyHitSource {
     EnemyAttackCycle cycle;
     EnemyAttackUsePtr projectile, thrownSword, riders, magic, spin;
+    EnemyAttackUsePtr deathSwordOrbs[2];
     unsigned throwCooldown = 0;
     bool summoning = false;
 };
@@ -151,8 +152,17 @@ void observe_enemy_attack(Enemy& enemy, fopAc_ac_c* actor) {
     default:break;
     }
     source.cycle.observe(key,action,mode);
-    if(enemy.profile==fpcNm_E_VT_e&&action==daE_VA_c::ACTION_OPACI_FLY_e)
-        source.magic=source.cycle.current();
+}
+// action() arms a specific slot before calcMagicMove consumes state 1. Reset
+// that projectile only, even if the other orb outlives the casting animation.
+void after_death_sword_magic_launch(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daE_VA_c*>(args,0);
+    auto* owner=actor?tracked(fopAcM_GetID(actor)):nullptr;
+    if(!owner||owner->profile!=fpcNm_E_VT_e||!limited_enemy_attacks(owner)||
+       !owner->initialized||owner->retiring||owner->credited||!in_arena()||
+       s_run.phase!=Phase::Running||!playable())return;
+    for(unsigned i=0;i<2;++i)if(actor->field_0x1228[i]==1)
+        s_enemyHitSources[owner->id].deathSwordOrbs[i]=new_enemy_attack_use();
 }
 EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
     auto* actor=attack?attack->GetAc():nullptr;if(!actor)return {};
@@ -189,9 +199,9 @@ EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
     }
     if(owner->profile==fpcNm_E_VT_e) {
         auto* sword=reinterpret_cast<daE_VA_c*>(root);
-        if(attack==&sword->mMagicSphs[0]||attack==&sword->mMagicSphs[1]) {
-            if(!source.magic)source.magic=new_enemy_attack_use();
-            return source.magic;
+        for(unsigned i=0;i<2;++i)if(attack==&sword->mMagicSphs[i]) {
+            if(!source.deathSwordOrbs[i])source.deathSwordOrbs[i]=new_enemy_attack_use();
+            return source.deathSwordOrbs[i];
         }
     }
     if(owner->profile==fpcNm_B_TN_e&&attack==&owner->extraAttack) {
@@ -209,7 +219,10 @@ void after_enemy_attack_spawn(ModContext*,void* args,void* result,void*) {
     if(structural_enemy_child(profile))return; // Shell/ball follow the owner's current attack.
     if(auto* actor=actor_by_id(owner->id))observe_enemy_attack(*owner,actor);
     EnemyAttackUsePtr use;
-    if(profile==fpcNm_E_ARROW_e)use=new_enemy_attack_use(); // Each native bow shot is a new attack.
+    const bool headBullet=profile==fpcNm_B_DS_e&&
+        ((mods::arg<u32>(args,2)&0xff)==daB_DS_c::TYPE_BULLET_B||
+         (mods::arg<u32>(args,2)&0xff)==daB_DS_c::TYPE_BULLET_C);
+    if(profile==fpcNm_E_ARROW_e||headBullet)use=new_enemy_attack_use();
     else if(profile==fpcNm_E_FK_e) {
         auto& source=s_enemyHitSources[owner->id];
         if(!source.summoning){source.riders=new_enemy_attack_use();source.summoning=true;}

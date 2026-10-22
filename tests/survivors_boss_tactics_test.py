@@ -59,8 +59,8 @@ struct Native:fopAc_ac_c{
  cXyz mPositions[16],mPositionsCopy[16],mMagicPos[2],mMagicSpeed[2],field_0x8dc[16],mTrianglePos,mMouthPos;
  struct{cXyz m_pos[50],field_0x320[50];}field_0x65c;
  struct{cXyz m_pos[20],field_0x140[20],field_0x230[20];}field_0xdec,field_0x11d8;
- cCcD_Obj mMagicSphs[2],mAtSph;Morph morph;Morph* mpModelMorf1=&morph;Morph* mpModelMorf2=&morph;Morph* mpMorf=&morph;
- Acch mAcch,objacch;
+ cCcD_Obj mMagicSphs[2],mAtSph,mBreathAtSph;Morph morph;Morph* mpModelMorf1=&morph;Morph* mpModelMorf2=&morph;Morph* mpMorf=&morph;
+ Acch mAcch,objacch,mBgc;
  enum{ACTION_OPACI_CHASE_e=15,ACTION_WAIT_e=2,ACT_F_FLY=10,ACT_ATTACK=11,ACT_B2_WAIT=1,TYPE_BULLET_B=2,TYPE_BULLET_C=3,ANM_FLY_BRAKE=7,ANM_CATCH_START=6,ANM_FLY=9};
  void setActionMode(int a,int m){mAction=mActionMode=mActionMode1=a;mMode=mMoveMode=mOcState=mActionMode2=m;}
  void setBck(int,int,float,float){}
@@ -97,7 +97,12 @@ Enemy* encounter_owner(fopAc_ac_c* a){return tracked(a->id);}
 bool structural_enemy_child(s16 p){return p==fpcNm_E_TH_BALL_e;}
 bool s_spawningEnemyArrows=false;
 unsigned spawns=0;std::vector<unsigned> spawnTicks;ActorId nextSpawnId=kNone;
-ActorId fopAcM_createChild(int,ActorId,u32,const cXyz*,int,const csXyz*,const cXyz*,int,void*){++spawns;spawnTicks.push_back(s_run.ticks);return nextSpawnId;}
+void dispatch_child_spawn(void*,ActorId*);
+ActorId fopAcM_createChild(int profile,ActorId parent,u32 params,const cXyz* pos,int room,const csXyz* angle,const cXyz*,int,void*){
+ ++spawns;spawnTicks.push_back(s_run.ticks);ActorId id=nextSpawnId;
+ if(id!=kNone){std::any args[]={s16(profile),parent,params,pos,room,angle};dispatch_child_spawn(args,&id);}
+ return id;
+}
 void summon_ghost_riders(Native*,const Enemy&){}
 std::string animationArchive;int animationResource=0;
 void encounter_animation(Morph* m,const char* archive,int resource,int){m->frame=0;animationArchive=archive;animationResource=resource;}
@@ -110,7 +115,7 @@ void after_enemy_arrow(ModContext*,void* args,void* result,void*){
 void after_enemy_attack_spawn(ModContext*,void* args,void* result,void*){
  const ActorId id=*static_cast<ActorId*>(result);if(!active_enemy_arrow(id))return;
  auto& cycle=s_enemyHitSources[mods::arg<ActorId>(args,1)].cycle;cycle.observe(1,1,1);
- s_enemyHitSources[id].projectile=cycle.current();
+ s_enemyHitSources[id].projectile=mods::arg<s16>(args,0)==fpcNm_B_DS_e?new_enemy_attack_use():cycle.current();
 }
 '''
 source='HookAction before_dynalfos_path(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}\nvoid clear_zelda_light_orbs(ActorId){}\n'+source
@@ -229,6 +234,23 @@ int main(){
   std::any args[]={static_cast<dBgS_Acch*>(&liz.objacch)};
   before_boss_path(nullptr,args,nullptr,nullptr);assert(liz.current.pos.z==(gate==8?-900:-50));
  }
+ // Stalfos' director lunge and native residual movement stop at melee range.
+ for(int action:{4,5})for(float scale:{1.f,2.f}) {
+  reset();Native skeleton;auto& sf=own(skeleton,fpcNm_E_SF_e);skeleton.mBgc.actor=&skeleton;
+  skeleton.scale={scale,scale,scale};skeleton.mAction=action;skeleton.mActionPhase=1;
+  s_bossTactics[sf.id].attacking=true; // Both ongoing native attacks, past entry selection.
+  skeleton.current.pos={0,0,-260*scale};std::any args[]={static_cast<dBgS_Acch*>(&skeleton.mBgc)};
+  for(int tick=0;tick<8;++tick){
+   before_boss_tactics(sf,&skeleton);skeleton.current.pos.z+=30;skeleton.current.pos.y=25;
+   before_boss_path(nullptr,args,nullptr,nullptr);
+   assert(skeleton.current.pos.z<=-250*scale+.01f&&skeleton.current.pos.y==25&&skeleton.mAction==action);
+  }
+  // An existing close overlap is never pushed further inward during a swing.
+  skeleton.current.pos={0,0,-100};before_boss_tactics(sf,&skeleton);skeleton.current.pos.z=100;
+  before_boss_path(nullptr,args,nullptr,nullptr);assert(skeleton.current.pos.z==-100);
+  skeleton.mAction=7;skeleton.current.pos.z=0;before_boss_path(nullptr,args,nullptr,nullptr);
+  assert(skeleton.current.pos.z==0); // guard is not constrained
+ }
  // Stalhound samples at the native alignment -> tell boundary, not entry.
  {reset();Native hound;auto& sh=own(hound,fpcNm_E_SH_e);hound.field_0x676=3;hound.field_0x678=1;
  player.current.pos=player.old.pos={0,0,500};before_boss_tactics(sh,&hound);
@@ -297,7 +319,8 @@ int main(){
   std::any fireArgs[]={s16(fpcNm_B_DS_e),owner.id,u32(type),&origin,0,&wrongPose};
   dispatch_child_spawn(fireArgs,&originalId);
   assert(volleyState.queuedShots==2 && volleyState.sequence==unsigned(volley));
-  assert((s_bossTactics[10].target-aim).abs()==0 && volleyState.volley);
+  assert((s_bossTactics[10].target-aim).abs()==0 && s_enemyHitSources[10].projectile);
+  auto previousUse=s_enemyHitSources[10].projectile;
   player.current.pos={5000,2000,-5000}; // Committed projectiles do not home.
   volleyState.target=player.current.pos; // Other boss phases may update their own target.
   for(int lane=0;lane<3;++lane) {
@@ -309,6 +332,11 @@ int main(){
     s_enemyArrows[lane]={bullet.id,owner.id,false,false};
     nextSpawnId=bullet.id;volleyState.shotDelay=0;boss_queue_shots(owner,&skull);
    }
+   if(lane) {
+    assert(s_enemyHitSources[bullet.id].projectile!=previousUse);
+    assert(!s_enemyHitSources[bullet.id].projectile->contacted);
+   }
+   previousUse=s_enemyHitSources[bullet.id].projectile;previousUse->contacted=true;
    auto& flight=s_bossTactics[bullet.id];
    update_boss_projectile(&bullet,false);
    assert(flight.projectileReady && bullet.speedF==125);
@@ -356,6 +384,22 @@ int main(){
  // Projectile speed applied once, never to native non-projectile actors.
  reset();Native shooter,arrow;arrow.id=10;arrow.profile=fpcNm_E_ARROW_e;auto& sh=own(shooter,fpcNm_E_RD_e);(void)sh;
  s_enemyArrows[0]={10,shooter.id,false,false};arrow.speedF=100;update_boss_projectile(&arrow,true);update_boss_projectile(&arrow,true);assert(std::abs(arrow.speedF-115)<.01f);
+ // Stallord uses the native fully charged radius on every B/C registration,
+ // without expanding other colliders, type A breath, or unowned projectiles.
+ for(int type:{Native::TYPE_BULLET_B,Native::TYPE_BULLET_C}) {
+  reset();Native skull,bullet;auto& owner=own(skull,fpcNm_B_DS_e);
+  bullet.id=10;bullet.profile=fpcNm_B_DS_e;bullet.arg0=type;bullet.mBreathAtSph.actor=&bullet;
+  s_enemyArrows[0]={10,owner.id,false,false};bullet.mBreathAtSph.center={20,30,40};
+  std::any args[]={nullptr,static_cast<cCcD_Obj*>(&bullet.mBreathAtSph)};
+  for(int tick=0;tick<4;++tick){bullet.mBreathAtSph.radius=80;
+   before_boss_ball_collision(nullptr,args,nullptr,nullptr);
+   assert(bullet.mBreathAtSph.radius==240&&bullet.mBreathAtSph.center.x==20);
+  }
+  bullet.arg0=1;bullet.mBreathAtSph.radius=80;before_boss_ball_collision(nullptr,args,nullptr,nullptr);
+  assert(bullet.mBreathAtSph.radius==80);
+  bullet.arg0=type;s_enemyArrows={};before_boss_ball_collision(nullptr,args,nullptr,nullptr);
+  assert(bullet.mBreathAtSph.radius==80);
+ }
  // Darkhammer's registered attack sphere follows the spinning ball, including
  // native startup's hidden sphere. Other states/colliders and vanilla stay native.
  {reset();Native hammer,ball;auto& hammerOwner=own(hammer,fpcNm_E_TH_e);

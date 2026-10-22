@@ -219,6 +219,7 @@ void before_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
             }
         }
     }
+    if(e.profile==fpcNm_E_SF_e&&!e.stagger&&actor->health>0)t.origin=actor->current.pos;
     boss_mobile_patterns(e,actor);
     const bool entry=view.active&&!t.attacking;
     if(entry) {
@@ -340,7 +341,6 @@ void after_boss_child_spawn(ModContext*,void* args,void* result,void*) {
         t.shotParams=mods::arg<u32>(args,2);
         t.shotAngle=shot.shotAngle=boss_fireball_angle(t.shotPosition,t.shotTarget);
         if(t.sequence%3==0) {shot.shotAngle.y-=0x1000;shot.targetLocked=false;}
-        t.volley=s_enemyHitSources[owner->id].cycle.current();
     } else if(owner->profile==fpcNm_E_RD_e && owner->arrowVolley%2==0) {
         t.queuedShots=1;t.shotDelay=9;t.shotIndex=0;
         t.shotPosition=*mods::arg<const cXyz*>(args,3);t.shotParams=mods::arg<u32>(args,2);
@@ -367,7 +367,7 @@ void boss_queue_shots(Enemy& e,fopAc_ac_c* actor) {
                                    -cM_ssin(centerYaw)*(t.shotIndex==1?-180.f:180.f));
         child.targetLocked=t.sequence%3!=0;
     }
-    if(id!=kNone && t.volley)s_enemyHitSources[id].projectile=t.volley;
+    if(id!=kNone&&!head&&t.volley)s_enemyHitSources[id].projectile=t.volley;
 }
 void update_boss_projectile(fopAc_ac_c* actor,bool after) {
     auto* owner=enemy_child_root(fopAcM_GetID(actor));
@@ -422,9 +422,19 @@ HookAction before_boss_ball_collision(ModContext*,void* args,void*,void*) {
     auto* object=mods::arg<cCcD_Obj*>(args,1);
     if(!object||!in_arena()||!playable()||s_run.phase!=Phase::Running)return HOOK_CONTINUE;
     auto* actor=object->GetAc();
-    if(!actor||fopAcM_GetName(actor)!=fpcNm_E_TH_BALL_e||!active_enemy_arrow(fopAcM_GetID(actor)))return HOOK_CONTINUE;
+    if(!actor||!active_enemy_arrow(fopAcM_GetID(actor)))return HOOK_CONTINUE;
     auto* owner=enemy_child_root(fopAcM_GetID(actor));
-    if(!owner||owner->profile!=fpcNm_E_TH_e||!boss_tactics_owned(*owner))return HOOK_CONTINUE;
+    if(!owner||!boss_tactics_owned(*owner))return HOOK_CONTINUE;
+    if(fopAcM_GetName(actor)==fpcNm_B_DS_e&&owner->profile==fpcNm_B_DS_e) {
+        auto* bullet=static_cast<daB_DS_c*>(actor);
+        // Without the spinner-path charge, native B/C bullets stay at radius
+        // 80 despite their full-size flame effect. Use the native charged
+        // radius at registration, after executeBullet rewrites the sphere.
+        if((bullet->arg0==daB_DS_c::TYPE_BULLET_B||bullet->arg0==daB_DS_c::TYPE_BULLET_C)&&
+           object==&bullet->mBreathAtSph)bullet->mBreathAtSph.SetR(240.f);
+        return HOOK_CONTINUE;
+    }
+    if(fopAcM_GetName(actor)!=fpcNm_E_TH_BALL_e||owner->profile!=fpcNm_E_TH_e)return HOOK_CONTINUE;
     auto* ball=static_cast<e_th_ball_class*>(actor);
     // Native startup hides this attack sphere 12,000 units away. While the
     // ball circles its owner, register it at the actual ball position instead.
@@ -660,17 +670,25 @@ HookAction before_boss_path(ModContext*,void* args,void*,void*) {
         if(acch==&beast->mAcch)limit_shadow_beast_approach(beast,t.origin);
         return HOOK_CONTINUE;
     }
-    if(e->profile==fpcNm_E_DN_e) {
-        auto* lizalfos=reinterpret_cast<e_dn_class*>(actor);
+    if(e->profile==fpcNm_E_DN_e||e->profile==fpcNm_E_SF_e) {
+        float meleeRadius;
+        if(e->profile==fpcNm_E_DN_e) {
+            auto* lizalfos=reinterpret_cast<e_dn_class*>(actor);
+            if(acch!=&lizalfos->objacch||lizalfos->action<3||lizalfos->action>6)return HOOK_CONTINUE;
+            meleeRadius=lizalfos->action==3?250.f:190.f;
+        } else {
+            auto* stalfos=reinterpret_cast<e_sf_class*>(actor);
+            if(acch!=&stalfos->mBgc||(stalfos->mAction!=4&&stalfos->mAction!=5))return HOOK_CONTINUE;
+            meleeRadius=250.f;
+        }
         auto* link=daAlink_getAlinkActorClass();
-        if(!link||acch!=&lizalfos->objacch||lizalfos->action<3||lizalfos->action>6||
-           std::abs(link->current.pos.y-t.origin.y)>180.f)return HOOK_CONTINUE;
+        if(!link||std::abs(link->current.pos.y-t.origin.y)>180.f)return HOOK_CONTINUE;
         // Limit the complete native + director + movement-bonus segment at its
         // first entry into melee spacing, including a step that crosses Link.
         // Leave vertical motion and native weapon/tail hit windows untouched.
         cXyz offset=t.origin-link->current.pos,step=actor->current.pos-t.origin;
         offset.y=step.y=0;
-        const float radius=(lizalfos->action==3?250.f:190.f)*std::max(1.f,actor->scale.x);
+        const float radius=meleeRadius*std::max(1.f,actor->scale.x);
         const float length2=step.x*step.x+step.z*step.z;
         const float outside=offset.x*offset.x+offset.z*offset.z-radius*radius;
         const float along=offset.x*step.x+offset.z*step.z;

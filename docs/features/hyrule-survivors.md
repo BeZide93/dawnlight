@@ -1418,9 +1418,10 @@ contact once. New attack uses and different attackers remain independent; there
 is no global player immunity window. Damage amounts and cooldowns are unchanged.
 
 Darknut's repeated heavy-sword throw has a separate budget from his simultaneous
-melee attack and renews for each 3-second throw. Death Sword's two magic orbs
-share their cast even if his next melee action begins. Stallord/Phantom Zant
-projectiles and nested portals retain their original cast, and Ganondorf's five
+melee attack and renews for each 3-second throw. Each Death Sword orb and each
+Stallord B/C fireball has its own one-contact budget. Orb slots reset only when
+the native action arms that slot; melee/cast transitions do not refresh a flying
+orb. Phantom Zant projectiles and nested portals retain their original cast, and Ganondorf's five
 ghost riders share one summon. Carrier claw strikes and its rider's individual
 bow shots remain independent. Helmasaur armor follows each dash; Darkhammer's
 ball shares one outbound/return throw, separate from his sustained spin.
@@ -1769,3 +1770,28 @@ motion, sword/tail collision windows, guards and gap jumps retain native behavio
 Regression fixtures cover scaled movement, crossings, retreat/path failure,
 excluded states and King Bulblin's wait/recovery boundaries. On-device melee
 reach and pacing still need a playtest.
+
+
+### Stalfos advances and independent boss projectiles (PR #148)
+
+Stalfos attack advances stop at 250 units times model scale (500 for the doubled
+boss), after native motion and movement bonuses, before ground/wall correction.
+The complete segment is constrained, including crossing steps; existing close
+positions cannot advance further inward. Preserve both sword animations, native
+vertical motion, hit windows, chase and shield behavior.
+
+Death Sword's two inline orb slots now receive separate one-contact budgets at
+the existing action post hook, when state 1 arms that particular slot. Merely
+starting another cast or melee action does not refresh a still-flying orb.
+Stallord's original and queued B/C fireballs each receive a new budget at child
+creation; delayed shots no longer inherit the volley budget. Repeat overlaps
+with the same projectile remain suppressed, including across Link's colliders.
+Normal damage/invulnerability and the shared 15-tick boss contact spacing remain.
+
+Stallord B/C projectile collision uses radius 240, the native fully charged
+radius, at collider registration. Native flight outside the spinner path stays
+at radius 80 while rendering the large flame effect at scale 5; the correction
+also applies on the first tracked frame and cannot compound. Keep its center,
+damage, fixed trajectory and terrain handling. Type A breath, other colliders
+and story actors retain native collision. Exact particle-edge agreement and
+practical dodging still require visual validation on device.

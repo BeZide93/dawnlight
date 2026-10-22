@@ -104,7 +104,8 @@ void observe_enemy_attack(Enemy& enemy, fopAc_ac_c* actor) {
     }
     case fpcNm_E_TH_e: {
         auto* e=reinterpret_cast<e_th_class*>(actor);action=e->mAction;mode=e->mMode;
-        // One sustained spin, then one throw including its return journey.
+        // Body contacts share a spin use; the rotating ball has its own cadence.
+        // One throw includes its return journey.
         if (action==1||action==2) key=1;
         if (action==3||action==4) key=2;
         break;
@@ -161,16 +162,22 @@ EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
     if(!root)return {};
     observe_enemy_attack(*owner,root);
     auto& source=s_enemyHitSources[owner->id];
+    bool repeatingSpin=false;
     if(owner->profile==fpcNm_E_RDB_e) {
         auto* king=reinterpret_cast<e_rdb_class*>(root);
-        // One accepted axe contact per half-second of playable run time.
-        // The timestamp is committed after native acceptance, not on overlap.
-        if(king->mAction==4 && king->mMode==2 && attack==&king->field_0xe64) {
-            if(!source.spin || (source.spin->contacted &&
-               s_run.ticks-source.spin->contactTick>=ticks_per_second/2))
-                source.spin=new_enemy_attack_use();
-            return source.spin;
-        }
+        repeatingSpin=king->mAction==4 && king->mMode==2 && attack==&king->field_0xe64;
+    } else if(owner->profile==fpcNm_E_TH_e && id!=owner->id &&
+              fopAcM_GetName(actor)==fpcNm_E_TH_BALL_e) {
+        auto* ball=reinterpret_cast<e_th_ball_class*>(actor);
+        repeatingSpin=ball->mAction==1 && ball->mMode>=1 && ball->mMode<=3 && attack==&ball->mAtSph;
+    }
+    // One accepted spin contact per half-second of playable run time, per
+    // owner and shared across Link's colliders. Re-entry cannot reset the clock.
+    if(repeatingSpin) {
+        if(!source.spin || (source.spin->contacted &&
+           s_run.ticks-source.spin->contactTick>=ticks_per_second/2))
+            source.spin=new_enemy_attack_use();
+        return source.spin;
     }
     if(owner->profile==fpcNm_E_VT_e) {
         auto* sword=reinterpret_cast<daE_VA_c*>(root);

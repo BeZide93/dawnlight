@@ -1,5 +1,6 @@
     PRE(RosterTargets,before_roster_targets);
     PRE(RosterTargets,before_elite_attack_scale);
+    PRE(RosterTargets,before_boss_ball_collision);
     PRE(SurvivorsProcess,before_elite_scale_scope); POST(SurvivorsProcess,after_elite_scale_scope);
     POST(SurvivorsEliteDistance,after_elite_melee_distance);
     PRE(SurvivorsEnemySpeed,before_elite_attack_motion);

@@ -31,10 +31,11 @@ struct fopAc_ac_c {int id=0,profile=0;void* sub_method=&methods;
  int mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
  field_0x672=0,field_0x676=0,field_0x678=0,mActionPhase=0,mActionMode1=0,mActionMode2=0,
  mMoveMode=0,mSubAction=0,field_0x68c=0;
- cCcD_Obj mMagicSphs[2],field_0xe64;
+ cCcD_Obj mMagicSphs[2],field_0xe64,mAtSph;
  static constexpr int ACTION_OPACI_ATTACK_e=16,ACTION_OPACI_FLY_e=12,ACT_B2_F_MOVE=2,ACT_ATTACK=4,ACTION_ATTACK_e=3;
 };
 int fopAcM_GetID(fopAc_ac_c* a){return a->id;}
+int fopAcM_GetName(fopAc_ac_c* a){return a->profile;}
 bool is_actor_process(void*){return true;}
 struct Enemy{int id=-1,profile=0;bool elite=true,initialized=true,retiring=false,credited=false;
  unsigned specialCooldown=0,summonCooldown=240,encounterTick=0;cCcD_Obj extraAttack;} enemies[4];
@@ -140,6 +141,41 @@ int main(){
  projectileA.id=20;actors[20]=&projectileA;spawn(20,fpcNm_E_TH_BALL_e);shell.actor=&projectileA;
  assert(contact(shell,target));boss.mAction=3;boss.mMode=0;observe();assert(contact(shell,target));
  boss.mAction=4;observe();assert(!contact(shell,target));boss.mMode=2;observe();assert(!contact(shell,target));
+ // Darkhammer: only the rotating ball's attack sphere repeats, every 15
+ // playable ticks. Collision probes and rejected contacts never spend a hit.
+ reset(fpcNm_E_TH_e);boss.mAction=2;boss.mMode=3;
+ projectileA={};projectileA.id=20;projectileA.profile=fpcNm_E_TH_BALL_e;
+ projectileA.mAction=1;projectileA.mMode=1;projectileA.mAtSph.actor=&projectileA;
+ actors[20]=&projectileA;spawn(20,fpcNm_E_TH_BALL_e);
+ auto& ballAttack=projectileA.mAtSph;
+ for(unsigned tick=0;tick<=60;++tick){
+  s_run.ticks=tick;
+  assert(contact(ballAttack,target)==(tick%15==0));
+  assert(!contact(ballAttack,secondTarget));
+ }
+ assert(damage==5&&nativeContacts==5);
+ s_run.ticks=75;nativeAccept=false;assert(contact(ballAttack,target)&&damage==5);
+ s_run.ticks=78;nativeAccept=true;assert(contact(ballAttack,target)&&damage==6);
+ s_run.ticks=92;assert(!contact(ballAttack,target));
+ s_run.ticks=93;assert(contact(ballAttack,target)&&damage==7);
+ // Re-entering spin or changing its subphase cannot reset the cooldown.
+ projectileA.mAction=0;boss.mAction=0;observe();
+ projectileA.mAction=1;boss.mAction=2;observe();
+ for(int mode=1;mode<=3;++mode){projectileA.mMode=mode;assert(!contact(ballAttack,target));}
+ // The owner's body and defensive sphere keep the ordinary single-use budget.
+ assert(contact(weapon,target)&&!contact(secondWeapon,secondTarget));
+ shell.actor=&projectileA;assert(!contact(shell,target));
+ // Another Darkhammer has an independent spin clock.
+ enemies[1].id=11;enemies[1].profile=fpcNm_E_TH_e;other.mAction=2;other.mMode=3;
+ projectileB={};projectileB.id=21;projectileB.profile=fpcNm_E_TH_BALL_e;
+ projectileB.mAction=1;projectileB.mMode=2;projectileB.mAtSph.actor=&projectileB;
+ actors[21]=&projectileB;children[21]=11;
+ assert(contact(projectileB.mAtSph,target)&&!contact(projectileB.mAtSph,secondTarget));
+ // Outbound and return still share one throw, even after half a second.
+ boss.mAction=3;boss.mMode=0;projectileA.mAction=2;observe();
+ s_run.ticks=108;assert(contact(ballAttack,target)&&!contact(ballAttack,secondTarget));
+ boss.mAction=4;projectileA.mAction=3;observe();s_run.ticks=123;
+ assert(!contact(ballAttack,target));
  // Whole Zelda triangle/energy-ball sequence, including later animation stages.
  reset(fpcNm_E_HZELDA_e);boss.mAction=2;
  assert(contact(weapon,target));for(int mode=1;mode<=3;++mode){boss.mMode=mode;assert(!contact(weapon,target));}

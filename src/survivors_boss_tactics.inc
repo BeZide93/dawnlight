@@ -341,6 +341,21 @@ void after_boss_sword_throw(ModContext*,void* args,void*,void*) {
     }
     t.swordState=a->mStates[13];
 }
+HookAction before_boss_ball_collision(ModContext*,void* args,void*,void*) {
+    auto* object=mods::arg<cCcD_Obj*>(args,1);
+    if(!object||!in_arena()||!playable()||s_run.phase!=Phase::Running)return HOOK_CONTINUE;
+    auto* actor=object->GetAc();
+    if(!actor||fopAcM_GetName(actor)!=fpcNm_E_TH_BALL_e||!active_enemy_arrow(fopAcM_GetID(actor)))return HOOK_CONTINUE;
+    auto* owner=enemy_child_root(fopAcM_GetID(actor));
+    if(!owner||owner->profile!=fpcNm_E_TH_e||!boss_tactics_owned(*owner))return HOOK_CONTINUE;
+    auto* ball=static_cast<e_th_ball_class*>(actor);
+    // Native startup hides this attack sphere 12,000 units away. While the
+    // ball circles its owner, register it at the actual ball position instead.
+    // Preserve the native radius, damage and the separate defensive collider.
+    if(object==&ball->mAtSph&&ball->mAction==1&&ball->mMode>=1&&ball->mMode<=3)
+        ball->mAtSph.SetC(ball->current.pos);
+    return HOOK_CONTINUE;
+}
 HookAction before_boss_attack_safety(ModContext*,void* args,void*,void*) {
     auto* at=mods::arg<cCcD_Obj*>(args,1);auto* tg=mods::arg<cCcD_Obj*>(args,2);
     auto* link=daAlink_getAlinkActorClass();

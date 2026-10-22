@@ -249,6 +249,37 @@ int main(){
  // Projectile speed applied once, never to native non-projectile actors.
  reset();Native shooter,arrow;arrow.id=10;arrow.profile=fpcNm_E_ARROW_e;auto& sh=own(shooter,fpcNm_E_RD_e);(void)sh;
  s_enemyArrows[0]={10,shooter.id,false,false};arrow.speedF=100;update_boss_projectile(&arrow,true);update_boss_projectile(&arrow,true);assert(std::abs(arrow.speedF-115)<.01f);
+ // Darkhammer's registered attack sphere follows the spinning ball, including
+ // native startup's hidden sphere. Other states/colliders and vanilla stay native.
+ {reset();Native hammer,ball;auto& hammerOwner=own(hammer,fpcNm_E_TH_e);
+ ball.id=10;ball.profile=fpcNm_E_TH_BALL_e;ball.current.pos={200,80,-300};
+ ball.mAtSph.actor=&ball;ball.mAtSph.radius=55;s_enemyArrows[0]={10,hammer.id,false,false};
+ std::any ballArgs[]={nullptr,static_cast<cCcD_Obj*>(&ball.mAtSph)};
+ for(int mode=1;mode<=3;++mode){
+  ball.mAction=1;ball.mMode=mode;ball.mAtSph.center={12200,80,-300};
+  before_boss_ball_collision(nullptr,ballArgs,nullptr,nullptr);
+  assert((ball.mAtSph.center-ball.current.pos).abs()==0&&ball.mAtSph.radius==55);
+ }
+ for(int action:{0,2,3,10}){
+  ball.mAction=action;ball.mAtSph.center={12200,80,-300};
+  before_boss_ball_collision(nullptr,ballArgs,nullptr,nullptr);
+  assert(ball.mAtSph.center.x==12200);
+ }
+ ball.mAction=1;
+ for(int guard=0;guard<7;++guard){
+  arena=playing=true;s_run.phase=Phase::Running;hammerOwner.retiring=hammerOwner.credited=hammerOwner.dormant=false;
+  s_enemyArrows[0].retiring=false;
+  if(guard==0)arena=false;if(guard==1)playing=false;if(guard==2)s_run.phase=Phase::Upgrade;
+  if(guard==3)hammerOwner.retiring=true;if(guard==4)hammerOwner.credited=true;if(guard==5)hammerOwner.dormant=true;
+  if(guard==6)s_enemyArrows[0].retiring=true;
+  ball.mAtSph.center={12200,80,-300};before_boss_ball_collision(nullptr,ballArgs,nullptr,nullptr);
+  assert(ball.mAtSph.center.x==12200);
+ }
+ s_enemyArrows[0].retiring=false;cCcD_Obj defensive;defensive.actor=&ball;defensive.center={999,0,0};
+ ballArgs[1]=&defensive;before_boss_ball_collision(nullptr,ballArgs,nullptr,nullptr);assert(defensive.center.x==999);
+ s_enemyArrows={};ballArgs[1]=static_cast<cCcD_Obj*>(&ball.mAtSph);
+ before_boss_ball_collision(nullptr,ballArgs,nullptr,nullptr);assert(ball.mAtSph.center.x==12200);
+ }
  // Summon caps distinguish the minions and count existing owned summons.
  reset();Native phantom;auto& ph=own(phantom,fpcNm_E_PZ_e);for(int i=0;i<6;++i){assert(boss_pz_minion(ph,fpcNm_E_YK_e));++s_bossTactics[ph.id].summons;}assert(!boss_pz_minion(ph,fpcNm_E_YK_e));
  s_bossTactics[ph.id].summons=0;for(int i=0;i<3;++i){assert(boss_pz_minion(ph,fpcNm_E_S1_e));++s_bossTactics[ph.id].summons;}assert(!boss_pz_minion(ph,fpcNm_E_S1_e));

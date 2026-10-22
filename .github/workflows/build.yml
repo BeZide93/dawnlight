@@ -49,6 +49,10 @@ jobs:
       - name: Test Hyrule Survivors rules and lifecycle
         if: matrix.platform == 'linux-x86_64'
         run: |
+          python3 tests/survivors_freeze_diagnostics_test.py
+          CXX=clang++ python3 tests/survivors_freeze_diagnostics_test.py
+          python3 tests/survivors_performance_settings_test.py
+          CXX=clang++ python3 tests/survivors_performance_settings_test.py
           python3 tests/survivors_enemy_archives_test.py
           CXX=clang++ python3 tests/survivors_enemy_archives_test.py
           python3 tests/survivors_process_index_test.py

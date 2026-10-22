@@ -151,6 +151,7 @@ add_mod(dawnlight_mod
         src/model_overlays.cpp
         src/new_save_modes.cpp
         src/survivors.cpp
+        src/survivors_freeze_diagnostics.cpp
         src/survivors_enemy_hud.cpp
         src/survivors_integrity.cpp
         src/clear_timer.cpp
@@ -197,4 +198,22 @@ if(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS)
         "${dawnlight_rmlui_headers_SOURCE_DIR}/Include"
         "${dawnlight_sdl3_headers_SOURCE_DIR}/include"
     )
+endif()
+
+# Include optional diagnostics; the persistent Performance Logs setting defaults Off.
+option(DAWNLIGHT_FREEZE_DIAGNOSTICS "Include optional Survivors Performance Logs" ON)
+if(DAWNLIGHT_FREEZE_DIAGNOSTICS)
+    execute_process(COMMAND git rev-parse --short=12 HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE DAWNLIGHT_DIAGNOSTIC_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(NOT DAWNLIGHT_DIAGNOSTIC_REVISION MATCHES "^[0-9a-f]+$")
+        set(DAWNLIGHT_DIAGNOSTIC_REVISION "unknown")
+    endif()
+    set(DAWNLIGHT_DIAGNOSTIC_BUILD "$ENV{GITHUB_RUN_NUMBER}")
+    if(NOT DAWNLIGHT_DIAGNOSTIC_BUILD MATCHES "^[0-9]+$")
+        set(DAWNLIGHT_DIAGNOSTIC_BUILD "local")
+    endif()
+    target_compile_definitions(dawnlight_mod PRIVATE DAWNLIGHT_FREEZE_DIAGNOSTICS=1
+        DAWNLIGHT_DIAGNOSTIC_REVISION="${DAWNLIGHT_DIAGNOSTIC_REVISION}"
+        DAWNLIGHT_DIAGNOSTIC_BUILD="${DAWNLIGHT_DIAGNOSTIC_BUILD}")
 endif()

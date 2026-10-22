@@ -171,6 +171,9 @@ DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
 DEFINE_HOOK(&daAlink_c::checkDamageAction, SurvivorsBlock);
+// Hook the address registered in Link's colliders. The wrapper's call to the
+// member function and the generic collision dispatcher can be inlined by the host.
+DEFINE_HOOK_SYMBOL("src/d/actor/d_a_alink.cpp#daAlink_tgHitCallback",void(fopAc_ac_c*,dCcD_GObjInf*,fopAc_ac_c*,dCcD_GObjInf*),SurvivorsPlayerHit);
 DEFINE_HOOK(&daAlink_c::setShieldGuard, SurvivorsGuard);
 DEFINE_HOOK_SYMBOL("cCcS::SetCoCommonHitInf",void(cCcS*,cCcD_Obj*,cXyz*,cCcD_Obj*,cXyz*,f32),SurvivorsEnemyContact);
 DEFINE_HOOK(&daE_OC_c::damage_check, SurvivorsBokoblinHit);
@@ -1765,6 +1768,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsMidnaFlow, before_midna_flow);
     PRE(SurvivorsEnemyContact,before_enemy_contact);
     PRE(SurvivorsBlock, before_player_contacts);
+    PRE(SurvivorsPlayerHit, before_native_player_contact);
     PRE(SurvivorsBlock, before_shield_block); POST(SurvivorsBlock, after_player_damage); PRE(SurvivorsGuard, before_survivors_guard);
     PRE(SurvivorsBulblinHit, before_bulblin_hit); POST(SurvivorsBulblinHit, after_bulblin_hit);
     PRE(SurvivorsBulblinAggro, before_bulblin_aggro);

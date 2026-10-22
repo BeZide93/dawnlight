@@ -60,6 +60,25 @@ HookAction before_player_contacts(ModContext*, void* args, void*, void*) {
     return HOOK_CONTINUE;
 }
 
+HookAction before_native_player_contact(ModContext*, void* args, void*, void*) {
+    if (!in_arena()) return HOOK_CONTINUE;
+    auto* link = daAlink_getAlinkActorClass();
+    auto* recipient = mods::arg<fopAc_ac_c*>(args, 0);
+    auto* target = mods::arg<dCcD_GObjInf*>(args, 1);
+    auto* attacker = mods::arg<fopAc_ac_c*>(args, 2);
+    auto* attack = mods::arg<dCcD_GObjInf*>(args, 3);
+    if (!link || recipient != link || actor_by_id(s_player) != link ||
+        !target || !attacker || !attack) return HOOK_CONTINUE;
+    // dCcS has already accepted the hit and set both raw hit and actor ID.
+    // Capture it at the actual callback boundary, before Link consumes it;
+    // absence of an outer SetAtTgCommonHitInf detour is not a rejected hit.
+    visit_player_contacts([&](dCcD_GObjInf& collider) {
+        if (&collider == target && raw_target_peer(collider) == attack)
+            s_contactPeers[&collider].target = {attack, attacker, fopAcM_GetID(attacker)};
+    });
+    return HOOK_CONTINUE;
+}
+
 void after_player_contact(ModContext*, void* args, void*, void*) {
     if (!in_arena()) return;
     auto* attack = mods::arg<cCcD_Obj*>(args, 1);

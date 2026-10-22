@@ -884,6 +884,18 @@ hook order. Survivors forces No Normal-Hit Invulnerability without changing the
 saved setting. Interrupted sword draws retry using the actual equip animation;
 a newly drawn sword gets a ready melee opportunity before the next item handoff.
 
+The contact lifetime guard introduced in build #1123 (`1ec429f`) must observe
+accepted incoming hits before pre-Execute/pre-damage validation. Capture them
+at the native `daAlink_tgHitCallback` function registered in Link's colliders,
+as well as the generic collision post hook. This callback runs after the native
+raw hit and actor ID are set; it remains usable when the host inlines the generic
+dispatcher or the wrapper's member-function call. An unobserved valid hit would
+otherwise be cleared as unsafe, preventing damage. The regression exercises this
+callback-only path with every body cylinder, repeat/projectile hits and deleted
+attackers. Existing stale-pointer checks remain active. The user's #1118-good /
+#1130-bad range includes #1123; confirming this as the cause of the reported
+spawn-time immunity still requires an in-game test of the corrected build.
+
 Regression coverage includes enemy facing, text lifecycle/projection, applied
 crit feedback, Dodge probabilities, v2 migration, scoped hit reactions, setting
 restoration and interrupted equip/item scheduling. In-game checks remain needed:

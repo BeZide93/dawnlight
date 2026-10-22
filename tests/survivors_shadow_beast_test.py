@@ -13,6 +13,10 @@ source=(root/'src/survivors_boss_tactics.inc').read_text()
 helpers='\n'.join(function(source,sig) for sig in ['void boss_ground_step(', 'void prepare_shadow_beast_melee(', 'void limit_shadow_beast_approach('])
 native=(sdk/'src/d/actor/d_a_e_s1.cpp').read_text()
 code='\n'.join(function(native,sig) for sig in ['static BOOL pl_at_check(', 'static void e_s1_fight_run(', 'static void e_s1_fight('])
+# The decompiled SDK retains four unused local vectors. Suppress that warning
+# only for the verbatim native functions; production helpers and test code keep
+# all -Werror checks under both GCC and Clang.
+code='\n#pragma GCC diagnostic push\n#pragma GCC diagnostic ignored "-Wunused-variable"\n'+code+'\n#pragma GCC diagnostic pop\n'
 fixture=r'''
 #include <algorithm>
 #include <cassert>

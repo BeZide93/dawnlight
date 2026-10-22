@@ -16,7 +16,16 @@ Link's grounded position, using the same actor, resources and 1,500-unit radius
 as the Boss Rush hub. Awakened stationary elites join the same encounter; dormant
 guards do not start it. The ring stays fixed while Link moves. Concurrent bosses
 share one circle, which disappears when the final active boss dies or retires.
-The native moving-background wall supplies collision. No room/save switch writes
+In Survivors, the wall follows a 96-point ground-height profile around its
+perimeter and is five times the original height. Sampling is limited to 24 rays
+per active update during creation, then cached for the encounter. Missing ground
+at cliffs interpolates neighboring heights (or uses the anchor if no edge has
+ground). A 40-unit buried skirt covers small ground seams. The visual model uses
+a private, format-preserving vertex array; the native moving-background wall
+uses matching terrain heights in its own collision vertices, with rebuilt planes
+and bounds. Both stay fixed after preparation. Shared archive meshes and the
+Boss Rush hub retain their original shape and height. Native deletion and module
+shutdown restore the model callback before releasing our array. No room/save switch writes
 are needed in Survivors; Boss Rush retains its own existing switch behavior.
 
 Pause/upgrade/chest menus keep the ring and pause its animation. End, defeat,

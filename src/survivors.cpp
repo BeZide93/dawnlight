@@ -547,6 +547,7 @@ void retire_pots();
 void cleanup_pots();
 void detach_pot_attacks();
 #include "survivors_enemy_archives.inc"
+#include "survivors_boss_ring_terrain.inc"
 #include "survivors_boss_ring.inc"
 void retire_enemies() {
     release_enemy_archives();
@@ -1866,6 +1867,7 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    shutdown_boss_ring();
     stop_survivors_music();
     shutdown_survivors_integrity();
     before_survivors_pad(nullptr,nullptr,nullptr,nullptr);

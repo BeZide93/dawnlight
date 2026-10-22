@@ -41,7 +41,7 @@ struct Native:fopAc_ac_c{
  Native(){mpPartModels[13]=&model;}void setSwordAtBit(int n){swordBit=n;}
 };
 struct e_mf_class:Native{int field_0x6c0[6]{};};
-using e_dn_class=Native;using e_sf_class=Native;using e_kr_class=Native;using e_mm_class=Native;
+using e_bs_class=Native;using e_dn_class=Native;using e_sf_class=Native;using e_kr_class=Native;using e_mm_class=Native;
 using daE_OC_c=Native;using e_rd_class=Native;using e_sh_class=Native;using e_s1_class=Native;
 using e_rdy_class=Native;using e_yc_class=Native;using b_gnd_class=Native;using daE_YMB_c=Native;using daB_TN_c=Native;
 struct Enemy{ActorId id=1;ProfileName profile=0;bool elite=true,dormant=false,initialized=true,retiring=false,credited=false;
@@ -116,6 +116,24 @@ int main(){
  owner.stagger=0;boss.current.pos={};boss.speed={4,6,8};after_boss_ymb_move(nullptr,args,nullptr,nullptr);
  assert(boss.current.pos.x==2&&boss.current.pos.y==3&&boss.current.pos.z==4);
  owner.stagger=1;after_boss_ymb_move(nullptr,args,nullptr,nullptr);assert(boss.current.pos.x==2);owner.stagger=0;
+ // Stalfos readiness takes half its former (2x native) duration.
+ owner.profile=fpcNm_E_SF_e;owner.elite=true;boss.mTimers[2]=28;
+ for(int i=0;i<7;++i){advance_elite_cooldowns(&boss,owner);if(boss.mTimers[2]>0)--boss.mTimers[2];}
+ assert(boss.mTimers[2]==0);
+ owner.elite=false;boss.mTimers[2]=28;advance_elite_cooldowns(&boss,owner);assert(boss.mTimers[2]==28);
+ // Ordinary Stalchildren: quarter readiness/close-range wait, no underflow;
+ // emergence, damage and attack animation clocks are not shortened.
+ owner.profile=fpcNm_E_BS_e;
+ for(bool elite:{false,true})for(int action=0;action<6;++action)for(int mode:{0,1,5}) {
+  owner.elite=elite;boss.action=action;boss.mode=mode;
+  boss.timers[0]=boss.timers[1]=boss.timers[2]=28;
+  for(int i=0;i<7;++i){advance_elite_cooldowns(&boss,owner);for(int j=0;j<3;++j)if(boss.timers[j]>0)--boss.timers[j];}
+  assert(boss.timers[2]==(action==2?0:21));
+  assert(boss.timers[0]==(action==2&&mode==5?0:21));assert(boss.timers[1]==21);
+ }
+ boss.action=2;boss.mode=5;
+ for(int value=0;value<4;++value){boss.timers[0]=boss.timers[2]=value;advance_elite_cooldowns(&boss,owner);assert(boss.timers[0]==0&&boss.timers[2]==0);}
+ owner.dormant=true;boss.timers[2]=10;advance_elite_cooldowns(&boss,owner);assert(boss.timers[2]==10);owner.dormant=false;
  // Halve readiness/recovery timers; do not shorten native attack windows.
  owner.profile=fpcNm_E_S1_e;boss.mAction=3;boss.mMode=1;boss.mTimers[0]=30;
  for(int i=0;i<15;++i){advance_elite_cooldowns(&boss,owner);if(boss.mTimers[0]>0)--boss.mTimers[0];}assert(boss.mTimers[0]==0);

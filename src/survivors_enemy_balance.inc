@@ -19,15 +19,27 @@ unsigned enemy_attack_factor(const Enemy& e) {
     }
 }
 bool faster_boss(const Enemy& e) {return e.elite||native_boss_profile(e.profile);}
-// Add one decrement to native attack-readiness/recovery clocks, never to
+// Accelerate native attack-readiness/recovery clocks, never
 // animation clocks, hit windows, charge durations or invulnerability timers.
 void advance_elite_cooldowns(fopAc_ac_c* actor,const Enemy& enemy) {
-    if(!enemy.elite||native_boss_profile(enemy.profile)||enemy.dormant)return;
+    if(enemy.dormant)return;
+    // Stalchildren are ordinary enemies too. Three extra decrements plus the
+    // native tick quarter readiness and close-range idle waits, clamped at zero.
+    if(enemy.profile==fpcNm_E_BS_e) {
+        auto* e=reinterpret_cast<e_bs_class*>(actor);
+        if(e->action==2) {
+            e->timers[2]=std::max(0,int(e->timers[2])-3);
+            if(e->mode==5)e->timers[0]=std::max(0,int(e->timers[0])-3);
+        }
+        return;
+    }
+    if(!enemy.elite||native_boss_profile(enemy.profile))return;
     const auto tick=[](auto& timer){if(timer>0)--timer;};
     switch(enemy.profile) {
     case fpcNm_E_DN_e:tick(reinterpret_cast<e_dn_class*>(actor)->timer[2]);break;
     case fpcNm_E_MF_e:tick(reinterpret_cast<e_mf_class*>(actor)->field_0x6c0[2]);break;
-    case fpcNm_E_SF_e:tick(reinterpret_cast<e_sf_class*>(actor)->mTimers[2]);break;
+    case fpcNm_E_SF_e:{auto& timer=reinterpret_cast<e_sf_class*>(actor)->mTimers[2];
+        timer=std::max(0,int(timer)-3);break;} // 4x native, twice the previous elite rate.
     case fpcNm_E_KR_e:tick(reinterpret_cast<e_kr_class*>(actor)->field_0x69c[5]);break;
     case fpcNm_E_MM_e:{auto* e=reinterpret_cast<e_mm_class*>(actor);if(e->action==1&&e->mode==5)tick(e->timers[0]);break;}
     case fpcNm_E_OC_e:{auto* e=reinterpret_cast<daE_OC_c*>(actor);if(e->mActionMode==3){tick(e->field_0x6c2);tick(e->field_0x6c0);}break;}

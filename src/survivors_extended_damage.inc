@@ -9,18 +9,25 @@ HookAction before_roster_native_damage(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<fopAc_ac_c*>(args,0);
     if(!roster_owned(actor))return HOOK_CONTINUE;
     const auto* enemy=tracked(fopAcM_GetID(actor));
-    if(enemy->profile==fpcNm_E_DN_e && enemy->elite && enemy->initialized &&
+    if((enemy->profile==fpcNm_E_DN_e||enemy->profile==fpcNm_E_SF_e) && enemy->elite && enemy->initialized &&
        !enemy->retiring && !enemy->credited && !enemy->dormant && !enemy->stagger &&
        actor->health>0 && s_run.phase==Phase::Running && !transitioning()) {
-        auto* lizalfos=reinterpret_cast<e_dn_class*>(actor);
         auto* link=daAlink_getAlinkActorClass();
-        // Native action() refreshes pl_dir immediately before damage_check(),
+        // Native action() refreshes its player distance before damage_check(),
         // then uses it for the fight-run spacing and attack selection. Express
         // that decision in model units so the doubled body cannot push Link
-        // away before reaching the unscaled 300/350-unit thresholds. Recompute
+        // away before reaching the unscaled combat thresholds. Recompute
         // from world positions, never divide a previous normalized value.
-        if(lizalfos->action==3 && link && actor->scale.x>1.f)
-            lizalfos->pl_dir=(link->current.pos-actor->current.pos).absXZ()/actor->scale.x;
+        if(link && actor->scale.x>1.f) {
+            const float distance=(link->current.pos-actor->current.pos).absXZ()/actor->scale.x;
+            if(enemy->profile==fpcNm_E_DN_e) {
+                auto* lizalfos=reinterpret_cast<e_dn_class*>(actor);
+                if(lizalfos->action==3)lizalfos->pl_dir=distance;
+            } else {
+                auto* stalfos=reinterpret_cast<e_sf_class*>(actor);
+                if(stalfos->mAction==3)stalfos->mPlayerDistanceXZ=distance;
+            }
+        }
     }
     return HOOK_SKIP_ORIGINAL;
 }
@@ -105,6 +112,12 @@ HookAction before_roster_targets(ModContext*,void* args,void*,void*) {
             auto* e=reinterpret_cast<e_sh_class*>(actor);e->mSphArr[0].SetR(30.f*scale);e->mSphArr[1].SetR(40.f*scale);
         } else if(enemy->profile==fpcNm_E_RDY_e) {
             auto* e=reinterpret_cast<e_rdy_class*>(actor);for(auto& sphere:e->mCcSph)sphere.SetR(35.f*scale);
+        } else if(enemy->profile==fpcNm_E_SF_e) {
+            // Native Stalfos uses a 1.2 base size; joint centers already scale.
+            auto* e=reinterpret_cast<e_sf_class*>(actor);
+            e->mCcSphs[0].SetR(36.f*scale);
+            e->mCcSphs[1].SetR(42.f*scale);e->mCcSphs[2].SetR(42.f*scale);
+            e->mTateSph.SetR(60.f*scale);
         } else if(enemy->profile==fpcNm_E_S1_e) {
             auto* e=reinterpret_cast<e_s1_class*>(actor);
             e->mCcSph[0].SetR(35.f*scale);e->mCcSph[1].SetR(60.f*scale);e->mCcSph[2].SetR(50.f*scale);
@@ -115,6 +128,8 @@ HookAction before_roster_targets(ModContext*,void* args,void*,void*) {
         const float scale=elite_scale(Species(enemy->species));
         if(enemy->profile==fpcNm_E_SH_e) {
             auto* e=reinterpret_cast<e_sh_class*>(actor);if(object==&e->mSph2)e->mSph2.SetR(35.f*scale);
+        } else if(enemy->profile==fpcNm_E_SF_e) {
+            auto* e=reinterpret_cast<e_sf_class*>(actor);if(object==&e->mAtSph)e->mAtSph.SetR(60.f*scale);
         } else if(enemy->profile==fpcNm_E_S1_e) {
             auto* e=reinterpret_cast<e_s1_class*>(actor);if(object==&e->mCcAtSph)e->mCcAtSph.SetR(40.f*scale);
         } else if(enemy->profile==fpcNm_E_RDY_e) {

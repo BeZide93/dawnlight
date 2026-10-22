@@ -28,9 +28,10 @@ int fopAcM_GetID(fopAc_ac_c* a){return a->id;}
 struct Target{fopAc_ac_c* actor=nullptr;bool ChkTgHit(){return actor;}auto* GetTgHitAc(){return actor;}};
 struct daAlink_c:fopAc_ac_c{Target mTgCyls[3];};
 struct daE_OC_c:fopAc_ac_c{int mActionMode=3,mOcState=4,animation=0x1e;bool checkBck(int n){return animation==n;}};
+struct e_bs_class{fopAc_ac_c enemy;int action=2;};
 struct e_ms_class:fopAc_ac_c{int mAction=1,mMode=2;};
 struct e_ba_class:fopAc_ac_c{enum{ACT_FIGHT_FLY=1,ACT_RETURN=4,ACT_FLY=5,ACT_PATH_FLY=6};bool mIsDying=false;float mKnockbackSpeed=0;int mAction=2;};
-constexpr int fpcNm_B_TN_e=5,fpcNm_E_YC_e=6,fpcNm_E_HZELDA_e=8,fpcNm_E_KR_e=9;
+constexpr int fpcNm_E_BS_e=10,fpcNm_B_TN_e=5,fpcNm_E_YC_e=6,fpcNm_E_HZELDA_e=8,fpcNm_E_KR_e=9;
 constexpr int fpcNm_E_OC_e=1,fpcNm_E_MS_e=2,fpcNm_E_BA_e=3,fpcNm_E_RD_e=4;
 struct e_rd_class{fopAc_ac_c enemy;int action=3,mode=1,anm=0x32;float jump_z=0,field_0x9f0=0;};
 bool arrowActive=false;bool active_enemy_arrow(int id){return arrowActive&&id==7;}
@@ -154,7 +155,23 @@ int main(){
  }
  bulblin.action=3;bulblin.mode=1;bulblin.jump_z=20;bulblin.enemy.current.pos={100,3,200};
  before_enemy_speed(nullptr,movement,nullptr,nullptr);assert(bulblin.enemy.current.pos.x==100);
- enemy={};acch.actor=&bok;
+ // Stalchild horizontal locomotion doubles and composes with difficulty,
+ // while attacks, falling velocity, pause and ownership remain protected.
+ e_bs_class child;acch.actor=&child.enemy;enemy={};enemy.profile=fpcNm_E_BS_e;
+ for(unsigned difficulty=1;difficulty<=3;++difficulty)for(int action=0;action<6;++action){
+  s_run.options.enemy_speed=difficulty;child.action=action;child.enemy.current.pos={100,3,200};
+  before_enemy_speed(nullptr,movement,nullptr,nullptr);
+  float extra=action==2?2.f*difficulty-1:0;
+  assert(child.enemy.current.pos.abs2({100+2*extra,3,200+4*extra})==0);
+  assert(child.enemy.speed.abs2({2,3,4})==0);
+ }
+ child.action=2;
+ for(int gate=0;gate<6;++gate){
+  owned=gate!=0;paused=gate==1;enemy.dormant=gate==2;enemy.retiring=gate==3;enemy.stagger=gate==4;enemy.credited=gate==5;
+  child.enemy.current.pos={100,3,200};before_enemy_speed(nullptr,movement,nullptr,nullptr);
+  assert(child.enemy.current.pos.abs2({100,3,200})==0);
+ }
+ owned=true;paused=false;enemy={};acch.actor=&bok;
  daAlink_c link;link.id=1;link.mTgCyls[0].actor=&bok;s_run.options.enemy_damage=10;
  std::any damage[]={&link,2,0,1,0};before_enemy_damage(nullptr,damage,nullptr,nullptr);assert(std::any_cast<int>(damage[1])==20);
  for(int reason=0;reason<4;++reason){
@@ -287,7 +304,7 @@ window=core[core.index('void open_window() {'):core.index('ModResult activated('
 ui=(root/'src/survivors_maps_ui.inc').read_text().split('UiElementHandle s_difficultySummary',1)[1]
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(fixture+'bool extended_locomotion(fopAc_ac_c*,int){return false;}\n'+(root/'src/survivors_options.inc').read_text()+'UiElementHandle s_difficultySummary'+ui+(root/'src/survivors_debug_ui.inc').read_text()+window+main)
+ cpp.write_text(fixture+'bool extended_locomotion(fopAc_ac_c* a,int p){return p==fpcNm_E_BS_e&&reinterpret_cast<e_bs_class*>(a)->action==2;}\n'+(root/'src/survivors_options.inc').read_text()+'UiElementHandle s_difficultySummary'+ui+(root/'src/survivors_debug_ui.inc').read_text()+window+main)
  for enabled in [0,1]:
   subprocess.run([os.environ.get('CXX','c++'),f'-DDAWNLIGHT_SURVIVORS_DEBUG={enabled}','-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-attributes','-I',str(root/'src'),'-I',str(root/'dusklight/sdk/include'),str(cpp),'-o',str(exe)],check=True)
   subprocess.run([str(exe)],check=True)

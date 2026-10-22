@@ -48,7 +48,7 @@ struct NativeActor:fopAc_ac_c {
  enum {ACT_WAIT=1,ACT_MOVE=2,ACT_CHASEH=3,ACTION_ATTACK_e=4,ACTION_WAIT_e=2};
  int mAction=0,mMode=0,mActionMode=0,mMoveMode=0,mActionMode1=0,action=0,mode=0,mActionPhase=0;
  int field_0x5b4=0,mCurAction=0,field_0x672=0,mCryTimer=0,combine_off_timer=0,mPlayerStunTimer=0,mPushButtonCount=0,field_0x6a0=0,animation=0;float speedF=0;
- float field_0x6d4=0,pl_range=0,pl_dir=0,field_0x6b8=0,mRecognizeDist=0,pl_recognize_dist=0,pl_search_range=0;
+ float mPlayerDistanceXZ=0,field_0x6d4=0,pl_range=0,pl_dir=0,field_0x6b8=0,mRecognizeDist=0,pl_recognize_dist=0,pl_search_range=0;
  s16 angle_target=0,mTargetAngleY=0,mCurrentAngleYTarget=0,field_0x6c0=0;int timers[4]{};
  ActorId armorChildId=kNone;int field_0xb99=0,m_action=0,m_mode=0;
  dCcD_Sph mSphere,mSphere2,mSphere3,cc_sph[3],tate_sph,mCcSphs[3],mTateSph;
@@ -419,6 +419,23 @@ int main(){
   e.elite=e.initialized=true;e.retiring=e.credited=e.dormant=false;e.stagger=0;liz.health=100;
   s_run.phase=Phase::Running;stageChange=false;liz.action=3;liz.scale={2,2,2};arena=true;playerPresent=true;
  }
+ // Stalfos size, spacing and colliders use the same scale, with native 1.2 base.
+ NativeActor sf;sf.id=e.id;sf.profile=fpcNm_E_SF_e;sf.mAction=3;
+ e.profile=sf.profile;e.species=unsigned(Species::Stalfos);e.elite=true;
+ initialize_extended_enemy(e,&sf);assert(sf.scale.x==2&&sf.scale.y==2&&sf.scale.z==2);
+ std::any sfArgs[]={static_cast<fopAc_ac_c*>(&sf)};player.current.pos={0,0,590};
+ for(int frame=0;frame<4;++frame){before_roster_native_damage(nullptr,sfArgs,nullptr,nullptr);assert(sf.mPlayerDistanceXZ==295);}
+ sf.mAction=4;sf.mPlayerDistanceXZ=590;before_roster_native_damage(nullptr,sfArgs,nullptr,nullptr);assert(sf.mPlayerDistanceXZ==590);
+ sf.mAction=3;e.elite=false;before_roster_native_damage(nullptr,sfArgs,nullptr,nullptr);assert(sf.mPlayerDistanceXZ==590);e.elite=true;
+ for(auto* sphere:{&sf.mCcSphs[0],&sf.mCcSphs[1],&sf.mCcSphs[2],&sf.mTateSph,&sf.mAtSph}){
+  sphere->owner=&sf;sphere->center={1,-200000,3};sphere->at=false;
+  std::any collisionArgs[]={0,static_cast<cCcD_Obj*>(sphere)};
+  for(int frame=0;frame<4;++frame){before_roster_targets(nullptr,collisionArgs,nullptr,nullptr);
+   const float expected=sphere==&sf.mCcSphs[0]?72:sphere==&sf.mCcSphs[1]||sphere==&sf.mCcSphs[2]?84:120;
+   assert(sphere->r==expected&&sphere->center.y==-200000&&!sphere->at);
+  }
+ }
+ e.profile=fpcNm_E_DN_e;
  liz.id=kNone;liz.pl_dir=590;assert(before_roster_native_damage(nullptr,lizArgs,nullptr,nullptr)==HOOK_CONTINUE&&liz.pl_dir==590);
 }
 '''

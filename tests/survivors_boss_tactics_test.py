@@ -160,6 +160,12 @@ int main(){
  before_boss_tactics(bo,&bok);bok.mActionMode=3;after_boss_tactics(bo,&bok);assert(bok.mActionMode==4&&s_bossTactics[bo.id].combo==1);
  before_boss_tactics(bo,&bok);bok.mActionMode=3;after_boss_tactics(bo,&bok);assert(s_bossTactics[bo.id].recovery==24);
  s_bossTactics.clear();bo.eliteSlot=4;bok.mActionMode=4;before_boss_tactics(bo,&bok);bok.mActionMode=3;after_boss_tactics(bo,&bok);assert(s_bossTactics[bo.id].recovery==24&&bok.mActionMode==3);
+ // Both Stalfos attacks retain alternation and halve the added recovery.
+ {reset();Native sf;auto& sk=own(sf,fpcNm_E_SF_e);
+ for(int sequence=0;sequence<2;++sequence){sf.mAction=4;sf.mActionPhase=0;before_boss_tactics(sk,&sf);
+  assert(sf.mAction==(sequence==0?5:4));sf.mAction=3;after_boss_tactics(sk,&sf);
+  assert(s_bossTactics[sk.id].recovery==12);s_bossTactics[sk.id].recovery=0;
+ }}
  // Stalhound samples at the native alignment -> tell boundary, not entry.
  {reset();Native hound;auto& sh=own(hound,fpcNm_E_SH_e);hound.field_0x676=3;hound.field_0x678=1;
  player.current.pos=player.old.pos={0,0,500};before_boss_tactics(sh,&hound);

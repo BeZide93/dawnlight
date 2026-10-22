@@ -232,7 +232,7 @@ void after_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
         if(e.eliteSlot>=int(timed_elite_count))follow=false;
         if(follow&&!t.combo&&fopAcM_searchPlayerDistance(actor)<900.f) {
             t.combo=1;boss_followup(e,actor);t.attacking=false;
-        } else {t.combo=0;t.recovery=24;t.attacking=false;}
+        } else {t.combo=0;t.recovery=e.profile==fpcNm_E_SF_e?12:24;t.attacking=false;}
     }
 }
 

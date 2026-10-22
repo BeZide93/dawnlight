@@ -66,7 +66,7 @@ and awakened guards use single-action versions of the ordinary elite combos.
 | Bokoblin | Faster gap closing at medium range, two swings, then 0.8-second recovery. Stationary guards get a smaller approach step and no forced second swing. |
 | Kargarok | Two warned dives, repositioning toward a different side between them. Attack entry no longer requires the narrow native 300–400-unit distance window. The damaging pass follows a committed line; recovery follows the pair. |
 | Stalhound | Sampled pounce direction and an alternating short second pounce; recovery after the sequence. Native alignment follows Link until the pounce tell starts (attack phase 2). Only then is aim locked, and general facing stops overriding it. |
-| Stalfos | Native attack animations alternate, with a forward step and 25% shorter late wind-up. The native exact-frame jump cue is preserved. |
+| Stalfos | Doubled model/weapon size, matching body/weapon radii and approach spacing. Readiness runs at 4× native rate (previously 2×); added recovery is 12 ticks / 0.4 seconds (previously 24 / 0.8). Native attack animations alternate, with a forward step and 25% shorter late wind-up. The native exact-frame jump cue is preserved. |
 | Shadow Beast | Short advance into a two-arm sequence, with the second attack selecting the other native animation and limited late turning. |
 
 ## Melee accuracy follow-up
@@ -130,3 +130,12 @@ teleport/structural-child visuals, simultaneous bosses in Endless, and late-wave
 frame cost. No claim of device-tested balance or platform loader success is made
 by the native fixture tests. Tune timings only after these checks; preserve the
 documented HP budgets, unchanged damage, readable tells, safe relocation and finite summon budgets.
+
+## Stalchild balance follow-up
+
+Run-owned Stalchildren move at twice their previous horizontal locomotion speed,
+composed with difficulty and Endless. Native attack readiness and close-range
+idle waits take one quarter of their previous duration (round up to a whole tick).
+Keep native attack animation/hit windows, random attack selection, emergence,
+stagger and vertical movement. Story actors are excluded. Device checks: confirm
+larger Stalfos sword contact at the new spacing and Stalchild pursuit near walls.

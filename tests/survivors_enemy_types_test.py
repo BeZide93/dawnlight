@@ -301,7 +301,7 @@ int main(){
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
  native=(root/'src/survivors_roster_native.inc').read_text().split('// Suppress only')[0]
- cpp.write_text(fixture+native+'void initialize_extended_enemy(Enemy&,fopAc_ac_c*){assert(false);}' +(root/'src/survivors_enemy_types.inc').read_text()+(root/'src/survivors_enemy_balance.inc').read_text().split('// Add one decrement')[0]+(root/'src/survivors_enemy_arrows.inc').read_text()+
+ cpp.write_text(fixture+native+'void initialize_extended_enemy(Enemy&,fopAc_ac_c*){assert(false);}' +(root/'src/survivors_enemy_types.inc').read_text()+(root/'src/survivors_enemy_balance.inc').read_text().split('void advance_elite_cooldowns')[0]+(root/'src/survivors_enemy_arrows.inc').read_text()+
   function('create_enemy_at')+function('spawn_enemy')+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

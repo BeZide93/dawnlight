@@ -4,6 +4,7 @@
 #include <cstdint>
 using namespace dawnlight::survivors;
 int main() {
+    static_assert(elite_scale(Species::Stalfos)==2.f);
     const std::array<std::array<Species,4>,5> expected{{
         {Species::Lizalfos,Species::Helmasaur,Species::Dynalfos,Species::Darknut},
         {Species::Bow,Species::Bokoblin,Species::Kargarok,Species::KingBulblin},

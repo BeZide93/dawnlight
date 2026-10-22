@@ -68,7 +68,7 @@ constexpr float elite_scale(Species type) {
     switch(type) {
     case Species::KingBulblin:case Species::DeathSword:case Species::TwilitBloat:
     case Species::PhantomZant:case Species::Darkhammer:case Species::PuppetZelda:case Species::Ganondorf:
-    case Species::Helmasaurus:case Species::Dynalfos:case Species::Stalfos:
+    case Species::Helmasaurus:case Species::Dynalfos:
     case Species::StallordHead:case Species::ZantHand:case Species::Aeralfos:case Species::Darknut:return 1.f;
     default:return 2.f;
     }

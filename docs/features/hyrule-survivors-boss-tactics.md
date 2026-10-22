@@ -139,3 +139,28 @@ idle waits take one quarter of their previous duration (round up to a whole tick
 Keep native attack animation/hit windows, random attack selection, emergence,
 stagger and vertical movement. Story actors are excluded. Device checks: confirm
 larger Stalfos sword contact at the new spacing and Stalchild pursuit near walls.
+
+## Pending Stalhound device diagnosis
+
+The user still reports zero damage while standing still after the aim/spacing
+patches. Existing fixtures establish native attack state progression, not contact
+with the device's actual animated skeleton and Link cylinders. Treat the issue as
+**unresolved** until a device log identifies the failing stage.
+
+Debug-enabled builds now emit `Survivors SH probe v1` automatically for active
+Stalhound bosses; the session's Enable Debug toggle is not required. One initial
+line and at most eight summaries per actor report native phase mask, visible and
+enabled bite frames, geometric overlap against Link's enabled target cylinders,
+contact attempts, safety/budget rejection conditions, accepted attack-use state
+and native hit frames. The closest sample includes both world positions, radii,
+cylinder height and the boss root. Positive gap means separation; zero/negative
+means touching/overlap. No sample is represented by gap=1e9. Summaries occur on
+attack exit or after 150 executed frames, including stalled/idle states.
+
+This is passive instrumentation, not another balance or hitbox patch. Hit-frame
+and overlap counts are observations, not distinct damage events; an accepted
+contact may still be blocked/dodged. Cylinder sampling is after native Execute,
+not a replacement for collision-server ordering. Existing boss-state cleanup
+resets it; Debug-off builds compile out the state and calls. Collect a short log
+with the boss attacking stationary Link, then remove this temporary probe after
+the actual defect is fixed.

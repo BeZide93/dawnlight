@@ -377,6 +377,9 @@ HookAction before_boss_attack_safety(ModContext*,void* args,void*,void*) {
     auto* ac=at->GetAc();auto* e=ac?enemy_child_root(fopAcM_GetID(ac)):nullptr;
     if(!e||!boss_tactics_owned(*e))return HOOK_CONTINUE;
     // Recovery applies to the body/weapon. A fired projectile keeps its travel.
+#if DAWNLIGHT_SURVIVORS_DEBUG
+    trace_stalhound_contact(*e,ac,at);
+#endif
     const auto& t=s_bossTactics[e->id];
     if(t.grace || (t.recovery&&fopAcM_GetID(ac)==e->id) ||
        (t.hasContact&&s_run.ticks-t.lastContact<15))return HOOK_SKIP_ORIGINAL;

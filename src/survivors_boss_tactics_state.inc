@@ -1,4 +1,15 @@
 struct BossTactics {
+#if DAWNLIGHT_SURVIVORS_DEBUG
+    // Temporary, passive device probe. Lifetime follows the existing boss state.
+    struct StalhoundProbe {
+        unsigned frames=0, reports=0, phases=0, visible=0, enabled=0, overlaps=0;
+        unsigned attempts=0, safety=0, spent=0, nativeHits=0;
+        int lastAction=-1,lastMode=-1;
+        float gap=1.e9f,radius=0,height=0,cylinderRadius=0;
+        cXyz bite{},target{},root{};
+        bool accepted=false;
+    } stalhoundProbe;
+#endif
     BossWatchdog watchdog;
     BossStagger stagger;
     unsigned majorUntil=0,ridersUntil=0,lastContact=0;bool hasContact=false,fanPending=false;

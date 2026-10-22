@@ -12,6 +12,11 @@ bool boss_blocks_from(const Enemy& enemy,fopAc_ac_c* actor,const cXyz& source) {
         guarding=stalfos->arg3!=0xff&&stalfos->mAction==7&&
             ((stalfos->mActionPhase==1&&stalfos->mpModelMorf->getFrame()>=2.f)||stalfos->mActionPhase==2);
     }
+    if(enemy.profile==fpcNm_E_MF_e&&enemy.elite&&!enemy.dormant&&!enemy.stagger) {
+        const auto* dynalfos=reinterpret_cast<e_mf_class*>(actor);
+        guarding=dynalfos->mAction==7&&((dynalfos->field_0x5b4==6&&
+            dynalfos->mpModelMorf->getFrame()>=2.f)||dynalfos->field_0x5b4==7);
+    }
     if(!guarding)return false;
     const auto delta=source-actor->current.pos;
     const s16 angle=s16(cM_atan2s(delta.x,delta.z)-actor->shape_angle.y);

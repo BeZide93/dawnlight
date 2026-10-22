@@ -1248,6 +1248,7 @@ HookAction before_sword_attack(ModContext* ctx, void* args, void* result, void* 
 #include "survivors_bosses.inc"
 #include "survivors_boss_tactics.inc"
 #include "survivors_stalfos.inc"
+#include "survivors_dynalfos.inc"
 bool pause_run_actor(bool enemy) {
     if(save_modal_active())return true;
     if (!in_arena() || s_run.phase == Phase::Loading) return false;
@@ -1749,7 +1750,8 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
 #include "survivors_roster_hooks.inc"
     PRE(SurvivorsEnemySpeed, before_enemy_speed); POST(SurvivorsEnemySpeed, after_enemy_facing);
-    PRE(SurvivorsEnemySpeed,before_boss_path); // Final position constraint after all movement boosts.
+    PRE(SurvivorsEnemySpeed,before_boss_path); // Final position constraints after all movement boosts.
+    PRE(SurvivorsEnemySpeed,before_dynalfos_path);
     PRE(SurvivorsEnemyDamage, before_enemy_damage);
     PRE(SurvivorsPotionDrink, before_potion_drink); POST(SurvivorsPotionDrink, after_potion_drink);
     PRE(SurvivorsPotionHeal, before_potion_heal);

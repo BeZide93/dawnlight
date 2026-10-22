@@ -342,6 +342,8 @@ jobs:
           CXX=clang++ python3 tests/survivors_shadow_beast_test.py dusklight
           python3 tests/survivors_stalfos_test.py dusklight
           CXX=clang++ python3 tests/survivors_stalfos_test.py dusklight
+          python3 tests/survivors_dynalfos_test.py dusklight
+          CXX=clang++ python3 tests/survivors_dynalfos_test.py dusklight
           CXX=clang++ python3 tests/survivors_potions_test.py
           CXX=clang++ python3 tests/survivors_defense_test.py
           CXX=clang++ python3 tests/survivors_feedback_test.py

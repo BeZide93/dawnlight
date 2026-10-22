@@ -27,11 +27,12 @@ enum class Phase{Ready,Loading,Running,Upgrade,Victory,Defeat};
 struct{struct{bool enemy_collision=false;}options;Phase phase=Phase::Running;}s_run;
 struct Enemy{int profile=0;bool elite=true,dormant=false,stagger=false;};
 bool enemy_child_root(int id){return id==2||id==3;}
-constexpr int fpcNm_B_TN_e=10,fpcNm_B_GND_e=11,fpcNm_E_SF_e=12;
+constexpr int fpcNm_B_TN_e=10,fpcNm_B_GND_e=11,fpcNm_E_SF_e=12,fpcNm_E_MF_e=13;
 struct daB_TN_c:fopAc_ac_c{enum{ACT_GUARDH=6,ACT_GUARDL=12};int mActionMode1=0;};
 struct b_gnd_class:fopAc_ac_c{int mActionMode=0;};
 struct e_sf_class:fopAc_ac_c{int arg3=0,mAction=7,mActionPhase=1;
  struct Morph{float frame=2;float getFrame(){return frame;}}morph;Morph* mpModelMorf=&morph;};
+struct e_mf_class:e_sf_class{int field_0x5b4=6;};
 struct Attack{bool active=false;cCcD_Obj collider;cXyz position,velocity;};std::array<Attack,2>s_attacks;
 bool native_sword_collider(cCcD_Obj*c){return c==&player.sword;}
 constexpr u32 Z2BGM_VS_GANON_04=10;
@@ -83,6 +84,17 @@ int main(){
  sf.mAction=7;sf.arg3=0xff;assert(!boss_blocks_from(owner,&sf,{0,0,100}));
  sf.arg3=0;owner.dormant=true;assert(!boss_blocks_from(owner,&sf,{0,0,100}));
  owner.dormant=false;owner.stagger=true;assert(!boss_blocks_from(owner,&sf,{0,0,100}));
+ // Dynalfos: raised guard blocks front contacts, but not rear/startup/release.
+ e_mf_class dyn;dyn.id=9;owner={fpcNm_E_MF_e};target.owner=&dyn;dyn.mAction=7;
+ for(int mode:{0,1,5,6,7,8}){dyn.field_0x5b4=mode;dyn.morph.frame=2;
+  assert(block_boss_contact(owner,&dyn,&player.sword,&target)==(mode==6||mode==7));
+  assert(!boss_blocks_from(owner,&dyn,{0,0,-100}));}
+ dyn.field_0x5b4=6;dyn.morph.frame=1;assert(!boss_blocks_from(owner,&dyn,{0,0,100}));
+ dyn.morph.frame=2;assert(block_boss_contact(owner,&dyn,&arrow.collider,&target));
+ assert(arrow.collider.shield&&arrow.collider.hit&&arrow.collider.target==9);
+ for(int action:{3,5,6}){dyn.mAction=action;assert(!boss_blocks_from(owner,&dyn,{0,0,100}));}
+ dyn.mAction=7;owner.dormant=true;assert(!boss_blocks_from(owner,&dyn,{0,0,100}));
+ owner.dormant=false;owner.stagger=true;assert(!boss_blocks_from(owner,&dyn,{0,0,100}));
  // One music start, pause continuity, departure cleanup, destination ownership.
  update_survivors_music();update_survivors_music();assert(audio.starts==1&&audio.stops==0);
  s_run.phase=Phase::Upgrade;update_survivors_music();assert(audio.starts==1);

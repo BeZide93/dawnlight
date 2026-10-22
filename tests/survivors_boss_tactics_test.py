@@ -113,7 +113,7 @@ void after_enemy_attack_spawn(ModContext*,void* args,void* result,void*){
  s_enemyHitSources[id].projectile=cycle.current();
 }
 '''
-source='void clear_zelda_light_orbs(ActorId){}\n'+source
+source='HookAction before_dynalfos_path(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}\nvoid clear_zelda_light_orbs(ActorId){}\n'+source
 source+='\nHookAction before_elite_attack_motion(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}\n'
 source+='HookAction before_enemy_speed(ModContext*,void* args,void*,void*){auto* actor=mods::arg<dBgS_Acch*>(args,0)->getMyAc();actor->current.pos+=actor->speed*99.f;return HOOK_CONTINUE;}\n'
 source+='void dispatch_motion(void* args){\n'+''.join(f'{callback}(nullptr,args,nullptr,nullptr);\n' for callback in motion_pres)+'}\n'

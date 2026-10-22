@@ -244,3 +244,28 @@ remain suppressed; a miss or native rejection does not spend its budget.
 The incoming-hit regression uses the production follow-up transition, covers
 both first-swing hit/miss outcomes, rejected second contacts, repeated overlap and
 subsequent attack cycles. Device verification of the second hit remains pending.
+
+### Dynalfos melee spacing and offensive guard policy
+
+For owned active Dynalfos bosses, normalize native chase distance by model scale
+at the damage hook after action refreshes it. Stop approaching in the enlarged
+melee band; recover overlap gradually on a walkable path. Clip boosted chase
+steps at 250 model units and the committed knife advance at 190, before native
+wall correction. Preserve vertical movement and native attack hit windows.
+
+Replace the native near-automatic sword-input guard with a frontal 20% roll,
+at most once per 60 active ticks, including failed rolls. Never interrupt an
+attack for a guard. Cap held guard at six active ticks and retain its native
+startup/release. Ready attacks no longer require Link to face the boss; preserve
+range, pitch, line of sight, entry waits, target-loss/cliff transitions and the
+65/35 knife/tail selection. The temporary native guard mask is scoped to action
+and restored before collision/rendering.
+
+Raised-guard phases block actual frontal sword/shield/projectile contacts using
+the shared shield response. Rear hits, startup and release remain vulnerable;
+clear native guard's blanket body hiding before collider registration.
+
+Actual SDK chase/guard tests cover sustained auto-attacks, failed guard rolls,
+readiness, both attacks, scaled spacing, terrain/target gates, boosted crossing
+steps and state restoration. Directional collision tests cover real shield-hit
+responses. Device animation/contact validation remains pending.

@@ -111,3 +111,5 @@ DEFINE_HOOK_SYMBOL("daB_TN_c::calcSwordMoveA",void(daB_TN_c*),BossTNThrow);
 DEFINE_HOOK_SYMBOL("daB_TN_c::cc_set",void(daB_TN_c*),BossTNThrowCollision);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_rdy.cpp#e_rdy_yc_ride",void(e_rdy_class*),BossCarrierRide);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_b_gnd.cpp#b_gnd_g_attack",BOOL(b_gnd_class*),BossGNDCharge);
+
+DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_mf.cpp#action",void(e_mf_class*),RosterMFAction);

@@ -1,3 +1,5 @@
+    PRE(RosterMFAction,before_dynalfos_action); POST(RosterMFAction,after_dynalfos_action);
+    PRE(RosterMF,before_dynalfos_readiness);
     PRE(RosterTargets,before_roster_targets);
     PRE(RosterSFAction,before_stalfos_action); POST(RosterSFAction,after_stalfos_action);
     PRE(RosterSF,before_stalfos_readiness);

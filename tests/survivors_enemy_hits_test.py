@@ -31,7 +31,7 @@ struct fopAc_ac_c {int id=0,profile=0;void* sub_method=&methods;
  int mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
  field_0x672=0,field_0x676=0,field_0x678=0,mActionPhase=0,mActionMode1=0,mActionMode2=0,
  mMoveMode=0,mSubAction=0,field_0x68c=0;
- cCcD_Obj mMagicSphs[2];
+ cCcD_Obj mMagicSphs[2],field_0xe64;
  static constexpr int ACTION_OPACI_ATTACK_e=16,ACTION_OPACI_FLY_e=12,ACT_B2_F_MOVE=2,ACT_ATTACK=4,ACTION_ATTACK_e=3;
 };
 int fopAcM_GetID(fopAc_ac_c* a){return a->id;}
@@ -83,14 +83,30 @@ void spawn(int id,int profile,int parent=10){
  after_enemy_attack_spawn(nullptr,args,&id,nullptr);
 }
 int main(){
- // Several body cylinders, colliders, animation loops, separation/re-entry:
- // one sustained spin may only contact once, until the next actual spin.
- reset(fpcNm_E_RDB_e);boss.mAction=4;boss.mMode=0;observe();
+ // Ordinary King Bulblin swings retain one accepted contact per attack,
+ // across colliders and repeated animation frames.
+ reset(fpcNm_E_RDB_e);boss.mAction=3;boss.mMode=0;observe();
  for(int frame=0;frame<102;++frame){boss.mMode=frame?2:1;observe();contact(weapon,target);contact(secondWeapon,secondTarget);}
  assert(damage==1&&nativeContacts==1);
- boss.mAction=1;boss.mMode=0;observe();boss.mAction=4;observe();assert(contact(weapon,target)&&damage==2);
+ boss.mAction=1;boss.mMode=0;observe();boss.mAction=3;observe();assert(contact(weapon,target)&&damage==2);
  // New attack without an idle Execute; unchanged action with a fresh mode 0.
  boss.mMode=2;observe();boss.mMode=0;observe();assert(contact(weapon,target)&&damage==3);
+ // Only the native axe in the active spin bypasses the attack-use budget.
+ reset(fpcNm_E_RDB_e);boss.field_0xe64.actor=&boss;auto& axe=boss.field_0xe64;
+ boss.mAction=4;boss.mMode=1;observe();
+ assert(contact(axe,target)&&!contact(axe,secondTarget)); // Wind-up stays limited.
+ boss.mMode=2;observe();
+ for(int frame=0;frame<102;++frame){
+  assert(contact(axe,target)); // Native collision can accept subsequent sweeps.
+  assert(!contact(weapon,secondTarget)); // No exemption for another collider.
+ }
+ assert(damage==103&&nativeContacts==103);
+ nativeAccept=false;assert(contact(axe,target)&&damage==103);
+ nativeAccept=true;assert(contact(axe,target)&&damage==104);
+ assert(s_enemyContactFrames.empty());
+ boss.mMode=3;observe();assert(!contact(axe,target)); // Recovery has no exemption.
+ boss.mAction=3;boss.mMode=2;observe();
+ assert(contact(axe,target)&&!contact(axe,secondTarget)); // Normal axe swing.
  // Darknut heavy throw is independent of his simultaneous sword swing.
  reset(fpcNm_B_TN_e);boss.mActionMode1=4;boss.mActionMode2=1;
  enemies[0].specialCooldown=45;observe();

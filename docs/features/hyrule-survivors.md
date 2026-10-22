@@ -1337,7 +1337,11 @@ find; they do not replace a signed-app installation or in-game test.
 
 ### One incoming hit per boss/elite attack use (PR #140)
 
-Each boss/elite attack has one accepted contact against Link. Extra weapon/body
+King Bulblin's active spinning axe is an exception: it can hit Link repeatedly
+using native collision timing throughout the spin. Normal axe swings, wind-up,
+recovery and other colliders retain the limit below.
+
+Each other boss/elite attack has one accepted contact against Link. Extra weapon/body
 colliders, subsequent active frames, leaving/re-entering the hitbox and looping
 animations do not grant more contacts. Native block/dodge is evaluated for that
 contact once. New attack uses and different attackers remain independent; there

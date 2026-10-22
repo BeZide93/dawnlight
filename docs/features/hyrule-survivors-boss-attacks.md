@@ -49,7 +49,7 @@ ausgenommen. Ganze Animationsabläufe werden nicht halbiert.
 | Gegner | Schaden gegenüber nativ | Zusätzliche Regeln |
 |---|---|---|
 | Beförderte normale Elites/Wächter | ×2 | Bereitschafts-/Erholungstimer ×½; ruhende Wächter bleiben ruhend |
-| King Bulblin | ×1 | Nativer Wirbel aus der Verfolgung unter 900 Einheiten; 6 s Cooldown |
+| King Bulblin | ×1 | Nativer Wirbel aus der Verfolgung unter 900 Einheiten; 6 s Cooldown; aktive Wirbelaxt kann mehrfach treffen |
 | Darknut | ×2 | Wiederholter schwerer Schwertwurf alle 1,5 aktiven Sekunden bei mehr als 400 Einheiten Abstand, in beiden Rüstungsphasen |
 | Death Sword | ×4 | Nach 4 s Verfolgung bei mehr als 600 Einheiten Abstand zur nativen Zweifach-Magiephase; laufende Schläge/Schüsse werden nicht neu gestartet |
 | Stallord-Kopf | ×4 | Atemstart bis 6.000 Einheiten, unabhängig von Links Schadensschutz; Annäherung ab 1.800 Einheiten |

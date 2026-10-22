@@ -161,6 +161,13 @@ EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
     if(!root)return {};
     observe_enemy_attack(*owner,root);
     auto& source=s_enemyHitSources[owner->id];
+    if(owner->profile==fpcNm_E_RDB_e) {
+        auto* king=reinterpret_cast<e_rdb_class*>(root);
+        // The sustained native spin must be able to hit again as the axe
+        // sweeps through Link. Keep the one-use limit for ordinary swings,
+        // wind-up/recovery and all other colliders; native collision owns timing.
+        if(king->mAction==4 && king->mMode==2 && attack==&king->field_0xe64) return {};
+    }
     if(owner->profile==fpcNm_E_VT_e) {
         auto* sword=reinterpret_cast<daE_VA_c*>(root);
         if(attack==&sword->mMagicSphs[0]||attack==&sword->mMagicSphs[1]) {

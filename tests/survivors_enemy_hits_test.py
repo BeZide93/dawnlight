@@ -30,7 +30,7 @@ struct cCcD_Obj {fopAc_ac_c* actor=nullptr;cCcD_Obj* hit=nullptr;unsigned power=
 struct fopAc_ac_c {int id=0,profile=0;void* sub_method=&methods;
  int mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
  field_0x672=0,field_0x676=0,field_0x678=0,mActionPhase=0,mActionMode1=0,mActionMode2=0,
- mMoveMode=0,mSubAction=0,field_0x68c=0;
+ mMoveMode=0,mSubAction=0,field_0x68c=0,mTimers[4]{};
  cCcD_Obj mMagicSphs[2],field_0xe64,mAtSph,mBallSphAt;
  static constexpr int ACTION_OPACI_ATTACK_e=16,ACTION_OPACI_FLY_e=12,ACT_B2_F_MOVE=2,ACT_ATTACK=4,ACTION_ATTACK_e=3;
 };
@@ -59,6 +59,12 @@ bool native_boss_profile(int p){return p==fpcNm_B_TN_e||p==fpcNm_E_PZ_e||p==fpcN
 bool structural_enemy_child(int p){return p==fpcNm_E_MM_MT_e||p==fpcNm_E_TH_BALL_e||p==fpcNm_E_RDY_e;}
 '''
 fixture += '\nEnemyAttackUsePtr zelda_light_orb_use(cCcD_Obj*){return {};}\nvoid boss_record_contact(cCcD_Obj*){}\n'
+# Reproduce the real director follow-up: mode 0 is overwritten by mode 1
+# before the next process observation, without leaving action 3.
+tactics = (root / 'src/survivors_boss_tactics.inc').read_text()
+followup = tactics[tactics.index('void boss_followup('):tactics.index('void prepare_stalhound_pounce(')]
+shadow_case = re.search(r'case fpcNm_E_S1_e:\{.*?break;\}', followup).group()
+fixture += 'void shadow_followup(fopAc_ac_c* actor){switch(fpcNm_E_S1_e){'+shadow_case+'default:break;}}\n'
 main = r'''
 fopAc_ac_c boss,other,projectileA,projectileB;
 cCcD_Obj target,secondTarget,weapon,secondWeapon;
@@ -216,6 +222,24 @@ int main(){
  projectileA.id=20;projectileB.id=21;ghostA.actor=&projectileA;ghostB.actor=&projectileB;
  assert(contact(weapon,target)&&contact(ghostA,target)&&contact(ghostB,target));
  assert(!contact(weapon,target)&&!contact(ghostA,target)&&!contact(ghostB,target));
+ // Shadow Beast's two native swings stay in action 3. Each active phase
+ // must own one accepted hit, even though follow-up skips observable mode 0.
+ for(bool missFirst:{false,true}){
+  reset(fpcNm_E_S1_e);boss.mAction=3;boss.mMode=1;observe();
+  boss.mMode=2;observe();
+  if(!missFirst){assert(contact(weapon,target));assert(!contact(weapon,secondTarget));}
+  for(int frame=0;frame<10;++frame){observe();if(!missFirst)assert(!contact(weapon,target));}
+  boss.mMode=0;shadow_followup(&boss);assert(boss.mAction==3&&boss.mMode==1&&boss.mTimers[0]==12);
+  for(int tick=0;tick<12;++tick){observe();--boss.mTimers[0];}
+  boss.mMode=2;observe();
+  nativeAccept=false;assert(contact(weapon,target)); // Rejection does not spend the second swing.
+  nativeAccept=true;assert(contact(weapon,target));
+  for(int frame=0;frame<9;++frame){observe();assert(!contact(weapon,target));assert(!contact(secondWeapon,secondTarget));}
+  assert(damage==(missFirst?1:2));
+  // A later normal cycle also gets a fresh budget; no reset per active frame.
+  boss.mMode=0;observe();boss.mMode=1;observe();boss.mMode=2;observe();
+  assert(contact(weapon,target)&&!contact(weapon,secondTarget));
+ }
  // No blanket immunity: other elites and ordinary enemies can still hit.
  reset(fpcNm_E_S1_e);boss.mAction=3;assert(contact(weapon,target));
  enemies[1].id=11;enemies[1].profile=fpcNm_E_S1_e;other.mAction=3;secondWeapon.actor=&other;
@@ -230,11 +254,10 @@ int main(){
  weapon.power=0;assert(contact(weapon,target));weapon.power=1;assert(!contact(weapon,target));
  // All ordinary promoted elite attack states reset for a new use.
  for(int profile:{fpcNm_E_OC_e,fpcNm_E_DN_e,fpcNm_E_MF_e,fpcNm_E_RD_e,
-                  fpcNm_E_RDY_e,fpcNm_E_KR_e,fpcNm_E_SH_e,fpcNm_E_SF_e,fpcNm_E_S1_e}){
+                  fpcNm_E_RDY_e,fpcNm_E_KR_e,fpcNm_E_SH_e,fpcNm_E_SF_e}){
   reset(profile);boss.mActionMode=4;boss.action=5;boss.mAction=5;boss.mCurAction=3;boss.field_0x676=3;
   if(profile==fpcNm_E_RD_e)boss.action=4;
   if(profile==fpcNm_E_RDY_e)boss.mAction=4;
-  if(profile==fpcNm_E_S1_e)boss.mAction=3;
   assert(contact(weapon,target));assert(!contact(secondWeapon,secondTarget));
   boss.mOcState=boss.mode=boss.field_0x5b4=boss.mMode=boss.field_0x672=boss.field_0x678=boss.mActionPhase=1;observe();
   boss.mOcState=boss.mode=boss.field_0x5b4=boss.mMode=boss.field_0x672=boss.field_0x678=boss.mActionPhase=0;observe();

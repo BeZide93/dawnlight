@@ -62,7 +62,10 @@ void observe_enemy_attack(Enemy& enemy, fopAc_ac_c* actor) {
     }
     case fpcNm_E_S1_e: {
         auto* e=reinterpret_cast<e_s1_class*>(actor);action=e->mAction;mode=e->mMode;
-        if (action==3) key=action;
+        // The director queues the second swing as mode 1, hiding native mode 0.
+        // Only mode 2 is a swing: observing its intervening wind-up clears the
+        // cycle key so each arm gets one use, shared across all Link colliders.
+        if (action==3&&mode==2) key=action;
         break;
     }
     case fpcNm_B_TN_e: {

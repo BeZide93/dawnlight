@@ -230,3 +230,17 @@ several headings, both swings, boosted steps crossing through Link, and scoped
 noncombat/terrain cases. Director tests cover call ordering, archive selection,
 no attack drift and ownership; collider tests preserve the inactive sentinel.
 Device confirmation of actual animated hand contacts remains pending.
+
+### Shadow Beast two-swing contact budget
+
+Each active native arm swing (`ACT_FIGHT`, mode 2) has one accepted-contact
+budget, shared across Link's colliders. The director queues the second swing in
+mode 1 before the observer can see native mode 0; treating all of action 3 as one
+attack therefore suppressed the second hit. Clear the cycle key during wind-up
+so entering the second swing creates a fresh budget. Preserve native hit windows,
+geometry, damage and block/dodge handling. Repeated contacts within one swing
+remain suppressed; a miss or native rejection does not spend its budget.
+
+The incoming-hit regression uses the production follow-up transition, covers
+both first-swing hit/miss outcomes, rejected second contacts, repeated overlap and
+subsequent attack cycles. Device verification of the second hit remains pending.

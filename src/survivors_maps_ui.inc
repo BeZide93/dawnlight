@@ -318,5 +318,7 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     control.kind=UI_CONTROL_GROUP;control.label="Manual aiming abilities";
     control.help_rml="Choose which abilities follow the reticle during manual aiming. Disabled abilities keep their automatic targeting.";
     control.on_pressed=open_manual_aim_settings;
-    return svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
+    return enemy_hud::build(left);
 }

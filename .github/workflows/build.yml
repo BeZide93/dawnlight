@@ -292,6 +292,8 @@ jobs:
       - name: Test shared Survivors settings against SDK
         if: matrix.platform == 'linux-x86_64'
         run: |
+          python3 tests/survivors_enemy_hud_test.py
+          CXX=clang++ python3 tests/survivors_enemy_hud_test.py
           python3 tests/survivors_results_test.py
           CXX=clang++ python3 tests/survivors_results_test.py
           clang++ -std=c++20 -Wall -Wextra -Werror tests/survivors_damage_test.cpp -o /tmp/survivors-damage-clang

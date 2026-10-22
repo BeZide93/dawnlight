@@ -11,6 +11,7 @@ fixture=r'''
 #include "survivors_rules.hpp"
 #include "mods/svc/ui.h"
 #define svc_ui test_ui
+namespace enemy_hud {ModResult build(UiElementHandle){return MOD_OK;}}
 using namespace dawnlight::survivors;
 std::string number(unsigned n){return std::to_string(n);}
 std::string result_decimal(double n,int=1){return std::to_string(n);}

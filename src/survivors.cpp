@@ -2,6 +2,7 @@
 #include "platform_compat.hpp"
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
+#include "survivors_enemy_hud.hpp"
 #include "survivors_integrity.hpp"
 #include "d/d_door_param2.h"
 #include "config.hpp"
@@ -416,6 +417,7 @@ struct Enemy {
     cXyz encounterTarget{};
     unsigned arrowVolley=0;
 };
+static_assert(enemy_capacity <= 512, "Update enemy HUD slot capacity with the roster");
 std::array<Enemy, enemy_capacity> s_enemies;
 ActorSlotIndex<ActorId> s_enemyIndex;
 struct Orb { cXyz position{}; unsigned value = 0; bool summoned = false, merged = false; };
@@ -563,6 +565,7 @@ void cleanup_enemies() {
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
         auto* actor = actor_by_id(e.id);
+        if(e.retiring || e.credited || !actor)enemy_hud::forget(&e-s_enemies.data());
         if(e.retiring||e.credited||(actor&&actor->health<=0))clear_zelda_light_orbs(e.id);
         if (!actor && !fpcM_IsCreating(e.id)) {
             clear_zelda_light_orbs(e.id);
@@ -640,6 +643,7 @@ void reset_runtime() {
         dComIfGp_setGameoverStatus(0);
     }
     clear_combat_feedback();
+    enemy_hud::reset();
     s_run = {}; s_orbs = {}; s_cooldowns = {};
     s_player = kNone; s_loaded = false; s_resultsStored = false;
     s_storeFailed = false; s_restart = false; s_saveRequested = false; s_saveStartTicks = 0;
@@ -1216,6 +1220,7 @@ void after_player(ModContext*, void* args, void*, void*) {
         if (s_victoryTicks>=10*ticks_per_second && s_run.phase==Phase::Running) finish(true);
         return;
     }
+    enemy_hud::tick();
     s_run.tick(true);
     if (s_run.life_regen_due() && dComIfGs_getLife()<dComIfGs_getMaxLifeGauge())
         dComIfGs_setLife(std::min<unsigned>(dComIfGs_getMaxLifeGauge(),dComIfGs_getLife()+1));
@@ -1293,6 +1298,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
         if (arrow) { s_enemyArrowIndex.erase(id); arrow->id=kNone; }
         // Never award XP here: cancellation, unloading and despawning also delete.
         if (enemy) {
+            enemy_hud::forget(enemy-s_enemies.data());
             s_enemyIndex.erase(id);
             *enemy = {};
         }
@@ -1330,6 +1336,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
         *static_cast<int*>(result) = 1;
         return HOOK_SKIP_ORIGINAL;
     }
+    if(enemy)enemy_hud::observe(enemy-s_enemies.data(),actor,enemy->initialized&&!enemy->retiring&&!enemy->credited&&!enemy->dormant);
     if(enemy && boss_tactics_owned(*enemy))s_bossTactics[id].stagger.tick();
     if (enemy && extended_enemy(enemy->profile) && !update_extended_enemy(actor,*enemy)) {
         *static_cast<int*>(result)=1; return HOOK_SKIP_ORIGINAL;
@@ -1362,6 +1369,10 @@ void after_process(ModContext*, void* args, void*, void*) {
             cXyz floor = actor->current.pos;
             if (loot_floor_position(floor)) enemy->lootPosition = floor;
         }
+        // Extended AI can credit/retire a lethal hit before returning here.
+        // Observe that final HP loss while the pre-Execute baseline still exists.
+        enemy_hud::observe(enemy-s_enemies.data(),actor,enemy->initialized&&!enemy->dormant&&
+            ((!enemy->retiring&&!enemy->credited)||actor->health<=0));
         credit_death(*enemy, actor);
     }
 }
@@ -1446,6 +1457,7 @@ void draw_hud(ModContext*, void* args, void*, void*) {
     const float x = mDoGph_gInf_c::getMinXF() + mDoGph_gInf_c::getWidthF() * 0.5f;
     if(preview || s_gearNoticeTicks)draw_gear_notice(preview);
     if (!preview && s_victory) { draw_victory_hud(x); graf->setup2D(); return; }
+    if(!preview)enemy_hud::draw();
     char text[180];
     draw_run_rank_hud(x,preview);
     const auto drawText=[&](HudPart part,float size,float offset=0.f) {
@@ -1517,6 +1529,7 @@ void begin_run() {
     reset_elite_encounters();
     s_bossHudTarget = kNone;
     clear_combat_feedback();
+    enemy_hud::reset();
     s_run.start(seed, s_options, s_records.talents);s_run.equip_gear(s_gear);clear_gear_notices(); reset_gale_charges();
     begin_survivors_integrity(s_run.options.allow_cheats,s_run.modded);
     dComIfGs_setMaxLife(s_run.maximum_hearts*5); dComIfGs_setLife(s_run.maximum_hearts*4);
@@ -1686,6 +1699,7 @@ bool survivors_dark_link_active() {
         s_run.phase == Phase::Upgrade || s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Treasure);
 }
 void update_survivors() {
+    enemy_hud::refresh();
     update_survivors_registration();
     update_survivors_music();
     update_survivors_integrity(s_run.modded);
@@ -1698,7 +1712,7 @@ void update_survivors() {
     enforce_survivors_bindings();
     if(update_hub_save())return;
     if(update_post_run_save())return;
-    if (!in_arena() || transitioning()) { update_survivors_equipment_chest(false,{},0); close_gear_window(); reset_ending(); reset_midna_dialog(); close_powerup_window(); clear_attacks(); clear_loot(); clear_enemy_effects(); s_player = kNone; s_warmup = 0; return; }
+    if (!in_arena() || transitioning()) { enemy_hud::reset(); update_survivors_equipment_chest(false,{},0); close_gear_window(); reset_ending(); reset_midna_dialog(); close_powerup_window(); clear_attacks(); clear_loot(); clear_enemy_effects(); s_player = kNone; s_warmup = 0; return; }
     auto* link = daAlink_getAlinkActorClass();
     if (!link || !dComIfGp_getStageStagInfo()) return;
     if (s_restart) {
@@ -1741,6 +1755,8 @@ ModResult initialize_survivors(ModError* error) {
     if(result!=MOD_OK)return result;
     result=initialize_option_config();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors settings");
+    result=enemy_hud::initialize();
+    if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors enemy HUD settings");
     result=initialize_hud_config();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors HUD settings");
     result=initialize_midna_dialog();
@@ -1868,6 +1884,7 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    enemy_hud::shutdown();
     shutdown_boss_ring();
     stop_survivors_music();
     shutdown_survivors_integrity();

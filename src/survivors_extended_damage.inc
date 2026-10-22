@@ -34,7 +34,7 @@ HookAction before_roster_cry(ModContext*,void* args,void* result,void*) {
         return HOOK_SKIP_ORIGINAL;
     // Keep native range/LOS checks, animation, button-mashing and Link's scream
     // pose. Avoid the native global/camera owner: run deaths bypass its cleanup.
-    actor->mPlayerStunTimer=60;actor->mCryTimer=80;actor->mPushButtonCount=0;
+    actor->mPlayerStunTimer=30;actor->mCryTimer=80;actor->mPushButtonCount=0;
     actor->speedF=0;actor->setBck(10,0,5.f,1.f);actor->field_0x6a0=3;
     s_run.gibdo_scream_cooldown=180;
     *static_cast<bool*>(result)=true;return HOOK_SKIP_ORIGINAL;

@@ -41,7 +41,8 @@ struct Enemy{int id=-1,profile=0;bool elite=true,initialized=true,retiring=false
 std::unordered_map<int,fopAc_ac_c*> actors;
 std::unordered_map<int,int> children;
 bool arena=true,playing=true;int s_player=1;
-enum class Phase{Running,Ready};struct{Phase phase=Phase::Running;}s_run;
+constexpr unsigned ticks_per_second=30;
+enum class Phase{Running,Ready};struct{Phase phase=Phase::Running;unsigned ticks=0;}s_run;
 bool in_arena(){return arena;}bool playable(){return playing;}
 fopAc_ac_c link;
 auto* daAlink_getAlinkActorClass(){return &link;}
@@ -76,7 +77,7 @@ void reset(int profile){
  link={};link.id=s_player=1;actors[10]=&boss;actors[11]=&other;
  target={&link};secondTarget={&link};weapon={&boss};secondWeapon={&boss};
  enemies[0].extraAttack.actor=&boss;
- arena=playing=nativeAccept=true;s_run.phase=Phase::Running;damage=nativeContacts=0;
+ arena=playing=nativeAccept=true;s_run.phase=Phase::Running;s_run.ticks=0;damage=nativeContacts=0;
 }
 void spawn(int id,int profile,int parent=10){
  children[id]=10;std::any args[]={s16(profile),parent};
@@ -91,20 +92,33 @@ int main(){
  boss.mAction=1;boss.mMode=0;observe();boss.mAction=3;observe();assert(contact(weapon,target)&&damage==2);
  // New attack without an idle Execute; unchanged action with a fresh mode 0.
  boss.mMode=2;observe();boss.mMode=0;observe();assert(contact(weapon,target)&&damage==3);
- // Only the native axe in the active spin bypasses the attack-use budget.
+ // Active spin has a per-owner 15-tick window shared across Link's colliders.
  reset(fpcNm_E_RDB_e);boss.field_0xe64.actor=&boss;auto& axe=boss.field_0xe64;
  boss.mAction=4;boss.mMode=1;observe();
  assert(contact(axe,target)&&!contact(axe,secondTarget)); // Wind-up stays limited.
  boss.mMode=2;observe();
- for(int frame=0;frame<102;++frame){
-  assert(contact(axe,target)); // Native collision can accept subsequent sweeps.
-  assert(!contact(weapon,secondTarget)); // No exemption for another collider.
+ for(unsigned frame=0;frame<102;++frame){
+  s_run.ticks=frame;
+  assert(contact(axe,target)==(frame%15==0));
+  assert(!contact(axe,secondTarget)); // Never double-hit in the same tick.
+  assert(!contact(weapon,secondTarget)); // Other collider keeps its attack budget.
  }
- assert(damage==103&&nativeContacts==103);
- nativeAccept=false;assert(contact(axe,target)&&damage==103);
- nativeAccept=true;assert(contact(axe,target)&&damage==104);
+ assert(damage==8&&nativeContacts==8); // Wind-up + ticks 0,15,...,90.
+ // Rejected native contacts do not start or extend the cooldown. The first
+ // accepted contact can occur long after the eligible overlap was observed.
+ s_run.ticks=105;nativeAccept=false;assert(contact(axe,target)&&damage==8);
+ s_run.ticks=120;nativeAccept=true;assert(contact(axe,target)&&damage==9);
+ for(unsigned tick=120;tick<135;++tick){s_run.ticks=tick;assert(!contact(axe,target));}
+ s_run.ticks=135;assert(contact(axe,target)&&damage==10);
  assert(s_enemyContactFrames.empty());
- boss.mMode=3;observe();assert(!contact(axe,target)); // Recovery has no exemption.
+ // Another King has an independent cooldown, not global player immunity.
+ enemies[1].id=11;enemies[1].profile=fpcNm_E_RDB_e;other.mAction=4;other.mMode=2;
+ other.field_0xe64.actor=&other;
+ assert(contact(other.field_0xe64,target)&&!contact(other.field_0xe64,secondTarget));
+ // Starting another spin cannot bypass the half-second since the last hit.
+ boss.mMode=0;observe();boss.mMode=2;observe();assert(!contact(axe,target));
+ s_run.ticks=150;assert(contact(axe,target));
+ boss.mMode=3;observe();assert(contact(axe,target)&&!contact(axe,secondTarget));
  boss.mAction=3;boss.mMode=2;observe();
  assert(contact(axe,target)&&!contact(axe,secondTarget)); // Normal axe swing.
  // Darknut heavy throw is independent of his simultaneous sword swing.

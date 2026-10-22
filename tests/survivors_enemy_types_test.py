@@ -47,7 +47,7 @@ struct e_ba_class{fopAc_ac_c enemy;Morf morph;Morf* mpMorf=&morph;Sphere mSph;};
 struct e_ms_class:fopAc_ac_c{Morf morph;Morf* mpModelMorf=&morph;Sphere mSph1,mSph2;};
 struct e_rd_class{fopAc_ac_c enemy;Sphere cc_sph[3];};
 struct Enemy{ActorId id=kNone;ProfileName profile=0;bool initialized=false,credited=false,retiring=false,elite=false;
- unsigned age=0,endlessMinute=0;int eliteSlot=-1;bool dormant=false;cXyz lootPosition{},spawnPosition{};unsigned species=0;};
+ unsigned age=0,endlessMinute=0;int eliteSlot=-1;bool dormant=false;cXyz lootPosition{},spawnPosition{};unsigned species=0,arrowVolley=0;};
 std::array<Enemy,enemy_capacity>s_enemies;
 ActorSlotIndex<ActorId> s_enemyIndex;
 Enemy* tracked(ActorId id){for(auto& e:s_enemies)if(e.id!=kNone&&e.id==id)return &e;return nullptr;}
@@ -69,7 +69,7 @@ struct Service{void delete_actor(ModContext*,ActorId id){deleted.insert(id);}}se
 main=r'''
 std::vector<s16> spreadAngles;
 ActorId fopAcM_createChild(s16 profile,ActorId parent,u32 params,const cXyz* pos,int room,const csXyz* angle,const cXyz* scale,s8 arg,createFunc callback){
- if(s_spawningEndlessArrows)assert(profile==fpcNm_E_ARROW_e&&parent==42&&params==7&&room==0&&
+ if(s_spawningEnemyArrows)assert(profile==fpcNm_E_ARROW_e&&(parent==42||parent==43)&&params==7&&room==0&&
     angle->x==123&&angle->z==456&&scale->x==1&&pos->x==0&&arg==-1&&callback==nullptr);
  std::any args[]={profile,parent,params,pos,room,angle,scale,arg,callback};ActorId id=nextId++;
  if(before_enemy_arrow(nullptr,args,&id,nullptr)==HOOK_SKIP_ORIGINAL)return id;
@@ -153,7 +153,7 @@ int main(){
  s_run.endless=false;
  // Native arrows are not enemies/loot sources. They remain owned after shooter deletion.
  s_enemies={};s_enemies[0].id=42;s_enemies[0].profile=fpcNm_E_RD_e;
- std::any args[]={s16(fpcNm_E_ARROW_e),ActorId(42)};ActorId arrowId=100;
+ std::any args[]={s16(fpcNm_E_ARROW_e),ActorId(42),u32(0),static_cast<const cXyz*>(nullptr),0,static_cast<const csXyz*>(nullptr)};ActorId arrowId=100;
  assert(before_enemy_arrow(nullptr,args,&arrowId,nullptr)==HOOK_CONTINUE);
  after_enemy_arrow(nullptr,args,&arrowId,nullptr);assert(active_enemy_arrow(100));
  after_enemy_arrow(nullptr,args,&arrowId,nullptr); // no duplicate entries
@@ -191,7 +191,7 @@ int main(){
  // Shadow arrows and Stallord fireballs share pause/teardown ownership.
  for(auto spec:{std::pair{fpcNm_E_RDY_e,fpcNm_E_ARROW_e},std::pair{fpcNm_B_DS_e,fpcNm_B_DS_e}}){
   s_enemyArrows={};s_enemies={};s_enemies[0].id=42;s_enemies[0].profile=spec.first;
-  std::any childArgs[]={s16(spec.second),ActorId(42),u32(daB_DS_c::TYPE_BULLET_B)};ActorId child=250;
+  std::any childArgs[]={s16(spec.second),ActorId(42),u32(daB_DS_c::TYPE_BULLET_B),static_cast<const cXyz*>(nullptr),0,static_cast<const csXyz*>(nullptr)};ActorId child=250;
   assert(before_enemy_arrow(nullptr,childArgs,&child,nullptr)==HOOK_CONTINUE);
   after_enemy_arrow(nullptr,childArgs,&child,nullptr);assert(active_enemy_arrow(child));
   s_enemies[0]={};assert(active_enemy_arrow(child));
@@ -232,7 +232,7 @@ int main(){
  std::any riderArgs[]={s16(fpcNm_E_RDY_e),ActorId(42)};ActorId rider=500;
  after_enemy_arrow(nullptr,riderArgs,&rider,nullptr);assert(enemy_damage_factor(rider)==4);
  fopAc_ac_c riderActor;riderActor.profile=fpcNm_E_RDY_e;actors[rider]=&riderActor;
- std::any mountedShot[]={s16(fpcNm_E_ARROW_e),ActorId(rider)};ActorId flyingArrow=501;
+ std::any mountedShot[]={s16(fpcNm_E_ARROW_e),ActorId(rider),u32(0),static_cast<const cXyz*>(nullptr),0,static_cast<const csXyz*>(nullptr)};ActorId flyingArrow=501;
  assert(before_enemy_arrow(nullptr,mountedShot,&flyingArrow,nullptr)==HOOK_CONTINUE);
  after_enemy_arrow(nullptr,mountedShot,&flyingArrow,nullptr);assert(enemy_damage_factor(flyingArrow)==4&&tracked_enemy_arrow(flyingArrow)->parent==42);
  carrier={};carrier.id=43;carrier.profile=fpcNm_E_OC_e;
@@ -247,19 +247,38 @@ int main(){
  s_enemies[0].credited=true;assert(!active_enemy_arrow(ghost));creating.insert(ghost);cleanup_enemy_arrows();
  assert(tracked_enemy_arrow(ghost));creating.clear();actors[ghost]=&player;cleanup_enemy_arrows();assert(deleted.contains(ghost));
  actors.clear();cleanup_enemy_arrows();assert(!tracked_enemy_arrow(ghost));s_enemies={};
- // Every Endless archer shot uses the Hard Mode fan, with recursive ownership
- // hooks still tracking exactly three arrows; normal runs and other species do not.
+ // Normal archers fire single, single, triple; Endless keeps every shot triple.
+ // Recursive side arrows do not advance the original-shot counter.
  for(int profile:{fpcNm_E_RD_e,fpcNm_E_RDY_e,fpcNm_E_OC_e})for(bool endless:{false,true}){
   s_enemyArrows={};s_enemies={};actors.clear();spreadAngles.clear();
   s_run.phase=Phase::Running;s_run.endless=endless;s_enemies[0].id=42;s_enemies[0].profile=profile;
   cXyz pos{},scale{1,1,1};csXyz angle{123,1000,456};
-  const auto id=fopAcM_createChild(s16(fpcNm_E_ARROW_e),42,7,&pos,0,&angle,&scale,s8(-1),nullptr);
-  const bool archer=profile!=fpcNm_E_OC_e;const unsigned count=endless&&archer?3:1;
-  assert(spreadAngles.size()==count&&angle.y==1000&&!s_spawningEndlessArrows);
-  if(count==3){assert(spreadAngles[1]==1000-0x900&&spreadAngles[2]==1000+0x900);
-   unsigned tracked=0;for(const auto& a:s_enemyArrows)if(a.id!=kNone){++tracked;assert(a.parent==42);}assert(tracked==3);
-   assert(active_enemy_arrow(id));retire_enemy_arrows();assert(!active_enemy_arrow(id));}
+  const bool archer=profile!=fpcNm_E_OC_e;unsigned total=0;
+  for(unsigned shot=1;shot<=6;++shot){
+   const auto before=spreadAngles.size();
+   const auto id=fopAcM_createChild(s16(fpcNm_E_ARROW_e),42,7,&pos,0,&angle,&scale,s8(-1),nullptr);
+   const unsigned count=archer&&(endless||shot%3==0)?3:1;total+=count;
+   assert(spreadAngles.size()==total&&angle.y==1000&&!s_spawningEnemyArrows);
+   if(count==3){assert(spreadAngles[before+1]==1000-0x900&&spreadAngles[before+2]==1000+0x900);}
+   if(archer){assert(active_enemy_arrow(id));assert(s_enemies[0].arrowVolley==shot%3);}
+  }
+  if(archer){unsigned tracked=0;for(const auto& a:s_enemyArrows)if(a.id!=kNone){++tracked;assert(a.parent==42);}assert(tracked==total);}
  }
+ s_run.endless=false;s_enemyArrows={};s_enemies={};actors.clear();spreadAngles.clear();
+ // Cadence belongs to each shooter; rejected/failed shots do not advance it.
+ s_enemies[0].id=42;s_enemies[0].profile=fpcNm_E_RD_e;
+ s_enemies[1].id=43;s_enemies[1].profile=fpcNm_E_RDY_e;
+ cXyz pos{},scale{1,1,1};csXyz angle{123,1000,456};
+ auto shoot=[&](ActorId parent){return fopAcM_createChild(s16(fpcNm_E_ARROW_e),parent,7,&pos,0,&angle,&scale,s8(-1),nullptr);};
+ shoot(42);shoot(43);shoot(42);assert(spreadAngles.size()==3);
+ s_run.phase=Phase::Upgrade;assert(shoot(42)==kNone&&s_enemies[0].arrowVolley==2);
+ s_run.phase=Phase::Running;ActorId failed=kNone;
+ after_enemy_arrow(nullptr,args,&failed,nullptr);assert(s_enemies[0].arrowVolley==2);
+ shoot(42);assert(spreadAngles.size()==6&&s_enemies[0].arrowVolley==0);
+ shoot(43);assert(spreadAngles.size()==7&&s_enemies[1].arrowVolley==2);
+ // Actor-slot reuse starts at the first shot, not a previous archer's third.
+ s_enemies[1]={};s_enemies[1].id=43;s_enemies[1].profile=fpcNm_E_RDY_e;
+ shoot(43);assert(spreadAngles.size()==8&&s_enemies[1].arrowVolley==1);
  s_run.endless=false;s_enemyArrows={};s_enemies={};actors.clear();
  // Foreign children and failed creates are ignored; capacity/pause reject new owned arrows.
  arrowId=101;after_enemy_arrow(nullptr,args,&arrowId,nullptr);assert(!tracked_enemy_arrow(101));

@@ -4,7 +4,7 @@
 namespace dawnlight::survivors {
 // A cast can own several colliders, projectiles or riders and outlive its
 // caster. Keep its contact budget with the cast, never with a frame or timer.
-struct EnemyAttackUse { bool contacted = false; };
+struct EnemyAttackUse { bool contacted = false; unsigned contactTick = 0; };
 using EnemyAttackUsePtr = std::shared_ptr<EnemyAttackUse>;
 inline EnemyAttackUsePtr new_enemy_attack_use() { return std::make_shared<EnemyAttackUse>(); }
 struct EnemyAttackCycle {

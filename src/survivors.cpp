@@ -408,6 +408,7 @@ struct Enemy {
     dCcD_Stts extraStatus{};
     dCcD_Sph extraAttack{};
     cXyz encounterTarget{};
+    unsigned arrowVolley=0;
 };
 std::array<Enemy, enemy_capacity> s_enemies;
 ActorSlotIndex<ActorId> s_enemyIndex;

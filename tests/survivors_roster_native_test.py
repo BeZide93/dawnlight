@@ -254,7 +254,7 @@ int main(){
  }
  gi={};gi.id=gibdo.id;gi.profile=gibdo.profile;gibdo.health=100;stageChange=false;s_run.phase=Phase::Running;
  before_roster_cry(nullptr,cryArgs,&cry,nullptr);
- assert(cry&&gibdo.mPlayerStunTimer==60&&gibdo.mCryTimer==80&&gibdo.animation==10&&gibdo.field_0x6a0==3);
+ assert(cry&&gibdo.mPlayerStunTimer==30&&gibdo.mCryTimer==80&&gibdo.animation==10&&gibdo.field_0x6a0==3);
  assert(s_run.gibdo_scream_cooldown==180);
  NativeActor other;other.id=2;other.profile=fpcNm_E_GI_e;s_enemies[1]=gi;s_enemies[1].id=2;
  cryArgs[0]=static_cast<daE_GI_c*>(&other);before_roster_cry(nullptr,cryArgs,&cry,nullptr);
@@ -262,7 +262,7 @@ int main(){
  s_run.phase=Phase::Upgrade;s_run.tick(true);assert(s_run.gibdo_scream_cooldown==180);
  s_run.phase=Phase::Running;s_run.tick(false);assert(s_run.gibdo_scream_cooldown==180);
  for(int i=0;i<180;++i)s_run.tick(true);
- before_roster_cry(nullptr,cryArgs,&cry,nullptr);assert(cry&&other.mPlayerStunTimer==60);
+ before_roster_cry(nullptr,cryArgs,&cry,nullptr);assert(cry&&other.mPlayerStunTimer==30);
  auto gibdoBody=extended_body(&gibdo,gi.profile);gibdoBody.targets[0]->hit=&sword;
  update_extended_enemy(&gibdo,gi);assert(!gibdo.mPlayerStunTimer&&gibdo.mCryTimer==20);
  s_run.start(5);assert(!s_run.gibdo_scream_cooldown);

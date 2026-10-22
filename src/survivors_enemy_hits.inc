@@ -2,7 +2,7 @@
 // host symbols or global player invulnerability are needed.
 struct EnemyHitSource {
     EnemyAttackCycle cycle;
-    EnemyAttackUsePtr projectile, thrownSword, riders, magic;
+    EnemyAttackUsePtr projectile, thrownSword, riders, magic, spin;
     unsigned throwCooldown = 0;
     bool summoning = false;
 };
@@ -163,10 +163,14 @@ EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
     auto& source=s_enemyHitSources[owner->id];
     if(owner->profile==fpcNm_E_RDB_e) {
         auto* king=reinterpret_cast<e_rdb_class*>(root);
-        // The sustained native spin must be able to hit again as the axe
-        // sweeps through Link. Keep the one-use limit for ordinary swings,
-        // wind-up/recovery and all other colliders; native collision owns timing.
-        if(king->mAction==4 && king->mMode==2 && attack==&king->field_0xe64) return {};
+        // One accepted axe contact per half-second of playable run time.
+        // The timestamp is committed after native acceptance, not on overlap.
+        if(king->mAction==4 && king->mMode==2 && attack==&king->field_0xe64) {
+            if(!source.spin || (source.spin->contacted &&
+               s_run.ticks-source.spin->contactTick>=ticks_per_second/2))
+                source.spin=new_enemy_attack_use();
+            return source.spin;
+        }
     }
     if(owner->profile==fpcNm_E_VT_e) {
         auto* sword=reinterpret_cast<daE_VA_c*>(root);
@@ -237,5 +241,8 @@ void after_enemy_attack_contact(ModContext*,void* args,void*,void*) {
     auto frame=std::move(s_enemyContactFrames.back());s_enemyContactFrames.pop_back();
     // Commit only a native accepted contact. The first block/dodge remains
     // effective for the whole attack instead of rerolling on every frame.
-    if(frame.target->ChkTgHit()&&frame.target->GetTgHitObj()==frame.attack)frame.use->contacted=true;
+    if(frame.target->ChkTgHit()&&frame.target->GetTgHitObj()==frame.attack) {
+        frame.use->contacted=true;
+        frame.use->contactTick=s_run.ticks;
+    }
 }

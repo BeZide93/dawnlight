@@ -266,7 +266,9 @@ and armor targets accept Survivors attacks; one shared damage pass applies power
 crit and status hooks, cooldowns, and Ball/Shield stagger. Defeat credits the enemy
 before requesting deletion and uses the native disappearance effect. This prevents
 armor HP resets, resurrection and Chu splitting from losing kills or duplicating
-loot. Chu merging and Gibdo paralysis are suppressed only for run-owned actors.
+loot. Chu merging is suppressed only for run-owned actors. Owned Gibdo screams
+stun Link for at most 30 ticks (1 second, previously 60 ticks); native button
+mashing can shorten this. Their shared 180-tick scream cooldown is unchanged.
 Helmasaur shell contacts route to parent HP regardless of parent/child execution
 order. Shells retire with their owner; Bomskit eggs and Bulblin arrows retain
 independent ownership for pause, difficulty, defense and deferred teardown.
@@ -1337,8 +1339,10 @@ find; they do not replace a signed-app installation or in-game test.
 
 ### One incoming hit per boss/elite attack use (PR #140)
 
-King Bulblin's active spinning axe is an exception: it can hit Link repeatedly
-using native collision timing throughout the spin. Normal axe swings, wind-up,
+King Bulblin's active spinning axe is an exception: it can hit Link repeatedly,
+at most once every 15 playable ticks (0.5 seconds), measured from the previous
+accepted contact. Rejected contacts do not consume the interval; all of Link's
+colliders share it, while separate Kings have independent intervals. Normal axe swings, wind-up,
 recovery and other colliders retain the limit below.
 
 Each other boss/elite attack has one accepted contact against Link. Extra weapon/body
@@ -1486,10 +1490,13 @@ lifetime aggregate. HighScoreRun::encode also refuses debug snapshots. Endless
 continuation preserves eligibility; the results screen shows zero awarded XP and
 explicitly labels the excluded run. Existing snapshots/save format are unchanged.
 
-### Endless archer volleys and late healing
+### Archer volleys and late Endless healing
 
-Every E_RD/E_RDY arrow spawn in Endless adds two arrows at yaw +/-0x900, matching
-Hard Mode's fan. Preserve the complete native spawn arguments, child ownership,
+E_RD/E_RDY archers fire a three-arrow volley on every third successful shot in
+normal runs (single, single, triple). Endless keeps a triple volley on every shot.
+The two side arrows use yaw +/-0x900, matching Hard Mode's fan. The counter belongs
+to the owning enemy and resets on replacement; side arrows and failed/blocked
+spawns do not advance it. Preserve the complete native spawn arguments, child ownership,
 damage factors, pause/cleanup and capacity guards. A scoped recursion guard
 prevents multiplying the side arrows again; reserve one structural-child slot
 per enemy and capacity for three projectiles per enemy.

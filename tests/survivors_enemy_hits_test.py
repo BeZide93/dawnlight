@@ -31,7 +31,7 @@ struct fopAc_ac_c {int id=0,profile=0;void* sub_method=&methods;
  int mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
  field_0x672=0,field_0x676=0,field_0x678=0,mActionPhase=0,mActionMode1=0,mActionMode2=0,
  mMoveMode=0,mSubAction=0,field_0x68c=0;
- cCcD_Obj mMagicSphs[2],field_0xe64,mAtSph;
+ cCcD_Obj mMagicSphs[2],field_0xe64,mAtSph,mBallSphAt;
  static constexpr int ACTION_OPACI_ATTACK_e=16,ACTION_OPACI_FLY_e=12,ACT_B2_F_MOVE=2,ACT_ATTACK=4,ACTION_ATTACK_e=3;
 };
 int fopAcM_GetID(fopAc_ac_c* a){return a->id;}
@@ -58,7 +58,7 @@ fixture += r'''
 bool native_boss_profile(int p){return p==fpcNm_B_TN_e||p==fpcNm_E_PZ_e||p==fpcNm_B_GND_e;}
 bool structural_enemy_child(int p){return p==fpcNm_E_MM_MT_e||p==fpcNm_E_TH_BALL_e||p==fpcNm_E_RDY_e;}
 '''
-fixture += '\nvoid boss_record_contact(cCcD_Obj*){}\n'
+fixture += '\nEnemyAttackUsePtr zelda_light_orb_use(cCcD_Obj*){return {};}\nvoid boss_record_contact(cCcD_Obj*){}\n'
 main = r'''
 fopAc_ac_c boss,other,projectileA,projectileB;
 cCcD_Obj target,secondTarget,weapon,secondWeapon;

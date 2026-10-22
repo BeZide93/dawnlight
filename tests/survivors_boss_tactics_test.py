@@ -93,6 +93,7 @@ ActorId fopAcM_createChild(int,ActorId,u32,const cXyz*,int,const csXyz*,const cX
 void summon_ghost_riders(Native*,const Enemy&){}
 void encounter_animation(Morph* m,const char*,int,int){m->frame=0;}
 '''
+source='void clear_zelda_light_orbs(ActorId){}\n'+source
 main=r'''
 void reset(){s_enemies={};s_enemyArrows={};s_bossTactics.clear();actors.clear();s_enemyHitSources.clear();s_run={};
  player={};player.id=100;floorValid=pathValid=playing=arena=true;blocked=false;probes=spawns=0;spawnTicks.clear();nextSpawnId=kNone;}

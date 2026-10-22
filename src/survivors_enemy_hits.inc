@@ -162,6 +162,11 @@ EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
     if(!root)return {};
     observe_enemy_attack(*owner,root);
     auto& source=s_enemyHitSources[owner->id];
+    if(owner->profile==fpcNm_E_HZELDA_e) {
+        if(auto use=zelda_light_orb_use(attack))return use;
+        auto* zelda=reinterpret_cast<e_hzelda_class*>(root);
+        if(attack==&zelda->mBallSphAt&&source.magic)return source.magic;
+    }
     bool repeatingSpin=false;
     if(owner->profile==fpcNm_E_RDB_e) {
         auto* king=reinterpret_cast<e_rdb_class*>(root);

@@ -485,6 +485,7 @@ Enemy* tracked(ActorId id) {
 #include "survivors_boss_tactics_state.inc"
 #include "survivors_enemy_arrows.inc"
 #include "survivors_enemy_hits.inc"
+#include "survivors_zelda_orbs.inc"
 #include "survivors_collision.inc"
 #include "survivors_elite_positions.inc"
 #include "survivors_maps.inc"
@@ -545,6 +546,7 @@ void detach_pot_attacks();
 #include "survivors_enemy_archives.inc"
 void retire_enemies() {
     release_enemy_archives();
+    clear_zelda_light_orbs();
     retire_pots(); retire_pickups(); retire_enemy_arrows();
     clear_enemy_effects();
     for (auto& e : s_enemies) if (e.id != kNone) e.retiring = true;
@@ -554,7 +556,9 @@ void cleanup_enemies() {
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
         auto* actor = actor_by_id(e.id);
+        if(e.retiring||e.credited||(actor&&actor->health<=0))clear_zelda_light_orbs(e.id);
         if (!actor && !fpcM_IsCreating(e.id)) {
+            clear_zelda_light_orbs(e.id);
             s_enemyIndex.erase(e.id); s_bossTactics.erase(e.id);
             e = {}; continue;
         }
@@ -567,6 +571,7 @@ bool own_collider(const cCcD_Obj* collider) {
     if (!collider) return false;
     if (effect_collider(collider)) return true;
     for (const auto& a : s_attacks) if (collider == &a.collider) return true;
+    for (const auto& orb : s_zeldaLightOrbs) if (collider == &orb.collider) return true;
     return false;
 }
 #include "survivors_contacts.inc"
@@ -608,6 +613,7 @@ void detach_attack_references() {
 void reset_runtime() {
     clear_player_contacts();
     restore_gear_collection();close_gear_window();s_gear={};s_gearWritable=true;clear_gear_notices();
+    clear_zelda_light_orbs();
     s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     stop_survivors_music();
     end_survivors_integrity();
@@ -1270,6 +1276,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     if (!methods) return HOOK_CONTINUE;
     const auto method = mods::arg<process_method_func>(args, 0);
     if (method == methods->delete_method) {
+        clear_zelda_light_orbs(id);
         s_bossTactics.erase(id);
         if (pickup) { s_pickupIndex.erase(id); pickup->id=kNone; }
         if (arrow) { s_enemyArrowIndex.erase(id); arrow->id=kNone; }
@@ -1488,6 +1495,7 @@ void select_upgrade(ModContext*, void* data) {
 }
 void begin_run() {
     if (s_run.phase != Phase::Ready || !s_arenaMeshReady || s_restart || s_progressSaving) return;
+    clear_zelda_light_orbs();
     s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     reset_ending();
     load_option_config();

@@ -102,6 +102,7 @@ void update_boss_watchdogs(daAlink_c* link) {
                 for(unsigned i=0;i<2;++i){a->field_0x1228[i]=0;a->mMagicSphs[i].OffAtSetBit();}
             }
             boss_idle(e,actor);
+            clear_zelda_light_orbs(e.id);
             t=BossTactics{};t.watchdog.damaged(actor->health);t.grace=boss_relocation_grace;
             break;
         }

@@ -146,8 +146,10 @@ HookAction before_boss_hzelda(ModContext*,void* args,void*,void*) {
     if(!owner->encounterReady) {e->mMode=0;e->mAction=0;owner->encounterReady=true;}
     e->mDemoMode=0;e->mMsgSetTimer=0;e->mMissedBallCount=0;
     // Native Execute already decrements this attack/readiness clock once.
-    // A second decrement halves wait/charge/recovery without skipping animation cues.
-    if(encounter_running(*owner) && !owner->stagger && e->mTimers[0]>0)--e->mTimers[0];
+    // Idle waits now run at 4x native (half the previous 2x wait). Charge and
+    // recovery clocks retain 2x; animation cues remain unchanged.
+    if(encounter_running(*owner) && !owner->stagger && e->mTimers[0]>0)
+        e->mTimers[0]=std::max(0,int(e->mTimers[0])-(e->mAction==0?3:1));
     return HOOK_CONTINUE;
 }
 void after_boss_hzelda(ModContext*,void* args,void*,void*) {
@@ -156,6 +158,7 @@ void after_boss_hzelda(ModContext*,void* args,void*,void*) {
     // Native attack animations are all authored at 1x. Set an absolute rate
     // after action() chooses the animation, before Execute advances its frames.
     e->mpModelMorf->setPlaySpeed(e->mAction>=1 && e->mAction<=3?2.f:1.f);
+    update_zelda_light_volley(e,*owner);
 }
 void after_boss_hzelda_triangle(ModContext*,void* args,void*,void*) {
     auto* e=mods::arg<e_hzelda_class*>(args,0);

@@ -13,6 +13,7 @@ struct BossTactics {
     bool waitingVolley=false;
     bool attacking=false, targetLocked=false, triangle=false, projectileReady=false;
     bool magicActive[2]{};
+    unsigned zeldaVolley=0;bool zeldaBallFlying=false;
     unsigned queuedShots=0, shotDelay=0, shotIndex=0;
     u32 shotParams=0;
     csXyz shotAngle{};
@@ -50,6 +51,9 @@ void update_boss_watchdogs(daAlink_c*);
 void before_boss_tactics(Enemy&,fopAc_ac_c*);
 void after_boss_tactics(Enemy&,fopAc_ac_c*);
 void update_boss_projectile(fopAc_ac_c*,bool);
+void clear_zelda_light_orbs(ActorId owner=kNone);
+EnemyAttackUsePtr zelda_light_orb_use(cCcD_Obj*);
+void update_zelda_light_volley(e_hzelda_class*,Enemy&);
 
 cXyz boss_lead_target(float ticks);
 s16 boss_target_yaw(fopAc_ac_c*,const cXyz&);

@@ -83,6 +83,8 @@ jobs:
           python3 tests/survivors_encounters_test.py
           python3 tests/survivors_bosses_test.py
           python3 tests/survivors_boss_specials_test.py
+          python3 tests/survivors_zelda_orbs_test.py
+          CXX=clang++ python3 tests/survivors_zelda_orbs_test.py
           python3 tests/survivors_boss_tactics_test.py
           CXX=clang++ python3 tests/survivors_boss_tactics_test.py
           python3 tests/survivors_enemy_hits_test.py
@@ -345,6 +347,8 @@ jobs:
           CXX=clang++ python3 tests/survivors_encounters_test.py
           CXX=clang++ python3 tests/survivors_bosses_test.py
           python3 tests/survivors_boss_specials_test.py
+          python3 tests/survivors_zelda_orbs_test.py
+          CXX=clang++ python3 tests/survivors_zelda_orbs_test.py
           python3 tests/survivors_boss_tactics_test.py
           CXX=clang++ python3 tests/survivors_boss_tactics_test.py
           python3 tests/survivors_bulblin_test.py

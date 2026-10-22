@@ -68,6 +68,7 @@ void advance_elite_cooldowns(fopAc_ac_c*,Enemy&){}
 struct BossState{struct{void tick(){}}stagger;};std::unordered_map<ActorId,BossState>s_bossTactics;
 bool boss_tactics_owned(const Enemy&){return false;}
 void before_boss_tactics(Enemy&,fopAc_ac_c*){}
+void clear_zelda_light_orbs(ActorId=kNone){}
 void update_boss_projectile(fopAc_ac_c*,bool){}
 '''
 

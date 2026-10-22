@@ -84,6 +84,7 @@ ActorId fopAcM_createChild(int,ActorId parent,u32 param,const cXyz*,int,const cs
 fixture+=r'''
 struct Tactics{unsigned pattern=0,summons=0,recovery=0;int pzStage=0;ActorId summoner=kNone;};
 std::map<ActorId,Tactics>s_bossTactics;
+void update_zelda_light_volley(e_hzelda_class*,Enemy&){}
 bool boss_attack_paused(const Enemy&){return false;}
 bool boss_major_ready(Enemy&,unsigned){return true;}
 bool boss_pz_minion(Enemy&,int){return true;}
@@ -148,6 +149,15 @@ int main(){
  boss.mAction=0;after_boss_hzelda(nullptr,args,nullptr,nullptr);assert(boss.morf.rate==1);
  s_run.phase=Phase::Upgrade;before_boss_hzelda(nullptr,args,nullptr,nullptr);assert(boss.mTimers[0]==9);
  s_run.phase=Phase::Running;owner.stagger=1;before_boss_hzelda(nullptr,args,nullptr,nullptr);assert(boss.mTimers[0]==9);owner.stagger=0;
+ boss.mTimers[0]=10;before_boss_hzelda(nullptr,args,nullptr,nullptr);assert(boss.mTimers[0]==7);
+ boss.mTimers[0]=2;before_boss_hzelda(nullptr,args,nullptr,nullptr);assert(boss.mTimers[0]==0);
+ // Include Execute's native decrement: a 200-tick idle budget now takes 50
+ // active frames instead of 100; charge/recovery still take 100.
+ for(int action:{0,1,2,3,4}) {
+  boss.mAction=action;boss.mTimers[0]=200;unsigned frames=0;
+  while(boss.mTimers[0]){--boss.mTimers[0];before_boss_hzelda(nullptr,args,nullptr,nullptr);++frames;}
+  assert(frames==(action==0?50u:100u));
+ }
  // Native teleport selection receives only valid points; no empty point table.
  owner.encounterReady=false;before_boss_pz(nullptr,args,nullptr,nullptr);assert(boss.mPointNum==9);
  floorValid=false;before_boss_pz(nullptr,args,nullptr,nullptr);assert(boss.mPointNum==1);floorValid=true;

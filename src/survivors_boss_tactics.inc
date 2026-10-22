@@ -17,6 +17,53 @@ void boss_ground_step(fopAc_ac_c* actor,const cXyz& target,float step) {
     cXyz next=actor->current.pos+delta*(std::min(step,distance)/distance);
     if(walkable_spawn_path(actor->current.pos,next,100.f))actor->current.pos=next;
 }
+// Stop in the enlarged hand's melee band before native movement/animation.
+// Use world-space separation here; generic distance hooks can be inlined away.
+void prepare_shadow_beast_melee(e_s1_class* actor) {
+    if(actor->mAction!=2 && !(actor->mAction==3&&actor->mMode<2))return;
+    auto* link=daAlink_getAlinkActorClass();if(!link)return;
+    const cXyz delta=link->current.pos-actor->current.pos;
+    const float distance=delta.absXZ(),scale=std::max(1.f,actor->scale.x);
+    if(std::abs(delta.y)>180.f)return;
+    if(distance>300.f*scale) {
+        if(actor->mAction==3){actor->mAction=2;actor->mMode=0;}
+        return;
+    }
+    if(distance>280.f*scale&&actor->mAction==2)return;
+    actor->speedF=0;actor->speed.x=actor->speed.z=0;
+    if(actor->mAction==2){actor->mAction=3;actor->mMode=0;}
+    if(distance<220.f*scale) {
+        const cXyz away=distance>1.f?delta*(-1.f/distance):
+            cXyz(-cM_ssin(actor->shape_angle.y),0,-cM_scos(actor->shape_angle.y));
+        const auto start=actor->current.pos;
+        boss_ground_step(actor,start+away*(250.f*scale-distance),18.f);
+        // Do not start a swing while successfully backing out. If terrain
+        // blocks retreat, retain native combat instead of waiting forever.
+        if((actor->current.pos-start).absXZ()>0&&actor->mMode==1)
+            actor->mTimers[0]=std::max<int>(actor->mTimers[0],3);
+    }
+}
+void limit_shadow_beast_approach(e_s1_class* actor,const cXyz& start) {
+    if(actor->mAction!=2 && !(actor->mAction==3&&actor->mMode<2))return;
+    auto* link=daAlink_getAlinkActorClass();if(!link)return;
+    if(std::abs(link->current.pos.y-start.y)>180.f)return;
+    cXyz offset=start-link->current.pos,step=actor->current.pos-start;
+    offset.y=step.y=0;
+    const float radius=250.f*std::max(1.f,actor->scale.x);
+    const float length2=step.x*step.x+step.z*step.z;
+    const float outside=offset.x*offset.x+offset.z*offset.z-radius*radius;
+    const float along=offset.x*step.x+offset.z*step.z;
+    if(length2<.001f||outside<=0||along>=0)return;
+    const float discriminant=along*along-length2*outside;
+    if(discriminant<0)return;
+    const float fraction=(-along-std::sqrt(discriminant))/length2;
+    if(fraction<0||fraction>1)return;
+    // Clip the actual boosted step at its FIRST intersection with the melee
+    // ring, even if high Endless speed would cross Link and exit the far side.
+    actor->current.pos.x=start.x+step.x*fraction;
+    actor->current.pos.z=start.z+step.z*fraction;
+    actor->speedF=0;actor->speed.x=actor->speed.z=0;
+}
 bool boss_major_ready(Enemy& e,unsigned duration) {
     auto& own=s_bossTactics[e.id];
     for(const auto& [id,t]:s_bossTactics)
@@ -154,6 +201,10 @@ void before_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
     boss_queue_shots(e,actor);
     auto view=boss_attack_view(e,actor);
     if(boss_attack_paused(e)) {boss_idle(e,actor);t.attacking=false;return;}
+    if(e.profile==fpcNm_E_S1_e&&!e.stagger&&actor->health>0) {
+        prepare_shadow_beast_melee(reinterpret_cast<e_s1_class*>(actor));
+        t.origin=actor->current.pos;
+    }
     boss_mobile_patterns(e,actor);
     const bool entry=view.active&&!t.attacking;
     if(entry) {
@@ -213,8 +264,6 @@ void before_boss_tactics(Enemy& e,fopAc_ac_c* actor) {
         auto* a=reinterpret_cast<e_sh_class*>(actor);
         if(view.active)prepare_stalhound_pounce(e,a);
         if(t.combo&&a->field_0x678==3)actor->speedF=std::min(actor->speedF,25.f);
-    } else if(e.profile==fpcNm_E_S1_e) {
-        if(view.active&&t.phaseTick<=9)boss_ground_step(actor,t.target,12.f);
     } else if(e.profile==fpcNm_E_RDY_e && e.eliteSlot>=int(timed_elite_count)) {
         auto* a=reinterpret_cast<e_rdy_class*>(actor);
         if(a->mAction==3&&fopAcM_searchPlayerDistance(actor)>400)boss_ground_step(actor,boss_lead_target(),6.f);
@@ -377,9 +426,6 @@ HookAction before_boss_attack_safety(ModContext*,void* args,void*,void*) {
     auto* ac=at->GetAc();auto* e=ac?enemy_child_root(fopAcM_GetID(ac)):nullptr;
     if(!e||!boss_tactics_owned(*e))return HOOK_CONTINUE;
     // Recovery applies to the body/weapon. A fired projectile keeps its travel.
-#if DAWNLIGHT_SURVIVORS_DEBUG
-    trace_stalhound_contact(*e,ac,at);
-#endif
     const auto& t=s_bossTactics[e->id];
     if(t.grace || (t.recovery&&fopAcM_GetID(ac)==e->id) ||
        (t.hasContact&&s_run.ticks-t.lastContact<15))return HOOK_SKIP_ORIGINAL;
@@ -491,10 +537,10 @@ void boss_after_patterns(Enemy& e,fopAc_ac_c* actor) {
         auto* a=reinterpret_cast<e_s1_class*>(actor);
         if(a->mAction==3&&a->mMode==2) {
             if(!t.attacking) {
-                a->mIsSlowAttack=t.combo?1:0;
-                encounter_animation(a->mpMorf,"E_s1",t.combo?6:5,0);
+                a->mIsSlowAttack=t.combo?1:0;a->mAnm=t.combo?6:5;
+                encounter_animation(a->mpMorf,"E_S2",a->mAnm,0);
+                t.yaw=boss_target_yaw(actor,boss_lead_target(0));
             }
-            actor->current.angle.y=t.yaw;
         }
     } else if(e.profile==fpcNm_E_SH_e) {
         auto* a=reinterpret_cast<e_sh_class*>(actor);
@@ -592,8 +638,16 @@ HookAction before_boss_path(ModContext*,void* args,void*,void*) {
     auto* acch=mods::arg<dBgS_Acch*>(args,0);
     auto* actor=acch?acch->getMyAc():nullptr;
     auto* e=actor?tracked(fopAcM_GetID(actor)):nullptr;
-    if(!e||!boss_tactics_owned(*e)||!playable()||e->stagger||e->profile!=fpcNm_E_KR_e)return HOOK_CONTINUE;
-    auto& t=s_bossTactics[e->id];auto* bird=reinterpret_cast<e_kr_class*>(actor);
+    if(!e||!boss_tactics_owned(*e)||!playable()||e->stagger||actor->health<=0||
+       s_run.phase!=Phase::Running||boss_attack_paused(*e))return HOOK_CONTINUE;
+    auto& t=s_bossTactics[e->id];
+    if(e->profile==fpcNm_E_S1_e) {
+        auto* beast=reinterpret_cast<e_s1_class*>(actor);
+        if(acch==&beast->mAcch)limit_shadow_beast_approach(beast,t.origin);
+        return HOOK_CONTINUE;
+    }
+    if(e->profile!=fpcNm_E_KR_e)return HOOK_CONTINUE;
+    auto* bird=reinterpret_cast<e_kr_class*>(actor);
     if(acch!=&bird->mAcch||bird->field_0x672!=7||t.motionTick<15||t.motionTick>27)return HOOK_CONTINUE;
     const cXyz d=t.target-t.origin;
     actor->current.pos=t.origin+d*(float(t.motionTick-14)/10.f);

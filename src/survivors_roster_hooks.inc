@@ -62,4 +62,3 @@
 
     POST(BossTNThrow,after_boss_sword_throw);
     PRE(SurvivorsEnemyArrow,before_boss_rider_arrow);
-    PRE(SurvivorsEnemySpeed,before_boss_path);

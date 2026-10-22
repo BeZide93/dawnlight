@@ -8,6 +8,7 @@ registration=(root/'src/survivors.cpp').read_text()
 registration=registration[registration.index('ModResult initialize_survivors('):registration.index('void shutdown_survivors()')]
 registration=registration.replace('#include "survivors_roster_hooks.inc"',(root/'src/survivors_roster_hooks.inc').read_text())
 spawn_posts=re.findall(r'POST\(SurvivorsEnemyArrow,\s*(\w+)\);',registration)
+motion_pres=re.findall(r'PRE\(SurvivorsEnemySpeed,\s*(\w+)\);',registration)
 profiles=sorted(set(re.findall(r'fpcNm_\w+_e',source+state)))
 fixture=r'''
 #include <algorithm>
@@ -18,6 +19,7 @@ fixture=r'''
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <string>
 #include "survivors_enemy_hits.hpp"
 #include "survivors_boss_tactics.hpp"
 using namespace dawnlight::survivors;
@@ -97,7 +99,8 @@ bool s_spawningEnemyArrows=false;
 unsigned spawns=0;std::vector<unsigned> spawnTicks;ActorId nextSpawnId=kNone;
 ActorId fopAcM_createChild(int,ActorId,u32,const cXyz*,int,const csXyz*,const cXyz*,int,void*){++spawns;spawnTicks.push_back(s_run.ticks);return nextSpawnId;}
 void summon_ghost_riders(Native*,const Enemy&){}
-void encounter_animation(Morph* m,const char*,int,int){m->frame=0;}
+std::string animationArchive;int animationResource=0;
+void encounter_animation(Morph* m,const char* archive,int resource,int){m->frame=0;animationArchive=archive;animationResource=resource;}
 // Boundary stubs for the tracking/budget stages; dispatch their real production
 // registration order, then execute the actual boss callback and flight code.
 void after_enemy_arrow(ModContext*,void* args,void* result,void*){
@@ -111,6 +114,9 @@ void after_enemy_attack_spawn(ModContext*,void* args,void* result,void*){
 }
 '''
 source='void clear_zelda_light_orbs(ActorId){}\n'+source
+source+='\nHookAction before_elite_attack_motion(ModContext*,void*,void*,void*){return HOOK_CONTINUE;}\n'
+source+='HookAction before_enemy_speed(ModContext*,void* args,void*,void*){auto* actor=mods::arg<dBgS_Acch*>(args,0)->getMyAc();actor->current.pos+=actor->speed*99.f;return HOOK_CONTINUE;}\n'
+source+='void dispatch_motion(void* args){\n'+''.join(f'{callback}(nullptr,args,nullptr,nullptr);\n' for callback in motion_pres)+'}\n'
 source+='\nvoid dispatch_child_spawn(void* args,ActorId* id){\n'+''.join(
     f'{callback}(nullptr,args,id,nullptr);\n' for callback in spawn_posts)+'}\n'
 main=r'''
@@ -155,6 +161,32 @@ int main(){
  assert(before_boss_attack_safety(nullptr,contact,nullptr,nullptr)==HOOK_CONTINUE);boss_record_contact(&attack);
  assert(before_boss_attack_safety(nullptr,contact,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);s_run.ticks+=15;
  assert(before_boss_attack_safety(nullptr,contact,nullptr,nullptr)==HOOK_CONTINUE);
+ // Shadow Beast stops in world-space melee range, including boosted crossings.
+ reset();Native beast;beast.scale={2,2,2};beast.mAcch.actor=&beast;auto& shadow=own(beast,fpcNm_E_S1_e);
+ beast.mAction=2;beast.mMode=1;beast.current.pos={0,0,-550};beast.speedF=20;
+ before_boss_tactics(shadow,&beast);assert(beast.mAction==3&&beast.mMode==0&&beast.speedF==0);
+ beast.mAction=2;beast.current.pos={0,0,-900};before_boss_tactics(shadow,&beast);
+ beast.speed={0,0,39};beast.current.pos.z+=beast.speed.z;std::any shadowPath[]={&beast.mAcch};
+ dispatch_motion(shadowPath);assert(std::abs(beast.current.pos.z+500)<.01f);
+ // Correct native animation archive and matching attack-window metadata.
+ for(unsigned combo:{0u,1u}){
+  auto& tactics=s_bossTactics[shadow.id];tactics.attacking=false;tactics.combo=combo;
+  beast.mAction=3;beast.mMode=2;boss_after_patterns(shadow,&beast);
+  assert(animationArchive=="E_S2"&&animationResource==int(combo?6:5));
+  assert(beast.mAnm==animationResource&&beast.mIsSlowAttack==int(combo));
+  const auto start=beast.current.pos;
+  for(int tick=0;tick<12;++tick)before_boss_tactics(shadow,&beast);
+  assert((beast.current.pos-start).absXZ()==0); // No director lunge into Link.
+ }
+ for(int gate=0;gate<7;++gate){
+  reset();beast.mAction=2;beast.mMode=1;beast.current.pos={0,0,-550};beast.speedF=20;
+  auto& excluded=own(beast,fpcNm_E_S1_e);
+  if(gate==0)excluded.elite=false;if(gate==1)excluded.dormant=true;if(gate==2)excluded.credited=true;
+  if(gate==3)excluded.retiring=true;if(gate==4)excluded.initialized=false;if(gate==5)playing=false;
+  if(gate==6)excluded.stagger=1;
+  before_boss_tactics(excluded,&beast);assert(beast.current.pos.z==-550);
+  if(gate!=6)assert(beast.mAction==2&&beast.speedF==20);
+ }
  // Ordinary two-hit combo boundaries and shorter single-action guard variant.
  reset();Native bok;auto& bo=own(bok,fpcNm_E_OC_e);bok.mActionMode=4;bok.mOcState=1;
  before_boss_tactics(bo,&bok);bok.mActionMode=3;after_boss_tactics(bo,&bok);assert(bok.mActionMode==4&&s_bossTactics[bo.id].combo==1);

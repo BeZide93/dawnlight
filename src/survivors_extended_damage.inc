@@ -120,7 +120,7 @@ HookAction before_roster_targets(ModContext*,void* args,void*,void*) {
             e->mTateSph.SetR(60.f*scale);
         } else if(enemy->profile==fpcNm_E_S1_e) {
             auto* e=reinterpret_cast<e_s1_class*>(actor);
-            e->mCcSph[0].SetR(35.f*scale);e->mCcSph[1].SetR(60.f*scale);e->mCcSph[2].SetR(50.f*scale);
+            e->mCcSph[0].SetR(45.5f*scale);e->mCcSph[1].SetR(78.f*scale);e->mCcSph[2].SetR(65.f*scale);
         } else if(enemy->profile==fpcNm_E_YC_e) reinterpret_cast<e_yc_class*>(actor)->mCcSph.SetR(80.f*scale);
         break;
     }
@@ -149,7 +149,7 @@ HookAction before_roster_targets(ModContext*,void* args,void*,void*) {
         } else if(enemy->profile==fpcNm_E_SF_e) {
             auto* e=reinterpret_cast<e_sf_class*>(actor);if(object==&e->mAtSph)e->mAtSph.SetR(60.f*scale);
         } else if(enemy->profile==fpcNm_E_S1_e) {
-            auto* e=reinterpret_cast<e_s1_class*>(actor);if(object==&e->mCcAtSph)e->mCcAtSph.SetR(40.f*scale);
+            auto* e=reinterpret_cast<e_s1_class*>(actor);if(object==&e->mCcAtSph)e->mCcAtSph.SetR(52.f*scale); // Native base size is 1.3.
         } else if(enemy->profile==fpcNm_E_RDY_e) {
             auto* e=reinterpret_cast<e_rdy_class*>(actor);if(object==&e->mAtSph && e->mAtSph.GetR()>0)e->mAtSph.SetR(50.f*scale);
         }

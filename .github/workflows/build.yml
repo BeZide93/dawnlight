@@ -338,8 +338,8 @@ jobs:
           CXX=clang++ python3 tests/survivors_death_sword_spacing_test.py dusklight
           python3 tests/survivors_stalhound_attack_test.py dusklight
           CXX=clang++ python3 tests/survivors_stalhound_attack_test.py dusklight
-          python3 tests/survivors_stalhound_diagnostic_test.py
-          CXX=clang++ python3 tests/survivors_stalhound_diagnostic_test.py
+          python3 tests/survivors_shadow_beast_test.py dusklight
+          CXX=clang++ python3 tests/survivors_shadow_beast_test.py dusklight
           python3 tests/survivors_stalfos_test.py dusklight
           CXX=clang++ python3 tests/survivors_stalfos_test.py dusklight
           CXX=clang++ python3 tests/survivors_potions_test.py

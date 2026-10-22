@@ -147,23 +147,10 @@ patches. Existing fixtures establish native attack state progression, not contac
 with the device's actual animated skeleton and Link cylinders. Treat the issue as
 **unresolved** until a device log identifies the failing stage.
 
-Debug-enabled builds now emit `Survivors SH probe v1` automatically for active
-Stalhound bosses; the session's Enable Debug toggle is not required. One initial
-line and at most eight summaries per actor report native phase mask, visible and
-enabled bite frames, geometric overlap against Link's enabled target cylinders,
-contact attempts, safety/budget rejection conditions, accepted attack-use state
-and native hit frames. The closest sample includes both world positions, radii,
-cylinder height and the boss root. Positive gap means separation; zero/negative
-means touching/overlap. No sample is represented by gap=1e9. Summaries occur on
-attack exit or after 150 executed frames, including stalled/idle states.
-
-This is passive instrumentation, not another balance or hitbox patch. Hit-frame
-and overlap counts are observations, not distinct damage events; an accepted
-contact may still be blocked/dodged. Cylinder sampling is after native Execute,
-not a replacement for collision-server ordering. Existing boss-state cleanup
-resets it; Debug-off builds compile out the state and calls. Collect a short log
-with the boss attacking stationary Link, then remove this temporary probe after
-the actual defect is fixed.
+Temporary passive geometry/contact diagnostics identified the height mismatch
+below. They have now been removed at the user's request, including counters,
+per-frame/contact callbacks and the instrumentation-only test/CI entries.
+The actual bite-height fix and log-derived geometry regression remain.
 
 ## Device-confirmed Stalhound height and Stalfos guard follow-up
 
@@ -180,8 +167,8 @@ parked sentinel, trajectory and damage budgets. Include the native 1.15 base siz
 in body/bite radii (bite 80.5 at scale 2). This moves the gameplay attack volume
 below the oversized animated jaw; it does not retarget Link or force damage.
 The recorded near passes now overlap, while lateral/elevated dodge cases remain
-misses. Keep the bounded passive probe as v2 until device confirmation, then remove
-it. Native animation and terrain validation still require a device run.
+misses. Temporary probe v2 has been removed. Native animation and terrain
+validation still require a device run.
 
 Stalfos' native `player_way_check` tests Link's facing, not line of sight. Requiring
 opposing headings prevented attacks in Survivors' free-movement combat. Owned
@@ -213,3 +200,26 @@ to ordinary enemies. The timed-boss fixed x2 budget remains in addition to the
 selected boss multiplier; the native 32,767 HP ceiling still applies.
 Settings are persisted for the next run and do not mutate current enemy HP.
 Rules/native-roster/config/UI and record-migration tests cover the separation.
+
+### Shadow Beast approach and attack alignment
+
+Owned Shadow Beast bosses stop in a world-space melee band before native
+movement, including when a generic distance query was inlined. An approach
+crossing the 250 x actor-scale ring is clipped at its first intersection before
+native ground/wall correction, after difficulty/Endless movement boosts. Native
+wind-up and attack windows remain; the director no longer adds nine forward
+steps during a swing. If already overlapping, back away up to 18 units per
+active tick on a walkable path before starting; a blocked retreat does not stall
+combat. Resume chase when Link leaves range during preparation.
+
+Use the actor's actual `E_S2` animation archive (previously `E_s1`) and keep
+`mAnm` and slow/fast hit-window metadata aligned for both combo swings. General
+facing no longer overwrites native/committed attack steering. Body and hand radii
+include the native 1.3 base size. Attack sphere centers/activation remain native;
+no automatic damage or target-snapped collider.
+
+Regression tests execute the SDK's chase/fight functions with near/far starts,
+several headings, both swings, boosted steps crossing through Link, and scoped
+noncombat/terrain cases. Director tests cover call ordering, archive selection,
+no attack drift and ownership; collider tests preserve the inactive sentinel.
+Device confirmation of actual animated hand contacts remains pending.

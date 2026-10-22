@@ -148,6 +148,9 @@ bool committed_enemy_motion(fopAc_ac_c* actor,ProfileName profile) {
         // so native alignment can complete before the boss aim lock starts.
         const auto* e=reinterpret_cast<e_sh_class*>(actor);return e->field_0x676==3 && e->field_0x678>=2;
     }
+    case fpcNm_E_S1_e: {
+        const auto* e=reinterpret_cast<e_s1_class*>(actor);return e->mAction==3&&e->mMode==2;
+    }
     case fpcNm_E_SM2_e:return reinterpret_cast<e_sm2_class*>(actor)->action==ACTION_ATTACK;
     case fpcNm_E_DN_e: {
         const auto action=reinterpret_cast<e_dn_class*>(actor)->action;

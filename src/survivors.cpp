@@ -487,7 +487,6 @@ Enemy* tracked(ActorId id) {
 #include "survivors_boss_tactics_state.inc"
 #include "survivors_enemy_arrows.inc"
 #include "survivors_enemy_hits.inc"
-#include "survivors_stalhound_diagnostic.inc"
 #include "survivors_zelda_orbs.inc"
 #include "survivors_collision.inc"
 #include "survivors_elite_positions.inc"
@@ -1349,10 +1348,6 @@ void after_process(ModContext*, void* args, void*, void*) {
     scale_elite_colliders(enemy,actor);
     finish_extended_targets(enemy,actor);
     if (enemy && actor) {
-#if DAWNLIGHT_SURVIVORS_DEBUG
-        // Read the native result before the director can schedule a follow-up.
-        if(frame.executed)trace_stalhound_frame(*enemy,actor);
-#endif
         if(frame.executed)after_boss_tactics(*enemy,actor);
         confine_arena_actor(actor, enemy->elite ? 80.f : 35.f);
         if (enemy->elite && actor->health > 0 && enemy->age % 15 == 0) {
@@ -1754,6 +1749,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
 #include "survivors_roster_hooks.inc"
     PRE(SurvivorsEnemySpeed, before_enemy_speed); POST(SurvivorsEnemySpeed, after_enemy_facing);
+    PRE(SurvivorsEnemySpeed,before_boss_path); // Final position constraint after all movement boosts.
     PRE(SurvivorsEnemyDamage, before_enemy_damage);
     PRE(SurvivorsPotionDrink, before_potion_drink); POST(SurvivorsPotionDrink, after_potion_drink);
     PRE(SurvivorsPotionHeal, before_potion_heal);

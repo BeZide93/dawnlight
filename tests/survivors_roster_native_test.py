@@ -228,6 +228,23 @@ int main(){
   }
  }
  s_run.options.boss_hp=1;
+ // Shadow Beast radii include its native 1.3 size; never move the animated hand.
+ for(bool elite:{false,true}){
+  NativeActor beast;beast.profile=fpcNm_E_S1_e;s_enemies={};auto& shadow=s_enemies[0];
+  shadow.id=beast.id;shadow.profile=beast.profile;shadow.species=unsigned(Species::ShadowBeast);shadow.elite=elite;
+  actors={{beast.id,&beast}};const float scale=elite?2.f:1.f;
+  for(auto& sphere:beast.mCcSph)sphere.owner=&beast;
+  beast.mCcAtSph.owner=&beast;beast.mCcAtSph.r=52;beast.mCcAtSph.center={20000,50000,20000};
+  std::any targetArgs[]={0,static_cast<cCcD_Obj*>(&beast.mCcSph[0])};
+  before_roster_targets(nullptr,targetArgs,nullptr,nullptr);
+  assert(std::abs(beast.mCcSph[0].r-45.5f*scale)<.001f);
+  assert(beast.mCcSph[1].r==78*scale&&beast.mCcSph[2].r==65*scale);
+  std::any attackArgs[]={0,static_cast<cCcD_Obj*>(&beast.mCcAtSph)};
+  for(int repeat=0;repeat<3;++repeat)before_roster_targets(nullptr,attackArgs,nullptr,nullptr);
+  assert(beast.mCcAtSph.r==52*scale&&beast.mCcAtSph.center.y==50000);
+  beast.mAction=3;beast.mMode=2;assert(committed_enemy_motion(&beast,beast.profile));
+  beast.mMode=1;assert(!committed_enemy_motion(&beast,beast.profile));
+ }
  // Endgame criticals must not erase Stallord's entire boss health pool.
  NativeActor head;head.profile=fpcNm_B_DS_e;s_enemies={};effects={};
  auto& boss=s_enemies[0];boss.id=head.id;boss.profile=head.profile;

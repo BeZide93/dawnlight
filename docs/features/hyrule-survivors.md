@@ -52,12 +52,20 @@ stationary elites, across all maps and Endless. Boss HP defaults to x1 and is
 saved as `survivors-boss-hp`; old configs keep their normal-enemy HP choice.
 The existing doubled timed-boss budget, map/time curves, Endless scaling and
 32,767 native HP cap still apply. Neither control compounds during updates or
-changes actors already spawned. Boss HP does not add rank/score/XP bonuses;
-the existing four-setting reward formula remains unchanged.
+changes actors already spawned. All five difficulty multipliers use 0.5 steps,
+with the same minus/plus buttons and disabled states as Talents. Boss HP now
+contributes to Twilit Rank and rewards like Enemy HP: each +0.5 adds 0.5 rank
+and 5 percentage points to the score/talent-XP multiplier. Damage adds 7.5,
+Speed 12.5 and Horde 5 percentage points per half step. Total rank ranges from
+0 to 33, and the reward multiplier from x1 to x5.05. Fractional Horde settings
+carry spawn/drop remainders, preserving proportional populations and rewards.
+Settings persist/export/import as decimal values; old integer configs still load.
 
-Records v14 appends Boss HP to each saved result without moving prior fields.
-Older results recover their boss multiplier from Enemy HP, which formerly
-applied to both groups; awarded scores, talents and progression are preserved.
+Records v15 preserves half steps, Boss HP and half ranks without changing the
+record size. v14 introduced independent Boss HP; older results recover it from
+Enemy HP. Historical results retain their original four-setting rank/reward
+formula, awarded scores, talents and progression, including rank-zero results.
+New runs always use the five-setting formula.
 
 | Arena | Native area | Layout |
 | --- | --- | --- |

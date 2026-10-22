@@ -4,6 +4,28 @@
 #include <iostream>
 using namespace dawnlight::survivors;
 int main() {
+    // Every half step affects rewards; Boss HP follows the Enemy HP weight.
+    float RunOptions::* const fields[]{&RunOptions::enemy_hp,&RunOptions::boss_hp,&RunOptions::enemy_damage,&RunOptions::enemy_speed,&RunOptions::horde};
+    constexpr float maxima[]{10,10,10,3,5},weights[]{10,10,15,25,10};
+    for(unsigned i=0;i<5;++i)for(float multiplier=1;multiplier<=maxima[i];multiplier+=.5f) {
+        RunOptions setting;setting.*fields[i]=multiplier;
+        assert(setting.twilit_rank()==multiplier-1);
+        assert(setting.score_percent()==100+(multiplier-1)*weights[i]);
+    }
+    RunOptions maxDifficulty{10,10,3,5,200};maxDifficulty.boss_hp=10;
+    assert(maxDifficulty.twilit_rank()==33&&maxDifficulty.score_percent()==505);
+    Run half;half.start(1);half.options.enemy_hp=half.options.boss_hp=half.options.enemy_damage=1.5f;
+    assert(half.enemy_health(8,false)==12&&half.enemy_health(8,true)==180&&half.incoming_damage(4)==6);
+    // Half Horde multipliers preserve fractional spawn and reward remainders.
+    for(float multiplier=1;multiplier<=5;multiplier+=.5f)for(bool event:{false,true}) {
+        half.start(1);half.options.horde=multiplier;half.horde_remaining=event;
+        unsigned spawned=0,drops=0;
+        for(unsigned i=0;i<90;++i)spawned+=half.spawn_batch();
+        assert(spawned==unsigned(90*multiplier*(event?3:1)));
+        for(unsigned i=0;i<unsigned(multiplier*20);++i)drops+=half.normal_kill_drops();
+        assert(drops==20);
+    }
+
     // Fixed map/time curves, rounded once with difficulty. Final boss budgets
     // are absolute, separate from normal/elite HP, and do not grow after 20m.
     Run hp;hp.start(1);

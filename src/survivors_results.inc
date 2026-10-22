@@ -85,7 +85,7 @@ std::string results_damage_rml(const Run& run=s_run,unsigned map=s_map) {
     const auto total=run.damage.total();
     const double seconds=std::max(1u,run.ticks)/double(ticks_per_second);
     std::string rml="<div class=\"sr-heading\">"+std::string(run.phase==Phase::Victory?"VICTORY":"DEFEAT")+"</div>";
-    rml+="<div class=\"sr-section\">Twilit Rank "+number(run.twilit_rank())+"</div>";
+    rml+="<div class=\"sr-section\">Twilit Rank "+result_decimal(run.twilit_rank(),std::floor(run.twilit_rank())==run.twilit_rank()?0:1)+"</div>";
     if(run.options.allow_cheats || run.modded) {
         const std::string labels=std::string(run.options.allow_cheats?"Cheated":"")+
             (run.options.allow_cheats && run.modded?" \xE2\x80\xA2 ":"")+(run.modded?"Modded":"");

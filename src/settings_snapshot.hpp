@@ -1,6 +1,11 @@
 #pragma once
 
 #include <charconv>
+#include <cmath>
+#include <iomanip>
+#include <limits>
+#include <locale>
+#include <sstream>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -8,11 +13,11 @@
 #include <variant>
 
 namespace dawnlight::settings {
-using Value = std::variant<bool, int64_t, std::string>;
+using Value = std::variant<bool, int64_t, double, std::string>;
 using Values = std::map<std::string, Value>;
 inline constexpr size_t MaxBytes = 1024 * 1024;
 
-// This versioned format contains only registered bool/int/string settings.
+// This versioned format contains only registered bool/int/float/string settings.
 // Do not reuse the permissive legacy HUD field reader for whole-config imports.
 class Reader {
     std::string_view text;
@@ -84,6 +89,23 @@ class Reader {
         if (pos==text.size() || text[pos]<'0' || text[pos]>'9') return false;
         if (text[pos]=='0') ++pos;
         else while (pos<text.size() && text[pos]>='0' && text[pos]<='9') ++pos;
+        bool decimal=false;
+        if(pos<text.size()&&text[pos]=='.') {
+            decimal=true;++pos;const auto digits=pos;
+            while(pos<text.size()&&text[pos]>='0'&&text[pos]<='9')++pos;
+            if(pos==digits)return false;
+        }
+        if(pos<text.size()&&(text[pos]=='e'||text[pos]=='E')) {
+            decimal=true;++pos;if(pos<text.size()&&(text[pos]=='+'||text[pos]=='-'))++pos;
+            const auto digits=pos;while(pos<text.size()&&text[pos]>='0'&&text[pos]<='9')++pos;
+            if(pos==digits)return false;
+        }
+        if(decimal) {
+            std::istringstream input(std::string{text.substr(start,pos-start)});input.imbue(std::locale::classic());
+            double number=0;input>>number;
+            if(input.fail()||!input.eof()||!std::isfinite(number))return false;
+            out=number;return true;
+        }
         int64_t number=0;
         if (std::from_chars(text.data()+start,text.data()+pos,number).ec!=std::errc{}) return false;
         out=number; return true;
@@ -152,7 +174,13 @@ inline std::string encode(const Values& values) {
         first=false;out+="    "+quote(key)+": ";
         if (auto* b=std::get_if<bool>(&value)) out+=*b?"true":"false";
         else if (auto* i=std::get_if<int64_t>(&value)) out+=std::to_string(*i);
-        else out+=quote(std::get<std::string>(value));
+        else if(auto* f=std::get_if<double>(&value)) {
+            if(!std::isfinite(*f))return {};
+            std::ostringstream number;number.imbue(std::locale::classic());
+            number<<std::setprecision(std::numeric_limits<double>::max_digits10)<<*f;
+            auto encoded=number.str();if(encoded.find_first_of(".eE")==std::string::npos)encoded+=".0";
+            out+=encoded;
+        } else out+=quote(std::get<std::string>(value));
     }
     return out+"\n  }\n}\n";
 }

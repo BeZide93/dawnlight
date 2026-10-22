@@ -854,7 +854,8 @@ void update_spawns(daAlink_c* link) {
     update_elite_spawns(link);
     if(active_boss_encounter()){s_spawnFailures=0;return;}
     if ((!s_run.endless && s_run.ticks >= s_run.run_duration()) || population>=s_run.target_population()) { s_spawnFailures=0; return; }
-    for (unsigned i=0; i<s_run.spawn_batch() && population<s_run.target_population(); ++i) {
+    const unsigned batch=s_run.spawn_batch();
+    for (unsigned i=0; i<batch && population<s_run.target_population(); ++i) {
         if (spawn_enemy(link,false)) { ++population; s_spawnFailures=0; }
         else { ++s_spawnFailures; break; }
     }

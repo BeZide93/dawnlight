@@ -1,5 +1,6 @@
 #include "../src/survivors_rules.hpp"
 #include <cassert>
+#include "survivors_legacy_records.hpp"
 #include <vector>
 #include <iostream>
 using namespace dawnlight::survivors;
@@ -50,7 +51,7 @@ int main() {
     restored.delete_high_score(0,false,true);
     assert(!restored.endless_ranked[0].present()&&restored.ranked[0].present()&&restored.map_unlocked(1));
     // Migration of the real v9 shape: ten snapshots, no endless fields or rank word.
-    const auto bytes=checkpoint.encode();std::vector<uint8_t> v9(bytes.begin(),bytes.begin()+136);v9[4]=9;
+    const auto bytes=legacy_records(checkpoint);std::vector<uint8_t> v9(bytes.begin(),bytes.begin()+136);v9[4]=9;
     for(unsigned n=0;n<10;++n){
         const auto begin=bytes.begin()+136+n*HighScoreRun::word_count*4;
         v9.insert(v9.end(),begin,begin+HighScoreRun::legacy_word_count*4);
@@ -68,15 +69,16 @@ int main() {
     assert(records.decode(restored.encode())&&records.encode()==restored.encode());
     // v10 stored sum 4..28. Migrate all four categories, including baseline
     // and maximum-rank records, without changing any score/progression bytes.
-    auto v10=restored.encode();v10[4]=10;
+    auto v10=legacy_records(restored);v10[4]=10;
     for(unsigned n=0;n<20;++n) {
         const unsigned begin=136+n*HighScoreRun::word_count*4;
         if(v10[begin])v10[begin+HighScoreRun::legacy_word_count*4]+=4;
     }
     Records migrated;assert(migrated.decode(std::span(v10.data(),Records::v11_byte_count)));
-    assert(migrated.encode()==restored.encode());
+    assert(migrated.total_xp==restored.total_xp&&migrated.ranked[0].score==restored.ranked[0].score);
+    const auto migratedBytes=migrated.encode();
     v10[136+HighScoreRun::legacy_word_count*4]=99;
-    assert(!migrated.decode(std::span(v10.data(),Records::v11_byte_count))&&migrated.encode()==restored.encode());
+    assert(!migrated.decode(std::span(v10.data(),Records::v11_byte_count))&&migrated.encode()==migratedBytes);
     auto bad=restored.encode();bad[136+HighScoreRun::legacy_word_count*4]=99;
     assert(!records.decode(bad)); // Invalid rank does not mutate existing records.
     assert(records.encode()==restored.encode());

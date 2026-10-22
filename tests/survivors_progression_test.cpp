@@ -1,5 +1,6 @@
 #include "../src/survivors_rules.hpp"
 #include <cassert>
+#include "survivors_legacy_records.hpp"
 #include <iostream>
 using namespace dawnlight;
 using namespace dawnlight::survivors;
@@ -27,7 +28,7 @@ void high_score_tests(){
         Records restored;const auto bytes=records.encode();assert(restored.decode(bytes)&&restored.encode()==bytes);
         assert(restored.high_score(0,assisted).run.ranks==run.ranks);
         assert(restored.high_score(0,assisted).run.options.boss_hp==6);
-        auto v13=bytes;v13[4]=13;Records migrated;
+        auto v13=legacy_records(records);v13[4]=13;Records migrated;
         assert(migrated.decode(std::span(v13.data(),Records::v13_byte_count)));
         assert(migrated.high_score(0,assisted).run.options.boss_hp==10);
         assert(migrated.high_score(0,assisted).score==restored.high_score(0,assisted).score);
@@ -66,7 +67,33 @@ void high_score_tests(){
     bad[damageStart]=bad[damageStart+1]=UINT32_MAX;bad[damageStart+2]=1;
     assert(!score.decode(bad)); // Refuse overflowing totals.
 }
+void half_step_records_tests() {
+    Records records;
+    for(bool assisted:{false,true})for(bool endless:{false,true})for(unsigned map=0;map<5;++map) {
+        Run run;RunOptions options{2.5f,3.5f,1.5f,4.5f,200};options.boss_hp=6.5f;options.allow_cheats=assisted;
+        run.start(1,options);run.end(true);
+        if(endless){assert(run.continue_endless());run.end(false);}
+        records.finish(run,map);
+    }
+    Records restored;const auto bytes=records.encode();assert(restored.decode(bytes)&&restored.encode()==bytes);
+    for(bool assisted:{false,true})for(bool endless:{false,true})for(unsigned map=0;map<5;++map) {
+        const auto& best=restored.high_score(map,assisted,endless);assert(best.present());
+        const auto& o=best.run.options;
+        assert(o.enemy_hp==2.5f&&o.enemy_damage==3.5f&&o.enemy_speed==1.5f&&o.horde==4.5f&&o.boss_hp==6.5f);
+        assert(best.run.twilit_rank()==13.5f&&o.score_percent()==255);
+        HighScoreRun alone;assert(alone.decode(best.encode())&&alone.run.options.boss_hp==6.5f);
+    }
+    // A historical rank zero stays zero despite its independent Boss HP setting.
+    Records historical;Run old;old.start(1);old.options.boss_hp=10;old.end(true);historical.finish(old,0);
+    assert(restored.decode(legacy_records(historical)));
+    assert(restored.ranked[0].run.twilit_rank()==0&&restored.ranked[0].run.options.score_percent()==100);
+    const auto oldScore=restored.ranked[0].score;
+    assert(restored.decode(restored.encode())&&restored.ranked[0].score==oldScore);
+    assert(restored.ranked[0].run.twilit_rank()==0&&restored.ranked[0].run.options.boss_hp==10);
+    Run fresh;fresh.start(1,restored.ranked[0].run.options);assert(fresh.twilit_rank()==9);
+}
 int main(){
+    half_step_records_tests();
     high_score_tests();
     Records gates;Run finished;finished.start(1);
     assert(gates.map_unlocked(0)&&!gates.map_unlocked(1)&&!gates.map_unlocked(5)&&!gates.map_unlocked(~0u));

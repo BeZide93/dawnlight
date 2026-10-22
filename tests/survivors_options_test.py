@@ -82,6 +82,7 @@ void dismiss_treasure_choice(){}
 struct Log{void warn(ModContext*,const char*){assert(false);}}logger;auto* svc_log=&logger;
 unsigned notices=0;bool failNotice=false;std::string noticeBody;UiDialogAction noticeAction{};
 struct Service{
+ ModResult pane_add_row(ModContext*,UiElementHandle,const UiRowDesc*,UiElementHandle* h){*h=200;return MOD_OK;}
  ModResult dialog_push(ModContext*,const UiDialogDesc* d,UiDialogHandle* h){if(failNotice)return MOD_INVALID_ARGUMENT;++notices;noticeBody=d->body_rml;noticeAction=d->actions[0];*h=9;return MOD_OK;}
 
  ModResult window_push(ModContext*,const UiWindowDesc* desc,UiWindowHandle* handle){
@@ -197,39 +198,48 @@ int main(){
  s_run.phase=Phase::Ready;s_options.camera_distance=300;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==300);
  before_run_camera(nullptr,cam,nullptr,nullptr);active=false;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==100);active=true;
  assert(build_difficulty(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
- assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==13);
+ assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==18);
  const auto manual=controls.back();
  assert(manual.kind==UI_CONTROL_GROUP&&std::string(manual.label)=="Manual aiming abilities"&&controlPanes.back()==1);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow&&std::string(pushedTab.title)==manual.label);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==23);
- for(unsigned i=13;i<23;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
- assert(controls[2].max==3);
- assert(std::string(controls[4].label)=="Boss HP"&&controls[4].min==1&&controls[4].max==10);
- assert(std::string(controls[4].prefix)=="x"&&!controls[4].suffix);
- assert(!controls[5].prefix&&std::string(controls[5].suffix)=="%");
- assert(std::string(controls[10].label)=="Allow Cheats");
- for(unsigned i=0;i<7;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_NUMBER&&c.get&&c.set);
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==28);
+ for(unsigned i=18;i<28;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
+ for(unsigned i=0;i<5;++i) {
+  auto& minus=controls[2*i];auto& plus=controls[2*i+1];auto& setting=s_runControls[i];
+  assert(std::string(minus.label)=="-"&&std::string(plus.label)=="+"&&!minus.get&&!plus.set);
+  s_options.*setting.field=1;assert(minus.is_disabled(nullptr,minus.user_data));
+  plus.on_pressed(nullptr,plus.user_data);assert(s_options.*setting.field==1.5f);
+  minus.on_pressed(nullptr,minus.user_data);assert(s_options.*setting.field==1);
+  for(unsigned n=0;n<30;++n)plus.on_pressed(nullptr,plus.user_data);
+  assert(s_options.*setting.field==setting.max&&plus.is_disabled(nullptr,plus.user_data));
+  s_run.phase=Phase::Running;minus.on_pressed(nullptr,minus.user_data);assert(s_options.*setting.field==setting.max);
+  s_run.phase=Phase::Ready;for(unsigned n=0;n<30;++n)minus.on_pressed(nullptr,minus.user_data);
+  assert(s_options.*setting.field==1);
+ }
+ assert(!controls[10].prefix&&std::string(controls[10].suffix)=="%");
+ assert(std::string(controls[15].label)=="Allow Cheats");
+ for(unsigned i=10;i<12;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_NUMBER&&c.get&&c.set);
   UiControlValue value=UI_CONTROL_VALUE_INIT;value.int_value=10000;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.int_value==c.max);
   value.int_value=-10000;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.int_value==c.min);
   s_run.phase=Phase::Running;value.int_value=c.max;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.int_value==c.min);s_run.phase=Phase::Ready;
  }
- for(unsigned i=7;i<11;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE);
-  UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value==(i==8));
-  value.bool_value=!(i==8);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==8));
-  s_run.phase=Phase::Running;value.bool_value=(i==8);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==8));
-  s_run.phase=Phase::Ready;s_restart=true;value.bool_value=(i==8);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==8));s_restart=false;
+ for(unsigned i=12;i<16;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE);
+  UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value==(i==13));
+  value.bool_value=!(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));
+  s_run.phase=Phase::Running;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));
+  s_run.phase=Phase::Ready;s_restart=true;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));s_restart=false;
  }
- for(unsigned i=13;i<23;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
+ for(unsigned i=18;i<28;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
   UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value);
   value.bool_value=false;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
-  assert(!s_options.manual_aim[i-13]);for(unsigned j=i-12;j<10;++j)assert(s_options.manual_aim[j]);
+  assert(!s_options.manual_aim[i-18]);for(unsigned j=i-17;j<10;++j)assert(s_options.manual_aim[j]);
   value.bool_value=true;s_run.phase=Phase::Running;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=true;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);s_restart=false;
  }
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);assert(!s_manualAimSettingsWindow);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==33);
- for(unsigned i=23;i<33;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==38);
+ for(unsigned i=28;i<38;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);
  s_run.start(1,s_options);for(bool enabled:s_run.options.manual_aim)assert(!enabled);
  s_options.manual_aim.fill(true);for(bool enabled:s_run.options.manual_aim)assert(!enabled);

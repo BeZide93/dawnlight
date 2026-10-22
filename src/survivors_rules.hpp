@@ -160,9 +160,10 @@ constexpr ManualAbility manual_ability(Upgrade weapon) {
     }
 }
 struct RunOptions {
-    unsigned enemy_hp = 1, enemy_damage = 1, enemy_speed = 1, horde = 1;
-    unsigned camera_distance = 200;
-    unsigned boss_hp = 1;
+    float enemy_hp = 1, enemy_damage = 1, enemy_speed = 1, horde = 1;
+    float camera_distance = 200;
+    float boss_hp = 1;
+    bool legacy_difficulty = false; // Historical snapshots retain pre-Boss-HP rank/rewards.
     DebugOptions debug{};
     int reticle_y = 0;
     bool switch_attack_lock = false;
@@ -176,18 +177,25 @@ struct RunOptions {
         return unsigned(ability)<manual_aim.size()&&manual_aim[unsigned(ability)];
     }
     bool manual_enabled(Upgrade weapon) const { return manual_enabled(manual_ability(weapon)); }
-    unsigned twilit_rank() const { return std::clamp(enemy_hp,1u,10u)+std::clamp(enemy_damage,1u,10u)+std::clamp(enemy_speed,1u,3u)+std::clamp(horde,1u,5u)-4; }
-    unsigned score_percent() const {
-        return 100+10*(std::clamp(enemy_hp,1u,10u)-1)+15*(std::clamp(enemy_damage,1u,10u)-1)+
-            25*(std::clamp(enemy_speed,1u,3u)-1)+10*(std::clamp(horde,1u,5u)-1);
+    static float difficulty(float value,float maximum) {
+        return std::isfinite(value)?std::clamp(std::round(value*2.f)*.5f,1.f,maximum):1.f;
+    }
+    float twilit_rank() const {
+        return difficulty(enemy_hp,10)+difficulty(enemy_damage,10)+difficulty(enemy_speed,3)+difficulty(horde,5)-4+
+            (legacy_difficulty?0.f:difficulty(boss_hp,10)-1.f);
+    }
+    float score_percent() const {
+        return 100+10*(difficulty(enemy_hp,10)-1)+15*(difficulty(enemy_damage,10)-1)+
+            25*(difficulty(enemy_speed,3)-1)+10*(difficulty(horde,5)-1)+
+            (legacy_difficulty?0.f:10*(difficulty(boss_hp,10)-1));
     }
     void clamp() {
         debug.clamp();
-        boss_hp=std::clamp(boss_hp,1u,10u);
+        boss_hp=difficulty(boss_hp,10);
         reticle_y=std::clamp(reticle_y,-40,40);
-        enemy_hp=std::clamp(enemy_hp,1u,10u); enemy_damage=std::clamp(enemy_damage,1u,10u);
-        enemy_speed=std::clamp(enemy_speed,1u,3u); horde=std::clamp(horde,1u,5u);
-        camera_distance=std::clamp(camera_distance,100u,500u);
+        enemy_hp=difficulty(enemy_hp,10); enemy_damage=difficulty(enemy_damage,10);
+        enemy_speed=difficulty(enemy_speed,3); horde=difficulty(horde,5);
+        camera_distance=std::isfinite(camera_distance)?std::clamp(camera_distance,100.f,500.f):200.f;
     }
 };
 struct Run {
@@ -198,7 +206,8 @@ struct Run {
     bool modded = false; // Sticky for this run, even if the extra mod is later disabled.
     bool endless=false;
     bool debug_run=false; // Captured at start; remains excluded through Endless.
-    unsigned endless_start=0, normal_score=0, rank_snapshot=0;
+    unsigned endless_start=0, normal_score=0;
+    float rank_snapshot=-1;
     RunOptions options;
     Talents talents;
     GearItem gear_weapon{}, gear_tunic{}; // Midna can equip the currently advertised drop.
@@ -218,7 +227,7 @@ struct Run {
     }
     unsigned dodge_basis_points() const { return std::min(10000u,talents.dodge_basis_points()+gear_tunic.second*100u); }
     unsigned timed_elites = 0, guard_elites = 0;
-    unsigned drop_progress = 0, maximum_hearts = 3;
+    unsigned drop_progress = 0, spawn_progress = 0, maximum_hearts = 3;
     unsigned master_sword = 0, shield = 0, dual_wield = 0, dark_link = 0;
     bool red_potion = false, starting_item_pending = false;
     unsigned free_rerolls = 1, banishes = 1, paid_rerolls = 0;
@@ -237,7 +246,7 @@ struct Run {
         return random;
     }
     void start(uint32_t seed, RunOptions settings = {}, Talents perks = {}) {
-        *this={}; options=settings; options.clamp(); talents=perks;
+        *this={}; options=settings; options.legacy_difficulty=false; options.clamp(); talents=perks;
         debug_run=debug_enabled && debug_session_enabled;
         if(!debug_run)options.debug={};
         maximum_hearts=talents.starting_hearts();
@@ -247,7 +256,7 @@ struct Run {
     }
     DebugOptions debug_options() const { auto value=options.debug;value.clamp();return value; }
     unsigned run_duration() const { return debug_options().run_minutes*60*ticks_per_second; }
-    unsigned twilit_rank() const { return rank_snapshot?rank_snapshot:options.twilit_rank(); }
+    float twilit_rank() const { return rank_snapshot>=0?rank_snapshot:options.twilit_rank(); }
     unsigned endless_minutes() const { return endless && ticks>=endless_start?(ticks-endless_start)/(60*ticks_per_second):0; }
     double endless_factor() const { return std::pow(1.1, double(std::min(1000u,endless_minutes()))); }
     bool continue_endless() {
@@ -265,10 +274,10 @@ struct Run {
     unsigned magnet_range() const { return (150+65*rank(Upgrade::Magnet))*(100+10*talents.rank(Talent::Magnet))/100; }
     unsigned normal_kills() const { return kills-std::min(kills,timed_elites+guard_elites); }
     unsigned score() const {
-        const uint64_t base=2*((endless?ticks:std::min(ticks,run_duration()))/ticks_per_second)+uint64_t(normal_kills())*10/std::clamp(options.horde,1u,5u)+
+        const double base=2*((endless?ticks:std::min(ticks,run_duration()))/ticks_per_second)+std::floor(double(normal_kills())*10/RunOptions::difficulty(options.horde,5))+
             uint64_t(timed_elites)*500+uint64_t(guard_elites)*250+uint64_t(level ? level-1 : 0)*50+
             (phase==Phase::Victory || endless ? 3000 : 0);
-        return unsigned(std::min<uint64_t>(UINT32_MAX,base*options.score_percent()/100));
+        return unsigned(std::min<double>(UINT32_MAX,base*options.score_percent()/100));
     }
     unsigned earned_meta_xp() const { return debug_run?0:score()-std::min(score(),endless?normal_score:0u); }
     unsigned required_xp() const { return 5 + level * 3; }
@@ -649,7 +658,7 @@ struct Run {
             (time-times[i-1]*ticks_per_second)/((times[i]-times[i-1])*ticks_per_second);
         const uint64_t hp=finalBoss ? uint64_t(finalHp[map])*scale*(endless?double(factor)/curves[map][5]:1.0) : elite ?
             std::max(120*scale,32*factor) : std::clamp(base,1u,32767u)*factor;
-        return unsigned(std::min(32767.0,std::floor(double(hp)*std::clamp(elite || finalBoss ? options.boss_hp : options.enemy_hp,1u,10u)*endless_factor()/scale+.5)));
+        return unsigned(std::min(32767.0,std::floor(double(hp)*RunOptions::difficulty(elite || finalBoss ? options.boss_hp : options.enemy_hp,10)*endless_factor()/scale+.5)));
     }
     // Only the four scheduled encounter slots get the fixed doubled HP budget.
     // Boss difficulty applies to all elites; ordinary actors use enemy difficulty.
@@ -660,7 +669,10 @@ struct Run {
     }
     // Fixed population ceiling; time and Horde difficulty only affect spawn cadence/batches.
     unsigned target_population() const { return 345u; }
-    unsigned spawn_batch() const { return options.horde * (horde_remaining ? 3 : 1); }
+    unsigned spawn_batch() {
+        spawn_progress+=unsigned(RunOptions::difficulty(options.horde,5)*2)*(horde_remaining?3:1);
+        const unsigned batch=spawn_progress/2;spawn_progress%=2;return batch;
+    }
     unsigned spawn_interval() const { return std::max(15u, 75u - std::min(60u, ticks / (10 * ticks_per_second))); }
     unsigned cooldown_percent(Upgrade weapon=Upgrade::Count) const {
         const auto rank = std::min(30u,base_rank(Upgrade::Haste)+gear_levels(Upgrade::Haste,gear_family(weapon)));
@@ -668,7 +680,11 @@ struct Run {
     }
     unsigned cooldown(unsigned base,Upgrade weapon=Upgrade::Count) const { return std::max(6u, base * cooldown_percent(weapon) / 100); }
     unsigned shield_cooldown() const {return std::max(30u,cooldown(9000/(100+3*rank(Upgrade::ShieldAttack))));}
-    bool normal_kill_drops() { if (++drop_progress < options.horde) return false; drop_progress=0; return true; }
+    bool normal_kill_drops() {
+        drop_progress+=2;const unsigned threshold=unsigned(RunOptions::difficulty(options.horde,5)*2);
+        if(drop_progress<threshold)return false;
+        drop_progress-=threshold;return true;
+    }
     // Independent bonus, once per ordinary reward opportunity: 2%, up to 3% with Luck.
     bool roll_exp_magnet() { return next_random()%10000<lucky_chance(200); }
     // At base Luck: 2.5% heart, 45% rupee, 52.5% nothing. A second lucky
@@ -744,22 +760,27 @@ struct HighScoreRun {
         if(!present() || run.debug_run)return words;
         unsigned i=0;const auto put=[&](uint32_t n){words[i++]=n;};
         put(run.phase==Phase::Victory?2:1);put(score);put(meta_level);put(unlock_points);
-        put(unsigned(run.options.allow_cheats)|(unsigned(run.modded)<<1)|(unsigned(run.red_potion)<<2)|(unsigned(run.endless)<<3));
+        // v15 stores half steps and Boss HP in spare flag bits, preserving offsets.
+        unsigned halves=0,bit=0;
+        for(float value:{run.options.enemy_hp,run.options.enemy_damage,run.options.enemy_speed,run.options.horde})
+            halves|=(unsigned(value*2)&1u)<<bit++;
+        put(unsigned(run.options.allow_cheats)|(unsigned(run.modded)<<1)|(unsigned(run.red_potion)<<2)|(unsigned(run.endless)<<3)|
+            (unsigned(run.options.legacy_difficulty)<<4)|(halves<<8)|(unsigned(run.options.boss_hp*2)<<16));
         put(run.ticks);put(run.kills);put(run.level);put(run.timed_elites);put(run.guard_elites);put(run.chests_opened);
         put(run.master_sword);put(run.shield);put(run.dual_wield);put(run.dark_link);
         put(run.options.enemy_hp);put(run.options.enemy_damage);put(run.options.enemy_speed);put(run.options.horde);
         put(run.debug_options().run_minutes);
         for(auto rank:run.ranks)put(rank);
         for(auto damage:run.damage.dealt){put(uint32_t(damage));put(uint32_t(damage>>32));}
-        put(run.twilit_rank());put(run.endless_start);put(run.normal_score);
+        put(unsigned(run.twilit_rank()*2));put(run.endless_start);put(run.normal_score);
         return words;
     }
-    bool decode(std::span<const uint32_t,word_count> words, unsigned version=11) {
+    bool decode(std::span<const uint32_t,word_count> words, unsigned version=15) {
         if(!words[0]) {
             if(std::any_of(words.begin(),words.end(),[](auto word){return word!=0;}))return false;
             *this={};return true;
         }
-        if(words[0]>2 || !words[2] || words[3]>=words[2] || (words[4]&~15u))return false;
+        if(words[0]>2 || !words[2] || words[3]>=words[2] || (words[4]&~(version>=15?0x001f0f1fu:15u)))return false;
         HighScoreRun next;auto& r=next.run;
         unsigned i=0;const auto get=[&](){return words[i++];};
         r.phase=get()==2?Phase::Victory:Phase::Defeat;next.score=get();next.meta_level=get();next.unlock_points=get();
@@ -768,6 +789,14 @@ struct HighScoreRun {
         r.master_sword=get();r.shield=get();r.dual_wield=get();r.dark_link=get();
         r.options.enemy_hp=get();r.options.enemy_damage=get();r.options.enemy_speed=get();r.options.horde=get();
         r.options.debug.run_minutes=get();
+        r.options.legacy_difficulty=version<15||(flags&16u);
+        if(version>=15) {
+            unsigned bit=8;
+            for(float* value:{&r.options.enemy_hp,&r.options.enemy_damage,&r.options.enemy_speed,&r.options.horde})
+                *value+=((flags>>bit++)&1u)*.5f;
+            r.options.boss_hp=float((flags>>16)&31u)*.5f;
+            if(r.options.boss_hp<1||r.options.boss_hp>10)return false;
+        }
         if(r.options.enemy_hp<1 || r.options.enemy_hp>10 || r.options.enemy_damage<1 || r.options.enemy_damage>10 ||
            r.options.enemy_speed<1 || r.options.enemy_speed>3 || r.options.horde<1 || r.options.horde>5 ||
            (r.options.debug.run_minutes!=5 && r.options.debug.run_minutes!=10 && r.options.debug.run_minutes!=20))return false;
@@ -778,7 +807,7 @@ struct HighScoreRun {
             if(damage>UINT64_MAX-total)return false;
             total+=damage;
         }
-        r.rank_snapshot=get();r.endless_start=get();r.normal_score=get();
+        r.rank_snapshot=float(get())/(version>=15?2.f:1.f);r.endless_start=get();r.normal_score=get();
         // Older snapshots either omitted rank or stored the unadjusted sum.
         if(version<10)r.rank_snapshot=r.options.twilit_rank();
         else if(version==10) {
@@ -853,7 +882,7 @@ struct Records {
         if(!best.present() || run.score()>best.score)best={run,run.score(),level(),available_points()};
     }
     std::array<uint8_t,byte_count> encode() const {
-        std::array<uint32_t,word_count> words{0x56525348,14,runs,wins,best_ticks,best_kills,best_level};
+        std::array<uint32_t,word_count> words{0x56525348,15,runs,wins,best_ticks,best_kills,best_level};
         for(unsigned i=0;i<5;++i)words[7+i]=high_scores[i];
         words[12]=uint32_t(total_xp);words[13]=uint32_t(total_xp>>32);
         for(unsigned i=0;i<legacy_talent_count;++i)words[14+i]=talents.ranks[i];
@@ -876,7 +905,7 @@ struct Records {
         std::array<uint32_t,word_count> words{};
         for(unsigned i=0;i<bytes.size()/4;++i)for(unsigned b=0;b<4;++b)words[i]|=uint32_t(bytes[i*4+b])<<(8*b);
         if(words[0]!=0x56525348 || words[3]>words[2])return false;
-        if(!((words[1]==1 && bytes.size()==28)||(words[1]==2 && bytes.size()==100)||(words[1]==3 && bytes.size()==104)||(words[1]==4 && bytes.size()==108)||(words[1]==5 && bytes.size()==124)||(words[1]==6 && bytes.size()==132)||(words[1]==7 && bytes.size()==136)||(words[1]==8 && bytes.size()==v8_byte_count)||(words[1]==9 && bytes.size()==v9_byte_count)||((words[1]==10 || words[1]==11) && bytes.size()==v11_byte_count)||(words[1]==12 && bytes.size()==v12_byte_count)||(words[1]==13 && bytes.size()==v13_byte_count)||(words[1]==14 && bytes.size()==byte_count)))return false;
+        if(!((words[1]==1 && bytes.size()==28)||(words[1]==2 && bytes.size()==100)||(words[1]==3 && bytes.size()==104)||(words[1]==4 && bytes.size()==108)||(words[1]==5 && bytes.size()==124)||(words[1]==6 && bytes.size()==132)||(words[1]==7 && bytes.size()==136)||(words[1]==8 && bytes.size()==v8_byte_count)||(words[1]==9 && bytes.size()==v9_byte_count)||((words[1]==10 || words[1]==11) && bytes.size()==v11_byte_count)||(words[1]==12 && bytes.size()==v12_byte_count)||(words[1]==13 && bytes.size()==v13_byte_count)||((words[1]==14 || words[1]==15) && bytes.size()==byte_count)))return false;
         Records next;
         // Legacy saves have aggregate wins only; scores also include defeats.
         if(words[1]>=7){
@@ -904,11 +933,14 @@ struct Records {
                 } else std::copy_n(words.begin()+offset,words[1]==9?HighScoreRun::legacy_word_count:snapshot.size(),snapshot.begin());
                 if(!best.decode(snapshot,words[1]) || (best.present() && (best.cheated()!=bool(category%2) || best.run.endless!=(category>=2))))return false;
                 if(words[1]>=13) {const auto spin=words[extension++];if(spin>1||(!best.present()&&spin))return false;best.run.chain_spin=spin;}
-                if(best.present())best.run.options.boss_hp=best.run.options.enemy_hp; // Legacy HP applied to both.
+                if(best.present()&&words[1]<15)best.run.options.boss_hp=best.run.options.enemy_hp; // Legacy HP applied to both.
                 if(words[1]>=14) {
                     const auto bossHp=words[bossExtension++];
                     if(best.present()?(bossHp<1 || bossHp>10):bossHp!=0)return false;
-                    if(best.present())best.run.options.boss_hp=bossHp;
+                    if(best.present()) {
+                        if(words[1]<15)best.run.options.boss_hp=bossHp;
+                        else if(unsigned(best.run.options.boss_hp)!=bossHp)return false;
+                    }
                 }
                 offset+=words[1]==8?v8_score_words:words[1]==9?HighScoreRun::legacy_word_count:HighScoreRun::word_count;
             }

@@ -31,7 +31,7 @@ Window window{};
 Context current{};
 uint64_t epoch=0,last_pulse=0,generation=1,sequence=0;
 unsigned held=0;
-bool enabled=false,execute_hook=false,resource_hook=false;
+bool execute_hook=false,resource_hook=false;
 HookStack execute_stack{},resource_stack{};
 // Same-metric nested scopes count once, retaining their inclusive outer time.
 std::array<unsigned,size_t(Metric::Count)> scope_depth{};
@@ -85,10 +85,11 @@ void after_resource(ModContext*,void* args,void*,void*) {
     if(resource_hook)post(resource_stack,args,Metric::Resource);
 }
 }
-Scope::Scope(Metric metric):metric_(metric),generation_(generation) {
+void Scope::begin() {
+    generation_=generation;
     if(enabled&&current.active){engaged_=true;if(scope_depth[size_t(metric_)]++==0)start_=now_us();}
 }
-Scope::~Scope() {
+void Scope::finish() {
     if(!engaged_||generation_!=generation)return;
     if(--scope_depth[size_t(metric_)]==0&&enabled&&current.active)
         window.sample(metric_,now_us()-start_);
@@ -121,7 +122,10 @@ void cache(CacheEvent event) {
 void rejected_contact(bool incoming) {
     if(enabled&&current.active)++(incoming?window.rejected_in:window.rejected_out);
 }
-void initialize() {
+void initialize(bool requested) {
+    // Called once after settings registration, before the game loop starts.
+    // Off must not read the clock, install hooks or emit even a startup line.
+    if(!requested)return;
     epoch=now_us();window={};window.started=epoch;last_pulse=0;generation=1;sequence=0;held=0;
     current={};scope_depth={};execute_stack={};resource_stack={};enabled=true;
     // Optional paired hooks: a failed half remains inert. Never uninstall a

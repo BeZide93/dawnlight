@@ -55,14 +55,14 @@ void validate_player_contacts() {
         const auto& peer = found == s_contactPeers.end() ? empty : found->second;
         if (raw_attack_peer(collider) && !live_contact_peer(raw_attack_peer(collider), peer)) {
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-            freeze_diag::rejected_contact(false);
+            if(freeze_diag::enabled)freeze_diag::rejected_contact(false);
 #endif
             collider.ResetAtHit();
         }
         // Missing observer bookkeeping must not cancel accepted native damage.
         if (raw_target_peer(collider) && !live_native_target_peer(collider)) {
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-            freeze_diag::rejected_contact(true);
+            if(freeze_diag::enabled)freeze_diag::rejected_contact(true);
 #endif
             collider.ResetTgHit();
         }

@@ -1605,6 +1605,7 @@ ModResult button(UiElementHandle pane, const char* text, UiPressedFn callback, v
 #include "survivors_results.inc"
 #include "survivors_scores_ui.inc"
 #include "survivors_hud_editor.inc"
+#include "survivors_performance_settings.inc"
 #include "survivors_maps_ui.inc"
 #include "survivors_debug_ui.inc"
 #include "survivors_settings_config.inc"
@@ -1697,6 +1698,13 @@ bool survivors_dual_wield() {
     return in_arena() && s_run.owns(ChestReward::OrdonSword) && !shield_pose(daAlink_getAlinkActorClass());
 }
 bool survivors_arena_active() { return in_arena(); }
+bool survivors_performance_logs_enabled() {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    return performance_logs_saved();
+#else
+    return false;
+#endif
+}
 bool survivors_save_screen_active() { return save_modal_active(); }
 bool survivors_dark_link_active() {
     return in_arena() && s_run.dark_active() && (s_run.phase == Phase::Running ||
@@ -1704,10 +1712,12 @@ bool survivors_dark_link_active() {
 }
 void update_survivors() {
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-    freeze_diag::context({s_active,s_hub,in_arena(),transitioning(),bool(dComIfGp_isPauseFlag()),
-        bool(dComIfGp_event_runCheck()),ui_visible()||dMeter2Info_getWindowStatus()!=0||dMeter2Info_getPauseStatus()!=0,
-        s_map,unsigned(s_run.phase),s_run.ticks});
-    freeze_diag::pulse();
+    if(freeze_diag::enabled) {
+        freeze_diag::context({s_active,s_hub,in_arena(),transitioning(),bool(dComIfGp_isPauseFlag()),
+            bool(dComIfGp_event_runCheck()),ui_visible()||dMeter2Info_getWindowStatus()!=0||dMeter2Info_getPauseStatus()!=0,
+            s_map,unsigned(s_run.phase),s_run.ticks});
+        freeze_diag::pulse();
+    }
     const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Update);
 #endif
     enemy_hud::refresh();

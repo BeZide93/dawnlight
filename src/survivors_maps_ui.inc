@@ -320,5 +320,9 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     control.on_pressed=open_manual_aim_settings;
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    result=build_performance_logs(left);
+    if(result!=MOD_OK)return result;
+#endif
     return enemy_hud::build(left);
 }

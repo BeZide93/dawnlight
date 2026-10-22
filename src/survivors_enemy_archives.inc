@@ -26,7 +26,7 @@ void release_enemy_archives() {
         const auto name=hold.name;
         hold={};
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-        freeze_diag::cache(freeze_diag::CacheEvent::Release);
+        if(freeze_diag::enabled)freeze_diag::cache(freeze_diag::CacheEvent::Release);
 #endif
         if(owned)dComIfG_deleteObjectResMain(name.data());
     }
@@ -59,7 +59,7 @@ void after_enemy_archive_ready(ModContext*,void* args,void* result,void*) {
     for(auto& hold:s_enemyArchives) {
         if(hold.archive==info->getArchive() && std::strcmp(hold.name.data(),canonical)==0) {
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-            freeze_diag::cache(freeze_diag::CacheEvent::Reuse);
+            if(freeze_diag::enabled)freeze_diag::cache(freeze_diag::CacheEvent::Reuse);
 #endif
             return;
         }
@@ -67,7 +67,7 @@ void after_enemy_archive_ready(ModContext*,void* args,void* result,void*) {
     }
     if(!available) {
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-        freeze_diag::cache(freeze_diag::CacheEvent::Full);
+        if(freeze_diag::enabled)freeze_diag::cache(freeze_diag::CacheEvent::Full);
 #endif
         return;
     }
@@ -78,6 +78,6 @@ void after_enemy_archive_ready(ModContext*,void* args,void* result,void*) {
     std::memcpy(available->name.data(),canonical,length+1);
     available->archive=info->getArchive();
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-    freeze_diag::cache(freeze_diag::CacheEvent::Acquire);
+    if(freeze_diag::enabled)freeze_diag::cache(freeze_diag::CacheEvent::Acquire);
 #endif
 }

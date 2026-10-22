@@ -12,7 +12,9 @@ struct Context {
     unsigned map=0,phase=0,tick=0;
 };
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-void initialize();
+// Latched at initialization; no per-frame config lookup or runtime hook removal.
+inline bool enabled=false;
+void initialize(bool requested);
 void shutdown();
 void pulse();
 void context(Context value);
@@ -22,9 +24,11 @@ class Scope {
     Metric metric_;
     uint64_t start_=0,generation_=0;
     bool engaged_=false;
+    void begin();
+    void finish();
 public:
-    explicit Scope(Metric metric);
-    ~Scope();
+    explicit Scope(Metric metric):metric_(metric){if(enabled)begin();}
+    ~Scope(){if(engaged_)finish();}
     Scope(const Scope&)=delete;
     Scope& operator=(const Scope&)=delete;
 };

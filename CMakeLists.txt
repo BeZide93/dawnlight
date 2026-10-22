@@ -200,8 +200,8 @@ if(DAWNLIGHT_PRIVATE_TOUCH_UI_HEADERS)
     )
 endif()
 
-# Temporary diagnostic CI builds opt in explicitly; normal/local builds stay off.
-option(DAWNLIGHT_FREEZE_DIAGNOSTICS "Measure Survivors stalls without changing gameplay" OFF)
+# Include optional diagnostics; the persistent Performance Logs setting defaults Off.
+option(DAWNLIGHT_FREEZE_DIAGNOSTICS "Include optional Survivors Performance Logs" ON)
 if(DAWNLIGHT_FREEZE_DIAGNOSTICS)
     execute_process(COMMAND git rev-parse --short=12 HEAD
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"

@@ -1,6 +1,6 @@
 # Survivors freeze diagnostic build
 
-This temporary diagnostic PR starts from main after PR #151. It investigates
+Optional Performance Logs are available in Survivors Settings. They investigate
 reported multi-second stalls following the correction of Link's Gerudo Desert
 immunity. Build #1123 (`1ec429f`) introduced contact lifetime protection; the
 later `3cfd61c` correction preserves native incoming hits without removing the
@@ -9,14 +9,26 @@ hit acceptance, add invulnerability, modify archive retention, or enable Debug.
 
 ## Getting a diagnostic build
 
-Every platform artifact and `mod-combined` from this branch's Build workflow has
-`DAWNLIGHT_FREEZE_DIAGNOSTICS=ON`. Install the `.dusk` from that workflow normally.
-No Debug tab or settings toggle is needed. Local/default builds keep diagnostics
-off; pass `-DDAWNLIGHT_FREEZE_DIAGNOSTICS=ON` to CMake to enable them manually.
-Before using this PR for a production release, remove the workflow's diagnostic
-opt-in. The compiled-out default contains no reporter or extra hooks.
+Release and local builds include the **Performance Logs** toggle, default **Off**.
+Set it in Dawnlight's Survivors Settings or the Survivors hub Settings tab, then
+**fully restart Dusklight**. Both On and Off apply at the next startup; the text
+under the toggle shows the state of the current session. No Debug tab is required.
+The setting persists through ConfigService, including settings export/import. It
+is independent of run difficulty, score eligibility and saved run options.
 
-1. Fully restart Dusklight with the intended mods already installed. Keep the
+When started with Off, the reporter installs no diagnostic callbacks, reads no
+clocks, collects no counters/context and writes no diagnostic startup/shutdown or
+periodic records. Existing gameplay/archive hooks are unchanged. Inline boolean
+guards and the compiled code/static storage remain; this is not literally the
+same binary as removing diagnostics. A build with
+`-DDAWNLIGHT_FREEZE_DIAGNOSTICS=OFF` removes instrumentation and the toggle entirely.
+
+Changes require restart because HookService 1.1 cannot unregister one callback:
+uninstalling the resource target also removes Dawnlight's archive-retention
+callbacks. Replacing a live execute detour inside its own call is unsafe as well.
+The toggle therefore only saves the requested value; it never hot-uninstalls hooks.
+
+1. Turn Performance Logs On, then fully restart Dusklight with the intended mods already installed. Keep the
    same gameplay/settings/texture pack initially so the reported case is preserved.
 2. Confirm the log contains `[SurvivorsDiag] enabled schema=1`, with `version`,
    `commit` and `build`. CI records its checked-out revision (a PR merge revision
@@ -83,7 +95,8 @@ A permanent hang cannot flush its unfinished call. These logs diagnose pauses
 that return; a never-returning hang needs a native thread capture. Timers/hook
 callbacks add overhead, and the logger's write can affect a surrounding execute
 sample, so compare this diagnostic build with the matching ordinary build before
-claiming a performance regression or improvement.
+claiming a performance regression or improvement. Switch Performance Logs Off
+and restart when finished collecting logs.
 
 ## Validation
 
@@ -91,7 +104,9 @@ The deterministic production-reporter fixture covers optional hook half-failures
 long calls, live archive names, counters, timestamp/build identity, nested calls,
 foreign post callbacks, bounded stack overflow, rate limiting, normal heartbeats,
 logging overhead in update gaps, mode changes during scopes and shutdown. It also
-compiles the disabled module without engine dependencies. Contact lifetime tests
+checks runtime Off for zero clock reads, hook installs and log writes, and
+compiles the disabled module without engine dependencies. A separate production
+settings fixture verifies default Off, persistence, the restart boundary and UI. Contact lifetime tests
 (including ASan/UBSan) and archive retention tests run with instrumentation both
 compiled out and enabled behind a reporter fixture. Native platform CI builds
 and iOS preparation checks validate the actual SDK hook metadata.

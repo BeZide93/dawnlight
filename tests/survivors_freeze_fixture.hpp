@@ -4,8 +4,8 @@
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
 #include "survivors_freeze_diagnostics.hpp"
 namespace dawnlight::freeze_diag {
-inline Scope::Scope(Metric metric):metric_(metric){}
-inline Scope::~Scope()=default;
+inline void Scope::begin(){}
+inline void Scope::finish(){}
 inline void cache(CacheEvent){}
 inline void rejected_contact(bool){}
 }

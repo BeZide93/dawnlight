@@ -6,7 +6,7 @@ source=(root/'src/survivors_freeze_diagnostics.cpp').read_text()
 # Mock the engine/host boundary; run the actual reporter, hooks, RAII and counters.
 source=re.sub(r'^#include "(?:service_imports.hpp|mods/hook.hpp|f_ap/f_ap_game.h|d/d_resorce.h)"\n','',source,flags=re.M)
 a=source.index('uint64_t now_us() {');b=source.index('\nconstexpr const char* metric_names',a)
-source=source[:a]+'uint64_t now_us(){return clock_us;}\n'+source[b:]
+source=source[:a]+'uint64_t now_us(){++clock_reads;return clock_us;}\n'+source[b:]
 fixture=r'''
 #include <any>
 #include <cassert>
@@ -22,7 +22,7 @@ struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 constexpr int MOD_OK=0,MOD_ERROR=1;
 using Pre=HookAction(*)(ModContext*,void*,void*,void*);
 using Post=void(*)(ModContext*,void*,void*,void*);
-uint64_t clock_us=1000000;
+uint64_t clock_us=1000000;unsigned clock_reads=0;
 void* mod_ctx=nullptr;int svc_hook=0;
 std::vector<std::string> messages;unsigned warnings=0,install_calls=0,fail_at=0;
 struct Log {void info(void*,const char* msg){messages.emplace_back(msg);clock_us+=2000;}void warn(void*,const char*){++warnings;}}logService;
@@ -38,13 +38,17 @@ struct dRes_info_c {const char* name="E_sf";const char* getArchiveName(){return 
 main=r'''
 int main(){
  using namespace dawnlight::freeze_diag;
+ // Default-off initialization and all inline scope paths do no timing or logging.
+ initialize(false);context({});pulse();cache(CacheEvent::Acquire);rejected_contact(true);
+ {Scope scope(Metric::Contacts);}
+ shutdown();assert(clock_reads==0&&install_calls==0&&messages.empty()&&warnings==0);
  // Each failed half is inert; normal diagnostics remain available.
  for(fail_at=1;fail_at<=4;++fail_at){
-  install_calls=warnings=0;initialize();assert(install_calls==4&&warnings==1);
+  install_calls=warnings=0;initialize(true);assert(install_calls==4&&warnings==1);
   assert(execute_hook==(fail_at>2));assert(resource_hook==(fail_at<=2));
   assert(messages.back().find("build=1206")!=std::string::npos);shutdown();
  }
- fail_at=0;install_calls=0;initialize();assert(execute_hook&&resource_hook);
+ fail_at=0;install_calls=0;initialize(true);assert(execute_hook&&resource_hook);
  assert(messages.back().find("commit=abc123")!=std::string::npos);
  messages.clear();Context c{};c.active=true;c.arena=true;c.map=2;c.phase=2;
  context(c);pulse();

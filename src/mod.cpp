@@ -189,7 +189,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     }
 
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-    dawnlight::freeze_diag::initialize();
+    dawnlight::freeze_diag::initialize(dawnlight::survivors_performance_logs_enabled());
 #endif
     svc_log->info(mod_ctx, "Dawnlight portable feature pack initialized");
     return MOD_OK;

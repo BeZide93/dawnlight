@@ -11,7 +11,8 @@ bool native_boss_profile(ProfileName p) {
 unsigned enemy_attack_factor(const Enemy& e) {
     if(!e.elite&&!native_boss_profile(e.profile))return 1;
     switch(e.profile) {
-    case fpcNm_B_GG_e:return e.elite?2:1; // Field replacement retains the giant Kargarok multiplier.
+    case fpcNm_E_WB_e:return 8; // Mount, riders and arrows: native power 1 -> two hearts.
+    case fpcNm_B_GG_e:return e.elite?8:1; // Every owned elite attack deals two base hearts.
     case fpcNm_B_TN_e:return 2;
     case fpcNm_E_VT_e:case fpcNm_B_DS_e:case fpcNm_E_YC_e:case fpcNm_E_HZELDA_e:return 4;
     case fpcNm_E_YMB_e:case fpcNm_E_TH_e:return 3;

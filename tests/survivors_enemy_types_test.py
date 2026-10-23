@@ -232,7 +232,7 @@ int main(){
      std::pair{fpcNm_E_VT_e,4u},std::pair{fpcNm_B_DS_e,4u},std::pair{fpcNm_E_YC_e,4u},
      std::pair{fpcNm_E_YMB_e,3u},std::pair{fpcNm_E_TH_e,3u},std::pair{fpcNm_E_HZELDA_e,4u},
      std::pair{fpcNm_B_GND_e,5u},std::pair{fpcNm_E_PZ_e,5u},
-     std::pair{fpcNm_E_WB_e,2u},std::pair{fpcNm_B_GG_e,2u}}){
+     std::pair{fpcNm_E_WB_e,8u},std::pair{fpcNm_B_GG_e,8u}}){
   Enemy e;e.elite=true;e.profile=spec.first;assert(enemy_attack_factor(e)==spec.second);
   if(!native_boss_profile(e.profile)){e.elite=false;assert(enemy_attack_factor(e)==1);}
  }
@@ -244,16 +244,16 @@ int main(){
  for(ActorId seat:{600u,601u}){
   std::any seatArgs[]={s16(fpcNm_E_RD_e),ActorId(42)};
   s_run.phase=Phase::Upgrade;assert(before_enemy_arrow(nullptr,seatArgs,&seat,nullptr)==HOOK_CONTINUE);
-  after_enemy_arrow(nullptr,seatArgs,&seat,nullptr);assert(enemy_damage_factor(seat)==2);
+  after_enemy_arrow(nullptr,seatArgs,&seat,nullptr);assert(enemy_damage_factor(seat)==8);
  }
  fopAc_ac_c mounted;mounted.profile=fpcNm_E_RD_e;actors[601]=&mounted;
  std::any shotArgs[]={s16(fpcNm_E_ARROW_e),ActorId(601),u32(0),static_cast<const cXyz*>(nullptr),0,static_cast<const csXyz*>(nullptr)};
  ActorId shot=602;s_run.phase=Phase::Running;
  assert(before_enemy_arrow(nullptr,shotArgs,&shot,nullptr)==HOOK_CONTINUE);
  after_enemy_arrow(nullptr,shotArgs,&shot,nullptr);
- assert(tracked_enemy_arrow(shot)->parent==42&&enemy_damage_factor(shot)==2);
+ assert(tracked_enemy_arrow(shot)->parent==42&&enemy_damage_factor(shot)==8);
  s_enemies[0]={};s_enemies[0].id=43;s_enemies[0].profile=fpcNm_E_OC_e;
- assert(!active_enemy_arrow(600)&&!active_enemy_arrow(601)&&active_enemy_arrow(shot)&&enemy_damage_factor(shot)==2);
+ assert(!active_enemy_arrow(600)&&!active_enemy_arrow(601)&&active_enemy_arrow(shot)&&enemy_damage_factor(shot)==8);
  creating.insert(600);cleanup_enemy_arrows();assert(tracked_enemy_arrow(600)&&deleted.contains(601));
  creating.clear();actors[600]=&mounted;cleanup_enemy_arrows();assert(deleted.contains(600));
  s_enemyArrows={};actors.clear();s_enemies={};

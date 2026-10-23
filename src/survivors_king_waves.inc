@@ -27,7 +27,7 @@ EnemyAttackUsePtr king_wave_use(cCcD_Obj* attack) {
     for(auto& wave:s_kingWaves)if(wave.owner!=kNone&&attack==&wave.collider)return wave.use;
     return {};
 }
-void launch_king_wave(e_rdb_class* actor,Enemy& owner,s16 yaw,const EnemyAttackUsePtr& use) {
+void launch_king_wave(e_rdb_class* actor,Enemy& owner,s16 yaw,const EnemyAttackUsePtr& use,const cXyz* target=nullptr) {
     for(auto& wave:s_kingWaves) {
         if(wave.owner!=kNone)continue;
         static const dCcD_SrcSph source={
@@ -38,6 +38,15 @@ void launch_king_wave(e_rdb_class* actor,Enemy& owner,s16 yaw,const EnemyAttackU
         wave.position=actor->enemy.current.pos+cXyz(0,65,0);
         wave.velocity=cXyz(cM_ssin(yaw)*35.f,0,cM_scos(yaw)*35.f);
         wave.rotation=csXyz(0,yaw,0);
+        if(target) {
+            const cXyz delta=*target-wave.position;
+            const float distance=delta.abs();
+            if(distance>.001f) {
+                wave.velocity=delta*(35.f/distance);
+                wave.rotation=csXyz(-cM_atan2s(delta.y,std::sqrt(delta.x*delta.x+delta.z*delta.z)),
+                    cM_atan2s(delta.x,delta.z),0);
+            }
+        }
         wave.status.Init(0xff,0,&actor->enemy);wave.collider.Set(source);wave.collider.SetStts(&wave.status);
         wave.collider.StartCAt(wave.position);wave.collider.OffAtSetBit();return;
     }
@@ -54,9 +63,11 @@ void update_king_waves(e_rdb_class* actor,Enemy& owner) {
         auto use=new_enemy_attack_use();
         // Aim the first wave at Link's current position on each release.
         const s16 aimedYaw=fopAcM_searchPlayerAngleY(&actor->enemy);
+        const auto* link=daAlink_getAlinkActorClass();
+        const cXyz target=link?link->current.pos+cXyz(0,65,0):actor->enemy.current.pos;
         if(count==1)actor->enemy.current.angle.y=actor->enemy.shape_angle.y=aimedYaw;
         for(unsigned i=0;i<count;++i)launch_king_wave(actor,owner,
-            i==0?aimedYaw:s16(s_run.next_random()&0xffff),use);
+            i==0?aimedYaw:s16(s_run.next_random()&0xffff),use,i==0&&link?&target:nullptr);
     }
     for(auto& wave:s_kingWaves) {
         if(wave.owner!=owner.id)continue;

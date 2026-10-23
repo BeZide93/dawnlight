@@ -123,8 +123,9 @@ HookAction before_field_boss_targets(ModContext*,void* args,void*,void*) {
     auto* owner=actor&&in_arena()?enemy_child_root(fopAcM_GetID(actor)):nullptr;
     if(!owner || !owner->elite ||
        (owner->profile!=fpcNm_E_WB_e && owner->profile!=fpcNm_B_GG_e))return HOOK_CONTINUE;
-    // Both replaced enemies used native attack power 1 with the elite x2
-    // multiplier. Normalize charge/sword/rider/projectile colliders at Set,
+    // Normalize native attack power to 1: Bullbo/riders/arrows and elite
+    // Aeralfos use x8 (two hearts), applied once at Link's damage boundary.
+    // Normalize charge/sword/rider/projectile colliders at Set,
     // after native code writes its per-animation power. Never multiply in place.
     object->SetAtAtp(1);
     if(owner->profile==fpcNm_E_WB_e && fopAcM_GetName(actor)==fpcNm_E_RD_e) {

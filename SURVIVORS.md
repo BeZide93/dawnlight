@@ -261,7 +261,9 @@ with new positions in Field/Desert. Timed elites do not respawn.
 Hyrule Field's Bullbo uses native charges with a front Bulblin driver and a rear
 Bulblin archer. All three share one boss HP budget and one kill/reward; hits on
 either rider damage the mount. The Bullbo and Aeralfos retain the timed-elite HP
-scaling and damage of the enemies they replace. Riders and their arrows follow
+scaling of the enemies they replace. All Bullbo/rider attacks (including arrows)
+and elite Aeralfos attacks deal two base hearts before difficulty/Endless scaling
+and damage reduction. Riders and their arrows follow
 the encounter's pause and cleanup rules. Mount/rider target spheres are 150% of
 native radius, and the rear archer always fires triple arrows with half the
 native readiness delay. Rider targets remain at their visible saddle positions.
@@ -271,6 +273,11 @@ includes Endless movement scaling; native collision and rider attacks stay activ
 The elite Aeralfos flies at 250–400 units above terrain (half the native band),
 has quarter-length native readiness waits, and alternates air/ground phases every ten
 active seconds, descending over a dry floor and using the native takeoff.
+A ready aerial attack starts without waiting for the native paired-Aeralfos AI.
+On the ground, a gap closer becomes due every three active seconds, waits for an
+ongoing strike to finish, and uses a bounded, collision-checked dash into melee.
+It starts a native attack immediately on arrival; blocked paths abort the dash.
+Nearby Link triggers a strike without another sidestep/idle cycle.
 
 Stalhounds emerge and fight in daylight as well as at night. The giant elite
 uses a lower pounce arc so its bite can reach grounded Link. Shadow Beasts do
@@ -294,13 +301,14 @@ are excluded; attacks, effects and attack timing remain native where portable.
 
 Boss balance: active elites/bosses move 50% faster. Promoted ordinary elites have
 half attack-readiness/recovery timers and double damage; native bosses/minibosses
-do not inherit those two generic factors. Explicit damage overrides are Darknut
-and elite Aeralfos ×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
+do not inherit those two generic factors. Explicit damage overrides are Darknut ×2;
+elite Aeralfos and Bullbo/riders ×8 on normalized native power 1 (two hearts); Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
 King Bulblin can spin every six seconds at a safe chase boundary, including at
 range. Normal axe swings launch one Sword Wave toward Link, even outside melee
 range; active spins emit five waves every second: one aimed at Link's current position
-and four randomly directed waves. Waves travel
+and four randomly directed waves. Aimed waves include Link's height and fly
+toward his body position at release, without homing afterward. Waves travel
 up to the light ring's diameter (3,000 units), stop at walls/hits, and use the
 native axe's base damage. Each five-wave salvo shares one accepted-hit budget.
 Darknut repeats

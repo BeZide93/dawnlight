@@ -21,6 +21,7 @@ struct cXyz{float x=0,y=0,z=0;cXyz()=default;cXyz(float a,float b,float c):x(a),
  float abs()const{return std::sqrt(x*x+y*y+z*z);}};
 float cM_ssin(s16 a){return std::sin(a*3.141592653589793/32768);}
 float cM_scos(s16 a){return std::cos(a*3.141592653589793/32768);}
+s16 cM_atan2s(float x,float z){return s16(std::atan2(x,z)*32768/3.141592653589793);}
 struct csXyz{s16 x=0,y=0,z=0;csXyz()=default;csXyz(s16 a,s16 b,s16 c):x(a),y(b),z(c){}};
 struct Actor{int health=100;struct{cXyz pos;csXyz angle;}current;csXyz shape_angle;int tevStr=0;cXyz eyePos;};
 struct e_hzelda_class:Actor{int mAction=3,mMode=3,field_0x6e4=2;cXyz mBallPos{0,100,0},mBallMove{0,0,35};};
@@ -28,6 +29,7 @@ struct e_rdb_class{Actor enemy;int mAction=3,mMode=1,field_0x6c4=1;};
 s16 aimYaw=0;s16 fopAcM_searchPlayerAngleY(Actor*){return aimYaw;}
 struct Enemy{ActorId id=1;bool retiring=false,credited=false;unsigned stagger=0;KingWaveClock kingWaveClock;};
 Actor player;Actor* daAlink_getAlinkActorClass(){return &player;}
+void setAim(s16 yaw,float height=0){aimYaw=yaw;player.current.pos={cM_ssin(yaw)*1000,height,cM_scos(yaw)*1000};}
 struct SourceHit{struct{int type,power,flags;}at;struct{int type,flags;}tg;int co;};
 struct dCcD_SrcSph{struct{struct{int flags;SourceHit hit;}obj;int at[5],tg[5],co[1];}info;struct{struct{cXyz pos;float radius;}sph;}attr;};
 constexpr int AT_TYPE_CSTATUE_SWING=1,dCcD_SE_METAL=7,dCcD_SE_NONE=0;
@@ -63,8 +65,8 @@ unsigned live(){unsigned count=0;for(auto& w:s_kingWaves)count+=w.owner!=kNone;r
 void reset(){clear_king_waves(kNone);emitters.clear();nextEmitter=1;s_run.ticks=0;s_run.phase=Phase::Running;running=arena=true;wall=false;registrations.clear();}
 int main(){
  reset();e_rdb_class king;Enemy owner;
- aimYaw=0x4000;update_king_waves(&king,owner);
- assert(live()==1&&s_kingWaves[0].velocity.x==35&&std::abs(s_kingWaves[0].velocity.z)<.001);
+ setAim(0x4000);update_king_waves(&king,owner);
+ assert(live()==1&&std::abs(s_kingWaves[0].velocity.x-35)<.001&&std::abs(s_kingWaves[0].velocity.z)<.001);
  assert(king.enemy.shape_angle.y==aimYaw&&s_kingWaves[0].remaining==2*boss_ring_radius-35);
  auto& first=s_kingWaves[0];assert(king_wave_use(&first.collider)==first.use);
  for(int i=0;i<9;++i)update_king_waves(&king,owner);assert(live()==1); // One per native strike window.
@@ -72,7 +74,7 @@ int main(){
  // Every full second emits five waves: one freshly aimed at Link and four random.
  reset();owner={};king.mAction=4;king.mMode=1;king.field_0x6c4=0;
  update_king_waves(&king,owner);assert(live()==0);
- aimYaw=0x2000;king.mMode=2;king.field_0x6c4=2;update_king_waves(&king,owner);assert(live()==5);
+ setAim(0x2000);king.mMode=2;king.field_0x6c4=2;update_king_waves(&king,owner);assert(live()==5);
  assert(s_kingWaves[0].rotation.y==aimYaw);
  for(unsigned i=1;i<5;++i)assert(s_kingWaves[i].use==s_kingWaves[0].use);
  assert(s_kingWaves[0].rotation.y!=s_kingWaves[1].rotation.y&&s_kingWaves[1].rotation.y!=s_kingWaves[2].rotation.y);
@@ -81,17 +83,37 @@ int main(){
  auto remaining=s_kingWaves[0].remaining;running=false;
  for(int i=0;i<90;++i)update_king_waves(&king,owner);
  assert(live()==5&&s_kingWaves[0].remaining==remaining&&owner.kingWaveClock.spinTicks==0);
- aimYaw=-0x4000;running=true;update_king_waves(&king,owner);assert(live()==10&&s_kingWaves[5].use!=s_kingWaves[0].use);
+ setAim(-0x4000);running=true;update_king_waves(&king,owner);assert(live()==10&&s_kingWaves[5].use!=s_kingWaves[0].use);
  assert(s_kingWaves[5].rotation.y==aimYaw&&s_kingWaves[0].rotation.y==0x2000);
- assert(s_kingWaves[5].velocity.x==-35&&std::abs(s_kingWaves[5].velocity.z)<.001);
+ assert(std::abs(s_kingWaves[5].velocity.x+35)<.001&&std::abs(s_kingWaves[5].velocity.z)<.001);
  king.mMode=3;king.field_0x6c4=0;update_king_waves(&king,owner);assert(live()==10);
  // Exact diameter travel, including the final partial frame, then removal.
- reset();owner={};king.mAction=3;king.mMode=1;king.field_0x6c4=1;aimYaw=0;
+ reset();owner={};king.mAction=3;king.mMode=1;king.field_0x6c4=1;setAim(0);
  update_king_waves(&king,owner);king.mAction=1;king.field_0x6c4=0;
  for(int i=1;i<86;++i)update_king_waves(&king,owner);
  assert(s_kingWaves[0].position.z==2*boss_ring_radius&&s_kingWaves[0].remaining==0);
  update_king_waves(&king,owner);assert(live()==0);
  for(const auto& [id,e]:emitters)assert(e.stopped);
+ // Aim normal strikes and the first spin wave uphill/downhill at release.
+ for(bool spin:{false,true})for(float height:{630.f,-630.f}){
+  reset();owner={};king.mAction=spin?4:3;king.mMode=spin?2:1;king.field_0x6c4=spin?2:1;
+  setAim(0,height);player.current.pos.z=840;
+  update_king_waves(&king,owner);auto& wave=s_kingWaves[0];
+  assert(std::abs(wave.velocity.abs()-35)<.001&&wave.velocity.y*height>0);
+  assert((height>0&&wave.rotation.x<0)||(height<0&&wave.rotation.x>0));
+  if(spin)for(unsigned i=1;i<5;++i)assert(s_kingWaves[i].velocity.y==0);
+  const auto velocity=wave.velocity;king.mAction=1;king.field_0x6c4=0;
+  player.current.pos={5000,5000,5000}; // Released waves do not home after launch.
+  for(int i=1;i<30;++i)update_king_waves(&king,owner);
+  assert(std::abs(wave.position.y-(65+height))<.01&&std::abs(wave.position.z-840)<.01);
+  assert(wave.velocity.y==velocity.y);
+  for(int i=30;i<86;++i)update_king_waves(&king,owner);
+  assert(std::abs((wave.position-cXyz(0,65,0)).abs()-2*boss_ring_radius)<.02&&wave.remaining==0);
+ }
+ // Degenerate target at the origin keeps a finite forward velocity.
+ reset();owner={};king.mAction=1;const cXyz coincident(0,65,0);
+ launch_king_wave(&king,owner,0,new_enemy_attack_use(),&coincident);
+ assert(s_kingWaves[0].velocity.z==35&&s_kingWaves[0].velocity.y==0);
  // Walls, accepted hits, blocks and owner teardown remove all effects.
  for(int kind=0;kind<4;++kind){reset();owner={};king.mAction=3;king.field_0x6c4=1;update_king_waves(&king,owner);
   king.mAction=1;king.field_0x6c4=0;
@@ -115,4 +137,4 @@ with tempfile.TemporaryDirectory() as tmp:
  cpp.write_text(fixture+(root/'src/survivors_king_waves.inc').read_text()+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
-print('King waves: native strike release, 1s five-wave salvos with fresh aim, diameter range, contact budget, walls, pause and teardown passed')
+print('King waves: native strike release, 1s five-wave salvos with fresh 3D aim, diameter range, contact budget, walls, pause and teardown passed')

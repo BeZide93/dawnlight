@@ -3,10 +3,11 @@ namespace dawnlight::survivors {
 inline constexpr float boss_ring_radius=1500.f;
 struct AeralfosCycle {
     unsigned ticks=0;
+    unsigned groundTicks=0,dashTicks=0;
     bool ground=false;
     bool advance() {
         if(++ticks<300)return false;
-        ticks=0;ground=!ground;return true;
+        ticks=0;groundTicks=dashTicks=0;ground=!ground;return true;
     }
 };
 struct KingWaveClock {

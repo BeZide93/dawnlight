@@ -11,6 +11,42 @@ void aeralfos_end_attack(daB_GG_c* actor) {
     for(auto& sphere:actor->mCcSph){sphere.OffAtSetBit();sphere.ResetAtHit();}
     actor->field_0x65a=0;actor->SpeedClear();
 }
+bool aeralfos_ground_pressure(daB_GG_c* actor,AeralfosCycle& cycle) {
+    auto* link=daAlink_getAlinkActorClass();
+    if(!link)return false;
+    if(cycle.groundTicks<90)++cycle.groundTicks;
+    // Never interrupt an active strike or a native damage/death state.
+    if(actor->mSubAction!=1){cycle.dashTicks=0;return false;}
+    const cXyz delta=link->current.pos-actor->current.pos;
+    const float distance=delta.absXZ();
+    const s16 yaw=cM_atan2s(delta.x,delta.z);
+    if(distance<=240.f&&std::abs(delta.y)<=120.f) {
+        aeralfos_end_attack(actor);cycle.dashTicks=0;
+        actor->current.angle.y=actor->shape_angle.y=actor->field_0x5ba=yaw;
+        actor->mCcCyl.OnTgSetBit();actor->mCcShieldSph.OnTgSetBit();
+        actor->SetAction(1,2,0); // Start the native strike now; no extra idle phase.
+        return false;
+    }
+    if(!cycle.dashTicks) {
+        if(cycle.groundTicks<90)return false;
+        cycle.groundTicks=0;cycle.dashTicks=30;
+        aeralfos_end_attack(actor);
+        actor->SetAction(1,1,2);actor->SetAnm(30,2,3.f,2.f);
+        actor->mCcCyl.OnTgSetBit();actor->mCcShieldSph.OnTgSetBit();
+    }
+    const float step=std::min(80.f,std::max(0.f,distance-180.f));
+    cXyz next=actor->current.pos+cXyz(cM_ssin(yaw)*step,0,cM_scos(yaw)*step);
+    // At most an 80-unit path: check slopes, water, walls and the light circle.
+    if(!step||!inside_boss_ring(next,100.f)||!walkable_spawn_path(actor->current.pos,next,60.f)||!--cycle.dashTicks) {
+        aeralfos_end_attack(actor);cycle.dashTicks=0;actor->mAnm=-1;
+        return false;
+    }
+    const float movement=1.5f*float(std::min(32767.0,s_run.endless_factor()));
+    actor->current.angle.y=actor->shape_angle.y=actor->field_0x5ba=yaw;
+    actor->speedF=actor->field_0x5bc=step/movement;
+    actor->gravity=-9.f;
+    return true; // Execute still handles animation, movement and floor collision.
+}
 HookAction before_aeralfos_action(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<daB_GG_c*>(args,0);auto* owner=aeralfos_owner(actor);
     if(!owner)return HOOK_CONTINUE;
@@ -42,6 +78,7 @@ HookAction before_aeralfos_action(ModContext*,void* args,void*,void*) {
         actor->mTimers[2]=std::max<s16>(actor->mTimers[2],2);
         actor->field_0x648=actor->current.pos.y;
         if(actor->mSubAction==1&&actor->mMode==4){actor->SetAction(1,1,2);actor->mAnm=-1;}
+        if(aeralfos_ground_pressure(actor,cycle))return HOOK_SKIP_ORIGINAL;
     }
     // Three extra readiness ticks make waits one quarter of native duration.
     // Animations, hit windows and phase timer retain their native speed.
@@ -52,6 +89,10 @@ HookAction before_aeralfos_action(ModContext*,void* args,void*,void*) {
     const bool groundWait=actor->mAction==1&&actor->mSubAction==1&&actor->mMode>=1&&actor->mMode<=3;
     if((flyWait||groundWait)&&actor->mTimers[0]>0)
         actor->mTimers[0]=std::max<s16>(0,actor->mTimers[0]-3);
+    // The native type-2 pair can postpone a ready attack while its partner is
+    // attacking. An owned solo boss must not wait for that shared partner state.
+    if(!cycle.ground&&actor->mAction==0&&actor->mSubAction<=1&&actor->mMode==1&&actor->mTimers[0]==0)
+        actor->SetAction(0,2,10);
     return HOOK_CONTINUE;
 }
 void after_aeralfos_action(ModContext*,void* args,void*,void*) {

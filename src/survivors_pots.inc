@@ -46,8 +46,8 @@ bool pot_position(daAlink_c* link, cXyz& position) {
     return separated_guard(position,250);
 }
 void update_pots(daAlink_c* link) {
-    if (!playable() || s_run.phase!=Phase::Running || !s_arenaMeshReady) return;
-    if (!s_potTarget) s_potTarget=pot_budget(s_map,s_eliteFloorArea);
+    if (!playable() || s_run.phase!=Phase::Running || !s_arenaMeshReady || !arena_distribution_ready()) return;
+    if (!s_potTarget) s_potTarget=pot_budget(s_map,arena_distribution_area());
     if (s_potDelay) {--s_potDelay;return;}
     for (unsigned i=0;i<s_potTarget;++i) {
         auto& pot=s_pots[i];

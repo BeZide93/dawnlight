@@ -854,12 +854,17 @@ void update_spawns(daAlink_c* link) {
     unsigned population = 0;
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
-        if (!e.elite) ++population;
+        if (!e.elite && !e.retiring && !e.credited) ++population;
         auto* actor = actor_by_id(e.id);
         if (!actor || !e.initialized) continue;
         ++e.age;
         // Guards and scheduled elites persist until killed; cleanup grants no loot.
-        if (!e.elite && !e.retiring && e.age > 5400) e.retiring = true;
+        // Do not let ordinary enemies stranded in the old area occupy the
+        // population budget for three minutes after Link has moved away.
+        if (!e.elite && !e.retiring && !e.credited && (e.age>5400 ||
+            (e.age>10*ticks_per_second && actor->current.pos.absXZ(link->current.pos)>6000.f))) {
+            e.retiring=true;--population; // Existing cleanup deletes without kill/drop credit.
+        }
     }
     if ((s_run.endless || s_run.ticks <= s_run.run_duration()) && s_run.ticks % s_run.boss_interval() == 0) s_spawnCooldown = 0;
     for (const auto& encounter : s_eliteEncounters)

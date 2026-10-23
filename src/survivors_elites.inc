@@ -36,6 +36,7 @@ bool separated_guard(cXyz pos, float distance) {
     return true;
 }
 bool random_arena_floor(cXyz& pos) {
+    if(needs_reachable_floor())return sample_reachable_arena_floor(pos) && elite_floor_position(pos);
     if (s_eliteFloors.empty() || s_eliteFloorArea <= 0) return false;
     const float roll = float(s_run.next_random() & 0xffffff) / 16777216.f * s_eliteFloorArea;
     auto tile = std::lower_bound(s_eliteFloors.begin(),s_eliteFloors.end(),roll,

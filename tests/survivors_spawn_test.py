@@ -298,7 +298,7 @@ int main(){
 '''
 # Exercise the real floor policy together with the rescue hooks.
 ground = (root/'src/survivors_ground.inc').read_text()
-dry_floor = ground[:ground.index('bool walkable_spawn_path')]
+dry_floor = ground[:ground.index('struct ArenaWalk')]
 functions = dry_floor+'\n'+'\n'.join(extract(n) for n in ['add_exit_box','arena_story_actor','before_arena_stage_actor',
     'confine_arena_actor','after_arena_position','before_arena_restart','arena_grounded','arena_fallen','arena_safe_footprint','restore_arena_player','update_arena_safety'])
 globals = source[source.index('std::vector<barriers::Wall>'):source.index('void add_exit_box')]

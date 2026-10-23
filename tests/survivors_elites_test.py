@@ -83,12 +83,14 @@ bool arena_path_clear(cXyz,cXyz,float){return !barrierBlocked;}
 bool dry_arena_floor(cXyz& p,float rise,float drop){if(p.y>drop||p.y < -rise||groundMissing||groundCode==4||groundCode==5||groundCode==10||
  (groundRoom!=-2&&groundRoom!=arena().room))return false;
  p.y=0;return true;}
+bool needs_reachable_floor(){return false;}bool sample_reachable_arena_floor(cXyz&){return false;}
 bool reachable=true;bool reachable_arena_floor(cXyz){return reachable;}void update_reachable_floor(){}
 bool rejectLongPath=false,narrowLanding=false;
 bool walkable_spawn_path(cXyz from,cXyz& to,float){return !groundMissing&&!wallBlocked&&!barrierBlocked &&
  (!rejectLongPath||from.absXZ(to)<1000) && (!narrowLanding||std::abs(to.x-from.x)<300); }
 bool failCreate=false;unsigned nextId=1,ordinarySpawns=0;
-fopAc_ac_c* actor_by_id(ActorId){return &player;}
+ActorId distantId=kNone;fopAc_ac_c distantActor;
+fopAc_ac_c* actor_by_id(ActorId id){return id==distantId?&distantActor:&player;}
 bool create_enemy_at(cXyz pos,s16,unsigned kind,bool elite,int slot=-1,bool dormant=false){
  if(dormant)assert(kind==unsigned(guard_species(s_map)));
  if(failCreate)return false;
@@ -116,7 +118,7 @@ void clear_attacks(){}void update_chests(daAlink_c*){}void update_pots(daAlink_c
 '''
 fixture+='void update_boss_watchdogs(daAlink_c*){}\n'+extract((root/'src/survivors_boss_tactics_state.inc').read_text(),'timed_boss')+extract((root/'src/survivors_boss_tactics_state.inc').read_text(),'active_boss_encounter')
 main=r'''
-void fresh(unsigned map){s_victory=false;s_victoryTicks=0;s_arenaSpawnPosition={};s_arenaSpawn=true;rejectLongPath=narrowLanding=false;s_map=map;roomData={};stageData={};keepDoors={};keepRoomDoors={};s_run.start(42);s_enemies={};s_chests={};s_chestsExhausted=false;s_chestSequence=0;s_selectedChest=kChestCount;clear_elite_sites();player.current.pos={};reset_elite_encounters();
+void fresh(unsigned map){distantId=kNone;s_victory=false;s_victoryTicks=0;s_arenaSpawnPosition={};s_arenaSpawn=true;rejectLongPath=narrowLanding=false;s_map=map;roomData={};stageData={};keepDoors={};keepRoomDoors={};s_run.start(42);s_enemies={};s_chests={};s_chestsExhausted=false;s_chestSequence=0;s_selectedChest=kChestCount;clear_elite_sites();player.current.pos={};reset_elite_encounters();
  groundMissing=wallBlocked=barrierBlocked=failCreate=false;groundRoom=-2;groundCode=0;s_spawnCooldown=s_spawnFailures=ordinarySpawns=0;}
 unsigned guards(){unsigned n=0;for(auto& e:s_enemies)n+=e.id!=kNone&&e.dormant;return n;}
 unsigned waves(){unsigned n=0;for(auto& e:s_enemies)n+=e.id!=kNone&&e.elite&&!e.dormant;return n;}
@@ -205,6 +207,15 @@ int main(){
  for(unsigned i=0;i<10;++i){s_spawnCooldown=0;update_spawns(&player);}assert(s_spawnFailures==10);
  failCreate=false;s_spawnCooldown=0;update_spawns(&player);assert(s_spawnFailures==0);
  s_spawnFailures=10;s_run.ticks=duration;s_spawnCooldown=0;update_spawns(&player);assert(s_spawnFailures==0);
+ // Moving to the rear must release slots held by distant ordinary enemies.
+ fresh(0);for(unsigned n=0;n<s_run.target_population();++n)assert(create_enemy_at({},0,0,false));
+ distantId=s_enemies[0].id;distantActor.current.pos={7000,0,0};
+ s_enemies[0].age=100;update_spawns(&player);assert(!s_enemies[0].retiring&&ordinarySpawns==0);
+ s_enemies[0].age=10*ticks_per_second;s_spawnCooldown=0;update_spawns(&player);
+ assert(s_enemies[0].retiring&&ordinarySpawns==1&&s_run.kills==0);
+ for(const auto& chest:s_chests)assert(!chest.active); // Cleanup must not grant rewards.
+ fresh(0);assert(create_enemy_at({},0,0,true,0,true));distantId=s_enemies[0].id;
+ s_enemies[0].age=6000;update_spawns(&player);assert(!s_enemies[0].retiring); // Stationary bosses persist.
  // Burst spawns are tripled but respect the current normal-enemy cap.
  fresh(0);s_run.horde_remaining=horde_duration;s_spawnCooldown=0;update_spawns(&player);assert(ordinarySpawns==3);
  for(unsigned density=1;density<=5;++density){

@@ -130,15 +130,28 @@ units, with 3,000 units of clearance from the original start and 1,800 from
 Link. They sample the whole room without a straight-line path to Link, so an
 entrance tunnel cannot attract the entire guard population. Field/Desert guards
 and small chests additionally require a verified walking route from the arena
-start. A bounded flood of the native floor builds this connected subset over
-multiple frames: at most 16 short expansion attempts and eight candidate route
-checks per active frame, with a 32,768-node cap. Unknown or isolated areas never
-qualify; missing placements retry as the search advances. The cache resets on
-restart, scene change and newly collected room collision. It is seeded only from
-the original grounded start, so jumping/gliding onto a plateau cannot authorize
-spawns there. The same rule applies to Throne Room chests, and walking rays use
-Link's polygon-pass rules to respect the native light wall. Guard/pot footprints
-also reject submerged or hazardous ground.
+start. Connectivity follows shared edges of the actual room-floor triangles,
+not a world grid that can skip narrow bends. Edges are checked via their shared
+portal using the native dry-floor and Link collision rules. The complete
+reachable component is prepared before any scattered guard/pot/map-chest slots
+are filled, preventing early near-start discoveries from consuming the budget.
+Sampling then uses the entire reachable component weighted by floor area.
+A selected landing stays queued until its walking check finishes, so short paths
+cannot win by being rerolled more often. Spacing and pot density use reachable
+floor area rather than inaccessible plateaus.
+
+Graph construction handles at most 128 triangles per active frame. Graph paths
+and queued landings share 64 ground/wall samples per frame (at most one ground,
+water and wall query per sample); long segments resume next frame. This replaces
+the former limit on whole paths. Cache reset and seeding remain tied to arena
+geometry and the original grounded start. Jumping/gliding onto a plateau cannot
+seed an isolated region. Throne Room checks retain the native light-wall filter.
+Footprints also reject submerged or hazardous ground.
+
+Ordinary enemies older than ten active seconds and more than 6,000 units from
+Link retire through the normal no-reward cleanup path. Retiring/credited enemies
+do not occupy the active population budget, so waves can refill around Link in
+the rear of the map. Stationary and timed bosses remain persistent.
 
 Every arena hosts a twenty-minute run.
 Start with three hearts and automatic normal sword strikes. Sword Wave starts
@@ -571,7 +584,7 @@ Safe-position retries are bounded to 24 candidates per update. Affordability,
 preview, payment, floating labels and paid-reroll reservations use the same price.
 Starting chests use area-weighted room-floor sampling with local dry-ground,
 room, exit and footprint checks, plus the connected-floor check in Field, Desert
-and Throne Room. Placement can continue while that bounded search expands. They
+and Throne Room. Placement begins after the bounded connectivity search finishes. They
 do not require a straight walking line
 from Link: that rejects distant sites around terrain obstacles and clusters
 chests near the entrance. Minimum spacing from Link and between these chests is

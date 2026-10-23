@@ -3,7 +3,7 @@ from pathlib import Path
 import os, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
 fixture=r'''
-bool s_victory=false;
+bool s_victory=false;bool fateTips=false;bool show_fate_tooltips(){return fateTips;}
 
 #include <cassert>
 #include <cmath>
@@ -31,9 +31,9 @@ void mDoLib_project(cXyz* w,cXyz* s){*s=*w;}
 namespace mDoGph_gInf_c{float getMinXF(){return 0;}float getMaxXF(){return 640;}float getHeightF(){return 480;}}
 namespace JUtility{struct TColor{TColor(unsigned,unsigned,unsigned,unsigned){}};}
 enum{HBIND_CENTER,VBIND_TOP};
-struct Printed{std::string text;float y;unsigned alpha;};std::vector<Printed>printed;
-struct J2DPrint{J2DPrint(void*,JUtility::TColor,JUtility::TColor){}void setFontSize(float,float){}
- void printReturn(const char* t,float,float,int,int,float,float y,unsigned a){printed.push_back({t,y,a});}};
+struct Printed{std::string text;float y;unsigned alpha;float size;};std::vector<Printed>printed;
+struct J2DPrint{float size=0;J2DPrint(void*,JUtility::TColor,JUtility::TColor){}void setFontSize(float x,float){size=x;}
+ void printReturn(const char* t,float,float,int,int,float,float y,unsigned a){printed.push_back({t,y,a,size});}};
 '''
 main=r'''
 int main(){
@@ -54,6 +54,16 @@ int main(){
   printed.clear();draw_combat_feedback();assert(printed.back().y>y&&printed.back().alpha==127);
   for(unsigned n=0;n<30;++n)update_combat_feedback();printed.clear();draw_combat_feedback();assert(printed.empty());
  }
+ fateTips=true;
+ for(unsigned i=0;i<unsigned(FateEffect::Count);++i){
+  clear_combat_feedback();printed.clear();fate_feedback({320,20,1000},FateEffect(i));draw_combat_feedback();
+  assert(printed.size()==4&&printed[1].text==fate_names[i]&&printed[3].text==fate_tooltips[i]);
+  assert(printed[3].size<printed[1].size&&printed[3].y==printed[1].y+18&&printed[3].alpha==printed[1].alpha);
+  for(unsigned n=0;n<30;++n)update_combat_feedback();printed.clear();draw_combat_feedback();
+  assert(printed[3].alpha==127&&printed[3].alpha==printed[1].alpha);
+  fateTips=false;printed.clear();draw_combat_feedback();assert(printed.size()==2&&printed[1].text==fate_names[i]);fateTips=true;
+ }
+ fateTips=false;
  clear_combat_feedback();begin_damage_feedback(&args,&enemy,&info);mark_damage_critical(&info,true);
  end_damage_feedback(&other);assert(s_damageFeedback.size()==1);
  end_damage_feedback(&args);assert(s_combatTexts[0].remaining==0); // Blocked/invincible: no damage, no Crit.

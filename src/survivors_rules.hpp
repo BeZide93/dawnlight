@@ -46,6 +46,9 @@ inline unsigned pot_budget(unsigned map, float floorArea) {
 }
 enum class FateEffect : unsigned { Horde, Greed, Sprint, Curse, Slow, Fairy, Luck, Misfortune, Count };
 inline constexpr std::array fate_names{"Horde", "Greed", "Sprint", "Curse", "Slow", "Fairy", "Luck", "Misfortune"};
+inline constexpr std::array fate_tooltips{
+    "3x enemy spawns", "No healing; +50% XP and rupees", "Movement speed +50%",
+    "Lose half your current hearts", "Movement speed -50%", "A fairy appears", "+50% Luck", "-50% Luck"};
 inline constexpr unsigned fate_duration = 15 * ticks_per_second;
 inline constexpr bool timed_fate(FateEffect effect) {
     return effect != FateEffect::Curse && effect != FateEffect::Fairy && effect < FateEffect::Count;

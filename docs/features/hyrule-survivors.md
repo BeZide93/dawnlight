@@ -1034,7 +1034,11 @@ height follows the same floor plane so A remains usable on a hillside.
 
 Press **A** within 150 units horizontally and 35 vertically to roll one of eight
 equally likely effects. The effect name rises from the portal and fades over two
-seconds. Timed effects appear with separate countdowns in the HUD's Horde/Info
+seconds. **Show Fate Tooltips** in Survivors Settings defaults to On and adds a
+smaller explanation below the floating effect name and its HUD countdown. Off
+keeps the short names/countdowns. This presentation setting applies immediately,
+is persisted/exported with settings, and does not change the run or score.
+Timed effects appear with separate countdowns in the HUD's Horde/Info
 area, sharing its configured position and scale:
 
 | Effect | Result |

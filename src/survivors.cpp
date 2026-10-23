@@ -1515,12 +1515,17 @@ void draw_hud(ModContext*, void* args, void*, void*) {
         drawText(HudPart::Info,14,bossOffset);
     }
     float effectOffset=22+bossOffset;
+    const bool fateTooltips=show_fate_tooltips();
     for (unsigned i=0;i<unsigned(FateEffect::Count);++i) {
         const auto remaining=s_run.fate_ticks(FateEffect(i));
         if (!remaining) continue;
         std::snprintf(text,sizeof(text),"%s  %us",fate_names[i],(remaining+ticks_per_second-1)/ticks_per_second);
         drawText(HudPart::Info,17,effectOffset);
-        effectOffset+=22;
+        if(fateTooltips) {
+            std::snprintf(text,sizeof(text),"%s",fate_tooltips[i]);
+            drawText(HudPart::Info,13,effectOffset+18);
+        }
+        effectOffset+=fateTooltips?38:22;
     }
     if (s_spawnFailures >= 10) {
         std::snprintf(text,sizeof(text),"Waiting for a clear enemy spawn position");

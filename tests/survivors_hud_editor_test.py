@@ -44,7 +44,12 @@ int main(){
   *handle=100+pushes;return MOD_OK;
  };
  ui.window_close=[](ModContext*,UiWindowHandle h){assert(!s_hudEditorWindow);++closes;onClosed(nullptr,h,nullptr);return MOD_OK;};
- assert(initialize_hud_config()==MOD_OK&&names.size()==30);
+ assert(initialize_hud_config()==MOD_OK&&names.size()==31);
+ assert(show_fate_tooltips()&&values.at(names.at("survivors-fate-tooltips"))==1);
+ set_fate_tooltips(false);assert(!show_fate_tooltips());
+ assert(initialize_hud_config()==MOD_OK&&!show_fate_tooltips()); // Reload keeps the persisted choice.
+ values.at(names.at("survivors-fate-tooltips"))=1;assert(show_fate_tooltips()); // Import is live.
+ failWrite=true;set_fate_tooltips(false);assert(show_fate_tooltips()&&warnings==1);failWrite=false;warnings=0;
  for(unsigned i=0;i<hud_defaults.size();++i)for(unsigned axis=0;axis<3;++axis)assert(hud_value(i,axis)==hud_defaults[i][axis]);
  open_hud_editor(nullptr,nullptr);assert(s_hudEditorWindow&&pushes==1);
  open_hud_editor(nullptr,nullptr);assert(pushes==1);
@@ -63,7 +68,7 @@ int main(){
  value.int_value=8;controls[0].set(nullptr,nullptr,&value);
  assert(hud_value(9,2)==159&&names.contains("survivors-hud-item-banner-scale"));
  // Re-registering (new session) and host imports use the same persistent values.
- assert(initialize_hud_config()==MOD_OK&&names.size()==30&&hud_value(8,2)==158);
+ assert(initialize_hud_config()==MOD_OK&&names.size()==31&&hud_value(8,2)==158);
  values[s_hudConfig[8][2]]=-100;assert(hud_position(HudPart::BossBar,304).scale==.1f);
  values[s_hudConfig[8][0]]=100000;assert(hud_value(8,0)==9999);
  values[s_hudConfig[8][2]]=100000;assert(hud_position(HudPart::BossBar,304).scale==4.f);

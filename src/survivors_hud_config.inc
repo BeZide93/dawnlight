@@ -1,5 +1,15 @@
 // Presentation preferences are separate from immutable run difficulty/score data.
 std::array<std::array<ConfigVarHandle,3>,unsigned(HudPart::Count)> s_hudConfig{};
+ConfigVarHandle s_fateTooltipsConfig=0;
+bool show_fate_tooltips() {
+    int64_t enabled=1;
+    if(s_fateTooltipsConfig)svc_config->get_int(mod_ctx,s_fateTooltipsConfig,&enabled);
+    return enabled!=0;
+}
+void set_fate_tooltips(bool enabled) {
+    if(s_fateTooltipsConfig && svc_config->set_int(mod_ctx,s_fateTooltipsConfig,enabled)!=MOD_OK)
+        svc_log->warn(mod_ctx,"Survivors: could not persist Fate tooltips");
+}
 UiWindowHandle s_hudEditorWindow=0;
 unsigned s_hudEditorPart=0;
 int64_t hud_value(unsigned part,unsigned axis) {
@@ -20,7 +30,9 @@ ModResult initialize_hud_config() {
         const auto result=register_owned_setting(&desc,&s_hudConfig[i][axis]);
         if(result!=MOD_OK)return result;
     }
-    return MOD_OK;
+    ConfigVarDesc desc=CONFIG_VAR_DESC_INIT;
+    desc.name="survivors-fate-tooltips";desc.type=CONFIG_VAR_INT;desc.default_int=1;
+    return register_owned_setting(&desc,&s_fateTooltipsConfig);
 }
 void close_hud_editor() {
     const auto handle=s_hudEditorWindow;s_hudEditorWindow=0;

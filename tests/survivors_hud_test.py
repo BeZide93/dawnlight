@@ -138,6 +138,7 @@ bool hasFont=true, arena=true, transition=false, window=false, hasGraf=true;
 JUTResFont* mDoExt_getMesgFont(){return hasFont?&font:nullptr;}
 JUTResFont* mDoExt_getRubyFont(){return hasFont?&ruby:nullptr;}
 enum {HBIND_CENTER,HBIND_LEFT,VBIND_TOP};
+bool fateTips=false;bool show_fate_tooltips(){return fateTips;}
 struct DrawText {std::string text;float x,y,size;};std::vector<DrawText> textPositions;
 struct J2DPrint {
     JUTResFont* face;float size=0;
@@ -357,6 +358,13 @@ int main(){
     checkText(HudPart::Info,"Sprint  15s",17,120);checkText(HudPart::Info,"Luck  15s",17,142);
     s_run.fate_remaining[unsigned(FateEffect::Greed)]=1;
     textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);checkText(HudPart::Info,"Greed  1s",17,98);
+    fateTips=true;textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);
+    checkText(HudPart::Info,"Horde  15s",17,76);checkText(HudPart::Info,"3x enemy spawns",13,94);
+    checkText(HudPart::Info,"Greed  1s",17,114);checkText(HudPart::Info,"No healing; +50% XP and rupees",13,132);
+    checkText(HudPart::Info,"Sprint  15s",17,152);checkText(HudPart::Info,"Movement speed +50%",13,170);
+    checkText(HudPart::Info,"Luck  15s",17,190);checkText(HudPart::Info,"+50% Luck",13,208);
+    fateTips=false;textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);
+    for(const auto& drawn:textPositions)for(const auto* tip:fate_tooltips)assert(drawn.text!=tip);
     s_run.clear_fate();s_run.horde_remaining=0;
     // Inline icon keeps its native 1:2 aspect and shares Info text transforms.
     const auto info=hud_position(HudPart::Info,304);

@@ -18,6 +18,9 @@ struct cXyz{float x=0,y=0,z=0;cXyz()=default;cXyz(float a,float b,float c):x(a),
  float abs2()const{return x*x+y*y+z*z;}};
 struct Player{struct{cXyz pos;}current;}player;
 bool hasPlayer=true;Player* daAlink_getAlinkActorClass(){return hasPlayer?&player:nullptr;}
+bool s_victory=false;
+struct HordePortal{bool visible=false;cXyz position{};};std::array<HordePortal,4>s_hordePortals;
+bool horde_portal_visible(const HordePortal& p){return p.visible;}
 Run s_run;constexpr unsigned kSmallChestCount=2;
 struct Chest{bool active=false,opening=false;cXyz position;bool free=false,fixed=false;};std::array<Chest,3>s_chests;
 bool event=false,view=true;bool dComIfGp_event_runCheck(){return event;}bool dComIfGd_getView(){return view;}
@@ -57,6 +60,14 @@ int main(){
  s_chests[1].position={320,0,1000};event=true;draw_chest_prices();assert(labels.empty());event=false;
  view=false;draw_chest_prices();assert(labels.empty());view=true;
  s_run.phase=Phase::TreasureChoice;draw_chest_prices();assert(labels.empty());
+ s_run.phase=Phase::Running;s_hordePortals[0]={true,{320,0,1000}};
+ labels.clear();draw_horde_portal_labels();assert((labels==std::vector<std::string>{"Fate"}));
+ for(unsigned reason=0;reason<5;++reason){labels.clear();s_hordePortals[0]={true,{320,0,1000}};
+  s_victory=reason==0;event=reason==1;view=reason!=2;
+  if(reason==3)s_hordePortals[0].visible=false;
+  if(reason==4)s_hordePortals[0].position.z=item_target_range;
+  draw_horde_portal_labels();assert(labels.empty());
+ }
  std::cout<<"Survivors prices: shared cost, Link shooting range, camera bounds and pause gates passed\n";
 }
 '''

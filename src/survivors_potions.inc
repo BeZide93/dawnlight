@@ -9,6 +9,8 @@ HookAction before_potion_drink(ModContext*, void* args, void*, void*) {
 }
 void after_potion_drink(ModContext*, void*, void*, void*) { s_potionDrinker = nullptr; }
 HookAction before_potion_heal(ModContext*, void* args, void*, void*) {
+    if (in_arena() && s_run.greed() && mods::arg<float>(args,0)>0)
+        return HOOK_SKIP_ORIGINAL;
     const bool redPotion = s_potionDrinker && in_arena() && s_run.phase == Phase::Running && s_run.red_potion &&
         fopAcM_GetID(s_potionDrinker) == s_player && s_potionDrinker->mEquipItem == dItemNo_RED_BOTTLE_e &&
         mods::arg<float>(args, 0) > 0 && mods::arg<u8>(args, 1) == 0;

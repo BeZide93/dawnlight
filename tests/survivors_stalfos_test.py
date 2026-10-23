@@ -27,20 +27,22 @@ fixture=r'''
 using s16=short;using u8=unsigned char;using u16=unsigned short;using u32=unsigned;using f32=float;using BOOL=int;
 constexpr BOOL TRUE=1,FALSE=0;struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods{template<class T>T arg(void* p,unsigned i){return std::any_cast<T>(static_cast<std::any*>(p)[i]);}}
-struct cXyz{float x=0,y=0,z=0;cXyz operator-(cXyz v)const{return{x-v.x,y-v.y,z-v.z};}float absXZ()const{return std::hypot(x,z);}};
+struct cXyz{float x=0,y=0,z=0;void set(float a,float b,float c){x=a;y=b;z=c;}cXyz operator-(cXyz v)const{return{x-v.x,y-v.y,z-v.z};}float absXZ()const{return std::hypot(x,z);}};
 struct fopAc_ac_c{unsigned id=1;int health=100;struct{cXyz pos;struct{s16 y=0;}angle;}current;
- struct{s16 y=0;}shape_angle;cXyz scale{2,2,2};float speedF=0;};using fopEn_enemy_c=fopAc_ac_c;
+ struct{s16 y=0;}shape_angle;cXyz speed,scale{2,2,2};float speedF=0;};using fopEn_enemy_c=fopAc_ac_c;
 struct Morph{float frame=0,speed=1;bool stopped=false;float getFrame(){return frame;}void setPlaySpeed(float v){speed=v;}bool isStop(){return stopped;}};
-struct e_sf_class{fopEn_enemy_c actor;u8 arg3=0;int mAction=3,mActionPhase=0,mType=0,mInvulnerabilityTimer=0;
+struct e_sf_class{fopEn_enemy_c actor;u8 arg3=0;int mAnm=0,mAction=3,mActionPhase=0,mType=0,mInvulnerabilityTimer=0;
  float mPlayerDistanceXZ=250,mRecognizeDist=1.e9f;s16 mPlayerAngleY=0,mPlayerAngleX=0,mTimers[4]{};
  int field_0x6ab=0,field_0x6ae=0;Morph morph;Morph* mpModelMorf=&morph;
  struct{bool ChkGroundHit(){return true;}}mBgc;struct{void startCreatureVoice(int,int){}}mSound;};
 struct Player:fopAc_ac_c{}player;Player* daAlink_getAlinkActorClass(){return &player;}Player* dComIfGp_getPlayer(int){return &player;}
 unsigned fopAcM_GetID(fopAc_ac_c* a){return a->id;}
 constexpr int fpcNm_E_SF_e=1;
-struct Enemy{unsigned id=1;int profile=1;bool elite=true,initialized=true,retiring=false,credited=false,dormant=false,stagger=false;}owner;
+struct Enemy{unsigned id=1;int profile=1;bool elite=true,initialized=true,retiring=false,credited=false,dormant=false,stagger=false,idleAnimation=false;}owner;
 Enemy* tracked(unsigned id){return id==owner.id?&owner:nullptr;}
 bool boss_tactics_owned(const Enemy& e){return e.elite&&e.initialized&&!e.retiring&&!e.credited&&!e.dormant;}
+bool arenaActive=true;bool in_arena(){return arenaActive;}
+unsigned idleAnimations=0;void encounter_animation(Morph*,const char*,int animation){assert(animation==0x0c);++idleAnimations;}
 bool playing=true,blocked=false,paused=false;bool playable(){return playing;}bool boss_attack_paused(const Enemy&){return paused;}
 BOOL fopAcM_otherBgCheck(fopAc_ac_c*,fopAc_ac_c*){return blocked;}
 enum class Phase{Running,Ready};struct{Phase phase=Phase::Running;unsigned roll=0,calls=0;unsigned next_random(){++calls;return roll;}}s_run;
@@ -60,6 +62,14 @@ static BOOL player_way_check(e_sf_class*);
 main=r'''
 int main(){
  e_sf_class sf;player.current.pos={0,0,500};std::any args[]={&sf};
+ owner.dormant=true;sf.actor.speedF=20;sf.actor.speed={1,2,3};
+ assert(before_stalfos_action(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+ after_stalfos_action(nullptr,args,nullptr,nullptr);
+ assert(idleAnimations==1&&sf.mAction==0&&sf.actor.speedF==0&&sf.actor.speed.x==0);
+ assert(s_stalfosActionFrames.empty());
+ assert(before_stalfos_action(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&idleAnimations==1);
+ arenaActive=false;assert(before_stalfos_action(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);arenaActive=true;
+ owner.dormant=false;sf.mAction=3; // First player hit wakes the guard before its action hook.
  // Native attack selection fails with Link facing away despite valid range.
  for(s16 yaw:{s16(0),s16(0x4000),s16(-0x4000),s16(-0x8000)}){
   sf.mAction=3;sf.mActionPhase=1;sf.mTimers[2]=0;player.shape_angle.y=yaw;

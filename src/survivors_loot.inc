@@ -499,7 +499,7 @@ bool spawn_chest(daAlink_c* link) {
             const float corner = dComIfG_Bgsp().GroundCross(&ground);
             if (!std::isfinite(corner) || std::abs(corner - floor) > 20) clear = false;
         }
-        if (!clear || !walkable_spawn_path(link->current.pos,pos,85)) continue;
+        if (!clear || !walkable_spawn_path(link->current.pos,pos,85) || !reachable_arena_floor(pos)) continue;
         // Keep the old chest intact until a replacement position is validated.
         *slot = {}; slot->active = true; slot->position = pos; slot->yaw = yaw + 0x8000;
         slot->spawnOrder=++s_chestSequence;
@@ -510,15 +510,16 @@ bool spawn_chest(daAlink_c* link) {
 // Separate, one-use map chests never consume the six replenishing slots.
 void seed_map_chests(daAlink_c* link) {
     if (!chest_spawning_allowed()) return;
-    if (!s_arenaMeshReady) return;
+    if (!s_arenaMeshReady || !arena_distribution_ready()) return;
     const unsigned budget=map_chest_budget(s_map);
     if (!budget) return;
     // Exploration chests sample the whole room, independently of Link's view
     // and straight-line walking path. random_arena_floor checks dry native
-    // ground, room membership, exits, walls and the chest footprint locally.
+    // ground, room membership, exits, walls and the chest footprint locally,
+    // plus a verified walking route from the entrance on every arena map.
     // A direct path from Link rejects safe sites behind hills/walls/rivers and
     // concentrates the entire map budget near the entrance.
-    const float spacing=std::clamp(std::sqrt(s_eliteFloorArea/float(budget))*0.5f,250.f,2500.f);
+    const float spacing=std::clamp(std::sqrt(arena_distribution_area()/float(budget))*0.5f,250.f,2500.f);
     unsigned attempts=0;
     for (unsigned n=0;n<budget;++n) {
         if (s_mapChestPlaced[n]) continue;

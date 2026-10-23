@@ -50,6 +50,8 @@ float s_eliteFloorArea=12000000;bool badFloor=false,nearGuard=false,failCreate=f
 bool save_modal_active(){return false;}
 bool in_arena(){return active;}bool transitioning(){return transition;}bool playable(){return active&&!paused&&!transition;}
 struct Arena{int room=51;}arenaData;const Arena& arena(){return arenaData;}
+bool distributionReady=true;bool arena_distribution_ready(){return distributionReady;}
+float arena_distribution_area(){return s_eliteFloorArea;}
 bool random_arena_floor(cXyz& p){p={1000.f+500.f*(sequence%12),0,1000.f+500.f*(sequence/12)};++sequence;return !badFloor;}
 bool separated_guard(cXyz,float){return !nearGuard;}
 struct ActorSpawnParams{unsigned parameters;int argument,room_num;cXyz position;struct{s16 x,y,z;}angle;cXyz scale;void* create_function;};
@@ -93,6 +95,8 @@ int main(){
   assert(creates==pot_budget(map,s_eliteFloorArea));cleanup_pots();assert(s_pots[0].id!=kNone);
   for(unsigned i=0;i<creates;++i)for(unsigned j=i+1;j<creates;++j)assert(s_pots[i].position.absXZ(s_pots[j].position)>=250);
  }
+ fresh();distributionReady=false;update_pots(&player);assert(creates==0&&s_potTarget==0);
+ distributionReady=true;
  fresh();badFloor=true;update_pots(&player);assert(creates==0);badFloor=false;
  s_potDelay=0;nearGuard=true;update_pots(&player);assert(creates==0);nearGuard=false;
  s_potDelay=0;failCreate=true;update_pots(&player);assert(creates==0);failCreate=false;

@@ -320,5 +320,12 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     control.on_pressed=open_manual_aim_settings;
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
+    control=UI_CONTROL_DESC_INIT;
+    control.kind=UI_CONTROL_TOGGLE;control.label="Show Fate Tooltips";
+    control.help_rml="Show smaller effect descriptions below Fate names and timers. Off shows only the short names and timers. Default: on.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=show_fate_tooltips();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){set_fate_tooltips(value->bool_value);};
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
     return enemy_hud::build(left);
 }

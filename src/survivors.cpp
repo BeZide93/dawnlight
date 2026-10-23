@@ -25,6 +25,7 @@
 #include "dusk/menu_pointer.h"
 #include "survivors_projectiles.hpp"
 #include "survivors_roster.hpp"
+#include "survivors_reachable.hpp"
 #include "survivors_items.hpp"
 #include "survivors_maps.hpp"
 #include "survivors_barriers.hpp"
@@ -43,6 +44,7 @@
 #include "mods/svc/flow.hpp"
 #include "dusk/ui/nav_types.hpp"
 #include "d/d_menu_save.h"
+#include "d/d_file_sel_info.h"
 #include "d/d_menu_window.h"
 #include "d/d_meter_map.h"
 #include "d/d_menu_ring.h"
@@ -64,6 +66,7 @@
 #include "d/actor/d_a_e_ba.h"
 #include "d/actor/d_a_e_oc.h"
 #include "d/actor/d_a_obj_carry.h"
+#include "d/actor/d_a_obj_bosswarp.h"
 #include "d/actor/d_a_obj_item.h"
 #include "d/actor/d_a_obj_life_container.h"
 #include "d/d_bg_s_wtr_chk.h"
@@ -106,6 +109,9 @@
 #include "d/actor/d_a_b_tn.h"
 
 #include "d/d_com_inf_game.h"
+#include "d/d_path.h"
+#include "d/actor/d_a_suspend.h"
+#include "d/actor/d_a_obj_lv8Lift.h"
 #include "d/d_debug_viewer.h"
 #include "d/d_gameover.h"
 #include "res/Object/E_fm.h"
@@ -167,12 +173,17 @@ DEFINE_HOOK_SYMBOL("dBgS_Acch::CrrPos", void(dBgS_Acch*, dBgS&), SurvivorsEnemyS
 DEFINE_HOOK(&daAlink_c::setDamagePoint, SurvivorsEnemyDamage);
 DEFINE_HOOK(&daAlink_c::commonBottleDrink, SurvivorsPotionDrink);
 DEFINE_HOOK(&dComIfGp_setItemLifeCount, SurvivorsPotionHeal);
+DEFINE_HOOK(&dComIfGp_setItemRupeeCount, SurvivorsFateRupees);
+DEFINE_HOOK(&daAlink_c::getMainBckData, SurvivorsFateSprint);
+DEFINE_HOOK(&JPABaseEmitter::deleteAllParticle, SurvivorsFairyParticles);
 DEFINE_HOOK(&dCamera_c::Run, SurvivorsCamera);
 DEFINE_HOOK(&daAlink_c::orderZTalk, SurvivorsMidnaOrder);
 DEFINE_HOOK(&dMsgFlow_c::getInitNodeIndex, SurvivorsMidnaFlow);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
+DEFINE_HOOK(static_cast<void(*)(fopAc_ac_c*)>(&daSus_c::check), SurvivorsPalaceFerrySuspend);
+DEFINE_HOOK(&daL8Lift_c::moveLift, SurvivorsPalaceFerryMove);
 DEFINE_HOOK(&daAlink_c::checkDamageAction, SurvivorsBlock);
 DEFINE_HOOK(&daAlink_c::setShieldGuard, SurvivorsGuard);
 DEFINE_HOOK_SYMBOL("cCcS::SetCoCommonHitInf",void(cCcS*,cCcD_Obj*,cXyz*,cCcD_Obj*,cXyz*,f32),SurvivorsEnemyContact);
@@ -190,6 +201,12 @@ DEFINE_HOOK(&fopAcM_searchActorAngleY, SurvivorsBossAim);
 DEFINE_HOOK(&daObjCarry_c::obj_break, SurvivorsPotBreak);
 DEFINE_HOOK(&daItem_c::itemGetNextExecute, SurvivorsKeyPickup);
 DEFINE_HOOK(&renderingAmap_c::afterDrawPath, SurvivorsEliteMinimap);
+DEFINE_HOOK(&dFile_info_c::setSaveData, SurvivorsSaveSlotInfo);
+DEFINE_HOOK(&dDlst_FileInfo_c::draw, SurvivorsSaveSlotDraw);
+// SDK v2.0.0's typed trampoline cannot marshal const references. The native
+// const Vec& uses the same pointer ABI; preserve it through a named hook.
+DEFINE_HOOK_SYMBOL("renderingPlusDoorAndCursor_c::drawCursor",
+    void(renderingPlusDoorAndCursor_c*, const Vec*, s16, int, f32), SurvivorsMinimapCursor);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ba.cpp#pl_check", BOOL(e_ba_class*, f32, s16), SurvivorsKeeseAggro);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ms.cpp#pl_check", int(e_ms_class*, f32), SurvivorsRatAggro);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ba.cpp#damage_check", void(e_ba_class*), SurvivorsKeeseHit);
@@ -256,6 +273,7 @@ DEFINE_HOOK(&daAlink_c::checkLightSwordMtrl, SurvivorsLightSword);
 DEFINE_HOOK(&dMeter2Draw_c::draw, SurvivorsHud);
 DEFINE_HOOK(&dComIfGs_gameStart, SurvivorsGameStart);
 DEFINE_HOOK(&mDoCPd_c::read, SurvivorsPad);
+DEFINE_HOOK(&daObjBossWarp_c::execute, SurvivorsHordePortal);
 DEFINE_HOOK(&dCamera_c::setMapToolData, SurvivorsCameraType);
 DEFINE_HOOK(&dMenu_save_c::_open, SurvivorsSaveOpen);
 DEFINE_HOOK(&dMenu_save_c::_delete, SurvivorsSaveDelete);
@@ -493,6 +511,8 @@ Enemy* tracked(ActorId id) {
 #include "survivors_zelda_orbs.inc"
 #include "survivors_collision.inc"
 #include "survivors_elite_positions.inc"
+#include "survivors_palace_ferry.inc"
+void clear_reachable_floor();
 #include "survivors_maps.inc"
 #include "survivors_extended_ai.inc"
 #include "survivors_aggro.inc"
@@ -502,6 +522,7 @@ DamageAmounts hit_damage_sources(const cCcD_Obj* collider);
 bool sword_kill_hit(const cCcD_Obj* collider);
 #include "survivors_feedback.inc"
 #include "survivors_ground.inc"
+#include "survivors_reachable.inc"
 #include "survivors_pickups.inc"
 #include "survivors_key_visual.inc"
 #include "survivors_player_damage.inc"
@@ -545,6 +566,8 @@ void close_window() {
     }
 }
 #include "survivors_menu_handoff.inc"
+void retire_horde_portals();
+void cleanup_horde_portals();
 void retire_pots();
 void cleanup_pots();
 void detach_pot_attacks();
@@ -555,11 +578,14 @@ void retire_enemies() {
     release_enemy_archives();
     retire_boss_ring();
     clear_zelda_light_orbs();
+    retire_horde_portals();
     retire_pots(); retire_pickups(); retire_enemy_arrows();
     clear_enemy_effects();
     for (auto& e : s_enemies) if (e.id != kNone) e.retiring = true;
 }
 void cleanup_enemies() {
+    cleanup_palace_ferries();
+    cleanup_horde_portals();
     cleanup_boss_ring();
     cleanup_enemy_arrows();
     for (auto& e : s_enemies) {
@@ -784,7 +810,7 @@ void update_orbs(daAlink_c* link) {
         const auto target = link->current.pos + cXyz(0, 30, 0);
         cXyz delta = target - orb.position;
         const float distance = delta.abs();
-        if (distance < 60) { s_run.xp += orb.value; orb = {}; }
+        if (distance < 60) { s_run.xp += s_run.gain_xp(orb.value); orb = {}; }
         else if (orb.summoned || distance < range) {
             const float speed = orb.summoned ? std::max(35.f, distance * 0.08f) : 35.f;
             orb.position += delta * (std::min(speed, distance) / distance);
@@ -837,18 +863,23 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
 }
 #include "survivors_elites.inc"
 #include "survivors_pots.inc"
-#include "survivors_minimap.inc"
+#include "survivors_save_slot.inc"
 void update_spawns(daAlink_c* link) {
     update_boss_watchdogs(link);
     unsigned population = 0;
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
-        if (!e.elite) ++population;
+        if (!e.elite && !e.retiring && !e.credited) ++population;
         auto* actor = actor_by_id(e.id);
         if (!actor || !e.initialized) continue;
         ++e.age;
         // Guards and scheduled elites persist until killed; cleanup grants no loot.
-        if (!e.elite && !e.retiring && e.age > 5400) e.retiring = true;
+        // Do not let ordinary enemies stranded in the old area occupy the
+        // population budget for three minutes after Link has moved away.
+        if (!e.elite && !e.retiring && !e.credited && (e.age>5400 ||
+            (e.age>10*ticks_per_second && actor->current.pos.absXZ(link->current.pos)>6000.f))) {
+            e.retiring=true;--population; // Existing cleanup deletes without kill/drop credit.
+        }
     }
     if ((s_run.endless || s_run.ticks <= s_run.run_duration()) && s_run.ticks % s_run.boss_interval() == 0) s_spawnCooldown = 0;
     for (const auto& encounter : s_eliteEncounters)
@@ -1092,6 +1123,9 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 #include "survivors_loot.inc"
+#include "survivors_fate.inc"
+#include "survivors_horde_portals.inc"
+#include "survivors_minimap.inc"
 #include "survivors_ranged.inc"
 #include "survivors_keys.inc"
 #include "survivors_treasure.inc"
@@ -1210,11 +1244,12 @@ void after_player(ModContext*, void* args, void*, void*) {
     update_combat_feedback();
     update_gear_notice();
     chest_spawning_allowed(); // Also retire exhausted chests during victory loot time.
+    update_palace_ferries();
     if (s_victory) {
         update_victory();
         update_exp_magnets(link); update_orbs(link);
         s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;
-        if (s_run.level_up()) { dComIfGs_setLife(dComIfGs_getMaxLifeGauge()); clear_attacks(); }
+        if (s_run.level_up()) { if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge()); clear_attacks(); }
         // Existing chests remain interactable; do not spawn new ones after victory.
         // Do not interrupt a final chest/level-up on the expiration frame.
         if (s_victoryTicks>=10*ticks_per_second && s_run.phase==Phase::Running) finish(true);
@@ -1225,12 +1260,14 @@ void after_player(ModContext*, void* args, void*, void*) {
     if (s_run.life_regen_due() && dComIfGs_getLife()<dComIfGs_getMaxLifeGauge())
         dComIfGs_setLife(std::min<unsigned>(dComIfGs_getMaxLifeGauge(),dComIfGs_getLife()+1));
     if (const unsigned rupees=s_run.auto_rupees())
-        dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+rupees));
+        dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+s_run.gain_rupees(rupees)));
     update_enemy_effects();
+    update_reachable_floor();
+    update_horde_portals(link);
     update_spawns(link); update_pots(link); update_exp_magnets(link); update_weapons(link); update_orbs(link);
     s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;
     if (s_run.level_up()) {
-        dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
+        if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
         clear_attacks();
     }
     else update_chests(link);
@@ -1284,8 +1321,15 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     retain_treasure_actor(actor, args);
     if (in_arena()) {
         const auto* nativeMethods = reinterpret_cast<const process_method_class*>(actor->sub_method);
-        if (nativeMethods && mods::arg<process_method_func>(args, 0) == nativeMethods->execute_method)
+        if (nativeMethods && mods::arg<process_method_func>(args, 0) == nativeMethods->execute_method) {
             collect_arena_mesh(actor);
+            // A moving floor must pause with its rider during upgrade/settings
+            // menus. Leave native creation, drawing and unloading untouched.
+            if (auto* ferry=tracked_palace_ferry(id); ferry && (ferry->retiring || pause_run_actor(false))) {
+                *static_cast<int*>(result)=1;
+                return HOOK_SKIP_ORIGINAL;
+            }
+        }
     }
     if (!enemy && !pot && !pickup && !arrow && (!in_arena() || id != s_player)) return HOOK_CONTINUE;
     const auto* methods = reinterpret_cast<const process_method_class*>(actor->sub_method);
@@ -1453,7 +1497,7 @@ void draw_hud(ModContext*, void* args, void*, void*) {
     auto* graf = dComIfGp_getCurrentGrafPort(); if (!graf) return;
     graf->setup2D();
     if (!preview && (s_deathPending || s_run.phase==Phase::Defeat)) return;
-    if(!preview) {draw_chest_prices();draw_combat_feedback();}
+    if(!preview) {draw_chest_prices();draw_horde_portal_labels();draw_combat_feedback();}
     const float x = mDoGph_gInf_c::getMinXF() + mDoGph_gInf_c::getWidthF() * 0.5f;
     if(preview || s_gearNoticeTicks)draw_gear_notice(preview);
     if (!preview && s_victory) { draw_victory_hud(x); graf->setup2D(); return; }
@@ -1485,13 +1529,22 @@ void draw_hud(ModContext*, void* args, void*, void*) {
         std::snprintf(text, sizeof(text), "No chest rewards available");
         drawText(HudPart::Info,14,bossOffset);
     }
-    if (s_run.horde_remaining) {
-        std::snprintf(text,sizeof(text),"HORDE!  3x enemy spawns  %us",(s_run.horde_remaining+29)/30);
-        drawText(HudPart::Info,17,22+bossOffset);
+    float effectOffset=22+bossOffset;
+    const bool fateTooltips=show_fate_tooltips();
+    for (unsigned i=0;i<unsigned(FateEffect::Count);++i) {
+        const auto remaining=s_run.fate_ticks(FateEffect(i));
+        if (!remaining) continue;
+        std::snprintf(text,sizeof(text),"%s  %us",fate_names[i],(remaining+ticks_per_second-1)/ticks_per_second);
+        drawText(HudPart::Info,17,effectOffset);
+        if(fateTooltips) {
+            std::snprintf(text,sizeof(text),"%s",fate_tooltips[i]);
+            drawText(HudPart::Info,13,effectOffset+18);
+        }
+        effectOffset+=fateTooltips?38:22;
     }
     if (s_spawnFailures >= 10) {
         std::snprintf(text,sizeof(text),"Waiting for a clear enemy spawn position");
-        drawText(HudPart::Info,13,(s_run.horde_remaining?44:22)+bossOffset);
+        drawText(HudPart::Info,13,effectOffset);
     }
     graf->setup2D();
 }
@@ -1511,8 +1564,8 @@ void select_upgrade(ModContext*, void* data) {
     if (selected == Upgrade::Heart)
         dComIfGs_setMaxLife(std::min(100u,unsigned(dComIfGs_getMaxLife())+5*(s_run.rank(Upgrade::Heart)-oldHearts)));
     // Include newly gained heart containers and each queued level's choice.
-    dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
-    if (bonus) dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(), dComIfGs_getRupee() + bonus));
+    if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
+    if (bonus) dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(), dComIfGs_getRupee() + s_run.gain_rupees(bonus)));
     close_window();
     s_run.level_up(); // Preserve queued levels; do not resume combat between choices.
 }
@@ -1772,6 +1825,8 @@ ModResult initialize_survivors(ModError* error) {
     if(!s_enemyArchivesAvailable)svc_log->warn(mod_ctx,
         "Survivors archive retention unavailable; using native resource loading");
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
+    PRE(SurvivorsPalaceFerrySuspend, before_palace_ferry_suspend);
+    PRE(SurvivorsPalaceFerryMove, before_palace_ferry_move);
 #include "survivors_roster_hooks.inc"
     PRE(SurvivorsEnemySpeed, before_enemy_speed); POST(SurvivorsEnemySpeed, after_enemy_facing);
     PRE(SurvivorsEnemySpeed,before_boss_path); // Final position constraints after all movement boosts.
@@ -1779,6 +1834,9 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsEnemyDamage, before_enemy_damage);
     PRE(SurvivorsPotionDrink, before_potion_drink); POST(SurvivorsPotionDrink, after_potion_drink);
     PRE(SurvivorsPotionHeal, before_potion_heal);
+    PRE(SurvivorsFateRupees, before_fate_rupees);
+    PRE(SurvivorsFateSprint, before_fate_sprint);
+    PRE(SurvivorsFairyParticles, before_fate_fairy_particles);
     PRE(SurvivorsPad, before_survivors_pad); POST(SurvivorsPad, after_survivors_pad);
     POST(SurvivorsCameraType, after_survivors_camera_tools);
     PRE(SurvivorsSaveOpen,before_save_screen_open); PRE(SurvivorsSaveDelete,before_save_screen_delete);
@@ -1795,6 +1853,8 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsPlayer, before_player_contacts);
     PRE(SurvivorsPlayer, before_player_bindings);
     PRE(SurvivorsPlayer, before_chest_action);
+    PRE(SurvivorsPlayer, before_horde_portal_action);
+    PRE(SurvivorsHordePortal, before_horde_portal_execute);
     PRE(SurvivorsPlayer, before_midna_call);
     PRE(SurvivorsMidnaOrder, before_midna_order);
     PRE(SurvivorsMidnaFlow, before_midna_flow);
@@ -1821,7 +1881,11 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsBokoblinWait, before_bokoblin_wait);
     PRE(SurvivorsPotBreak, before_pot_break);
     PRE(SurvivorsKeyPickup, before_key_pickup);
+    PRE(SurvivorsEliteMinimap, before_survivors_minimap);
+    POST(SurvivorsSaveSlotInfo, after_survivors_save_slot);
+    POST(SurvivorsSaveSlotDraw, after_survivors_save_slot_draw);
     POST(SurvivorsEliteMinimap, after_elite_minimap);
+    PRE(SurvivorsMinimapCursor, before_survivors_minimap_cursor);
     PRE(SurvivorsKeeseAggro, before_keese_aggro);
     PRE(SurvivorsRatAggro, before_rat_aggro);
     PRE(SurvivorsKeeseHit, before_enemy_hit); POST(SurvivorsKeeseHit, after_enemy_hit);

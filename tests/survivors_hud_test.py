@@ -138,6 +138,7 @@ bool hasFont=true, arena=true, transition=false, window=false, hasGraf=true;
 JUTResFont* mDoExt_getMesgFont(){return hasFont?&font:nullptr;}
 JUTResFont* mDoExt_getRubyFont(){return hasFont?&ruby:nullptr;}
 enum {HBIND_CENTER,HBIND_LEFT,VBIND_TOP};
+bool fateTips=false;bool show_fate_tooltips(){return fateTips;}
 struct DrawText {std::string text;float x,y,size;};std::vector<DrawText> textPositions;
 struct J2DPrint {
     JUTResFont* face;float size=0;
@@ -247,6 +248,8 @@ int main(){
     printed.clear();rubyLabels=0;hasFont=true;draw_hud(nullptr,nullptr,nullptr,nullptr);
     assert(rubyLabels==2&&printed[0].find("Endless")!=std::string::npos&&printed[1]=="25");
     s_run.start(42);
+    prices=portalLabels=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
+    assert(prices==1&&portalLabels==1&&feedback==1);
     // Victory uses the boss font, a red ceiling-rounded 10-second timer,
     // and restores GX vertex descriptors for the next native HUD element.
     s_run.phase=Phase::Running;s_victory=true;hasFont=true;
@@ -265,15 +268,15 @@ int main(){
     // All native menu opening/active/closing states hide every overlay, even
     // when the UI service reports no document (Collection is native).
     for(bool inHub:{false,true})for(unsigned state:{1u,2u,3u,4u,5u,10u}) {
-        hub=inHub;nativeWindow=state;boxes=labels=prices=feedback=hubLabels=0;
+        hub=inHub;nativeWindow=state;boxes=labels=prices=portalLabels=feedback=hubLabels=0;
         draw_hud(nullptr,nullptr,nullptr,nullptr);
-        assert(!boxes&&!labels&&!prices&&!feedback&&!hubLabels);nativeWindow=0;
+        assert(!boxes&&!labels&&!prices&&!portalLabels&&!feedback&&!hubLabels);nativeWindow=0;
     }
     hub=false;
     for(unsigned reason=0;reason<3;++reason) {
         nativePause=reason==0;pauseFlag=reason==1;scenePause=reason==2;
-        boxes=labels=prices=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
-        assert(!boxes&&!labels&&!prices&&!feedback);
+        boxes=labels=prices=portalLabels=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
+        assert(!boxes&&!labels&&!prices&&!portalLabels&&!feedback);
     }
     nativePause=0;pauseFlag=scenePause=false;
     s_gearNoticeTicks=0;
@@ -281,8 +284,8 @@ int main(){
     // without emitting world labels or changing run/encounter state.
     s_hudEditorWindow=1;window=hub=true;s_run.phase=Phase::Ready;
     const auto ticksBefore=s_run.ticks;const auto targetBefore=s_bossHudTarget;
-    boxes=labels=prices=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
-    assert(boxes==4&&labels&&bossPercentage==65&&!prices&&!feedback);
+    boxes=labels=prices=portalLabels=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
+    assert(boxes==4&&labels&&bossPercentage==65&&!prices&&!portalLabels&&!feedback);
     assert(s_run.phase==Phase::Ready&&s_run.ticks==ticksBefore&&s_bossHudTarget==targetBefore);
     nativeWindow=3;boxes=labels=0;draw_hud(nullptr,nullptr,nullptr,nullptr);assert(!boxes&&!labels);nativeWindow=0;
     s_hudEditorWindow=0;window=hub=false;s_run.phase=Phase::Running;
@@ -347,6 +350,22 @@ int main(){
     near(gearGeometry[2],44*banner.scale);
     checkText(HudPart::ItemBanner,"Hero's Sword",13,-28,-76);
     checkText(HudPart::ItemBanner,"Call Midna to Equip",11,58);
+    // Concurrent timed Fate effects share Info anchoring and never overlap.
+    s_run.apply_fate(FateEffect::Horde);s_run.apply_fate(FateEffect::Greed);
+    s_run.apply_fate(FateEffect::Sprint);s_run.apply_fate(FateEffect::Luck);
+    textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);
+    checkText(HudPart::Info,"Horde  15s",17,76);checkText(HudPart::Info,"Greed  15s",17,98);
+    checkText(HudPart::Info,"Sprint  15s",17,120);checkText(HudPart::Info,"Luck  15s",17,142);
+    s_run.fate_remaining[unsigned(FateEffect::Greed)]=1;
+    textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);checkText(HudPart::Info,"Greed  1s",17,98);
+    fateTips=true;textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);
+    checkText(HudPart::Info,"Horde  15s",17,76);checkText(HudPart::Info,"3x enemy spawns",13,94);
+    checkText(HudPart::Info,"Greed  1s",17,114);checkText(HudPart::Info,"No healing; +50% XP and rupees",13,132);
+    checkText(HudPart::Info,"Sprint  15s",17,152);checkText(HudPart::Info,"Movement speed +50%",13,170);
+    checkText(HudPart::Info,"Luck  15s",17,190);checkText(HudPart::Info,"+50% Luck",13,208);
+    fateTips=false;textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);
+    for(const auto& drawn:textPositions)for(const auto* tip:fate_tooltips)assert(drawn.text!=tip);
+    s_run.clear_fate();s_run.horde_remaining=0;
     // Inline icon keeps its native 1:2 aspect and shares Info text transforms.
     const auto info=hud_position(HudPart::Info,304);
     near(rupeeGeometry[2],9*info.scale);near(rupeeGeometry[3],18*info.scale);
@@ -368,7 +387,7 @@ int main(){
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'test.cpp'
     binary = Path(tmp) / 'test'
-    cpp.write_text(prefix + stubs + '\nunsigned s_gearNoticeTicks=0;const char* s_gearNotice="Weapon acquired";GearItem s_gearNoticeItem{};bool gear_notice_equip_available(){return s_gearNoticeTicks&&s_gearNoticeItem.kind!=GearKind::Empty;}\n' + '\nbool hub=false;unsigned hubLabels=0,prices=0,feedback=0;bool survivors_hub_active(){return hub;} void draw_hub_labels(){++hubLabels;} void draw_chest_prices(){++prices;} void draw_combat_feedback(){++feedback;}\n' + native + '\n' + function(source, 'void label(') + '\n' +
+    cpp.write_text(prefix + stubs + '\nunsigned s_gearNoticeTicks=0;const char* s_gearNotice="Weapon acquired";GearItem s_gearNoticeItem{};bool gear_notice_equip_available(){return s_gearNoticeTicks&&s_gearNoticeItem.kind!=GearKind::Empty;}\n' + '\nbool hub=false;unsigned hubLabels=0,prices=0,portalLabels=0,feedback=0;bool survivors_hub_active(){return hub;} void draw_hub_labels(){++hubLabels;} void draw_chest_prices(){++prices;} void draw_horde_portal_labels(){++portalLabels;} void draw_combat_feedback(){++feedback;}\n' + native + '\n' + function(source, 'void label(') + '\n' +
                    (root/'src/survivors_boss_hud.inc').read_text() + '\n' + (root/'src/survivors_chest_hud.inc').read_text() + '\n' + (root/'src/survivors_gear_notice.inc').read_text() + '\n' + function(source, 'void draw_hud(') + '\n' + main)
     subprocess.run([os.environ.get('CXX','c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror', '-I', str(root/'src'),
                     str(cpp), '-o', str(binary)], check=True)

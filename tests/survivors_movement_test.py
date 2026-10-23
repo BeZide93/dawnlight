@@ -84,6 +84,17 @@ int main(){
   before_auto_movement(nullptr,args,nullptr,nullptr);assert(link.mMaxSpeed==25+2.5f*rank&&link.mNormalSpeed==link.mMaxSpeed);
  }
  link.sprintHeld=false;s_run.talents={};
+ // Fate affects walking and automatic combat without sticky speed after expiry.
+ link.mProcID=daAlink_c::PROC_MOVE;s_swordAction=SwordAction::None;
+ for(auto effect:{FateEffect::Sprint,FateEffect::Slow}){
+  s_run.apply_fate(effect);
+  for(float stick:{0.f,.25f,1.f}){
+   link.mMoveValue=stick;before_auto_movement(nullptr,args,nullptr,nullptr);
+   assert(link.mMaxSpeed==(effect==FateEffect::Sprint?30.f:10.f));
+   assert(link.mNormalSpeed==link.mMaxSpeed*stick);
+  }
+ }
+ s_run.clear_fate();before_auto_movement(nullptr,args,nullptr,nullptr);assert(link.mMaxSpeed==20);
  // End-of-swing handoff: native checkCutCancelNextMode zeros speed, then
  // enters WAIT/MOVE before posMove; the scheduler clears sword ownership.
  // Recovery blend/foot speed must not slow any following locomotion frames.

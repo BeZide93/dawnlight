@@ -122,6 +122,10 @@ std::vector<EliteFloor>s_eliteFloors{
  {{-10000,0,-10000},{10000,0,-10000},{-10000,0,10000},200000000},
  {{10000,0,10000},{-10000,0,10000},{10000,0,-10000},400000000}};
 bool walkable_spawn_path(cXyz,cXyz&,float){return !blocked&&!invalidFloor&&!arenaBlocked;}
+bool distributionReady=true;bool arena_distribution_ready(){return distributionReady;}
+float arena_distribution_area(){return s_eliteFloorArea;}
+bool needs_reachable_floor(){return false;}bool sample_reachable_arena_floor(cXyz&){return false;}
+bool reachable=true;bool reachable_arena_floor(cXyz){return reachable;}
 bool elite_floor_position(cXyz&){++placement;return !invalidFloor;}
 bool in_arena(){return arenaPresent;}bool transitioning(){return transition;}
 unsigned dComIfGs_getRupee(){return rupees;}void dComIfGs_setRupee(unsigned r){rupees=r;}
@@ -432,11 +436,15 @@ int main(){
     s_run.phase=Phase::Running;assert(!chest_spawning_allowed()&&!s_chests[0].active);
     // Seed every map budget independently; fixed chests do not replenish after purchase.
     for(unsigned map=0;map<5;++map) {
-        reset();s_map=map;invalidFloor=true;seed_map_chests(&player);
+        reset();s_map=map;distributionReady=false;seed_map_chests(&player);
+        for(const auto& c:s_chests)assert(!c.active);
+        distributionReady=true;invalidFloor=true;seed_map_chests(&player);
         for(const auto& c:s_chests)assert(!c.active);
         // Safe destinations can be reached by going around obstacles. The old
         // Link-to-chest straight-path filter incorrectly rejected all of them.
-        invalidFloor=false;blocked=true;
+        invalidFloor=false;reachable=false;seed_map_chests(&player);
+        for(const auto& c:s_chests)assert(!c.active);
+        reachable=true;blocked=true;
         for(unsigned frame=0;frame<200;++frame){
             const unsigned before=placement;seed_map_chests(&player);
             assert(placement-before<=24);

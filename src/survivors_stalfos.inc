@@ -31,9 +31,23 @@ HookAction before_stalfos_readiness(ModContext*,void* args,void*,void*) {
     return HOOK_CONTINUE;
 }
 HookAction before_stalfos_action(ModContext*,void* args,void*,void*) {
-    auto* actor=mods::arg<e_sf_class*>(args,0);auto* e=active_stalfos(actor);
+    auto* actor=mods::arg<e_sf_class*>(args,0);
+    auto* body=actor?reinterpret_cast<fopAc_ac_c*>(actor):nullptr;
+    auto* guard=body?tracked(fopAcM_GetID(body)):nullptr;
+    // The process pre-hook already consumes hits and wakes the guard. Keep
+    // Execute's animation/colliders alive, but stop native proximity aggro.
+    if(in_arena() && guard && guard->initialized && guard->dormant &&
+       !guard->retiring && !guard->credited && body->health>0) {
+        if(!guard->idleAnimation) {
+            encounter_animation(actor->mpModelMorf,"E_sf",0x0c); // SF_WAIT01
+            actor->mAnm=0x0c;guard->idleAnimation=true;
+        }
+        actor->mAction=0;actor->mActionPhase=0;
+        body->speedF=0;body->speed.set(0,0,0);
+        return HOOK_SKIP_ORIGINAL;
+    }
+    auto* e=active_stalfos(actor);
     if(!e)return HOOK_CONTINUE;
-    auto* body=reinterpret_cast<fopAc_ac_c*>(actor);
     auto& t=s_bossTactics[e->id];
     if(t.stalfosGuardCooldown)--t.stalfosGuardCooldown;
     const u8 shield=actor->arg3;

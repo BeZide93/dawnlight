@@ -96,6 +96,32 @@ native scene exits are disabled during runs. The hub retains its usable exit doo
 Enemy and chest placement reject other rooms and paths across these barriers.
 If collision is not ready, combat does not begin. Story mode and Boss Rush retain their own rules.
 
+The Palace crossing is explicitly created from the room's authored light-lift
+records. A one-time scan of `room.dzr` includes inactive actor layers, and the
+stage-create hook retains any shared-stage records before suppressing their
+original actors. Both `optLift` and `L8LiftX` are supported; their different
+path/speed parameter fields are translated into the native `L8LiftX` always-on
+mode. This avoids `optLift`'s requirement for a switch transition after Create.
+Routes are deduplicated by room/path and up to two are selected, preferring the
+native east-platform switch `0x64`. Both crossings remain available for the
+return journey. The east ferry completes its entire outbound and return trip
+while the other waits at its starting dock. Only after native braking completes
+back at point zero does the turn pass to the second ferry for its own round trip.
+This sequence repeats; the far endpoint and intermediate waypoints never hand
+the turn to the waiting ferry. The two-second pause at each dock is preserved.
+Only `moveLift` is gated while waiting; native Execute continues updating the
+collision matrix, lighting and rider state. Menu/event pauses freeze the dwell.
+The pair stays fixed through retries and late actor records. Retiring actors
+block a fresh pair across restarts, and actor loss retries only the missing route.
+Selected paths are validated before spawning. Position, scale, orientation and
+movement speed come from native records and paths.
+
+Only owned ferries bypass native story suspension volumes and pause with Link
+in menus. Creation IDs remain tracked until initialization/deletion completes,
+including restart and departure. No story switches or room archives are edited.
+One-time route discovery and actor-request messages in the game log identify
+missing records or invalid paths without logging every frame.
+
 On every arena, falling more than 500 units below the last safe position checks
 for dry, valid ground beneath Link before triggering recovery. Tall cliff jumps
 can land naturally on lower floors; missing ground, void/exit floor codes, water
@@ -128,8 +154,30 @@ barriers reject a candidate instead of falling back to an unsafe position.
 Random Field/Desert guards use local path checks in eight directions over 600
 units, with 3,000 units of clearance from the original start and 1,800 from
 Link. They sample the whole room without a straight-line path to Link, so an
-entrance tunnel cannot attract the entire guard population. Guard/pot footprints also
-reject submerged or hazardous ground.
+entrance tunnel cannot attract the entire guard population. Field/Desert guards
+and small chests additionally require a verified walking route from the arena
+start. Connectivity follows shared edges of the actual room-floor triangles,
+not a world grid that can skip narrow bends. Edges are checked via their shared
+portal using the native dry-floor and Link collision rules. The complete
+reachable component is prepared before any scattered guard/pot/map-chest slots
+are filled, preventing early near-start discoveries from consuming the budget.
+Sampling then uses the entire reachable component weighted by floor area.
+A selected landing stays queued until its walking check finishes, so short paths
+cannot win by being rerolled more often. Spacing and pot density use reachable
+floor area rather than inaccessible plateaus.
+
+Graph construction handles at most 128 triangles per active frame. Graph paths
+and queued landings share 64 ground/wall samples per frame (at most one ground,
+water and wall query per sample); long segments resume next frame. This replaces
+the former limit on whole paths. Cache reset and seeding remain tied to arena
+geometry and the original grounded start. Jumping/gliding onto a plateau cannot
+seed an isolated region. Throne Room checks retain the native light-wall filter.
+Footprints also reject submerged or hazardous ground.
+
+Ordinary enemies older than ten active seconds and more than 6,000 units from
+Link retire through the normal no-reward cleanup path. Retiring/credited enemies
+do not occupy the active population budget, so waves can refill around Link in
+the rear of the map. Stationary and timed bosses remain persistent.
 
 Every arena hosts a twenty-minute run.
 Start with three hearts and automatic normal sword strikes. Sword Wave starts
@@ -410,13 +458,13 @@ Additional stationary elite guards wait at these map locations:
 
 | Map | Guards |
 | --- | --- |
-| Hyrule Field | Four random, separated positions across the room's floor |
-| Gerudo Desert | Four random, separated positions across the room's floor |
+| Hyrule Field | Four Bokoblins at separated, reachable random positions |
+| Gerudo Desert | Four Stalfos at separated, reachable random positions |
 | Darknut Arena | None; scheduled elites only |
 | Hyrule Castle Throne Room | None; scheduled elites only |
 | Palace of Twilight | One in front of each authored building doorway |
 
-Guards (Bokoblins, or Shadow club Bulblins in the Palace) use native idle animation, physics and collision, but
+Guards (Bokoblins in the Field, Stalfos in the Desert, Shadow club Bulblins in the Palace) use native idle animation, physics and collision, but
 skip idle detection/social alerts. Only a damaging hit from Link wakes them.
 Once provoked they pursue Link at any distance, just like ordinary and scheduled
 enemies. Standing nearby alone does not provoke a guard. Placement uses loaded
@@ -436,6 +484,42 @@ native Tear-of-Light bug marker: same texture, palette and size, updated to thei
 current position with the native room rotation/offset. Markers disappear on death
 and return when the replacement has loaded. No story flags or treasure records
 are modified.
+
+In Survivors arenas, the minimap player arrow follows the active camera's
+horizontal eye-to-center direction, including the native room rotation. The
+override applies only to the player cursor during the minimap draw pass; Link's
+model, restart markers and full-screen maps retain their native behavior. Missing
+cameras and vertical/invalid views fall back to the native player heading.
+
+Survivors save-slot panels display **Meta Level N** in place of the native heart
+rows. File selection, copy destinations and the native save menu read each
+panel's actual slot with SaveService `peek_blob`, using the existing Records
+decoder for older formats. Missing progression starts at level 1; unreadable
+records display `Meta Level ?`. Empty/corrupt game saves retain native messages,
+and other game modes retain hearts. A hidden native textbox belongs to the screen
+root, outside the data panel's `CPaneMgrAlpha` subtree: that manager caches its
+children at construction, so adding children there would invalidate its alpha
+array. The screen still owns the textbox lifetime; there is no pane-pointer cache.
+
+Draw the label after `dDlst_FileInfo_c::draw`, using the hearts' final global
+vertices after the native `mBasePane` / `Nm_02` slot transform. Re-evaluate the
+area each draw so selection scaling and replacement layouts follow their actual
+heart positions horizontally. Align vertically with the visible native player-name
+textbox (`f_name01` or `w_name01`), retaining its local font metrics, vertical
+binding, print offset and final transform. This preserves the same baseline even
+when J2DPrint rounds binding offsets during selection scaling. Match the name's
+font, color and fade; fit long levels horizontally without changing their height
+or baseline. Suppress the label when its panel is hidden. This pass neither allocates a pane
+nor reads save records. The literal `setString` fix remains in place. No save data
+or live progression state is changed.
+
+Regression coverage runs the actual SDK FileInfo draw, vertex transform and
+string setter, plus J2DPrint vertical binding with one-line font fixtures. It checks
+matching name/level baselines for both regional name fields, top/center/bottom
+binding, nonzero text origins/offsets, fractional selection scaling and narrow
+layouts. It also covers moving/resized slots after records were loaded, different
+panel origins, hidden panes, fades and unchanged alpha-manager child counts. The
+SDK-dependent tests run after SDK setup in CI.
 
 Each scheduled elite and first kill of a guard slot leaves **one free large chest** at its death position (or its
 last safe floor position). It uses native Dalways large-chest model 13 and lid
@@ -525,7 +609,9 @@ they cost 40 rupees or one small key, never advance regular prices, and share se
 Safe-position retries are bounded to 24 candidates per update. Affordability,
 preview, payment, floating labels and paid-reroll reservations use the same price.
 Starting chests use area-weighted room-floor sampling with local dry-ground,
-room, exit and footprint checks. They do not require a straight walking line
+room, exit and footprint checks, plus the connected-floor check in Field, Desert
+and Throne Room. Placement begins after the bounded connectivity search finishes. They
+do not require a straight walking line
 from Link: that rejects distant sites around terrain obstacles and clusters
 chests near the entrance. Minimum spacing from Link and between these chests is
 half the square root of floor area per chest, clamped to 250–2,500 units.
@@ -960,6 +1046,65 @@ five difficulty settings range from x1–x5 in 0.5 steps. Native enemy HP is sca
 once at initialization. Movement is scaled before native ground/wall correction,
 excluding dormant, dying and knocked-back actors. Enemy damage scales at Link's
 native damage entry, restricted to owned enemy contacts.
+
+Native Midna **Fate** floor portals are randomly sampled from the completed
+reachable surface on every arena map:
+
+| Map | Portals |
+| --- | ---: |
+| Darknut Arena | 1 |
+| Hyrule Field | 4 |
+| Gerudo Desert | 4 |
+| Palace of Twilight | 2 |
+| Hyrule Castle – Throne Room | 1 |
+
+All five maps use the same bounded connected-floor preparation. Portals are spaced
+apart from one another, guards, existing chests and pots. A floating **Fate**
+label uses the same range/projection as chest prices; available portals also use
+the same Tears of Light minimap marker as field elites, with native room
+rotation/offset. Loading, consumed and retiring portals have no marker. Portal models and persistent
+emitters follow the native floor normal, with a small normal-direction clearance.
+Eight surrounding floor samples reject sharply uneven sites; the normal and
+clearance are cached at placement, with no per-frame ground scan. Interaction
+height follows the same floor plane so A remains usable on a hillside.
+
+Press **A** within 150 units horizontally and 35 vertically to roll one of eight
+equally likely effects. The effect name rises from the portal and fades over two
+seconds. **Show Fate Tooltips** in Survivors Settings defaults to On and adds a
+smaller explanation below the floating effect name and its HUD countdown. Off
+keeps the short names/countdowns. This presentation setting applies immediately,
+is persisted/exported with settings, and does not change the run or score.
+Timed effects appear with separate countdowns in the HUD's Horde/Info
+area, sharing its configured position and scale:
+
+| Effect | Result |
+| --- | --- |
+| Horde | 15 seconds of triple enemy spawn batches, within existing population/boss limits. |
+| Greed | 15 seconds without healing, with +50% XP and rupee income. |
+| Sprint | 15 seconds at 150% movement speed, using the sprint animation for ordinary forward running. |
+| Curse | Immediately removes half of current health, rounded down to whole quarter-heart units. |
+| Slow | 15 seconds at 50% movement speed. |
+| Fairy | Spawns one native fairy to collect or bottle. |
+| Luck | 15 seconds of +50% effective Luck, including drops, rarity, critical and lightning chance. |
+| Misfortune | 15 seconds of -50% effective Luck. |
+
+Greed blocks hearts, fairies, potions, life steal, regeneration and level-up
+healing. Half-unit XP/rupee bonuses carry between rewards during Greed; costs
+are unchanged. Sprint/Slow replace one another, as do Luck/Misfortune. Other
+effects coexist; repeating a timed effect refreshes its 15 seconds. Horde adds
+15 seconds to any existing random/portal Horde, without multiplying the 3x
+boost, and resets the normal spawn cooldown. Curse and Fairy have no timer.
+Menus/events pause all countdowns. Temporary modifiers clear on victory,
+defeat and a new run, and never change permanent upgrade ranks or save data.
+
+A wall, pause/menu/event, wolf form, defeat/victory or the run time limit blocks
+activation. The action consumes that A press. Each used portal disappears and respawns
+**one minute of active run time after use**, at a new random reachable
+position separated from its old site. Unused portals remain available.
+Native portal creation/model/particles/deletion are retained, while Execute is
+overridden only for our tracked IDs to prevent automatic warps and events,
+including the Execute call inside native Create. Pending actors stay tracked
+through cleanup and never count as another free portal slot.
 
 Random horde events roll independently once per playable second (1/150 chance),
 for about two events per five minutes, with no quota. Each adds 450 ticks to

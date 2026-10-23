@@ -3,6 +3,8 @@ from pathlib import Path
 import os, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
 fixture=r'''
+bool fateTips=true;bool show_fate_tooltips(){return fateTips;}void set_fate_tooltips(bool value){fateTips=value;}
+
 #include <any>
 #include <cassert>
 #include <cmath>
@@ -199,12 +201,12 @@ int main(){
  s_run.phase=Phase::Ready;s_options.camera_distance=300;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==300);
  before_run_camera(nullptr,cam,nullptr,nullptr);active=false;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==100);active=true;
  assert(build_difficulty(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
- assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==18);
- const auto manual=controls.back();
+ assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==19);
+ const auto manual=controls[17];
  assert(manual.kind==UI_CONTROL_GROUP&&std::string(manual.label)=="Manual aiming abilities"&&controlPanes.back()==1);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow&&std::string(pushedTab.title)==manual.label);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==28);
- for(unsigned i=18;i<28;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==29);
+ for(unsigned i=19;i<29;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
  for(unsigned i=0;i<5;++i) {
   auto& minus=controls[2*i];auto& plus=controls[2*i+1];auto& setting=s_runControls[i];
   assert(std::string(minus.label)=="-"&&std::string(plus.label)=="+"&&!minus.get&&!plus.set);
@@ -230,17 +232,21 @@ int main(){
   s_run.phase=Phase::Running;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));s_restart=false;
  }
- for(unsigned i=18;i<28;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
+ auto& fate=controls[18];assert(std::string(fate.label)=="Show Fate Tooltips"&&fate.kind==UI_CONTROL_TOGGLE&&!fate.is_disabled);
+ UiControlValue tipValue=UI_CONTROL_VALUE_INIT;fate.get(nullptr,nullptr,&tipValue);assert(tipValue.bool_value);
+ s_run.phase=Phase::Running;tipValue.bool_value=false;fate.set(nullptr,nullptr,&tipValue);
+ fate.get(nullptr,nullptr,&tipValue);assert(!tipValue.bool_value);s_run.phase=Phase::Ready;
+ for(unsigned i=19;i<29;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
   UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value);
   value.bool_value=false;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
-  assert(!s_options.manual_aim[i-18]);for(unsigned j=i-17;j<10;++j)assert(s_options.manual_aim[j]);
+  assert(!s_options.manual_aim[i-19]);for(unsigned j=i-18;j<10;++j)assert(s_options.manual_aim[j]);
   value.bool_value=true;s_run.phase=Phase::Running;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=true;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);s_restart=false;
  }
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);assert(!s_manualAimSettingsWindow);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==38);
- for(unsigned i=28;i<38;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==39);
+ for(unsigned i=29;i<39;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);
  s_run.start(1,s_options);for(bool enabled:s_run.options.manual_aim)assert(!enabled);
  s_options.manual_aim.fill(true);for(bool enabled:s_run.options.manual_aim)assert(!enabled);

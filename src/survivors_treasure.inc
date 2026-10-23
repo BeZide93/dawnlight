@@ -137,7 +137,7 @@ bool begin_treasure_demo(unsigned index, daAlink_c* link, ChestReward reward) {
     s_treasure = {}; s_treasure.item = item;
     s_treasure.result = preview; s_treasure.key = key;
     s_treasure.price = key ? 0 : s_run.chest_price(s_chests[index].free, s_chests[index].fixed);
-    s_treasure.bonusRupees = s_run.chest_rupees(reward, rarity, potion_capacity());
+    s_treasure.bonusRupees = s_run.preview_rupees(s_run.chest_rupees(reward, rarity, potion_capacity()));
     if (reward == ChestReward::RedPotion) s_treasure.potions = s_run.chest_gain(reward, rarity, potion_capacity());
     s_chests[index].reward = reward;
     s_run.phase = Phase::Treasure;

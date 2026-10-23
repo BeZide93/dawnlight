@@ -1,4 +1,4 @@
-"""Production minimap hook: native bug styling, live positions and run isolation."""
+"""Production minimap hooks: camera heading, native bug styling and run isolation."""
 from pathlib import Path
 import os
 import subprocess
@@ -9,15 +9,18 @@ fixture = r'''
 #include <any>
 #include <array>
 #include <cassert>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <iostream>
 #include <vector>
 #include "survivors_rules.hpp"
 using namespace dawnlight::survivors;
-using u8=unsigned char;
-struct Vec{float x=0,y=0,z=0;};using cXyz=Vec;
+using u8=unsigned char;using s16=int16_t;
+struct Vec{float x=0,y=0,z=0;Vec operator-(Vec b)const{return {x-b.x,y-b.y,z-b.z};}};using cXyz=Vec;
 #define BE(T) T
 struct ModContext{};enum HookAction{HOOK_CONTINUE};
-namespace mods{template<class T>T arg(void* a,int n){return std::any_cast<T>(static_cast<std::any*>(a)[n]);}}
+namespace mods{template<class T>T& arg_ref(void* a,int n){return std::any_cast<T&>(static_cast<std::any*>(a)[n]);}template<class T>T arg(void* a,int n){return std::any_cast<T>(static_cast<std::any*>(a)[n]);}}
 constexpr unsigned kNone=~0u;
 struct Enemy{unsigned id=kNone;bool elite=true,initialized=true,credited=false,retiring=false;};
 std::array<Enemy,enemy_capacity>s_enemies;
@@ -25,12 +28,25 @@ struct Actor{struct{cXyz pos;}current;int health=100,room=0;};
 std::array<Actor,enemy_capacity>actors;
 Actor* actor_by_id(unsigned id){return id<actors.size()?&actors[id]:nullptr;}
 int fopAcM_GetRoomNo(Actor* a){return a->room;}
+constexpr unsigned kHordePortalCount=4;
+struct HordePortal{bool visible=false;cXyz position{};};std::array<HordePortal,kHordePortalCount>s_hordePortals;
+bool horde_portal_visible(const HordePortal& p){return p.visible;}
 Run s_run;bool arenaActive=true,changingStage=false;
 bool in_arena(){return arenaActive;}bool transitioning(){return changingStage;}
 struct Arena{int room=0;}currentArena;const Arena& arena(){return currentArena;}
 namespace dMapInfo_n{void correctionOriginPos(int room,Vec* pos){
  assert(room==currentArena.room);const float x=pos->x;pos->x=pos->z+100;pos->z=-x+200;
 }}
+
+s16 cM_atan2s(float x,float z){return s16(std::atan2(x,z)*32768.0/3.141592653589793);}
+struct Link{int field_0x317c=2; s16 modelAngle=1234;}link;
+bool playerAvailable=true,cameraAvailable=true,roomAvailable=true;
+Link* daAlink_getAlinkActorClass(){return playerAvailable?&link:nullptr;}
+struct CameraActor{struct{Vec mEye{},mCenter{0,0,100};}mCamera;}camera;
+CameraActor* dComIfGp_getCamera(int index){assert(index==2);return cameraAvailable?&camera:nullptr;}
+struct Room{int field_0x1c=0;}room;
+int dComIfGp_roomControl_getStayNo(){return 3;}
+struct dStage_roomControl_c{static Room* getFileList2(int index){assert(index==3);return roomAvailable?&room:nullptr;}};
 int textureObject=0;bool textureAvailable=true;
 struct TextureGroup{int* getTexObjPointer(int type){assert(type==4);return textureAvailable?&textureObject:nullptr;}};
 namespace dMpath_n{TextureGroup m_texObjAgg;}
@@ -61,14 +77,51 @@ void GXSetTevColor(int reg,GXColor c){assert(c.r==(reg==GX_TEVREG1?132:136)&&c.g
 '''
 main = r'''
 int main(){
+
+ // Only the live player cursor inside the minimap follows the active camera.
+ renderingAmap_c cursorMap;std::any mapArgs[]={&cursorMap};
+ std::any cursorArgs[]={&cursorMap,Vec{},s16(1234),int(0x1e),float(25)};
+ const auto cursor=[&]{cursorArgs[2]=s16(1234);assert(before_survivors_minimap_cursor(nullptr,cursorArgs,nullptr,nullptr)==HOOK_CONTINUE);return std::any_cast<s16>(cursorArgs[2]);};
+ assert(cursor()==1234); // Full-screen map / other draw passes remain native.
+ before_survivors_minimap(nullptr,mapArgs,nullptr,nullptr);
+ for(const Vec direction:{Vec{0,0,100},Vec{100,90,0},Vec{0,-90,-100},Vec{-100,0,0}}){
+  camera.mCamera.mEye={20,40,60};camera.mCamera.mCenter={20+direction.x,40+direction.y,60+direction.z};
+  for(int rotation:{0,8192,30000,-30000}){
+   room.field_0x1c=rotation;
+   const s16 expected=s16(cM_atan2s(direction.x,direction.z)+rotation);
+   assert(cursor()==expected&&link.modelAngle==1234);
+  }
+ }
+ room.field_0x1c=8192;camera.mCamera.mEye={};camera.mCamera.mCenter={100,0,0};
+ roomAvailable=false;assert(cursor()==16384);roomAvailable=true;
+ for(int marker:{0x1f,0x20,4}){cursorArgs[3]=marker;assert(cursor()==1234);}cursorArgs[3]=int(0x1e);
+ for(unsigned reason=0;reason<7;++reason){
+  arenaActive=reason!=0;changingStage=reason==1;playerAvailable=reason!=2;cameraAvailable=reason!=3;
+  camera.mCamera.mCenter=reason==4?Vec{0,100,0}:reason==5?Vec{std::numeric_limits<float>::quiet_NaN(),0,1}:reason==6?Vec{1,0,std::numeric_limits<float>::infinity()}:Vec{100,0,0};
+  assert(cursor()==1234);
+ }
+ arenaActive=true;changingStage=false;playerAvailable=cameraAvailable=true;camera.mCamera.mCenter={100,0,0};
+ before_survivors_minimap(nullptr,mapArgs,nullptr,nullptr);assert(s_minimapDrawDepth==2);
+ after_elite_minimap(nullptr,mapArgs,nullptr,nullptr);assert(s_minimapDrawDepth==1&&cursor()==24576);
+ after_elite_minimap(nullptr,mapArgs,nullptr,nullptr);assert(s_minimapDrawDepth==0&&cursor()==1234);
+ assert(std::any_cast<int>(cursorArgs[3])==0x1e&&std::any_cast<float>(cursorArgs[4])==25);
  s_run.start(42);renderingAmap_c map;std::any args[]={&map};
- const auto draw=[&]{map.drawn.clear();after_elite_minimap(nullptr,args,nullptr,nullptr);assert(!map.textured);};
+ const auto draw=[&]{map.drawn.clear();before_survivors_minimap(nullptr,args,nullptr,nullptr);after_elite_minimap(nullptr,args,nullptr,nullptr);assert(!map.textured);};
  draw();assert(map.drawn.empty()&&gxChanges==0);
  // A dormant guard and an aggro/scheduled elite both use their actor positions.
  s_enemies[0].id=0;actors[0].current.pos={25,0,50};
  s_enemies[1].id=1;actors[1].current.pos={-30,0,70};
  draw();assert(map.drawn.size()==2&&map.drawn[0].x==150&&map.drawn[0].z==175);
  actors[0].current.pos={40,0,80};map.zoom=100;draw();assert(map.drawn[0].x==180&&map.drawn[0].z==160);
+ // Portal markers use the same style and room correction, disappear on use,
+ // and follow the new position after respawn.
+ s_hordePortals[0]={true,{600,0,900}};draw();assert(map.drawn.size()==3&&map.drawn[2].x==1000&&map.drawn[2].z==-400);
+ s_hordePortals[0].visible=false;draw();assert(map.drawn.size()==2);
+ s_hordePortals[0]={true,{1200,0,300}};draw();assert(map.drawn.size()==3&&map.drawn[2].x==400&&map.drawn[2].z==-1000);
+ for(auto& p:s_hordePortals)p={true,{100,0,100}};
+ for(unsigned i=0;i<elite_capacity;++i){s_enemies[i]={i};actors[i]={};}
+ draw();assert(map.drawn.size()==elite_capacity+kHordePortalCount);
+ s_hordePortals={};for(unsigned i=2;i<s_enemies.size();++i)s_enemies[i]={};
  // No marker for dying/deleted/uninitialized/ordinary/wrong-room/off-map actors.
  for(unsigned reason=0;reason<8;++reason){
   s_enemies[0]={0};actors[0]={};
@@ -92,7 +145,7 @@ int main(){
   draw();assert(map.drawn.empty()&&gxChanges==before);
  }
  assert(map.setups==map.restores);
- std::cout<<"Survivors minimap: native bug style, transformed live positions, death/respawn and isolation passed\n";
+ std::cout<<"Survivors minimap: camera heading, room rotation, fallback, cursor isolation and elite markers passed\n";
 }
 '''
 with tempfile.TemporaryDirectory() as temp:

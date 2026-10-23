@@ -85,6 +85,10 @@ unsigned fopAcM_GetID(fopAc_ac_c* a){return a->id;}int fopAcM_GetRoomNo(fopAc_ac
 void fopAcM_SetRoomNo(fopAc_ac_c* a,int n){a->room=n;}
 void load_records(){++recordsLoaded;}
 void clear_elite_sites(){}
+void clear_reachable_floor(){}
+void retire_palace_ferries(){}
+bool ferryCaptured=false;
+bool capture_palace_ferry(int,const fopAcM_prm_class&){return ferryCaptured;}
 void capture_elite_site(int,const fopAcM_prm_class&){}
 void reset_midna_dialog(){}
 void update_midna_dialog(){}
@@ -115,6 +119,13 @@ int main(){
    assert((params.base.parameters&0x00fe0fff)==(original&0x00fe0fff));
   }
  }
+ // A captured ferry transfers to explicit creation; release the append and
+ // suppress its original creator so there cannot be two collision platforms.
+ info.procname=fpcNm_BG_e;ferryCaptured=true;
+ assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&freed==1);
+ active=false;
+ assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_CONTINUE&&freed==1);
+ active=true;ferryCaptured=false;freed=0;
  // Native story chests remain filtered; the hub chest uses its own actor.
  s_map=0;params.room_no=51;info.procname=fpcNm_TBOX_e;
  assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
@@ -297,7 +308,7 @@ int main(){
 '''
 # Exercise the real floor policy together with the rescue hooks.
 ground = (root/'src/survivors_ground.inc').read_text()
-dry_floor = ground[:ground.index('bool walkable_spawn_path')]
+dry_floor = ground[:ground.index('struct ArenaWalk')]
 functions = dry_floor+'\n'+'\n'.join(extract(n) for n in ['add_exit_box','arena_story_actor','before_arena_stage_actor',
     'confine_arena_actor','after_arena_position','before_arena_restart','arena_grounded','arena_fallen','arena_safe_footprint','restore_arena_player','update_arena_safety'])
 globals = source[source.index('std::vector<barriers::Wall>'):source.index('void add_exit_box')]

@@ -5,6 +5,8 @@ root=Path(__file__).resolve().parents[1]
 core=(root/'src/survivors.cpp').read_text()
 available=re.search(r'bool map_available\(unsigned map\) \{.*?\n\}',core,re.S).group()
 fixture=r'''
+bool fateTips=true;bool show_fate_tooltips(){return fateTips;}void set_fate_tooltips(bool value){fateTips=value;}
+
 #include <cassert>
 #include <numeric>
 #include <cstdio>

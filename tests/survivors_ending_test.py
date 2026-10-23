@@ -57,6 +57,7 @@ void load_records(){}constexpr const char* kBlob="test";constexpr int MOD_OK=0;
 struct Save{unsigned writes=0;int set_blob(ModContext*,const char*,const void*,size_t){++writes;return 0;}}save;
 auto* svc_save=&save;
 void update_combat_feedback(){}void update_enemy_effects(){}
+void update_reachable_floor(){assert(false);} // Victory/defeat must not expand spawn routes.
 void update_spawns(daAlink_c*){++spawns;}void update_pots(daAlink_c*){}
 void update_weapons(daAlink_c*){++attacks;}void update_orbs(daAlink_c*){++orbs;}
 struct Pickup{bool retiring=false;};unsigned pickupMoves=0;

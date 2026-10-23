@@ -111,6 +111,7 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_path.h"
 #include "d/actor/d_a_suspend.h"
+#include "d/actor/d_a_obj_lv8Lift.h"
 #include "d/d_debug_viewer.h"
 #include "d/d_gameover.h"
 #include "res/Object/E_fm.h"
@@ -182,6 +183,7 @@ DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
 DEFINE_HOOK(static_cast<void(*)(fopAc_ac_c*)>(&daSus_c::check), SurvivorsPalaceFerrySuspend);
+DEFINE_HOOK(&daL8Lift_c::moveLift, SurvivorsPalaceFerryMove);
 DEFINE_HOOK(&daAlink_c::checkDamageAction, SurvivorsBlock);
 DEFINE_HOOK(&daAlink_c::setShieldGuard, SurvivorsGuard);
 DEFINE_HOOK_SYMBOL("cCcS::SetCoCommonHitInf",void(cCcS*,cCcD_Obj*,cXyz*,cCcD_Obj*,cXyz*,f32),SurvivorsEnemyContact);
@@ -1824,6 +1826,7 @@ ModResult initialize_survivors(ModError* error) {
         "Survivors archive retention unavailable; using native resource loading");
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
     PRE(SurvivorsPalaceFerrySuspend, before_palace_ferry_suspend);
+    PRE(SurvivorsPalaceFerryMove, before_palace_ferry_move);
 #include "survivors_roster_hooks.inc"
     PRE(SurvivorsEnemySpeed, before_enemy_speed); POST(SurvivorsEnemySpeed, after_enemy_facing);
     PRE(SurvivorsEnemySpeed,before_boss_path); // Final position constraints after all movement boosts.

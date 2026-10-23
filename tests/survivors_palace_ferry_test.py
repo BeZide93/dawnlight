@@ -36,7 +36,12 @@ struct fopAc_ac_c{ActorId id;unsigned status=0;};
 constexpr unsigned fopAcStts_UNK_0x20000000_e=0x20000000;
 unsigned fopAcM_GetID(fopAc_ac_c* a){return a->id;}
 void fopAcM_OffStatus(fopAc_ac_c* a,unsigned bits){a->status&=~bits;}
-std::map<ActorId,fopAc_ac_c> actors;std::set<ActorId> pending;
+struct daL8Lift_c:fopAc_ac_c {
+ enum {MODE_ACC_e,MODE_MOVE_e,MODE_BRK_e,MODE_WAIT_e,MODE_WAIT_INIT_e};
+ int mMode=MODE_WAIT_INIT_e,mCurrentPoint=0;
+ daL8Lift_c(ActorId id=0,unsigned status=0):fopAc_ac_c{id,status}{}
+};
+std::map<ActorId,daL8Lift_c> actors;std::set<ActorId> pending;
 bool fpcM_IsCreating(ActorId id){return pending.contains(id);}
 fopAc_ac_c* actor_by_id(ActorId id){auto i=actors.find(id);return i==actors.end()?nullptr:&i->second;}
 struct ActorSpawnParams{unsigned parameters;int argument,room_num;cXyz position;csXyz angle;cXyz scale;void* create_function;};
@@ -86,7 +91,7 @@ int main(){
  pending.erase(id);actors[id]={id,fopAcStts_UNK_0x20000000_e|4};
  cleanup_palace_ferries();assert(s_palaceFerries[0].ready);
  const auto reports=logService.infos;cleanup_palace_ferries();assert(logService.infos==reports);
- std::any args[]={&actors[id]};
+ std::any args[]={static_cast<fopAc_ac_c*>(&actors[id])};
  assert(before_palace_ferry_suspend(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
  assert(actors[id].status==4); // No suspension flag, unrelated status retained.
  fopAc_ac_c foreign{999,fopAcStts_UNK_0x20000000_e};args[0]=&foreign;
@@ -110,43 +115,74 @@ int main(){
  file.m_chunkCount=0;frame();assert(s_palaceFerryScanned&&s_palaceFerries.empty());
  assert(logService.warnings>=2);
 
- // Regression: two distinct, intersecting layer paths previously spawned two
- // moving floors. Prefer the east route even when its record is encountered last.
+ // Two distinct intersecting paths are retained, but never move together.
  retire_palace_ferries();
- Point crossing[2]{{{100,2,-100}},{{100,2,100}}};
- standard.base.parameters=0xff065743; // Other switch/path, encountered first.
- opt.base.parameters=0xff074264; // East switch 0x64, path 0x42.
- file.m_chunkCount=2;file.m_nodes[0]=node("ACT0",1,&standard);file.m_nodes[1]=node("SCO2",1,&opt);
- paths[0x43]={2,crossing};paths.erase(0x42);
+ Point crossing[3]{{{100,2,-100}},{{100,2,0}},{{100,2,100}}};
+ standard.base.parameters=0xff065743;
+ opt.base.parameters=0xff074264; // East route should take the first turn.
+ stage_actor_data_class third=standard;third.base.parameters=0xff066744;
+ file.m_chunkCount=3;file.m_nodes[0]=node("ACT0",1,&standard);
+ file.m_nodes[1]=node("SCO2",1,&opt);file.m_nodes[2]=node("ACT1",1,&third);
+ paths[0x43]={3,crossing};paths[0x44]={3,crossing};paths.erase(0x42);
  const auto before=requests;
- frame();assert(s_palaceFerries.size()==2&&requests==before); // Wait for chosen path, don't switch routes.
- paths[0x42]={3,points};refuse=true;frame();assert(requests==before+1);
- refuse=false;frame();assert(requests==before+2&&(last.parameters&255)==0x42);
- auto eastID=s_palaceFerries[1].id;assert(eastID!=kNone&&s_palaceFerries[0].id==kNone);
- for(int i=0;i<100;++i){frame();cleanup_palace_ferries();}
- assert(requests==before+2&&pending.size()==1);
+ frame();assert(requests==before+1&&(last.parameters&255)==0x43);
+ const auto otherID=s_palaceFerries[0].id;
+ pending.erase(otherID);actors[otherID]={otherID};cleanup_palace_ferries();
+ auto move=[](ActorId id){std::any args[]={&actors.at(id)};return before_palace_ferry_move(nullptr,args,nullptr,nullptr);};
+ assert(move(otherID)==HOOK_SKIP_ORIGINAL); // Wait for partner's path/creation.
+ paths[0x42]={3,points};refuse=true;frame();assert(requests==before+2);
+ refuse=false;frame();assert(requests==before+3&&(last.parameters&255)==0x42);
+ const auto eastID=s_palaceFerries[1].id;
+ for(int i=0;i<100;++i){frame();cleanup_palace_ferries();assert(move(otherID)==HOOK_SKIP_ORIGINAL);}
+ assert(requests==before+3&&s_palaceFerries[2].id==kNone);
  pending.erase(eastID);actors[eastID]={eastID};cleanup_palace_ferries();
- for(int i=0;i<100;++i)frame();
- assert(requests==before+2&&actors.size()==1);
- // Losing the actor retries the same route, never the intersecting alternative.
- actors.clear();cleanup_palace_ferries();frame();
- assert(requests==before+3&&(last.parameters&255)==0x42);
- eastID=s_palaceFerries[1].id;
- // A restart discovers new candidates while the old Create/Delete is pending.
- retire_palace_ferries();frame();assert(requests==before+3);
- pending.erase(eastID);actors[eastID]={eastID};cleanup_palace_ferries();
- for(int i=0;i<100;++i)frame();
- assert(requests==before+3); // Still alive/retiring: no replacement yet.
- actors.clear();cleanup_palace_ferries();frame();
- assert(requests==before+4&&(last.parameters&255)==0x42&&pending.size()==1);
- pending.clear();retire_palace_ferries();cleanup_palace_ferries();assert(s_palaceFerries.empty());
- // Archives without the east marker still get exactly one stable fallback.
+ assert(move(otherID)==HOOK_SKIP_ORIGINAL&&move(eastID)==HOOK_CONTINUE);
+ auto& east=actors[eastID];auto& other=actors[otherID];
+ // A full native acceleration/braking leg retains ownership at intermediate
+ // points, handing over only after braking at an endpoint (WAIT_INIT).
+ auto travel=[&](ActorId id,ActorId waiting,int endpoint){
+  auto& a=actors[id];
+  for(int mode:{daL8Lift_c::MODE_WAIT_e,daL8Lift_c::MODE_ACC_e,daL8Lift_c::MODE_MOVE_e,daL8Lift_c::MODE_BRK_e}) {
+   a.mMode=mode;assert(move(id)==HOOK_CONTINUE&&move(waiting)==HOOK_SKIP_ORIGINAL);
+  }
+  a.mMode=daL8Lift_c::MODE_WAIT_INIT_e;a.mCurrentPoint=1;
+  assert(move(id)==HOOK_CONTINUE&&move(waiting)==HOOK_SKIP_ORIGINAL);
+  a.mMode=daL8Lift_c::MODE_BRK_e;a.mCurrentPoint=endpoint;
+  assert(move(id)==HOOK_CONTINUE&&move(waiting)==HOOK_SKIP_ORIGINAL);
+  a.mMode=daL8Lift_c::MODE_WAIT_INIT_e;
+  assert(move(id)==HOOK_SKIP_ORIGINAL&&s_palaceFerryTurn==waiting);
+  assert(s_palaceFerryDwell==60);
+  playing=false;
+  for(int i=0;i<20;++i)assert(move(waiting)==HOOK_SKIP_ORIGINAL);
+  assert(s_palaceFerryDwell==60);playing=true;
+  for(int i=0;i<60;++i)assert(move(waiting)==HOOK_SKIP_ORIGINAL&&move(id)==HOOK_SKIP_ORIGINAL);
+  assert(move(waiting)==HOOK_CONTINUE&&s_palaceFerryDwell==0);
+ };
+ for(int trip=0;trip<4;++trip){travel(eastID,otherID,trip%2?0:2);travel(otherID,eastID,trip%2?0:2);}
+ assert(east.mCurrentPoint==0&&other.mCurrentPoint==0); // Repeated return crossings.
+ daL8Lift_c vanilla{999};std::any foreignMove[]={&vanilla};
+ assert(before_palace_ferry_move(nullptr,foreignMove,nullptr,nullptr)==HOOK_CONTINUE);
+ // Loss of the current actor recreates only that route, then resumes scheduling.
+ actors.erase(eastID);cleanup_palace_ferries();assert(s_palaceFerryTurn==kNone);
+ assert(move(otherID)==HOOK_SKIP_ORIGINAL);frame();
+ assert(requests==before+4&&(last.parameters&255)==0x42);
+ const auto replacementID=s_palaceFerries[1].id;
+ // Restart waits for both the live partner and the pending replacement to retire.
+ retire_palace_ferries();frame();assert(requests==before+4);
+ assert(move(otherID)==HOOK_SKIP_ORIGINAL);
+ actors.erase(otherID);cleanup_palace_ferries();frame();assert(requests==before+4);
+ pending.erase(replacementID);actors[replacementID]={replacementID};cleanup_palace_ferries();
+ frame();assert(requests==before+4);
+ actors.clear();cleanup_palace_ferries();frame();frame();
+ assert(requests==before+6&&pending.size()==2);
+ // An archive with only one route still runs; late records cannot add a third.
+ pending.clear();retire_palace_ferries();cleanup_palace_ferries();
  file.m_chunkCount=1;frame();assert((last.parameters&255)==0x43);
- const auto fallbackRequests=requests;
+ const auto fallbackID=s_palaceFerries[0].id;
+ pending.clear();actors[fallbackID]={fallbackID};cleanup_palace_ferries();
  p.base.parameters=0xff074264;assert(capture_palace_ferry(fpcNm_Obj_Lv8OptiLift_e,p));
- frame();assert(requests==fallbackRequests);
- pending.clear();cleanup_palace_ferries();frame();
- assert(requests==fallbackRequests+1&&(last.parameters&255)==0x43);
+ frame();assert(requests==before+7&&move(fallbackID)==HOOK_CONTINUE);
+
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
@@ -154,4 +190,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture+(root/'src/survivors_palace_ferry.inc').read_text()+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print('Palace ferry: single crossing, stable route selection, restart exclusion, inactive-layer discovery, native parameters, suspension and cleanup passed')
+print('Palace ferry: alternating crossings, endpoint handoff, pause/dwell, restart exclusion, inactive-layer discovery, native parameters, suspension and cleanup passed')

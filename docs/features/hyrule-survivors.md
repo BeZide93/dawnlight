@@ -102,13 +102,17 @@ stage-create hook retains any shared-stage records before suppressing their
 original actors. Both `optLift` and `L8LiftX` are supported; their different
 path/speed parameter fields are translated into the native `L8LiftX` always-on
 mode. This avoids `optLift`'s requirement for a switch transition after Create.
-Routes are deduplicated by room/path, but only one crossing is activated: prefer
-the native east-platform switch `0x64`, otherwise use the first authored route.
-The selection stays fixed through retries and late actor records. A pending,
-live or retiring ferry blocks every other creation, including across restarts,
-so intersecting layer variants cannot trap Link between two moving platforms.
-The selected path is validated before spawning. Position, scale, orientation
-and movement speed come from native records and paths.
+Routes are deduplicated by room/path and up to two are selected, preferring the
+native east-platform switch `0x64`. Both crossings remain available for the
+return journey. Only one moves at a time: after native braking completes at an
+endpoint, it waits there and hands the turn to the other ferry after a two-second
+boarding/disembarking pause. Intermediate waypoints do not release the turn.
+Only `moveLift` is gated while waiting; native Execute continues updating the
+collision matrix, lighting and rider state. Menu/event pauses freeze the dwell.
+The pair stays fixed through retries and late actor records. Retiring actors
+block a fresh pair across restarts, and actor loss retries only the missing route.
+Selected paths are validated before spawning. Position, scale, orientation and
+movement speed come from native records and paths.
 
 Only owned ferries bypass native story suspension volumes and pause with Link
 in menus. Creation IDs remain tracked until initialization/deletion completes,

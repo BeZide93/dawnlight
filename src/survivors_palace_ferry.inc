@@ -5,11 +5,13 @@ struct PalaceFerry {
     fopAcM_prm_class source{};
     ActorId id=kNone;
     unsigned path=0,speed=0;
-    bool east=false,selected=false,retiring=false,reported=false,ready=false;
+    bool east=false,selected=false,retiring=false,reported=false,ready=false,departed=false;
 };
 std::vector<PalaceFerry> s_palaceFerries;
 bool s_palaceFerryScanned=false;
 unsigned s_palaceFerryRetry=0;
+ActorId s_palaceFerryTurn=kNone;
+unsigned s_palaceFerryDwell=0;
 bool palace_ferry_profile(int profile) {
     return profile==fpcNm_Obj_Lv8Lift_e || profile==fpcNm_Obj_Lv8OptiLift_e;
 }
@@ -19,8 +21,7 @@ bool capture_palace_ferry(int profile,const fopAcM_prm_class& params) {
     const unsigned raw=params.base.parameters;
     const bool opti=profile==fpcNm_Obj_Lv8OptiLift_e;
     const unsigned path=(raw>>(opti?8:0))&255,speed=(raw>>(opti?16:8))&15;
-    // Native Palace switch 0x64 identifies the east crossing. Other layer
-    // records can describe intersecting routes, not additional safe ferries.
+    // Prefer the native east crossing (switch 0x64) when selecting the pair.
     const bool east=((raw>>(opti?0:12))&255)==0x64;
     for(auto& ferry:s_palaceFerries)
         if(!ferry.retiring && ferry.source.room_no==params.room_no && ferry.path==path) {
@@ -33,6 +34,7 @@ bool capture_palace_ferry(int profile,const fopAcM_prm_class& params) {
 }
 void retire_palace_ferries() {
     s_palaceFerryScanned=false;s_palaceFerryRetry=0;
+    s_palaceFerryTurn=kNone;s_palaceFerryDwell=0;
     for(auto& ferry:s_palaceFerries)ferry.retiring=true;
     std::erase_if(s_palaceFerries,[](const auto& ferry){return ferry.id==kNone;});
 }
@@ -40,7 +42,10 @@ void cleanup_palace_ferries() {
     for(auto& ferry:s_palaceFerries) {
         if(ferry.id==kNone || fpcM_IsCreating(ferry.id))continue;
         auto* actor=actor_by_id(ferry.id);
-        if(!actor){ferry.id=kNone;ferry.ready=false;}
+        if(!actor) {
+            if(s_palaceFerryTurn==ferry.id){s_palaceFerryTurn=kNone;s_palaceFerryDwell=0;}
+            ferry.id=kNone;ferry.ready=false;ferry.departed=false;
+        }
         else if(ferry.retiring)svc_actor->delete_actor(mod_ctx,ferry.id);
         else if(!ferry.ready) {
             ferry.ready=true;
@@ -52,6 +57,42 @@ void cleanup_palace_ferries() {
 PalaceFerry* tracked_palace_ferry(ActorId id) {
     if(id!=kNone)for(auto& ferry:s_palaceFerries)if(ferry.id==id)return &ferry;
     return nullptr;
+}
+HookAction before_palace_ferry_move(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<daL8Lift_c*>(args,0);
+    auto* ferry=actor?tracked_palace_ferry(fopAcM_GetID(actor)):nullptr;
+    if(!ferry)return HOOK_CONTINUE;
+    if(ferry->retiring || !ferry->ready || !playable())return HOOK_SKIP_ORIGINAL;
+    if(s_palaceFerryTurn==kNone) {
+        // Keep both at their starting docks until all selected actors are ready.
+        // This also covers asynchronous creation after a restart or actor loss.
+        PalaceFerry* first=nullptr;
+        for(auto& candidate:s_palaceFerries)if(candidate.selected && !candidate.retiring) {
+            if(candidate.id==kNone || !candidate.ready)return HOOK_SKIP_ORIGINAL;
+            if(!first || (!first->east && candidate.east))first=&candidate;
+        }
+        if(first)s_palaceFerryTurn=first->id;
+    }
+    if(s_palaceFerryTurn!=ferry->id)return HOOK_SKIP_ORIGINAL;
+    if(s_palaceFerryDwell){--s_palaceFerryDwell;return HOOK_SKIP_ORIGINAL;}
+    const auto* path=dPath_GetRoomPath(ferry->path,ferry->source.room_no);
+    const bool endpoint=path && (actor->mCurrentPoint==0 || actor->mCurrentPoint==path->m_num-1);
+    // WAIT_INIT follows completed braking; mCurrentPoint still names the point
+    // just reached. Intermediate waypoints must not hand over the crossing.
+    if(ferry->departed && endpoint && actor->mMode==daL8Lift_c::MODE_WAIT_INIT_e) {
+        ferry->departed=false;
+        for(const auto& next:s_palaceFerries)
+            if(next.selected && !next.retiring && next.ready && next.id!=ferry->id) {
+                s_palaceFerryTurn=next.id;break;
+            }
+        s_palaceFerryDwell=60; // Two seconds of active game ticks to disembark.
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if(actor->mMode==daL8Lift_c::MODE_ACC_e || actor->mMode==daL8Lift_c::MODE_MOVE_e ||
+       actor->mMode==daL8Lift_c::MODE_BRK_e)ferry->departed=true;
+    // Gate only moveLift: native Execute still refreshes the collision matrix,
+    // lighting and ride callback state while the other platform waits.
+    return HOOK_CONTINUE;
 }
 HookAction before_palace_ferry_suspend(ModContext*,void* args,void*,void*) {
     auto* actor=mods::arg<fopAc_ac_c*>(args,0);
@@ -89,6 +130,8 @@ void discover_palace_ferries(const dStage_fileHeader* file) {
 void update_palace_ferries() {
     if(s_map!=3 || !in_arena() || !playable())return;
     if(s_palaceFerryRetry){--s_palaceFerryRetry;return;}
+    // Never overlap actors from the previous arena with a fresh pair.
+    for(const auto& ferry:s_palaceFerries)if(ferry.retiring && ferry.id!=kNone)return;
     if(!s_palaceFerryScanned) {
         // Room loader has already relocated every node, including inactive
         // layers. Scan once, without changing the archive or its actor records.
@@ -96,25 +139,23 @@ void update_palace_ferries() {
             dComIfG_getStageRes(dComIfG_getRoomArcName(arena().room),"room.dzr"));
         if(!file){s_palaceFerryRetry=30;return;}
         discover_palace_ferries(file);s_palaceFerryScanned=true;
+        // Keep both authored crossings, but never activate additional layer
+        // variants. Lock the pair before creation, including failed retries.
+        for(unsigned n=0;n<2;++n) {
+            PalaceFerry* chosen=nullptr;
+            for(auto& ferry:s_palaceFerries) {
+                if(ferry.retiring || ferry.selected)continue;
+                if(!chosen || (!chosen->east && ferry.east))chosen=&ferry;
+            }
+            if(chosen)chosen->selected=true;
+        }
         char message[128];std::snprintf(message,sizeof(message),
             "Survivors Palace ferry: found %u authored routes across room layers",unsigned(s_palaceFerries.size()));
         svc_log->info(mod_ctx,message);
         if(s_palaceFerries.empty())svc_log->warn(mod_ctx,"Survivors Palace ferry: no native lift records found in room.dzr");
     }
-    // Enforce one floor across all routes, including pending Create and Delete.
-    // A restart must wait until the previous actor has actually disappeared.
-    for(const auto& ferry:s_palaceFerries)if(ferry.id!=kNone)return;
-    PalaceFerry* chosen=nullptr;
     for(auto& ferry:s_palaceFerries) {
-        if(ferry.retiring)continue;
-        if(ferry.selected){chosen=&ferry;break;}
-        if(!chosen || (!chosen->east && ferry.east))chosen=&ferry;
-    }
-    // Lock the route even if creation needs retries; later records must not
-    // change the crossing or introduce a second colliding platform.
-    if(chosen)chosen->selected=true;
-    for(auto& ferry:s_palaceFerries) {
-        if(&ferry!=chosen)continue;
+        if(ferry.retiring || !ferry.selected || ferry.id!=kNone)continue;
         const auto* path=dPath_GetRoomPath(ferry.path,ferry.source.room_no);
         // Native setNextPoint assumes at least two points and uses signed byte
         // endpoint indices. Never launch an actor stuck in Create on a bad path.

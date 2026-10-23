@@ -136,6 +136,7 @@ void observe_enemy_attack(Enemy& enemy, fopAc_ac_c* actor) {
     // Other roster types can also be promoted to elites. Their native action
     // transitions/re-entry delimit attacks; continuous contact is one use.
 #define HIT_STATE(P,T,A,M) case P: {auto* e=reinterpret_cast<T*>(actor);action=e->A;mode=e->M;key=action+1;break;}
+    HIT_STATE(fpcNm_E_WB_e,e_wb_class,action,ride_mode)
     HIT_STATE(fpcNm_E_BA_e,e_ba_class,mAction,mMode)
     HIT_STATE(fpcNm_E_MS_e,e_ms_class,mAction,mMode)
     HIT_STATE(fpcNm_E_TT_e,daE_TT_c,mAction,mMode)

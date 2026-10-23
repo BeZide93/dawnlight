@@ -65,3 +65,8 @@
 
     POST(BossTNThrow,after_boss_sword_throw);
     PRE(SurvivorsEnemyArrow,before_boss_rider_arrow);
+    PRE(RosterWB,before_roster_native_damage);
+    PRE(BossBullboAction,before_bullbo_action);
+    PRE(BossBullboRider,before_bullbo_rider);
+    PRE(SurvivorsBulblinHit,before_bullbo_rider_damage);
+    PRE(RosterTargets,before_field_boss_targets);

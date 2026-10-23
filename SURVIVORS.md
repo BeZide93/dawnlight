@@ -245,7 +245,7 @@ Each map spawns four timed elites:
 | Map | 5:00 | 10:00 | 15:00 | 20:00 |
 | --- | --- | --- | --- | --- |
 | Darknut Arena | Giant Lizalfos | Giant Helmasaur | Dynalfos | Darknut |
-| Hyrule Field | Giant bow Bulblin | Giant Bokoblin | Giant Kargarok | King Bulblin |
+| Hyrule Field | Giant Bokoblin | Bullbo with two Bulblin riders | Aeralfos | King Bulblin |
 | Gerudo Desert | Giant Stalhound | Stalfos | Death Sword | Stallord’s flying head |
 | Palace of Twilight | Giant Shadow Beast | Twilit Bloat | Giant Twilit Carrier Kargarok | Phantom Zant |
 | Hyrule Castle Throne Room | Darknut | Darkhammer | Puppet Zelda | Ganondorf |
@@ -257,6 +257,12 @@ and use the native Tear-of-Light minimap icon. Dormant guards remain
 giant Bokoblins except in the Palace, where they are giant Shadow club Bulblins. Dormant
 elites wake only after taking damage; after a kill they respawn in three minutes,
 with new positions in Field/Desert. Timed elites do not respawn.
+
+Hyrule Field's Bullbo uses native charges with a front Bulblin driver and a rear
+Bulblin archer. All three share one boss HP budget and one kill/reward; hits on
+either rider damage the mount. The Bullbo and Aeralfos retain the timed-elite HP
+scaling and damage of the enemies they replace. Riders and their arrows follow
+the encounter's pause and cleanup rules.
 
 Stalhounds emerge and fight in daylight as well as at night. The giant elite
 uses a lower pounce arc so its bite can reach grounded Link. Shadow Beasts do
@@ -281,7 +287,7 @@ are excluded; attacks, effects and attack timing remain native where portable.
 Boss balance: active elites/bosses move 50% faster. Promoted ordinary elites have
 half attack-readiness/recovery timers and double damage; native bosses/minibosses
 do not inherit those two generic factors. Explicit damage overrides are Darknut
-×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
+and elite Aeralfos ×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
 King Bulblin can spin every six seconds at a safe chase boundary. Darknut repeats
 his sword throw every 1.5 active seconds outside melee range in either phase.

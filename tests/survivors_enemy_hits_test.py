@@ -28,7 +28,7 @@ struct cCcD_Obj {fopAc_ac_c* actor=nullptr;cCcD_Obj* hit=nullptr;unsigned power=
  auto* GetAc(){return actor;}auto* GetTgHitObj(){return hit;}bool ChkTgHit(){return hit;}
  unsigned GetAtAtp(){return power;}};
 struct fopAc_ac_c {int id=0,profile=0;void* sub_method=&methods;
- int mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
+ int ride_mode=0,mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
  field_0x672=0,field_0x676=0,field_0x678=0,mActionPhase=0,mActionMode1=0,mActionMode2=0,
  mMoveMode=0,mSubAction=0,field_0x68c=0,mTimers[4]{},field_0x1228[2]{};
  cCcD_Obj mMagicSphs[2],field_0xe64,mAtSph,mBallSphAt;

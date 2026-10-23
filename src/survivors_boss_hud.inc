@@ -38,7 +38,7 @@ const char* boss_hud_name(unsigned species) {
         "Black Chu", "Dynalfos", "Aeralfos", "Darknut", "Dodongo", "Stalhound",
         "Shadow Bulblin", "Shadow Bulblin Archer", "Shadow Beast", "Shadow Keese",
         "Twilit Carrier Kargarok", "Stallord", "Zant's Hand", "King Bulblin",
-        "Death Sword", "Twilit Bloat", "Phantom Zant", "Darkhammer", "Puppet Zelda", "Ganondorf",
+        "Death Sword", "Twilit Bloat", "Phantom Zant", "Darkhammer", "Puppet Zelda", "Ganondorf", "Bullbo Riders",
     };
     static_assert(std::size(names) == species_count);
     return species < species_count ? names[species] : "Elite";

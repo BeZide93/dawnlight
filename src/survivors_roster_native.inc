@@ -20,7 +20,8 @@ constexpr std::array<NativeSpecies,species_count> native_roster{{
     {fpcNm_E_RDB_e,0xffffff00,-1,0,1200}, {fpcNm_E_VT_e,0xffffffff,-1,0,24},
     {fpcNm_E_YMB_e,0xffffffff,-1,300,24}, {fpcNm_E_PZ_e,0xffffff01,-1,0,1200},
     {fpcNm_E_TH_e,0xffffff00,-1,0,24}, {fpcNm_E_HZELDA_e,0xffffff00,-1,300,24},
-    {fpcNm_B_GND_e,0xffffff00,-1,0,1200}
+    {fpcNm_B_GND_e,0xffffff00,-1,0,1200},
+    {fpcNm_E_WB_e,0xffff0000,-1,0,8}
 }};
 bool extended_enemy(ProfileName profile) {
     return std::any_of(native_roster.begin()+5,native_roster.end(),
@@ -42,6 +43,7 @@ ROSTER_HIT(RosterFS,"src/d/actor/d_a_e_fs.cpp#damage_check",e_fs_class);
 ROSTER_HIT(RosterBU,"src/d/actor/d_a_e_bu.cpp#damage_check",e_bu_class);
 ROSTER_HIT(RosterSM,"src/d/actor/d_a_e_sm2.cpp#damage_check",e_sm2_class);
 ROSTER_HIT(RosterMF,"src/d/actor/d_a_e_mf.cpp#damage_check",e_mf_class);
+ROSTER_HIT(RosterWB,"src/d/actor/d_a_e_wb.cpp#damage_check",e_wb_class);
 ROSTER_HIT(RosterGG,"daB_GG_c::At_Check",daB_GG_c);
 ROSTER_HIT(RosterTN,"daB_TN_c::damage_check",daB_TN_c);
 ROSTER_HIT(RosterDD,"src/d/actor/d_a_e_dd.cpp#damage_check",e_dd_class);
@@ -113,3 +115,6 @@ DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_rdy.cpp#e_rdy_yc_ride",void(e_rdy_class*),
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_b_gnd.cpp#b_gnd_g_attack",BOOL(b_gnd_class*),BossGNDCharge);
 
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_mf.cpp#action",void(e_mf_class*),RosterMFAction);
+
+DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_wb.cpp#action",void(e_wb_class*),BossBullboAction);
+DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_rd.cpp#daE_RD_Execute",int(e_rd_class*),BossBullboRider);

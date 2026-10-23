@@ -54,6 +54,8 @@ jobs:
           python3 tests/survivors_process_index_test.py
           python3 tests/survivors_palace_ferry_test.py
           CXX=clang++ python3 tests/survivors_palace_ferry_test.py
+          python3 tests/survivors_bullbo_test.py
+          CXX=clang++ python3 tests/survivors_bullbo_test.py
           CXX=clang++ python3 tests/survivors_process_index_test.py
           python3 tests/enemy_slow_dispatch_test.py
           CXX=clang++ python3 tests/enemy_slow_dispatch_test.py

@@ -73,6 +73,7 @@
 #include "m_Do/m_Do_lib.h"
 #include "d/actor/d_a_e_ms.h"
 #include "d/actor/d_a_e_rd.h"
+#include "d/actor/d_a_e_wb.h"
 #include "d/actor/d_a_e_dd.h"
 #include "d/actor/d_a_e_sh.h"
 #include "d/actor/d_a_e_rdy.h"
@@ -434,6 +435,7 @@ struct Enemy {
     dCcD_Sph extraAttack{};
     cXyz encounterTarget{};
     unsigned arrowVolley=0;
+    std::array<ActorId,2> bullboRiders{kNone,kNone};
 };
 static_assert(enemy_capacity <= 512, "Update enemy HUD slot capacity with the roster");
 std::array<Enemy, enemy_capacity> s_enemies;
@@ -1292,6 +1294,7 @@ HookAction before_sword_attack(ModContext* ctx, void* args, void* result, void* 
 }
 #include "survivors_extended_damage.inc"
 #include "survivors_encounters.inc"
+#include "survivors_bullbo.inc"
 #include "survivors_elite_scale.inc"
 #include "survivors_bosses.inc"
 #include "survivors_boss_tactics.inc"

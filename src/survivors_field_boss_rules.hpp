@@ -18,7 +18,7 @@ struct KingWaveClock {
         if(!spin){spinTicks=0;return strike?1:0;}
         const bool volley=spinTicks==0;
         spinTicks=(spinTicks+1)%30;
-        return volley?3:0;
+        return volley?5:0;
     }
 };
 }

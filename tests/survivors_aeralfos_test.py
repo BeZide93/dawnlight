@@ -39,11 +39,12 @@ int main(){
  auto pre=[&]{return before_aeralfos_action(nullptr,args,nullptr,nullptr);};
  auto post=[&]{after_aeralfos_action(nullptr,args,nullptr,nullptr);};
  auto matrix=[&]{before_aeralfos_matrix(nullptr,args,nullptr,nullptr);};
- // One extra timer tick halves idle, orbit and preparation delays, never a dive.
+ // Three extra ticks quarter idle, orbit and preparation delays, never a dive.
  for(auto state:{std::array{0,0,1,14},std::array{0,1,1,14},std::array{0,2,10,11},std::array{1,1,2,30}}){
   owner={};actor.SetAction(state[0],state[1],state[2]);actor.mAnm=state[3];actor.mTimers[0]=100;
-  for(int i=0;i<50;++i){--actor.mTimers[0];pre();}
+  for(int i=0;i<25;++i){--actor.mTimers[0];pre();}
   assert(actor.mTimers[0]==0);
+  for(int remaining=0;remaining<=3;++remaining){actor.mTimers[0]=remaining;pre();assert(actor.mTimers[0]==0);}
  }
  actor.SetAction(0,2,1);actor.mTimers[0]=80;pre();assert(actor.mTimers[0]==80);
  // Flight control halves the original 500..800 band above varied terrain.
@@ -83,4 +84,4 @@ with tempfile.TemporaryDirectory() as tmp:
  cpp.write_text(fixture+(root/'src/survivors_aeralfos.inc').read_text()+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
-print('Aeralfos: half-height terrain cap/recovery, half readiness, 10s phases, landing, pause and isolation passed')
+print('Aeralfos: half-height terrain cap/recovery, quarter readiness, 10s phases, landing, pause and isolation passed')

@@ -69,18 +69,22 @@ int main(){
  auto& first=s_kingWaves[0];assert(king_wave_use(&first.collider)==first.use);
  for(int i=0;i<9;++i)update_king_waves(&king,owner);assert(live()==1); // One per native strike window.
  king.field_0x6c4=0;update_king_waves(&king,owner);king.field_0x6c4=1;update_king_waves(&king,owner);assert(live()==2);
- // Every full second of actual spinning emits three independently aimed waves.
+ // Every full second emits five waves: one freshly aimed at Link and four random.
  reset();owner={};king.mAction=4;king.mMode=1;king.field_0x6c4=0;
  update_king_waves(&king,owner);assert(live()==0);
- king.mMode=2;king.field_0x6c4=2;update_king_waves(&king,owner);assert(live()==3);
+ aimYaw=0x2000;king.mMode=2;king.field_0x6c4=2;update_king_waves(&king,owner);assert(live()==5);
+ assert(s_kingWaves[0].rotation.y==aimYaw);
+ for(unsigned i=1;i<5;++i)assert(s_kingWaves[i].use==s_kingWaves[0].use);
  assert(s_kingWaves[0].rotation.y!=s_kingWaves[1].rotation.y&&s_kingWaves[1].rotation.y!=s_kingWaves[2].rotation.y);
  assert(s_kingWaves[0].use==s_kingWaves[1].use&&s_kingWaves[1].use==s_kingWaves[2].use);
- for(int i=0;i<29;++i)update_king_waves(&king,owner);assert(live()==3);
+ for(int i=0;i<29;++i)update_king_waves(&king,owner);assert(live()==5);
  auto remaining=s_kingWaves[0].remaining;running=false;
  for(int i=0;i<90;++i)update_king_waves(&king,owner);
- assert(live()==3&&s_kingWaves[0].remaining==remaining&&owner.kingWaveClock.spinTicks==0);
- running=true;update_king_waves(&king,owner);assert(live()==6&&s_kingWaves[3].use!=s_kingWaves[0].use);
- king.mMode=3;king.field_0x6c4=0;update_king_waves(&king,owner);assert(live()==6);
+ assert(live()==5&&s_kingWaves[0].remaining==remaining&&owner.kingWaveClock.spinTicks==0);
+ aimYaw=-0x4000;running=true;update_king_waves(&king,owner);assert(live()==10&&s_kingWaves[5].use!=s_kingWaves[0].use);
+ assert(s_kingWaves[5].rotation.y==aimYaw&&s_kingWaves[0].rotation.y==0x2000);
+ assert(s_kingWaves[5].velocity.x==-35&&std::abs(s_kingWaves[5].velocity.z)<.001);
+ king.mMode=3;king.field_0x6c4=0;update_king_waves(&king,owner);assert(live()==10);
  // Exact diameter travel, including the final partial frame, then removal.
  reset();owner={};king.mAction=3;king.mMode=1;king.field_0x6c4=1;aimYaw=0;
  update_king_waves(&king,owner);king.mAction=1;king.field_0x6c4=0;
@@ -111,4 +115,4 @@ with tempfile.TemporaryDirectory() as tmp:
  cpp.write_text(fixture+(root/'src/survivors_king_waves.inc').read_text()+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
-print('King waves: native strike release, random 1s triples, diameter range, contact budget, walls, pause and teardown passed')
+print('King waves: native strike release, 1s five-wave salvos with fresh aim, diameter range, contact budget, walls, pause and teardown passed')

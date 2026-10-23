@@ -43,13 +43,15 @@ HookAction before_aeralfos_action(ModContext*,void* args,void*,void*) {
         actor->field_0x648=actor->current.pos.y;
         if(actor->mSubAction==1&&actor->mMode==4){actor->SetAction(1,1,2);actor->mAnm=-1;}
     }
-    // Extra readiness tick: attack animations, hit windows and phase timer
-    // retain their native speed. Execute already decremented these clocks once.
+    // Three extra readiness ticks make waits one quarter of native duration.
+    // Animations, hit windows and phase timer retain their native speed.
+    // Execute already decremented these clocks once; clamp the remainder at zero.
     const bool flyWait=actor->mAction==0 &&
         ((actor->mSubAction<=1&&actor->mMode==1)||
          (actor->mSubAction==2&&actor->mMode==10&&actor->mAnm==11));
     const bool groundWait=actor->mAction==1&&actor->mSubAction==1&&actor->mMode>=1&&actor->mMode<=3;
-    if((flyWait||groundWait)&&actor->mTimers[0]>0)--actor->mTimers[0];
+    if((flyWait||groundWait)&&actor->mTimers[0]>0)
+        actor->mTimers[0]=std::max<s16>(0,actor->mTimers[0]-3);
     return HOOK_CONTINUE;
 }
 void after_aeralfos_action(ModContext*,void* args,void*,void*) {

@@ -52,9 +52,11 @@ void update_king_waves(e_rdb_class* actor,Enemy& owner) {
     if(count) {
         // One contact budget per strike/salvo, across all of Link's colliders.
         auto use=new_enemy_attack_use();
-        if(count==1)actor->enemy.current.angle.y=actor->enemy.shape_angle.y=fopAcM_searchPlayerAngleY(&actor->enemy);
+        // Aim the first wave at Link's current position on each release.
+        const s16 aimedYaw=fopAcM_searchPlayerAngleY(&actor->enemy);
+        if(count==1)actor->enemy.current.angle.y=actor->enemy.shape_angle.y=aimedYaw;
         for(unsigned i=0;i<count;++i)launch_king_wave(actor,owner,
-            count==1?actor->enemy.shape_angle.y:s16(s_run.next_random()&0xffff),use);
+            i==0?aimedYaw:s16(s_run.next_random()&0xffff),use);
     }
     for(auto& wave:s_kingWaves) {
         if(wave.owner!=owner.id)continue;

@@ -12,6 +12,8 @@ fixture=r'''
 using namespace dawnlight::survivors;
 using s16=short;
 constexpr int fpcNm_B_GG_e=7;
+constexpr int Z2SE_EN_GG_ATK_MOVE=1;
+void cLib_addCalcAngleS2(s16*,s16,s16,s16){}
 struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods{template<class T>T arg(void* p,int i){return std::any_cast<T>(static_cast<std::any*>(p)[i]);}}
 struct cXyz{float x=0,y=0,z=0;
@@ -25,21 +27,29 @@ struct{struct{cXyz pos{1000,0,0};}current;}player;
 auto* daAlink_getAlinkActorClass(){return &player;}
 struct{double factor=1;double endless_factor(){return factor;}}s_run;
 bool pathClear=true,ringClear=true;unsigned pathQueries=0;
+bool wallBlocked=false;
+struct dBgS_LinChk{void Set(const cXyz*,const cXyz*,void*){}};
+struct Bgsp{bool LineCross(dBgS_LinChk*){return wallBlocked;}}bgsp;
+Bgsp& dComIfG_Bgsp(){return bgsp;}
 bool inside_boss_ring(cXyz,float){return ringClear;}
 bool walkable_spawn_path(cXyz from,cXyz& to,float){++pathQueries;assert((to-from).absXZ()<=80.01f);return pathClear;}
 struct Angle{s16 y=0;};
 struct Sphere{bool at=true,hit=true;void OffAtSetBit(){at=false;}void ResetAtHit(){hit=false;}void OnTgSetBit(){}};
 struct daB_GG_c{
- struct{cXyz pos;Angle angle;}current,home;Angle shape_angle;s16 field_0x5ba=0;
- cXyz speed;float speedF=0,gravity=0,field_0x5c0=0,field_0x5bc=0,field_0x648=0;
+ struct{cXyz pos;Angle angle;}current,home;Angle shape_angle;s16 field_0x5ba=0,field_0x6c4=0,field_0x6be=0;
+ struct{void startCreatureSoundLevel(int,int,int){}}mSound;
+ cXyz speed;float speedF=0,gravity=0,field_0x5c0=0,field_0x5bc=0,field_0x648=0,field_0x650=0;
  int mAction=0,mSubAction=1,mMode=1,mAnm=14,field_0x65a=1;s16 mTimers[4]{};
- struct{float floor=0;float GetGroundH(){return floor;}}mAcch;
+ struct{float floor=0;bool wall=false,ground=false;float GetGroundH(){return floor;}
+  bool ChkWallHit(){return wall;}bool ChkGroundHit(){return ground;}}mAcch;
+ unsigned hitChecks=0;void F_AtHit(){++hitChecks;}
  Sphere mCcSph[3],mCcCyl,mCcShieldSph;
  void SpeedClear(){speedF=field_0x5bc=speed.y=field_0x5c0=0;}
  void SetAction(int a,int s,int m){mAction=a;mSubAction=s;mMode=m;}
  void SetAnm(int a,int,float,float){mAnm=a;}
 };
-struct Enemy{bool elite=true,initialized=true,retiring=false,credited=false;int profile=fpcNm_B_GG_e,stagger=0;AeralfosCycle aeralfosCycle;}owner;
+struct AeralfosDive{cXyz target{},velocity{};unsigned ticks=0;bool locked=false,active=false;};
+struct Enemy{bool elite=true,initialized=true,retiring=false,credited=false;int profile=fpcNm_B_GG_e,stagger=0;AeralfosCycle aeralfosCycle;AeralfosDive aeralfosDive;}owner;
 bool owned=true,running=true,playing=true,dry=true;float floorY=0;
 Enemy* encounter_owner(daB_GG_c*){return owned?&owner:nullptr;}
 bool encounter_running(const Enemy& e){return e.initialized&&!e.retiring&&!e.credited&&running;}
@@ -52,6 +62,60 @@ int main(){
  auto pre=[&]{return before_aeralfos_action(nullptr,args,nullptr,nullptr);};
  auto post=[&]{after_aeralfos_action(nullptr,args,nullptr,nullptr);};
  auto matrix=[&]{before_aeralfos_matrix(nullptr,args,nullptr,nullptr);};
+ auto attack=[&]{return before_aeralfos_air_attack(nullptr,args,nullptr,nullptr);};
+ // Capture the windup target, then fly past it even if Link dodges sideways or
+ // changes height. Exercise the actual pre/attack/post order before movement.
+ for(double factor:{1.,8.}){
+  owner={};actor={};s_run.factor=factor;actor.current.pos={0,300,0};
+  player.current.pos={1000,0,0};actor.SetAction(0,2,0);
+  pre();assert(attack()==HOOK_CONTINUE&&owner.aeralfosDive.locked);
+  player.current.pos={1000,800,1000};
+  // Native windup completion initializes its old homing fields. POST must
+  // replace those on the very first dive frame, before Execute moves the actor.
+  actor.mMode=1;actor.speedF=123;actor.speed.y=50;actor.current.angle.y=0;
+  post();const auto yaw=actor.current.angle.y;
+  unsigned steps=0;
+  while(actor.mMode==1&&steps++<90){
+   assert(std::abs(actor.speedF*1.5f*float(factor)-60.f)<.001f);
+   assert(actor.current.angle.y==yaw&&actor.shape_angle.y==yaw);
+   actor.current.pos.x+=cM_ssin(yaw)*actor.speedF*1.5f*float(factor);
+   actor.current.pos.z+=cM_scos(yaw)*actor.speedF*1.5f*float(factor);
+   actor.current.pos.y+=actor.speed.y;
+   player.current.pos={actor.current.pos.x,2000,500};
+   pre();assert(attack()==HOOK_SKIP_ORIGINAL);post();
+  }
+  assert(steps<90&&actor.current.pos.x>=1450&&actor.current.pos.x<1510);
+  assert(std::abs(actor.current.pos.z)<.1f&&std::abs(actor.current.pos.y-100)<.01f);
+  assert(actor.mAnm==6&&actor.mMode==2&&actor.speedF==0&&actor.speed.y==0);
+  assert(actor.hitChecks>0&&!owner.aeralfosDive.locked);
+  for(auto& s:actor.mCcSph)assert(!s.at&&!s.hit);
+ }
+ s_run.factor=1;
+ // Close-range dives do not brake at Link. Walls, ground, circle limits and
+ // a time budget still stop damage and enter native recovery safely.
+ for(int stop=0;stop<5;++stop){
+  owner={};actor={};actor.current.pos={0,300,0};player.current.pos={200,200,0};
+  actor.SetAction(0,2,0);pre();attack();actor.mMode=1;post();
+  assert(actor.mMode==1&&actor.speedF>0);
+  if(stop==0)wallBlocked=true;if(stop==1)actor.mAcch.wall=true;
+  if(stop==2)actor.mAcch.ground=true;if(stop==3)ringClear=false;
+  if(stop==4)owner.aeralfosDive.ticks=90;
+  pre();attack();post();assert(actor.mMode==2&&actor.speedF==0&&!owner.aeralfosDive.active);
+  for(auto& s:actor.mCcSph)assert(!s.at);
+  wallBlocked=false;ringClear=true;
+ }
+ // Pause and stagger preserve the snapshot; a phase change cancels it.
+ owner={};actor={};actor.current.pos={0,300,0};player.current.pos={1000,0,0};
+ actor.SetAction(0,2,0);pre();attack();actor.mMode=1;post();
+ const auto diveTicks=owner.aeralfosDive.ticks;
+ for(int stop=0;stop<3;++stop){
+  if(stop==0)playing=false;if(stop==1)owner.stagger=1;if(stop==2)owner.retiring=true;
+  assert(pre()==HOOK_SKIP_ORIGINAL&&attack()==HOOK_SKIP_ORIGINAL);post();
+  assert(owner.aeralfosDive.ticks==diveTicks&&owner.aeralfosDive.locked);
+  playing=true;owner.stagger=0;owner.retiring=false;
+ }
+ owner.aeralfosCycle.ticks=299;pre();assert(!owner.aeralfosDive.locked);
+ owner={};actor={};actor.current.pos.y=300;
  // Three extra ticks quarter idle, orbit and preparation delays, never a dive.
  for(auto state:{std::array{0,0,1,14},std::array{0,1,1,14},std::array{0,2,10,11},std::array{1,1,2,30}}){
   owner={};actor.SetAction(state[0],state[1],state[2]);actor.mAnm=state[3];actor.mTimers[0]=100;
@@ -125,8 +189,8 @@ int main(){
   playing=running=true;
  }
  // Non-owned and ordinary Aeralfos keep their native height/cadence.
- owner={};owned=false;actor.current.pos.y=900;assert(pre()==HOOK_CONTINUE);matrix();assert(actor.current.pos.y==900);
- owned=true;owner.elite=false;pre();matrix();assert(actor.current.pos.y==900&&owner.aeralfosCycle.ticks==0);
+ owner={};owned=false;actor.current.pos.y=900;assert(pre()==HOOK_CONTINUE&&attack()==HOOK_CONTINUE);matrix();assert(actor.current.pos.y==900);
+ owned=true;owner.elite=false;pre();matrix();assert(actor.current.pos.y==900&&owner.aeralfosCycle.ticks==0&&attack()==HOOK_CONTINUE);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
@@ -134,4 +198,4 @@ with tempfile.TemporaryDirectory() as tmp:
  cpp.write_text(fixture+(root/'src/survivors_aeralfos.inc').read_text()+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
-print('Aeralfos: half-height terrain cap/recovery, quarter readiness, solo air attacks, 3s ground dash/strike, 10s phases, landing, pause and isolation passed')
+print('Aeralfos: dodgeable fixed-lane aerial pass, safe recovery, half-height cap, quarter readiness, 3s ground dash/strike, 10s phases, pause and isolation passed')

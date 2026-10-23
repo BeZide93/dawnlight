@@ -274,6 +274,11 @@ The elite Aeralfos flies at 250–400 units above terrain (half the native band)
 has quarter-length native readiness waits, and alternates air/ground phases every ten
 active seconds, descending over a dry floor and using the native takeoff.
 A ready aerial attack starts without waiting for the native paired-Aeralfos AI.
+The dive locks Link's position at the start of its visible windup, then follows
+a fixed lane at 60 units per update without homing or braking near Link. It flies
+about 450 units beyond that position, levels out at the captured body height,
+and enters recovery with damage disabled. Walls, ground contact, the light-ring
+boundary or a three-second safety limit end the pass early.
 On the ground, a gap closer becomes due every three active seconds, waits for an
 ongoing strike to finish, and uses a bounded, collision-checked dash into melee.
 It starts a native attack immediately on arrival; blocked paths abort the dash.

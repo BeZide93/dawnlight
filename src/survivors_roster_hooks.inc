@@ -72,5 +72,6 @@
     PRE(SurvivorsBulblinHit,before_bullbo_rider_damage);
     PRE(RosterTargets,before_field_boss_targets);
     PRE(BossGGAction,before_aeralfos_action); POST(BossGGAction,after_aeralfos_action);
+    PRE(BossGGFlightAttack,before_aeralfos_air_attack);
     PRE(BossGGMatrix,before_aeralfos_matrix);
     POST(BossRDBAction,after_boss_rdb);

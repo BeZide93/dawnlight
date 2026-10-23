@@ -122,4 +122,5 @@ DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_wb.cpp#e_wb_f_run",void(e_wb_class*),BossB
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_rd.cpp#daE_RD_Execute",int(e_rd_class*),BossBullboRider);
 
 DEFINE_HOOK_SYMBOL("daB_GG_c::Action",void(daB_GG_c*),BossGGAction);
+DEFINE_HOOK_SYMBOL("daB_GG_c::F_AttackAction",void(daB_GG_c*),BossGGFlightAttack);
 DEFINE_HOOK_SYMBOL("daB_GG_c::setBaseMtx",void(daB_GG_c*),BossGGMatrix);

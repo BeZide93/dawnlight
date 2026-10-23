@@ -24,7 +24,13 @@ in die innere Kreishälfte zurück, bevor sie Link wieder verfolgt. Der Aeralfos
 Sekunden zwischen Boden und Luft, fliegt im halbierten Höhenband 250–400 über
 Boden und hat auf ein Viertel verkürzte native Bereitschaftstimer. Die niedrigere Obergrenze beendet
 auch den Rückflug nach einem Sturzangriff. Bereite Luftangriffe warten nicht mehr
-auf den nativen Partnerstatus. Im Bodenkampf wird alle drei aktiven Sekunden ein
+auf den nativen Partnerstatus. Der Sturzflug erfasst Links Position beim Beginn
+des sichtbaren Ausholens und fliegt danach mit 60 Einheiten pro Update auf einer
+festen Bahn etwa 450 Einheiten darüber hinaus. Er verfolgt Link nicht weiter
+und bremst nicht in seiner Nähe. Auf der erfassten Körperhöhe wird der Flug
+waagerecht; Wand, Bodenkontakt, Lichtkreis oder drei Sekunden Sicherheitslimit
+beenden ihn früher. Die anschließende Erholung verursacht keinen Schaden.
+Im Bodenkampf wird alle drei aktiven Sekunden ein
 kollisionsgeprüfter Gap Closer fällig; laufende Schläge werden erst beendet.
 Nach dem Ansturm beginnt sofort der native Nahkampfangriff. Blockierte Wege
 brechen den Ansturm ab. Gezielte Sword Waves von King Bulblin berücksichtigen

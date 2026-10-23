@@ -417,6 +417,11 @@ std::array<unsigned, 3> s_choices{0, 1, 2};
 struct ProcessFrame { void* args; ActorId id; bool executed=false; };
 std::vector<ProcessFrame> s_processFrames;
 
+struct AeralfosDive {
+    cXyz target{},velocity{};
+    unsigned ticks=0;
+    bool locked=false,active=false;
+};
 struct Enemy {
     ActorId id = kNone;
     ProfileName profile = 0;
@@ -440,6 +445,7 @@ struct Enemy {
     std::array<unsigned,3> bullboTargetsPending{};
     bool bullboReturning=false;
     AeralfosCycle aeralfosCycle;
+    AeralfosDive aeralfosDive;
     KingWaveClock kingWaveClock;
 };
 static_assert(enemy_capacity <= 512, "Update enemy HUD slot capacity with the roster");

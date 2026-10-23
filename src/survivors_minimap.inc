@@ -34,7 +34,7 @@ void after_elite_minimap(ModContext*, void* args, void*, void*) {
          s_run.phase!=Phase::TreasureChoice && s_run.phase!=Phase::Treasure)) return;
     auto* texture=dMpath_n::m_texObjAgg.getTexObjPointer(4);
     if (!texture || !map->isRendIcon() || map->mRoomNoSingle<0) return;
-    std::array<cXyz,elite_capacity> positions{};
+    std::array<cXyz,elite_capacity+kHordePortalCount> positions{};
     unsigned count=0;
     for (const auto& enemy : s_enemies) {
         if (enemy.id==kNone || !enemy.elite || !enemy.initialized || enemy.credited || enemy.retiring) continue;
@@ -44,6 +44,12 @@ void after_elite_minimap(ModContext*, void* args, void*, void*) {
         // Match Link's minimap coordinates, including room rotation/offset.
         dMapInfo_n::correctionOriginPos(arena().room,&position);
         if (map->isDrawAreaCheck(position) && count<positions.size()) positions[count++]=position;
+    }
+    for(const auto& portal:s_hordePortals) {
+        if(!horde_portal_visible(portal))continue;
+        BE(Vec) position=portal.position;
+        dMapInfo_n::correctionOriginPos(arena().room,&position);
+        if(map->isDrawAreaCheck(position) && count<positions.size())positions[count++]=position;
     }
     if (!count) return;
     static const u8 texcoords[8]{0,1,1,1,1,0,0,0};

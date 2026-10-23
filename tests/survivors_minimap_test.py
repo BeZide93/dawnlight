@@ -28,6 +28,9 @@ struct Actor{struct{cXyz pos;}current;int health=100,room=0;};
 std::array<Actor,enemy_capacity>actors;
 Actor* actor_by_id(unsigned id){return id<actors.size()?&actors[id]:nullptr;}
 int fopAcM_GetRoomNo(Actor* a){return a->room;}
+constexpr unsigned kHordePortalCount=4;
+struct HordePortal{bool visible=false;cXyz position{};};std::array<HordePortal,kHordePortalCount>s_hordePortals;
+bool horde_portal_visible(const HordePortal& p){return p.visible;}
 Run s_run;bool arenaActive=true,changingStage=false;
 bool in_arena(){return arenaActive;}bool transitioning(){return changingStage;}
 struct Arena{int room=0;}currentArena;const Arena& arena(){return currentArena;}
@@ -110,6 +113,15 @@ int main(){
  s_enemies[1].id=1;actors[1].current.pos={-30,0,70};
  draw();assert(map.drawn.size()==2&&map.drawn[0].x==150&&map.drawn[0].z==175);
  actors[0].current.pos={40,0,80};map.zoom=100;draw();assert(map.drawn[0].x==180&&map.drawn[0].z==160);
+ // Portal markers use the same style and room correction, disappear on use,
+ // and follow the new position after respawn.
+ s_hordePortals[0]={true,{600,0,900}};draw();assert(map.drawn.size()==3&&map.drawn[2].x==1000&&map.drawn[2].z==-400);
+ s_hordePortals[0].visible=false;draw();assert(map.drawn.size()==2);
+ s_hordePortals[0]={true,{1200,0,300}};draw();assert(map.drawn.size()==3&&map.drawn[2].x==400&&map.drawn[2].z==-1000);
+ for(auto& p:s_hordePortals)p={true,{100,0,100}};
+ for(unsigned i=0;i<elite_capacity;++i){s_enemies[i]={i};actors[i]={};}
+ draw();assert(map.drawn.size()==elite_capacity+kHordePortalCount);
+ s_hordePortals={};for(unsigned i=2;i<s_enemies.size();++i)s_enemies[i]={};
  // No marker for dying/deleted/uninitialized/ordinary/wrong-room/off-map actors.
  for(unsigned reason=0;reason<8;++reason){
   s_enemies[0]={0};actors[0]={};

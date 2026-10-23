@@ -1021,6 +1021,26 @@ once at initialization. Movement is scaled before native ground/wall correction,
 excluding dormant, dying and knocked-back actors. Enemy damage scales at Link's
 native damage entry, restricted to owned enemy contacts.
 
+Hyrule Field and Gerudo Desert each have four native Midna floor portals,
+randomly sampled from the completed reachable arena surface. They are spaced
+apart from one another, guards, existing chests and pots. A floating **Horde**
+label uses the same range/projection as chest prices; available portals also use
+the same Tears of Light minimap marker as field elites, with native room
+rotation/offset. Loading, consumed and retiring portals have no marker.
+
+Press **A** within 150 units horizontally and 35 vertically to trigger a
+15-second horde. A wall, pause/menu/event, wolf form, defeat/victory or the run
+time limit blocks activation. The action consumes that A press and resets the
+normal spawn cooldown; the existing population ceiling and boss-encounter
+spawn policy still apply. Overlapping random/portal hordes extend duration
+without multiplying the 3x boost. Each used portal disappears and respawns
+**three minutes of active run time after use**, at a new random reachable
+position separated from its old site. Unused portals remain available.
+Native portal creation/model/particles/deletion are retained, while Execute is
+overridden only for our tracked IDs to prevent automatic warps and events,
+including the Execute call inside native Create. Pending actors stay tracked
+through cleanup and never count as another free portal slot.
+
 Random horde events roll independently once per playable second (1/150 chance),
 for about two events per five minutes, with no quota. Each adds 450 ticks to
 remaining duration; active events multiply spawn batches by three, never by nine.

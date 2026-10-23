@@ -66,6 +66,7 @@
 #include "d/actor/d_a_e_ba.h"
 #include "d/actor/d_a_e_oc.h"
 #include "d/actor/d_a_obj_carry.h"
+#include "d/actor/d_a_obj_bosswarp.h"
 #include "d/actor/d_a_obj_item.h"
 #include "d/actor/d_a_obj_life_container.h"
 #include "d/d_bg_s_wtr_chk.h"
@@ -264,6 +265,7 @@ DEFINE_HOOK(&daAlink_c::checkLightSwordMtrl, SurvivorsLightSword);
 DEFINE_HOOK(&dMeter2Draw_c::draw, SurvivorsHud);
 DEFINE_HOOK(&dComIfGs_gameStart, SurvivorsGameStart);
 DEFINE_HOOK(&mDoCPd_c::read, SurvivorsPad);
+DEFINE_HOOK(&daObjBossWarp_c::execute, SurvivorsHordePortal);
 DEFINE_HOOK(&dCamera_c::setMapToolData, SurvivorsCameraType);
 DEFINE_HOOK(&dMenu_save_c::_open, SurvivorsSaveOpen);
 DEFINE_HOOK(&dMenu_save_c::_delete, SurvivorsSaveDelete);
@@ -555,6 +557,8 @@ void close_window() {
     }
 }
 #include "survivors_menu_handoff.inc"
+void retire_horde_portals();
+void cleanup_horde_portals();
 void retire_pots();
 void cleanup_pots();
 void detach_pot_attacks();
@@ -565,11 +569,13 @@ void retire_enemies() {
     release_enemy_archives();
     retire_boss_ring();
     clear_zelda_light_orbs();
+    retire_horde_portals();
     retire_pots(); retire_pickups(); retire_enemy_arrows();
     clear_enemy_effects();
     for (auto& e : s_enemies) if (e.id != kNone) e.retiring = true;
 }
 void cleanup_enemies() {
+    cleanup_horde_portals();
     cleanup_boss_ring();
     cleanup_enemy_arrows();
     for (auto& e : s_enemies) {
@@ -847,7 +853,6 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
 }
 #include "survivors_elites.inc"
 #include "survivors_pots.inc"
-#include "survivors_minimap.inc"
 #include "survivors_save_slot.inc"
 void update_spawns(daAlink_c* link) {
     update_boss_watchdogs(link);
@@ -1108,6 +1113,8 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 #include "survivors_loot.inc"
+#include "survivors_horde_portals.inc"
+#include "survivors_minimap.inc"
 #include "survivors_ranged.inc"
 #include "survivors_keys.inc"
 #include "survivors_treasure.inc"
@@ -1244,6 +1251,7 @@ void after_player(ModContext*, void* args, void*, void*) {
         dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+rupees));
     update_enemy_effects();
     update_reachable_floor();
+    update_horde_portals(link);
     update_spawns(link); update_pots(link); update_exp_magnets(link); update_weapons(link); update_orbs(link);
     s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;
     if (s_run.level_up()) {
@@ -1470,7 +1478,7 @@ void draw_hud(ModContext*, void* args, void*, void*) {
     auto* graf = dComIfGp_getCurrentGrafPort(); if (!graf) return;
     graf->setup2D();
     if (!preview && (s_deathPending || s_run.phase==Phase::Defeat)) return;
-    if(!preview) {draw_chest_prices();draw_combat_feedback();}
+    if(!preview) {draw_chest_prices();draw_horde_portal_labels();draw_combat_feedback();}
     const float x = mDoGph_gInf_c::getMinXF() + mDoGph_gInf_c::getWidthF() * 0.5f;
     if(preview || s_gearNoticeTicks)draw_gear_notice(preview);
     if (!preview && s_victory) { draw_victory_hud(x); graf->setup2D(); return; }
@@ -1812,6 +1820,8 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsPlayer, before_player_contacts);
     PRE(SurvivorsPlayer, before_player_bindings);
     PRE(SurvivorsPlayer, before_chest_action);
+    PRE(SurvivorsPlayer, before_horde_portal_action);
+    PRE(SurvivorsHordePortal, before_horde_portal_execute);
     PRE(SurvivorsPlayer, before_midna_call);
     PRE(SurvivorsMidnaOrder, before_midna_order);
     PRE(SurvivorsMidnaFlow, before_midna_flow);

@@ -103,6 +103,7 @@ std::array<unsigned,3> s_cooldowns{};
 std::array<int,64> s_orbs{};
 Records s_records;
 void retire_enemy_arrows(){} void cleanup_enemy_arrows(){} void clear_zelda_light_orbs(ActorId=kNone){}
+void retire_horde_portals(){} void cleanup_horde_portals(){}
 void retire_pots(){} void retire_pickups(){}
 void queue_exp_magnet(const Enemy&,fopAc_ac_c*){}
 void clear_enemy_effects(){}

@@ -17,18 +17,18 @@ namespace mods{template<class T>T arg(void* a,int i){return std::any_cast<T>(sta
 struct Vec{float x=0,y=0,z=0;};struct Angle{short x=0,y=0,z=0;};
 struct fopAc_ac_c{ActorId id=kNone;int profile=0,health=100,field_0x560=100;u32 params=0;
  struct{Vec pos;}current;Angle shape_angle;float speedF=0;};
-struct cCcD_Obj{fopAc_ac_c* actor=nullptr;cCcD_Obj* hit=nullptr;bool at=true,tg=true,shield=true;unsigned power=9;
+struct cCcD_Obj{fopAc_ac_c* actor=nullptr;cCcD_Obj* hit=nullptr;bool at=true,tg=true,shield=true;unsigned power=9;float radius=35;float GetR(){return radius;}void SetR(float r){radius=r;}
  fopAc_ac_c* GetAc(){return actor;}void SetAtAtp(unsigned p){power=p;}void OffAtSetBit(){at=false;}
  void OffTgSetBit(){tg=false;}bool ChkTgHit(){return hit;}cCcD_Obj* GetTgHitObj(){return hit;}void ResetTgHit(){hit=nullptr;}};
 struct e_wb_class{fopAc_ac_c enemy;ActorId rd_id=kNone;unsigned status_flag=0;
- int demo_mode=2,action=0,ride_mode=0,arg0=0,leader=0,field_0x7a6=0,field_0x7a7=0;bool no_draw=true;};
+ int demo_mode=2,action=0,ride_mode=0,arg0=0,leader=0,field_0x7a6=0,field_0x7a7=0;bool no_draw=true;cCcD_Obj cc_sph[7];};
 struct e_rd_class{fopAc_ac_c enemy;ActorId boar_id=kNone;
- int boar_stand=0,ride_mode=0,actor_set=0,demo_mode=1,damage_timer=0,one_hit_kill=1,action=0,mode=0;
+ int weapon_type=1,timer[4]{};int boar_stand=0,ride_mode=0,actor_set=0,demo_mode=1,damage_timer=0,one_hit_kill=1,action=0,mode=0;
  cCcD_Obj cc_sph[3];};
 ActorId fopAcM_GetID(fopAc_ac_c* a){return a->id;}int fopAcM_GetName(fopAc_ac_c* a){return a->profile;}
 u32 fopAcM_GetParam(fopAc_ac_c* a){return a->params;}int fopAcM_GetRoomNo(fopAc_ac_c*){return 0;}
 struct Enemy{ActorId id=1;int profile=fpcNm_E_WB_e;bool elite=true,retiring=false,credited=false,initialized=true,encounterReady=false;
- unsigned age=0,stagger=0;cCcD_Obj* childHit=nullptr;std::array<ActorId,2> bullboRiders{kNone,kNone};}owner;
+ unsigned age=0,stagger=0;cCcD_Obj* childHit=nullptr;std::array<ActorId,2> bullboRiders{kNone,kNone};std::array<unsigned,3> bullboTargetsPending{};}owner;
 struct Child{ActorId parent=1;bool retiring=false;};std::map<ActorId,Child> children;
 std::map<ActorId,fopAc_ac_c*> actors;std::set<ActorId> pending;
 Enemy* tracked(ActorId id){return id==owner.id?&owner:nullptr;}
@@ -69,7 +69,7 @@ int main(){
  assert(boar.action==6&&boar.ride_mode==3); // Never reset an ongoing native charge.
  for(unsigned i=0;i<2;++i){auto& r=riders[i];std::any ra[]={&r};int result=0;
   assert(before_bullbo_rider(nullptr,ra,&result,nullptr)==HOOK_CONTINUE);
-  assert(r.boar_id==owner.id&&r.boar_stand==int(i+1)&&r.ride_mode==2&&r.action==13&&r.damage_timer==20);
+  assert(r.boar_id==owner.id&&r.boar_stand==int(i+1)&&r.ride_mode==2&&r.action==13&&r.damage_timer==0);
   assert(r.enemy.health==boar.enemy.health&&!r.actor_set&&!r.demo_mode&&!r.one_hit_kill);
   r.mode=30;before_bullbo_rider(nullptr,ra,&result,nullptr);assert(r.mode==30);
   r.cc_sph[0].hit=&foreignHit;r.cc_sph[1].hit=&sword;r.cc_sph[2].hit=&sword;
@@ -81,10 +81,16 @@ int main(){
   owner.stagger=3;assert(before_bullbo_rider(nullptr,ra,&result,nullptr)==HOOK_SKIP_ORIGINAL);owner.stagger=0;
  }
  assert(boar.rd_id==riders[0].enemy.id);
+ riders[1].weapon_type=2;riders[1].timer[1]=50;
+ {std::any a[]={&riders[1]};int result=0;before_bullbo_rider(nullptr,a,&result,nullptr);assert(riders[1].timer[1]==49);}
+ riders[0].timer[1]=50;
+ {std::any a[]={&riders[0]};int result=0;before_bullbo_rider(nullptr,a,&result,nullptr);assert(riders[0].timer[1]==50);}
+
  // All new attacks retain native base power 1; rider targets remain hittable.
  auto collision=[&](cCcD_Obj& target){std::any a[]={0,&target};return before_field_boss_targets(nullptr,a,nullptr,nullptr);};
+ for(auto& target:boar.cc_sph){target.actor=&boar.enemy;target.radius=40;collision(target);assert(target.radius==60);for(int i=0;i<8;++i)collision(target);assert(target.radius==60);}
  cCcD_Obj charge;charge.actor=&boar.enemy;collision(charge);assert(charge.power==1);
- for(auto& r:riders)for(auto& t:r.cc_sph){collision(t);collision(t);assert(t.power==1&&!t.shield&&t.tg);}
+ for(auto& r:riders)for(auto& t:r.cc_sph){t.radius=35;collision(t);assert(t.radius==52.5f);collision(t);assert(t.radius==52.5f&&t.power==1&&!t.shield&&t.tg);}
  fopAc_ac_c arrow;arrow.id=500;children[500]={owner.id};cCcD_Obj shot;shot.actor=&arrow;collision(shot);assert(shot.power==1);
  owner.stagger=2;collision(charge);assert(!charge.at);owner.stagger=0;
  owner.profile=fpcNm_B_GG_e;charge.power=4;collision(charge);assert(charge.power==1);

@@ -58,7 +58,7 @@ fixture += r'''
 bool native_boss_profile(int p){return p==fpcNm_B_TN_e||p==fpcNm_E_PZ_e||p==fpcNm_B_GND_e;}
 bool structural_enemy_child(int p){return p==fpcNm_E_MM_MT_e||p==fpcNm_E_TH_BALL_e||p==fpcNm_E_RDY_e;}
 '''
-fixture += '\nEnemyAttackUsePtr zelda_light_orb_use(cCcD_Obj*){return {};}\nvoid boss_record_contact(cCcD_Obj*){}\n'
+fixture += '\nEnemyAttackUsePtr king_wave_use(cCcD_Obj*){return {};}\nEnemyAttackUsePtr zelda_light_orb_use(cCcD_Obj*){return {};}\nvoid boss_record_contact(cCcD_Obj*){}\n'
 # Reproduce the real director follow-up: mode 0 is overwritten by mode 1
 # before the next process observation, without leaving action 3.
 tactics = (root / 'src/survivors_boss_tactics.inc').read_text()

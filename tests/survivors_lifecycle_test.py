@@ -102,7 +102,7 @@ unsigned s_spawnCooldown=0, s_spawnFailures=0, s_warmup=0, s_saveStartTicks=0;
 std::array<unsigned,3> s_cooldowns{};
 std::array<int,64> s_orbs{};
 Records s_records;
-void retire_enemy_arrows(){} void cleanup_enemy_arrows(){} void clear_zelda_light_orbs(ActorId=kNone){}
+void retire_enemy_arrows(){} void cleanup_enemy_arrows(){} void clear_king_waves(ActorId=kNone){} void clear_zelda_light_orbs(ActorId=kNone){}
 void retire_horde_portals(){} void cleanup_horde_portals(){}
 void cleanup_palace_ferries(){}
 void retire_pots(){} void retire_pickups(){}

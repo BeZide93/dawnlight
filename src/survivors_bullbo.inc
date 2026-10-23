@@ -31,6 +31,7 @@ HookAction before_bullbo_action(ModContext*,void* args,void*,void*) {
     auto* owner=boar?encounter_owner(&boar->enemy):nullptr;
     if(!owner)return HOOK_CONTINUE;
     if(!encounter_running(*owner))return HOOK_SKIP_ORIGINAL;
+    owner->bullboTargetsPending[0]=0x7f; // Native Execute rewrites all seven radii.
     boar->status_flag|=3; // Both seats occupied; never enter riderless flight.
     boar->demo_mode=0;boar->no_draw=false;
     if(!maintain_bullbo_riders(boar,*owner)) {
@@ -59,12 +60,17 @@ HookAction before_bullbo_rider(ModContext*,void* args,void* result,void*) {
     auto* boar=reinterpret_cast<e_wb_class*>(mount);
     rider->boar_id=owner->id;
     rider->boar_stand=(fopAcM_GetParam(&rider->enemy)&255)==1?1:2;
+    owner->bullboTargetsPending[rider->boar_stand]=7;
     rider->ride_mode=2;rider->actor_set=0;rider->demo_mode=0;
-    rider->damage_timer=20;rider->one_hit_kill=0;
+    rider->damage_timer=0;rider->one_hit_kill=0;
     rider->enemy.health=rider->enemy.field_0x560=mount->health;
     if(rider->action!=13){rider->action=13;rider->mode=0;} // Native ACTION_WB_RUN.
     boar->status_flag|=3;
     if(rider->boar_stand==1)boar->rd_id=fopAcM_GetID(&rider->enemy);
+    // Native damage is bypassed above; an invulnerability timer would move
+    // all three rider targets far outside the map during native Execute.
+    // One extra decrement halves only the mounted bow's readiness timer.
+    if(rider->weapon_type>=2&&rider->boar_stand==2&&rider->timer[1]>0)--rider->timer[1];
     return HOOK_CONTINUE; // Native saddle-joint placement, animations and attacks.
 }
 HookAction before_bullbo_rider_damage(ModContext*,void* args,void*,void*) {
@@ -91,9 +97,23 @@ HookAction before_field_boss_targets(ModContext*,void* args,void*,void*) {
     object->SetAtAtp(1);
     if(owner->profile==fpcNm_E_WB_e && fopAcM_GetName(actor)==fpcNm_E_RD_e) {
         auto* rider=reinterpret_cast<e_rd_class*>(actor);
-        for(auto& target:rider->cc_sph)if(object==&target) {
+        const unsigned seat=(fopAcM_GetParam(actor)&255)==1?1:2;
+        for(unsigned i=0;i<3;++i)if(object==&rider->cc_sph[i]) {
+            auto& target=rider->cc_sph[i];
             if(owner->retiring||owner->credited)target.OffTgSetBit();
             else allow_roster_target(&target);
+            if(owner->bullboTargetsPending[seat]&(1u<<i)) {
+                target.SetR(target.GetR()*1.5f);owner->bullboTargetsPending[seat]&=~(1u<<i);
+            }
+        }
+    }
+    if(owner->profile==fpcNm_E_WB_e && fopAcM_GetName(actor)==fpcNm_E_WB_e) {
+        auto* boar=reinterpret_cast<e_wb_class*>(actor);
+        // Stagger re-registers existing targets without native Execute. Consume
+        // one bit per native radius write so that repeated Sets never compound.
+        for(unsigned i=0;i<7;++i)if(object==&boar->cc_sph[i]&&(owner->bullboTargetsPending[0]&(1u<<i))) {
+            auto& target=boar->cc_sph[i];target.SetR(target.GetR()*1.5f);
+            owner->bullboTargetsPending[0]&=~(1u<<i);
         }
     }
     if(owner->retiring || owner->credited || owner->stagger)object->OffAtSetBit();

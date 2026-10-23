@@ -9,7 +9,7 @@ struct BossRing {
 BossRing s_bossRing;
 bool inside_boss_ring(const cXyz& position,float margin=0.f) {
     return !s_bossRing.anchored||s_bossRing.retiring||
-        (position-s_bossRing.center).absXZ()<=1500.f-margin;
+        (position-s_bossRing.center).absXZ()<=boss_ring_radius-margin;
 }
 
 void cleanup_boss_ring() {

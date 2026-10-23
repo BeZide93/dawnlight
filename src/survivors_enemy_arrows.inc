@@ -78,7 +78,7 @@ void spawn_enemy_arrow_spread(void* args) {
     // Count successful original shots only; recursive side arrows never count.
     // Enemy slot lifetime owns the cadence, so replacement archers start fresh.
     owner->arrowVolley=(owner->arrowVolley+1)%(owner->elite?2:3);
-    if(owner->elite) {if(owner->profile!=fpcNm_E_YC_e && owner->arrowVolley==0)return;}
+    if(owner->elite) {if(owner->profile!=fpcNm_E_YC_e && owner->profile!=fpcNm_E_WB_e && owner->arrowVolley==0)return;}
     else if (!s_run.endless && owner->arrowVolley!=0) return;
     struct SpreadScope { SpreadScope(){s_spawningEnemyArrows=true;} ~SpreadScope(){s_spawningEnemyArrows=false;} } scope;
     // Same native +/-0x900 yaw fan as enemy_slow_motion/bulblin.cpp Hard Mode,

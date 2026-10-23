@@ -181,6 +181,7 @@ EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
         auto* zelda=reinterpret_cast<e_hzelda_class*>(root);
         if(attack==&zelda->mBallSphAt&&source.magic)return source.magic;
     }
+    if(owner->profile==fpcNm_E_RDB_e)if(auto use=king_wave_use(attack))return use;
     bool repeatingSpin=false;
     if(owner->profile==fpcNm_E_RDB_e) {
         auto* king=reinterpret_cast<e_rdb_class*>(root);

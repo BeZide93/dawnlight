@@ -262,7 +262,12 @@ Hyrule Field's Bullbo uses native charges with a front Bulblin driver and a rear
 Bulblin archer. All three share one boss HP budget and one kill/reward; hits on
 either rider damage the mount. The Bullbo and Aeralfos retain the timed-elite HP
 scaling and damage of the enemies they replace. Riders and their arrows follow
-the encounter's pause and cleanup rules.
+the encounter's pause and cleanup rules. Mount/rider target spheres are 150% of
+native radius, and the rear archer always fires triple arrows with half the
+native readiness delay. Rider targets remain at their visible saddle positions.
+The elite Aeralfos flies at 250–400 units above terrain (half the native band),
+has half-length readiness waits, and alternates air/ground phases every ten
+active seconds, descending over a dry floor and using the native takeoff.
 
 Stalhounds emerge and fight in daylight as well as at night. The giant elite
 uses a lower pounce arc so its bite can reach grounded Link. Shadow Beasts do
@@ -289,7 +294,12 @@ half attack-readiness/recovery timers and double damage; native bosses/minibosse
 do not inherit those two generic factors. Explicit damage overrides are Darknut
 and elite Aeralfos ×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
-King Bulblin can spin every six seconds at a safe chase boundary. Darknut repeats
+King Bulblin can spin every six seconds at a safe chase boundary, including at
+range. Normal axe swings launch one Sword Wave toward Link, even outside melee
+range; active spins emit three randomly directed waves every second. Waves travel
+up to the light ring's diameter (3,000 units), stop at walls/hits, and use the
+native axe's base damage. Each three-wave salvo shares one accepted-hit budget.
+Darknut repeats
 his sword throw every 1.5 active seconds outside melee range in either phase.
 Death Sword can enter ranged combat after four seconds of distant pursuit;
 Stallord can start breath out to 6,000 units without Link's damage-protection gate.

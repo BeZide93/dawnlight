@@ -18,6 +18,7 @@
 #include "survivors_multistrike.hpp"
 #include "survivors_enemy_hits.hpp"
 #include "survivors_boss_tactics.hpp"
+#include "survivors_field_boss_rules.hpp"
 #include "d/d_msg_scrn_explain.h"
 #include "d/d_msg_scrn_3select.h"
 #include "d/d_lib.h"
@@ -436,6 +437,9 @@ struct Enemy {
     cXyz encounterTarget{};
     unsigned arrowVolley=0;
     std::array<ActorId,2> bullboRiders{kNone,kNone};
+    std::array<unsigned,3> bullboTargetsPending{};
+    AeralfosCycle aeralfosCycle;
+    KingWaveClock kingWaveClock;
 };
 static_assert(enemy_capacity <= 512, "Update enemy HUD slot capacity with the roster");
 std::array<Enemy, enemy_capacity> s_enemies;
@@ -511,6 +515,7 @@ Enemy* tracked(ActorId id) {
 #include "survivors_enemy_arrows.inc"
 #include "survivors_enemy_hits.inc"
 #include "survivors_zelda_orbs.inc"
+#include "survivors_king_waves.inc"
 #include "survivors_collision.inc"
 #include "survivors_elite_positions.inc"
 #include "survivors_palace_ferry.inc"
@@ -579,7 +584,7 @@ void detach_pot_attacks();
 void retire_enemies() {
     release_enemy_archives();
     retire_boss_ring();
-    clear_zelda_light_orbs();
+    clear_zelda_light_orbs();clear_king_waves();
     retire_horde_portals();
     retire_pots(); retire_pickups(); retire_enemy_arrows();
     clear_enemy_effects();
@@ -594,9 +599,9 @@ void cleanup_enemies() {
         if (e.id == kNone) continue;
         auto* actor = actor_by_id(e.id);
         if(e.retiring || e.credited || !actor)enemy_hud::forget(&e-s_enemies.data());
-        if(e.retiring||e.credited||(actor&&actor->health<=0))clear_zelda_light_orbs(e.id);
+        if(e.retiring||e.credited||(actor&&actor->health<=0)){clear_zelda_light_orbs(e.id);clear_king_waves(e.id);}
         if (!actor && !fpcM_IsCreating(e.id)) {
-            clear_zelda_light_orbs(e.id);
+            clear_zelda_light_orbs(e.id);clear_king_waves(e.id);
             s_enemyIndex.erase(e.id); s_bossTactics.erase(e.id);
             e = {}; continue;
         }
@@ -651,7 +656,7 @@ void detach_attack_references() {
 void reset_runtime() {
     clear_player_contacts();
     restore_gear_collection();close_gear_window();s_gear={};s_gearWritable=true;clear_gear_notices();
-    clear_zelda_light_orbs();
+    clear_zelda_light_orbs();clear_king_waves();
     s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     stop_survivors_music();
     end_survivors_integrity();
@@ -1295,6 +1300,7 @@ HookAction before_sword_attack(ModContext* ctx, void* args, void* result, void* 
 #include "survivors_extended_damage.inc"
 #include "survivors_encounters.inc"
 #include "survivors_bullbo.inc"
+#include "survivors_aeralfos.inc"
 #include "survivors_elite_scale.inc"
 #include "survivors_bosses.inc"
 #include "survivors_boss_tactics.inc"
@@ -1339,7 +1345,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     if (!methods) return HOOK_CONTINUE;
     const auto method = mods::arg<process_method_func>(args, 0);
     if (method == methods->delete_method) {
-        clear_zelda_light_orbs(id);
+        clear_zelda_light_orbs(id);clear_king_waves(id);
         s_bossTactics.erase(id);
         if (pickup) { s_pickupIndex.erase(id); pickup->id=kNone; }
         if (arrow) { s_enemyArrowIndex.erase(id); arrow->id=kNone; }
@@ -1574,7 +1580,7 @@ void select_upgrade(ModContext*, void* data) {
 }
 void begin_run() {
     if (s_run.phase != Phase::Ready || !s_arenaMeshReady || s_restart || s_progressSaving) return;
-    clear_zelda_light_orbs();
+    clear_zelda_light_orbs();clear_king_waves();
     s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     reset_ending();
     load_option_config();

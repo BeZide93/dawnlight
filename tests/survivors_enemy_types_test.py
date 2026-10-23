@@ -70,7 +70,7 @@ struct Service{void delete_actor(ModContext*,ActorId id){deleted.insert(id);}}se
 main=r'''
 std::vector<s16> spreadAngles;
 ActorId fopAcM_createChild(s16 profile,ActorId parent,u32 params,const cXyz* pos,int room,const csXyz* angle,const cXyz* scale,s8 arg,createFunc callback){
- if(s_spawningEnemyArrows)assert(profile==fpcNm_E_ARROW_e&&(parent==42||parent==43)&&params==7&&room==0&&
+ if(s_spawningEnemyArrows)assert(profile==fpcNm_E_ARROW_e&&(parent==42||parent==43||parent==601)&&params==7&&room==0&&
     angle->x==123&&angle->z==456&&scale->x==1&&pos->x==0&&arg==-1&&callback==nullptr);
  std::any args[]={profile,parent,params,pos,room,angle,scale,arg,callback};ActorId id=nextId++;
  if(before_enemy_arrow(nullptr,args,&id,nullptr)==HOOK_SKIP_ORIGINAL)return id;
@@ -256,6 +256,17 @@ int main(){
  assert(!active_enemy_arrow(600)&&!active_enemy_arrow(601)&&active_enemy_arrow(shot)&&enemy_damage_factor(shot)==2);
  creating.insert(600);cleanup_enemy_arrows();assert(tracked_enemy_arrow(600)&&deleted.contains(601));
  creating.clear();actors[600]=&mounted;cleanup_enemy_arrows();assert(deleted.contains(600));
+ s_enemyArrows={};actors.clear();s_enemies={};
+ // Mounted bow volleys are always triples, not alternating elite singles.
+ s_enemies[0].id=42;s_enemies[0].profile=fpcNm_E_WB_e;s_enemies[0].elite=true;
+ ActorId seat=601;std::any seatArgs[]={s16(fpcNm_E_RD_e),ActorId(42)};
+ after_enemy_arrow(nullptr,seatArgs,&seat,nullptr);actors[seat]=&mounted;
+ cXyz pos{},scale{1,1,1};csXyz angle{123,1000,456};spreadAngles.clear();
+ for(unsigned n=1;n<=4;++n){
+  fopAcM_createChild(s16(fpcNm_E_ARROW_e),seat,7,&pos,0,&angle,&scale,s8(-1),nullptr);
+  assert(spreadAngles.size()==3*n);
+  assert(spreadAngles[3*n-2]==1000-0x900&&spreadAngles[3*n-1]==1000+0x900);
+ }
  s_enemyArrows={};actors.clear();s_enemies={};
  }
  // Rider arrows belong to the carrier, keep its factor after death, and never

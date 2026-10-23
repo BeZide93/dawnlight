@@ -11,6 +11,17 @@ Taktikänderungen erhöhen den Schaden nicht. Ein nachfolgender Balance-Patch
 verdoppelt die HP aller vier zeitgesteuerten Bosse einschließlich Finalboss und
 Endless-Wiederholungen; stationäre Wächter behalten ihre bisherigen HP.
 
+
+Aktualisierung für PR #154 (23.10.2026): Hyrule Field verwendet jetzt
+Riesen-Bokoblin → Bullbo mit zwei Bulblins → Aeralfos → King Bulblin. Die
+historischen nativen Ausgangstabellen unten beschreiben noch die ersetzten
+Gegner. HP-Budgets und die bisherigen Schadensfaktoren der Ersatzslots bleiben
+bestehen. Der Bullbo hat 150% große Zielradien; sein Bogenschütze feuert immer
+dreifach mit halbem Bereitschaftstimer. Der Aeralfos wechselt alle 10 aktiven
+Sekunden zwischen Boden und Luft, fliegt im halbierten Höhenband 250–400 über
+Boden und hat halbierte Bereitschaftstimer. Die niedrigere Obergrenze beendet
+auch den Rückflug nach einem Sturzangriff.
+
 ## Zeiten und Schadenseinheiten
 
 Die vier Slots erscheinen bei 25 %, 50 %, 75 % und 100 % der Run-Dauer:
@@ -56,7 +67,7 @@ ausgenommen. Ganze Animationsabläufe werden nicht halbiert.
 | Gegner | Schaden gegenüber nativ | Zusätzliche Regeln |
 |---|---|---|
 | Beförderte normale Elites/Wächter | ×2 | Bereitschafts-/Erholungstimer ×½; ruhende Wächter bleiben ruhend |
-| King Bulblin | ×1 | Nativer Wirbel aus der Verfolgung unter 900 Einheiten; 6 s Cooldown; aktive Wirbelaxt kann höchstens alle 0,5 s erneut treffen |
+| King Bulblin | ×1 | Nativer Wirbel auch auf Distanz; 6 s Cooldown; aktive Wirbelaxt kann höchstens alle 0,5 s erneut treffen. Normale Schläge senden eine Sword Wave auf Link, Wirbel alle 1 s drei zufällig gerichtete Wellen (3.000 Einheiten Reichweite, nativer Axt-Basisschaden) |
 | Darknut | ×2 | Wiederholter schwerer Schwertwurf alle 3 aktiven Sekunden bei mehr als 400 Einheiten Abstand, in beiden Rüstungsphasen |
 | Death Sword | ×4 | Nach 2,5 s Verfolgung bei mehr als 600 Einheiten Abstand zur nativen Zweifach-Magiephase; laufende Schläge/Schüsse werden nicht neu gestartet |
 | Stallord-Kopf | ×4 | Atemstart bis 6.000 Einheiten, unabhängig von Links Schadensschutz; Annäherung ab 1.800 Einheiten |

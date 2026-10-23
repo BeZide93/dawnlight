@@ -104,12 +104,11 @@ path/speed parameter fields are translated into the native `L8LiftX` always-on
 mode. This avoids `optLift`'s requirement for a switch transition after Create.
 Routes are deduplicated by room/path and up to two are selected, preferring the
 native east-platform switch `0x64`. Both crossings remain available for the
-return journey. The east ferry makes the initial outbound trip alone. After the
-same two-second docking pause, it returns while the other ferry travels out.
-Subsequent phases pair one return leg with the other outbound leg, switching only
-after both finish native braking at their endpoints. A faster ferry waits for
-its partner before the next shared pause; intermediate waypoints do not end a
-phase. This clears the previous ferry from the far dock when its partner starts.
+return journey. The east ferry completes its entire outbound and return trip
+while the other waits at its starting dock. Only after native braking completes
+back at point zero does the turn pass to the second ferry for its own round trip.
+This sequence repeats; the far endpoint and intermediate waypoints never hand
+the turn to the waiting ferry. The two-second pause at each dock is preserved.
 Only `moveLift` is gated while waiting; native Execute continues updating the
 collision matrix, lighting and rider state. Menu/event pauses freeze the dwell.
 The pair stays fixed through retries and late actor records. Retiring actors

@@ -443,6 +443,15 @@ override applies only to the player cursor during the minimap draw pass; Link's
 model, restart markers and full-screen maps retain their native behavior. Missing
 cameras and vertical/invalid views fall back to the native player heading.
 
+Survivors save-slot panels display **Meta Level N** in place of the native heart
+rows. File selection, copy destinations and the native save menu read each
+panel's actual slot with SaveService `peek_blob`, using the existing Records
+decoder for older formats. Missing progression starts at level 1; unreadable
+records display `Meta Level ?`. Empty/corrupt game saves retain native messages,
+and other game modes retain hearts. The native pane tree owns the added textbox,
+which follows the heart area's position, slot scaling and fades. No save data or
+live progression state is changed by this display.
+
 Each scheduled elite and first kill of a guard slot leaves **one free large chest** at its death position (or its
 last safe floor position). It uses native Dalways large-chest model 13 and lid
 animation 8, not a scaled small chest. Opening shows the same three-card

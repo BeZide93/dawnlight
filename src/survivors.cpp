@@ -43,6 +43,7 @@
 #include "mods/svc/flow.hpp"
 #include "dusk/ui/nav_types.hpp"
 #include "d/d_menu_save.h"
+#include "d/d_file_sel_info.h"
 #include "d/d_menu_window.h"
 #include "d/d_meter_map.h"
 #include "d/d_menu_ring.h"
@@ -190,6 +191,7 @@ DEFINE_HOOK(&fopAcM_searchActorAngleY, SurvivorsBossAim);
 DEFINE_HOOK(&daObjCarry_c::obj_break, SurvivorsPotBreak);
 DEFINE_HOOK(&daItem_c::itemGetNextExecute, SurvivorsKeyPickup);
 DEFINE_HOOK(&renderingAmap_c::afterDrawPath, SurvivorsEliteMinimap);
+DEFINE_HOOK(&dFile_info_c::setSaveData, SurvivorsSaveSlotInfo);
 // SDK v2.0.0's typed trampoline cannot marshal const references. The native
 // const Vec& uses the same pointer ABI; preserve it through a named hook.
 DEFINE_HOOK_SYMBOL("renderingPlusDoorAndCursor_c::drawCursor",
@@ -842,6 +844,7 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
 #include "survivors_elites.inc"
 #include "survivors_pots.inc"
 #include "survivors_minimap.inc"
+#include "survivors_save_slot.inc"
 void update_spawns(daAlink_c* link) {
     update_boss_watchdogs(link);
     unsigned population = 0;
@@ -1826,6 +1829,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsPotBreak, before_pot_break);
     PRE(SurvivorsKeyPickup, before_key_pickup);
     PRE(SurvivorsEliteMinimap, before_survivors_minimap);
+    POST(SurvivorsSaveSlotInfo, after_survivors_save_slot);
     POST(SurvivorsEliteMinimap, after_elite_minimap);
     PRE(SurvivorsMinimapCursor, before_survivors_minimap_cursor);
     PRE(SurvivorsKeeseAggro, before_keese_aggro);

@@ -1021,8 +1021,18 @@ once at initialization. Movement is scaled before native ground/wall correction,
 excluding dormant, dying and knocked-back actors. Enemy damage scales at Link's
 native damage entry, restricted to owned enemy contacts.
 
-Hyrule Field and Gerudo Desert each have four native Midna floor portals,
-randomly sampled from the completed reachable arena surface. They are spaced
+Native Midna **Fate** floor portals are randomly sampled from the completed
+reachable surface on every arena map:
+
+| Map | Portals |
+| --- | ---: |
+| Darknut Arena | 1 |
+| Hyrule Field | 4 |
+| Gerudo Desert | 4 |
+| Palace of Twilight | 2 |
+| Hyrule Castle – Throne Room | 1 |
+
+All five maps use the same bounded connected-floor preparation. Portals are spaced
 apart from one another, guards, existing chests and pots. A floating **Fate**
 label uses the same range/projection as chest prices; available portals also use
 the same Tears of Light minimap marker as field elites, with native room

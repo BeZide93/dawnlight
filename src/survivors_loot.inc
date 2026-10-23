@@ -516,7 +516,7 @@ void seed_map_chests(daAlink_c* link) {
     // Exploration chests sample the whole room, independently of Link's view
     // and straight-line walking path. random_arena_floor checks dry native
     // ground, room membership, exits, walls and the chest footprint locally,
-    // plus a verified walking route from the entrance on the field/desert/throne maps.
+    // plus a verified walking route from the entrance on every arena map.
     // A direct path from Link rejects safe sites behind hills/walls/rivers and
     // concentrates the entire map budget near the entrance.
     const float spacing=std::clamp(std::sqrt(arena_distribution_area()/float(budget))*0.5f,250.f,2500.f);

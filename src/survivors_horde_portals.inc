@@ -1,6 +1,10 @@
 // Native Midna floor portals, with only their visual execution retained. Never
 // enter the native warp/event path, including Execute called from Create().
-constexpr unsigned kHordePortalCount=4;
+constexpr unsigned kHordePortalCount=4; // Maximum storage; each map has its own budget.
+unsigned horde_portal_budget() {
+    constexpr std::array<unsigned,5> counts{1,4,4,2,1};
+    return s_map<counts.size()?counts[s_map]:0;
+}
 constexpr unsigned kHordePortalRespawn=60*ticks_per_second;
 struct HordePortal {
     ActorId id=kNone;
@@ -17,7 +21,7 @@ HordePortal* tracked_horde_portal(ActorId id) {
     return nullptr;
 }
 bool horde_portals_running() {
-    return (s_map==1 || s_map==2) && s_run.phase==Phase::Running && !s_victory &&
+    return horde_portal_budget()!=0 && s_run.phase==Phase::Running && !s_victory &&
         (s_run.endless || s_run.ticks<s_run.run_duration()) && playable();
 }
 bool horde_portal_visible(const HordePortal& portal) {
@@ -44,8 +48,8 @@ void cleanup_horde_portals() {
 }
 bool horde_portal_position(const HordePortal& slot,daAlink_c* link,cXyz& pos) {
     if(!random_arena_floor(pos) || pos.absXZ(link->current.pos)<500 || !separated_guard(pos,450))return false;
-    // Keep four map-wide destinations, including a genuinely new respawn site.
-    const float spacing=std::clamp(std::sqrt(arena_distribution_area()/kHordePortalCount)*.4f,900.f,6000.f);
+    // Space this map's destinations apart, including a genuinely new respawn site.
+    const float spacing=std::clamp(std::sqrt(arena_distribution_area()/std::max(1u,horde_portal_budget()))*.4f,900.f,6000.f);
     if(slot.consumed && pos.absXZ(slot.position)<spacing)return false;
     for(const auto& portal:s_hordePortals)
         if(portal.id!=kNone && pos.absXZ(portal.position)<spacing)return false;
@@ -99,7 +103,8 @@ float horde_portal_floor_height(const HordePortal& portal,const cXyz& pos) {
 void update_horde_portals(daAlink_c* link) {
     if(!horde_portals_running() || !s_arenaMeshReady || !arena_distribution_ready())return;
     if(s_hordePortalDelay){--s_hordePortalDelay;return;}
-    for(auto& portal:s_hordePortals) {
+    for(unsigned i=0;i<horde_portal_budget();++i) {
+        auto& portal=s_hordePortals[i];
         if(portal.id!=kNone || s_run.ticks<portal.respawnAt)continue;
         cXyz pos;
         if(!horde_portal_position(portal,link,pos)){s_hordePortalDelay=5;return;}

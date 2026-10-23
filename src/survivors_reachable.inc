@@ -6,7 +6,8 @@ void clear_reachable_floor() {
     s_reachableFloor.clear();s_reachableWalk={};
     s_reachableSamplePending=s_reachableSampleReady=false;
 }
-bool needs_reachable_floor() {return s_map==1 || s_map==2 || s_map==4;}
+// All five arenas now scatter Fate portals; validate their connected walking surface too.
+bool needs_reachable_floor() {return s_map<5;}
 bool arena_distribution_ready() {return !needs_reachable_floor() || s_reachableFloor.ready();}
 float arena_distribution_area() {return needs_reachable_floor()?s_reachableFloor.floor_area():s_eliteFloorArea;}
 void update_reachable_floor() {

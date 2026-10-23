@@ -95,7 +95,26 @@ void ready(unsigned slot){auto& p=s_hordePortals[slot];pending.erase(p.id);auto&
 void interact(bool pressed){pad.mPressedButtonFlags=pressed?PAD_BUTTON_A:0;std::any args[]={&player};
  assert(before_horde_portal_action(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);}
 int main(){
- for(unsigned map=0;map<5;++map){fresh(map);update_horde_portals(&player);assert(creates==unsigned(map==1||map==2));}
+ // Every map fills exactly its budget, then reuses a consumed slot after 60 seconds.
+ constexpr unsigned counts[]{1,4,4,2,1};
+ for(unsigned map=0;map<5;++map){
+  fresh(map);assert(horde_portal_budget()==counts[map]);
+  for(unsigned i=0;i<counts[map];++i){
+   nextPosition={2000.f+4000*i,0,2000};s_hordePortalDelay=0;update_horde_portals(&player);
+   assert(creates==i+1);ready(i);
+  }
+  for(unsigned frame=0;frame<60;++frame)update_horde_portals(&player);
+  assert(creates==counts[map]);
+  for(unsigned i=counts[map];i<s_hordePortals.size();++i)assert(s_hordePortals[i].id==kNone);
+  const auto oldPosition=s_hordePortals[0].position;player.current.pos=oldPosition;
+  interact(true);assert(s_hordePortals[0].consumed&&!pad.mPressedButtonFlags&&s_run.horde_remaining==horde_duration);
+  cleanup_horde_portals();cleanup_horde_portals();s_run.ticks=60*ticks_per_second-1;s_hordePortalDelay=0;
+  nextPosition={22000,0,2000};player.current.pos={};update_horde_portals(&player);assert(creates==counts[map]);
+  ++s_run.ticks;paused=true;update_horde_portals(&player);assert(creates==counts[map]);
+  paused=false;update_horde_portals(&player);assert(creates==counts[map]+1);ready(0);
+  assert(s_hordePortals[0].position.absXZ(oldPosition)>=900);
+ }
+ fresh(5);update_horde_portals(&player);assert(!horde_portal_budget()&&!creates&&!samples);
  for(unsigned reason=0;reason<7;++reason){fresh();
   if(reason==0)paused=true;if(reason==1)s_run.phase=Phase::Upgrade;if(reason==2)s_victory=true;
   if(reason==3)distributionReady=false;if(reason==4)s_arenaMeshReady=false;if(reason==5)active=false;

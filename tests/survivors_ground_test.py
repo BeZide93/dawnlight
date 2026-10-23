@@ -122,7 +122,13 @@ int main(){
  terrain=0;ArenaWalk path;path.begin({-2000,0,0},{2000,0,0},40);
  unsigned budget=4;assert(path.advance(budget)==WalkResult::Pending&&budget==0&&path.active);
  unsigned frames=1;while(path.active){budget=4;path.advance(budget);++frames;}assert(frames>20);
- s_map=3;clear_reachable_floor();assert(arena_distribution_ready()&&reachable_arena_floor({300,0,0}));
+ // Darknut/Palace now wait for connected-floor preparation as well; no isolated platforms.
+ for(unsigned map:{0u,3u}){
+  s_map=map;s_arenaSpawnPosition={0,0,0};terrain=2;mesh();clear_reachable_floor();
+  assert(needs_reachable_floor()&&!arena_distribution_ready());grow();
+  assert(arena_distribution_ready()&&!reachable_arena_floor({1500,100,0}));
+  assert(reachable_arena_floor({300,0,0}));
+ }
  std::cout<<"Survivors ground: water, bridges, ledges, gaps, slopes, footprints and barriers passed\n";
 }
 '''

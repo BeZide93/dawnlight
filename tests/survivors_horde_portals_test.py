@@ -120,7 +120,7 @@ int main(){
  paused=s_victory=player.wolf=wallHit=false;s_run.phase=Phase::Running;life=12;player.current.pos=old;
  s_run.ticks=100;interact(true);
  assert(s_run.horde_remaining==horde_duration&&!s_spawnCooldown&&!pad.mPressedButtonFlags);
- assert(s_hordePortals[0].respawnAt==100+3*60*ticks_per_second&&!horde_portal_visible(s_hordePortals[0]));
+ assert(s_hordePortals[0].respawnAt==100+60*ticks_per_second&&!horde_portal_visible(s_hordePortals[0]));
  assert(actors[id].disappearances==1);interact(true);assert(s_run.horde_remaining==horde_duration);
  cleanup_horde_portals();cleanup_horde_portals();assert(s_hordePortals[0].id==kNone);
  s_run.ticks=s_hordePortals[0].respawnAt-1;s_hordePortalDelay=0;update_horde_portals(&player);assert(creates==4);
@@ -172,7 +172,7 @@ int main(){
   if(reason==3)s_chests[0]={true,nextPosition};if(reason==4)s_pots[0]={10,nextPosition};
   update_horde_portals(&player);assert(s_hordePortals[0].id==kNone);
  }
- std::cout<<"Survivors Horde portals: maps, native ownership, A action, stacking, new-site 3-minute respawn and cleanup passed\n";
+ std::cout<<"Survivors Horde portals: maps, native ownership, A action, stacking, new-site 1-minute respawn and cleanup passed\n";
 }
 '''
 with tempfile.TemporaryDirectory() as temp:

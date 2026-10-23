@@ -1059,7 +1059,7 @@ defeat and a new run, and never change permanent upgrade ranks or save data.
 
 A wall, pause/menu/event, wolf form, defeat/victory or the run time limit blocks
 activation. The action consumes that A press. Each used portal disappears and respawns
-**three minutes of active run time after use**, at a new random reachable
+**one minute of active run time after use**, at a new random reachable
 position separated from its old site. Unused portals remain available.
 Native portal creation/model/particles/deletion are retained, while Execute is
 overridden only for our tracked IDs to prevent automatic warps and events,

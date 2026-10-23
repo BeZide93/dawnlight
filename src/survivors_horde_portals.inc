@@ -1,7 +1,7 @@
 // Native Midna floor portals, with only their visual execution retained. Never
 // enter the native warp/event path, including Execute called from Create().
 constexpr unsigned kHordePortalCount=4;
-constexpr unsigned kHordePortalRespawn=3*60*ticks_per_second;
+constexpr unsigned kHordePortalRespawn=60*ticks_per_second;
 struct HordePortal {
     ActorId id=kNone;
     cXyz position{},normal{0,1,0};

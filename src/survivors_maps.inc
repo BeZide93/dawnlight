@@ -42,6 +42,18 @@ bool arena_story_actor(int name) {
     default: return false;
     }
 }
+HookAction before_palace_platform_switch(ModContext*, void* args, void* result, void*) {
+    if (!args || !result || s_map!=3 || !in_arena()) return HOOK_CONTINUE;
+    const int bit=mods::arg<int>(args,1);
+    const int room=mods::arg<int>(args,2);
+    // Palace's east crossing has a separate availability switch (0x64).
+    // Answer its native reads from the start of room loading: changing a lift
+    // append cannot unlock checks which run before dStage_actorCreate. Keep
+    // this virtual so visiting the arena never completes the story's Sol puzzle.
+    if (bit!=0x64 || (room!=arena().room && room!=-1)) return HOOK_CONTINUE;
+    *static_cast<BOOL*>(result)=TRUE;
+    return HOOK_SKIP_ORIGINAL;
+}
 HookAction before_arena_stage_actor(ModContext*, void* args, void*, void*) {
     if (!in_arena()) return HOOK_CONTINUE;
     const auto* record=mods::arg<stage_actor_data_class*>(args,0);

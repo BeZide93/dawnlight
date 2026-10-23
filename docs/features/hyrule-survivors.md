@@ -96,11 +96,16 @@ native scene exits are disabled during runs. The hub retains its usable exit doo
 Enemy and chest placement reject other rooms and paths across these barriers.
 If collision is not ready, combat does not begin. Story mode and Boss Rush retain their own rules.
 
-The Palace exterior's native `L8LiftX` light ferry is always enabled in Survivors,
-providing the crossing to the other wing without bringing a Sol to its socket.
-Its authored path, speed, collision and return trip remain native. Only the
-actor's switch parameter is overridden in the active arena; story switches and
-room archives are unchanged. The ferry pauses with Link during menus.
+The Palace exterior's east-platform availability switch `0x64` reads as enabled
+in Survivors from room loading onward, without bringing a Sol to its socket.
+This switch is documented as "East platform to palace active" in the
+[TP Randomizer's seed flags](https://github.com/zsrtp/Randomizer-Web-Generator/blob/2025e1ff8cc628588ebc58b284c25ee571a31df7/Generator/Assets/Flags.cs).
+The override applies only to the active Palace arena's room 0 and shared-stage
+reads. Other switches, rooms and game modes retain native results. No save bits
+are written. The `L8LiftX` actor additionally uses its native always-on mode for
+continuous return trips along its authored path, and pauses with Link in menus.
+The actor-parameter edit alone did not cover the separate availability gate;
+the switch hook is installed before stage loading, not after actor creation.
 
 On every arena, falling more than 500 units below the last safe position checks
 for dry, valid ground beneath Link before triggering recovery. Tall cliff jumps

@@ -100,6 +100,28 @@ bool update_ending(daAlink_c*){return false;}
 '''
 main = r'''
 int main(){
+ // East-platform availability must be visible before any actor append exists,
+ // including Loading. No switch storage is written by this read-only override.
+ s_run.phase=Phase::Loading;
+ for(bool enabled:{false,true})for(unsigned map=0;map<arenas.size();++map)
+ for(int room:{-1,0,1,6,51})for(int bit=-1;bit<=255;++bit) {
+  active=enabled;s_map=map;
+  std::any args[]={nullptr,bit,room};BOOL result=37;
+  const bool crossing=enabled&&map==3&&(room==-1||room==0)&&bit==0x64;
+  assert(before_palace_platform_switch(nullptr,args,&result,nullptr)==
+      (crossing?HOOK_SKIP_ORIGINAL:HOOK_CONTINUE));
+  assert(result==(crossing?TRUE:37));
+ }
+ active=true;s_map=3;
+ std::any switchArgs[]={nullptr,0x64,0};BOOL platformAvailable=FALSE;
+ assert(before_palace_platform_switch(nullptr,switchArgs,&platformAvailable,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(platformAvailable==TRUE);
+ assert(before_palace_platform_switch(nullptr,nullptr,&platformAvailable,nullptr)==HOOK_CONTINUE);
+ assert(before_palace_platform_switch(nullptr,switchArgs,nullptr,nullptr)==HOOK_CONTINUE);
+ active=false;platformAvailable=FALSE;
+ assert(before_palace_platform_switch(nullptr,switchArgs,&platformAvailable,nullptr)==HOOK_CONTINUE);
+ assert(platformAvailable==FALSE); // Leaving the mode immediately restores native reads.
+ active=true;s_run.phase=Phase::Running;
  stage_actor_data_class record;fopAcM_prm_class params;
  std::any spawnArgs[]={&record,&params};info.procname=fpcNm_ALINK_e;
  for(unsigned map=0;map<arenas.size();++map){
@@ -317,7 +339,7 @@ int main(){
 # Exercise the real floor policy together with the rescue hooks.
 ground = (root/'src/survivors_ground.inc').read_text()
 dry_floor = ground[:ground.index('struct ArenaWalk')]
-functions = dry_floor+'\n'+'\n'.join(extract(n) for n in ['add_exit_box','arena_story_actor','before_arena_stage_actor',
+functions = dry_floor+'\n'+'\n'.join(extract(n) for n in ['add_exit_box','arena_story_actor','before_palace_platform_switch','before_arena_stage_actor',
     'confine_arena_actor','after_arena_position','before_arena_restart','arena_grounded','arena_fallen','arena_safe_footprint','restore_arena_player','update_arena_safety'])
 globals = source[source.index('std::vector<barriers::Wall>'):source.index('void add_exit_box')]
 with tempfile.TemporaryDirectory() as tmp:

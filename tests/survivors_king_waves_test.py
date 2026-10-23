@@ -30,7 +30,7 @@ struct Enemy{ActorId id=1;bool retiring=false,credited=false;unsigned stagger=0;
 Actor player;Actor* daAlink_getAlinkActorClass(){return &player;}
 struct SourceHit{struct{int type,power,flags;}at;struct{int type,flags;}tg;int co;};
 struct dCcD_SrcSph{struct{struct{int flags;SourceHit hit;}obj;int at[5],tg[5],co[1];}info;struct{struct{cXyz pos;float radius;}sph;}attr;};
-constexpr int AT_TYPE_CSTATUE_SWING=1,dCcD_SE_METAL=7,dCcD_SE_13=13,dCcD_SE_NONE=0,dCcD_MTRL_ELECTRIC=2;
+constexpr int AT_TYPE_CSTATUE_SWING=1,dCcD_SE_METAL=7,dCcD_SE_NONE=0;
 struct dCcD_Stts{Actor* actor=nullptr;void Init(int,int,Actor* a){actor=a;}};
 struct dCcD_Sph{bool active=false,hit=false,shield=false;int power=0,material=0;float radius=0;dCcD_Stts* status=nullptr;cXyz position;
  void Set(const dCcD_SrcSph& s){power=s.info.obj.hit.at.power;radius=s.attr.sph.radius;hit=shield=false;}

@@ -36,7 +36,13 @@ namespace mods {template<class T>T arg(void* args,int n){return std::any_cast<T>
 using process_method_func=int(*)(void*);
 int execute(void*){return 1;} int destroy(void*){return 1;} int create(void*){return 1;}
 struct process_method_class {process_method_func execute_method=execute,delete_method=destroy;} methods;
-struct fopAc_ac_c {ActorId id;void* sub_method=&methods;bool actor=true;};
+struct fopAc_ac_c {ActorId id;void* sub_method=&methods;bool actor=true;int name=0,room=0;};
+constexpr int fpcNm_Obj_Lv8Lift_e=43;
+int fopAcM_GetName(fopAc_ac_c* p){return p->name;}
+int fopAcM_GetRoomNo(fopAc_ac_c* p){return p->room;}
+unsigned s_map=0;
+struct Arena{int room=0;}map;
+const Arena& arena(){return map;}
 struct{ActorId id=kNone;}s_bossRing;
 HookAction process_boss_ring(fopAc_ac_c*,void*,void*){return HOOK_CONTINUE;}
 struct daE_OC_c:fopAc_ac_c {int mMoveRange=0,field_0x6e3=0;int getActionMode(){return 0;}void setActionMode(int,int){}};
@@ -53,8 +59,8 @@ std::array<EnemyArrow,1488>s_enemyArrows;
 std::vector<RunPickup>s_pickups;
 ActorSlotIndex<ActorId>s_enemyIndex,s_potIndex,s_enemyArrowIndex,s_pickupIndex;
 EnemyArrow* tracked_enemy_arrow(ActorId id){return id==kNone?nullptr:s_enemyArrowIndex.find(s_enemyArrows,id);}
-bool arena=false,paused=false,s_victory=false;
-bool in_arena(){return arena;}
+bool arenaActive=false,paused=false,s_victory=false;
+bool in_arena(){return arenaActive;}
 ActorId s_player=99;
 enum class Phase {Running};struct {Phase phase=Phase::Running;} s_run;
 struct Frame {void* args;ActorId id;bool executed=false;};std::vector<Frame>s_processFrames;
@@ -80,6 +86,20 @@ cases = r'''
 int main(){
     fopAc_ac_c actor{7};int result=0;
     std::any args[]={process_method_func(execute),static_cast<void*>(&actor)};
+    // Only the active Palace ferry's Execute freezes with Link. Rendering,
+    // creation and destruction still run, including unload while paused.
+    for(bool active:{false,true})for(bool pause:{false,true})
+    for(unsigned area:{0u,3u,4u})for(int room:{-1,0,1})
+    for(int name:{0,fpcNm_Obj_Lv8Lift_e})
+    for(auto method:{execute,create,destroy}) {
+        arenaActive=active;paused=pause;s_map=area;actor.room=room;actor.name=name;
+        args[0]=process_method_func(method);result=0;
+        const bool frozen=active&&pause&&area==3&&room<=0&&
+            name==fpcNm_Obj_Lv8Lift_e&&method==execute;
+        assert(before_process(nullptr,args,&result,nullptr)==(frozen?HOOK_SKIP_ORIGINAL:HOOK_CONTINUE));
+        assert(result==(frozen?1:0));
+    }
+    arenaActive=paused=false;s_map=0;actor.room=actor.name=0;args[0]=process_method_func(execute);
     assert(before_process(nullptr,args,&result,nullptr)==HOOK_CONTINUE);
     assert(!tracked(7)&&!tracked_pot(7)&&!tracked_pickup(7));
     assert(!tracked(kNone)&&!tracked_pot(kNone)&&!tracked_pickup(kNone));
@@ -119,7 +139,7 @@ int main(){
     for(unsigned id=10;id<2010;++id)assert(bool(tracked_pickup(id))==bool(id%2));
     // Unrelated Execute still collects arena geometry and retains treasure;
     // non-actor requests never reach those actor-specific helpers.
-    arena=true;actor.id=9000;args[0]=process_method_func(execute);
+    arenaActive=true;actor.id=9000;args[0]=process_method_func(execute);
     unsigned oldMeshes=meshes;
     before_process(nullptr,args,&result,nullptr);assert(meshes==oldMeshes+1);
     unsigned oldRetained=retained;actor.actor=false;

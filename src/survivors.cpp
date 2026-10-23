@@ -1313,8 +1313,17 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     retain_treasure_actor(actor, args);
     if (in_arena()) {
         const auto* nativeMethods = reinterpret_cast<const process_method_class*>(actor->sub_method);
-        if (nativeMethods && mods::arg<process_method_func>(args, 0) == nativeMethods->execute_method)
+        if (nativeMethods && mods::arg<process_method_func>(args, 0) == nativeMethods->execute_method) {
             collect_arena_mesh(actor);
+            // A moving floor must pause with its rider during upgrade/settings
+            // menus. Leave native creation, drawing and unloading untouched.
+            if (s_map==3 && fopAcM_GetName(actor)==fpcNm_Obj_Lv8Lift_e &&
+                (fopAcM_GetRoomNo(actor)==arena().room || fopAcM_GetRoomNo(actor)==-1) &&
+                pause_run_actor(false)) {
+                *static_cast<int*>(result)=1;
+                return HOOK_SKIP_ORIGINAL;
+            }
+        }
     }
     if (!enemy && !pot && !pickup && !arrow && (!in_arena() || id != s_player)) return HOOK_CONTINUE;
     const auto* methods = reinterpret_cast<const process_method_class*>(actor->sub_method);

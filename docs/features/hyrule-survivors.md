@@ -96,6 +96,12 @@ native scene exits are disabled during runs. The hub retains its usable exit doo
 Enemy and chest placement reject other rooms and paths across these barriers.
 If collision is not ready, combat does not begin. Story mode and Boss Rush retain their own rules.
 
+The Palace exterior's native `L8LiftX` light ferry is always enabled in Survivors,
+providing the crossing to the other wing without bringing a Sol to its socket.
+Its authored path, speed, collision and return trip remain native. Only the
+actor's switch parameter is overridden in the active arena; story switches and
+room archives are unchanged. The ferry pauses with Link during menus.
+
 On every arena, falling more than 500 units below the last safe position checks
 for dry, valid ground beneath Link before triggering recovery. Tall cliff jumps
 can land naturally on lower floors; missing ground, void/exit floor codes, water

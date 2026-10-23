@@ -60,6 +60,12 @@ HookAction before_arena_stage_actor(ModContext*, void* args, void*, void*) {
         return HOOK_CONTINUE;
     }
     const bool local=params->room_no==arena().room || params->room_no==-1;
+    if (s_map==3 && local && info->procname==fpcNm_Obj_Lv8Lift_e) {
+        // L8LiftX's native switch sentinel keeps the ferry visible, collidable
+        // and travelling its authored path in both directions. Bypass only its
+        // Sol switch; preserve the path/speed and never alter story save flags.
+        params->base.parameters |= 0x000ff000u;
+    }
     if (s_map==3) capture_elite_site(info->procname,*params);
     bool skip=arena_story_actor(info->procname);
     if (info->procname==fpcNm_SCENE_EXIT_e || info->procname==fpcNm_SCENE_EXIT2_e) {

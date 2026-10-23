@@ -116,6 +116,24 @@ int main(){
    assert((params.base.parameters&0x00fe0fff)==(original&0x00fe0fff));
   }
  }
+ // Enable the authored Palace ferry only in the active arena's own room.
+ // Preserve its path, speed, position and all unrelated parameter bits.
+ info.procname=fpcNm_Obj_Lv8Lift_e;
+ for(bool enabled:{false,true})for(unsigned map=0;map<arenas.size();++map)
+ for(int room:{-1,0,6,51})for(unsigned sw:{0u,61u,255u}) {
+  active=enabled;s_map=map;params.room_no=room;
+  const unsigned original=0xa5b00d07u|(sw<<12);
+  params.base.parameters=original;params.base.position={12,34,56};params.base.angle.y=1234;
+  assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_CONTINUE);
+  const bool ferry=enabled&&map==3&&(room==-1||room==arena().room);
+  assert(((params.base.parameters>>12)&255)==(ferry?255:sw));
+  assert((params.base.parameters&0xfff00fffu)==(original&0xfff00fffu));
+  assert(params.base.position.y==34&&params.base.angle.y==1234&&freed==0);
+ }
+ active=true;s_map=3;params.room_no=0;info.procname=fpcNm_BG_e;
+ params.base.parameters=0x12345678;
+ assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_CONTINUE);
+ assert(params.base.parameters==0x12345678);
  // Native story chests remain filtered; the hub chest uses its own actor.
  s_map=0;params.room_no=51;info.procname=fpcNm_TBOX_e;
  assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);

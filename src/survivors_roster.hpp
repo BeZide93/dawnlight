@@ -30,8 +30,8 @@ inline constexpr std::array<MapRoster,5> map_rosters{{
     {{{Species::ShadowClub,Species::ShadowBow,Species::ShadowKeese}},
      {{{Species::ShadowBeast,120},{Species::ShadowKargarok,180}}},2,
      {{Species::ShadowBeast,Species::TwilitBloat,Species::ShadowKargarok,Species::PhantomZant}}},
-    {{{Species::Bokoblin,Species::Club,Species::Rat}},
-     {{{Species::Bow,60},{Species::Lizalfos,120},{Species::Helmasaur,180}}},3,
+    {{{Species::Bokoblin,Species::Club,Species::Bow}},
+     {{{Species::Lizalfos,60},{Species::Helmasaurus,120},{Species::Dynalfos,180}}},3,
      {{Species::Darknut,Species::Darkhammer,Species::PuppetZelda,Species::Ganondorf}}}
 }};
 constexpr const MapRoster& map_roster(unsigned map) { return map_rosters[map<map_rosters.size()?map:0]; }

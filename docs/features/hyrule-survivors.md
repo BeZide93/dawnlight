@@ -451,6 +451,11 @@ records display `Meta Level ?`. Empty/corrupt game saves retain native messages,
 and other game modes retain hearts. The native pane tree owns the added textbox,
 which follows the heart area's position, slot scaling and fades. No save data or
 live progression state is changed by this display.
+Pass the already formatted label literally to `J2DTextBox::setString`: the native
+variadic implementation does not expand format placeholders. Heart bounds are
+in panel-local coordinates, so subtract the panel's bounds origin before calling
+`J2DPane::place`, which adds that origin internally. The regression test executes
+both actual SDK functions and runs after SDK setup in CI.
 
 Each scheduled elite and first kill of a guard slot leaves **one free large chest** at its death position (or its
 last safe floor position). It uses native Dalways large-chest model 13 and lid

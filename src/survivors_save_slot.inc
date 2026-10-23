@@ -65,13 +65,18 @@ void after_survivors_save_slot(ModContext*,void* args,void* result,void*) {
         label->setFont(info->mFileInfo.mFont);
         label->setInfluencedAlpha(true,false);
     }
-    label->place(area); // appendChild may offset a new pane; use panel coordinates.
+    // area is in the parent's local coordinates. Native place() accepts an
+    // offset from its top-left and adds parent->getBounds().i itself.
+    const auto& origin=parent->getBounds().i;
+    label->place(JGeometry::TBox2<f32>(area.i.x-origin.x,area.i.y-origin.y,
+        area.f.x-origin.x,area.f.y-origin.y));
     J2DTextBox::TFontSize font;style->getFontSize(font);
     const float scale=std::min({1.f,area.getHeight()/std::max(1.f,font.mSizeY),
         area.getWidth()/std::max(1.f,font.mSizeX*float(std::strlen(text)))});
     label->setFontSize(font.mSizeX*scale,font.mSizeY*scale);
     label->setFontColor(style->getCharColor(),style->getGradColor());
-    label->setString(sizeof(text),"%s",text);
+    // Despite its variadic signature, the native setter copies literal text.
+    label->setString(sizeof(text),text);
     if(!label->getStringPtr())return;
     for(auto* heart:hearts)heart->hide();
     label->show();

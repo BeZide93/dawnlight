@@ -94,8 +94,6 @@ jobs:
           python3 tests/survivors_ground_test.py
           python3 tests/survivors_prices_test.py
           python3 tests/survivors_minimap_test.py
-          python3 tests/survivors_save_slot_test.py
-          CXX=clang++ python3 tests/survivors_save_slot_test.py
           python3 tests/survivors_hook_install_test.py
           CXX=clang++ python3 tests/survivors_hook_install_test.py
           python3 tests/survivors_restart_test.py
@@ -380,6 +378,9 @@ jobs:
           CXX=clang++ python3 tests/survivors_pickups_test.py
           CXX=clang++ python3 tests/survivors_prices_test.py
           CXX=clang++ python3 tests/survivors_minimap_test.py
+          # Uses actual SDK text/placement functions; run after Configure CMake.
+          python3 tests/survivors_save_slot_test.py
+          CXX=clang++ python3 tests/survivors_save_slot_test.py
           python3 tests/survivors_combat_test.py dusklight
           CXX=clang++ python3 tests/survivors_combat_test.py dusklight
           python3 tests/survivors_ranged_test.py dusklight

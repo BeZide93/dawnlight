@@ -48,7 +48,7 @@ std::vector<ItemChange> treasure_changes(ChestReward reward, const Run& before, 
         if (bottles < 4) changes.push_back({"Bottles", number(bottles), number(std::min(4u, bottles + gain))});
         changes.push_back({"Red potions", number(red), number(red + gain)});
     }
-    const auto extra = before.chest_rupees(reward, rarity, potion_capacity());
+    const auto extra = before.preview_rupees(before.chest_rupees(reward, rarity, potion_capacity()));
     if (extra) changes.push_back({"Excess reward", "0", "+" + number(extra) + " rupees"});
     return changes;
 }

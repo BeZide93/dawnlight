@@ -349,6 +349,15 @@ int main(){
     near(gearGeometry[2],44*banner.scale);
     checkText(HudPart::ItemBanner,"Hero's Sword",13,-28,-76);
     checkText(HudPart::ItemBanner,"Call Midna to Equip",11,58);
+    // Concurrent timed Fate effects share Info anchoring and never overlap.
+    s_run.apply_fate(FateEffect::Horde);s_run.apply_fate(FateEffect::Greed);
+    s_run.apply_fate(FateEffect::Sprint);s_run.apply_fate(FateEffect::Luck);
+    textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);
+    checkText(HudPart::Info,"Horde  15s",17,76);checkText(HudPart::Info,"Greed  15s",17,98);
+    checkText(HudPart::Info,"Sprint  15s",17,120);checkText(HudPart::Info,"Luck  15s",17,142);
+    s_run.fate_remaining[unsigned(FateEffect::Greed)]=1;
+    textPositions.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);checkText(HudPart::Info,"Greed  1s",17,98);
+    s_run.clear_fate();s_run.horde_remaining=0;
     // Inline icon keeps its native 1:2 aspect and shares Info text transforms.
     const auto info=hud_position(HudPart::Info,304);
     near(rupeeGeometry[2],9*info.scale);near(rupeeGeometry[3],18*info.scale);

@@ -713,6 +713,13 @@ int main(){
     const auto oldLevel=s_run.level;
     select_upgrade(nullptr,&choice);
     assert(life==16&&s_run.level==oldLevel+1&&s_run.phase==Phase::Upgrade);
+    // Greed also blocks the choice-time refill, including newly gained containers.
+    reset();s_run.phase=Phase::Upgrade;s_run.apply_fate(FateEffect::Greed);
+    s_run.offers[0]=Upgrade::Heart;maxLife=17;life=3;choice=0;
+    select_upgrade(nullptr,&choice);assert(maxLife==22&&life==3);
+    s_run.phase=Phase::Upgrade;s_run.offers[0]=Upgrade::Rupees;rupees=0;
+    const auto greedBonus=s_run.upgrade_rupees(Upgrade::Rupees,s_run.offer_rarities[0]);
+    select_upgrade(nullptr,&choice);assert(life==3&&rupees==greedBonus*3/2);
     // Every Multi Strike activation uses a new native cut, after the previous
     // pose/hit window; repeats do not recursively re-arm the burst.
     for(unsigned extra=1;extra<=3;++extra){

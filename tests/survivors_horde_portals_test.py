@@ -75,6 +75,9 @@ struct mDoCPd_c{static bool getTrigA(unsigned){return pad.mPressedButtonFlags&PA
  static Pad& getCpadInfo(unsigned){return pad;}};
 void dComIfGp_setDoStatusForce(unsigned status,unsigned){assert(status==BUTTON_STATUS_ENTER);++prompts;}
 '''
+fixture+=r'''
+bool activate_fate(daAlink_c*,const cXyz&){s_run.apply_fate(FateEffect::Horde);s_spawnCooldown=0;return true;}
+'''
 main=r'''
 void fresh(unsigned map=1){
  s_hordePortals={};s_hordePortalDelay=0;actors.clear();pending.clear();s_chests={};s_pots={};

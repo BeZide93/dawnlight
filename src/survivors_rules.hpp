@@ -44,6 +44,12 @@ inline unsigned pot_budget(unsigned map, float floorArea) {
     const float density=floorArea>0 ? floorArea/2000000.f : 0.f;
     return unsigned(std::clamp(density,float(minimum[map]),float(maximum[map])));
 }
+enum class FateEffect : unsigned { Horde, Greed, Sprint, Curse, Slow, Fairy, Luck, Misfortune, Count };
+inline constexpr std::array fate_names{"Horde", "Greed", "Sprint", "Curse", "Slow", "Fairy", "Luck", "Misfortune"};
+inline constexpr unsigned fate_duration = 15 * ticks_per_second;
+inline constexpr bool timed_fate(FateEffect effect) {
+    return effect != FateEffect::Curse && effect != FateEffect::Fairy && effect < FateEffect::Count;
+}
 enum class Phase { Loading, Ready, Running, Upgrade, TreasureChoice, Treasure, Victory, Defeat };
 enum class Upgrade : unsigned { Wave, Spin, ShieldAttack, Power, Haste, Reach, Magnet, Heart, Bow, Boomerang, Bombs, Ball, FireArrows, Luck, PotionHealing, CritChance, CritDamage, JumpStrike, DualWield, Knockback, Piercing, Multishot, LifeRegen, LifeSteal, Hurricane, FireBomb, BombArrow, FireEdge, DarkAura, Shockwave, Lightning, MasterSword, MultiStrike, Rupees, ChainSpin, Count };
 inline constexpr DamageSource weapon_damage_source(unsigned weapon) {
@@ -243,6 +249,44 @@ struct Run {
     std::array<bool,unsigned(ChestReward::Count)> banned_items{};
     unsigned dark_clock = 0, dark_remaining = 0;
     unsigned horde_remaining = 0;
+    // Transient run state, intentionally absent from persistent score/save records.
+    std::array<unsigned,unsigned(FateEffect::Count)> fate_remaining{};
+    unsigned greed_xp_half = 0, greed_rupee_half = 0;
+    unsigned fate_ticks(FateEffect effect) const {
+        return effect == FateEffect::Horde ? horde_remaining : fate_remaining[unsigned(effect)];
+    }
+    bool greed() const { return fate_ticks(FateEffect::Greed) != 0; }
+    void apply_fate(FateEffect effect) {
+        if (effect == FateEffect::Horde) { horde_remaining += fate_duration; return; }
+        if (!timed_fate(effect)) return;
+        if (effect == FateEffect::Sprint) fate_remaining[unsigned(FateEffect::Slow)] = 0;
+        if (effect == FateEffect::Slow) fate_remaining[unsigned(FateEffect::Sprint)] = 0;
+        if (effect == FateEffect::Luck) fate_remaining[unsigned(FateEffect::Misfortune)] = 0;
+        if (effect == FateEffect::Misfortune) fate_remaining[unsigned(FateEffect::Luck)] = 0;
+        fate_remaining[unsigned(effect)] = fate_duration;
+    }
+    FateEffect roll_fate() {
+        constexpr uint32_t count = unsigned(FateEffect::Count), limit = UINT32_MAX - UINT32_MAX % count;
+        uint32_t roll; do { roll = next_random() - 1; } while (roll >= limit);
+        return FateEffect(roll % count);
+    }
+    void clear_fate() { fate_remaining = {}; greed_xp_half = greed_rupee_half = 0; }
+    float fate_speed() const {
+        return fate_ticks(FateEffect::Sprint) ? 1.5f : fate_ticks(FateEffect::Slow) ? .5f : 1.f;
+    }
+    unsigned fate_luck(unsigned base) const {
+        return fate_ticks(FateEffect::Luck) ? base * 3 / 2 : fate_ticks(FateEffect::Misfortune) ? base / 2 : base;
+    }
+    unsigned greed_reward(unsigned value, unsigned& half) const {
+        if (!greed() || !value) return value;
+        const uint64_t bonus = uint64_t(value) + half;
+        half = unsigned(bonus % 2);
+        return unsigned(std::min<uint64_t>(UINT32_MAX, uint64_t(value) + bonus / 2));
+    }
+    unsigned gain_xp(unsigned value) { return greed_reward(value, greed_xp_half); }
+    unsigned gain_rupees(unsigned value) { return greed_reward(value, greed_rupee_half); }
+    unsigned preview_rupees(unsigned value) const { auto half = greed_rupee_half; return greed_reward(value, half); }
+    static unsigned cursed_life(unsigned quarters) { return quarters - quarters / 2; }
     unsigned gibdo_scream_cooldown = 0;
     std::array<unsigned, unsigned(Upgrade::Rupees)> ranks{};
     unsigned chain_spin=0; // Appended upgrade; preserve historical rank-array offsets.
@@ -321,8 +365,8 @@ struct Run {
         return extra?std::min(upgrade_cap(u),base_rank(u)+extra):base_rank(u);
     }
     unsigned potion_heal_quarters() const { return 4 + rank(Upgrade::PotionHealing); }
-    unsigned luck_percent() const { return 100 + 10 * std::min(20u, rank(Upgrade::Luck)); }
-    unsigned crit_chance_basis_points() const { return std::min(10000u, (std::min(30u,rank(Upgrade::CritChance))*75+talents.rank(Talent::CritChance)*100)*(100+5*std::min(20u,rank(Upgrade::Luck))/2)/100); }
+    unsigned luck_percent() const { return fate_luck(100 + 10 * std::min(20u, rank(Upgrade::Luck))); }
+    unsigned crit_chance_basis_points() const { return std::min(10000u, (std::min(30u,rank(Upgrade::CritChance))*75+talents.rank(Talent::CritChance)*100)*fate_luck(100+5*std::min(20u,rank(Upgrade::Luck))/2)/100); }
     unsigned crit_damage_percent() const { return 200 + 5*std::min(30u,rank(Upgrade::CritDamage)) + 10*talents.rank(Talent::CritDamage); }
     bool roll_chance(unsigned chance) {
         if (!chance) return false;
@@ -370,15 +414,22 @@ struct Run {
         return unsigned(std::min<uint64_t>(65535,(uint64_t(base)*crit_damage_percent()+50)/100));
     }
     // Drop frequency/quality retain their old +50% cap independently of rarities.
-    unsigned lucky_chance(unsigned basis_points) const { return basis_points * std::min(150u, luck_percent()) / 100; }
+    unsigned lucky_chance(unsigned basis_points) const { return basis_points * fate_luck(std::min(150u, 100 + 10 * std::min(20u, rank(Upgrade::Luck)))) / 100; }
     std::array<uint32_t, 5> rarity_weights() const {
         // 60 / 25k / 10k^2 / 4k^3 / k^4. Integer weights retain half-step Luck ranks.
-        const uint32_t t = 100 + 5*std::min(20u,rank(Upgrade::Luck)); // k = t / 100; t is in [100, 200].
+        const uint64_t t = fate_luck(100 + 5*std::min(20u,rank(Upgrade::Luck))); // k = t / 100.
         // Shift 0.6 percentage points per perk rank from Common to Legendary
         // in the base distribution, then apply the same Luck weights.
         const uint32_t perk=std::min(5u,talents.rank(Talent::LegendaryChance));
-        return {600000000-6000000*perk, 2500000*t, 10000*t*t, 40*t*t*t,
-            uint32_t(uint64_t(10+6*perk)*t*t*t*t/100)};
+        const std::array<uint64_t,5> wide{600000000-6000000*perk, 2500000*t, 10000*t*t, 40*t*t*t,
+            (10+6*perk)*t*t*t*t/100};
+        uint64_t total=0; for (auto weight:wide) total+=weight;
+        // Fate can raise k to 3. Scale all weights together to keep the RNG's
+        // 32-bit total valid, preserving the exact historical weights otherwise.
+        const uint64_t divisor=(total+UINT32_MAX-1)/UINT32_MAX;
+        std::array<uint32_t,5> weights{};
+        for (unsigned i=0;i<weights.size();++i) weights[i]=uint32_t(wide[i]/divisor);
+        return weights;
     }
     Rarity roll_rarity() {
         const auto weights = rarity_weights();
@@ -479,8 +530,8 @@ struct Run {
     }
     unsigned life_regen_interval() const { return (20-std::min(5u,talents.rank(Talent::LifeRegen))-std::min(5u,rank(Upgrade::LifeRegen)))*ticks_per_second; }
     bool restricted_healing() const { return endless && ticks>=40*60*ticks_per_second; }
-    bool life_steal_active() const { return !restricted_healing() && rank(Upgrade::LifeSteal); }
-    bool life_regen_due() const { return phase==Phase::Running && ticks && ticks%life_regen_interval()==0; }
+    bool life_steal_active() const { return !greed() && !restricted_healing() && rank(Upgrade::LifeSteal); }
+    bool life_regen_due() const { return !greed() && phase==Phase::Running && ticks && ticks%life_regen_interval()==0; }
     unsigned auto_rupees() const { return ticks && ticks%(5*ticks_per_second)==0 ? talents.rank(Talent::AutoRupees) : 0; }
     unsigned jump_splash_percent() const {
         const auto level = std::min(30u, rank(Upgrade::JumpStrike));
@@ -618,7 +669,7 @@ struct Run {
         const unsigned price = key ? 0 : chest_price(free, fixed);
         if (phase != Phase::Treasure || rupees < price || !chest_eligible(reward, bottle_capacity != 0)) return false;
         const unsigned gain = chest_gain(reward, rarity, bottle_capacity);
-        rupees = rupees - price + chest_rupees(reward, rarity, bottle_capacity);
+        rupees = rupees - price + gain_rupees(chest_rupees(reward, rarity, bottle_capacity));
         if (!free && !fixed) ++chests_opened;
         if (reward == ChestReward::RedPotion) red_potion = true;
         if (reward == ChestReward::MasterSword) master_sword += gain;
@@ -639,6 +690,8 @@ struct Run {
         ++ticks;
         if (gibdo_scream_cooldown) --gibdo_scream_cooldown;
         if (horde_remaining) --horde_remaining;
+        for (auto& remaining:fate_remaining) if (remaining) --remaining;
+        if (!greed()) greed_xp_half=greed_rupee_half=0;
         // Independent one-second trials: E(events / 5 minutes) = 300 / 150 = 2.
         // Overlaps add time, never multiply the active spawn boost.
         if ((endless || ticks < run_duration()) && ticks % ticks_per_second == 0 && next_random() % 150 == 0)
@@ -754,7 +807,7 @@ struct Run {
     static constexpr float lightning_speed=42.f*5;
     static constexpr unsigned lightning_chance=2000;
     unsigned lightning_proc_chance() const { return lightning_chance*luck_percent()/100; }
-    void end(bool won) { if (phase == Phase::Running || phase == Phase::Upgrade || phase == Phase::TreasureChoice || phase == Phase::Treasure) phase = won ? Phase::Victory : Phase::Defeat; }
+    void end(bool won) { if (phase == Phase::Running || phase == Phase::Upgrade || phase == Phase::TreasureChoice || phase == Phase::Treasure) { phase = won ? Phase::Victory : Phase::Defeat; clear_fate(); } }
 };
 
 // A presentation snapshot, never used to resume gameplay. Store the awarded

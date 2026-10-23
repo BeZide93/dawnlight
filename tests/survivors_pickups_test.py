@@ -66,7 +66,7 @@ struct Orb{cXyz position;unsigned value=0;bool summoned=false,merged=false;};std
 Run s_run;bool s_allowDrop=false,playing=true,failCreate=false,dry=true,path=true;
 bool playable(){return playing;}
 struct Arena{int room=6;}data;const Arena& arena(){return data;}
-enum{dItemNo_HORSE_FLUTE_e=132,dItemNo_KAKERA_HEART_e=33,dItemNo_HEART_e=0,dItemNo_SILVER_RUPEE_e=7,dItemNo_KEY_OF_FILONE_e=0xfe,dItemNo_SMALL_KEY_e=0x20};
+enum{dItemNo_RECOVERY_FAILY_e=40,dItemNo_HORSE_FLUTE_e=132,dItemNo_KAKERA_HEART_e=33,dItemNo_HEART_e=0,dItemNo_SILVER_RUPEE_e=7,dItemNo_KEY_OF_FILONE_e=0xfe,dItemNo_SMALL_KEY_e=0x20};
 struct dItem_data{static float getR(int item){assert(item==dItemNo_SMALL_KEY_e);return 30;}static float getH(int item){assert(item==dItemNo_SMALL_KEY_e);return 40;}};
 struct ModContext{};ModContext* mod_ctx=nullptr;enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods{template<class T>T arg(void* args,int i){return std::any_cast<T>(static_cast<std::any*>(args)[i]);}}
@@ -210,6 +210,16 @@ int main(){
  fresh();auto pendingId=create_run_pickup({},132);actors.erase(pendingId);pending.insert(pendingId);
  retire_pickups();cleanup_pickups();assert(tracked_pickup(pendingId));
  pending.erase(pendingId);actors[pendingId].id=pendingId;cleanup_pickups();cleanup_pickups();assert(s_pickups.empty());
+ // Actual one-XP orb collection retains Greed's half-unit bonus across pickups.
+ fresh();s_run.apply_fate(FateEffect::Greed);s_run.xp=0;
+ for(unsigned n=0;n<2;++n){s_orbs[0].position=player.current.pos+cXyz(0,30,0);s_orbs[0].value=1;update_orbs(&player);}
+ assert(s_run.xp==3&&!s_orbs[0].value);
+ // Fairy is a separate native actor: never cast/magnet-pull it as daItem_c.
+ fresh();const auto fairyId=create_run_pickup({100,20,0},dItemNo_RECOVERY_FAILY_e);
+ auto* fairy=tracked_pickup(fairyId);fopAc_ac_c fairyActor;fairyActor.current.pos={100,20,0};
+ assert(pickup_waiting(*fairy,&fairyActor));move_pickup(*fairy,&fairyActor);
+ assert(fairyActor.current.pos.x==100&&fairyActor.current.pos.y==20);
+ retire_pickups();cleanup_pickups();cleanup_pickups();assert(!tracked_pickup(fairyId));
  // At Endless 40:00, no new hearts/pieces and no leftover healing pickups.
  fresh();const auto heart=create_run_pickup({},dItemNo_HEART_e);
  const auto latePiece=create_run_pickup({},dItemNo_KAKERA_HEART_e);

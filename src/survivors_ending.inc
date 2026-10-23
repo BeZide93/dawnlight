@@ -11,7 +11,7 @@ void reset_ending() {
 }
 void begin_victory(const cXyz& position) {
     if (s_victory || s_deathPending || s_resultsStored || s_run.phase!=Phase::Running) return;
-    s_victory=true; s_victoryTicks=0;
+    s_victory=true; s_victoryTicks=0; s_run.clear_fate();
     s_victoryWave.origin=position;
     s_victoryWave.radius=1500;
     for (const auto& enemy:s_enemies) if (enemy.id!=kNone && !enemy.retiring) {

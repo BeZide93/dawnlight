@@ -148,8 +148,7 @@ HookAction before_horde_portal_action(ModContext*,void* args,void*,void*) {
         if(dComIfG_Bgsp().LineCross(&wall))continue;
         dComIfGp_setDoStatusForce(BUTTON_STATUS_ENTER,0);
         if(mDoCPd_c::getTrigA(PAD_1)) {
-            s_run.horde_remaining+=horde_duration;
-            s_spawnCooldown=0;
+            if (!activate_fate(link,portal.position)) return HOOK_CONTINUE;
             portal.consumed=portal.retiring=true;
             portal.respawnAt=s_run.ticks+kHordePortalRespawn;
             static_cast<daObjBossWarp_c*>(actor_by_id(portal.id))->disappear(0);

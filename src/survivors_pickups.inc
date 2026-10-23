@@ -59,6 +59,7 @@ void cleanup_pickups() {
         s_pickupIndex.rebuild(s_pickups,kNone);
 }
 bool pickup_waiting(const RunPickup& pickup, fopAc_ac_c* actor) {
+    if (pickup.item==dItemNo_RECOVERY_FAILY_e) return true; // Native fairy, never cast to daItem_c.
     if (pickup.item==dItemNo_KAKERA_HEART_e)
         return static_cast<daObjLife_c*>(actor)->chkStatus(daObjLife_c::STATUS_WAIT_e);
     return static_cast<daItem_c*>(actor)->getStatus()==daItem_c::STATUS_NORMAL_e;
@@ -68,7 +69,7 @@ bool heart_or_rupee(const RunPickup& pickup) {
 }
 void move_pickup(RunPickup& pickup, fopAc_ac_c* actor) {
     if (disabled_healing_pickup(pickup.item)) pickup.retiring=true;
-    if (pickup.retiring) return;
+    if (pickup.retiring || pickup.item==dItemNo_RECOVERY_FAILY_e) return; // Native flight/collection.
     if (heart_or_rupee(pickup) || pickup.item == dItemNo_KEY_OF_FILONE_e) {
         auto* item=static_cast<daItem_c*>(actor);
         item->setFlag(daItem_c::FLAG_NO_TIMER_e);

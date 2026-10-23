@@ -36,6 +36,6 @@ void draw_horde_portal_labels() {
         if (!std::isfinite(screen.x) || !std::isfinite(screen.y) ||
             screen.x<mDoGph_gInf_c::getMinXF() || screen.x>mDoGph_gInf_c::getMaxXF() ||
             screen.y<0 || screen.y>mDoGph_gInf_c::getHeightF()) continue;
-        label("Horde",screen.x,screen.y,std::clamp(18000.f/w,12.f,22.f));
+        label("Fate",screen.x,screen.y,std::clamp(18000.f/w,12.f,22.f));
     }
 }

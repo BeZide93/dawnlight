@@ -91,6 +91,7 @@ jobs:
           CXX=clang++ python3 tests/survivors_enemy_hits_test.py
           python3 tests/survivors_enemy_types_test.py
           python3 tests/survivors_horde_portals_test.py
+          python3 tests/survivors_fate_test.py
           python3 tests/survivors_pots_test.py
           python3 tests/survivors_ground_test.py
           python3 tests/survivors_prices_test.py
@@ -369,6 +370,7 @@ jobs:
           python3 tests/survivors_bulblin_test.py
           CXX=clang++ python3 tests/survivors_bulblin_test.py
           CXX=clang++ python3 tests/survivors_horde_portals_test.py
+          CXX=clang++ python3 tests/survivors_fate_test.py
           CXX=clang++ python3 tests/survivors_pots_test.py
           CXX=clang++ python3 tests/survivors_ground_test.py
           # Reads native key resources/matrices; Configure CMake provides the SDK.

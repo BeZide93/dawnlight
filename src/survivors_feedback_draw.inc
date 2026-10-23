@@ -11,8 +11,8 @@ void draw_combat_feedback() {
         if (!std::isfinite(screen.x) || !std::isfinite(screen.y) ||
             screen.x<mDoGph_gInf_c::getMinXF() || screen.x>mDoGph_gInf_c::getMaxXF() ||
             screen.y<0 || screen.y>mDoGph_gInf_c::getHeightF()) continue;
-        const u8 alpha=u8(255*text.remaining/combat_text_lifetime);
-        const char* name=text.kind==CombatText::Block ? "Block" : text.kind==CombatText::Dodge ? "Dodge" : "Crit";
+        const u8 alpha=u8(255*text.remaining/text.lifetime);
+        const char* name=text.kind==CombatText::Fate ? fate_names[unsigned(text.fate)] : text.kind==CombatText::Block ? "Block" : text.kind==CombatText::Dodge ? "Dodge" : "Crit";
         const JUtility::TColor color=text.kind==CombatText::Crit ? JUtility::TColor(255,210,60,255) :
             text.kind==CombatText::Dodge ? JUtility::TColor(140,255,170,255) : JUtility::TColor(150,220,255,255);
         J2DPrint shadow(font,JUtility::TColor(0,0,0,220),JUtility::TColor(0,0,0,220));

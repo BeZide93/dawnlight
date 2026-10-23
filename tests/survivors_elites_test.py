@@ -330,6 +330,16 @@ int main(){
  ++s_run.xp;after_player(nullptr,levelArgs,nullptr,nullptr);
  assert(life==12&&lifeWrites==1&&s_run.phase==Phase::Upgrade);
  after_player(nullptr,levelArgs,nullptr,nullptr);assert(lifeWrites==1);
+ // Greed blocks level-up and periodic regen while boosting actual passive payouts.
+ fresh(0);life=1;lifeWrites=0;s_run.apply_fate(FateEffect::Greed);s_run.xp=s_run.required_xp();
+ after_player(nullptr,levelArgs,nullptr,nullptr);assert(life==1&&!lifeWrites&&s_run.phase==Phase::Upgrade);
+ s_run.phase=Phase::Running;s_run.xp=0;s_run.ticks=s_run.life_regen_interval()-1;
+ after_player(nullptr,levelArgs,nullptr,nullptr);assert(life==1&&!lifeWrites);
+ rupees=0;s_run.talents.ranks[unsigned(Talent::AutoRupees)]=1;
+ s_run.ticks=149;after_player(nullptr,levelArgs,nullptr,nullptr);assert(rupees==1);
+ s_run.ticks=299;after_player(nullptr,levelArgs,nullptr,nullptr);assert(rupees==3);
+ s_run.clear_fate();s_run.xp=s_run.required_xp();after_player(nullptr,levelArgs,nullptr,nullptr);
+ assert(life==12&&lifeWrites==1);
  // Endless 40:00 preserves passive regen and full level-up healing.
  fresh(0);s_run.endless=true;s_run.ticks=40*60*ticks_per_second-1;life=1;lifeWrites=0;
  after_player(nullptr,levelArgs,nullptr,nullptr);assert(life==2&&lifeWrites==1);

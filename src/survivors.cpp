@@ -170,6 +170,9 @@ DEFINE_HOOK_SYMBOL("dBgS_Acch::CrrPos", void(dBgS_Acch*, dBgS&), SurvivorsEnemyS
 DEFINE_HOOK(&daAlink_c::setDamagePoint, SurvivorsEnemyDamage);
 DEFINE_HOOK(&daAlink_c::commonBottleDrink, SurvivorsPotionDrink);
 DEFINE_HOOK(&dComIfGp_setItemLifeCount, SurvivorsPotionHeal);
+DEFINE_HOOK(&dComIfGp_setItemRupeeCount, SurvivorsFateRupees);
+DEFINE_HOOK(&daAlink_c::getMainBckData, SurvivorsFateSprint);
+DEFINE_HOOK(&JPABaseEmitter::deleteAllParticle, SurvivorsFairyParticles);
 DEFINE_HOOK(&dCamera_c::Run, SurvivorsCamera);
 DEFINE_HOOK(&daAlink_c::orderZTalk, SurvivorsMidnaOrder);
 DEFINE_HOOK(&dMsgFlow_c::getInitNodeIndex, SurvivorsMidnaFlow);
@@ -800,7 +803,7 @@ void update_orbs(daAlink_c* link) {
         const auto target = link->current.pos + cXyz(0, 30, 0);
         cXyz delta = target - orb.position;
         const float distance = delta.abs();
-        if (distance < 60) { s_run.xp += orb.value; orb = {}; }
+        if (distance < 60) { s_run.xp += s_run.gain_xp(orb.value); orb = {}; }
         else if (orb.summoned || distance < range) {
             const float speed = orb.summoned ? std::max(35.f, distance * 0.08f) : 35.f;
             orb.position += delta * (std::min(speed, distance) / distance);
@@ -1113,6 +1116,7 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 #include "survivors_loot.inc"
+#include "survivors_fate.inc"
 #include "survivors_horde_portals.inc"
 #include "survivors_minimap.inc"
 #include "survivors_ranged.inc"
@@ -1237,7 +1241,7 @@ void after_player(ModContext*, void* args, void*, void*) {
         update_victory();
         update_exp_magnets(link); update_orbs(link);
         s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;
-        if (s_run.level_up()) { dComIfGs_setLife(dComIfGs_getMaxLifeGauge()); clear_attacks(); }
+        if (s_run.level_up()) { if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge()); clear_attacks(); }
         // Existing chests remain interactable; do not spawn new ones after victory.
         // Do not interrupt a final chest/level-up on the expiration frame.
         if (s_victoryTicks>=10*ticks_per_second && s_run.phase==Phase::Running) finish(true);
@@ -1248,14 +1252,14 @@ void after_player(ModContext*, void* args, void*, void*) {
     if (s_run.life_regen_due() && dComIfGs_getLife()<dComIfGs_getMaxLifeGauge())
         dComIfGs_setLife(std::min<unsigned>(dComIfGs_getMaxLifeGauge(),dComIfGs_getLife()+1));
     if (const unsigned rupees=s_run.auto_rupees())
-        dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+rupees));
+        dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+s_run.gain_rupees(rupees)));
     update_enemy_effects();
     update_reachable_floor();
     update_horde_portals(link);
     update_spawns(link); update_pots(link); update_exp_magnets(link); update_weapons(link); update_orbs(link);
     s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;
     if (s_run.level_up()) {
-        dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
+        if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
         clear_attacks();
     }
     else update_chests(link);
@@ -1510,13 +1514,17 @@ void draw_hud(ModContext*, void* args, void*, void*) {
         std::snprintf(text, sizeof(text), "No chest rewards available");
         drawText(HudPart::Info,14,bossOffset);
     }
-    if (s_run.horde_remaining) {
-        std::snprintf(text,sizeof(text),"HORDE!  3x enemy spawns  %us",(s_run.horde_remaining+29)/30);
-        drawText(HudPart::Info,17,22+bossOffset);
+    float effectOffset=22+bossOffset;
+    for (unsigned i=0;i<unsigned(FateEffect::Count);++i) {
+        const auto remaining=s_run.fate_ticks(FateEffect(i));
+        if (!remaining) continue;
+        std::snprintf(text,sizeof(text),"%s  %us",fate_names[i],(remaining+ticks_per_second-1)/ticks_per_second);
+        drawText(HudPart::Info,17,effectOffset);
+        effectOffset+=22;
     }
     if (s_spawnFailures >= 10) {
         std::snprintf(text,sizeof(text),"Waiting for a clear enemy spawn position");
-        drawText(HudPart::Info,13,(s_run.horde_remaining?44:22)+bossOffset);
+        drawText(HudPart::Info,13,effectOffset);
     }
     graf->setup2D();
 }
@@ -1536,8 +1544,8 @@ void select_upgrade(ModContext*, void* data) {
     if (selected == Upgrade::Heart)
         dComIfGs_setMaxLife(std::min(100u,unsigned(dComIfGs_getMaxLife())+5*(s_run.rank(Upgrade::Heart)-oldHearts)));
     // Include newly gained heart containers and each queued level's choice.
-    dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
-    if (bonus) dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(), dComIfGs_getRupee() + bonus));
+    if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
+    if (bonus) dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(), dComIfGs_getRupee() + s_run.gain_rupees(bonus)));
     close_window();
     s_run.level_up(); // Preserve queued levels; do not resume combat between choices.
 }
@@ -1804,6 +1812,9 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsEnemyDamage, before_enemy_damage);
     PRE(SurvivorsPotionDrink, before_potion_drink); POST(SurvivorsPotionDrink, after_potion_drink);
     PRE(SurvivorsPotionHeal, before_potion_heal);
+    PRE(SurvivorsFateRupees, before_fate_rupees);
+    PRE(SurvivorsFateSprint, before_fate_sprint);
+    PRE(SurvivorsFairyParticles, before_fate_fairy_particles);
     PRE(SurvivorsPad, before_survivors_pad); POST(SurvivorsPad, after_survivors_pad);
     POST(SurvivorsCameraType, after_survivors_camera_tools);
     PRE(SurvivorsSaveOpen,before_save_screen_open); PRE(SurvivorsSaveDelete,before_save_screen_delete);

@@ -29,7 +29,7 @@ HookAction before_auto_movement(ModContext*, void* args, void*, void*) {
     if (shield_pose(link)) { s_guardMovement = link; s_guardSpeed = link->mNormalSpeed; }
     link->current.angle.y = link->mMoveAngle;
     const bool sprint=s_run.talents.rank(Talent::Sprint) && link->doButton() && !link->doTrigger() && link->checkInputOnR();
-    link->mMaxSpeed = link->mpHIO->mMove.m.mMaxSpeed*(sprint ? s_run.talents.sprint_multiplier() : 1.f);
+    link->mMaxSpeed = link->mpHIO->mMove.m.mMaxSpeed*(sprint ? s_run.talents.sprint_multiplier() : 1.f)*s_run.fate_speed();
     // setStickData scales mStickValue for the iron-ball heavy state. mMoveValue
     // retains the player's input before that penalty; keep the native deadzone.
     link->mNormalSpeed = link->mMoveValue > 0.05f ? link->mMaxSpeed * link->mMoveValue : 0;

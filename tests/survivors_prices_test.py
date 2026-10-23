@@ -61,7 +61,7 @@ int main(){
  view=false;draw_chest_prices();assert(labels.empty());view=true;
  s_run.phase=Phase::TreasureChoice;draw_chest_prices();assert(labels.empty());
  s_run.phase=Phase::Running;s_hordePortals[0]={true,{320,0,1000}};
- labels.clear();draw_horde_portal_labels();assert((labels==std::vector<std::string>{"Horde"}));
+ labels.clear();draw_horde_portal_labels();assert((labels==std::vector<std::string>{"Fate"}));
  for(unsigned reason=0;reason<5;++reason){labels.clear();s_hordePortals[0]={true,{320,0,1000}};
   s_victory=reason==0;event=reason==1;view=reason!=2;
   if(reason==3)s_hordePortals[0].visible=false;

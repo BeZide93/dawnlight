@@ -65,7 +65,7 @@ ModResult build_upgrade_choices(UiElementHandle left, UiElementHandle right) {
             rml += "<div class=\"survivors-treasure-change\">" + treasure_rml_escape(change.label) +
                 ": <span class=\"survivors-treasure-delta\">" + treasure_rml_escape(change.before) +
                 " -&gt; " + treasure_rml_escape(change.after) + "</span></div>";
-        const unsigned extra = s_run.upgrade_rupees(upgrade, rarity);
+        const unsigned extra = s_run.preview_rupees(s_run.upgrade_rupees(upgrade, rarity));
         if (upgrade != Upgrade::Rupees && extra)
             rml += "<div class=\"survivors-treasure-change\">Excess reward: <span class=\"survivors-treasure-delta\">+" +
                 number(extra) + " rupees</span></div>";

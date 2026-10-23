@@ -46,6 +46,14 @@ int main(){
   printed.clear();draw_combat_feedback();assert(printed.back().alpha<255&&printed.back().alpha>0&&printed.back().y>y);
   for(unsigned i=0;i<15;++i)update_combat_feedback();printed.clear();draw_combat_feedback();assert(printed.empty());
  }
+ // Every Fate name rises for two seconds and fades, then disappears.
+ for(unsigned i=0;i<unsigned(FateEffect::Count);++i){
+  clear_combat_feedback();printed.clear();fate_feedback({320,20,1000},FateEffect(i));draw_combat_feedback();
+  assert(printed.size()==2&&printed.back().text==fate_names[i]&&printed.back().alpha==255);
+  const auto y=printed.back().y;for(unsigned n=0;n<30;++n)update_combat_feedback();
+  printed.clear();draw_combat_feedback();assert(printed.back().y>y&&printed.back().alpha==127);
+  for(unsigned n=0;n<30;++n)update_combat_feedback();printed.clear();draw_combat_feedback();assert(printed.empty());
+ }
  clear_combat_feedback();begin_damage_feedback(&args,&enemy,&info);mark_damage_critical(&info,true);
  end_damage_feedback(&other);assert(s_damageFeedback.size()==1);
  end_damage_feedback(&args);assert(s_combatTexts[0].remaining==0); // Blocked/invincible: no damage, no Crit.

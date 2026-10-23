@@ -1023,7 +1023,7 @@ native damage entry, restricted to owned enemy contacts.
 
 Hyrule Field and Gerudo Desert each have four native Midna floor portals,
 randomly sampled from the completed reachable arena surface. They are spaced
-apart from one another, guards, existing chests and pots. A floating **Horde**
+apart from one another, guards, existing chests and pots. A floating **Fate**
 label uses the same range/projection as chest prices; available portals also use
 the same Tears of Light minimap marker as field elites, with native room
 rotation/offset. Loading, consumed and retiring portals have no marker. Portal models and persistent
@@ -1032,12 +1032,33 @@ Eight surrounding floor samples reject sharply uneven sites; the normal and
 clearance are cached at placement, with no per-frame ground scan. Interaction
 height follows the same floor plane so A remains usable on a hillside.
 
-Press **A** within 150 units horizontally and 35 vertically to trigger a
-15-second horde. A wall, pause/menu/event, wolf form, defeat/victory or the run
-time limit blocks activation. The action consumes that A press and resets the
-normal spawn cooldown; the existing population ceiling and boss-encounter
-spawn policy still apply. Overlapping random/portal hordes extend duration
-without multiplying the 3x boost. Each used portal disappears and respawns
+Press **A** within 150 units horizontally and 35 vertically to roll one of eight
+equally likely effects. The effect name rises from the portal and fades over two
+seconds. Timed effects appear with separate countdowns in the HUD's Horde/Info
+area, sharing its configured position and scale:
+
+| Effect | Result |
+| --- | --- |
+| Horde | 15 seconds of triple enemy spawn batches, within existing population/boss limits. |
+| Greed | 15 seconds without healing, with +50% XP and rupee income. |
+| Sprint | 15 seconds at 150% movement speed, using the sprint animation for ordinary forward running. |
+| Curse | Immediately removes half of current health, rounded down to whole quarter-heart units. |
+| Slow | 15 seconds at 50% movement speed. |
+| Fairy | Spawns one native fairy to collect or bottle. |
+| Luck | 15 seconds of +50% effective Luck, including drops, rarity, critical and lightning chance. |
+| Misfortune | 15 seconds of -50% effective Luck. |
+
+Greed blocks hearts, fairies, potions, life steal, regeneration and level-up
+healing. Half-unit XP/rupee bonuses carry between rewards during Greed; costs
+are unchanged. Sprint/Slow replace one another, as do Luck/Misfortune. Other
+effects coexist; repeating a timed effect refreshes its 15 seconds. Horde adds
+15 seconds to any existing random/portal Horde, without multiplying the 3x
+boost, and resets the normal spawn cooldown. Curse and Fairy have no timer.
+Menus/events pause all countdowns. Temporary modifiers clear on victory,
+defeat and a new run, and never change permanent upgrade ranks or save data.
+
+A wall, pause/menu/event, wolf form, defeat/victory or the run time limit blocks
+activation. The action consumes that A press. Each used portal disappears and respawns
 **three minutes of active run time after use**, at a new random reachable
 position separated from its old site. Unused portals remain available.
 Native portal creation/model/particles/deletion are retained, while Execute is

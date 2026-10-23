@@ -13,6 +13,7 @@ barriers::Point map_point(const cXyz& p) { return {p.x,p.y,p.z}; }
 cXyz game_point(barriers::Point p) { return cXyz(p.x,p.y,p.z); }
 void clear_arena_geometry() {
     clear_elite_sites();
+    clear_reachable_floor();
     s_barriers.clear(); s_arenaBackgrounds.clear(); s_arenaMeshReady = false; s_arenaSafe = s_arenaSpawn = false;
 }
 void add_exit_box(const fopAcM_prm_class& params, float width, float depth) {
@@ -116,6 +117,7 @@ void collect_arena_mesh(fopAc_ac_c* actor) {
     auto walls=boundary.walls();
     s_barriers.insert(s_barriers.end(),walls.begin(),walls.end());
     s_arenaBackgrounds.push_back(id); s_arenaMeshReady=true;
+    clear_reachable_floor(); // Newly streamed collision can open previously unknown routes.
     char message[160];
     std::snprintf(message,sizeof(message),"Hyrule Survivors: arena %s room %d, %u exit barrier segments",
         arena().stage,arena().room,unsigned(s_barriers.size()));

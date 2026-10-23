@@ -25,6 +25,7 @@
 #include "dusk/menu_pointer.h"
 #include "survivors_projectiles.hpp"
 #include "survivors_roster.hpp"
+#include "survivors_reachable.hpp"
 #include "survivors_items.hpp"
 #include "survivors_maps.hpp"
 #include "survivors_barriers.hpp"
@@ -500,6 +501,7 @@ Enemy* tracked(ActorId id) {
 #include "survivors_zelda_orbs.inc"
 #include "survivors_collision.inc"
 #include "survivors_elite_positions.inc"
+void clear_reachable_floor();
 #include "survivors_maps.inc"
 #include "survivors_extended_ai.inc"
 #include "survivors_aggro.inc"
@@ -509,6 +511,7 @@ DamageAmounts hit_damage_sources(const cCcD_Obj* collider);
 bool sword_kill_hit(const cCcD_Obj* collider);
 #include "survivors_feedback.inc"
 #include "survivors_ground.inc"
+#include "survivors_reachable.inc"
 #include "survivors_pickups.inc"
 #include "survivors_key_visual.inc"
 #include "survivors_player_damage.inc"
@@ -1235,6 +1238,7 @@ void after_player(ModContext*, void* args, void*, void*) {
     if (const unsigned rupees=s_run.auto_rupees())
         dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+rupees));
     update_enemy_effects();
+    update_reachable_floor();
     update_spawns(link); update_pots(link); update_exp_magnets(link); update_weapons(link); update_orbs(link);
     s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;
     if (s_run.level_up()) {

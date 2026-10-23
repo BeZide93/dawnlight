@@ -128,8 +128,17 @@ barriers reject a candidate instead of falling back to an unsafe position.
 Random Field/Desert guards use local path checks in eight directions over 600
 units, with 3,000 units of clearance from the original start and 1,800 from
 Link. They sample the whole room without a straight-line path to Link, so an
-entrance tunnel cannot attract the entire guard population. Guard/pot footprints also
-reject submerged or hazardous ground.
+entrance tunnel cannot attract the entire guard population. Field/Desert guards
+and small chests additionally require a verified walking route from the arena
+start. A bounded flood of the native floor builds this connected subset over
+multiple frames: at most 16 short expansion attempts and eight candidate route
+checks per active frame, with a 32,768-node cap. Unknown or isolated areas never
+qualify; missing placements retry as the search advances. The cache resets on
+restart, scene change and newly collected room collision. It is seeded only from
+the original grounded start, so jumping/gliding onto a plateau cannot authorize
+spawns there. The same rule applies to Throne Room chests, and walking rays use
+Link's polygon-pass rules to respect the native light wall. Guard/pot footprints
+also reject submerged or hazardous ground.
 
 Every arena hosts a twenty-minute run.
 Start with three hearts and automatic normal sword strikes. Sword Wave starts
@@ -410,13 +419,13 @@ Additional stationary elite guards wait at these map locations:
 
 | Map | Guards |
 | --- | --- |
-| Hyrule Field | Four random, separated positions across the room's floor |
-| Gerudo Desert | Four random, separated positions across the room's floor |
+| Hyrule Field | Four Bokoblins at separated, reachable random positions |
+| Gerudo Desert | Four Stalfos at separated, reachable random positions |
 | Darknut Arena | None; scheduled elites only |
 | Hyrule Castle Throne Room | None; scheduled elites only |
 | Palace of Twilight | One in front of each authored building doorway |
 
-Guards (Bokoblins, or Shadow club Bulblins in the Palace) use native idle animation, physics and collision, but
+Guards (Bokoblins in the Field, Stalfos in the Desert, Shadow club Bulblins in the Palace) use native idle animation, physics and collision, but
 skip idle detection/social alerts. Only a damaging hit from Link wakes them.
 Once provoked they pursue Link at any distance, just like ordinary and scheduled
 enemies. Standing nearby alone does not provoke a guard. Placement uses loaded
@@ -561,7 +570,9 @@ they cost 40 rupees or one small key, never advance regular prices, and share se
 Safe-position retries are bounded to 24 candidates per update. Affordability,
 preview, payment, floating labels and paid-reroll reservations use the same price.
 Starting chests use area-weighted room-floor sampling with local dry-ground,
-room, exit and footprint checks. They do not require a straight walking line
+room, exit and footprint checks, plus the connected-floor check in Field, Desert
+and Throne Room. Placement can continue while that bounded search expands. They
+do not require a straight walking line
 from Link: that rejects distant sites around terrain obstacles and clusters
 chests near the entrance. Minimum spacing from Link and between these chests is
 half the square root of floor area per chest, clamped to 250–2,500 units.

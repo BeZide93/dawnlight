@@ -63,7 +63,7 @@ inline Species choose_species(unsigned map,unsigned seconds,bool horde_event,flo
         if(counts[unsigned(type)]<ordinary_limit(type,horde)) candidates[count++]=type;
     return count?candidates[pick_roll%count]:Species::Count;
 }
-constexpr Species guard_species(unsigned map) {return map==3?Species::ShadowClub:Species::Bokoblin;}
+constexpr Species guard_species(unsigned map) {return map==2?Species::Stalfos:map==3?Species::ShadowClub:Species::Bokoblin;}
 constexpr float elite_scale(Species type) {
     switch(type) {
     case Species::KingBulblin:case Species::DeathSword:case Species::TwilitBloat:

@@ -24,7 +24,7 @@ bool walkable_spawn_path(cXyz from, cXyz& to, float footprint) {
         if (!dry_arena_floor(sample, 35, 35)) return false;
         // Sweep at ankle height, not above a low wall or a raised platform.
         cXyz a = previous+cXyz(0,20,0), b = sample+cXyz(0,20,0);
-        dBgS_LinChk wall; wall.Set(&a,&b,nullptr);
+        dBgS_LinChk wall; wall.SetLink(); wall.Set(&a,&b,nullptr);
         if (dComIfG_Bgsp().LineCross(&wall) || !arena_path_clear(a,b,footprint)) return false;
         previous=sample;
     }

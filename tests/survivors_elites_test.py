@@ -83,6 +83,7 @@ bool arena_path_clear(cXyz,cXyz,float){return !barrierBlocked;}
 bool dry_arena_floor(cXyz& p,float rise,float drop){if(p.y>drop||p.y < -rise||groundMissing||groundCode==4||groundCode==5||groundCode==10||
  (groundRoom!=-2&&groundRoom!=arena().room))return false;
  p.y=0;return true;}
+bool reachable=true;bool reachable_arena_floor(cXyz){return reachable;}void update_reachable_floor(){}
 bool rejectLongPath=false,narrowLanding=false;
 bool walkable_spawn_path(cXyz from,cXyz& to,float){return !groundMissing&&!wallBlocked&&!barrierBlocked &&
  (!rejectLongPath||from.absXZ(to)<1000) && (!narrowLanding||std::abs(to.x-from.x)<300); }
@@ -174,6 +175,10 @@ int main(){
   assert(s_chests[2].position.x==500&&s_chests[2].position.z==600);
  }
  s_chests[2]={};
+ for(unsigned map:{1u,2u}) {
+  fresh(map);add_floor(10000);reachable=false;update_elite_spawns(&player);assert(guards()==0);
+  reachable=true;update_elite_spawns(&player);assert(guards()==4);
+ }
  // Missing corpse ground falls back to its last validated floor.
  killed.eliteSlot=1;killed.lootPosition={100,0,200};groundMissing=true;drop_elite_chest(killed,&player);
  assert(s_chests[2].position.x==100&&s_chests[2].position.y==0&&s_chests[2].position.z==200);groundMissing=false;

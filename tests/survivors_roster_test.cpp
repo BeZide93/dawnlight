@@ -60,7 +60,7 @@ int main() {
     assert(map_roster(3).specialist_count==2);
     assert(ordinary_limit(Species::ShadowBow,5)==12&&ordinary_limit(Species::ShadowKargarok,5)==6);
     assert(ordinary_limit(Species::ShadowBeast,5)==4);
-    assert(guard_species(3)==Species::ShadowClub&&guard_species(2)==Species::Bokoblin);
+    assert(guard_species(3)==Species::ShadowClub&&guard_species(2)==Species::Stalfos&&guard_species(1)==Species::Bokoblin);
     assert(elite_scale(Species::StallordHead)==1&&elite_scale(Species::ZantHand)==1);
     assert(elite_scale(Species::Stalhound)==2&&elite_scale(Species::ShadowBeast)==2);
     assert(elite_scale(Species::Tektite)==2&&elite_scale(Species::FireBubble)==2);

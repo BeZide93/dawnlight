@@ -122,6 +122,7 @@ std::vector<EliteFloor>s_eliteFloors{
  {{-10000,0,-10000},{10000,0,-10000},{-10000,0,10000},200000000},
  {{10000,0,10000},{-10000,0,10000},{10000,0,-10000},400000000}};
 bool walkable_spawn_path(cXyz,cXyz&,float){return !blocked&&!invalidFloor&&!arenaBlocked;}
+bool reachable=true;bool reachable_arena_floor(cXyz){return reachable;}
 bool elite_floor_position(cXyz&){++placement;return !invalidFloor;}
 bool in_arena(){return arenaPresent;}bool transitioning(){return transition;}
 unsigned dComIfGs_getRupee(){return rupees;}void dComIfGs_setRupee(unsigned r){rupees=r;}
@@ -436,7 +437,9 @@ int main(){
         for(const auto& c:s_chests)assert(!c.active);
         // Safe destinations can be reached by going around obstacles. The old
         // Link-to-chest straight-path filter incorrectly rejected all of them.
-        invalidFloor=false;blocked=true;
+        invalidFloor=false;reachable=false;seed_map_chests(&player);
+        for(const auto& c:s_chests)assert(!c.active);
+        reachable=true;blocked=true;
         for(unsigned frame=0;frame<200;++frame){
             const unsigned before=placement;seed_map_chests(&player);
             assert(placement-before<=24);

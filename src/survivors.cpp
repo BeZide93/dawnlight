@@ -109,6 +109,8 @@
 #include "d/actor/d_a_b_tn.h"
 
 #include "d/d_com_inf_game.h"
+#include "d/d_path.h"
+#include "d/actor/d_a_suspend.h"
 #include "d/d_debug_viewer.h"
 #include "d/d_gameover.h"
 #include "res/Object/E_fm.h"
@@ -179,7 +181,7 @@ DEFINE_HOOK(&dMsgFlow_c::getInitNodeIndex, SurvivorsMidnaFlow);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
-DEFINE_HOOK(&dSv_info_c::isSwitch, SurvivorsPalacePlatformSwitch);
+DEFINE_HOOK(static_cast<void(*)(fopAc_ac_c*)>(&daSus_c::check), SurvivorsPalaceFerrySuspend);
 DEFINE_HOOK(&daAlink_c::checkDamageAction, SurvivorsBlock);
 DEFINE_HOOK(&daAlink_c::setShieldGuard, SurvivorsGuard);
 DEFINE_HOOK_SYMBOL("cCcS::SetCoCommonHitInf",void(cCcS*,cCcD_Obj*,cXyz*,cCcD_Obj*,cXyz*,f32),SurvivorsEnemyContact);
@@ -507,6 +509,7 @@ Enemy* tracked(ActorId id) {
 #include "survivors_zelda_orbs.inc"
 #include "survivors_collision.inc"
 #include "survivors_elite_positions.inc"
+#include "survivors_palace_ferry.inc"
 void clear_reachable_floor();
 #include "survivors_maps.inc"
 #include "survivors_extended_ai.inc"
@@ -579,6 +582,7 @@ void retire_enemies() {
     for (auto& e : s_enemies) if (e.id != kNone) e.retiring = true;
 }
 void cleanup_enemies() {
+    cleanup_palace_ferries();
     cleanup_horde_portals();
     cleanup_boss_ring();
     cleanup_enemy_arrows();
@@ -1238,6 +1242,7 @@ void after_player(ModContext*, void* args, void*, void*) {
     update_combat_feedback();
     update_gear_notice();
     chest_spawning_allowed(); // Also retire exhausted chests during victory loot time.
+    update_palace_ferries();
     if (s_victory) {
         update_victory();
         update_exp_magnets(link); update_orbs(link);
@@ -1318,9 +1323,7 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
             collect_arena_mesh(actor);
             // A moving floor must pause with its rider during upgrade/settings
             // menus. Leave native creation, drawing and unloading untouched.
-            if (s_map==3 && fopAcM_GetName(actor)==fpcNm_Obj_Lv8Lift_e &&
-                (fopAcM_GetRoomNo(actor)==arena().room || fopAcM_GetRoomNo(actor)==-1) &&
-                pause_run_actor(false)) {
+            if (auto* ferry=tracked_palace_ferry(id); ferry && (ferry->retiring || pause_run_actor(false))) {
                 *static_cast<int*>(result)=1;
                 return HOOK_SKIP_ORIGINAL;
             }
@@ -1820,7 +1823,7 @@ ModResult initialize_survivors(ModError* error) {
     if(!s_enemyArchivesAvailable)svc_log->warn(mod_ctx,
         "Survivors archive retention unavailable; using native resource loading");
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
-    PRE(SurvivorsPalacePlatformSwitch, before_palace_platform_switch);
+    PRE(SurvivorsPalaceFerrySuspend, before_palace_ferry_suspend);
 #include "survivors_roster_hooks.inc"
     PRE(SurvivorsEnemySpeed, before_enemy_speed); POST(SurvivorsEnemySpeed, after_enemy_facing);
     PRE(SurvivorsEnemySpeed,before_boss_path); // Final position constraints after all movement boosts.

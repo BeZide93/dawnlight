@@ -37,12 +37,9 @@ using process_method_func=int(*)(void*);
 int execute(void*){return 1;} int destroy(void*){return 1;} int create(void*){return 1;}
 struct process_method_class {process_method_func execute_method=execute,delete_method=destroy;} methods;
 struct fopAc_ac_c {ActorId id;void* sub_method=&methods;bool actor=true;int name=0,room=0;};
-constexpr int fpcNm_Obj_Lv8Lift_e=43;
-int fopAcM_GetName(fopAc_ac_c* p){return p->name;}
-int fopAcM_GetRoomNo(fopAc_ac_c* p){return p->room;}
-unsigned s_map=0;
-struct Arena{int room=0;}map;
-const Arena& arena(){return map;}
+struct PalaceFerry{bool retiring=false;}ferry;
+bool ferryOwned=false;
+PalaceFerry* tracked_palace_ferry(ActorId id){return ferryOwned&&id==7?&ferry:nullptr;}
 struct{ActorId id=kNone;}s_bossRing;
 HookAction process_boss_ring(fopAc_ac_c*,void*,void*){return HOOK_CONTINUE;}
 struct daE_OC_c:fopAc_ac_c {int mMoveRange=0,field_0x6e3=0;int getActionMode(){return 0;}void setActionMode(int,int){}};
@@ -89,17 +86,15 @@ int main(){
     // Only the active Palace ferry's Execute freezes with Link. Rendering,
     // creation and destruction still run, including unload while paused.
     for(bool active:{false,true})for(bool pause:{false,true})
-    for(unsigned area:{0u,3u,4u})for(int room:{-1,0,1})
-    for(int name:{0,fpcNm_Obj_Lv8Lift_e})
+    for(bool owned:{false,true})for(bool retiring:{false,true})
     for(auto method:{execute,create,destroy}) {
-        arenaActive=active;paused=pause;s_map=area;actor.room=room;actor.name=name;
+        arenaActive=active;paused=pause;ferryOwned=owned;ferry.retiring=retiring;
         args[0]=process_method_func(method);result=0;
-        const bool frozen=active&&pause&&area==3&&room<=0&&
-            name==fpcNm_Obj_Lv8Lift_e&&method==execute;
+        const bool frozen=active&&owned&&(pause||retiring)&&method==execute;
         assert(before_process(nullptr,args,&result,nullptr)==(frozen?HOOK_SKIP_ORIGINAL:HOOK_CONTINUE));
         assert(result==(frozen?1:0));
     }
-    arenaActive=paused=false;s_map=0;actor.room=actor.name=0;args[0]=process_method_func(execute);
+    arenaActive=paused=ferryOwned=false;args[0]=process_method_func(execute);
     assert(before_process(nullptr,args,&result,nullptr)==HOOK_CONTINUE);
     assert(!tracked(7)&&!tracked_pot(7)&&!tracked_pickup(7));
     assert(!tracked(kNone)&&!tracked_pot(kNone)&&!tracked_pickup(kNone));

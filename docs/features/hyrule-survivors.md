@@ -96,16 +96,20 @@ native scene exits are disabled during runs. The hub retains its usable exit doo
 Enemy and chest placement reject other rooms and paths across these barriers.
 If collision is not ready, combat does not begin. Story mode and Boss Rush retain their own rules.
 
-The Palace exterior's east-platform availability switch `0x64` reads as enabled
-in Survivors from room loading onward, without bringing a Sol to its socket.
-This switch is documented as "East platform to palace active" in the
-[TP Randomizer's seed flags](https://github.com/zsrtp/Randomizer-Web-Generator/blob/2025e1ff8cc628588ebc58b284c25ee571a31df7/Generator/Assets/Flags.cs).
-The override applies only to the active Palace arena's room 0 and shared-stage
-reads. Other switches, rooms and game modes retain native results. No save bits
-are written. The `L8LiftX` actor additionally uses its native always-on mode for
-continuous return trips along its authored path, and pauses with Link in menus.
-The actor-parameter edit alone did not cover the separate availability gate;
-the switch hook is installed before stage loading, not after actor creation.
+The Palace crossing is explicitly created from the room's authored light-lift
+records. A one-time scan of `room.dzr` includes inactive actor layers, and the
+stage-create hook retains any shared-stage records before suppressing their
+original actors. Both `optLift` and `L8LiftX` are supported; their different
+path/speed parameter fields are translated into the native `L8LiftX` always-on
+mode. This avoids `optLift`'s requirement for a switch transition after Create.
+Routes are deduplicated by room/path and validated before spawning. Position,
+scale, orientation and movement speed come from native records and paths.
+
+Only owned ferries bypass native story suspension volumes and pause with Link
+in menus. Creation IDs remain tracked until initialization/deletion completes,
+including restart and departure. No story switches or room archives are edited.
+One-time route discovery and actor-request messages in the game log identify
+missing records or invalid paths without logging every frame.
 
 On every arena, falling more than 500 units below the last safe position checks
 for dry, valid ground beneath Link before triggering recovery. Tall cliff jumps

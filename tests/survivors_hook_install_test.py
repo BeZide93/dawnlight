@@ -95,7 +95,7 @@ assert 'DEFINE_HOOK_SYMBOL("dBgS_LinChk::Set"' not in source
 assert 'DEFINE_HOOK(&dComIfGp_setSelectItem, SurvivorsBind)' in source
 assert 'DEFINE_HOOK(&cBgS::LineCross, SurvivorsEnemyNavigationLine)' in source
 assert ('SurvivorsPlayer','before_player_bindings') in hooks
-assert ('SurvivorsPalacePlatformSwitch','before_palace_platform_switch') in hooks
+assert ('SurvivorsPalaceFerrySuspend','before_palace_ferry_suspend') in hooks
 assert ('SurvivorsEliteMinimap','before_survivors_minimap') in hooks
 assert ('SurvivorsEliteMinimap','after_elite_minimap') in hooks
 assert ('SurvivorsMinimapCursor','before_survivors_minimap_cursor') in hooks

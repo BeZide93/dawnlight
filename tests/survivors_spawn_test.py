@@ -86,6 +86,9 @@ void fopAcM_SetRoomNo(fopAc_ac_c* a,int n){a->room=n;}
 void load_records(){++recordsLoaded;}
 void clear_elite_sites(){}
 void clear_reachable_floor(){}
+void retire_palace_ferries(){}
+bool ferryCaptured=false;
+bool capture_palace_ferry(int,const fopAcM_prm_class&){return ferryCaptured;}
 void capture_elite_site(int,const fopAcM_prm_class&){}
 void reset_midna_dialog(){}
 void update_midna_dialog(){}
@@ -100,28 +103,6 @@ bool update_ending(daAlink_c*){return false;}
 '''
 main = r'''
 int main(){
- // East-platform availability must be visible before any actor append exists,
- // including Loading. No switch storage is written by this read-only override.
- s_run.phase=Phase::Loading;
- for(bool enabled:{false,true})for(unsigned map=0;map<arenas.size();++map)
- for(int room:{-1,0,1,6,51})for(int bit=-1;bit<=255;++bit) {
-  active=enabled;s_map=map;
-  std::any args[]={nullptr,bit,room};BOOL result=37;
-  const bool crossing=enabled&&map==3&&(room==-1||room==0)&&bit==0x64;
-  assert(before_palace_platform_switch(nullptr,args,&result,nullptr)==
-      (crossing?HOOK_SKIP_ORIGINAL:HOOK_CONTINUE));
-  assert(result==(crossing?TRUE:37));
- }
- active=true;s_map=3;
- std::any switchArgs[]={nullptr,0x64,0};BOOL platformAvailable=FALSE;
- assert(before_palace_platform_switch(nullptr,switchArgs,&platformAvailable,nullptr)==HOOK_SKIP_ORIGINAL);
- assert(platformAvailable==TRUE);
- assert(before_palace_platform_switch(nullptr,nullptr,&platformAvailable,nullptr)==HOOK_CONTINUE);
- assert(before_palace_platform_switch(nullptr,switchArgs,nullptr,nullptr)==HOOK_CONTINUE);
- active=false;platformAvailable=FALSE;
- assert(before_palace_platform_switch(nullptr,switchArgs,&platformAvailable,nullptr)==HOOK_CONTINUE);
- assert(platformAvailable==FALSE); // Leaving the mode immediately restores native reads.
- active=true;s_run.phase=Phase::Running;
  stage_actor_data_class record;fopAcM_prm_class params;
  std::any spawnArgs[]={&record,&params};info.procname=fpcNm_ALINK_e;
  for(unsigned map=0;map<arenas.size();++map){
@@ -138,24 +119,13 @@ int main(){
    assert((params.base.parameters&0x00fe0fff)==(original&0x00fe0fff));
   }
  }
- // Enable the authored Palace ferry only in the active arena's own room.
- // Preserve its path, speed, position and all unrelated parameter bits.
- info.procname=fpcNm_Obj_Lv8Lift_e;
- for(bool enabled:{false,true})for(unsigned map=0;map<arenas.size();++map)
- for(int room:{-1,0,6,51})for(unsigned sw:{0u,61u,255u}) {
-  active=enabled;s_map=map;params.room_no=room;
-  const unsigned original=0xa5b00d07u|(sw<<12);
-  params.base.parameters=original;params.base.position={12,34,56};params.base.angle.y=1234;
-  assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_CONTINUE);
-  const bool ferry=enabled&&map==3&&(room==-1||room==arena().room);
-  assert(((params.base.parameters>>12)&255)==(ferry?255:sw));
-  assert((params.base.parameters&0xfff00fffu)==(original&0xfff00fffu));
-  assert(params.base.position.y==34&&params.base.angle.y==1234&&freed==0);
- }
- active=true;s_map=3;params.room_no=0;info.procname=fpcNm_BG_e;
- params.base.parameters=0x12345678;
- assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_CONTINUE);
- assert(params.base.parameters==0x12345678);
+ // A captured ferry transfers to explicit creation; release the append and
+ // suppress its original creator so there cannot be two collision platforms.
+ info.procname=fpcNm_BG_e;ferryCaptured=true;
+ assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&freed==1);
+ active=false;
+ assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_CONTINUE&&freed==1);
+ active=true;ferryCaptured=false;freed=0;
  // Native story chests remain filtered; the hub chest uses its own actor.
  s_map=0;params.room_no=51;info.procname=fpcNm_TBOX_e;
  assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
@@ -339,7 +309,7 @@ int main(){
 # Exercise the real floor policy together with the rescue hooks.
 ground = (root/'src/survivors_ground.inc').read_text()
 dry_floor = ground[:ground.index('struct ArenaWalk')]
-functions = dry_floor+'\n'+'\n'.join(extract(n) for n in ['add_exit_box','arena_story_actor','before_palace_platform_switch','before_arena_stage_actor',
+functions = dry_floor+'\n'+'\n'.join(extract(n) for n in ['add_exit_box','arena_story_actor','before_arena_stage_actor',
     'confine_arena_actor','after_arena_position','before_arena_restart','arena_grounded','arena_fallen','arena_safe_footprint','restore_arena_player','update_arena_safety'])
 globals = source[source.index('std::vector<barriers::Wall>'):source.index('void add_exit_box')]
 with tempfile.TemporaryDirectory() as tmp:

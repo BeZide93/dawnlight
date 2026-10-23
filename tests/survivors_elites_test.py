@@ -114,6 +114,7 @@ void dComIfGs_setRupee(unsigned value){rupees=value;++rupeeWrites;}
 void update_combat_feedback(){}
 void update_enemy_effects(){}void update_weapons(daAlink_c*){}void update_orbs(daAlink_c*){} void update_exp_magnets(daAlink_c*){}
 void clear_attacks(){}void update_chests(daAlink_c*){}void update_pots(daAlink_c*){}
+void update_palace_ferries(){}
 void update_horde_portals(daAlink_c*){}
 
 '''

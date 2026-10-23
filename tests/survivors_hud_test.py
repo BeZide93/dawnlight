@@ -247,6 +247,8 @@ int main(){
     printed.clear();rubyLabels=0;hasFont=true;draw_hud(nullptr,nullptr,nullptr,nullptr);
     assert(rubyLabels==2&&printed[0].find("Endless")!=std::string::npos&&printed[1]=="25");
     s_run.start(42);
+    prices=portalLabels=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
+    assert(prices==1&&portalLabels==1&&feedback==1);
     // Victory uses the boss font, a red ceiling-rounded 10-second timer,
     // and restores GX vertex descriptors for the next native HUD element.
     s_run.phase=Phase::Running;s_victory=true;hasFont=true;
@@ -265,15 +267,15 @@ int main(){
     // All native menu opening/active/closing states hide every overlay, even
     // when the UI service reports no document (Collection is native).
     for(bool inHub:{false,true})for(unsigned state:{1u,2u,3u,4u,5u,10u}) {
-        hub=inHub;nativeWindow=state;boxes=labels=prices=feedback=hubLabels=0;
+        hub=inHub;nativeWindow=state;boxes=labels=prices=portalLabels=feedback=hubLabels=0;
         draw_hud(nullptr,nullptr,nullptr,nullptr);
-        assert(!boxes&&!labels&&!prices&&!feedback&&!hubLabels);nativeWindow=0;
+        assert(!boxes&&!labels&&!prices&&!portalLabels&&!feedback&&!hubLabels);nativeWindow=0;
     }
     hub=false;
     for(unsigned reason=0;reason<3;++reason) {
         nativePause=reason==0;pauseFlag=reason==1;scenePause=reason==2;
-        boxes=labels=prices=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
-        assert(!boxes&&!labels&&!prices&&!feedback);
+        boxes=labels=prices=portalLabels=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
+        assert(!boxes&&!labels&&!prices&&!portalLabels&&!feedback);
     }
     nativePause=0;pauseFlag=scenePause=false;
     s_gearNoticeTicks=0;
@@ -281,8 +283,8 @@ int main(){
     // without emitting world labels or changing run/encounter state.
     s_hudEditorWindow=1;window=hub=true;s_run.phase=Phase::Ready;
     const auto ticksBefore=s_run.ticks;const auto targetBefore=s_bossHudTarget;
-    boxes=labels=prices=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
-    assert(boxes==4&&labels&&bossPercentage==65&&!prices&&!feedback);
+    boxes=labels=prices=portalLabels=feedback=0;draw_hud(nullptr,nullptr,nullptr,nullptr);
+    assert(boxes==4&&labels&&bossPercentage==65&&!prices&&!portalLabels&&!feedback);
     assert(s_run.phase==Phase::Ready&&s_run.ticks==ticksBefore&&s_bossHudTarget==targetBefore);
     nativeWindow=3;boxes=labels=0;draw_hud(nullptr,nullptr,nullptr,nullptr);assert(!boxes&&!labels);nativeWindow=0;
     s_hudEditorWindow=0;window=hub=false;s_run.phase=Phase::Running;
@@ -368,7 +370,7 @@ int main(){
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'test.cpp'
     binary = Path(tmp) / 'test'
-    cpp.write_text(prefix + stubs + '\nunsigned s_gearNoticeTicks=0;const char* s_gearNotice="Weapon acquired";GearItem s_gearNoticeItem{};bool gear_notice_equip_available(){return s_gearNoticeTicks&&s_gearNoticeItem.kind!=GearKind::Empty;}\n' + '\nbool hub=false;unsigned hubLabels=0,prices=0,feedback=0;bool survivors_hub_active(){return hub;} void draw_hub_labels(){++hubLabels;} void draw_chest_prices(){++prices;} void draw_combat_feedback(){++feedback;}\n' + native + '\n' + function(source, 'void label(') + '\n' +
+    cpp.write_text(prefix + stubs + '\nunsigned s_gearNoticeTicks=0;const char* s_gearNotice="Weapon acquired";GearItem s_gearNoticeItem{};bool gear_notice_equip_available(){return s_gearNoticeTicks&&s_gearNoticeItem.kind!=GearKind::Empty;}\n' + '\nbool hub=false;unsigned hubLabels=0,prices=0,portalLabels=0,feedback=0;bool survivors_hub_active(){return hub;} void draw_hub_labels(){++hubLabels;} void draw_chest_prices(){++prices;} void draw_horde_portal_labels(){++portalLabels;} void draw_combat_feedback(){++feedback;}\n' + native + '\n' + function(source, 'void label(') + '\n' +
                    (root/'src/survivors_boss_hud.inc').read_text() + '\n' + (root/'src/survivors_chest_hud.inc').read_text() + '\n' + (root/'src/survivors_gear_notice.inc').read_text() + '\n' + function(source, 'void draw_hud(') + '\n' + main)
     subprocess.run([os.environ.get('CXX','c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror', '-I', str(root/'src'),
                     str(cpp), '-o', str(binary)], check=True)

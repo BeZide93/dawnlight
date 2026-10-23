@@ -109,6 +109,44 @@ int main(){
  assert(opt.base.parameters==0xff074208&&standard.base.parameters==0xff064742);
  file.m_chunkCount=0;frame();assert(s_palaceFerryScanned&&s_palaceFerries.empty());
  assert(logService.warnings>=2);
+
+ // Regression: two distinct, intersecting layer paths previously spawned two
+ // moving floors. Prefer the east route even when its record is encountered last.
+ retire_palace_ferries();
+ Point crossing[2]{{{100,2,-100}},{{100,2,100}}};
+ standard.base.parameters=0xff065743; // Other switch/path, encountered first.
+ opt.base.parameters=0xff074264; // East switch 0x64, path 0x42.
+ file.m_chunkCount=2;file.m_nodes[0]=node("ACT0",1,&standard);file.m_nodes[1]=node("SCO2",1,&opt);
+ paths[0x43]={2,crossing};paths.erase(0x42);
+ const auto before=requests;
+ frame();assert(s_palaceFerries.size()==2&&requests==before); // Wait for chosen path, don't switch routes.
+ paths[0x42]={3,points};refuse=true;frame();assert(requests==before+1);
+ refuse=false;frame();assert(requests==before+2&&(last.parameters&255)==0x42);
+ auto eastID=s_palaceFerries[1].id;assert(eastID!=kNone&&s_palaceFerries[0].id==kNone);
+ for(int i=0;i<100;++i){frame();cleanup_palace_ferries();}
+ assert(requests==before+2&&pending.size()==1);
+ pending.erase(eastID);actors[eastID]={eastID};cleanup_palace_ferries();
+ for(int i=0;i<100;++i)frame();
+ assert(requests==before+2&&actors.size()==1);
+ // Losing the actor retries the same route, never the intersecting alternative.
+ actors.clear();cleanup_palace_ferries();frame();
+ assert(requests==before+3&&(last.parameters&255)==0x42);
+ eastID=s_palaceFerries[1].id;
+ // A restart discovers new candidates while the old Create/Delete is pending.
+ retire_palace_ferries();frame();assert(requests==before+3);
+ pending.erase(eastID);actors[eastID]={eastID};cleanup_palace_ferries();
+ for(int i=0;i<100;++i)frame();
+ assert(requests==before+3); // Still alive/retiring: no replacement yet.
+ actors.clear();cleanup_palace_ferries();frame();
+ assert(requests==before+4&&(last.parameters&255)==0x42&&pending.size()==1);
+ pending.clear();retire_palace_ferries();cleanup_palace_ferries();assert(s_palaceFerries.empty());
+ // Archives without the east marker still get exactly one stable fallback.
+ file.m_chunkCount=1;frame();assert((last.parameters&255)==0x43);
+ const auto fallbackRequests=requests;
+ p.base.parameters=0xff074264;assert(capture_palace_ferry(fpcNm_Obj_Lv8OptiLift_e,p));
+ frame();assert(requests==fallbackRequests);
+ pending.clear();cleanup_palace_ferries();frame();
+ assert(requests==fallbackRequests+1&&(last.parameters&255)==0x43);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
@@ -116,4 +154,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture+(root/'src/survivors_palace_ferry.inc').read_text()+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print('Palace ferry: inactive-layer discovery, native parameter conversion, pending ownership, suspension isolation and cleanup passed')
+print('Palace ferry: single crossing, stable route selection, restart exclusion, inactive-layer discovery, native parameters, suspension and cleanup passed')

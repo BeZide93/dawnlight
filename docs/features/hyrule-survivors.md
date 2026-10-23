@@ -456,13 +456,20 @@ array. The screen still owns the textbox lifetime; there is no pane-pointer cach
 Draw the label after `dDlst_FileInfo_c::draw`, using the hearts' final global
 vertices after the native `mBasePane` / `Nm_02` slot transform. Re-evaluate the
 area each draw so selection scaling and replacement layouts follow their actual
-heart positions. Match the native time text's rendered font size, color and fade;
-suppress the label when its panel is hidden. This pass neither allocates a pane
+heart positions horizontally. Align vertically with the visible native player-name
+textbox (`f_name01` or `w_name01`), retaining its local font metrics, vertical
+binding, print offset and final transform. This preserves the same baseline even
+when J2DPrint rounds binding offsets during selection scaling. Match the name's
+font, color and fade; fit long levels horizontally without changing their height
+or baseline. Suppress the label when its panel is hidden. This pass neither allocates a pane
 nor reads save records. The literal `setString` fix remains in place. No save data
 or live progression state is changed.
 
 Regression coverage runs the actual SDK FileInfo draw, vertex transform and
-string setter. It checks moving/resized slots after records were loaded, different
+string setter, plus J2DPrint vertical binding with one-line font fixtures. It checks
+matching name/level baselines for both regional name fields, top/center/bottom
+binding, nonzero text origins/offsets, fractional selection scaling and narrow
+layouts. It also covers moving/resized slots after records were loaded, different
 panel origins, hidden panes, fades and unchanged alpha-manager child counts. The
 SDK-dependent tests run after SDK setup in CI.
 

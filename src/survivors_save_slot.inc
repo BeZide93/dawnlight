@@ -27,7 +27,7 @@ void after_survivors_save_slot(ModContext*,void* args,void* result,void*) {
     else std::snprintf(text,sizeof(text),"Meta Level ?");
 
     if(!info->mFileInfo.field_0x10 || !info->mFileInfo.mFont ||
-        !screen->search(MULTI_CHAR('w_ptim01')))return;
+        (!screen->search(MULTI_CHAR('f_name01')) && !screen->search(MULTI_CHAR('w_name01'))))return;
     std::array<J2DPane*,20> hearts{};
     for(unsigned i=0;i<hearts.size();++i) {
         hearts[i]=screen->search(kSaveHeartTags[i]);
@@ -53,7 +53,10 @@ void after_survivors_save_slot_draw(ModContext*,void* args,void*,void*) {
     if(!s_active || !info || !info->Scr)return;
     auto* label=static_cast<J2DTextBox*>(info->Scr->search(kSaveMetaTag));
     if(!label || !label->getUserInfo() || !label->getStringPtr())return;
-    auto* style=static_cast<J2DTextBox*>(info->Scr->search(MULTI_CHAR('w_ptim01')));
+    // The native screen selects one of these name fields for the current region.
+    auto* style=static_cast<J2DTextBox*>(info->Scr->search(MULTI_CHAR('f_name01')));
+    if(!style || !style->isVisible())
+        style=static_cast<J2DTextBox*>(info->Scr->search(MULTI_CHAR('w_name01')));
     if(!style || !style->mColorAlpha)return;
     for(J2DPane* pane=style;pane;pane=pane->getParentPane())if(!pane->isVisible())return;
     auto* graf=dComIfGp_getCurrentGrafPort();if(!graf)return;
@@ -72,16 +75,29 @@ void after_survivors_save_slot_draw(ModContext*,void* args,void*,void*) {
         }
     }
     if(area.getWidth()<=0 || area.getHeight()<=0)return;
+    // Keep the name's local vertical geometry and text metrics. Centering in
+    // both heart rows puts the baseline below Link; scaling metrics into screen
+    // coordinates also changes J2DPrint's integer vertical-binding rounding.
     J2DTextBox::TFontSize font;style->getFontSize(font);
     const auto& m=style->mGlobalMtx;
-    font.mSizeX*=std::hypot(m[0][0],m[1][0]);font.mSizeY*=std::hypot(m[0][1],m[1][1]);
-    const float scale=std::min({1.f,area.getHeight()/std::max(1.f,font.mSizeY),
-        area.getWidth()/std::max(1.f,font.mSizeX*float(std::strlen(label->getStringPtr())))});
-    label->setFontSize(font.mSizeX*scale,font.mSizeY*scale);
+    const float scaleX=std::hypot(m[0][0],m[1][0]);
+    if(!std::isfinite(scaleX) || scaleX<=0 || !style->getFont())return;
+    const float width=area.getWidth()/scaleX;
+    const float textWidth=(font.mSizeX+std::max(0.f,style->getCharSpace()))*
+        float(std::strlen(label->getStringPtr()));
+    const float fit=std::min(1.f,width/std::max(1.f,textWidth));
+    // Fit long levels horizontally without changing their baseline or height.
+    label->setFont(style->getFont());
+    label->setFontSize(font.mSizeX*fit,font.mSizeY);
+    label->setCharSpace(style->getCharSpace()*fit);
+    label->setLineSpace(style->getLineSpace());
+    label->mFlags=(label->mFlags & ~0x0f) | (HBIND_LEFT<<2) | style->getVBinding();
+    label->field_0x10c=0;
+    label->field_0x110=style->field_0x110;
     label->setFontColor(style->getCharColor(),style->getGradColor());
-    label->mBounds=JGeometry::TBox2<f32>(0,0,area.getWidth(),area.getHeight());
-    MTXIdentity(label->mGlobalMtx);
-    label->mGlobalMtx[0][3]=area.i.x;label->mGlobalMtx[1][3]=area.i.y;
+    label->mBounds=JGeometry::TBox2<f32>(0,style->mBounds.i.y,width,style->mBounds.f.y);
+    std::memcpy(label->mGlobalMtx,m,sizeof(Mtx));
+    label->mGlobalMtx[0][3]=area.i.x-m[0][1]*style->mBounds.i.y;
     label->mColorAlpha=style->mColorAlpha;
     // drawSelf uses the supplied native graf matrix and does not show the pane
     // during the next ordinary tree traversal. No per-frame allocation or reads.

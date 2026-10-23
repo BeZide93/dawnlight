@@ -115,7 +115,7 @@ int main(){
  file.m_chunkCount=0;frame();assert(s_palaceFerryScanned&&s_palaceFerries.empty());
  assert(logService.warnings>=2);
 
- // Two distinct intersecting paths are retained, but never move together.
+ // Start one ferry first, then pair its return with the other outbound leg.
  retire_palace_ferries();
  Point crossing[3]{{{100,2,-100}},{{100,2,0}},{{100,2,100}}};
  standard.base.parameters=0xff065743;
@@ -138,32 +138,51 @@ int main(){
  pending.erase(eastID);actors[eastID]={eastID};cleanup_palace_ferries();
  assert(move(otherID)==HOOK_SKIP_ORIGINAL&&move(eastID)==HOOK_CONTINUE);
  auto& east=actors[eastID];auto& other=actors[otherID];
- // A full native acceleration/braking leg retains ownership at intermediate
- // points, handing over only after braking at an endpoint (WAIT_INIT).
- auto travel=[&](ActorId id,ActorId waiting,int endpoint){
+ // Simulate native acceleration, intermediate waypoints and endpoint braking.
+ auto travel=[&](ActorId id,int endpoint){
   auto& a=actors[id];
   for(int mode:{daL8Lift_c::MODE_WAIT_e,daL8Lift_c::MODE_ACC_e,daL8Lift_c::MODE_MOVE_e,daL8Lift_c::MODE_BRK_e}) {
-   a.mMode=mode;assert(move(id)==HOOK_CONTINUE&&move(waiting)==HOOK_SKIP_ORIGINAL);
+   a.mMode=mode;assert(move(id)==HOOK_CONTINUE);
   }
   a.mMode=daL8Lift_c::MODE_WAIT_INIT_e;a.mCurrentPoint=1;
-  assert(move(id)==HOOK_CONTINUE&&move(waiting)==HOOK_SKIP_ORIGINAL);
+  assert(move(id)==HOOK_CONTINUE); // Never switch phases at an intermediate point.
   a.mMode=daL8Lift_c::MODE_BRK_e;a.mCurrentPoint=endpoint;
-  assert(move(id)==HOOK_CONTINUE&&move(waiting)==HOOK_SKIP_ORIGINAL);
+  assert(move(id)==HOOK_CONTINUE);
   a.mMode=daL8Lift_c::MODE_WAIT_INIT_e;
-  assert(move(id)==HOOK_SKIP_ORIGINAL&&s_palaceFerryTurn==waiting);
+  assert(move(id)==HOOK_SKIP_ORIGINAL);
+ };
+ auto dwell=[&]{
   assert(s_palaceFerryDwell==60);
   playing=false;
-  for(int i=0;i<20;++i)assert(move(waiting)==HOOK_SKIP_ORIGINAL);
+  for(int i=0;i<20;++i)assert(move(eastID)==HOOK_SKIP_ORIGINAL&&move(otherID)==HOOK_SKIP_ORIGINAL);
   assert(s_palaceFerryDwell==60);playing=true;
-  for(int i=0;i<60;++i)assert(move(waiting)==HOOK_SKIP_ORIGINAL&&move(id)==HOOK_SKIP_ORIGINAL);
-  assert(move(waiting)==HOOK_CONTINUE&&s_palaceFerryDwell==0);
+  // Partner executes before the clock owner: the delay must still count once.
+  for(int i=0;i<60;++i)assert(move(otherID)==HOOK_SKIP_ORIGINAL&&move(eastID)==HOOK_SKIP_ORIGINAL);
+  assert(s_palaceFerryDwell==0);
+  assert(move(eastID)==HOOK_CONTINUE&&move(otherID)==HOOK_CONTINUE);
  };
- for(int trip=0;trip<4;++trip){travel(eastID,otherID,trip%2?0:2);travel(otherID,eastID,trip%2?0:2);}
- assert(east.mCurrentPoint==0&&other.mCurrentPoint==0); // Repeated return crossings.
+ east.mMode=daL8Lift_c::MODE_ACC_e;
+ assert(move(eastID)==HOOK_CONTINUE&&move(otherID)==HOOK_SKIP_ORIGINAL);
+ travel(eastID,2); // Initial outbound arrival: release BOTH legs after the dwell.
+ for(int trip=0;trip<4;++trip){
+  dwell();
+  east.mMode=other.mMode=daL8Lift_c::MODE_ACC_e;
+  assert(move(otherID)==HOOK_CONTINUE&&move(eastID)==HOOK_CONTINUE);
+  travel(eastID,0); // Previous ferry returns while the second is still moving out.
+  assert(s_palaceFerryDwell==0&&move(eastID)==HOOK_SKIP_ORIGINAL&&move(otherID)==HOOK_CONTINUE);
+  travel(otherID,2); // Wait for the slower partner before beginning the next pair.
+  dwell();
+  east.mMode=other.mMode=daL8Lift_c::MODE_ACC_e;
+  assert(move(eastID)==HOOK_CONTINUE&&move(otherID)==HOOK_CONTINUE);
+  travel(otherID,0); // Reverse arrival/Execute order on the next phase.
+  assert(s_palaceFerryDwell==0&&move(otherID)==HOOK_SKIP_ORIGINAL&&move(eastID)==HOOK_CONTINUE);
+  travel(eastID,2);
+ }
+ assert(east.mCurrentPoint==2&&other.mCurrentPoint==0);
  daL8Lift_c vanilla{999};std::any foreignMove[]={&vanilla};
  assert(before_palace_ferry_move(nullptr,foreignMove,nullptr,nullptr)==HOOK_CONTINUE);
  // Loss of the current actor recreates only that route, then resumes scheduling.
- actors.erase(eastID);cleanup_palace_ferries();assert(s_palaceFerryTurn==kNone);
+ actors.erase(eastID);cleanup_palace_ferries();assert(s_palaceFerryClock==kNone);
  assert(move(otherID)==HOOK_SKIP_ORIGINAL);frame();
  assert(requests==before+4&&(last.parameters&255)==0x42);
  const auto replacementID=s_palaceFerries[1].id;
@@ -190,4 +209,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture+(root/'src/survivors_palace_ferry.inc').read_text()+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print('Palace ferry: alternating crossings, endpoint handoff, pause/dwell, restart exclusion, inactive-layer discovery, native parameters, suspension and cleanup passed')
+print('Palace ferry: paired outbound/return crossings, endpoint synchronization, pause/dwell, restart exclusion, inactive-layer discovery, native parameters, suspension and cleanup passed')

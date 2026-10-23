@@ -6,12 +6,14 @@ struct PalaceFerry {
     ActorId id=kNone;
     unsigned path=0,speed=0;
     bool east=false,selected=false,retiring=false,reported=false,ready=false,departed=false;
+    bool moving=false,arrived=false;
 };
 std::vector<PalaceFerry> s_palaceFerries;
 bool s_palaceFerryScanned=false;
 unsigned s_palaceFerryRetry=0;
-ActorId s_palaceFerryTurn=kNone;
+ActorId s_palaceFerryClock=kNone;
 unsigned s_palaceFerryDwell=0;
+bool s_palaceFerryStarted=false;
 bool palace_ferry_profile(int profile) {
     return profile==fpcNm_Obj_Lv8Lift_e || profile==fpcNm_Obj_Lv8OptiLift_e;
 }
@@ -34,7 +36,7 @@ bool capture_palace_ferry(int profile,const fopAcM_prm_class& params) {
 }
 void retire_palace_ferries() {
     s_palaceFerryScanned=false;s_palaceFerryRetry=0;
-    s_palaceFerryTurn=kNone;s_palaceFerryDwell=0;
+    s_palaceFerryClock=kNone;s_palaceFerryDwell=0;s_palaceFerryStarted=false;
     for(auto& ferry:s_palaceFerries)ferry.retiring=true;
     std::erase_if(s_palaceFerries,[](const auto& ferry){return ferry.id==kNone;});
 }
@@ -43,8 +45,8 @@ void cleanup_palace_ferries() {
         if(ferry.id==kNone || fpcM_IsCreating(ferry.id))continue;
         auto* actor=actor_by_id(ferry.id);
         if(!actor) {
-            if(s_palaceFerryTurn==ferry.id){s_palaceFerryTurn=kNone;s_palaceFerryDwell=0;}
-            ferry.id=kNone;ferry.ready=false;ferry.departed=false;
+            if(s_palaceFerryClock==ferry.id)s_palaceFerryClock=kNone;
+            ferry.id=kNone;ferry.ready=false;ferry.departed=false;ferry.arrived=false;
         }
         else if(ferry.retiring)svc_actor->delete_actor(mod_ctx,ferry.id);
         else if(!ferry.ready) {
@@ -63,35 +65,45 @@ HookAction before_palace_ferry_move(ModContext*,void* args,void*,void*) {
     auto* ferry=actor?tracked_palace_ferry(fopAcM_GetID(actor)):nullptr;
     if(!ferry)return HOOK_CONTINUE;
     if(ferry->retiring || !ferry->ready || !playable())return HOOK_SKIP_ORIGINAL;
-    if(s_palaceFerryTurn==kNone) {
-        // Keep both at their starting docks until all selected actors are ready.
-        // This also covers asynchronous creation after a restart or actor loss.
-        PalaceFerry* first=nullptr;
-        for(auto& candidate:s_palaceFerries)if(candidate.selected && !candidate.retiring) {
-            if(candidate.id==kNone || !candidate.ready)return HOOK_SKIP_ORIGINAL;
-            if(!first || (!first->east && candidate.east))first=&candidate;
-        }
-        if(first)s_palaceFerryTurn=first->id;
+    // Pause the shared cycle until both selected actors are initialized,
+    // including recreation after actor loss. Keep their current leg state.
+    PalaceFerry* first=nullptr;
+    for(auto& candidate:s_palaceFerries)if(candidate.selected && !candidate.retiring) {
+        if(candidate.id==kNone || !candidate.ready)return HOOK_SKIP_ORIGINAL;
+        if(!first || (!first->east && candidate.east))first=&candidate;
     }
-    if(s_palaceFerryTurn!=ferry->id)return HOOK_SKIP_ORIGINAL;
-    if(s_palaceFerryDwell){--s_palaceFerryDwell;return HOOK_SKIP_ORIGINAL;}
+    if(!first)return HOOK_SKIP_ORIGINAL;
+    if(s_palaceFerryClock==kNone)s_palaceFerryClock=first->id;
+    if(!s_palaceFerryStarted) {
+        first->moving=true; // Initial outbound leg: the partner stays at home.
+        s_palaceFerryStarted=true;
+    }
+    if(s_palaceFerryDwell) {
+        // Only one actor counts ticks, independent of the pair's Execute order.
+        if(s_palaceFerryClock==ferry->id)--s_palaceFerryDwell;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if(!ferry->moving || ferry->arrived)return HOOK_SKIP_ORIGINAL;
     const auto* path=dPath_GetRoomPath(ferry->path,ferry->source.room_no);
     const bool endpoint=path && (actor->mCurrentPoint==0 || actor->mCurrentPoint==path->m_num-1);
-    // WAIT_INIT follows completed braking; mCurrentPoint still names the point
-    // just reached. Intermediate waypoints must not hand over the crossing.
+    // WAIT_INIT follows completed braking. Intermediate waypoints never end
+    // a leg. Once all moving ferries dock, reverse both after the shared dwell:
+    // one returns home while its partner travels out, then vice versa.
     if(ferry->departed && endpoint && actor->mMode==daL8Lift_c::MODE_WAIT_INIT_e) {
-        ferry->departed=false;
+        ferry->arrived=true;
         for(const auto& next:s_palaceFerries)
-            if(next.selected && !next.retiring && next.ready && next.id!=ferry->id) {
-                s_palaceFerryTurn=next.id;break;
-            }
-        s_palaceFerryDwell=60; // Two seconds of active game ticks to disembark.
+            if(next.selected && !next.retiring && next.moving && !next.arrived)
+                return HOOK_SKIP_ORIGINAL;
+        for(auto& next:s_palaceFerries)if(next.selected && !next.retiring) {
+            next.moving=true;next.arrived=false;next.departed=false;
+        }
+        s_palaceFerryDwell=60; // Preserve the two-second disembarking pause.
         return HOOK_SKIP_ORIGINAL;
     }
     if(actor->mMode==daL8Lift_c::MODE_ACC_e || actor->mMode==daL8Lift_c::MODE_MOVE_e ||
        actor->mMode==daL8Lift_c::MODE_BRK_e)ferry->departed=true;
     // Gate only moveLift: native Execute still refreshes the collision matrix,
-    // lighting and ride callback state while the other platform waits.
+    // lighting and ride callback state while a platform waits at its dock.
     return HOOK_CONTINUE;
 }
 HookAction before_palace_ferry_suspend(ModContext*,void* args,void*,void*) {

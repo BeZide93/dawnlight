@@ -709,31 +709,34 @@ struct Run {
     // Fixed map/time curves: never scale from the player's actual gear or luck.
     // Normal runs stop at 20m. Endless extrapolates the last map segment and
     // compounds its own minute bonus, within native signed-16-bit HP limits.
-    unsigned enemy_health(unsigned base, bool elite, unsigned map=0, bool finalBoss=false) const {
+    unsigned enemy_health(unsigned base, bool elite, unsigned map=0, bool finalBoss=false, bool timedBoss=false) const {
         constexpr uint64_t scale=1000000;
         constexpr unsigned times[]{0,60,300,600,900,1200};
-        constexpr uint64_t curves[5][6]{
+        constexpr uint64_t curves[2][6]{
             {1000000,1000000,4092209,10758235,19215847,28296574},
-            {1000000,1082457,8761003,25392559,49660833,67439452},
-            {1000000,1042207,8387484,23263089,44298512,59427164},
-            {1000000,1000000,5696760,14616823,24382634,34535097},
-            {1000000,1097053,4979767,12787987,22408492,32725714}};
-        constexpr unsigned finalHp[]{2300,5400,4800,2800,2600};
+            {1000000,1082457,8761003,25392559,49660833,67439452}};
+        constexpr unsigned finalHp[]{2300,5400};
+        constexpr unsigned mapPermille[]{1000,1000,1100,1210,1331};
         map=map<5?map:0;
+        const unsigned curve=map==0?0:1;
         const unsigned time=endless?ticks:std::min(ticks,duration);
         unsigned i=1;while(i<5 && time>times[i]*ticks_per_second)++i;
-        const uint64_t factor=curves[map][i-1]+(curves[map][i]-curves[map][i-1])*
+        const uint64_t factor=curves[curve][i-1]+(curves[curve][i]-curves[curve][i-1])*
             (time-times[i-1]*ticks_per_second)/((times[i]-times[i-1])*ticks_per_second);
-        const uint64_t hp=finalBoss ? uint64_t(finalHp[map])*scale*(endless?double(factor)/curves[map][5]:1.0) : elite ?
+        const uint64_t hp=finalBoss ? uint64_t(finalHp[curve])*scale*(endless?double(factor)/curves[curve][5]:1.0) : elite ?
             std::max(120*scale,32*factor) : std::clamp(base,1u,32767u)*factor;
-        return unsigned(std::min(32767.0,std::floor(double(hp)*RunOptions::difficulty(elite || finalBoss ? options.boss_hp : options.enemy_hp,5)*endless_factor()/scale+.5)));
+        // Preserve Field's rounded HP budget, including timed bosses' x2, then
+        // apply successive +10% map steps once. Integer rounding avoids drift
+        // from rounding intermediate maps (e.g. Castle final boss: 14,375 HP).
+        const uint64_t budget=uint64_t(std::min(32767.0,std::floor(double(hp)*
+            RunOptions::difficulty(elite || finalBoss ? options.boss_hp : options.enemy_hp,5)*endless_factor()/scale+.5)))*(timedBoss?2u:1u);
+        return unsigned(std::min<uint64_t>(32767,(budget*mapPermille[map]+500)/1000));
     }
     // Only the four scheduled encounter slots get the fixed doubled HP budget.
     // Boss difficulty applies to all elites; ordinary actors use enemy difficulty.
     unsigned spawn_enemy_health(unsigned base, bool elite, unsigned map, int eliteSlot) const {
         const bool timedBoss=elite && eliteSlot>=0 && unsigned(eliteSlot)<timed_elite_count;
-        const unsigned hp=enemy_health(base,elite,map,timedBoss && unsigned(eliteSlot)==timed_elite_count-1);
-        return timedBoss ? std::min(32767u,hp*2) : hp;
+        return enemy_health(base,elite,map,timedBoss && unsigned(eliteSlot)==timed_elite_count-1,timedBoss);
     }
     // Fixed population ceiling; time and Horde difficulty only affect spawn cadence/batches.
     unsigned target_population() const { return 345u; }

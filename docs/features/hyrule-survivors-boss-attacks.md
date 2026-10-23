@@ -36,6 +36,12 @@ Nach dem Ansturm beginnt sofort der native Nahkampfangriff. Blockierte Wege
 brechen den Ansturm ab. Gezielte Sword Waves von King Bulblin berücksichtigen
 auch Links Höhe beim Abschuss; sie verfolgen ihn danach nicht weiter.
 
+Die HP-Kurve ab Gerudo Desert folgt jetzt Hyrule Field: Desert x1,10,
+Palace x1,21, Castle x1,331. Das gilt auch für normale Gegner und Wächter;
+die Darknut Arena behält ihre Kurve. Der Map-Aufschlag folgt nach dem gerundeten
+Field-Budget einschließlich des x2 für zeitgesteuerte Bosse. Die vollständigen
+HP-Tabellen und Rundungsregeln stehen in [SURVIVORS.md](../../SURVIVORS.md#enemy-health-curves).
+
 ## Zeiten und Schadenseinheiten
 
 Die vier Slots erscheinen bei 25 %, 50 %, 75 % und 100 % der Run-Dauer:

@@ -224,7 +224,7 @@ int main(){
   finalEnemy.profile=native_roster[finalEnemy.species].profile;
   for(unsigned minute:{0u,10u,20u})for(unsigned multiplier:{1u,3u,10u}) {
    s_run.ticks=minute*60*ticks_per_second;s_run.options.boss_hp=multiplier;initialize_extended_enemy(finalEnemy,&finalBoss);
-   assert(finalBoss.health==int(std::min(32767u,2*s_run.enemy_health(1200,true,map,true)))&&finalBoss.field_0x560==finalBoss.health);
+   assert(finalBoss.health==int(s_run.spawn_enemy_health(1200,true,map,3))&&finalBoss.field_0x560==finalBoss.health);
   }
  }
  s_run.options.boss_hp=1;
@@ -251,16 +251,16 @@ int main(){
  boss.species=unsigned(Species::StallordHead);boss.elite=true;boss.eliteSlot=3;s_map=2;
  s_run.start(7);s_run.ticks=duration;s_run.ranks.fill(30);s_run.master_sword=10;
  s_run.dark_link=29;s_run.dark_remaining=100; // maximal direct-hit upgrade damage
- initialize_extended_enemy(boss,&head);assert(head.health==9600&&head.field_0x560==9600);
+ initialize_extended_enemy(boss,&head);assert(head.health==11880&&head.field_0x560==11880);
  power=s_run.attack_power(unsigned(Upgrade::Spin))*s_run.crit_damage_percent()/100*2;
  assert(power>120&&power<1200);
  auto targets=extended_body(&head,boss.profile);
  for(auto* target:targets.targets)if(target)target->hit=&sword;
  const unsigned beforeHeadHits=calls;
  assert(update_extended_enemy(&head,boss));
- assert(head.health==9600-int(power)&&calls==beforeHeadHits+1&&!boss.credited);
+ assert(head.health==11880-int(power)&&calls==beforeHeadHits+1&&!boss.credited);
  for(auto* target:targets.targets)if(target)target->hit=&sword;
- update_extended_enemy(&head,boss);assert(head.health==9600-2*int(power)); // Fresh next-frame contact; no shared lockout.
+ update_extended_enemy(&head,boss);assert(head.health==11880-2*int(power)); // Fresh next-frame contact; no shared lockout.
  s_run.options.boss_hp=10;initialize_extended_enemy(boss,&head);assert(head.health==32767);
  s_run.start(5);power=7;
  // Owned screams have a short native stun and a shared cooldown across Gibdos.

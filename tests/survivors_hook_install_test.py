@@ -95,6 +95,10 @@ assert 'DEFINE_HOOK_SYMBOL("dBgS_LinChk::Set"' not in source
 assert 'DEFINE_HOOK(&dComIfGp_setSelectItem, SurvivorsBind)' in source
 assert 'DEFINE_HOOK(&cBgS::LineCross, SurvivorsEnemyNavigationLine)' in source
 assert ('SurvivorsPlayer','before_player_bindings') in hooks
+assert ('SurvivorsEliteMinimap','before_survivors_minimap') in hooks
+assert ('SurvivorsEliteMinimap','after_elite_minimap') in hooks
+assert ('SurvivorsMinimapCursor','before_survivors_minimap_cursor') in hooks
+assert 'DEFINE_HOOK_SYMBOL("renderingPlusDoorAndCursor_c::drawCursor"' in source
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test';cpp.write_text(fixture+(root/'src/survivors_mode.inc').read_text()+body+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)

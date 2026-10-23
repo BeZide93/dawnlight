@@ -190,6 +190,10 @@ DEFINE_HOOK(&fopAcM_searchActorAngleY, SurvivorsBossAim);
 DEFINE_HOOK(&daObjCarry_c::obj_break, SurvivorsPotBreak);
 DEFINE_HOOK(&daItem_c::itemGetNextExecute, SurvivorsKeyPickup);
 DEFINE_HOOK(&renderingAmap_c::afterDrawPath, SurvivorsEliteMinimap);
+// SDK v2.0.0's typed trampoline cannot marshal const references. The native
+// const Vec& uses the same pointer ABI; preserve it through a named hook.
+DEFINE_HOOK_SYMBOL("renderingPlusDoorAndCursor_c::drawCursor",
+    void(renderingPlusDoorAndCursor_c*, const Vec*, s16, int, f32), SurvivorsMinimapCursor);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ba.cpp#pl_check", BOOL(e_ba_class*, f32, s16), SurvivorsKeeseAggro);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ms.cpp#pl_check", int(e_ms_class*, f32), SurvivorsRatAggro);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ba.cpp#damage_check", void(e_ba_class*), SurvivorsKeeseHit);
@@ -1821,7 +1825,9 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsBokoblinWait, before_bokoblin_wait);
     PRE(SurvivorsPotBreak, before_pot_break);
     PRE(SurvivorsKeyPickup, before_key_pickup);
+    PRE(SurvivorsEliteMinimap, before_survivors_minimap);
     POST(SurvivorsEliteMinimap, after_elite_minimap);
+    PRE(SurvivorsMinimapCursor, before_survivors_minimap_cursor);
     PRE(SurvivorsKeeseAggro, before_keese_aggro);
     PRE(SurvivorsRatAggro, before_rat_aggro);
     PRE(SurvivorsKeeseHit, before_enemy_hit); POST(SurvivorsKeeseHit, after_enemy_hit);

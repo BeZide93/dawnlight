@@ -1,7 +1,33 @@
+// Limit the shared cursor hook to the minimap render pass, including nested
+// draws. Do not alter Link's model angle or the full-screen map's cursors.
+unsigned s_minimapDrawDepth=0;
+HookAction before_survivors_minimap(ModContext*, void*, void*, void*) {
+    ++s_minimapDrawDepth;
+    return HOOK_CONTINUE;
+}
+HookAction before_survivors_minimap_cursor(ModContext*, void* args, void*, void*) {
+    if (!s_minimapDrawDepth || !in_arena() || transitioning() ||
+        mods::arg<int>(args,3)!=0x1e) return HOOK_CONTINUE;
+    auto* link=daAlink_getAlinkActorClass();
+    auto* camera=link?dComIfGp_getCamera(link->field_0x317c):nullptr;
+    if (!camera) return HOOK_CONTINUE;
+    const cXyz forward=camera->mCamera.mCenter-camera->mCamera.mEye;
+    // A vertical/invalid view has no horizontal heading: retain the native angle.
+    if (!std::isfinite(forward.x) || !std::isfinite(forward.z) ||
+        forward.x*forward.x+forward.z*forward.z<.000001f) return HOOK_CONTINUE;
+    s16 angle=cM_atan2s(forward.x,forward.z);
+    // Match getMapPlayerAngleY(): rotate into the current room's map space.
+    auto* room=dStage_roomControl_c::getFileList2(dComIfGp_roomControl_getStayNo());
+    if (room) angle=s16(angle+room->field_0x1c);
+    mods::arg_ref<s16>(args,2)=angle;
+    return HOOK_CONTINUE;
+}
+
 // Draw into the native minimap render pass. Group 4 (Tears of Light) uses
 // texture 4 and palette entries 132..139 in drawTreasureAfterPlayer(). Do not
 // insert fake treasure records or change compass/story/light-drop flags.
 void after_elite_minimap(ModContext*, void* args, void*, void*) {
+    if (s_minimapDrawDepth) --s_minimapDrawDepth;
     auto* map=mods::arg<renderingAmap_c*>(args,0);
     if (!map || !in_arena() || transitioning() ||
         (s_run.phase!=Phase::Running && s_run.phase!=Phase::Upgrade &&

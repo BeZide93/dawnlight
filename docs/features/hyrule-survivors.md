@@ -437,6 +437,12 @@ current position with the native room rotation/offset. Markers disappear on deat
 and return when the replacement has loaded. No story flags or treasure records
 are modified.
 
+In Survivors arenas, the minimap player arrow follows the active camera's
+horizontal eye-to-center direction, including the native room rotation. The
+override applies only to the player cursor during the minimap draw pass; Link's
+model, restart markers and full-screen maps retain their native behavior. Missing
+cameras and vertical/invalid views fall back to the native player heading.
+
 Each scheduled elite and first kill of a guard slot leaves **one free large chest** at its death position (or its
 last safe floor position). It uses native Dalways large-chest model 13 and lid
 animation 8, not a scaled small chest. Opening shows the same three-card

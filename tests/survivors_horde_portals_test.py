@@ -9,6 +9,8 @@ fixture=r'''
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <cstring>
+#include <limits>
 #include <set>
 #include "survivors_rules.hpp"
 using namespace dawnlight::survivors;
@@ -19,7 +21,11 @@ struct cXyz{float x=0,y=0,z=0;cXyz()=default;cXyz(float a,float b,float c):x(a),
  float absXZ(cXyz p)const{return std::hypot(x-p.x,z-p.z);}cXyz operator+(cXyz b)const{return{x+b.x,y+b.y,z+b.z};}};
 struct fopAc_ac_c{ActorId id=kNone;struct{cXyz pos;}current;};
 struct Animation{float speed=1;unsigned plays=0;void setPlaySpeed(float s){speed=s;}void play(){++plays;}};
+using Mtx=float[3][4];
+struct Model{Mtx matrix{};void setBaseTRMtx(Mtx m){std::memcpy(matrix,m,sizeof(Mtx));}};
+struct Emitter{Mtx matrix{};void setGlobalRTMatrix(const Mtx m){std::memcpy(matrix,m,sizeof(Mtx));}};
 struct daObjBossWarp_c:fopAc_ac_c{
+ Model model;Model* mpModel=&model;Emitter effect;Emitter* mpParticle[4]{nullptr,&effect,nullptr,nullptr};
  cXyz scale{1,.15f,1};Animation brk,btk0,btk1;Animation* mpBrkAnm=&brk;Animation* mpBtkAnm[2]{&btk0,&btk1};
  unsigned appearances=0,matrices=0,disappearances=0;
  void set_appear(){++appearances;}void setBaseMtx(){++matrices;}void disappear(int){++disappearances;}
@@ -50,7 +56,18 @@ int create_standalone_actor(int profile,const ActorSpawnParams& p,ActorId& id){
  if(failCreate)return 1;id=++creates;pending.insert(id);return MOD_OK;
 }
 struct dBgS_LinChk{void SetLink(){}void Set(cXyz*,cXyz*,daAlink_c*){}};
-struct Background{bool LineCross(dBgS_LinChk*){return wallHit;}}background;
+float slopeX=0,slopeZ=0,roughness=0;bool missingNormal=false,missingFloor=false;
+unsigned groundQueries=0;
+struct dBgS_ObjGndChk{cXyz pos;void SetPos(cXyz* p){pos=*p;}};
+struct cM3dGPla{cXyz mNormal;};
+struct Background{
+ bool LineCross(dBgS_LinChk*){return wallHit;}
+ float GroundCross(dBgS_ObjGndChk*){++groundQueries;return missingFloor?-1.e9f:nextPosition.y;}
+ bool GetTriPla(dBgS_ObjGndChk&,cM3dGPla* p){p->mNormal={-slopeX,1,-slopeZ};return !missingNormal;}
+}background;
+bool dry_arena_floor(cXyz& p,float,float){++groundQueries;
+ p.y=nextPosition.y+slopeX*(p.x-nextPosition.x)+slopeZ*(p.z-nextPosition.z)+roughness;return !missingFloor;
+}
 auto& dComIfG_Bgsp(){return background;}
 constexpr unsigned PAD_1=0,PAD_BUTTON_A=1,BUTTON_STATUS_ENTER=7;
 struct Pad{unsigned mPressedButtonFlags=0;}pad;unsigned prompts=0;
@@ -63,6 +80,7 @@ void fresh(unsigned map=1){
  s_hordePortals={};s_hordePortalDelay=0;actors.clear();pending.clear();s_chests={};s_pots={};
  s_run.start(42);s_map=map;s_spawnCooldown=50;s_victory=false;player={};player.id=s_player;
  active=s_arenaMeshReady=distributionReady=true;paused=badFloor=nearGuard=failCreate=wallHit=false;
+ slopeX=slopeZ=roughness=0;missingNormal=missingFloor=false;groundQueries=0;
  samples=creates=prompts=service.deletes=0;life=12;pad={};nextPosition={2000,0,2000};
 }
 void ready(unsigned slot){auto& p=s_hordePortals[slot];pending.erase(p.id);auto& a=actors[p.id];a.id=p.id;a.current.pos=p.position;
@@ -107,6 +125,36 @@ int main(){
  nextPosition={12000,0,2000};s_hordePortalDelay=0;update_horde_portals(&player);assert(creates==5);ready(0);
  assert(s_hordePortals[0].position.absXZ(old)>=900);player.current.pos=s_hordePortals[0].position;
  interact(true);assert(s_run.horde_remaining==2*horde_duration); // Duration stacks, boost stays 3x.
+ // Slopes in either direction and diagonally align the model and effects.
+ for(const auto slope:std::array<std::array<float,2>,5>{{{0,0},{.35f,0},{-.35f,0},{0,.4f},{.3f,-.25f}}}){
+  fresh();slopeX=slope[0];slopeZ=slope[1];update_horde_portals(&player);assert(creates==1);ready(0);
+  const auto& p=s_hordePortals[0];auto& a=actors[p.id];
+  for(unsigned row=0;row<3;++row)for(unsigned col=0;col<4;++col)assert(a.model.matrix[row][col]==a.effect.matrix[row][col]);
+  for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j){
+   float dot=0;for(unsigned r=0;r<3;++r)dot+=a.model.matrix[r][i]*a.model.matrix[r][j];
+   assert(std::abs(dot-(i==j?1.f:0.f))<.0001f);
+  }
+  for(const auto corner:std::array<std::array<float,2>,4>{{{-250,-250},{250,-250},{250,250},{-250,250}}}){
+   const auto& m=a.model.matrix;
+   const float x=m[0][0]*corner[0]+m[0][2]*corner[1]+m[0][3];
+   const float y=m[1][0]*corner[0]+m[1][2]*corner[1]+m[1][3];
+   const float z=m[2][0]*corner[0]+m[2][2]*corner[1]+m[2][3];
+   const float floor=p.position.y+slopeX*(x-p.position.x)+slopeZ*(z-p.position.z);
+   assert(y>floor&&y-floor<5); // Every rim corner clears a planar hillside.
+  }
+  const auto queried=groundQueries;std::any args[]={&a};
+  for(unsigned i=0;i<60;++i){int result=0;before_horde_portal_execute(nullptr,args,&result,nullptr);}
+  assert(groundQueries==queried); // No recurring floor scan during Execute.
+  player.current.pos={p.position.x+140,p.position.y+slopeX*140,p.position.z};
+  interact(true);assert(s_run.horde_remaining==horde_duration);
+ }
+ // Invalid/steep floor planes and uneven footprints reroll, mild bumps lift.
+ for(unsigned reason=0;reason<5;++reason){fresh();
+  if(reason==0)missingNormal=true;if(reason==1)missingFloor=true;
+  if(reason==2)slopeX=2;if(reason==3)slopeX=std::numeric_limits<float>::quiet_NaN();if(reason==4)roughness=30;
+  update_horde_portals(&player);assert(!creates);
+ }
+ fresh();roughness=8;update_horde_portals(&player);assert(creates==1&&s_hordePortals[0].lift==11);
  // Foreign native portals keep normal execution, even at our old position.
  daObjBossWarp_c foreign;foreign.id=999;std::any foreignArgs[]={&foreign};int result=0;
  assert(before_horde_portal_execute(nullptr,foreignArgs,&result,nullptr)==HOOK_CONTINUE);

@@ -1026,7 +1026,11 @@ randomly sampled from the completed reachable arena surface. They are spaced
 apart from one another, guards, existing chests and pots. A floating **Horde**
 label uses the same range/projection as chest prices; available portals also use
 the same Tears of Light minimap marker as field elites, with native room
-rotation/offset. Loading, consumed and retiring portals have no marker.
+rotation/offset. Loading, consumed and retiring portals have no marker. Portal models and persistent
+emitters follow the native floor normal, with a small normal-direction clearance.
+Eight surrounding floor samples reject sharply uneven sites; the normal and
+clearance are cached at placement, with no per-frame ground scan. Interaction
+height follows the same floor plane so A remains usable on a hillside.
 
 Press **A** within 150 units horizontally and 35 vertically to trigger a
 15-second horde. A wall, pause/menu/event, wolf form, defeat/victory or the run

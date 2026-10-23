@@ -192,6 +192,7 @@ DEFINE_HOOK(&daObjCarry_c::obj_break, SurvivorsPotBreak);
 DEFINE_HOOK(&daItem_c::itemGetNextExecute, SurvivorsKeyPickup);
 DEFINE_HOOK(&renderingAmap_c::afterDrawPath, SurvivorsEliteMinimap);
 DEFINE_HOOK(&dFile_info_c::setSaveData, SurvivorsSaveSlotInfo);
+DEFINE_HOOK(&dDlst_FileInfo_c::draw, SurvivorsSaveSlotDraw);
 // SDK v2.0.0's typed trampoline cannot marshal const references. The native
 // const Vec& uses the same pointer ABI; preserve it through a named hook.
 DEFINE_HOOK_SYMBOL("renderingPlusDoorAndCursor_c::drawCursor",
@@ -1830,6 +1831,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsKeyPickup, before_key_pickup);
     PRE(SurvivorsEliteMinimap, before_survivors_minimap);
     POST(SurvivorsSaveSlotInfo, after_survivors_save_slot);
+    POST(SurvivorsSaveSlotDraw, after_survivors_save_slot_draw);
     POST(SurvivorsEliteMinimap, after_elite_minimap);
     PRE(SurvivorsMinimapCursor, before_survivors_minimap_cursor);
     PRE(SurvivorsKeeseAggro, before_keese_aggro);

@@ -7,33 +7,12 @@ constexpr std::array<u64,20> kSaveHeartTags{
     MULTI_CHAR('hear_30'),MULTI_CHAR('hear_31'),MULTI_CHAR('hear_32'),MULTI_CHAR('hear_33'),MULTI_CHAR('hear_34'),
     MULTI_CHAR('hear_35'),MULTI_CHAR('hear_36'),MULTI_CHAR('hear_37'),MULTI_CHAR('hear_38'),MULTI_CHAR('hear_39')};
 
-bool save_heart_bounds(J2DPane* heart,J2DPane* parent,JGeometry::TBox2<f32>& area,bool& first) {
-    const auto& bounds=heart->getBounds();
-    for(unsigned corner=0;corner<4;++corner) {
-        float x=corner&1?bounds.f.x:bounds.i.x,y=corner&2?bounds.f.y:bounds.i.y;
-        auto* pane=heart;
-        // Transform into the data panel's coordinates, including intermediate
-        // pane offsets/scales. The label then inherits native slot fades/motion.
-        for(unsigned depth=0;pane && pane!=parent && depth<32;++depth) {
-            const auto& m=pane->mPositionMtx;
-            const float nextX=m[0][0]*x+m[0][1]*y+m[0][3];
-            y=m[1][0]*x+m[1][1]*y+m[1][3];x=nextX;
-            pane=pane->getParentPane();
-        }
-        if(pane!=parent || !std::isfinite(x) || !std::isfinite(y))return false;
-        if(first){area=JGeometry::TBox2<f32>(x,y,x,y);first=false;}
-        else {area.i.x=std::min(area.i.x,x);area.i.y=std::min(area.i.y,y);
-              area.f.x=std::max(area.f.x,x);area.f.y=std::max(area.f.y,y);}
-    }
-    return true;
-}
-
 void after_survivors_save_slot(ModContext*,void* args,void* result,void*) {
     auto* info=mods::arg<dFile_info_c*>(args,0);
     if(!info || !info->mFileInfo.Scr)return;
     auto* screen=info->mFileInfo.Scr;
     auto* label=static_cast<J2DTextBox*>(screen->search(kSaveMetaTag));
-    if(label)label->hide();
+    if(label){label->hide();label->setUserInfo(0);}
     const auto slot=mods::arg<u8>(args,3);
     const int status=result?*static_cast<int*>(result):-1;
     if(!s_active || slot>=3 || (status!=0 && status!=2) || !svc_save || !svc_save->peek_blob)return;
@@ -47,37 +26,64 @@ void after_survivors_save_slot(ModContext*,void* args,void* result,void*) {
     if(known)std::snprintf(text,sizeof(text),"Meta Level %u",records.level());
     else std::snprintf(text,sizeof(text),"Meta Level ?");
 
-    auto* parent=info->mFileInfo.field_0x10;
-    auto* style=static_cast<J2DTextBox*>(screen->search(MULTI_CHAR('w_ptim01')));
-    if(!parent || !style || !info->mFileInfo.mFont)return;
+    if(!info->mFileInfo.field_0x10 || !info->mFileInfo.mFont ||
+        !screen->search(MULTI_CHAR('w_ptim01')))return;
     std::array<J2DPane*,20> hearts{};
-    JGeometry::TBox2<f32> area;bool first=true;
     for(unsigned i=0;i<hearts.size();++i) {
         hearts[i]=screen->search(kSaveHeartTags[i]);
-        if(!hearts[i] || !save_heart_bounds(hearts[i],parent,area,first))return;
+        if(!hearts[i])return;
+    }
+    if(!label) {
+        label=JKR_NEW J2DTextBox(kSaveMetaTag,JGeometry::TBox2<f32>(0,0,1,1),nullptr,"",sizeof(text),HBIND_LEFT,VBIND_CENTER);
+        if(!label)return;
+        // Keep this native-owned, hidden storage pane OUTSIDE mDatBase's tree:
+        // CPaneMgrAlpha cached that subtree's child count during screenSet().
+        if(!screen->appendChild(label)){JKR_DELETE(label);return;}
+        label->setFont(info->mFileInfo.mFont);
+    }
+    label->hide(); // Draw explicitly after the native slot has its final matrices.
+    label->setString(sizeof(text),text); // Native setter copies literal text.
+    if(!label->getStringPtr())return;
+    label->setUserInfo(1);
+    for(auto* heart:hearts)heart->hide();
+}
+
+void after_survivors_save_slot_draw(ModContext*,void* args,void*,void*) {
+    auto* info=mods::arg<dDlst_FileInfo_c*>(args,0);
+    if(!s_active || !info || !info->Scr)return;
+    auto* label=static_cast<J2DTextBox*>(info->Scr->search(kSaveMetaTag));
+    if(!label || !label->getUserInfo() || !label->getStringPtr())return;
+    auto* style=static_cast<J2DTextBox*>(info->Scr->search(MULTI_CHAR('w_ptim01')));
+    if(!style || !style->mColorAlpha)return;
+    for(J2DPane* pane=style;pane;pane=pane->getParentPane())if(!pane->isVisible())return;
+    auto* graf=dComIfGp_getCurrentGrafPort();if(!graf)return;
+    // dDlst_FileInfo_c::draw has now applied mBasePane to Nm_02 and drawn the
+    // tree. Even hidden hearts have fresh global matrices. Use the same final
+    // vertices as their native pictures, including replacement layouts.
+    JGeometry::TBox2<f32> area;bool first=true;
+    for(auto tag:kSaveHeartTags) {
+        auto* heart=info->Scr->search(tag);if(!heart)return;
+        for(unsigned corner=0;corner<4;++corner) {
+            const auto point=heart->getGlbVtx(corner);
+            if(!std::isfinite(point.x)||!std::isfinite(point.y))return;
+            if(first){area=JGeometry::TBox2<f32>(point.x,point.y,point.x,point.y);first=false;}
+            else {area.i.x=std::min(area.i.x,point.x);area.i.y=std::min(area.i.y,point.y);
+                  area.f.x=std::max(area.f.x,point.x);area.f.y=std::max(area.f.y,point.y);}
+        }
     }
     if(area.getWidth()<=0 || area.getHeight()<=0)return;
-    if(!label) {
-        label=JKR_NEW J2DTextBox(kSaveMetaTag,area,nullptr,"",sizeof(text),HBIND_LEFT,VBIND_CENTER);
-        if(!label)return;
-        if(!parent->appendChild(label)){JKR_DELETE(label);return;}
-        // The native pane tree owns and deletes this native-class textbox.
-        label->setFont(info->mFileInfo.mFont);
-        label->setInfluencedAlpha(true,false);
-    }
-    // area is in the parent's local coordinates. Native place() accepts an
-    // offset from its top-left and adds parent->getBounds().i itself.
-    const auto& origin=parent->getBounds().i;
-    label->place(JGeometry::TBox2<f32>(area.i.x-origin.x,area.i.y-origin.y,
-        area.f.x-origin.x,area.f.y-origin.y));
     J2DTextBox::TFontSize font;style->getFontSize(font);
+    const auto& m=style->mGlobalMtx;
+    font.mSizeX*=std::hypot(m[0][0],m[1][0]);font.mSizeY*=std::hypot(m[0][1],m[1][1]);
     const float scale=std::min({1.f,area.getHeight()/std::max(1.f,font.mSizeY),
-        area.getWidth()/std::max(1.f,font.mSizeX*float(std::strlen(text)))});
+        area.getWidth()/std::max(1.f,font.mSizeX*float(std::strlen(label->getStringPtr())))});
     label->setFontSize(font.mSizeX*scale,font.mSizeY*scale);
     label->setFontColor(style->getCharColor(),style->getGradColor());
-    // Despite its variadic signature, the native setter copies literal text.
-    label->setString(sizeof(text),text);
-    if(!label->getStringPtr())return;
-    for(auto* heart:hearts)heart->hide();
-    label->show();
+    label->mBounds=JGeometry::TBox2<f32>(0,0,area.getWidth(),area.getHeight());
+    MTXIdentity(label->mGlobalMtx);
+    label->mGlobalMtx[0][3]=area.i.x;label->mGlobalMtx[1][3]=area.i.y;
+    label->mColorAlpha=style->mColorAlpha;
+    // drawSelf uses the supplied native graf matrix and does not show the pane
+    // during the next ordinary tree traversal. No per-frame allocation or reads.
+    label->drawSelf(0,0,&graf->mPosMtx);
 }

@@ -448,14 +448,23 @@ rows. File selection, copy destinations and the native save menu read each
 panel's actual slot with SaveService `peek_blob`, using the existing Records
 decoder for older formats. Missing progression starts at level 1; unreadable
 records display `Meta Level ?`. Empty/corrupt game saves retain native messages,
-and other game modes retain hearts. The native pane tree owns the added textbox,
-which follows the heart area's position, slot scaling and fades. No save data or
-live progression state is changed by this display.
-Pass the already formatted label literally to `J2DTextBox::setString`: the native
-variadic implementation does not expand format placeholders. Heart bounds are
-in panel-local coordinates, so subtract the panel's bounds origin before calling
-`J2DPane::place`, which adds that origin internally. The regression test executes
-both actual SDK functions and runs after SDK setup in CI.
+and other game modes retain hearts. A hidden native textbox belongs to the screen
+root, outside the data panel's `CPaneMgrAlpha` subtree: that manager caches its
+children at construction, so adding children there would invalidate its alpha
+array. The screen still owns the textbox lifetime; there is no pane-pointer cache.
+
+Draw the label after `dDlst_FileInfo_c::draw`, using the hearts' final global
+vertices after the native `mBasePane` / `Nm_02` slot transform. Re-evaluate the
+area each draw so selection scaling and replacement layouts follow their actual
+heart positions. Match the native time text's rendered font size, color and fade;
+suppress the label when its panel is hidden. This pass neither allocates a pane
+nor reads save records. The literal `setString` fix remains in place. No save data
+or live progression state is changed.
+
+Regression coverage runs the actual SDK FileInfo draw, vertex transform and
+string setter. It checks moving/resized slots after records were loaded, different
+panel origins, hidden panes, fades and unchanged alpha-manager child counts. The
+SDK-dependent tests run after SDK setup in CI.
 
 Each scheduled elite and first kill of a guard slot leaves **one free large chest** at its death position (or its
 last safe floor position). It uses native Dalways large-chest model 13 and lid

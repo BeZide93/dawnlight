@@ -99,6 +99,7 @@ assert ('SurvivorsEliteMinimap','before_survivors_minimap') in hooks
 assert ('SurvivorsEliteMinimap','after_elite_minimap') in hooks
 assert ('SurvivorsMinimapCursor','before_survivors_minimap_cursor') in hooks
 assert ('SurvivorsSaveSlotInfo','after_survivors_save_slot') in hooks
+assert ('SurvivorsSaveSlotDraw','after_survivors_save_slot_draw') in hooks
 assert 'DEFINE_HOOK_SYMBOL("renderingPlusDoorAndCursor_c::drawCursor"' in source
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test';cpp.write_text(fixture+(root/'src/survivors_mode.inc').read_text()+body+main)

@@ -1,22 +1,44 @@
-"""Bullbo pair creation, native rider state, shared damage and isolation."""
+"""Bullbo pair creation, native rider state, shared damage, ring steering and isolation."""
 from pathlib import Path
 import os, subprocess, tempfile
 root = Path(__file__).resolve().parents[1]
+native=(root/'dusklight/src/d/actor/d_a_e_wb.cpp')
+if native.exists():
+    action=native.read_text().split('static void action(e_wb_class* i_this) {',1)[1]
+    for call in ('e_wb_f_wait(i_this);','e_wb_f_run(i_this);'):
+        assert action.index(call)<action.index('actor->current.pos += actor->speed;')
 fixture = r'''
+#include <algorithm>
+#include <cmath>
+#include "survivors_field_boss_rules.hpp"
+using namespace dawnlight::survivors;
 #include <any>
 #include <array>
 #include <cassert>
 #include <map>
 #include <set>
 #include <vector>
-using ActorId=unsigned;using u32=unsigned;
+using ActorId=unsigned;using u32=unsigned;using s16=short;
 constexpr ActorId kNone=~0u;
-constexpr int fpcNm_E_WB_e=1,fpcNm_E_RD_e=2,fpcNm_B_GG_e=3,ACT_F_WAIT=5;
+constexpr int fpcNm_E_WB_e=1,fpcNm_E_RD_e=2,fpcNm_B_GG_e=3,ACT_F_WAIT=5,ACT_C_F_RUN=6;
 struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods{template<class T>T arg(void* a,int i){return std::any_cast<T>(static_cast<std::any*>(a)[i]);}}
-struct Vec{float x=0,y=0,z=0;};struct Angle{short x=0,y=0,z=0;};
+struct Vec{float x=0,y=0,z=0;
+ Vec operator+(const Vec& b)const{return{x+b.x,y+b.y,z+b.z};}
+ Vec operator-(const Vec& b)const{return{x-b.x,y-b.y,z-b.z};}
+ float absXZ()const{return std::sqrt(x*x+z*z);}};
+using cXyz=Vec;
+float cM_ssin(s16 a){return std::sin(a*3.141592653589793/32768);}
+float cM_scos(s16 a){return std::cos(a*3.141592653589793/32768);}
+s16 cM_atan2s(float x,float z){return s16(std::atan2(x,z)*32768/3.141592653589793);}
+void cLib_addCalcAngleS2(s16* a,s16 goal,int divisor,int step){
+ int delta=s16(goal-*a)/divisor;*a=s16(*a+std::clamp(delta,-step,step));}
+struct{double factor=1;double endless_factor(){return factor;}}s_run;
+struct{bool anchored=false,retiring=false;Vec center;}s_bossRing;
+bool inside_boss_ring(const Vec& p,float margin){return !s_bossRing.anchored||s_bossRing.retiring||(p-s_bossRing.center).absXZ()<=boss_ring_radius-margin;}
+struct Angle{short x=0,y=0,z=0;};
 struct fopAc_ac_c{ActorId id=kNone;int profile=0,health=100,field_0x560=100;u32 params=0;
- struct{Vec pos;}current;Angle shape_angle;float speedF=0;};
+ struct{Vec pos;Angle angle;}current;Angle shape_angle;float speedF=0;};
 struct cCcD_Obj{fopAc_ac_c* actor=nullptr;cCcD_Obj* hit=nullptr;bool at=true,tg=true,shield=true;unsigned power=9;float radius=35;float GetR(){return radius;}void SetR(float r){radius=r;}
  fopAc_ac_c* GetAc(){return actor;}void SetAtAtp(unsigned p){power=p;}void OffAtSetBit(){at=false;}
  void OffTgSetBit(){tg=false;}bool ChkTgHit(){return hit;}cCcD_Obj* GetTgHitObj(){return hit;}void ResetTgHit(){hit=nullptr;}};
@@ -27,7 +49,7 @@ struct e_rd_class{fopAc_ac_c enemy;ActorId boar_id=kNone;
  cCcD_Obj cc_sph[3];};
 ActorId fopAcM_GetID(fopAc_ac_c* a){return a->id;}int fopAcM_GetName(fopAc_ac_c* a){return a->profile;}
 u32 fopAcM_GetParam(fopAc_ac_c* a){return a->params;}int fopAcM_GetRoomNo(fopAc_ac_c*){return 0;}
-struct Enemy{ActorId id=1;int profile=fpcNm_E_WB_e;bool elite=true,retiring=false,credited=false,initialized=true,encounterReady=false;
+struct Enemy{ActorId id=1;int profile=fpcNm_E_WB_e;bool bullboReturning=false,elite=true,retiring=false,credited=false,initialized=true,encounterReady=false;
  unsigned age=0,stagger=0;cCcD_Obj* childHit=nullptr;std::array<ActorId,2> bullboRiders{kNone,kNone};std::array<unsigned,3> bullboTargetsPending{};}owner;
 struct Child{ActorId parent=1;bool retiring=false;};std::map<ActorId,Child> children;
 std::map<ActorId,fopAc_ac_c*> actors;std::set<ActorId> pending;
@@ -36,7 +58,7 @@ Child* tracked_enemy_arrow(ActorId id){auto it=children.find(id);return it==chil
 Enemy* enemy_child_root(ActorId id){if(auto* e=tracked(id))return e;auto* c=tracked_enemy_arrow(id);return c&&!c->retiring?tracked(c->parent):nullptr;}
 fopAc_ac_c* actor_by_id(ActorId id){auto it=actors.find(id);return pending.contains(id)||it==actors.end()?nullptr:it->second;}
 bool fpcM_IsCreating(ActorId id){return pending.contains(id);}bool fpcM_IsExecuting(ActorId id){return actor_by_id(id)!=nullptr;}
-bool arena=true,running=true,refuse=false;
+bool arena=true,running=true,refuse=false,playing=true;bool playable(){return playing;}
 bool in_arena(){return arena;}Enemy* encounter_owner(fopAc_ac_c* a){return a&&arena?tracked(a->id):nullptr;}
 bool encounter_running(Enemy& e){return running&&e.initialized&&!e.retiring&&!e.credited;}
 struct Spawn{int profile;ActorId parent,id;u32 params;};std::vector<Spawn> spawns;
@@ -67,6 +89,49 @@ int main(){
  assert(boar.action==ACT_F_WAIT&&boar.status_flag==3&&!boar.demo_mode&&!boar.no_draw);
  boar.action=6;boar.ride_mode=3;before_bullbo_action(nullptr,args,nullptr,nullptr);
  assert(boar.action==6&&boar.ride_mode==3); // Never reset an ongoing native charge.
+ // Predict the wall before movement, then return inward despite Link at the edge.
+ auto steer=[&]{after_bullbo_field_move(nullptr,args,nullptr,nullptr);};
+ s_bossRing.anchored=true;s_bossRing.center={100,500,-200};
+ boar.enemy.current.pos=s_bossRing.center;boar.enemy.current.angle.y=0;boar.enemy.speedF=40;
+ steer();assert(!owner.bullboReturning&&boar.enemy.speedF==40&&boar.enemy.current.angle.y==0);
+ for(s16 yaw:{s16(0),s16(0x4000),s16(-0x6000)})for(float speed:{40.f,120.f})for(double factor:{1.,8.}){
+  s_run.factor=factor;
+  owner.bullboReturning=false;boar.action=ACT_C_F_RUN;boar.ride_mode=3;
+  boar.enemy.current.angle.y=yaw;
+  boar.enemy.current.pos=s_bossRing.center+Vec{cM_ssin(yaw)*1100,0,cM_scos(yaw)*1100};
+  boar.enemy.speedF=speed;steer();assert(owner.bullboReturning&&boar.enemy.speedF==0);
+  bool returned=false;
+  for(int frame=0;frame<180;++frame){
+   // Native chase can keep turning toward a player at the wall; our inward goal wins.
+   cLib_addCalcAngleS2(&boar.enemy.current.angle.y,yaw,8,0x200);
+   boar.enemy.speedF=40;steer();
+   if(!owner.bullboReturning){returned=true;break;}
+   boar.enemy.current.pos.x+=cM_ssin(boar.enemy.current.angle.y)*boar.enemy.speedF*1.5f*float(s_run.factor);
+   boar.enemy.current.pos.z+=cM_scos(boar.enemy.current.angle.y)*boar.enemy.speedF*1.5f*float(s_run.factor);
+   assert(inside_boss_ring(boar.enemy.current.pos,300.f));
+   assert(boar.enemy.current.pos.y==500); // No teleport or vertical correction.
+  }
+  assert(returned&&(boar.enemy.current.pos-s_bossRing.center).absXZ()<=boss_ring_radius*.5f);
+ }
+ s_run.factor=1;
+ // A stopped mount facing inward can leave wait; disable the guard with the ring.
+ owner.bullboReturning=true;boar.enemy.current.pos=s_bossRing.center+Vec{0,0,1100};
+ boar.enemy.current.angle.y=s16(-32768);boar.enemy.speedF=0;boar.action=ACT_F_WAIT;
+ steer();assert(boar.action==ACT_C_F_RUN&&boar.ride_mode==0&&owner.bullboReturning);
+ s_bossRing.retiring=true;steer();assert(!owner.bullboReturning);s_bossRing.retiring=false;
+ // Paused/staggered/foreign actors never acquire the inward goal.
+ for(int kind=0;kind<6;++kind){
+  boar.enemy.current.angle.y=0;boar.enemy.speedF=40;owner.bullboReturning=false;
+  if(kind==0)playing=false;
+  if(kind==1)running=false;
+  if(kind==2)owner.stagger=1;
+  if(kind==3)owner.elite=false;
+  if(kind==4)arena=false;
+  if(kind==5)s_bossRing.anchored=false;
+  steer();assert(!owner.bullboReturning&&boar.enemy.current.angle.y==0&&boar.enemy.speedF==40);
+  playing=running=arena=owner.elite=s_bossRing.anchored=true;owner.stagger=0;
+ }
+ s_bossRing.anchored=false;
  for(unsigned i=0;i<2;++i){auto& r=riders[i];std::any ra[]={&r};int result=0;
   assert(before_bullbo_rider(nullptr,ra,&result,nullptr)==HOOK_CONTINUE);
   assert(r.boar_id==owner.id&&r.boar_stand==int(i+1)&&r.ride_mode==2&&r.action==13&&r.damage_timer==0);
@@ -115,6 +180,6 @@ int main(){
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp)/'test.cpp', Path(tmp)/'test'
     cpp.write_text(fixture+(root/'src/survivors_bullbo.inc').read_text()+main)
-    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
+    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-print('Bullbo: two native seats, pending retries, shared hits, attack power, pause/deletion and foreign isolation passed')
+print('Bullbo: two native seats, pending retries, shared hits, attack power, predictive ring steering, pause/deletion and foreign isolation passed')

@@ -265,6 +265,9 @@ scaling and damage of the enemies they replace. Riders and their arrows follow
 the encounter's pause and cleanup rules. Mount/rider target spheres are 150% of
 native radius, and the rear archer always fires triple arrows with half the
 native readiness delay. Rider targets remain at their visible saddle positions.
+The mounted boss anticipates the light-ring boundary, stops to turn inward, and
+returns to the inner half of the circle before resuming pursuit. The check
+includes Endless movement scaling; native collision and rider attacks stay active.
 The elite Aeralfos flies at 250–400 units above terrain (half the native band),
 has quarter-length native readiness waits, and alternates air/ground phases every ten
 active seconds, descending over a dry floor and using the native takeoff.

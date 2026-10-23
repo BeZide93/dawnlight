@@ -17,7 +17,9 @@ Riesen-Bokoblin → Bullbo mit zwei Bulblins → Aeralfos → King Bulblin. Die
 historischen nativen Ausgangstabellen unten beschreiben noch die ersetzten
 Gegner. HP-Budgets und die bisherigen Schadensfaktoren der Ersatzslots bleiben
 bestehen. Der Bullbo hat 150% große Zielradien; sein Bogenschütze feuert immer
-dreifach mit halbem Bereitschaftstimer. Der Aeralfos wechselt alle 10 aktiven
+dreifach mit halbem Bereitschaftstimer. Seine Lauf-KI prüft die Bewegung vorab
+gegen den Lichtkreis (inklusive Endless-Tempo), wendet vor der Wand und kehrt
+in die innere Kreishälfte zurück, bevor sie Link wieder verfolgt. Der Aeralfos wechselt alle 10 aktiven
 Sekunden zwischen Boden und Luft, fliegt im halbierten Höhenband 250–400 über
 Boden und hat auf ein Viertel verkürzte native Bereitschaftstimer. Die niedrigere Obergrenze beendet
 auch den Rückflug nach einem Sturzangriff.

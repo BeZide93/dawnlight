@@ -438,6 +438,7 @@ struct Enemy {
     unsigned arrowVolley=0;
     std::array<ActorId,2> bullboRiders{kNone,kNone};
     std::array<unsigned,3> bullboTargetsPending{};
+    bool bullboReturning=false;
     AeralfosCycle aeralfosCycle;
     KingWaveClock kingWaveClock;
 };

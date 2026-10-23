@@ -1,5 +1,37 @@
 // One encounter owns the Bullbo and both riders. Only the mount has run HP,
 // kill credit and rewards; rider contacts feed its existing child-hit channel.
+void after_bullbo_field_move(ModContext*,void* args,void*,void*) {
+    auto* boar=mods::arg<e_wb_class*>(args,0);
+    auto* owner=boar?encounter_owner(&boar->enemy):nullptr;
+    if(!owner||!owner->elite||!encounter_running(*owner)||!playable()||owner->stagger)return;
+    if(!s_bossRing.anchored||s_bossRing.retiring) {owner->bullboReturning=false;return;}
+    auto& actor=boar->enemy;
+    const cXyz offset=actor.current.pos-s_bossRing.center;
+    // Run after native wait/run steering but BEFORE action() integrates motion.
+    // Anticipate six frames at the boss/Endless movement speed, with body room
+    // inside the wall. Native run mode 3 otherwise charges straight for 40 frames.
+    const float movement=1.5f*float(std::min(32767.0,s_run.endless_factor()));
+    const float lookahead=std::max(0.f,actor.speedF)*movement*6.f;
+    const cXyz projected=actor.current.pos+
+        cXyz(cM_ssin(actor.current.angle.y)*lookahead,0,cM_scos(actor.current.angle.y)*lookahead);
+    if(owner->bullboReturning) {
+        if(offset.absXZ()<=boss_ring_radius*.5f)owner->bullboReturning=false;
+    } else if(!inside_boss_ring(projected,300.f))owner->bullboReturning=true;
+    if(!owner->bullboReturning)return;
+
+    // Keep an inward goal until well clear of the wall, even when Link stands
+    // at its edge. Stop while turning instead of sliding sideways into it.
+    const s16 inward=cM_atan2s(-offset.x,-offset.z);
+    cLib_addCalcAngleS2(&actor.current.angle.y,inward,1,0x1000);
+    const int error=s16(inward-actor.current.angle.y);
+    if(std::abs(error)>0x1000)actor.speedF=0;
+    else {
+        actor.speedF=std::min(actor.speedF,37.5f/movement);
+        if(boar->action==ACT_F_WAIT) {
+            boar->action=ACT_C_F_RUN;boar->ride_mode=0;
+        }
+    }
+}
 Enemy* bullbo_rider_owner(e_rd_class* rider) {
     if(!rider || !in_arena())return nullptr;
     const auto* child=tracked_enemy_arrow(fopAcM_GetID(&rider->enemy));

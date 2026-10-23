@@ -26,7 +26,7 @@ using ActorId=unsigned;using ProfileName=int;using u32=unsigned;using s16=short;
 unsigned s_map=0;constexpr ActorId kNone=~0u;constexpr int fpcNm_E_OC_e=1,fpcNm_E_BA_e=2,fpcNm_E_MS_e=3,fpcNm_E_RD_e=4,fpcNm_E_ARROW_e=5;
 constexpr int fpcNm_E_TT_e=6,fpcNm_E_DN_e=7,fpcNm_E_MM_e=8,fpcNm_E_GE_e=9,fpcNm_E_KR_e=10,fpcNm_E_CR_e=11,fpcNm_E_BS_e=12,fpcNm_E_GI_e=13,fpcNm_E_SF_e=14,fpcNm_E_FS_e=15,fpcNm_E_BU_e=16,fpcNm_E_SM2_e=17,fpcNm_E_MF_e=18,fpcNm_E_CR_EGG_e=19,fpcNm_E_MM_MT_e=20,fpcNm_B_GG_e=21,fpcNm_B_TN_e=22;
 constexpr int fpcNm_E_DD_e=23,fpcNm_E_SH_e=24,fpcNm_E_RDY_e=25,fpcNm_E_S1_e=26,fpcNm_E_YK_e=27,fpcNm_E_YC_e=28,fpcNm_B_DS_e=29,fpcNm_E_ZH_e=30;
-constexpr int fpcNm_E_RDB_e=31,fpcNm_E_VT_e=32,fpcNm_E_YMB_e=33,fpcNm_E_PZ_e=34,fpcNm_E_TH_e=35,fpcNm_E_HZELDA_e=36,fpcNm_B_GND_e=37,fpcNm_E_TH_BALL_e=38,fpcNm_MANT_e=39,fpcNm_E_FK_e=40;
+constexpr int fpcNm_E_RDB_e=31,fpcNm_E_VT_e=32,fpcNm_E_YMB_e=33,fpcNm_E_PZ_e=34,fpcNm_E_TH_e=35,fpcNm_E_HZELDA_e=36,fpcNm_B_GND_e=37,fpcNm_E_TH_BALL_e=38,fpcNm_MANT_e=39,fpcNm_E_FK_e=40,fpcNm_E_WB_e=41;
 struct daB_DS_c{enum {TYPE_BULLET_B=3,TYPE_BULLET_C=4};};
 struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 ModContext* mod_ctx=nullptr;
@@ -70,7 +70,7 @@ struct Service{void delete_actor(ModContext*,ActorId id){deleted.insert(id);}}se
 main=r'''
 std::vector<s16> spreadAngles;
 ActorId fopAcM_createChild(s16 profile,ActorId parent,u32 params,const cXyz* pos,int room,const csXyz* angle,const cXyz* scale,s8 arg,createFunc callback){
- if(s_spawningEnemyArrows)assert(profile==fpcNm_E_ARROW_e&&(parent==42||parent==43)&&params==7&&room==0&&
+ if(s_spawningEnemyArrows)assert(profile==fpcNm_E_ARROW_e&&(parent==42||parent==43||parent==601)&&params==7&&room==0&&
     angle->x==123&&angle->z==456&&scale->x==1&&pos->x==0&&arg==-1&&callback==nullptr);
  std::any args[]={profile,parent,params,pos,room,angle,scale,arg,callback};ActorId id=nextId++;
  if(before_enemy_arrow(nullptr,args,&id,nullptr)==HOOK_SKIP_ORIGINAL)return id;
@@ -130,14 +130,15 @@ int main(){
   actor->health=maximum-1;initialize_enemy(&e,actor);
   assert(actor->health==maximum-1&&actor->field_0x560==maximum);
  }
- // The ordinary actor path must double timed boss HP exactly once.
- for(int slot=0;slot<4;++slot) {
-  s_run.ticks=(slot+1)*elite_interval;Enemy timed;timed.profile=fpcNm_E_OC_e;timed.elite=true;timed.eliteSlot=slot;
+ // Ordinary actor initialization uses the full timed budget and rounds each map once.
+ for(unsigned map=0;map<5;++map)for(int slot=0;slot<4;++slot) {
+  s_map=map;s_run.ticks=(slot+1)*elite_interval;Enemy timed;timed.profile=fpcNm_E_OC_e;timed.elite=true;timed.eliteSlot=slot;
   initialize_enemy(&timed,&bok);
-  const int maximum=std::min(32767u,2*s_run.enemy_health(native_roster[0].hp,true,s_map,slot==3));
+  const int maximum=int(s_run.spawn_enemy_health(native_roster[0].hp,true,s_map,slot));
   assert(bok.health==maximum&&bok.field_0x560==maximum);
   --bok.health;initialize_enemy(&timed,&bok);assert(bok.health==maximum-1&&bok.field_0x560==maximum);
  }
+ s_map=0;
  // Untouched waiting guards remain relevant on discovery, then stop growing
  // on damage or activation. Repeated updates never compound HP or heal wounds.
  s_run.ticks=0;Enemy guard;guard.profile=fpcNm_E_OC_e;guard.elite=guard.dormant=true;
@@ -231,9 +232,43 @@ int main(){
  for(auto spec:{std::pair{fpcNm_E_DN_e,2u},std::pair{fpcNm_E_RDB_e,1u},std::pair{fpcNm_B_TN_e,2u},
      std::pair{fpcNm_E_VT_e,4u},std::pair{fpcNm_B_DS_e,4u},std::pair{fpcNm_E_YC_e,4u},
      std::pair{fpcNm_E_YMB_e,3u},std::pair{fpcNm_E_TH_e,3u},std::pair{fpcNm_E_HZELDA_e,4u},
-     std::pair{fpcNm_B_GND_e,5u},std::pair{fpcNm_E_PZ_e,5u}}){
+     std::pair{fpcNm_B_GND_e,5u},std::pair{fpcNm_E_PZ_e,5u},
+     std::pair{fpcNm_E_WB_e,8u},std::pair{fpcNm_B_GG_e,8u}}){
   Enemy e;e.elite=true;e.profile=spec.first;assert(enemy_attack_factor(e)==spec.second);
   if(!native_boss_profile(e.profile)){e.elite=false;assert(enemy_attack_factor(e)==1);}
+ }
+ // Both Bullbo seats are structural children; nested arrows retain damage
+ // after the mount dies, while riders retire even during asynchronous creation.
+ {
+ {Enemy normal;normal.profile=fpcNm_B_GG_e;assert(enemy_attack_factor(normal)==1);}
+ s_enemyArrows={};s_enemies={};s_enemies[0].id=42;s_enemies[0].profile=fpcNm_E_WB_e;s_enemies[0].elite=true;
+ for(ActorId seat:{600u,601u}){
+  std::any seatArgs[]={s16(fpcNm_E_RD_e),ActorId(42)};
+  s_run.phase=Phase::Upgrade;assert(before_enemy_arrow(nullptr,seatArgs,&seat,nullptr)==HOOK_CONTINUE);
+  after_enemy_arrow(nullptr,seatArgs,&seat,nullptr);assert(enemy_damage_factor(seat)==8);
+ }
+ fopAc_ac_c mounted;mounted.profile=fpcNm_E_RD_e;actors[601]=&mounted;
+ std::any shotArgs[]={s16(fpcNm_E_ARROW_e),ActorId(601),u32(0),static_cast<const cXyz*>(nullptr),0,static_cast<const csXyz*>(nullptr)};
+ ActorId shot=602;s_run.phase=Phase::Running;
+ assert(before_enemy_arrow(nullptr,shotArgs,&shot,nullptr)==HOOK_CONTINUE);
+ after_enemy_arrow(nullptr,shotArgs,&shot,nullptr);
+ assert(tracked_enemy_arrow(shot)->parent==42&&enemy_damage_factor(shot)==8);
+ s_enemies[0]={};s_enemies[0].id=43;s_enemies[0].profile=fpcNm_E_OC_e;
+ assert(!active_enemy_arrow(600)&&!active_enemy_arrow(601)&&active_enemy_arrow(shot)&&enemy_damage_factor(shot)==8);
+ creating.insert(600);cleanup_enemy_arrows();assert(tracked_enemy_arrow(600)&&deleted.contains(601));
+ creating.clear();actors[600]=&mounted;cleanup_enemy_arrows();assert(deleted.contains(600));
+ s_enemyArrows={};actors.clear();s_enemies={};
+ // Mounted bow volleys are always triples, not alternating elite singles.
+ s_enemies[0].id=42;s_enemies[0].profile=fpcNm_E_WB_e;s_enemies[0].elite=true;
+ ActorId seat=601;std::any seatArgs[]={s16(fpcNm_E_RD_e),ActorId(42)};
+ after_enemy_arrow(nullptr,seatArgs,&seat,nullptr);actors[seat]=&mounted;
+ cXyz pos{},scale{1,1,1};csXyz angle{123,1000,456};spreadAngles.clear();
+ for(unsigned n=1;n<=4;++n){
+  fopAcM_createChild(s16(fpcNm_E_ARROW_e),seat,7,&pos,0,&angle,&scale,s8(-1),nullptr);
+  assert(spreadAngles.size()==3*n);
+  assert(spreadAngles[3*n-2]==1000-0x900&&spreadAngles[3*n-1]==1000+0x900);
+ }
+ s_enemyArrows={};actors.clear();s_enemies={};
  }
  // Rider arrows belong to the carrier, keep its factor after death, and never
  // inherit a reused enemy slot. Attached riders/ghosts retire with their root.

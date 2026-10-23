@@ -136,6 +136,7 @@ void observe_enemy_attack(Enemy& enemy, fopAc_ac_c* actor) {
     // Other roster types can also be promoted to elites. Their native action
     // transitions/re-entry delimit attacks; continuous contact is one use.
 #define HIT_STATE(P,T,A,M) case P: {auto* e=reinterpret_cast<T*>(actor);action=e->A;mode=e->M;key=action+1;break;}
+    HIT_STATE(fpcNm_E_WB_e,e_wb_class,action,ride_mode)
     HIT_STATE(fpcNm_E_BA_e,e_ba_class,mAction,mMode)
     HIT_STATE(fpcNm_E_MS_e,e_ms_class,mAction,mMode)
     HIT_STATE(fpcNm_E_TT_e,daE_TT_c,mAction,mMode)
@@ -180,6 +181,7 @@ EnemyAttackUsePtr enemy_attack_use(cCcD_Obj* attack) {
         auto* zelda=reinterpret_cast<e_hzelda_class*>(root);
         if(attack==&zelda->mBallSphAt&&source.magic)return source.magic;
     }
+    if(owner->profile==fpcNm_E_RDB_e)if(auto use=king_wave_use(attack))return use;
     bool repeatingSpin=false;
     if(owner->profile==fpcNm_E_RDB_e) {
         auto* king=reinterpret_cast<e_rdb_class*>(root);

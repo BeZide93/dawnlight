@@ -26,14 +26,17 @@ int main() {
         assert(drops==20);
     }
 
-    // Fixed map/time curves, rounded once with difficulty. Final boss budgets
+    // Field-based map progression, with difficulty and final map rounding. Boss budgets
     // are absolute, separate from normal/elite HP, and do not grow after 20m.
     Run hp;hp.start(1);
-    constexpr unsigned normalEnd[]{226,540,475,276,262};
-    constexpr unsigned eliteEnd[]{905,2158,1902,1105,1047};
-    constexpr unsigned bosses[]{2300,5400,4800,2800,2600};
+    constexpr unsigned normalEnd[]{226,540,594,653,719};
+    constexpr unsigned normalStart[]{8,8,9,10,11},eliteStart[]{120,120,132,145,160};
+    constexpr unsigned permille[]{1000,1000,1100,1210,1331};
+    const auto scaled=[&](unsigned hp,unsigned map){return std::min(32767u,(hp*permille[map]+500)/1000);};
+    constexpr unsigned eliteEnd[]{905,2158,2374,2611,2872};
+    constexpr unsigned bosses[]{2300,5400,5400,5400,5400};
     for(unsigned map=0;map<5;++map) {
-        hp.ticks=0;assert(hp.enemy_health(8,false,map)==8&&hp.enemy_health(8,true,map)==120);
+        hp.ticks=0;assert(hp.enemy_health(8,false,map)==normalStart[map]&&hp.enemy_health(8,true,map)==eliteStart[map]);
         unsigned previous=0;
         for(unsigned tick=0;tick<=duration;tick+=30){hp.ticks=tick;
             unsigned now=hp.enemy_health(8,false,map);assert(now>=previous);previous=now;}
@@ -41,7 +44,7 @@ int main() {
         assert(hp.enemy_health(8,true,map)==eliteEnd[map]);
         for(unsigned multiplier:{1u,3u,5u}) {
             hp.options.boss_hp=multiplier;
-            assert(hp.enemy_health(1200,true,map,true)==std::min(32767u,bosses[map]*multiplier));
+            assert(hp.enemy_health(1200,true,map,true)==scaled(bosses[map]*multiplier,map));
         }
         hp.options.boss_hp=1;hp.ticks=~0u;
         assert(hp.enemy_health(8,false,map)==normalEnd[map]);
@@ -51,11 +54,33 @@ int main() {
         hp.start(1);hp.endless=endless;hp.options.boss_hp=difficulty;
         for(int slot=0;slot<4;++slot) {
             hp.ticks=(slot+1)*elite_interval+(endless?duration:0);
-            const auto baseline=hp.enemy_health(8,true,map,slot==3);
-            assert(hp.spawn_enemy_health(8,true,map,slot)==std::min(32767u,baseline*2));
+            const auto baseline=hp.enemy_health(8,true,map?1:0,slot==3);
+            assert(hp.spawn_enemy_health(8,true,map,slot)==scaled(baseline*2,map));
             assert(hp.spawn_enemy_health(8,false,map,slot)==hp.enemy_health(8,false,map));
         }
         for(int slot:{-1,4,5,6,7})assert(hp.spawn_enemy_health(8,true,map,slot)==hp.enemy_health(8,true,map));
+    }
+    // Exact approved 20-minute boss and guard preview, including odd HP totals.
+    constexpr unsigned scheduled[5][4]{{262,688,1230,4600},{560,1626,3178,10800},
+        {616,1789,3496,11880},{678,1967,3845,13068},{745,2164,4230,14375}};
+    constexpr unsigned guards[3][4]{{120,280,813,1589},{132,308,894,1748},{145,339,984,1923}};
+    hp.start(1);
+    for(unsigned map=0;map<5;++map)for(int slot=0;slot<4;++slot){
+        hp.ticks=(slot+1)*elite_interval;
+        assert(hp.spawn_enemy_health(1200,true,map,slot)==scheduled[map][slot]);
+    }
+    for(unsigned map=1;map<=3;++map)for(unsigned step=0;step<4;++step){
+        hp.ticks=step*elite_interval;
+        assert(hp.spawn_enemy_health(8,true,map,4)==guards[map-1][step]);
+    }
+    // Intermediate times and Endless reuse Field's complete curve, including
+    // normal species HP, the guard minimum, difficulty and native HP saturation.
+    for(bool endless:{false,true})for(unsigned tick:{0u,1800u,5000u,15000u,36000u,40000u,~0u})
+    for(float difficulty:{1.f,1.5f,5.f})for(unsigned map=2;map<5;++map){
+        hp.start(1);hp.endless=endless;hp.ticks=tick;
+        hp.options.enemy_hp=hp.options.boss_hp=difficulty;
+        for(bool elite:{false,true})for(int slot:{-1,0,1,2,3,4})
+            assert(hp.spawn_enemy_health(8,elite,map,slot)==scaled(hp.spawn_enemy_health(8,elite,1,slot),map));
     }
     // Independent HP sliders across every map, timed slot, guard and Endless.
     for(unsigned map=0;map<5;++map)for(bool endless:{false,true})

@@ -51,7 +51,7 @@ struct NativeActor:fopAc_ac_c {
  float mPlayerDistanceXZ=0,field_0x6d4=0,pl_range=0,pl_dir=0,field_0x6b8=0,mRecognizeDist=0,pl_recognize_dist=0,pl_search_range=0;
  s16 angle_target=0,mTargetAngleY=0,mCurrentAngleYTarget=0,field_0x6c0=0;int timers[4]{};
  ActorId armorChildId=kNone;int field_0xb99=0,m_action=0,m_mode=0;
- dCcD_Sph mSphere,mSphere2,mSphere3,cc_sph[3],tate_sph,mCcSphs[3],mTateSph;
+ dCcD_Sph mSphere,mSphere2,mSphere3,cc_sph[7],tate_sph,mCcSphs[3],mTateSph;
  dCcD_Sph field_0xa7c[3],field_0xf5c,mCcHookCyl,mCcShieldSph,mSphA[3],mSphB[3],mSphC,m_sphere,m_sph;
  TargetSet ccSph,mCcSph;
  dCcD_Sph field_0x944[3],mBodyCyls[3],mNeckSph,field_0x82c[2],field_0xa9c,mCylCollider,mWarpCylCollider,mSphCc[3],mGndSph[3];
@@ -62,7 +62,7 @@ struct NativeActor:fopAc_ac_c {
  mDoExt_McaMorfSO* mAnm_p=&morph;
  float field_0x6bc=0,mPlayerCheckDist=0,mSearchRange=0,mPlayerTrigger=0;
  int field_0x68c=0,field_0x676=0,field_0x678=0,mWeaponType=1,mGroupID=0;dCcD_Cyl mCcCyl;
- dCcU_AtInfo mAtInfo,at_info,atInfo;dCcD_Stts mStts,stts,ccStts,mCcStts,mStts1;
+ dCcU_AtInfo mAtInfo,at_info,atInfo;dCcD_Stts Stts,mStts,stts,ccStts,mCcStts,mStts1;
  mDoExt_McaMorfSO morph; mDoExt_McaMorfSO* mpMorfSO=&morph,*mpMorf=&morph,*anm_p=&morph,*modelMorf=&morph,*mpModelMorf=&morph,*mpModelMorf1=&morph;
  void setActionMode(int a,int m=0){mAction=mActionMode=mActionMode1=a;mMode=mMoveMode=m;}
  void setBck(int a,int,float,float){animation=a;}
@@ -75,7 +75,7 @@ struct NativeActor:fopAc_ac_c {
   }
  }
 };
-using e_rdb_class=NativeActor;using daE_VA_c=NativeActor;using daE_YMB_c=NativeActor;using daE_PZ_c=NativeActor;
+using e_wb_class=NativeActor;using e_rdb_class=NativeActor;using daE_VA_c=NativeActor;using daE_YMB_c=NativeActor;using daE_PZ_c=NativeActor;
 using e_th_class=NativeActor;using e_hzelda_class=NativeActor;using b_gnd_class=NativeActor;
 using e_dd_class=NativeActor;using e_sh_class=NativeActor;using e_rdy_class=NativeActor;using e_s1_class=NativeActor;using e_yk_class=NativeActor;using e_yc_class=NativeActor;using daB_DS_c=NativeActor;using daE_ZH_c=NativeActor;
 using daE_TT_c=NativeActor;using daE_GE_c=NativeActor;using e_kr_class=NativeActor;using e_dn_class=NativeActor;
@@ -224,7 +224,7 @@ int main(){
   finalEnemy.profile=native_roster[finalEnemy.species].profile;
   for(unsigned minute:{0u,10u,20u})for(unsigned multiplier:{1u,3u,10u}) {
    s_run.ticks=minute*60*ticks_per_second;s_run.options.boss_hp=multiplier;initialize_extended_enemy(finalEnemy,&finalBoss);
-   assert(finalBoss.health==int(std::min(32767u,2*s_run.enemy_health(1200,true,map,true)))&&finalBoss.field_0x560==finalBoss.health);
+   assert(finalBoss.health==int(s_run.spawn_enemy_health(1200,true,map,3))&&finalBoss.field_0x560==finalBoss.health);
   }
  }
  s_run.options.boss_hp=1;
@@ -251,16 +251,16 @@ int main(){
  boss.species=unsigned(Species::StallordHead);boss.elite=true;boss.eliteSlot=3;s_map=2;
  s_run.start(7);s_run.ticks=duration;s_run.ranks.fill(30);s_run.master_sword=10;
  s_run.dark_link=29;s_run.dark_remaining=100; // maximal direct-hit upgrade damage
- initialize_extended_enemy(boss,&head);assert(head.health==9600&&head.field_0x560==9600);
+ initialize_extended_enemy(boss,&head);assert(head.health==11880&&head.field_0x560==11880);
  power=s_run.attack_power(unsigned(Upgrade::Spin))*s_run.crit_damage_percent()/100*2;
  assert(power>120&&power<1200);
  auto targets=extended_body(&head,boss.profile);
  for(auto* target:targets.targets)if(target)target->hit=&sword;
  const unsigned beforeHeadHits=calls;
  assert(update_extended_enemy(&head,boss));
- assert(head.health==9600-int(power)&&calls==beforeHeadHits+1&&!boss.credited);
+ assert(head.health==11880-int(power)&&calls==beforeHeadHits+1&&!boss.credited);
  for(auto* target:targets.targets)if(target)target->hit=&sword;
- update_extended_enemy(&head,boss);assert(head.health==9600-2*int(power)); // Fresh next-frame contact; no shared lockout.
+ update_extended_enemy(&head,boss);assert(head.health==11880-2*int(power)); // Fresh next-frame contact; no shared lockout.
  s_run.options.boss_hp=10;initialize_extended_enemy(boss,&head);assert(head.health==32767);
  s_run.start(5);power=7;
  // Owned screams have a short native stun and a shared cooldown across Gibdos.

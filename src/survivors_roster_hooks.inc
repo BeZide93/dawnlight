@@ -65,3 +65,13 @@
 
     POST(BossTNThrow,after_boss_sword_throw);
     PRE(SurvivorsEnemyArrow,before_boss_rider_arrow);
+    PRE(RosterWB,before_roster_native_damage);
+    PRE(BossBullboAction,before_bullbo_action);
+    POST(BossBullboWait,after_bullbo_field_move); POST(BossBullboRun,after_bullbo_field_move);
+    PRE(BossBullboRider,before_bullbo_rider);
+    PRE(SurvivorsBulblinHit,before_bullbo_rider_damage);
+    PRE(RosterTargets,before_field_boss_targets);
+    PRE(BossGGAction,before_aeralfos_action); POST(BossGGAction,after_aeralfos_action);
+    PRE(BossGGFlightAttack,before_aeralfos_air_attack);
+    PRE(BossGGMatrix,before_aeralfos_matrix);
+    POST(BossRDBAction,after_boss_rdb);

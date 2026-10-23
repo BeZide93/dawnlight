@@ -245,7 +245,7 @@ Each map spawns four timed elites:
 | Map | 5:00 | 10:00 | 15:00 | 20:00 |
 | --- | --- | --- | --- | --- |
 | Darknut Arena | Giant Lizalfos | Giant Helmasaur | Dynalfos | Darknut |
-| Hyrule Field | Giant bow Bulblin | Giant Bokoblin | Giant Kargarok | King Bulblin |
+| Hyrule Field | Giant Bokoblin | Bullbo with two Bulblin riders | Aeralfos | King Bulblin |
 | Gerudo Desert | Giant Stalhound | Stalfos | Death Sword | Stallord’s flying head |
 | Palace of Twilight | Giant Shadow Beast | Twilit Bloat | Giant Twilit Carrier Kargarok | Phantom Zant |
 | Hyrule Castle Throne Room | Darknut | Darkhammer | Puppet Zelda | Ganondorf |
@@ -257,6 +257,32 @@ and use the native Tear-of-Light minimap icon. Dormant guards remain
 giant Bokoblins except in the Palace, where they are giant Shadow club Bulblins. Dormant
 elites wake only after taking damage; after a kill they respawn in three minutes,
 with new positions in Field/Desert. Timed elites do not respawn.
+
+Hyrule Field's Bullbo uses native charges with a front Bulblin driver and a rear
+Bulblin archer. All three share one boss HP budget and one kill/reward; hits on
+either rider damage the mount. The Bullbo and Aeralfos retain the timed-elite HP
+scaling of the enemies they replace. All Bullbo/rider attacks (including arrows)
+and elite Aeralfos attacks deal two base hearts before difficulty/Endless scaling
+and damage reduction. Riders and their arrows follow
+the encounter's pause and cleanup rules. Mount/rider target spheres are 150% of
+native radius, and the rear archer always fires triple arrows with half the
+native readiness delay. Rider targets remain at their visible saddle positions.
+The mounted boss anticipates the light-ring boundary, stops to turn inward, and
+returns to the inner half of the circle before resuming pursuit. The check
+includes Endless movement scaling; native collision and rider attacks stay active.
+The elite Aeralfos flies at 250–400 units above terrain (half the native band),
+has quarter-length native readiness waits, and alternates air/ground phases every ten
+active seconds, descending over a dry floor and using the native takeoff.
+A ready aerial attack starts without waiting for the native paired-Aeralfos AI.
+The dive locks Link's position at the start of its visible windup, then follows
+a fixed lane at 60 units per update without homing or braking near Link. It flies
+about 450 units beyond that position, levels out at the captured body height,
+and enters recovery with damage disabled. Walls, ground contact, the light-ring
+boundary or a three-second safety limit end the pass early.
+On the ground, a gap closer becomes due every three active seconds, waits for an
+ongoing strike to finish, and uses a bounded, collision-checked dash into melee.
+It starts a native attack immediately on arrival; blocked paths abort the dash.
+Nearby Link triggers a strike without another sidestep/idle cycle.
 
 Stalhounds emerge and fight in daylight as well as at night. The giant elite
 uses a lower pounce arc so its bite can reach grounded Link. Shadow Beasts do
@@ -280,10 +306,17 @@ are excluded; attacks, effects and attack timing remain native where portable.
 
 Boss balance: active elites/bosses move 50% faster. Promoted ordinary elites have
 half attack-readiness/recovery timers and double damage; native bosses/minibosses
-do not inherit those two generic factors. Explicit damage overrides are Darknut
-×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
+do not inherit those two generic factors. Explicit damage overrides are Darknut ×2;
+elite Aeralfos and Bullbo/riders ×8 on normalized native power 1 (two hearts); Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
-King Bulblin can spin every six seconds at a safe chase boundary. Darknut repeats
+King Bulblin can spin every six seconds at a safe chase boundary, including at
+range. Normal axe swings launch one Sword Wave toward Link, even outside melee
+range; active spins emit five waves every second: one aimed at Link's current position
+and four randomly directed waves. Aimed waves include Link's height and fly
+toward his body position at release, without homing afterward. Waves travel
+up to the light ring's diameter (3,000 units), stop at walls/hits, and use the
+native axe's base damage. Each five-wave salvo shares one accepted-hit budget.
+Darknut repeats
 his sword throw every 1.5 active seconds outside melee range in either phase.
 Death Sword can enter ranged combat after four seconds of distant pursuit;
 Stallord can start breath out to 6,000 units without Link's damage-protection gate.
@@ -415,24 +448,42 @@ damageable. Ball lifetime grows with Reach so its return leg is preserved.
 
 ### Enemy health curves
 
-Normal HP multiply the species' base HP by the following fixed map/time factors.
-Interpolate linearly; start at 1× at minute zero and stop growth at minute 20.
+Normal HP multiply the species' base HP by a fixed time curve. Interpolate
+linearly from 1x at minute zero; normal-run growth stops at minute 20. Darknut
+Arena retains its own curve. Every later map uses the Hyrule Field curve and
+budget, with these cumulative map multipliers: Field x1, Desert x1.10, Palace
+x1.21, Castle x1.331. They apply to normal enemies, timed bosses and guards.
 These curves do not react to the player's equipment or luck. HP is sampled on
-spawn; untouched dormant guards refresh until engaged. Ordinary elite HP is
-`max(120, 32 × factor)`. Final bosses instead use the separate absolute budgets
-below. The selected Enemy HP difficulty multiplier applies once to every type;
-round once and cap at native signed-HP maximum 32,767.
+spawn; untouched dormant guards refresh until engaged. Existing wounded or
+active enemies do not gain HP as time passes during a normal run.
 
-| Map | 1 min | 5 min | 10 min | 15 min | 20 min | Final boss HP |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Darknut Arena | 1.00 | 4.09 | 10.76 | 19.22 | 28.30 | 2,300 |
-| Hyrule Field | 1.08 | 8.76 | 25.39 | 49.66 | 67.44 | 5,400 |
-| Gerudo Desert | 1.04 | 8.39 | 23.26 | 44.30 | 59.43 | 4,800 |
-| Palace of Twilight | 1.00 | 5.70 | 14.62 | 24.38 | 34.54 | 2,800 |
-| Hyrule Castle Throne Room | 1.10 | 4.98 | 12.79 | 22.41 | 32.73 | 2,600 |
+| Base curve | 1 min | 5 min | 10 min | 15 min | 20 min |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Darknut Arena | 1.00 | 4.09 | 10.76 | 19.22 | 28.30 |
+| Hyrule Field and later maps | 1.08 | 8.76 | 25.39 | 49.66 | 67.44 |
 
-These are balance starting points from the progression model; actual boss flight
-windows, attack geometry and survival pressure still need in-game validation.
+Before the map multiplier, elite HP is `max(120, 32 x factor)`; final bosses
+instead use 2,300 HP in the Arena and 5,400 in Field/later maps. Enemy HP difficulty
+applies only to normal enemies; Boss HP applies to elites and final bosses.
+Apply the selected difficulty and Endless factor, round to whole HP, then double
+the budget for timed slots only. Finally apply the map multiplier once, round
+half up and cap at 32,767. Do not round through each intermediate map: Castle
+uses exactly 1.331 times the Field budget. Damage is unaffected by these HP steps.
+
+At Boss HP x1 in a normal 20-minute run, the scheduled spawn budgets are:
+
+| Map | 5 min | 10 min | 15 min | 20 min (final boss) |
+| --- | ---: | ---: | ---: | ---: |
+| Darknut Arena | 262 | 688 | 1,230 | 4,600 |
+| Hyrule Field | 560 | 1,626 | 3,178 | 10,800 |
+| Gerudo Desert | 616 | 1,789 | 3,496 | 11,880 |
+| Palace of Twilight | 678 | 1,967 | 3,845 | 13,068 |
+| Hyrule Castle Throne Room | 745 | 2,164 | 4,230 | 14,375 |
+
+Guard HP at 0/5/10/15 minutes: Field 120/280/813/1,589; Desert
+132/308/894/1,748; Palace 145/339/984/1,923. Guards never receive the timed-slot
+x2. Delayed spawns and shortened debug runs use their actual simulation time.
+Endless extrapolates the same base curve and retains the map multiplier.
 No optional Legendary global-damage bonus is included.
 
 ## Critical hits

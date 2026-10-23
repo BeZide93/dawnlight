@@ -7,7 +7,7 @@ int main() {
     static_assert(elite_scale(Species::Stalfos)==2.f);
     const std::array<std::array<Species,4>,5> expected{{
         {Species::Lizalfos,Species::Helmasaur,Species::Dynalfos,Species::Darknut},
-        {Species::Bow,Species::Bokoblin,Species::Kargarok,Species::KingBulblin},
+        {Species::Bokoblin,Species::Bullbo,Species::Aeralfos,Species::KingBulblin},
         {Species::Stalhound,Species::Stalfos,Species::DeathSword,Species::StallordHead},
         {Species::ShadowBeast,Species::TwilitBloat,Species::ShadowKargarok,Species::PhantomZant},
         {Species::Darknut,Species::Darkhammer,Species::PuppetZelda,Species::Ganondorf}

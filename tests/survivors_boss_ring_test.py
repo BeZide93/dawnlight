@@ -22,6 +22,8 @@ assert 'shutdown_boss_ring();' in function(core,'void shutdown_survivors(')
 hub=(root/'src/new_save_modes.cpp').read_text()
 assert 'configure_ganondorf_barrier(barrier);' in function(hub,'void arm_ganondorf_barrier(obj_gb_class* barrier) {')
 fixture=r'''
+#include "survivors_field_boss_rules.hpp"
+using namespace dawnlight::survivors;
 #include <algorithm>
 #include <any>
 #include <array>
@@ -252,6 +254,6 @@ with tempfile.TemporaryDirectory() as td:
     cpp.write_text(fixture+shared+'\nusing namespace dawnlight;\n'+terrain+production+
         '\n#pragma GCC diagnostic push\n#pragma GCC diagnostic ignored "-Wunused-variable"\n'+native+
         '\n#pragma GCC diagnostic pop\n'+main)
-    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
+    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
 print('Survivors boss ring: terrain model/collision, 5x height, bounded sampling, immutable archives, formats, cliffs, pauses, lifecycle and unload passed')

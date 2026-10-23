@@ -53,6 +53,8 @@ void update_boss_watchdogs(daAlink_c*);
 void before_boss_tactics(Enemy&,fopAc_ac_c*);
 void after_boss_tactics(Enemy&,fopAc_ac_c*);
 void update_boss_projectile(fopAc_ac_c*,bool);
+void clear_king_waves(ActorId owner=kNone);
+EnemyAttackUsePtr king_wave_use(cCcD_Obj*);
 void clear_zelda_light_orbs(ActorId owner=kNone);
 EnemyAttackUsePtr zelda_light_orb_use(cCcD_Obj*);
 void update_zelda_light_volley(e_hzelda_class*,Enemy&);

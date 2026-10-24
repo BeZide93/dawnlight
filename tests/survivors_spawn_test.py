@@ -80,6 +80,8 @@ bool s_hub=false,s_hubDoorStarted=false,s_arrivingRun=false;void update_hub(daAl
 unsigned s_map=0;const Arena& arena(){return arenas[s_map];}Run s_run;
 ActorId s_player=7;unsigned s_warmup=0,recordsLoaded=0;
 bool active=true,transition=false,event=false,creating=false,s_restart=false;
+bool arrivalActive=false;
+bool survivors_hub_arrival_active(){return arrivalActive;}
 bool in_arena(){return active;}bool transitioning(){return transition;}bool playable(){return active&&!event&&!transition;}
 bool fpcM_IsCreating(ActorId){return creating;}
 unsigned fopAcM_GetID(fopAc_ac_c* a){return a->id;}int fopAcM_GetRoomNo(fopAc_ac_c* a){return a->room;}
@@ -166,6 +168,13 @@ int main(){
  }
  link.demo=false;link.current.pos={2400,0,0};link.shape_angle.y=1234;
  link.mLinkAcch.hit=true;link.mLinkAcch.floor=0;s_arenaSafe=false;landingFloor=0;landingRoom=51;
+ // Save-load arrival owns Link until the rise finishes. Neither rescue/scan
+ // anchors nor the grounded warmup may initialize underneath that pose.
+ clear_arena_geometry();s_hub=true;arrivalActive=true;
+ for(int frame=0;frame<120;++frame)load_frame(&link);
+ assert(s_run.phase==Phase::Loading&&s_warmup==0&&recordsLoaded==0);
+ assert(!s_arenaSafe&&!s_arenaSpawn);
+ arrivalActive=false;s_hub=false;
  for(int frame=0;frame<14;++frame){load_frame(&link);assert(s_run.phase==Phase::Loading);}
  // Capture native floor contact even if the derived barrier mesh is not ready.
  assert(s_arenaSafe&&!s_arenaMeshReady);

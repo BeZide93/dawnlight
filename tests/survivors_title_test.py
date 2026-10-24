@@ -13,6 +13,7 @@ fixture=r'''
 #include <cstring>
 #include <iostream>
 #include <initializer_list>
+#include <vector>
 #include "survivors_maps.hpp"
 using namespace dawnlight::survivors;
 using s8=signed char;using s16=short;using u32=unsigned;
@@ -43,7 +44,30 @@ struct dScnPly_c{static bool isPause(){return false;}};
 bool nextStage=false;bool dComIfGp_isEnableNextStage(){return nextStage;}
 namespace mDoRst {bool isReset(){return resetting;}bool isReturnToMenu(){return returning;}}
 unsigned reloads=0;bool reloadSelected=false;
-int dComIfG_changeOpeningScene(Scene*,int name){assert(name==fpcNm_OPENING_SCENE_e);++reloads;reloadSelected=s_active;return 1;}
+bool overlapBusy=false,rejectScene=false;int queuedScene=0;
+unsigned requestAttempts=0,stageWrites=0,runtimeResets=0,audioChanges=0;
+bool fopOvlpM_IsDoingReq(){return overlapBusy;}
+int fopScnM_ChangeReq(Scene*,int name,int,unsigned){
+ ++requestAttempts;if(rejectScene||overlapBusy)return 0;
+ queuedScene=name;
+ if(name==fpcNm_OPENING_SCENE_e){++reloads;reloadSelected=s_active;}
+ return 1;
+}
+const char* nextName="unchanged";s8 nextRoom=7,nextLayer=3;
+const char* dComIfGp_getNextStageName(){return nextName;}
+s8 dComIfGp_getNextStageRoomNo(){return nextRoom;}
+s8 dComIfGp_getNextStageLayer(){return nextLayer;}
+void dComIfGp_offEnableNextStage(){nextStage=false;}
+void dComIfGp_setNextStage(const char*,s16,s8,s8);
+void reset_runtime(){++runtimeResets;s_gameStarted=false;s_hubArrivalPending=false;s_hubArrivalSeconds=0;}
+void mDoAud_setSceneName(const char* name,int room,int layer){assert(name==nextName&&room==nextRoom&&layer==nextLayer);++audioChanges;}
+void dComIfGs_setRestartRoomParam(int n){assert(n==0);}
+namespace JUtility{struct TColor{int r,g,b,a;TColor(int r,int g,int b,int a):r(r),g(g),b(b),a(a){}};}
+struct Fader{int getStatus(){return 1;}}fader;
+struct mDoGph_gInf_c{
+ static Fader* getFader(){return &fader;}
+ static void setFadeColor(JUtility::TColor& c){assert(c.r==0&&c.g==0&&c.b==0&&c.a==255);}
+};
 struct dStage_roomControl_c{static int getProcID(){return 17;}};
 Scene* fopScnM_SearchByID(int id){assert(id==17);return hasScene?&scene:nullptr;}
 int fpcM_GetName(Scene* s){return s->name;}
@@ -92,8 +116,35 @@ constexpr unsigned PAD_1=0;
 struct mDoCPd_c{static unsigned getHold(unsigned){return 0;}static unsigned getTrig(unsigned){return 0;}};
 bool ui_visible(){return false;}
 '''
+native_fixture=r'''
+// Model the SDK's next-stage enable latch and Draw's independent PLAY request,
+// which the old always-successful changeOpeningScene stub did not exercise.
+void dComIfGp_setNextStage(const char* name,s16 point,s8 room,s8 layer){
+ std::any args[]{name,point,room,layer};
+ if(before_title_stage(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL)return;
+ ++stageWrites;
+ if(!nextStage){nextStage=true;nextName=mods::arg<const char*>(args,0);
+  nextRoom=mods::arg<s8>(args,2);nextLayer=mods::arg<s8>(args,3);}
+}
+void native_draw_transition(){
+ if(!transition&&nextStage)fopScnM_ChangeReq(&scene,fpcNm_PLAY_SCENE_e,0,5);
+}
+void route_opening(void* args){
+ before_title_opening(nullptr,nullptr,nullptr,nullptr);
+ before_title_stage(nullptr,args,nullptr,nullptr);
+ after_title_opening(nullptr,nullptr,nullptr,nullptr);
+ assert(!s_titleOpeningDepth);
+}
+'''
 main=r'''
 int main(){
+ int outerCall=0,innerCall=0;
+ after_title_opening(nullptr,&innerCall,nullptr,nullptr);assert(!s_titleOpeningDepth);
+ before_title_opening(nullptr,&outerCall,nullptr,nullptr);
+ after_title_opening(nullptr,&innerCall,nullptr,nullptr);assert(s_titleOpeningDepth==1);
+ before_title_opening(nullptr,&innerCall,nullptr,nullptr);assert(s_titleOpeningDepth==2);
+ after_title_opening(nullptr,&innerCall,nullptr,nullptr);assert(s_titleOpeningDepth==1);
+ after_title_opening(nullptr,&outerCall,nullptr,nullptr);assert(!s_titleOpeningDepth&&s_titleOpeningCalls.empty());
  for(int rate:{30,60,120}){
   TitleFlow flow;flow.play();
   for(int i=0;i<rate*5;++i)flow.tick(1.f/rate,false,false,false,false);
@@ -121,14 +172,14 @@ int main(){
   s_active=true;s_gameStarted=false;scene.name=1;hasScene=true;roomNo=51;
  }
  std::any args[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
- before_title_stage(nullptr,args,nullptr,nullptr);
+ route_opening(args);
  assert(std::strcmp(mods::arg<const char*>(args,0),arenas[0].stage)==0);
  assert(mods::arg<s16>(args,1)==0&&mods::arg<s8>(args,2)==51&&mods::arg<s8>(args,3)==0);
  for(int which=0;which<5;++which){
   std::any original[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
   if(which==0)s_active=false;if(which==1)s_gameStarted=true;
   if(which==2)original[1]=s16(0);if(which==3)original[2]=s8(1);if(which==4)original[3]=s8(0);
-  before_title_stage(nullptr,original,nullptr,nullptr);
+  route_opening(original);
   assert(std::strcmp(mods::arg<const char*>(original,0),"F_SP102")==0);
   s_active=true;s_gameStarted=false;
  }
@@ -206,7 +257,7 @@ int main(){
  // Startup is already loading its first scene: do not request a duplicate.
  scene.name=999;request_title_preview();update_title_preview();assert(!reloads&&s_titleReloadPending&&!s_titleFlow.launched);
  std::any startup[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
- before_title_stage(nullptr,startup,nullptr,nullptr);assert(!s_titleReloadPending);
+ route_opening(startup);assert(!s_titleReloadPending);
  scene.name=1;
  // Deselect -> vanilla; select again -> hub, including rapid carousel changes.
  s_active=false;request_title_preview();assert(s_titleReloadPending);
@@ -281,7 +332,7 @@ int main(){
   s_active=true;stageName=arenas[0].stage;roomNo=arenas[0].room;
   request_title_preview();
   std::any hub[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
-  before_title_stage(nullptr,hub,nullptr,nullptr);assert(!s_titleReloadPending);
+  route_opening(hub);assert(!s_titleReloadPending);
   s_active=false;request_title_preview();sceneCreating=true;
   const auto previousReloads=reloads;
   transition=(cycle%2)==0;update_title_preview();assert(reloads==previousReloads&&s_titleReloadPending);
@@ -299,7 +350,7 @@ int main(){
   hasScene=true;sceneCreating=false;update_title_preview();
   assert(reloads==previousReloads+1&&reloadSelected==s_active&&!s_titleReloadPending);
   std::any next[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
-  before_title_stage(nullptr,next,nullptr,nullptr);
+  route_opening(next);
   stageName=mods::arg<const char*>(next,0);roomNo=mods::arg<s8>(next,2);
   assert((std::strcmp(stageName,arenas[0].stage)==0)==s_active);
   assert(survivors_title_active()==s_active);
@@ -309,7 +360,47 @@ int main(){
   assert(!s_gameStarted&&!s_hubArrivalPending&&s_titleFlow.launched==s_active);
   update_title_preview();assert(reloads==previousReloads+1);
  }
- std::cout<<"Survivors title: opening routing, scene isolation, kneeling pose, private input, framing and logo cue passed\n";
+ // Log regression: vanilla demo38_01 is still running after Survivors is
+ // selected. Its setNextStage must not route the hub through native Draw's
+ // PLAY_SCENE path (which starts BS_SHUTTER_START without a TITLE actor).
+ s_active=true;s_gameStarted=false;stageName="F_SP102";roomNo=0;nextStage=false;
+ request_title_preview();queuedScene=0;
+ auto writes=stageWrites;
+ dComIfGp_setNextStage("F_SP102",100,0,10);
+ dComIfGp_setNextStage("F_SP102",101,0,10);
+ native_draw_transition();
+ assert(stageWrites==writes&&!nextStage&&!queuedScene&&s_titleReloadPending);
+ // IsPeek may be false at either edge of an active overlap. No request or
+ // level-data mutation is allowed then, nor after a rejected ChangeReq.
+ const auto attempts=requestAttempts,resets=runtimeResets,audio=audioChanges;
+ overlapBusy=true;transition=false;update_title_preview();
+ assert(requestAttempts==attempts&&stageWrites==writes&&s_titleReloadPending);
+ overlapBusy=false;rejectScene=true;update_title_preview();
+ assert(requestAttempts==attempts+1&&stageWrites==writes&&s_titleReloadPending);
+ assert(runtimeResets==resets&&audioChanges==audio&&!nextStage&&!queuedScene);
+ rejectScene=false;play_survivors(nullptr,nullptr);update_title_preview();
+ assert(queuedScene==fpcNm_OPENING_SCENE_e&&!nextStage&&!s_titleReloadPending&&s_titleFlow.launched);
+ assert(!std::strcmp(nextName,arenas[0].stage)&&nextRoom==51&&nextLayer==0);
+ assert(stageWrites==writes+1&&runtimeResets==resets+1&&audioChanges==audio+1);
+ native_draw_transition();assert(queuedScene==fpcNm_OPENING_SCENE_e);
+ // A late event cannot overwrite the accepted preview or arm another reload.
+ dComIfGp_setNextStage("F_SP102",100,0,10);native_draw_transition();
+ assert(stageWrites==writes+1&&!nextStage&&!s_titleReloadPending&&queuedScene==fpcNm_OPENING_SCENE_e);
+ // Reverse switch: the outgoing hub cannot activate a map-tool exit either.
+ stageName=arenas[0].stage;roomNo=51;s_active=false;request_title_preview();
+ dComIfGp_setNextStage("D_MN08",0,0,0);assert(!nextStage);
+ update_title_preview();assert(!std::strcmp(nextName,"F_SP102")&&nextRoom==0&&nextLayer==10);
+ native_draw_transition();assert(queuedScene==fpcNm_OPENING_SCENE_e&&!nextStage);
+ // Once vanilla is loaded, its own transitions work. NAME_SCENE / actual
+ // gameplay requests also retain their parameters and native enable flag.
+ stageName="F_SP102";roomNo=0;
+ for(int gate=0;gate<3;++gate){
+  s_active=gate!=0;scene.name=gate==1?999:(gate==2?fpcNm_PLAY_SCENE_e:fpcNm_OPENING_SCENE_e);
+  s_gameStarted=gate==2;nextStage=false;queuedScene=0;
+  dComIfGp_setNextStage("F_SP108",21,1,13);native_draw_transition();
+  assert(nextStage&&!std::strcmp(nextName,"F_SP108")&&nextRoom==1&&nextLayer==13&&queuedScene==fpcNm_PLAY_SCENE_e);
+ }
+ std::cout<<"Survivors title: opening routing, rejected requests, native next-stage latch, scene isolation, pose and logo flow passed\n";
 }
 '''
 native_event=(sdk/'src/d/d_event_manager.cpp').read_text()
@@ -319,11 +410,17 @@ assert 'evId = getEventIdx("DEFAULT_START", 0xFF, -1);' in native_event
 native_title=(sdk/'src/d/actor/d_a_title.cpp').read_text()
 assert 'else if (getDemoPrm() == 1)' in native_title
 assert 'fopScnM_ChangeReq(playScene, fpcNm_NAME_SCENE_e, 0, 5);' in native_title
+native_stage=(sdk/'src/d/d_stage.cpp').read_text()
+assert 'if (!enabled) {\n        enabled = true;' in native_stage
+native_scene=(sdk/'src/d/d_s_play.cpp').read_text()
+assert 'fopScnM_ChangeReq(i_this, fpcNm_PLAY_SCENE_e, l_wipeType[wipe], 5)' in native_scene
 source=(root/'src/survivors.cpp').read_text()
 assert source.index('PRE(SurvivorsStage, before_title_stage)')<source.index('PRE(SurvivorsStage, before_stage)')
 assert source.index('PRE(SurvivorsArenaActor, before_title_stage_actor)')<source.index('PRE(SurvivorsArenaActor, before_arena_stage_actor)')
+assert 'PRE(SurvivorsOpening, before_title_opening)' in source
+assert 'POST(SurvivorsOpening, after_title_opening)' in source
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'title.cpp';exe=Path(tmp)/'title'
- cpp.write_text(fixture+(root/'src/survivors_title.inc').read_text()+main)
+ cpp.write_text(fixture+(root/'src/survivors_title.inc').read_text()+native_fixture+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'include'),'-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

@@ -41,6 +41,7 @@
 #include "gale_counter.hpp"
 #include "jump_abilities.hpp"
 #include "m_Do/m_Do_MemCard.h"
+#include "m_Do/m_Do_audio.h"
 #include "service_imports.hpp"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
@@ -2065,6 +2066,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsStage, before_title_stage);
     PRE(SurvivorsStage, before_stage); POST(SurvivorsHud, draw_hud);
     PRE(SurvivorsGameStart, before_game_start); PRE(SurvivorsOpening, before_opening);
+    PRE(SurvivorsOpening, before_title_opening); POST(SurvivorsOpening, after_title_opening);
     PRE(SurvivorsDrops, before_drop); PRE(SurvivorsDirectDrops, before_drop);
 #undef PRE
 #undef POST

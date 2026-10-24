@@ -2,6 +2,8 @@
 // Only its stage and presentation change. A title is never a started run or
 // a loaded save; gameplay, rewards, talent UI and save callbacks stay gated.
 bool s_titleReloadPending = false;
+unsigned s_titleOpeningDepth = 0;
+std::vector<void*> s_titleOpeningCalls;
 TitleFlow s_titleFlow;
 auto s_titleClock = std::chrono::steady_clock::now();
 bool title_model_ready(daAlink_c* link);
@@ -28,16 +30,42 @@ ModResult play_survivors(void*, ModError*) {
     return MOD_OK; // Keep the prepared preview actors; Play is not activation.
 }
 void update_title_preview() {
-    if (!s_titleReloadPending || transitioning() || mDoRst::isReset() || mDoRst::isReturnToMenu()) return;
+    if (!s_titleReloadPending || transitioning() || fopOvlpM_IsDoingReq() ||
+        mDoRst::isReset() || mDoRst::isReturnToMenu()) return;
     auto* scene = opening_scene();
     // An opening is searchable before its asynchronous creation has finished.
     // Do not replace it in the gap between its fade and actor initialization.
     if (!scene || fpcM_IsCreating(dStage_roomControl_c::getProcID())) return;
-    s_titleReloadPending = false;
+    // The native changeOpeningScene helper writes next-stage data BEFORE
+    // requesting a scene and returns success even when ChangeReq fails. Reserve
+    // the opening first, so a busy fade cannot leave a hub PLAY_SCENE queued.
+    if (!fopScnM_ChangeReq(scene,fpcNm_OPENING_SCENE_e,0,30)) return;
+    if (s_active) reset_runtime();
     s_titlePoseOwner = kNone;
-    // Preserve the host menu. The normal opening hook chooses hub or vanilla
-    // from the final selected mode, also when Survivors has been deselected.
-    dComIfG_changeOpeningScene(scene,fpcNm_OPENING_SCENE_e);
+    dComIfGp_offEnableNextStage();
+    ++s_titleOpeningDepth;
+    dComIfGp_setNextStage("F_SP102",100,0,10);
+    --s_titleOpeningDepth;
+    // The accepted OPENING_SCENE request owns these parameters. Prevent the
+    // old scene's Draw from independently requesting PLAY_SCENE with them.
+    dComIfGp_offEnableNextStage();
+    mDoAud_setSceneName(dComIfGp_getNextStageName(),dComIfGp_getNextStageRoomNo(),dComIfGp_getNextStageLayer());
+    dComIfGs_setRestartRoomParam(0);
+    if (mDoGph_gInf_c::getFader()->getStatus()==1) {
+        JUtility::TColor black(0,0,0,255);
+        mDoGph_gInf_c::setFadeColor(black);
+    }
+}
+HookAction before_title_opening(ModContext*,void* args,void*,void*) {
+    s_titleOpeningCalls.push_back(args);
+    ++s_titleOpeningDepth;
+    return HOOK_CONTINUE;
+}
+void after_title_opening(ModContext*,void* args,void*,void*) {
+    // Post hooks also run when another mod skipped our pre hook.
+    if (s_titleOpeningCalls.empty() || s_titleOpeningCalls.back()!=args) return;
+    s_titleOpeningCalls.pop_back();
+    --s_titleOpeningDepth;
 }
 bool survivors_title_active() {
     // Selection changes immediately, but the outgoing hub can still be loading
@@ -109,6 +137,16 @@ HookAction before_title_fall(ModContext*, void* args, void* result, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 HookAction before_title_stage(ModContext*, void* args, void*, void*) {
+    if (!s_titleOpeningDepth) {
+        // Native title-demo events also call setNextStage (sometimes with the
+        // exact same F_SP102 tuple), but their Draw creates PLAY_SCENE. They
+        // cannot drive a selected/pending Survivors preview or an outgoing hub.
+        if (!s_gameStarted && opening_scene() &&
+            (s_active || s_titleReloadPending || survivors_title_active())) {
+            return HOOK_SKIP_ORIGINAL;
+        }
+        return HOOK_CONTINUE;
+    }
     const auto* stage = mods::arg<const char*>(args,0);
     // Exact native opening request, including reset-to-title. Do not redirect
     // file selection, new-game setup or an actual gameplay transition.

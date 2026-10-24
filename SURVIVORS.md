@@ -8,7 +8,11 @@ You arrive in the freely walkable Darknut Arena hub. Interact with the central
 Master Sword using A to open **Talents / Settings**; closing saves automatically.
 Zelda stands beside the sword pedestal and turns toward Link when spoken to.
 Speak to her with A: "It's dangerous to go alone! Take this." She then presents
-the **Ordon Sword** with the native item-get animation and message.
+the **Ordon Sword**, raised overhead in Link's hand, with the native item message.
+New saves start without a sword; Zelda's completed gift is saved automatically.
+Trying the exit first turns the conversation camera toward Zelda as she calls
+"Wait! Come here!" Visit her to receive the sword before starting a run.
+Existing saves that already own Ordon keep it.
 Interact with the exit door beneath **Start Run** to open map selection. Pick a
 map and press **Start run**: the menu closes, the native door opens, and Link walks
 through before the scene changes to the selected arena. Story and Boss Rush saves remain separate.

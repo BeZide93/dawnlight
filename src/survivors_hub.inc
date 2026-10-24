@@ -10,7 +10,8 @@ HookAction before_hub_door(ModContext*,void* args,void* result,void*) {
        link && door && fopAcM_GetID(link)==s_player && playable()) {
         s_hubDoor=fopAcM_GetID(door);
         s_hubDoorPriority=mods::arg<u16>(args,2);s_hubDoorFlags=mods::arg<u16>(args,3);
-        s_hubMenu=HubMenu::Run;open_window();
+        if (!dComIfGs_isItemFirstBit(dItemNo_SWORD_e)) request_hub_zelda_call();
+        else {s_hubMenu=HubMenu::Run;open_window();}
     }
     *static_cast<s32*>(result)=0;
     return HOOK_SKIP_ORIGINAL;

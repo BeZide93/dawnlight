@@ -137,10 +137,12 @@ Save* dComIfGs_getSaveData(){return &save;}
 void save_state_set_boss_rush_active(bool){} void save_state_set_intro_skipped(bool){}
 void dComIfGs_onDarkClearLV(int){}
 void dComIfGs_onEventBit(int){} void dComIfGs_setTransformStatus(int){}
-void dComIfGs_onItemFirstBit(int){} void dComIfGs_setCollectClothes(int){}
-void dComIfGs_setSelectEquipClothes(int){} void dComIfGs_setCollectSword(int){}
-void dComIfGs_setSelectEquipSword(int){} void dComIfGs_setSelectEquipShield(int){}
-void dComIfGs_setBButtonItemKey(int){} void dComIfGs_setMaxLife(int){}
+bool swordReceived=false,swordCollected=false;int selectedSword=dItemNo_NONE_e,bItem=dItemNo_NONE_e;
+void dComIfGs_onItemFirstBit(int item){if(item==dItemNo_SWORD_e)swordReceived=true;}
+bool dComIfGs_isItemFirstBit(int item){assert(item==dItemNo_SWORD_e);return swordReceived;} void dComIfGs_setCollectClothes(int){}
+void dComIfGs_setSelectEquipClothes(int){} void dComIfGs_setCollectSword(int item){if(item==COLLECT_ORDON_SWORD)swordCollected=true;}
+void dComIfGs_setSelectEquipSword(int item){selectedSword=item;} void dComIfGs_setSelectEquipShield(int){}
+void dComIfGs_setBButtonItemKey(int item){bItem=item;} void dComIfGs_setMaxLife(int){}
 void dComIfGs_setWalletSize(int){}
 int life=12;int dComIfGs_getLife(){return life;}
 int dComIfGs_getMaxLifeGauge(){return 12;}
@@ -156,8 +158,8 @@ void dComIfGp_clearItemKeyNumCount(){pendingKeys=0;}void dComIfGs_setKeyNum(u8 n
 constexpr int COLLECT_LIGHT_SWORD=12,dItemNo_LIGHT_SWORD_e=13,COLLECT_WOODEN_SHIELD=0,COLLECT_HYLIAN_SHIELD=2;
 void dComIfGs_offCollectShield(int){}
 constexpr int COLLECT_MASTER_SWORD=10,dItemNo_MASTER_SWORD_e=11;
-void dComIfGs_offCollectSword(int){}
-void dComIfGs_offItemFirstBit(int){}
+void dComIfGs_offCollectSword(int item){if(item==COLLECT_ORDON_SWORD)swordCollected=false;}
+void dComIfGs_offItemFirstBit(int item){if(item==dItemNo_SWORD_e)swordReceived=false;}
 void dComIfGs_setSelectItemIndex(int,int){assert(false && "live item hook before Link exists");}
 void dComIfGs_setMixItemIndex(int,int){assert(false && "live mix hook during save preparation");}
 void dComIfGs_setItem(int i,int v){
@@ -218,6 +220,8 @@ int main() {
     save.player.status.slots.fill(dItemNo_NONE_e);
     save.player.status.mixes.fill(dItemNo_NONE_e);
     prepare_save(); // Even a blank new save must not call live item hooks.
+    assert(!swordReceived&&!swordCollected&&selectedSword==dItemNo_NONE_e&&bItem==dItemNo_NONE_e);
+
     // Cover reused/loaded slots, not only a blank new-save buffer. The HUD's
     // play cache and all saved selections must agree before inventory clears.
     for (int pass=0;pass<2;++pass) {
@@ -386,6 +390,11 @@ int main() {
         assert(std::strcmp(std::any_cast<const char*>(next[0]),"F_SP102")==0);
         s_gameStarted=true;
     }
+    loaded(nullptr,nullptr);assert(!swordReceived&&selectedSword==dItemNo_NONE_e);
+    swordReceived=true;loaded(nullptr,nullptr);
+    assert(swordReceived&&swordCollected&&selectedSword==dItemNo_SWORD_e&&bItem==dItemNo_SWORD_e);
+    new_save(nullptr,nullptr); // A different slot must not inherit the old sword.
+    assert(!swordReceived&&!swordCollected&&selectedSword==dItemNo_NONE_e&&bItem==dItemNo_NONE_e);
     std::cout<<"Survivors lifecycle: true deaths, pending spawns, cleanup and routing passed\n";
 }
 '''

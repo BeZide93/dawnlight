@@ -718,11 +718,15 @@ void prepare_save() {
     for (int shield = COLLECT_WOODEN_SHIELD; shield <= COLLECT_HYLIAN_SHIELD; ++shield) dComIfGs_offCollectShield(shield);
     dComIfGs_offCollectSword(COLLECT_MASTER_SWORD);
     dComIfGs_offItemFirstBit(dItemNo_MASTER_SWORD_e);
-    dComIfGs_onItemFirstBit(dItemNo_SWORD_e);
-    dComIfGs_setCollectSword(COLLECT_ORDON_SWORD);
-    dComIfGs_setSelectEquipSword(dItemNo_SWORD_e);
+    // The native first-get bit persists Zelda's gift across loads and runs.
+    // Preparing a save must never award the starter weapon by itself.
+    const bool swordReceived = dComIfGs_isItemFirstBit(dItemNo_SWORD_e);
+    if (swordReceived) dComIfGs_setCollectSword(COLLECT_ORDON_SWORD);
+    else dComIfGs_offCollectSword(COLLECT_ORDON_SWORD);
+    const u8 sword = swordReceived ? dItemNo_SWORD_e : dItemNo_NONE_e;
+    dComIfGs_setSelectEquipSword(sword);
     dComIfGs_setSelectEquipShield(dItemNo_NONE_e);
-    dComIfGs_setBButtonItemKey(dItemNo_SWORD_e);
+    dComIfGs_setBButtonItemKey(sword);
     // Save callbacks run inside file select, before Link exists. The live
     // dComIfGs_setSelectItemIndex hook in HD HUD checks Link's wolf state for
     // slot 2. Initialize the data directly, including the play cache, instead.
@@ -1626,7 +1630,7 @@ void begin_run() {
 }
 void start_run(ModContext*, void*) {
     if(!s_hub || s_run.phase!=Phase::Ready || s_hubDeparture || s_progressSaving ||
-       s_restart || !s_arenaMeshReady || !map_available(s_requestedMap) || !actor_by_id(s_hubDoor))return;
+       s_restart || !dComIfGs_isItemFirstBit(dItemNo_SWORD_e) || !s_arenaMeshReady || !map_available(s_requestedMap) || !actor_by_id(s_hubDoor))return;
     s_hubDeparture=true;s_hubDoorStarted=false;s_hubDoorTicks=0;
     close_window(); // Save and fully hide the UI before ordering the native door event.
 }
@@ -1742,7 +1746,9 @@ void open_window() {
 ModResult activated(void*, ModError*) { s_active = true; reset_runtime(); return MOD_OK; }
 ModResult deactivated(void*, ModError*) { s_active = false; reset_runtime(); return MOD_OK; }
 ModResult new_save(void*, ModError*) {
-    reset_runtime(); s_records = {}; prepare_save();
+    reset_runtime(); s_records = {};
+    dComIfGs_offItemFirstBit(dItemNo_SWORD_e);
+    prepare_save();
     if(!store_gear(GearInventory{}))return MOD_UNAVAILABLE;
     s_saveReady = true;
     const auto bytes = s_records.encode();
@@ -2006,7 +2012,8 @@ void shutdown_survivors() {
     before_survivors_pad(nullptr,nullptr,nullptr,nullptr);
     s_active = false; reset_runtime(); cleanup_enemies(); cleanup_pots(); cleanup_pickups();
     s_midnaGraph.reset(); s_midnaPrompt.reset(); s_midnaOptions.reset(); s_midnaStart=0;
-    s_hubZeldaGraph.reset(); s_hubZeldaMessage.reset(); s_hubZeldaReward={}; s_hubZeldaStart=0;
+    s_hubZeldaGraph.reset(); s_hubZeldaMessage.reset(); s_hubZeldaCallMessage.reset();
+    s_hubZeldaReward={}; s_hubZeldaStart=s_hubZeldaCallStart=0;
     s_treasureMessage.reset(); s_itemNameMessage.reset(); s_itemDescriptionMessage.reset();
     if (s_savePrompt != kNone) { d_GameOver_Delete(s_savePrompt); s_savePrompt = kNone; }
     if (s_registered) svc_game_mode->unregister_game_mode(mod_ctx, kMode);

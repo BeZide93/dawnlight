@@ -4,9 +4,11 @@ ActorId s_hubZelda = kNone;
 bool s_hubZeldaRetiring = false, s_hubZeldaRewardPending = false;
 unsigned s_hubZeldaRetry = 0;
 mods::flow::Graph s_hubZeldaGraph;
-mods::flow::RegisteredMessage s_hubZeldaMessage;
+mods::flow::RegisteredMessage s_hubZeldaMessage, s_hubZeldaCallMessage;
 mods::flow::Event s_hubZeldaReward;
-u16 s_hubZeldaStart = 0;
+u16 s_hubZeldaStart = 0, s_hubZeldaCallStart = 0;
+bool s_hubZeldaCallPending = false, s_hubZeldaCalling = false;
+unsigned s_hubZeldaCallFrames = 0;
 constexpr u16 kHubZeldaFlow = 3001; // Native common-message archive selection.
 struct HubZeldaGift {
     ActorId id = kNone;
@@ -25,8 +27,8 @@ fopAc_ac_c* hub_zelda_gift_actor() {
     auto* actor = actor_by_id(s_hubZeldaGift.id);
     return actor && fopAcM_GetName(actor) == fpcNm_Demo_Item_e ? actor : nullptr;
 }
-// The hub loadout already owns/equips Ordon. Reuse its correctly oriented
-// weapon model rather than the differently authored, spinning Demo_Item mesh.
+// Reuse the correctly oriented Ordon model, which Link loads even before
+// obtaining it, rather than the differently authored spinning Demo_Item mesh.
 bool hub_zelda_gift_pose(daAlink_c* link) {
     return link && s_hubZeldaGift.poseStarted && !s_hubZeldaGift.retiring &&
         owns_hub_zelda_gift_event() && fopAcM_GetID(link) == s_hubZeldaGift.poseOwner &&
@@ -86,7 +88,10 @@ void update_hub_zelda_gift() {
     if (item && owned && item->eventInfo.checkCommandItem()) s_hubZeldaGift.started = true;
     if (s_hubZeldaGift.started) {
         if (owned && !dComIfGp_evmng_endCheck("DEFAULT_GETITEM")) return;
-        if (owned) execItemGet(dItemNo_SWORD_e);
+        if (owned) {
+            execItemGet(dItemNo_SWORD_e);
+            s_hubSaveRequested = true; // Persist the first-get bit after the event closes.
+        }
         retire_hub_zelda_gift();
         return;
     }
@@ -141,8 +146,7 @@ HookAction before_hub_zelda_get_tick(ModContext*, void* args, void*, void*) {
 }
 void after_hub_zelda_item_matrix(ModContext*, void* args, void*, void*) {
     auto* link = mods::arg<daAlink_c*>(args, 0);
-    if (!hub_zelda_gift_pose(link) || !link->mpSwAModel ||
-        link->mSwordModel != link->mpSwAModel || !link->checkSwordDraw()) {
+    if (!hub_zelda_gift_pose(link) || !link->mpSwAModel) {
         restore_hub_zelda_sword();
         return;
     }
@@ -162,6 +166,16 @@ HookAction before_hub_zelda_gift_draw(ModContext*, void* args, void* result, voi
     auto* process = mods::arg<leafdraw_class*>(args, 0);
     if (!process || fopAcM_GetID(process) != s_hubZeldaGift.id ||
         !s_hubZeldaGift.handSword || !hub_zelda_gift_pose(daAlink_getAlinkActorClass())) return HOOK_CONTINUE;
+    auto* link = daAlink_getAlinkActorClass();
+    if (link->mSwordModel != s_hubZeldaGift.handSword || !link->checkSwordDraw()) {
+        // Before the first grant the native equipment renderer hides swords.
+        // Draw only the presentation model, without granting/equipping early.
+        auto* item = hub_zelda_gift_actor();
+        if (!item) return HOOK_CONTINUE;
+        dKy_tevstr_c tev{}; g_env_light.settingTevStruct(0, &item->current.pos, &tev);
+        g_env_light.setLightTevColorType_MAJI(s_hubZeldaGift.handSword, &tev);
+        mDoExt_modelUpdateDL(s_hubZeldaGift.handSword);
+    }
     // Only suppress this event's floating display. Its actor still executes
     // the native item message, fanfare and event completion normally.
     *static_cast<int*>(result) = 1;
@@ -175,6 +189,39 @@ bool owned_hub_zelda(fopAc_ac_c* actor) {
 bool hub_zelda_enabled() {
     return survivors_hub_active() && !s_hubDeparture && !transitioning();
 }
+void clear_hub_zelda_call() {
+    s_hubZeldaCallPending = s_hubZeldaCalling = false;
+    s_hubZeldaCallFrames = 0;
+}
+void request_hub_zelda_call() {
+    if (!hub_zelda_enabled() || s_hubZeldaRetiring || hub_zelda_gift_busy() ||
+        s_hubZeldaCallPending || s_hubZeldaCalling || dComIfGs_isItemFirstBit(dItemNo_SWORD_e) ||
+        !owned_hub_zelda(actor_by_id(s_hubZelda))) return;
+    s_hubZeldaRewardPending = false;
+    s_hubZeldaCallPending = true;
+    s_hubZeldaCallFrames = 0;
+}
+void update_hub_zelda_call() {
+    if (!s_hubZeldaCallPending && !s_hubZeldaCalling) return;
+    auto* actor = actor_by_id(s_hubZelda);
+    if (!owned_hub_zelda(actor)) {clear_hub_zelda_call(); return;}
+    if (s_hubZeldaCalling) {
+        // Native Zelda closes her talk event and restores the gameplay camera.
+        // Never reset another actor's replacement event.
+        if (dComIfGp_getEvent()->mPt2 != s_hubZelda || !dComIfGp_event_runCheck()) clear_hub_zelda_call();
+        return;
+    }
+    if (!playable() || s_progressSaving || s_hubSaveRequested) return;
+    if (++s_hubZeldaCallFrames > 90 || dComIfGs_isItemFirstBit(dItemNo_SWORD_e)) {
+        clear_hub_zelda_call(); return;
+    }
+    auto* link = daAlink_getAlinkActorClass();
+    if (!link || !link->eventInfo.chkCondition(dEvtCnd_CANTALK_e) ||
+        !actor->eventInfo.chkCondition(dEvtCnd_CANTALK_e)) return;
+    // A native NPC-initiated conversation works at the exit's distance too.
+    // Keep native eligibility, input blocking, camera easing and restoration.
+    fopAcM_orderTalkEvent(link, actor, 0, 0);
+}
 void cleanup_hub_zelda() {
     if (s_hubZelda == kNone || fpcM_IsCreating(s_hubZelda)) return;
     auto* actor = actor_by_id(s_hubZelda);
@@ -187,6 +234,9 @@ void cleanup_hub_zelda() {
     }
 }
 void retire_hub_zelda() {
+    if (s_hubZeldaCalling && in_arena() && !transitioning() &&
+        dComIfGp_getEvent()->mPt2 == s_hubZelda) dComIfGp_event_reset();
+    clear_hub_zelda_call();
     retire_hub_zelda_gift();
     s_hubZeldaRetiring = true;
     s_hubZeldaRewardPending = false;
@@ -208,15 +258,22 @@ ModResult initialize_hub_zelda() {
         .box_kind(MESSAGE_BOX_TALK).talk_anim(0).face_anim(0)
         .text("It's dangerous to go alone! Take this."));
     if (!s_hubZeldaMessage) return s_hubZeldaMessage.result();
+    s_hubZeldaCallMessage = register_survivors_dialog(mods::flow::MessageBuilder{}
+        .box_kind(MESSAGE_BOX_TALK).talk_anim(0).face_anim(0).camera_attr(1)
+        .text("Wait! Come here!"));
+    if (!s_hubZeldaCallMessage) return s_hubZeldaCallMessage.result();
     s_hubZeldaReward = mods::flow::register_event("Survivors Zelda Ordon Sword", hub_zelda_give_sword);
     if (!s_hubZeldaReward) return s_hubZeldaReward.result();
     mods::flow::GraphBuilder graph{0};
     const auto text = graph.add_message(s_hubZeldaMessage.id());
     const auto reward = graph.add_event(s_hubZeldaReward.id(), {0,0,0,0});
     text.next(reward); reward.next(mods::flow::kEnd);
+    const auto call = graph.add_message(s_hubZeldaCallMessage.id());
+    call.next(mods::flow::kEnd); // Calling from the exit never hands out the sword.
     s_hubZeldaGraph = graph.commit();
     if (!s_hubZeldaGraph) return s_hubZeldaGraph.result();
     s_hubZeldaStart = text.id();
+    s_hubZeldaCallStart = call.id();
     return MOD_OK;
 }
 HookAction before_hub_zelda_param(ModContext*, void* args, void*, void*) {
@@ -241,6 +298,15 @@ HookAction before_hub_zelda_flow(ModContext*, void* args, void* result, void*) {
         mods::arg<dMsgFlow_c*>(args, 0) != &static_cast<daNpc_Zelda_c*>(actor)->mFlow ||
         mods::arg<u16>(args, 1) != kHubZeldaFlow) return HOOK_CONTINUE;
     // Retain native init(3001) to bind group 0, then select our private graph.
+    if ((s_hubZeldaCallPending || s_hubZeldaCalling) && dComIfGp_getEvent()->mPt2 == s_hubZelda) {
+        *static_cast<u16*>(result) = s_hubZeldaCallStart;
+        s_hubZeldaCallPending = false; s_hubZeldaCalling = true;
+        s_hubZeldaRewardPending = false;
+        // Flow init has already cleared the old camera actors. Message camera
+        // attribute 1 focuses slot 1 on Zelda using native talk-camera easing.
+        dComIfGp_setMesgCameraInfoActor(actor,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr);
+        return HOOK_SKIP_ORIGINAL;
+    }
     *static_cast<u16*>(result) = s_hubZeldaStart;
     s_hubZeldaRewardPending = true;
     return HOOK_SKIP_ORIGINAL;
@@ -249,6 +315,7 @@ void update_hub_zelda() {
     if (!hub_zelda_enabled()) { retire_hub_zelda(); return; }
     update_hub_zelda_gift();
     cleanup_hub_zelda();
+    update_hub_zelda_call();
     if (s_hubZelda != kNone || !s_hubZeldaStart || !playable() ||
         s_progressSaving || s_hubSaveRequested) return;
     if (s_hubZeldaRetry) { --s_hubZeldaRetry; return; }

@@ -17,11 +17,12 @@ fixture = r'''
 #include "mods/svc/actor.h"
 using u32=uint32_t;using u8=uint8_t;using u16=uint16_t;using s16=int16_t;
 constexpr ActorId kNone=~0u;
-constexpr int fpcNm_NPC_ZELDA_e=100,fpcNm_Demo_Item_e=101,dItemNo_SWORD_e=0x28,dEvtCnd_CANGETITEM_e=1;
+constexpr int fpcNm_NPC_ZELDA_e=100,fpcNm_Demo_Item_e=101,dItemNo_SWORD_e=0x28,dEvtCnd_CANGETITEM_e=1,dEvtCnd_CANTALK_e=2;
 enum HookAction {HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods {template<class T>T arg(void* a,int n){return std::any_cast<T>(static_cast<std::any*>(a)[n]);}}
 std::map<u16,FlowNodeData> nodes;std::map<u16,u16> edges;
 std::map<MessageId,std::vector<std::string>> texts;
+std::map<MessageId,unsigned> cameraAttrs;
 u16 nextNode=0x8000,nextEdge=0x8000,nextMessage=0x8000;
 FlowEventFn rewardCallback=nullptr;
 ModResult beginGraph(ModContext*,u16 group,FlowGraphHandle* out){assert(group==0);*out=1;return MOD_OK;}
@@ -34,6 +35,7 @@ ModResult registerEvent(ModContext*,const char* name,FlowEventFn fn,void*,FlowEv
  assert(std::string(name)=="Survivors Zelda Ordon Sword");rewardCallback=fn;*out=200;return MOD_OK;}
 ModResult registerMessage(ModContext*,u16 group,const MessageVariantData* variants,size_t count,MessageId* id,MessageHandle* handle){
  assert(group==0&&count==6);*id=nextMessage++;*handle=*id;
+ cameraAttrs[*id]=variants[0].entry.bytes[15];
  for(size_t i=0;i<count;++i)texts[*id].emplace_back(reinterpret_cast<const char*>(variants[i].text),variants[i].text_size);
  return MOD_OK;
 }
@@ -50,7 +52,7 @@ struct fopAc_ac_c {
  struct{unsigned flags=3;}attention_info;
  struct{cXyz pos;}current;
  struct EventInfo {bool item=false;unsigned conditions=0;
- bool checkCommandItem(){return item;}void onCondition(unsigned c){conditions|=c;}}eventInfo;
+ bool checkCommandItem(){return item;}void onCondition(unsigned c){conditions|=c;}bool chkCondition(unsigned c){return conditions&c;}}eventInfo;
 };
 struct dMsgFlow_c {bool finished=false;unsigned getEventId(int* n){*n=0;return 0;}bool checkEndFlow(){return finished;}};
 struct daNpc_Zelda_c:fopAc_ac_c {
@@ -104,6 +106,18 @@ struct daAlink_c:fopAc_ac_c {
  void setSingleAnimeBase(int n){assert(n==ANM_GET_MASTER_SWORD);animation=n;++animations;}
 }link;
 fopAc_ac_c giftItem;
+bool swordReceived=false;
+bool dComIfGs_isItemFirstBit(int item){assert(item==dItemNo_SWORD_e);return swordReceived;}
+struct dKy_tevstr_c {};
+struct Environment {void settingTevStruct(int,cXyz*,dKy_tevstr_c*){}
+ void setLightTevColorType_MAJI(J3DModel*,dKy_tevstr_c*){}}g_env_light;
+unsigned presentationDraws=0;
+void mDoExt_modelUpdateDL(J3DModel* model){assert(model==link.mpSwAModel);++presentationDraws;}
+unsigned talkOrders=0;
+void fopAcM_orderTalkEvent(fopAc_ac_c* a,fopAc_ac_c* b,int,int){assert(a==&link&&b==&zelda);++talkOrders;}
+fopAc_ac_c* cameraSpeaker=nullptr;
+void dComIfGp_setMesgCameraInfoActor(fopAc_ac_c* a,fopAc_ac_c*,fopAc_ac_c*,fopAc_ac_c*,fopAc_ac_c*,
+ fopAc_ac_c*,fopAc_ac_c*,fopAc_ac_c*,fopAc_ac_c*,fopAc_ac_c*){cameraSpeaker=a;}
 ActorId s_player=7;
 daAlink_c* daAlink_getAlinkActorClass(){return &link;}
 fopAc_ac_c* daPy_getPlayerActorClass(){return &link;}
@@ -127,9 +141,10 @@ fopAc_ac_c* actor_by_id(ActorId id){
 ModResult deleteActor(ModContext*,ActorId id){if(id==55)++giftDeletes;else{assert(id==zelda.id);++deleteCalls;}return MOD_OK;}
 ActorService actorService{.delete_actor=deleteActor};
 extern "C" {const ActorService* svc_actor=&actorService;}
-void execItemGet(int n){assert(n==dItemNo_SWORD_e);++rewardCalls;}
+void execItemGet(int n){assert(n==dItemNo_SWORD_e);swordReceived=true;++rewardCalls;}
 struct{ActorId mPt2=kNone;}nativeEvent;
 auto* dComIfGp_getEvent(){return &nativeEvent;}
+bool dComIfGp_event_runCheck(){return eventRunning;}
 void dComIfGp_event_reset(){++eventResets;nativeEvent.mPt2=kNone;eventRunning=false;}
 bool dComIfGp_evmng_endCheck(const char* n){assert(std::string(n)=="DEFAULT_GETITEM");return eventEnded;}
 void dComIfGp_event_setGtItm(int n){assert(n==dItemNo_SWORD_e);}
@@ -158,7 +173,7 @@ main = r'''
 u16 word(const FlowNodeData& n,unsigned offset){return u16(n.bytes[offset]<<8|n.bytes[offset+1]);}
 int main(){
  link.id=s_player;giftItem.id=55;giftItem.name=fpcNm_Demo_Item_e;
- assert(initialize_hub_zelda()==MOD_OK&&nodes.size()==2);
+ assert(initialize_hub_zelda()==MOD_OK&&nodes.size()==3);
  const auto text=nodes.at(s_hubZeldaStart);assert(text.bytes[0]==1);
  for(const auto& t:texts.at(word(text,2)))assert(t.find("It's dangerous to go alone! Take this.")!=t.npos);
  const auto gift=nodes.at(word(text,4));assert(gift.bytes[0]==3&&gift.bytes[1]==s_hubZeldaReward.id());
@@ -197,6 +212,27 @@ int main(){
  assert(before_hub_zelda_flow(nullptr,otherFlow,&entry,nullptr)==HOOK_CONTINUE);
  flowArgs[1]=u16(42);assert(before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr)==HOOK_CONTINUE);flowArgs[1]=u16(3001);
  assert(before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr)==HOOK_SKIP_ORIGINAL&&entry==s_hubZeldaStart);
+ // Exit reminder is its own native talk graph and camera target, with no gift.
+ const auto call=nodes.at(s_hubZeldaCallStart);assert(call.bytes[0]==1&&word(call,4)==mods::flow::kEnd);
+ assert(cameraAttrs.at(word(call,2))==1); // Native camera focuses actor slot 1 (Zelda).
+ for(const auto& t:texts.at(word(call,2)))assert(t.find("Wait! Come here!")!=t.npos);
+ request_hub_zelda_call();request_hub_zelda_call();assert(s_hubZeldaCallPending);
+ update_hub_zelda_call();assert(!talkOrders); // Wait for native eligibility.
+ link.eventInfo.conditions=zelda.eventInfo.conditions=dEvtCnd_CANTALK_e;
+ update_hub_zelda_call();assert(talkOrders==1);
+ nativeEvent.mPt2=zelda.id;eventRunning=true;
+ before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);
+ assert(entry==s_hubZeldaCallStart&&s_hubZeldaCalling&&!s_hubZeldaCallPending&&cameraSpeaker==&zelda);
+ rewardCallback(nullptr,&event,nullptr);assert(!hub_zelda_gift_busy()&&!rewardCalls);
+ update_hub_zelda_call();assert(s_hubZeldaCalling);
+ nativeEvent.mPt2=99;const auto callResets=eventResets;update_hub_zelda_call();
+ assert(!s_hubZeldaCalling&&eventResets==callResets); // Foreign events are untouched.
+ eventRunning=false;nativeEvent.mPt2=kNone;
+ request_hub_zelda_call();play=false;
+ for(int i=0;i<120;++i){update_hub_zelda_call();}assert(s_hubZeldaCallFrames==0);
+ play=true;for(int i=0;i<91;++i){update_hub_zelda_call();}assert(!s_hubZeldaCallPending);
+ swordReceived=true;request_hub_zelda_call();assert(!s_hubZeldaCallPending);swordReceived=false;
+ before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);assert(entry==s_hubZeldaStart);
  assert(!rewardCalls);rewardCallback(nullptr,&foreign,nullptr);rewardCallback(nullptr,nullptr,nullptr);assert(!rewardCalls);
 
  // Queue only after text; wait for the native conversation/event to finish.
@@ -239,14 +275,19 @@ int main(){
   lower.now=false; // Native updateFrame clears the just-set marker next tick.
  }
  assert(link.animations==1);
- // Model/draw fallback does not hide an item when the hand model cannot draw.
+ // First-time gifts render the hand model without prematurely granting it.
+ assert(!swordReceived&&presentationDraws==0);
  link.swordDraw=false;after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
- assert(link.ordon.data.material.shape.hidden&&!s_hubZeldaGift.handSword);
- assert(before_hub_zelda_gift_draw(nullptr,itemDraw,&drawResult,nullptr)==HOOK_CONTINUE);
+ assert(!link.ordon.data.material.shape.hidden&&s_hubZeldaGift.handSword);
+ assert(before_hub_zelda_gift_draw(nullptr,itemDraw,&drawResult,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(presentationDraws==1&&!swordReceived);
  link.swordDraw=true;after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
+ before_hub_zelda_gift_draw(nullptr,itemDraw,&drawResult,nullptr);
+ assert(presentationDraws==1); // Owned equipment uses its native draw exactly once.
  update_hub_zelda_gift();assert(!rewardCalls);eventEnded=true;
  update_hub_zelda_gift();assert(rewardCalls==1&&s_hubZeldaGift.retiring);
  assert(link.ordon.data.material.shape.hidden&&!s_hubZeldaGift.handSword);
+ assert(swordReceived&&s_hubSaveRequested);s_hubSaveRequested=false;
  update_hub_zelda_gift();assert(rewardCalls==1);giftLive=false;update_hub_zelda_gift();assert(!hub_zelda_gift_busy());
  // A repeated conversation may present the same ordinary sword again, never rupees or a run upgrade.
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);rewardCallback(nullptr,&event,nullptr);
@@ -259,12 +300,14 @@ int main(){
  after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
  assert(s_hubZeldaGift.handSword);
  // Losing ownership/cancellation must not award a sword or reset the replacement event.
+ swordReceived=false;s_hubSaveRequested=false; // Also model an interrupted first gift.
  nativeEvent.mPt2=99;const auto resets=eventResets;
  const auto calcs=link.calculations;lower.rate=1;lower.ended=false;
  before_hub_zelda_get_tick(nullptr,linkArgs,nullptr,nullptr);assert(lower.rate==1);
  after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
  assert(link.calculations==calcs&&!s_hubZeldaGift.handSword&&!link.ordon.data.material.shape.hidden);
  update_hub_zelda_gift();assert(rewardCalls==1&&eventResets==resets);
+ assert(!swordReceived&&!s_hubSaveRequested);
  giftLive=false;cleanup_hub_zelda_gift();nativeEvent.mPt2=kNone;eventRunning=false;
  // Timeout an unaccepted request; menus do not spend the retry budget.
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);rewardCallback(nullptr,&event,nullptr);

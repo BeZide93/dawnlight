@@ -257,7 +257,7 @@ int main(){
   s_hubArrivalPending=true;s_hubArrivalSeconds=0;
   for(int i=0;i<rate*10;++i)advance_hub_arrival(1.f/rate,false);
   assert(hub_arrival_progress()==0&&s_hubArrivalPending);
-  for(int i=0;i<rate*2;++i)advance_hub_arrival(1.f/rate,true);
+  for(int i=0;i<rate*3/2;++i)advance_hub_arrival(1.f/rate,true);
   assert(s_hubArrivalPending&&hub_arrival_progress()>.9f&&hub_arrival_progress()<1);
   for(int i=0;i<rate;++i)advance_hub_arrival(1.f/rate,true);
   assert(!s_hubArrivalPending&&hub_arrival_progress()==1&&link.mUnderFrameCtrl[0].rate==1);

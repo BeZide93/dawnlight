@@ -35,6 +35,7 @@ int initialize_hud_config(){return init(5,nullptr);}
 namespace enemy_hud {int initialize(){return init(6,nullptr);}}
 int initialize_option_config(){return init(2,nullptr);}
 int initialize_midna_dialog(){return init(3,nullptr);}
+int initialize_hub_zelda(){return init(7,nullptr);}
 void initialize_menu_handoff(){}
 constexpr int activated=0,deactivated=0,loaded=0,new_save=0,reset=0;
 constexpr const char* kMode="survivors";
@@ -65,10 +66,10 @@ int main(){
   assert(calls==i&&attempted.back()==expected[i-1]&&error.message.find(expected[i-1])!=std::string::npos);
  }
  failAt=0;
- for(initFailure=1;initFailure<=6;++initFailure){
+ for(initFailure=1;initFailure<=7;++initFailure){
   calls=registrations=0;error={};
   assert(initialize_survivors(&error)==MOD_UNAVAILABLE&&!calls&&!registrations);
-  assert(error.message==((initFailure==1||initFailure==4)?"initializer-specific failure":initFailure==2?
+  assert(error.message==((initFailure==1||initFailure==4)?"initializer-specific failure":initFailure==7?"failed to initialize Hyrule Survivors Zelda dialog":initFailure==2?
    "failed to initialize Hyrule Survivors settings":initFailure==6?"failed to initialize Survivors enemy HUD settings":initFailure==5?"failed to initialize Survivors HUD settings":"failed to initialize Hyrule Survivors Midna dialog"));
  }
  initFailure=0;modeFailure=true;calls=registrations=0;error={};

@@ -74,6 +74,7 @@ enum class HubMenu{None,Talents,Run};unsigned s_hubClosingWindow=0;HubMenu s_hub
 bool s_hub=true,s_hubDeparture=false,s_hubDoorStarted=false,s_arrivingRun=false,s_allowHubDoor=false,s_hubSaveRequested=false;
 ActorId s_hubDoor=kNone;unsigned s_hubDoorTicks=0;
 unsigned s_window=0,s_refreshChoices=0;
+void retire_hub_zelda(){}
 void load_option_config(){}void update_survivors_pedestal(bool){}
 void update_survivors_equipment_chest(bool,int,int){}
 

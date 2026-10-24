@@ -6,9 +6,9 @@ A 20-minute survival mode included in `dawnlight_mod.dusk`. Select **Hyrule
 Survivors** in Dusklight's game-mode menu and create/load its separate save.
 You arrive in the freely walkable Darknut Arena hub. Interact with the central
 Master Sword using A to open **Talents / Settings**; closing saves automatically.
-Zelda stands beside the sword pedestal. Speak to her with A: "It's dangerous to
-go alone! Take this." Each completed conversation gives Link **10 rupees**, up to
-the wallet limit.
+Zelda stands beside the sword pedestal and turns toward Link when spoken to.
+Speak to her with A: "It's dangerous to go alone! Take this." She then presents
+the **Ordon Sword** with the native item-get animation and message.
 Interact with the exit door beneath **Start Run** to open map selection. Pick a
 map and press **Start run**: the menu closes, the native door opens, and Link walks
 through before the scene changes to the selected arena. Story and Boss Rush saves remain separate.

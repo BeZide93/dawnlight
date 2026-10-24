@@ -57,6 +57,7 @@
 #include "d/d_camera.h"
 #include "d/d_msg_object.h"
 #include "d/actor/d_a_npc_zelda.h"
+#include "d/d_item.h"
 #include "d/d_msg_class.h"
 #include "JSystem/JMessage/control.h"
 #include "JSystem/JParticle/JPAResource.h"
@@ -182,7 +183,6 @@ DEFINE_HOOK(&JPABaseEmitter::deleteAllParticle, SurvivorsFairyParticles);
 DEFINE_HOOK(&dCamera_c::Run, SurvivorsCamera);
 DEFINE_HOOK(&daAlink_c::orderZTalk, SurvivorsMidnaOrder);
 DEFINE_HOOK(&dMsgFlow_c::getInitNodeIndex, SurvivorsMidnaFlow);
-DEFINE_HOOK(&daNpc_Zelda_c::getType, SurvivorsHubZeldaType);
 DEFINE_HOOK(&daNpc_Zelda_c::setParam, SurvivorsHubZeldaParam);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
@@ -1900,7 +1900,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsMidnaOrder, before_midna_order);
     PRE(SurvivorsMidnaFlow, before_midna_flow);
     PRE(SurvivorsMidnaFlow, before_hub_zelda_flow);
-    PRE(SurvivorsHubZeldaType, before_hub_zelda_type);
+    PRE(SurvivorsHubZeldaParam, before_hub_zelda_param);
     POST(SurvivorsHubZeldaParam, after_hub_zelda_param);
     PRE(SurvivorsEnemyContact,before_enemy_contact);
     PRE(SurvivorsBlock, before_player_contacts);
@@ -1968,6 +1968,8 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsTreasureDraw, before_key_draw);
     PRE(SurvivorsTreasureDraw, before_treasure_draw);
     PRE(SurvivorsGetItem, before_treasure_get); POST(SurvivorsGetItem, after_treasure_get);
+    PRE(SurvivorsGetItem, before_hub_zelda_get);
+    POST(SurvivorsGetItem, after_hub_zelda_get);
     PRE(SurvivorsGameOver, before_game_over);
     PRE(SurvivorsDeath, before_death); PRE(SurvivorsManualAttack, before_cut);
     PRE(SurvivorsManualCharge, before_manual_charge);

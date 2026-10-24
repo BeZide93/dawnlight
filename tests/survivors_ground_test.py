@@ -130,12 +130,20 @@ int main(){
  }
  // Descend from the entrance landing over four 30-unit risers. Narrow
  // treads are valid transit surfaces even though a chest cannot fit on them.
- terrain=10;s_map=0;s_eliteFloors.clear();s_eliteFloorArea=0;
+ terrain=10;s_map=0;
+ for(bool splitEdges:{false,true}) {
+ s_eliteFloors.clear();s_eliteFloorArea=0;
  const float cuts[]{-1000,0,60,120,180,1000};
  for(unsigned i=0;i<5;++i){
   const float a=cuts[i],b=cuts[i+1],y=stairs((a+b)*.5f);
-  s_eliteFloors.push_back({{a,y,-500},{b,y,-500},{a,y,500}});
-  s_eliteFloors.push_back({{b,y,500},{a,y,500},{b,y,-500}});
+  // Alternate one long boundary with two shorter boundaries (T-junctions).
+  // Neither shorter edge has both endpoints in common with the long edge.
+  const unsigned pieces=splitEdges&&i%2?2:1;
+  for(unsigned j=0;j<pieces;++j){
+   const float z0=-500+1000.f*j/pieces,z1=-500+1000.f*(j+1)/pieces;
+   s_eliteFloors.push_back({{a,y,z0},{b,y,z0},{a,y,z1}});
+   s_eliteFloors.push_back({{b,y,z1},{a,y,z1},{b,y,z0}});
+  }
   s_eliteFloorArea+=(b-a)*1000;
  }
  for(bool descending:{true,false}) {
@@ -148,6 +156,28 @@ int main(){
    lower+=sampled.x<-100;upper+=sampled.x>280;
   }
   assert(lower>=15&&upper>=15);
+ }
+ }
+ // Matching also handles diagonal/reversed partial edges, without joining
+ // disjoint collinear intervals or an overlapping floor 100 units above it.
+ {
+  std::vector<Floor> floors{
+   {{0,0,0},{120,0,120},{-120,0,120}},
+   {{120,0,120},{60,0,60},{180,0,0}},
+   {{240,0,240},{300,0,300},{360,0,240}},
+   {{120,100,120},{60,100,60},{180,100,0}}};
+  ReachableFloor<cXyz> graph;graph.seed({-20,0,100},unsigned(floors.size()));
+  graph.build(floors,0);assert(!graph.ready());
+  unsigned ticks=0;
+  while(!graph.ready()){
+   graph.build(floors,1);graph.expand([](cXyz,cXyz){return WalkResult::Clear;});
+   assert(++ticks<1000);
+  }
+  assert(ticks>floors.size()); // One operation per build call resumes mid-edge.
+  assert(graph.valid(graph.containing({120,0,60})));
+  assert(!graph.valid(graph.containing({300,0,260})));
+  assert(!graph.valid(graph.containing({120,100,60})));
+  graph.clear();assert(graph.empty()&&!graph.ready());
  }
  // Actual spawn footprints remain strict near a stair edge.
  to={10,30,0};assert(!walkable_spawn_path({-800,0,0},to,40));

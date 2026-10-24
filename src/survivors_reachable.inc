@@ -17,7 +17,7 @@ void update_reachable_floor() {
         if(!dry_arena_floor(start,60,100))return;
         s_reachableFloor.seed(start,unsigned(s_eliteFloors.size()));
     }
-    s_reachableFloor.build(s_eliteFloors,128);
+    s_reachableFloor.build(s_eliteFloors,1024); // Bounded topology operations, including edge comparisons.
     unsigned budget=64; // Shared by graph edges AND requested spawn landings.
     s_reachableFloor.expand([&](cXyz from,cXyz to){
         if(!s_reachableWalk.active)s_reachableWalk.begin(from,to,40,false);

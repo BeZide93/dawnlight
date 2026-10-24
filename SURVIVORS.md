@@ -368,7 +368,11 @@ No native Darknut placement is required. Chests, pots and Fate portals share the
 resulting arena-side component. During reachability scans, stair transitions do
 not require a flat spawn footprint at every tread. The path still checks ground,
 water, walls and exit barriers; the final spawn landing retains its full footprint
-checks. Wall rays clear accepted short risers in both directions.
+checks. Wall rays clear accepted short risers in both directions. Floor connectivity
+also matches partially overlapping collinear edges, so a long landing edge can
+connect to several shorter stair edges. Edge matching uses spatial buckets and
+resumes after a bounded number of operations per frame; native collision and
+height checks still decide whether each resulting connection is walkable.
 
 Up to **64 EXP crystals** can lie on the ground. Further XP merges into the nearest
 crystal without loss; merged crystals turn **red**, ordinary crystals stay turquoise.

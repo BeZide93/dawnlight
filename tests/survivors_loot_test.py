@@ -124,6 +124,7 @@ std::vector<EliteFloor>s_eliteFloors{
 bool walkable_spawn_path(cXyz,cXyz&,float){return !blocked&&!invalidFloor&&!arenaBlocked;}
 bool distributionReady=true;bool arena_distribution_ready(){return distributionReady;}
 float arena_distribution_area(){return s_eliteFloorArea;}
+void record_arena_spawn_sample(cXyz,cXyz,bool){}
 bool needs_reachable_floor(){return false;}bool sample_reachable_arena_floor(cXyz&){return false;}
 bool reachable=true;bool reachable_arena_floor(cXyz){return reachable;}
 bool elite_floor_position(cXyz&){++placement;return !invalidFloor;}

@@ -35,7 +35,7 @@ template<class Point> class ReachableFloor {
     std::vector<unsigned> queue;
     std::vector<float> areas;
     Point origin{};
-    unsigned count=0,root=none,cursor=0,direction=0,leg=0;
+    unsigned epoch=0,count=0,root=none,cursor=0,direction=0,leg=0;
     bool built=false,done=false;
     float area=0,rootHeight=25.f;
     static bool line_key(Point a,Point b,Line& key) {
@@ -82,7 +82,10 @@ template<class Point> class ReachableFloor {
         area+=triangle_area(nodes[index]);areas.push_back(area);
     }
 public:
-    void clear() {assembling=none;edgeCursor=ownerCursor=0;edgePrepared=false;edges.clear();nodes.clear();queue.clear();areas.clear();count=cursor=direction=leg=0;root=none;built=done=false;area=0;rootHeight=25.f;}
+    void clear() {++epoch;assembling=none;edgeCursor=ownerCursor=0;edgePrepared=false;edges.clear();nodes.clear();queue.clear();areas.clear();count=cursor=direction=leg=0;root=none;built=done=false;area=0;rootHeight=25.f;}
+    unsigned generation()const {return epoch;}
+    unsigned reached_count()const {return unsigned(queue.size());}
+    bool reached(unsigned index)const {return index<nodes.size()&&nodes[index].reached;}
     bool empty()const {return count==0;}
     bool ready()const {return done;}
     float floor_area()const {return done?area:0;}

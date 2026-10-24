@@ -84,6 +84,8 @@ bool dry_arena_floor(cXyz& p,float rise,float drop){if(p.y>drop||p.y < -rise||gr
  (groundRoom!=-2&&groundRoom!=arena().room))return false;
  p.y=0;return true;}
 bool needs_reachable_floor(){return false;}bool sample_reachable_arena_floor(cXyz&){return false;}
+void update_spawn_diagnostics(daAlink_c*){}
+void record_arena_spawn_sample(cXyz,cXyz,bool){}
 bool reachable=true;bool reachable_arena_floor(cXyz){return reachable;}void update_reachable_floor(){}
 bool rejectLongPath=false,narrowLanding=false;
 bool walkable_spawn_path(cXyz from,cXyz& to,float){return !groundMissing&&!wallBlocked&&!barrierBlocked &&

@@ -102,8 +102,8 @@ jobs:
           python3 tests/survivors_fate_test.py
           python3 tests/survivors_pots_test.py
           python3 tests/survivors_ground_test.py
-          python3 tests/survivors_spawn_diagnostics_test.py
-          CXX=clang++ python3 tests/survivors_spawn_diagnostics_test.py
+          python3 tests/survivors_darknut_floor_test.py
+          CXX=clang++ python3 tests/survivors_darknut_floor_test.py
           python3 tests/survivors_prices_test.py
           python3 tests/survivors_minimap_test.py
           python3 tests/survivors_hook_install_test.py

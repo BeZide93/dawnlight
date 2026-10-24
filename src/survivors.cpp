@@ -875,7 +875,6 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
     }
     return false;
 }
-void record_arena_spawn_sample(cXyz sample,cXyz projected,bool accepted);
 #include "survivors_elites.inc"
 #include "survivors_pots.inc"
 #include "survivors_save_slot.inc"
@@ -1144,7 +1143,6 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
 #include "survivors_loot.inc"
 #include "survivors_fate.inc"
 #include "survivors_horde_portals.inc"
-#include "survivors_spawn_diagnostics.inc"
 #include "survivors_minimap.inc"
 #include "survivors_ranged.inc"
 #include "survivors_keys.inc"
@@ -1283,7 +1281,6 @@ void after_player(ModContext*, void* args, void*, void*) {
         dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+s_run.gain_rupees(rupees)));
     update_enemy_effects();
     update_reachable_floor();
-    update_spawn_diagnostics(link);
     update_horde_portals(link);
     update_spawns(link); update_pots(link); update_exp_magnets(link); update_weapons(link); update_orbs(link);
     s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;

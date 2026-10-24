@@ -374,15 +374,12 @@ connect to several shorter stair edges. Edge matching uses spatial buckets and
 resumes after a bounded number of operations per frame; native collision and
 height checks still decide whether each resulting connection is walkable.
 
-A temporary development-build capture diagnoses the remaining Darknut-only spawn
-concentration. `Survivors floor diag v1` logs the scan generation, entrance/Link
-positions, native ground height, reached triangle count, sample/footprint results
-and spawned chest/pot height ranges. It also records at most 4,096 accepted floor
-triangles, eight per active frame, to reconstruct the actual loaded geometry.
-Summaries run every five seconds for the first minute per scan generation;
-individual sample logs stop after 16. Other maps and builds without Debug do not
-capture anything. No extra collision queries or gameplay changes are introduced.
-Remove this temporary capture after the real arena failure has been identified.
+Darknut Arena's entrance contains two native 50-unit stair risers. Its graph and
+walking checks allow 50 units plus a small collision tolerance; all other maps
+retain the 35-unit limit. Shared stair-edge checks account for their midpoint
+height, including the 25-unit offset at a 50-unit riser. Actual spawn footprints
+remain strict. Temporary floor diagnostics have been removed after identifying
+these limits from the runtime floor capture.
 
 Up to **64 EXP crystals** can lie on the ground. Further XP merges into the nearest
 crystal without loss; merged crystals turn **red**, ordinary crystals stay turquoise.

@@ -35,9 +35,9 @@ template<class Point> class ReachableFloor {
     std::vector<unsigned> queue;
     std::vector<float> areas;
     Point origin{};
-    unsigned epoch=0,count=0,root=none,cursor=0,direction=0,leg=0;
+    unsigned count=0,root=none,cursor=0,direction=0,leg=0;
     bool built=false,done=false;
-    float area=0,rootHeight=25.f;
+    float area=0,rootHeight=25.f,stepHeight=35.f;
     static bool line_key(Point a,Point b,Line& key) {
         const int64_t ax=int64_t(std::round(a.x)),az=int64_t(std::round(a.z));
         int64_t dx=int64_t(std::round(b.x))-ax,dz=int64_t(std::round(b.z))-az;
@@ -52,7 +52,7 @@ template<class Point> class ReachableFloor {
     static int64_t first_cell(const EdgeOwner& e,const Line& key) {
         return std::min(cell(e.a,key),cell(e.b,key));
     }
-    static bool overlap(const EdgeOwner& a,const EdgeOwner& b,Point& portal) {
+    bool overlap(const EdgeOwner& a,const EdgeOwner& b,Point& portal)const {
         const bool x=std::abs(a.b.x-a.a.x)>=std::abs(a.b.z-a.a.z);
         const auto coordinate=[&](Point p){return x?p.x:p.z;};
         const float a0=coordinate(a.a),a1=coordinate(a.b),b0=coordinate(b.a),b1=coordinate(b.b);
@@ -63,7 +63,7 @@ template<class Point> class ReachableFloor {
         const Point al=point(a,a0,a1,lo),ah=point(a,a0,a1,hi);
         const Point bl=point(b,b0,b1,lo),bh=point(b,b0,b1,hi);
         // Overlapping stacked floors and large risers remain disconnected.
-        if(std::abs(al.y-bl.y)>35.f || std::abs(ah.y-bh.y)>35.f)return false;
+        if(std::abs(al.y-bl.y)>stepHeight || std::abs(ah.y-bh.y)>stepHeight)return false;
         portal=(al+ah+bl+bh)*.25f;return true;
     }
     static float triangle_area(const Node& n) {
@@ -82,14 +82,11 @@ template<class Point> class ReachableFloor {
         area+=triangle_area(nodes[index]);areas.push_back(area);
     }
 public:
-    void clear() {++epoch;assembling=none;edgeCursor=ownerCursor=0;edgePrepared=false;edges.clear();nodes.clear();queue.clear();areas.clear();count=cursor=direction=leg=0;root=none;built=done=false;area=0;rootHeight=25.f;}
-    unsigned generation()const {return epoch;}
-    unsigned reached_count()const {return unsigned(queue.size());}
-    bool reached(unsigned index)const {return index<nodes.size()&&nodes[index].reached;}
+    void clear() {assembling=none;edgeCursor=ownerCursor=0;edgePrepared=false;edges.clear();nodes.clear();queue.clear();areas.clear();count=cursor=direction=leg=0;root=none;built=done=false;area=0;rootHeight=25.f;stepHeight=35.f;}
     bool empty()const {return count==0;}
     bool ready()const {return done;}
     float floor_area()const {return done?area:0;}
-    void seed(Point start,unsigned triangles) {clear();origin=start;count=triangles;}
+    void seed(Point start,unsigned triangles,float maxStep=35.f) {clear();origin=start;count=triangles;stepHeight=maxStep;}
     template<class Floors> void build(const Floors& floors,unsigned budget) {
         if(built || !count)return;
         // Budget edge comparisons too: a long boundary may have many shorter

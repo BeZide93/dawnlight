@@ -371,8 +371,8 @@ void update_hub_zelda() {
         s_progressSaving || s_hubSaveRequested) return;
     if (s_hubZeldaRetry) { --s_hubZeldaRetry; return; }
     cXyz anchor;
-    if (!hub_brazier_anchor(anchor) && !(preparing && hub_center_ground(anchor))) return;
-    cXyz probe = anchor + cXyz(-320, 100, 0);
+    if (!hub_center_ground(anchor)) return;
+    cXyz probe = anchor + cXyz(roundtable_layout::zeldaX, 100, 0);
     dBgS_ObjGndChk ground; ground.SetPos(&probe);
     const float height = dComIfG_Bgsp().GroundCross(&ground);
     if (!std::isfinite(height) || height <= -1.e8f || std::abs(height-anchor.y) > 50) return;

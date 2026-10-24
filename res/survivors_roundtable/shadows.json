@@ -1,0 +1,18 @@
+{
+  "light": [
+    0.0,
+    -50.0,
+    0.0
+  ],
+  "size": 1024,
+  "step": 24.0,
+  "min": 97,
+  "max": 255,
+  "sources": {
+    "res/survivors_roundtable/hall.mesh": "29a6c459d5d7fbbea8c8001717a2ef6e7e47369d2703ccecf16a5069456da10e",
+    "tools/generate_roundtable.py": "50b09c600b4b86982aa20b7f4eb8ab54fe9827ccee84cfd4671c82e3674e5c12",
+    "tools/bake_roundtable_shadows.cpp": "f3fee58449ece3b3952279c1892efb89e6e6199a9c518683e7a18b0ea6f5c0a3",
+    "tools/bake_roundtable_shadows.py": "c0ea758d50ce4d731cb3015dd1c0a09bf42715fb394ea7058096d171e91941e8",
+    "res/survivors_roundtable/shadows.i8": "4e4dc36700d826eda66fee85f76baeb0503a7f1ac6564d485c580c0d0cc9601d"
+  }
+}

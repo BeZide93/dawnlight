@@ -9,8 +9,8 @@ spec=importlib.util.spec_from_file_location('hall',ROOT/'tools/generate_roundtab
 g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
 hall=g.Hall().build()
 mesh=(g.OUT/'hall.mesh').read_bytes()
-assert mesh[:4]==b'RTH1'
-assert mesh==b'RTH1'+struct.pack('<I',len(hall.vertices))+b''.join(struct.pack('<5f4B',*v) for v in hall.vertices)
+assert mesh[:4]==b'RTH2'
+assert mesh==b'RTH2'+struct.pack('<I',len(hall.vertices))+b''.join(struct.pack('<7f4B',*v) for v in hall.vertices)
 data=(g.OUT/'hall.dzb').read_bytes()
 assert data==g.dzb(hall), 'Regenerate collision from the same authoring source'
 assert len((g.OUT/'materials.rgb565').read_bytes())==256*256*2
@@ -66,10 +66,10 @@ def ground(x,z,ceiling=1000):
 
 assert g.RADIUS==1800, 'Keep the compact build-1295 footprint'
 chest_x=g.FRONT+25-150
-for x,z in [(0,0),(0,260),(-320,0),(chest_x,0)]:
+for x,z in [(0,g.REST_Z),(g.ZELDA_X,0),(chest_x,0)]:
     assert abs(ground(x,z)+400)<.01, 'Rest/fire/Zelda/equipment anchor must remain clear'
-assert abs(ground(0,-650)-(-299.5))<.01, 'Tabletop is 100.5 units above the floor'
-assert abs(ground(0,-1110)-(-327.95))<.01, 'Chair collision reaches the cushion at 72.05 units'
+assert abs(ground(0,0)-(-299.5))<.01, 'Tabletop is 100.5 units above the floor'
+assert abs(ground(0,-460)-(-327.95))<.01, 'Chair collision reaches the cushion at 72.05 units'
 chair=g.Hall();chair.chair(0,0,0)
 assert min(v[1] for v in chair.vertices)==g.FLOOR
 assert abs(max(v[1] for v in chair.vertices)-g.FLOOR-187)<.01
@@ -96,7 +96,8 @@ for angle in (math.pi*.75,math.pi,math.pi*1.25):
     assert segment_hits(point(-200),point(0)), 'Memorial must reach the floor'
 
 # Walkable links between all interaction points, including the authored door.
-routes=[((0,260),(-320,0)),((0,260),(chest_x,0)),((0,260),(0,3900))]
+routes=[((0,g.REST_Z),(-720,650)),((-720,650),(g.ZELDA_X,0)),
+        ((0,g.REST_Z),(chest_x,0)),((0,g.REST_Z),(0,3900))]
 for start,end in routes:
     last=-400
     for step in range(101):
@@ -110,11 +111,11 @@ assert ground(3000,0) is None
 for i in range(48):
     angle=(i+.25)*math.tau/48
     def table_point(radius):
-        return radius*math.sin(angle),g.FLOOR+30.01,-650+radius*math.cos(angle)
+        return radius*math.sin(angle),g.FLOOR+30.01,radius*math.cos(angle)
     assert segment_hits(table_point(410),table_point(340),True), 'Solid table skirt from every side'
-for i in range(2,11):
+for i in range(12):
     angle=i*math.tau/12
-    cx=460*math.sin(angle);cz=-650+460*math.cos(angle)
+    cx=460*math.sin(angle);cz=460*math.cos(angle)
     for approach in range(8):
         direction=approach*math.tau/8
         start=(cx+65*math.sin(direction),g.FLOOR+30.01,cz+65*math.cos(direction))
@@ -133,10 +134,10 @@ for i in range(1,g.SIDES):
 # Door wings cover the full corridor width, but leave native interaction and
 # the opening/closing path unblocked. The back wall closes the previous void.
 for x in (-g.HALF_DOOR+2,-230,230,g.HALF_DOOR-2):
-    assert segment_hits((x,-200,3800),(x,-200,3950),True)
+    assert segment_hits((x,-200,3500),(x,-200,3950),True)
 for x in (-120,0,120):
     assert not segment_hits((x,-120,3600),(x,-120,4140),True), 'Door event route must remain clear'
-assert segment_hits((0,150,3800),(0,150,3950),True), 'Door lintel closes overhead gap'
+assert segment_hits((0,150,3500),(0,150,3950),True), 'Door lintel closes overhead gap'
 assert segment_hits((0,-120,4140),(0,-120,4250),True), 'Visible back wall has collision'
 # Atlas repeats must remain within one quadrant, including triangles split at
 # UV repeat boundaries. The GPU uses clamp and cannot repeat a whole atlas.
@@ -160,6 +161,7 @@ for surface in (column,wall):
                 if abs(a[0]-b[0])+abs(a[2]-b[2])<.001 and abs(a[1]-b[1])>1:
                     span=abs(a[1]-b[1])/(abs(a[4]-b[4])*2/.92)
                     assert abs(span-g.TEXEL_SPAN)<.01, 'Unequal vertical texture density'
+assert all(0<=v[5]<1 and 0<=v[6]<1 for v in hall.vertices), 'Valid shadow atlas coordinates'
 assert len(hall.vertices)<=100000, 'Stay within renderer resource bounds'
 
 print(f'Roundtable: {tn} native collision triangles, valid tree/room ancestry, clear hub routes')

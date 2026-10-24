@@ -50,6 +50,7 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: |
           python3 tests/survivors_roundtable_test.py
+          python3 tests/survivors_roundtable_shadows_test.py
           python3 tests/survivors_roundtable_runtime_test.py
           CXX=clang++ python3 tests/survivors_roundtable_runtime_test.py
           python3 tests/survivors_enemy_archives_test.py
@@ -347,8 +348,8 @@ jobs:
           CXX=clang++ python3 tests/survivors_progress_save_test.py
           python3 tests/survivors_spawn_test.py dusklight
           CXX=clang++ python3 tests/survivors_spawn_test.py dusklight
-          python3 tests/survivors_hub_brazier_test.py
-          CXX=clang++ python3 tests/survivors_hub_brazier_test.py
+          python3 tests/survivors_hub_layout_test.py
+          CXX=clang++ python3 tests/survivors_hub_layout_test.py
           python3 tests/survivors_title_test.py
           CXX=clang++ python3 tests/survivors_title_test.py
           python3 tests/survivors_title_texture_test.py

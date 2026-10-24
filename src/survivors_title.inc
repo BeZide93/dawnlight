@@ -101,13 +101,15 @@ bool survivors_title_preparing() {
         !mDoRst::isReset() && !mDoRst::isReturnToMenu();
 }
 bool title_floor_anchor(cXyz& anchor) {
-    return hub_brazier_anchor(anchor) || hub_center_ground(anchor);
+    return hub_center_ground(anchor);
 }
 bool title_scene_ready() {
     auto* link = daAlink_getAlinkActorClass();
     cXyz anchor;
+    // Room assets load synchronously with its collider. A valid floor also
+    // permits the native-room fallback if custom assets could not be loaded.
     return !s_titleReloadPending && link && s_titlePoseOwner == fopAcM_GetID(link) && title_model_ready(link) &&
-        hub_brazier_anchor(anchor) && owned_hub_zelda(actor_by_id(s_hubZelda));
+        title_floor_anchor(anchor) && owned_hub_zelda(actor_by_id(s_hubZelda));
 }
 bool title_ui_blocked() {
     return (s_active || survivors_title_active()) && !s_gameStarted && opening_scene() &&
@@ -189,7 +191,7 @@ HookAction before_title_stage_actor(ModContext*, void* args, void*, void*) {
         // Idle spawn 16, no entrance event; the ground is probed once loaded.
         params->base.parameters = (params->base.parameters & 0x00fe0fffu) | 0xff010000u;
         params->base.position.x = 0;
-        params->base.position.z = 260;
+        params->base.position.z = roundtable_layout::restZ;
         params->base.angle.y = static_cast<s16>(0x8000);
     } else if (survivors_title_active() && (arena_story_actor(info->procname) ||
                info->procname == fpcNm_SCENE_EXIT_e || info->procname == fpcNm_SCENE_EXIT2_e)) {
@@ -214,7 +216,7 @@ HookAction before_title_wait(ModContext*, void* args, void* result, void*) {
     cXyz anchor;
     s_titlePoseOwner = kNone;
     if (title_floor_anchor(anchor)) {
-        cXyz position = anchor + cXyz(0,0,260);
+        cXyz position = anchor + cXyz(0,0,roundtable_layout::restZ);
         cXyz probe = position + cXyz(0,100,0);
         dBgS_ObjGndChk ground; ground.SetPos(&probe);
         const float height = dComIfG_Bgsp().GroundCross(&ground);
@@ -244,7 +246,7 @@ void after_title_camera(ModContext*, void* args, void*, void*) {
     if (survivors_hub_arrival_active()) {
         // Keep the rest pose visible through fade-in and decoration loading,
         // then show the rise from the same side as the title's final view.
-        camera->Set(anchor+cXyz(0,90,180),anchor+cXyz(475.08f,190,260),40.f,s16(0));
+        camera->Set(anchor+cXyz(0,170,350),anchor+cXyz(640,250,roundtable_layout::restZ+90),48.f,s16(0));
         camera->mUp.set(0,1,0);
         camera->mDirection.Val(camera->mEye-camera->mCenter);
         advance_hub_arrival(seconds,title_scene_ready() && !transitioning() && !ui_visible() &&
@@ -258,14 +260,14 @@ void after_title_camera(ModContext*, void* args, void*, void*) {
     // One eased arc: reduce distance/height/FOV while rotating to Link's side.
     // Logo input does not stop or restart this movement.
     const float t = s_titleFlow.camera();
-    const float startAngle = std::atan2(650.f,640.f);
-    const float angle = startAngle+(1.57079632679f-startAngle)*t;
-    const float startRadius = std::sqrt(650.f*650.f+640.f*640.f);
-    const float endRadius = std::sqrt(360.f*360.f+310.f*310.f);
+    const float startAngle = std::atan2(700.f,490.f);
+    const float angle = startAngle+(std::atan2(640.f,90.f)-startAngle)*t;
+    const float startRadius = std::sqrt(700.f*700.f+490.f*490.f);
+    const float endRadius = std::sqrt(640.f*640.f+90.f*90.f);
     const float radius = startRadius+(endRadius-startRadius)*t;
-    const cXyz eye(radius*std::sin(angle),330-140*t,260+radius*std::cos(angle));
-    camera->Set(anchor+cXyz(-70+70*t,110-20*t,80+100*t),
-                anchor+eye,45.f-5.f*t,s16(0));
+    const cXyz eye(radius*std::sin(angle),400-150*t,roundtable_layout::restZ+radius*std::cos(angle));
+    camera->Set(anchor+cXyz(-80+80*t,190-20*t,450-100*t),
+                anchor+eye,52.f-4.f*t,s16(0));
     camera->mUp.set(0,1,0);
     camera->mDirection.Val(camera->mEye-camera->mCenter);
 }

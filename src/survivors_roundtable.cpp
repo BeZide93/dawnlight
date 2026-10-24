@@ -24,12 +24,13 @@
 namespace dawnlight {
 namespace {
 constexpr ActorId kNoRoom = fpcM_ERROR_PROCESS_ID_e;
-struct Vertex { float x,y,z,u,v; u8 r,g,b,a; };
-static_assert(sizeof(Vertex)==24);
+struct Vertex { float x,y,z,u,v,lu,lv; u8 r,g,b,a; };
+static_assert(sizeof(Vertex)==32);
 std::vector<Vertex> s_vertices;
 std::vector<u8> s_collision;
 alignas(32) u8 s_texture[256*256*2];
-GXTexObj s_textureObject{};
+GXTexObj s_textureObject{},s_shadowObject{};
+alignas(32) u8 s_shadow[1024*1024];
 bool s_ready=false;
 
 bool resource(const char* name, std::vector<u8>& out) {
@@ -43,23 +44,24 @@ bool resource(const char* name, std::vector<u8>& out) {
 u32 le32(const u8* p) { return u32(p[0])|(u32(p[1])<<8)|(u32(p[2])<<16)|(u32(p[3])<<24); }
 bool load_assets() {
     if(s_ready)return true;
-    std::vector<u8> mesh,texture,collision;
+    std::vector<u8> mesh,texture,collision,shadow;
     if(!resource("survivors_roundtable/hall.mesh",mesh) ||
        !resource("survivors_roundtable/hall.dzb",collision) ||
-       !resource("survivors_roundtable/materials.rgb565",texture))return false;
-    if(mesh.size()<8 || std::memcmp(mesh.data(),"RTH1",4) ||
-       texture.size()!=sizeof(s_texture) || collision.size()<52)return false;
+       !resource("survivors_roundtable/materials.rgb565",texture) ||
+       !resource("survivors_roundtable/shadows.i8",shadow))return false;
+    if(mesh.size()<8 || std::memcmp(mesh.data(),"RTH2",4) ||
+       shadow.size()!=sizeof(s_shadow) || texture.size()!=sizeof(s_texture) || collision.size()<52)return false;
     const u32 count=le32(mesh.data()+4);
     if(count==0 || count%3 || count>100000 || mesh.size()!=8+size_t(count)*sizeof(Vertex))return false;
     std::vector<Vertex> vertices(count);
     for(size_t i=0;i<count;++i) {
-        const auto* p=mesh.data()+8+i*24;
-        float values[5];
-        for(unsigned j=0;j<5;++j) {
+        const auto* p=mesh.data()+8+i*32;
+        float values[7];
+        for(unsigned j=0;j<7;++j) {
             const u32 bits=le32(p+j*4);std::memcpy(&values[j],&bits,4);
             if(!std::isfinite(values[j]))return false;
         }
-        vertices[i]={values[0],values[1],values[2],values[3],values[4],p[20],p[21],p[22],p[23]};
+        vertices[i]={values[0],values[1],values[2],values[3],values[4],values[5],values[6],p[28],p[29],p[30],p[31]};
     }
     // Validate every DZB table before native pointer relocation. The bundled
     // format is also checked by the generator test, including tree ancestry.
@@ -74,6 +76,9 @@ bool load_assets() {
     std::memcpy(s_texture,texture.data(),sizeof(s_texture));
     GXInitTexObj(&s_textureObject,s_texture,256,256,GX_TF_RGB565,GX_CLAMP,GX_CLAMP,GX_FALSE);
     GXInitTexObjLOD(&s_textureObject,GX_LINEAR,GX_LINEAR,0,0,0,GX_FALSE,GX_FALSE,GX_ANISO_1);
+    std::memcpy(s_shadow,shadow.data(),sizeof(s_shadow));
+    GXInitTexObj(&s_shadowObject,s_shadow,1024,1024,GX_TF_I8,GX_CLAMP,GX_CLAMP,GX_FALSE);
+    GXInitTexObjLOD(&s_shadowObject,GX_LINEAR,GX_LINEAR,0,0,0,GX_FALSE,GX_FALSE,GX_ANISO_1);
     s_ready=true;
     return true;
 }
@@ -87,8 +92,8 @@ public:
     std::unique_ptr<u8[]> storage;
     JKRExpHeap* heap=nullptr;
     bool installed=false;
-    std::array<u32,6> fire{};
-    LIGHT_INFLUENCE light{};
+    std::array<u32,9> fire{};
+    LIGHT_INFLUENCE light{},tableLight{};
     bool lit=false;
 
     ~Room() override { if(heap)heap->destroy(); }
@@ -99,18 +104,31 @@ public:
             }
             id=0;
         }
-        if(lit)dKy_plight_cut(&light);
+        if(lit){dKy_plight_cut(&light);dKy_plight_cut(&tableLight);}
         lit=false;
     }
     void update_fire() {
         constexpr u16 effects[]{0x3ad,0x3af,0x3ae};
         const cXyz scale(.7f,.7f,.7f);
-        for(unsigned i=0;i<fire.size();++i) {
+        for(unsigned i=0;i<6;++i) {
             const cXyz position(roundtable_layout::hearthFireX,-330.f,i<3?-90.f:90.f);
             fire[i]=dComIfGp_particle_set(fire[i],effects[i%3],&position,nullptr,nullptr,&scale,
                 0xff,nullptr,-1,nullptr,nullptr,nullptr);
         }
+        const cXyz flame(0,roundtable_layout::flameY,0);
+        const cXyz flameScale(.85f,2.5f,.85f);
+        for(unsigned i=6;i<fire.size();++i) {
+            fire[i]=dComIfGp_particle_set(fire[i],effects[i-6],&flame,nullptr,nullptr,&flameScale,
+                0xff,nullptr,-1,nullptr,nullptr,nullptr);
+            if(auto* emitter=dComIfGp_particle_getEmitter(fire[i])) {
+                emitter->setGlobalPrmColor(255,225,120);
+                emitter->setGlobalEnvColor(255,130,18);
+            }
+        }
         if(!lit) {
+            tableLight.mPosition.set(0,roundtable_layout::flameLightY,0);
+            tableLight.mColor={255,205,112,255};tableLight.mPow=1800;
+            tableLight.mFluctuation=1;dKy_plight_set(&tableLight);
             light.mPosition.set(roundtable_layout::hearthLightX,-170,0);light.mColor={188,102,66,255};
             light.mPow=650;light.mFluctuation=1;dKy_plight_set(&light);lit=true;
         }
@@ -143,16 +161,21 @@ public:
         j3dSys.reinitGX();
         GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);GXSetCurrentMtx(GX_PNMTX0);
         GXClearVtxDesc();
-        GXSetVtxDesc(GX_VA_POS,GX_DIRECT);GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);GXSetVtxDesc(GX_VA_TEX0,GX_DIRECT);
+        GXSetVtxDesc(GX_VA_POS,GX_DIRECT);GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);GXSetVtxDesc(GX_VA_TEX0,GX_DIRECT);GXSetVtxDesc(GX_VA_TEX1,GX_DIRECT);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_F32,0);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_CLR0,GX_CLR_RGBA,GX_RGBA8,0);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_F32,0);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX1,GX_TEX_ST,GX_F32,0);
         GXSetNumChans(1);
         GXSetChanCtrl(GX_COLOR0A0,GX_DISABLE,GX_SRC_REG,GX_SRC_VTX,GX_LIGHT_NULL,GX_DF_NONE,GX_AF_NONE);
-        GXSetNumTexGens(1);GXSetTexCoordGen(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_TEX0,GX_IDENTITY);
+        GXSetNumTexGens(2);GXSetTexCoordGen(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_TEX0,GX_IDENTITY);
+        GXSetTexCoordGen(GX_TEXCOORD1,GX_TG_MTX2x4,GX_TG_TEX1,GX_IDENTITY);
+        GXLoadTexObj(&s_shadowObject,GX_TEXMAP1);
         GXLoadTexObj(&s_textureObject,GX_TEXMAP0);
-        GXSetNumTevStages(1);GXSetTevOrder(GX_TEVSTAGE0,GX_TEXCOORD0,GX_TEXMAP0,GX_COLOR0A0);
+        GXSetNumTevStages(2);GXSetTevOrder(GX_TEVSTAGE0,GX_TEXCOORD0,GX_TEXMAP0,GX_COLOR0A0);
         GXSetTevOp(GX_TEVSTAGE0,GX_MODULATE);
+        GXSetTevOrder(GX_TEVSTAGE1,GX_TEXCOORD1,GX_TEXMAP1,GX_COLOR_NULL);
+        GXSetTevOp(GX_TEVSTAGE1,GX_MODULATE);
         GXSetZMode(GX_TRUE,GX_LEQUAL,GX_TRUE);
         GXSetBlendMode(GX_BM_NONE,GX_BL_ONE,GX_BL_ZERO,GX_LO_CLEAR);
         GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);GXSetCullMode(GX_CULL_NONE);
@@ -161,7 +184,7 @@ public:
             GXBegin(GX_TRIANGLES,GX_VTXFMT0,static_cast<u16>(end-start));
             for(size_t i=start;i<end;++i) {
                 const auto& v=s_vertices[i];GXPosition3f32(v.x,v.y,v.z);
-                GXColor4u8(v.r,v.g,v.b,v.a);GXTexCoord2f32(v.u,v.v);
+                GXColor4u8(v.r,v.g,v.b,v.a);GXTexCoord2f32(v.u,v.v);GXTexCoord2f32(v.lu,v.lv);
             }
             GXEnd();
         }

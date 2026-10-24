@@ -90,7 +90,7 @@ struct Color{int r,g,b,a;};
 struct LIGHT_INFLUENCE{cXyz mPosition;Color mColor;float mPow,mFluctuation;};
 int lights=0,particles=0;
 void dKy_plight_set(LIGHT_INFLUENCE*){++lights;}void dKy_plight_cut(LIGHT_INFLUENCE*){assert(lights>0);--lights;}
-struct Emitter{void stopCreateParticle(){}void quitImmortalEmitter(){}void becomeInvalidEmitter(){--particles;}} emitter;
+struct Emitter{void setGlobalPrmColor(u8 r,u8 g,u8 b){assert(r==255&&g==225&&b==120);}void setGlobalEnvColor(u8 r,u8 g,u8 b){assert(r==255&&g==130&&b==18);}void stopCreateParticle(){}void quitImmortalEmitter(){}void becomeInvalidEmitter(){--particles;}} emitter;
 Emitter* dComIfGp_particle_getEmitter(unsigned id){return id?&emitter:nullptr;}
 template<class... Args>unsigned dComIfGp_particle_set(unsigned id,Args...){if(id)return id;++particles;return particles;}
 struct J3DPacket{
@@ -138,6 +138,7 @@ int main(int argc,char** argv){
    registry.fail=true;dispatch(bg,create,true);registry.fail=false;assert(bg.mpKCol==&native&&liveHeaps==0);
   }
   dispatch(bg,create,true);assert(bg.mpBgW&&bg.mpKCol==nullptr&&liveHeaps==1&&!native.used);
+
   auto* custom=bg.mpBgW;assert(custom==roomCollision&&registry.entries.count(custom));
   dispatch(bg,create,true);assert(bg.mpBgW==custom&&liveHeaps==1);
   // Mode selection is now false: this outgoing actor must keep its own room.
@@ -151,8 +152,8 @@ int main(int argc,char** argv){
       (unsigned(header[6])<<16)|(unsigned(header[7])<<24);
   submitted=batches=0;packet->draw();
   assert(submitted==expected&&batches==(expected+59999)/60000);
-  dispatch(bg,execute,false);assert(lights==1&&particles==6);
-  dispatch(bg,execute,false);assert(lights==1&&particles==6);
+  dispatch(bg,execute,false);assert(lights==2&&particles==9);
+  dispatch(bg,execute,false);assert(lights==2&&particles==9);
   if(cycle%2==0){
    dispatch(bg,remove,false,1,true); // Post-delete must not inspect the poisoned actor.
   }else dawnlight::shutdown_roundtable();

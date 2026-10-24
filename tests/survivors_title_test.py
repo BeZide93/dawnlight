@@ -4,6 +4,8 @@ import os,re,subprocess,tempfile
 root=Path(__file__).resolve().parents[1]
 sdk=root/'dusklight'
 fixture=r'''
+#include "generated/roundtable_layout.hpp"
+namespace roundtable_layout=dawnlight::roundtable_layout;
 #include <any>
 #include <algorithm>
 #include <chrono>
@@ -30,7 +32,7 @@ namespace mods{
 constexpr int fpcNm_PLAY_SCENE_e=5;
 bool s_hubArrivalPending=false,s_hub=true;float s_hubArrivalSeconds=0;unsigned s_map=0;
 constexpr int fpcNm_OPENING_SCENE_e=1,fpcNm_ALINK_e=2,fpcNm_SCENE_EXIT_e=3,fpcNm_SCENE_EXIT2_e=4;
-bool s_active=true,s_gameStarted=false,hasScene=true,bowlLive=true,zeldaLive=true;
+bool s_active=true,s_gameStarted=false,hasScene=true,roomReady=true,zeldaLive=true;
 const char* stageName=arenas[0].stage;s8 roomNo=arenas[0].room;
 const char* dComIfGp_getStartStageName(){return stageName;}
 s8 dComIfGp_getStartStageRoomNo(){return roomNo;}
@@ -83,7 +85,7 @@ bool arena_story_actor(int n){return n==99;}
 unsigned freed=0;void JKRFree(void*){++freed;}
 struct Frame{float frame=0,rate=1;void setFrame(float f){frame=f;}void setRate(float f){rate=f;}};
 struct daAlink_c{
- ActorId id=7;struct{cXyz pos{0,-400,260};}current;
+ ActorId id=7;struct{cXyz pos{0,-400,760};}current;
  enum{PROC_WAIT=1,ANM_WAIT=25};int mProcID=99,animation=0,sets=0;
  unsigned mItemButton=7,mItemTrigger=3;
  float mStickValue=1,mMoveValue=1,mNormalSpeed=4,speedF=4;
@@ -96,13 +98,12 @@ struct daAlink_c{
 }link,foreign;
 daAlink_c* daAlink_getAlinkActorClass(){return &link;}
 ActorId fopAcM_GetID(daAlink_c* a){return a->id;}
-bool hub_brazier_anchor(cXyz& p){p={0,-400,0};return bowlLive;}
 struct dBgS_ObjGndChk{cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 float floorY=-400;
-struct Bg{float GroundCross(dBgS_ObjGndChk* p){assert(p->pos.x==0&&((p->pos.y==-300&&p->pos.z==260)||(p->pos.y==600&&p->pos.z==0)));return floorY;}}bg;
+struct Bg{float GroundCross(dBgS_ObjGndChk* p){assert(p->pos.x==0&&((p->pos.y==-300&&p->pos.z==760)||(p->pos.y==600&&p->pos.z==760)));return roomReady?floorY:std::nanf("");}}bg;
 Bg& dComIfG_Bgsp(){return bg;}
 bool hub_center_ground(cXyz& anchor){
- cXyz probe(0,link.current.pos.y+1000,0);dBgS_ObjGndChk ground;ground.SetPos(&probe);
+ cXyz probe(0,link.current.pos.y+1000,760);dBgS_ObjGndChk ground;ground.SetPos(&probe);
  const float height=dComIfG_Bgsp().GroundCross(&ground);
  if(!std::isfinite(height)||height<=-1.e8f)return false;anchor.set(0,height,0);return true;
 }
@@ -218,7 +219,7 @@ int main(){
  std::any actorArgs[]{&record,&params};
  assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_CONTINUE);
  assert(((params.base.parameters>>12)&0x1f)==16&&((params.base.parameters>>24)&0xff)==0xff);
- assert(params.base.position.x==0&&params.base.position.z==260&&params.base.position.y==-400);
+ assert(params.base.position.x==0&&params.base.position.z==760&&params.base.position.y==-400);
  assert(params.base.angle.y==s16(0x8000));
  for(int n:{99,fpcNm_SCENE_EXIT_e,fpcNm_SCENE_EXIT2_e}){
   info.procname=n;assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
@@ -232,15 +233,17 @@ int main(){
  assert(!link.speedF&&!link.mNormalSpeed&&!link.speed.y&&link.mProcID==daAlink_c::PROC_WAIT);
  int result=0;assert(before_title_wait(nullptr,otherArgs,&result,nullptr)==HOOK_CONTINUE);
  for(int i=0;i<200;++i)assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==1);
- assert(link.sets==1&&link.position.z==260&&link.position.y==-400&&link.yaw==s16(0x8000));
+ assert(link.sets==1&&link.position.z==760&&link.position.y==-400&&link.yaw==s16(0x8000));
  assert(link.mUnderFrameCtrl[0].frame==0&&link.mUpperFrameCtrl[0].frame==0);
  assert(link.mUnderFrameCtrl[0].rate==0&&link.mUpperFrameCtrl[0].rate==0);
  floorY=std::nanf("");before_title_wait(nullptr,linkArgs,&result,nullptr);assert(link.position.y==-400);
  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
- assert(camera.sets==1&&std::abs(camera.mEye.x-650)<.001f&&std::abs(camera.mEye.z-900)<.001f&&camera.mEye.y==-70&&camera.mCenter.x==-70&&camera.fov==45);
+ assert(camera.sets==0); // No valid floor: do not install a camera on a NaN anchor.
+ floorY=-400;after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
+ assert(camera.sets==1&&std::abs(camera.mEye.x-700)<.001f&&std::abs(camera.mEye.z-1250)<.001f&&camera.mEye.y==0&&camera.mCenter.x==-80&&camera.fov==52);
  zeldaLive=false;assert(before_title_logo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-1);
- zeldaLive=true;bowlLive=false;before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==-1);
- bowlLive=true;floorY=-400;
+ zeldaLive=true;roomReady=false;before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==-1);
+ roomReady=true;floorY=-400;
  // Selection alone never starts logo/input, even if native A/Start is pressed.
  before_title_wait(nullptr,linkArgs,&result,nullptr);
  assert(title_scene_ready()&&!s_titleFlow.launched);
@@ -267,8 +270,8 @@ int main(){
  assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_controls(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
- assert(camera.sets==2&&std::abs(camera.mEye.x-std::sqrt(360.f*360+310.f*310))<.01f&&
-  camera.mEye.y==-210&&std::abs(camera.mEye.z-260)<.01f&&camera.fov==40);
+ assert(camera.sets==2&&std::abs(camera.mEye.x-640.f)<.01f&&
+  camera.mEye.y==-150&&std::abs(camera.mEye.z-850)<.01f&&camera.fov==48);
  assert(survivors_title_preparing());
  transition=true;assert(survivors_title_preparing()); // Fade-in does not serialize resource loads.
  nextStage=true;assert(!survivors_title_preparing());nextStage=false;
@@ -278,13 +281,13 @@ int main(){
  result=123;assert(before_title_fall(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==0);
  assert(before_title_fall(nullptr,otherArgs,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_player_draw(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
- bowlLive=false;floorY=std::nanf("");
+ roomReady=false;floorY=std::nanf("");
  before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==kNone);
  assert(before_title_player_draw(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL);
  assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL);
- // Grounding and pose do not have to wait for the asynchronous bowl model.
- floorY=-400;before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==link.id&&!title_scene_ready());
- bowlLive=true;assert(title_scene_ready());
+ // Grounding and pose do not have to wait for Zelda to finish loading.
+ roomReady=true;zeldaLive=false;floorY=-400;before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==link.id&&!title_scene_ready());
+ zeldaLive=true;assert(title_scene_ready());
  // Startup is already loading its first scene: do not request a duplicate.
  scene.name=999;request_title_preview();update_title_preview();assert(!reloads&&s_titleReloadPending&&!s_titleFlow.launched);
  std::any startup[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
@@ -321,7 +324,7 @@ int main(){
  assert(survivors_hub_arrival_active()&&!survivors_title_active());
  info.procname=fpcNm_ALINK_e;params.base.position.x=999;params.base.position.z=999;
  before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
- assert(params.base.position.x==0&&params.base.position.z==260&&params.base.angle.y==s16(0x8000));
+ assert(params.base.position.x==0&&params.base.position.z==760&&params.base.angle.y==s16(0x8000));
  assert(((params.base.parameters>>12)&0x1f)==16&&((params.base.parameters>>24)&0xff)==0xff);
  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-2);
  info.procname=99;assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_CONTINUE);
@@ -336,13 +339,13 @@ int main(){
   nextStage=resetting=returning=false;
  }
  before_title_wait(nullptr,linkArgs,&result,nullptr);
- assert(link.position.z==260&&link.position.y==-400&&title_scene_ready());
+ assert(link.position.z==760&&link.position.y==-400&&title_scene_ready());
  // Missing scenery, fade-in and pause must not consume the visible rise.
  for(int gate=0;gate<4;++gate){
-  if(gate==0)bowlLive=false;if(gate==1)zeldaLive=false;if(gate==2)transition=true;if(gate==3)paused=true;
+  if(gate==0)roomReady=false;if(gate==1)zeldaLive=false;if(gate==2)transition=true;if(gate==3)paused=true;
   s_titleClock=std::chrono::steady_clock::now()-std::chrono::seconds(1);
   after_title_camera(nullptr,cameraArgs,nullptr,nullptr);assert(s_hubArrivalSeconds==0);
-  bowlLive=zeldaLive=true;transition=paused=false;
+  roomReady=zeldaLive=true;transition=paused=false;
  }
  for(int rate:{30,60,120}){
   s_hubArrivalPending=true;s_hubArrivalSeconds=0;
@@ -441,18 +444,18 @@ int main(){
   s_titleFlow.elapsed=TitleFlow::menuFade+TitleFlow::cameraDuration*(i/240.f);
   if(i==60)s_titleFlow.logo=true;
   after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
-  const float radius=std::hypot(camera.mEye.x,camera.mEye.z-260);
-  const float angle=std::atan2(camera.mEye.x,camera.mEye.z-260);
+  const float radius=std::hypot(camera.mEye.x,camera.mEye.z-760);
+  const float angle=std::atan2(camera.mEye.x,camera.mEye.z-760);
   if(i){
    assert(radius<lastRadius&&angle>lastAngle&&camera.fov<lastFov);
    assert(camera.mEye.y<lastEye.y);
    assert(std::hypot(camera.mEye.x-lastEye.x,camera.mEye.z-lastEye.z)<10);
   }
-  if(i==120){assert(radius<800&&radius>500&&angle>1&&angle<1.5f&&camera.fov<45&&camera.fov>40);}
+  if(i==120){assert(radius<800&&radius>500&&angle>1&&angle<1.5f&&camera.fov<52&&camera.fov>48);}
   lastRadius=radius;lastAngle=angle;lastFov=camera.fov;lastEye=camera.mEye;
  }
- assert(std::abs(camera.mEye.x-std::sqrt(360.f*360+310.f*310))<.01f&&
-  std::abs(camera.mEye.z-260)<.01f&&camera.mEye.y==-210&&camera.fov==40);
+ assert(std::abs(camera.mEye.x-640.f)<.01f&&
+  std::abs(camera.mEye.z-850)<.01f&&camera.mEye.y==-150&&camera.fov==48);
  // Skip the native logo animation with a fresh input, but never reuse the
  // reveal edge or advance to NAME_SCENE on the animation-completion input.
  transition=false;s_titleReloadPending=false;s_titlePoseOwner=link.id;
@@ -464,11 +467,11 @@ int main(){
   if(gate==0)s_active=false;if(gate==1)scene.name=fpcNm_PLAY_SCENE_e;
   if(gate==2)s_titleFlow.logo=false;if(gate==3)s_titleFlow.revealEdge=true;
   if(gate==4)s_titleReloadPending=true;if(gate==5)menuVisible=true;
-  if(gate==6)transition=true;if(gate==7)bowlLive=false;if(gate==8)padTrigger=0;
+  if(gate==6)transition=true;if(gate==7)roomReady=false;if(gate==8)padTrigger=0;
   assert(before_title_logo_animation(nullptr,titleArgs,nullptr,nullptr)==HOOK_CONTINUE);
   assert(title.mProcID==2&&title.mBck.frame==3&&!presentationSyncs);
   s_active=true;scene.name=fpcNm_OPENING_SCENE_e;s_titleFlow.logo=true;s_titleFlow.revealEdge=false;
-  s_titleReloadPending=menuVisible=transition=false;bowlLive=true;
+  s_titleReloadPending=menuVisible=transition=false;roomReady=true;
  }
  const float cameraProgress=s_titleFlow.camera();padTrigger=16;
  assert(before_title_logo_animation(nullptr,titleArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);

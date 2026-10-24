@@ -28,6 +28,11 @@ EXIT_Z = 3900.0  # captured native BS_SHUTTER_START actor position
 EXIT_FLOOR = -250.0
 EXIT_HALF_WIDTH = 190.0
 EXIT_HEIGHT = 350.0
+REST_Z = 760.0
+ZELDA_X = -650.0
+LIGHT_POSITION = (0.0, FLOOR+350.0, 0.0)
+LIGHTMAP_SIZE = 1024
+LIGHTMAP_STEP = 24.0
 
 
 def add(a, b): return tuple(x+y for x, y in zip(a, b))
@@ -41,6 +46,9 @@ class Hall:
         self.vertices = []
         self.collision = []
         self.transform = lambda p: p
+        self.receivers = []
+        self.casters = []
+        self.light_faces = []
 
     def triangle(self, points, material=0, tint=(255, 255, 255), solid=True, visible=True, uv=None):
         p = [self.transform(v) for v in points]
@@ -52,6 +60,19 @@ class Hall:
             self.collision.append(tuple(p))
         if not visible:
             return
+        face_id = -1
+        if material != 4:
+            self.casters.append(tuple(p))
+            u = tuple(v/length(sub(p[1],p[0])) for v in sub(p[1],p[0]))
+            v = cross(tuple(x/n for x in normal),u)
+            dot=lambda a,b:sum(x*y for x,y in zip(a,b))
+            xs=[dot(sub(q,p[0]),u) for q in p]
+            ys=[dot(sub(q,p[0]),v) for q in p]
+            origin=add(p[0],tuple(x*min(xs)+y*min(ys) for x,y in zip(u,v)))
+            width=max(2,math.ceil((max(xs)-min(xs))/LIGHTMAP_STEP)+1)
+            height=max(2,math.ceil((max(ys)-min(ys))/LIGHTMAP_STEP)+1)
+            face_id=len(self.receivers)
+            self.receivers.append({'points':p,'origin':origin,'u':u,'v':v,'w':width+2,'h':height+2})
         if uv is None:
             uv = ((.03, .03), (.97, .03), (.97, .97))
         # Soft baked directional/ambient lighting, plus fire warmth near the
@@ -71,7 +92,8 @@ class Hall:
                 if material == 4:
                     u=v=1.5/256
                     color=tint
-                self.vertices.append((*pos, u, v, *color, 255))
+                self.vertices.append((*pos, u, v, 0.0, 0.0, *color, 255))
+                self.light_faces.append(face_id)
         if material == 4:
             emit(p, uv)
             return
@@ -239,7 +261,7 @@ class Hall:
         self.column(0,FLOOR+1460,0,100,35,material=3,solid=False)
         # Round table behind the rest/fire area. Front is left clear so the
         # existing camera, kneeling pose and Zelda dialogue remain unobstructed.
-        self.local(0,-650,0,scale=(.67,.5,.67))
+        self.local(0,0,0,scale=(.67,.5,.67))
         self.column(0,0,0,300,55,material=1,solid=False,n=32)
         self.column(0,55,0,175,100,top=240,material=1,solid=False,n=24)
         self.column(0,155,0,540,34,material=1,solid=False,n=48)
@@ -257,12 +279,12 @@ class Hall:
             self.column(x,201,z,35,3,material=3,solid=False)
             self.column(x,204,z,25,2,material=1,solid=False)
         self.reset()
-        for i in range(2,11):
+        for i in range(12):
             angle=i*TAU/12
-            self.chair(460*math.sin(angle),-650+460*math.cos(angle),angle+math.pi)
+            self.chair(460*math.sin(angle),460*math.cos(angle),angle+math.pi)
         # Smaller candle holders sit directly on the 100.5-unit-high tabletop.
         # Their proportions are independent of the broad table's horizontal scale.
-        for x,z in ((-134,-650),(134,-650),(0,-810.8)):
+        for x,z in ((-220,0),(220,0),(0,-240)):
             self.local(x,z,0,scale=(.4,.4,.4))
             base=100.5/.4
             self.column(0,base,0,37,15,material=3,solid=False)
@@ -312,22 +334,38 @@ class Hall:
             self.quad((-HALF_DOOR,y0+660,z0),(HALF_DOOR,y0+660,z0),(HALF_DOOR,y1+660,z1),(-HALF_DOOR,y1+660,z1),solid=False,tint=(130,120,110))
         # The native shutter stays at its captured position. Build solid wings
         # and a lintel around it, tied into both corridor walls and the ceiling.
-        # Recess the door behind a 40-unit stone reveal; keep the centre clear
+        # Enclose the full door-frame depth in a 600-unit stone reveal; keep the centre clear
         # for the native approach, opening animation and +/-240 goal positions.
         side_width=HALF_DOOR-EXIT_HALF_WIDTH
         for sign in (-1,1):
             self.box(sign*(EXIT_HALF_WIDTH+side_width/2),EXIT_FLOOR,EXIT_Z,
-                side_width,660,80)
-            self.box(sign*(EXIT_HALF_WIDTH+22),EXIT_FLOOR,EXIT_Z-48,
+                side_width,660,600)
+            self.box(sign*(EXIT_HALF_WIDTH+22),EXIT_FLOOR,EXIT_Z-310,
                 44,EXIT_HEIGHT,24)
         self.box(0,EXIT_FLOOR+EXIT_HEIGHT,EXIT_Z,
-            2*EXIT_HALF_WIDTH,660-EXIT_HEIGHT,80)
-        self.box(0,EXIT_FLOOR+EXIT_HEIGHT,EXIT_Z-48,
+            2*EXIT_HALF_WIDTH,660-EXIT_HEIGHT,600)
+        self.box(0,EXIT_FLOOR+EXIT_HEIGHT,EXIT_Z-310,
             2*EXIT_HALF_WIDTH+88,40,24)
         # Keep floor behind the opening for the real door event, and close the
         # far end visibly as well as physically (rather than a black void).
         self.box(0,EXIT_FLOOR,4220,2*HALF_DOOR,660,40,tint=(140,132,120))
+        self.pack_lightmaps()
         return self
+
+    def pack_lightmaps(self):
+        # Deterministic shelf pack, ordered by height to limit atlas waste.
+        x=1;y=1;row_height=0
+        for face in sorted(self.receivers,key=lambda f:-f['h']):
+            if x+face['w']>=LIGHTMAP_SIZE:x=1;y+=row_height;row_height=0
+            assert y+face['h']<LIGHTMAP_SIZE, 'Lightmap atlas overflow'
+            face['x']=x;face['y']=y;x+=face['w'];row_height=max(row_height,face['h'])
+        for i,(vertex,face_id) in enumerate(zip(self.vertices,self.light_faces)):
+            if face_id<0:uv=(.5/LIGHTMAP_SIZE,.5/LIGHTMAP_SIZE)
+            else:
+                face=self.receivers[face_id];delta=sub(vertex[:3],face['origin'])
+                uv=tuple((face[axis]+1.5+sum(a*b for a,b in zip(delta,face[basis]))/LIGHTMAP_STEP)/LIGHTMAP_SIZE
+                         for axis,basis in (('x','u'),('y','v')))
+            self.vertices[i]=vertex[:5]+uv+vertex[7:]
 
 
 def dzb(hall):
@@ -381,13 +419,17 @@ def dzb(hall):
 
 def write_assets():
     hall=Hall().build();OUT.mkdir(parents=True,exist_ok=True)
-    mesh=b'RTH1'+struct.pack('<I',len(hall.vertices))+b''.join(struct.pack('<5f4B',*v) for v in hall.vertices)
+    mesh=b'RTH2'+struct.pack('<I',len(hall.vertices))+b''.join(struct.pack('<7f4B',*v) for v in hall.vertices)
     (OUT/'hall.mesh').write_bytes(mesh)
     (OUT/'hall.dzb').write_bytes(dzb(hall))
     # Native effects and the hearth geometry must use the same source layout.
     (ROOT/'src/generated/roundtable_layout.hpp').write_text(
         '// Generated by tools/generate_roundtable.py.\n#pragma once\n'
         'namespace dawnlight::roundtable_layout {\n'
+        f'inline constexpr float restZ = {REST_Z:.1f}f;\n'
+        f'inline constexpr float zeldaX = {ZELDA_X:.1f}f;\n'
+        f'inline constexpr float flameY = {FLOOR+180:.1f}f;\n'
+        f'inline constexpr float flameLightY = {LIGHT_POSITION[1]:.1f}f;\n'
         f'inline constexpr float hearthFireX = {-FRONT+120:.6f}f;\n'
         f'inline constexpr float hearthLightX = {-FRONT+265:.6f}f;\n'
         '}\n')

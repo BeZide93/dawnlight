@@ -3,6 +3,7 @@
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
 #include "survivors_roundtable.hpp"
+#include "generated/roundtable_layout.hpp"
 #include "survivors_enemy_hud.hpp"
 #include "survivors_integrity.hpp"
 #include "d/d_door_param2.h"
@@ -62,7 +63,6 @@
 #include "d/d_camera.h"
 #include "d/d_msg_object.h"
 #include "d/actor/d_a_npc_zelda.h"
-#include "d/actor/d_a_obj_oiltubo.h"
 #include "d/d_item.h"
 #include "d/d_msg_class.h"
 #include "JSystem/JMessage/control.h"
@@ -191,9 +191,6 @@ DEFINE_HOOK(&dCamera_c::Run, SurvivorsCamera);
 DEFINE_HOOK(&daAlink_c::orderZTalk, SurvivorsMidnaOrder);
 DEFINE_HOOK(&dMsgFlow_c::getInitNodeIndex, SurvivorsMidnaFlow);
 DEFINE_HOOK(&daNpc_Zelda_c::setParam, SurvivorsHubZeldaParam);
-DEFINE_HOOK(&daObj_Oiltubo_c::Execute, SurvivorsHubBrazierExecute);
-DEFINE_HOOK(&daObj_Oiltubo_c::Draw, SurvivorsHubBrazierDraw);
-DEFINE_HOOK(&daObj_Oiltubo_c::Delete, SurvivorsHubBrazierDelete);
 // d_a_title.h declares a global procFunc typedef conflicting with item headers.
 DEFINE_HOOK_SYMBOL("daTitle_c::getDemoPrm", int(void*), SurvivorsTitleLogo);
 DEFINE_HOOK_SYMBOL("daTitle_c::logoDispWait", void(void*), SurvivorsTitleWaitLogo);
@@ -395,7 +392,6 @@ bool s_midnaTalking = false, s_midnaEndPending = false, s_midnaRestartPending = 
 bool midna_dialog_busy() { return s_midnaRequestFrames || s_midnaTalking || s_midnaEndPending || s_midnaRestartPending; }
 void reset_midna_dialog() { s_midnaRequestFrames=0; s_midnaTalking=s_midnaEndPending=s_midnaRestartPending=false; }
 void retire_hub_zelda();
-void update_hub_brazier(bool enabled);
 enum class SwordAction { None, Normal, Spin, Jump };
 SwordAction s_swordAction = SwordAction::None;
 unsigned s_meleeCooldown = 0;
@@ -713,7 +709,6 @@ void reset_runtime() {
     s_hub=true; s_hubDeparture=s_hubDoorStarted=s_arrivingRun=s_allowHubDoor=false;
     s_hubDoor=kNone; s_hubDoorTicks=0;
     update_survivors_equipment_chest(false,{},0);
-    update_hub_brazier(false);
     s_options.debug.clamp();
     reset_midna_dialog();
     s_saveReady = false; s_gameStarted = false;
@@ -807,7 +802,7 @@ void finish(bool won) {
 }
 #include "survivors_ending.inc"
 #include "survivors_midna.inc"
-#include "survivors_hub_brazier.inc"
+#include "survivors_hub_layout.inc"
 #include "survivors_hub_zelda.inc"
 #include "survivors_title.inc"
 #include "survivors_title_pose.inc"
@@ -1514,7 +1509,6 @@ HookAction before_stage(ModContext*, void* args, void*, void*) {
         s_hubDeparture=s_hubDoorStarted=false; s_hubDoor=kNone;
         clear_arena_geometry();
         update_survivors_equipment_chest(false,{},0);
-        update_hub_brazier(false);
     } else if (in_arena() && !s_restart && s_run.phase != Phase::Loading) return HOOK_SKIP_ORIGINAL;
     dComIfGs_setRestartRoomParam(0);
     mods::arg_ref<const char*>(args, 0) = arena().stage;
@@ -1839,8 +1833,6 @@ bool survivors_dark_link_active() {
 }
 void update_survivors() {
     update_title_preview();
-    update_hub_brazier(survivors_title_preparing() || survivors_hub_preparing() ||
-        (survivors_hub_active() && !s_hubDeparture && !transitioning()));
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
     update_survivors_registration();
@@ -1980,9 +1972,6 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsMidnaFlow, before_hub_zelda_flow);
     PRE(SurvivorsHubZeldaParam, before_hub_zelda_param);
     POST(SurvivorsHubZeldaParam, after_hub_zelda_param);
-    PRE(SurvivorsHubBrazierExecute, before_hub_brazier_execute);
-    PRE(SurvivorsHubBrazierDraw, before_hub_brazier_draw);
-    PRE(SurvivorsHubBrazierDelete, before_hub_brazier_delete);
     PRE(SurvivorsEnemyContact,before_enemy_contact);
     PRE(SurvivorsBlock, before_player_contacts);
     PRE(SurvivorsBlock, before_shield_block); POST(SurvivorsBlock, after_player_damage); PRE(SurvivorsGuard, before_survivors_guard);

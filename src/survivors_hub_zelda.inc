@@ -153,7 +153,9 @@ void after_hub_zelda_item_matrix(ModContext*, void* args, void*, void*) {
         s_hubZeldaGift.bladeWasHidden = shape->checkFlag(J3DShpFlag_Visible);
     }
     shape->show();
-    sword->setBaseTRMtx(link->getLeftHandMatrix());
+    // Use the native sword grip joint, not the wrist (getLeftHandMatrix).
+    // Its local offset/orientation aligns the hilt with the closed fingers.
+    sword->setBaseTRMtx(link->getLeftItemMatrix());
     link->modelCalc(sword);
 }
 HookAction before_hub_zelda_gift_draw(ModContext*, void* args, void* result, void*) {

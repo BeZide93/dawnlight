@@ -77,7 +77,8 @@ constexpr int J3DShpFlag_Visible=1;
 struct Shape {bool hidden=true;bool checkFlag(int){return hidden;}void show(){hidden=false;}void hide(){hidden=true;}};
 struct Material {Shape shape;Shape* getShape(){return &shape;}};
 struct ModelData {Material material;Material* getMaterialNodePointer(int i){assert(i==0);return &material;}};
-struct J3DModel {ModelData data;int matrix=0;ModelData* getModelData(){return &data;}
+using MtxP=int;
+struct J3DModel {MtxP getAnmMtx(int joint){return 100+joint;}ModelData data;int matrix=0;ModelData* getModelData(){return &data;}
  void setBaseTRMtx(int m){matrix=m;}};
 struct daPy_frameCtrl_c {
  float frame=0,rate=1;int end=50;bool ended=false,now=false;
@@ -94,7 +95,9 @@ struct daAlink_c:fopAc_ac_c {
  bool swordDraw=true;
  bool checkUnderMove0BckNoArc(int n){return animation==n;}
  bool checkSwordDraw(){return swordDraw;}
- int getLeftHandMatrix(){return 42;}
+ J3DModel body;J3DModel* mpLinkModel=&body;
+ int mLeftHandJntNo=9,mLeftItemJntNo=10;
+ MtxP getLeftHandMatrix();MtxP getLeftItemMatrix();
  void modelCalc(J3DModel* m){assert(m==mpSwAModel);++calculations;}
  struct{int p0=777,p1=888;void setParam0(int n){p0=n;}void setParam1(int n){p1=n;}}mDemo;
  struct{int field_0x300a=-7;}mProcVar1;
@@ -216,7 +219,10 @@ int main(){
  int drawResult=0;
  assert(before_hub_zelda_gift_draw(nullptr,itemDraw,&drawResult,nullptr)==HOOK_CONTINUE);
  after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
- assert(link.ordon.matrix==42&&!link.ordon.data.material.shape.hidden&&link.calculations==1);
+ // Run the SDK's real hand/item accessors: the wrist and weapon grip are
+ // different joints. Attaching to the wrist misaligns the sword in GETSWL.
+ assert(link.getLeftHandMatrix()!=link.getLeftItemMatrix());
+ assert(link.ordon.matrix==link.getLeftItemMatrix()&&!link.ordon.data.material.shape.hidden&&link.calculations==1);
  assert(before_hub_zelda_gift_draw(nullptr,itemDraw,&drawResult,nullptr)==HOOK_SKIP_ORIGINAL&&drawResult==1);
  assert(before_hub_zelda_gift_draw(nullptr,foreignDraw,&drawResult,nullptr)==HOOK_CONTINUE);
  auto& lower=link.mUnderFrameCtrl[0];auto& upper=link.mUpperFrameCtrl[0];
@@ -312,6 +318,10 @@ def extract_body(source, signature):
     raise AssertionError(signature)
 native_actions=''.join(extract_body(native,'int daNpc_Zelda_c::'+name+'(') for name in ('wait','talk'))
 native_actions+=extract_body((sdk/'src/d/actor/d_a_player.cpp').read_text(),'bool daPy_frameCtrl_c::checkAnmEnd()')
+link_native=(sdk/'src/d/actor/d_a_alink_link.inc').read_text()
+native_actions+=''.join(extract_body(link_native,'MtxP daAlink_c::'+name+'()') for name in ('getLeftHandMatrix','getLeftItemMatrix'))
+sword_native=extract_body((sdk/'src/d/actor/d_a_alink.cpp').read_text(),'void daAlink_c::setItemMatrix(')
+assert 'mSwordModel->setBaseTRMtx(mpLinkModel->getAnmMtx(mLeftItemJntNo));' in sword_native
 assert 'PRE(SurvivorsGetItemTick, before_hub_zelda_get_tick);' in core
 assert 'POST(SurvivorsItemMatrix, after_hub_zelda_item_matrix);' in core
 assert 'PRE(SurvivorsTreasureDraw, before_hub_zelda_gift_draw);' in core

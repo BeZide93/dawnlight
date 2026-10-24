@@ -69,20 +69,20 @@ chest_x=g.FRONT+25-150
 for x,z in [(0,0),(0,260),(-320,0),(chest_x,0)]:
     assert abs(ground(x,z)+400)<.01, 'Rest/fire/Zelda/equipment anchor must remain clear'
 assert abs(ground(0,-650)-(-299.5))<.01, 'Tabletop is 100.5 units above the floor'
-assert abs(ground(0,-1110)-(-333.45))<.01, 'Rear chair seat is 66.55 units high'
+assert abs(ground(0,-1110)-(-327.95))<.01, 'Chair collision reaches the cushion at 72.05 units'
 chair=g.Hall();chair.chair(0,0,0)
 assert min(v[1] for v in chair.vertices)==g.FLOOR
 assert abs(max(v[1] for v in chair.vertices)-g.FLOOR-187)<.01
 # A horizontal ray just above the floor must hit each memorial plinth. The
 # old floating box at +150 passed a top-down ground-height check.
-def segment_hits(start,end):
+def segment_hits(start,end,front_only=False):
     direction=g.sub(end,start)
     dot=lambda a,b:sum(x*y for x,y in zip(a,b))
     for a,b,c,_,_ in triangles:
         a,b,c=vertices[a],vertices[b],vertices[c]
         edge1=g.sub(b,a);edge2=g.sub(c,a);h=g.cross(direction,edge2)
         det=dot(edge1,h)
-        if abs(det)<1.e-6:continue
+        if abs(det)<1.e-6 or (front_only and det<0):continue
         offset=g.sub(start,a);u=dot(offset,h)/det
         if u<0 or u>1:continue
         q=g.cross(offset,edge1);v=dot(direction,q)/det
@@ -103,6 +103,63 @@ for start,end in routes:
         t=step/100;x=start[0]+t*(end[0]-start[0]);z=start[1]+t*(end[1]-start[1])
         y=ground(x,z,0);assert y is not None and abs(y-last)<10,(x,z,y,last)
         last=y
-assert abs(ground(0,3900)+250)<.01
+assert abs(ground(0,3900,0)+250)<.01
 assert ground(3000,0) is None
+# Native Link wall checks use +30.01 and +129.99, not a complete body capsule.
+# The old tabletop/seat surfaces missed the low circle and allowed penetration.
+for i in range(48):
+    angle=(i+.25)*math.tau/48
+    def table_point(radius):
+        return radius*math.sin(angle),g.FLOOR+30.01,-650+radius*math.cos(angle)
+    assert segment_hits(table_point(410),table_point(340),True), 'Solid table skirt from every side'
+for i in range(2,11):
+    angle=i*math.tau/12
+    cx=460*math.sin(angle);cz=-650+460*math.cos(angle)
+    for approach in range(8):
+        direction=approach*math.tau/8
+        start=(cx+65*math.sin(direction),g.FLOOR+30.01,cz+65*math.cos(direction))
+        assert segment_hits(start,(cx,g.FLOOR+30.01,cz),True), 'Chair seat footprint must stop walking'
+# Rays from the walkable side must hit the visible panel/pilaster, rather than
+# only the rear shell. Test along each bay at native body-check height.
+for i in range(1,g.SIDES):
+    angle=i*math.tau/g.SIDES
+    def wall_point(x,z):
+        return (g.FRONT*math.sin(angle)+x*math.cos(angle)+z*math.sin(angle),
+                g.FLOOR+129.99,
+                g.FRONT*math.cos(angle)-x*math.sin(angle)+z*math.cos(angle))
+    assert segment_hits(wall_point(0,-80),wall_point(0,10),True), 'Panel collision at its visible front'
+    pillar_x=(2*g.HALF_DOOR-175)/2+38
+    assert segment_hits(wall_point(pillar_x,-80),wall_point(pillar_x,0),True), 'Arch pilaster must be solid'
+# Door wings cover the full corridor width, but leave native interaction and
+# the opening/closing path unblocked. The back wall closes the previous void.
+for x in (-g.HALF_DOOR+2,-230,230,g.HALF_DOOR-2):
+    assert segment_hits((x,-200,3800),(x,-200,3950),True)
+for x in (-120,0,120):
+    assert not segment_hits((x,-120,3600),(x,-120,4140),True), 'Door event route must remain clear'
+assert segment_hits((0,150,3800),(0,150,3950),True), 'Door lintel closes overhead gap'
+assert segment_hits((0,-120,4140),(0,-120,4250),True), 'Visible back wall has collision'
+# Atlas repeats must remain within one quadrant, including triangles split at
+# UV repeat boundaries. The GPU uses clamp and cannot repeat a whole atlas.
+for start in range(0,len(hall.vertices),3):
+    face=hall.vertices[start:start+3]
+    tiles={(int(v[3]*2),int(v[4]*2)) for v in face}
+    assert len(tiles)==1, 'UV triangle crosses into another material'
+    for v in face:
+        if v[3:5] != (1.5/256,1.5/256):
+            assert all(.02-1.e-6<=coord%.5<=.48+1.e-6 for coord in v[3:5]), 'Avoid emissive texel bleed'
+# A tall column must contain complete vertical repeats of the stone tile at
+# the same world scale as a broad wall, not one tile stretched over the shaft.
+column=g.Hall();column.column(0,0,0,78,830,n=12)
+wall=g.Hall();wall.quad((0,0,0),(600,0,0),(600,830,0),(0,830,0))
+for surface in (column,wall):
+    for start in range(0,len(surface.vertices),3):
+        face=surface.vertices[start:start+3]
+        assert max(v[1] for v in face)-min(v[1] for v in face)<=g.TEXEL_SPAN+.01
+        for a in face:
+            for b in face:
+                if abs(a[0]-b[0])+abs(a[2]-b[2])<.001 and abs(a[1]-b[1])>1:
+                    span=abs(a[1]-b[1])/(abs(a[4]-b[4])*2/.92)
+                    assert abs(span-g.TEXEL_SPAN)<.01, 'Unequal vertical texture density'
+assert len(hall.vertices)<=100000, 'Stay within renderer resource bounds'
+
 print(f'Roundtable: {tn} native collision triangles, valid tree/room ancestry, clear hub routes')

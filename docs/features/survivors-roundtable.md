@@ -23,13 +23,25 @@ details. The hall uses baked vertex lighting rather than dynamic room shadows.
   table sits just behind the fire/rest area, centered at Z = -650, with the front
   seating bay open. Zelda's sword gift, talents and exit warning remain intact.
 - The table is 100.5 units high and 361.8 units in radius; chair seats are
-  66.55 units high and the full chair height is 187. Table settings and smaller
+  72.05 units high (including cushions) and the full chair height is 187. Table settings and smaller
   candle holders sit on the tabletop. Memorial plinths extend to the floor.
 - Floor brightness is explicitly 255 (inherit native room lighting), rather
   than 0, which multiplies actor ambient light to zero. This fixes the black
   Link silhouette away from point lights without changing global lighting.
   Warmer, brighter baked wall lighting retains visible wood in the recesses;
   planar flagstone UVs remove diagonal seams on clipped floor tiles.
+- A stone surround joins the native door at Z = 3,900 to both corridor walls
+  and the ceiling. Solid wings, a lintel and a visible back wall replace the
+  freestanding shutter/black void; its approach and native event goals stay clear.
+- Recessed wall panels and arch pilasters collide at their visible front faces.
+  The table has a continuous collision skirt to the floor, and chairs have
+  full seat/body and back volumes. These cover Link's native +30.01-unit wall
+  check, which previously passed below the tabletops/seats between thin legs.
+  The upper collision surfaces match the tabletop and chair cushion heights.
+- Wall and column textures repeat every 200 world units; shaft UVs wrap around
+  the circumference. Repeats are split into triangles before export, with atlas
+  padding to prevent sampling adjacent materials or reserved emissive texels.
+  The collider retains unsplit surfaces and does not grow with texture repeats.
 - The equipment chest still probes the east wall. Collision tests cover its
   approach, Zelda's position, the rest position and the route to the exit.
 - Only completed room-51 BG actors created for the Survivors hub/title acquire
@@ -64,8 +76,8 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 256×256 tiled RGB565 atlas. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 12,121 visual triangles and 3,762
-collision triangles, with a balanced collision tree. Resources total about 1 MiB
+tools or network image generation. There are 25,947 visual triangles and 5,146
+collision triangles, with a balanced collision tree. Resources total about 2 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
 The runtime fixture executes the production implementation with a fake host,
@@ -73,7 +85,9 @@ ASan/UBSan and both compilers: partial/failed creation, 30 room lifetimes,
 selection changes, repeated retained draws, native particle/light cleanup,
 deletion and mod shutdown. Geometry tests verify reproducibility, native table
 bounds/tree ancestry, winding, inherited floor lighting, furniture heights,
-grounded memorial plinths and interaction paths.
+grounded memorial plinths, front-facing wall/seat/table blocking at native
+body-check heights, clear door-event paths and uniform wall/column UV density.
+The runtime test checks that every vertex is submitted across multiple GX batches.
 
 In-game visual and native-door validation still requires a playable installation:
 load a new/existing save, finish Zelda's gift, open talents/equipment, start each

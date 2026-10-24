@@ -145,7 +145,12 @@ int main(int argc,char** argv){
   dispatch(bg,draw,false);auto* packet=drawList.entries[0];assert(packet!=&other);
   for(int i=0;i<5;++i)dispatch(bg,draw,false);
   assert(packet==drawList.entries[0]&&packet->getNextPacket()==&other&&other.getNextPacket()==nullptr);
-  submitted=batches=0;packet->draw();assert(submitted>30000&&batches==1);
+  std::ifstream mesh(assetRoot+"/survivors_roundtable/hall.mesh",std::ios::binary);
+  unsigned char header[8]{};mesh.read(reinterpret_cast<char*>(header),8);assert(mesh);
+  const unsigned expected=unsigned(header[4])|(unsigned(header[5])<<8)|
+      (unsigned(header[6])<<16)|(unsigned(header[7])<<24);
+  submitted=batches=0;packet->draw();
+  assert(submitted==expected&&batches==(expected+59999)/60000);
   dispatch(bg,execute,false);assert(lights==1&&particles==6);
   dispatch(bg,execute,false);assert(lights==1&&particles==6);
   if(cycle%2==0){

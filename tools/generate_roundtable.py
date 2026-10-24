@@ -20,6 +20,14 @@ SIDES = 16
 FRONT = RADIUS * math.cos(math.pi/SIDES)
 HALF_DOOR = RADIUS * math.sin(math.pi/SIDES)
 TAU = math.tau
+# One atlas quadrant covers this many world units, on both texture axes.
+# UV repeats are split in the authoring step so GX_CLAMP cannot bleed into
+# neighbouring atlas materials. Collision keeps the unsplit source triangles.
+TEXEL_SPAN = 200.0
+EXIT_Z = 3900.0  # captured native BS_SHUTTER_START actor position
+EXIT_FLOOR = -250.0
+EXIT_HALF_WIDTH = 190.0
+EXIT_HEIGHT = 350.0
 
 
 def add(a, b): return tuple(x+y for x, y in zip(a, b))
@@ -49,22 +57,57 @@ class Hall:
         # Soft baked directional/ambient lighting, plus fire warmth near the
         # original brazier. Native Link/Zelda still receive its live point light.
         shade = .72 + .16*max(0, normal[1]/n) + .10*max(0, -normal[0]/n)
-        for pos, tex in zip(p, uv):
-            distance = math.hypot(pos[0], pos[2])
-            warm = max(0, 1-distance/1400)*.14
-            light = (shade+warm, shade+warm*.6, shade+warm*.15)
-            color = tuple(min(255, round(t*c)) for t, c in zip(tint, light))
-            if material == 4:
-                color = tint
-            tile = min(material, 3)
-            u = (tile % 2 + tex[0])*.5
-            v = (tile // 2 + tex[1])*.5
-            if material == 4:u=v=1.5/256 # reserved untextured/emissive texel
-            self.vertices.append((*pos, u, v, *color, 255))
+        def emit(points, coords):
+            for pos, tex in zip(points, coords):
+                distance = math.hypot(pos[0], pos[2])
+                warm = max(0, 1-distance/1400)*.14
+                light = (shade+warm, shade+warm*.6, shade+warm*.15)
+                color = tuple(min(255, round(t*c)) for t, c in zip(tint, light))
+                tile = min(material, 3)
+                # Keep bilinear samples inside their atlas quadrant and clear
+                # of the reserved 4x4 emissive texels in the stone corner.
+                u = (tile % 2 + .04 + tex[0]*.92)*.5
+                v = (tile // 2 + .04 + tex[1]*.92)*.5
+                if material == 4:
+                    u=v=1.5/256
+                    color=tint
+                self.vertices.append((*pos, u, v, *color, 255))
+        if material == 4:
+            emit(p, uv)
+            return
+        # Clip the textured triangle at integer UV boundaries. Each resulting
+        # polygon retains the original winding and interpolated world position.
+        # A full repeat therefore has the same scale on a wall and a short trim.
+        for row in range(math.floor(min(t[1] for t in uv)), math.ceil(max(t[1] for t in uv))):
+            for col in range(math.floor(min(t[0] for t in uv)), math.ceil(max(t[0] for t in uv))):
+                polygon=[(*pos,*tex) for pos,tex in zip(p,uv)]
+                for axis,edge,sign in ((3,col,1),(3,col+1,-1),(4,row,1),(4,row+1,-1)):
+                    result=[]
+                    for i,a in enumerate(polygon):
+                        b=polygon[(i+1)%len(polygon)]
+                        da=(a[axis]-edge)*sign;db=(b[axis]-edge)*sign
+                        if da>=0:result.append(a)
+                        if (da<0)!=(db<0):
+                            t=da/(da-db)
+                            result.append(tuple(x+t*(y-x) for x,y in zip(a,b)))
+                    polygon=result
+                    if not polygon:break
+                for i in range(1,len(polygon)-1):
+                    face=(polygon[0],polygon[i],polygon[i+1])
+                    points=[v[:3] for v in face]
+                    if length(cross(sub(points[1],points[0]),sub(points[2],points[0])))<.001:continue
+                    emit(points,[(v[3]-col,v[4]-row) for v in face])
 
-    def quad(self, a, b, c, d, **kw):
-        self.triangle((a,b,c), uv=((.03,.97),(.97,.97),(.97,.03)), **kw)
-        self.triangle((a,c,d), uv=((.03,.97),(.97,.03),(.03,.03)), **kw)
+    def quad(self, a, b, c, d, uv=None, **kw):
+        if uv is None:
+            # Measure after the object transform: scaled furniture must not
+            # change the apparent size of wood grain or stone courses.
+            pa,pb,pc,pd=[self.transform(p) for p in (a,b,c,d)]
+            width=max(length(sub(pb,pa)),length(sub(pc,pd)))/TEXEL_SPAN
+            height=max(length(sub(pd,pa)),length(sub(pc,pb)))/TEXEL_SPAN
+            uv=((0,0),(width,0),(width,height),(0,height))
+        self.triangle((a,b,c), uv=uv[:3], **kw)
+        self.triangle((a,c,d), uv=(uv[0],uv[2],uv[3]), **kw)
 
     def box(self, x, y, z, w, h, d, **kw):
         a=(x-w/2,y,z-d/2); b=(x+w/2,y,z-d/2)
@@ -75,6 +118,7 @@ class Hall:
         self.quad(e,c,up(c),up(e),**kw)
         self.quad(a,e,up(e),up(a),**kw)
         self.quad(up(a),up(e),up(c),up(b),**kw)
+        self.quad(a,b,c,e,**kw)
 
     def column(self,x,y,z,r,h,top=None,n=12,**kw):
         top=r if top is None else top
@@ -84,7 +128,13 @@ class Hall:
             q=(x+r*math.sin(b),y,z+r*math.cos(b))
             u=(x+top*math.sin(a),y+h,z+top*math.cos(a))
             v=(x+top*math.sin(b),y+h,z+top*math.cos(b))
-            self.quad(p,q,v,u,**kw)
+            # Unwrap around the circumference instead of stretching a complete
+            # stone tile over every narrow, 830-unit-tall shaft face.
+            scale_r=length(sub(self.transform((x+r,y,z)),self.transform((x,y,z))))/r
+            arc=TAU*max(r,top)*scale_r/TEXEL_SPAN
+            height=length(sub(self.transform((x,y+h,z)),self.transform((x,y,z))))/TEXEL_SPAN
+            self.quad(p,q,v,u,uv=((i*arc/n,0),((i+1)*arc/n,0),
+                ((i+1)*arc/n,height),(i*arc/n,height)),**kw)
             self.triangle(((x,y+h,z),u,v),uv=((.5,.5),(.5+.46*math.sin(a),.5+.46*math.cos(a)),(.5+.46*math.sin(b),.5+.46*math.cos(b))),**kw)
 
     def local(self,x,z,angle,scale=(1,1,1)):
@@ -100,25 +150,29 @@ class Hall:
         for i in range(12):
             a=i*math.pi/12; b=(i+1)*math.pi/12
             point=lambda r,t,z:(r*math.cos(t),bottom+r*math.sin(t),z)
-            self.quad(point(radius,a,0),point(radius,b,0),point(radius+75,b,0),point(radius+75,a,0),solid=False)
-            self.quad(point(radius,a,0),point(radius,a,depth),point(radius,b,depth),point(radius,b,0),solid=False,tint=(195,185,165))
+            self.quad(point(radius,a,0),point(radius,b,0),point(radius+75,b,0),point(radius+75,a,0),solid=True)
+            self.quad(point(radius,a,0),point(radius,a,depth),point(radius,b,depth),point(radius,b,0),solid=True,tint=(195,185,165))
         for side in (-1,1):
-            self.box(side*(radius+38),0,40,76,bottom,depth,solid=False)
-            self.box(side*(radius+38),bottom-24,20,110,40,140,solid=False)
-        self.box(0,height,50,width+250,65,180,solid=False)
+            self.box(side*(radius+38),0,40,76,bottom,depth,solid=True)
+            self.box(side*(radius+38),bottom-24,20,110,40,140,solid=True)
+        self.box(0,height,50,width+250,65,180,solid=True)
 
     def chair(self,x,z,angle):
         self.local(x,z,angle,scale=(.55,.55,.55))
         for px in (-48,48):
-            for pz in (-45,45): self.box(px,0,pz,18,110,18,material=1)
-        self.box(0,96,0,130,25,120,material=1)
+            for pz in (-45,45): self.box(px,0,pz,18,110,18,material=1,solid=False)
+        self.box(0,96,0,130,25,120,material=1,solid=False)
         self.box(0,121,0,109,10,98,material=2,solid=False)
-        self.box(0,120,-49,130,174,24,material=1)
+        self.box(0,120,-49,130,174,24,material=1,solid=False)
         self.box(0,145,-34,88,116,5,material=2,solid=False)
         for px in (-66,66):
             self.box(px,110,-45,18,205,20,material=1,solid=False)
             self.column(px,315,-45,17,25,top=0,material=3,solid=False,n=6)
         self.box(0,282,-49,155,22,32,material=3,solid=False)
+        # Continuous seat/body and back volumes: Link's lowest wall circle
+        # is 30 units high, so separate thin legs leave a walk-through gap.
+        self.box(0,0,0,130,131,120,visible=False)
+        self.box(0,131,-45,150,184,40,visible=False)
         self.reset()
 
     def build(self):
@@ -157,7 +211,7 @@ class Hall:
             if i:
                 self.quad((width/2,0,25),(-width/2,0,25),(-width/2,1200,25),(width/2,1200,25),tint=(180,175,160))
                 # Dark recessed panel visible through a carved arch.
-                self.box(0,0,12,width-130,760,12,material=1,solid=False,tint=(210,195,175))
+                self.box(0,0,12,width-130,760,12,material=1,solid=True,tint=(210,195,175))
             self.arch(width-175,460,920)
             self.box(0,1040,0,width+10,100,100,material=1,solid=False)
             self.box(0,1000,-8,width+10,30,140,material=3,solid=False)
@@ -186,12 +240,16 @@ class Hall:
         # Round table behind the rest/fire area. Front is left clear so the
         # existing camera, kneeling pose and Zelda dialogue remain unobstructed.
         self.local(0,-650,0,scale=(.67,.5,.67))
-        self.column(0,0,0,300,55,material=1,n=32)
-        self.column(0,55,0,175,100,top=240,material=1,n=24)
-        self.column(0,155,0,540,34,material=1,n=48)
+        self.column(0,0,0,300,55,material=1,solid=False,n=32)
+        self.column(0,55,0,175,100,top=240,material=1,solid=False,n=24)
+        self.column(0,155,0,540,34,material=1,solid=False,n=48)
         self.column(0,189,0,520,9,material=3,n=48,solid=False)
-        self.column(0,198,0,495,3,material=1,n=48)
+        self.column(0,198,0,495,3,material=1,solid=False,n=48)
         self.column(0,201,0,185,2,material=3,n=32,solid=False)
+        # The native wall solver samples at +30/+130 units, straddling
+        # the thin tabletop. A perimeter down to the floor prevents Link's torso
+        # entering the overhang while preserving a flat, walkable top.
+        self.column(0,0,0,540,201,material=1,n=48,visible=False)
         # Place settings rest on the tabletop, not one unit above its surface.
         for i in range(12):
             angle=i*TAU/12
@@ -252,9 +310,23 @@ class Hall:
                 if sign<0: points.reverse()
                 self.quad(*points,tint=(200,190,170))
             self.quad((-HALF_DOOR,y0+660,z0),(HALF_DOOR,y0+660,z0),(HALF_DOOR,y1+660,z1),(-HALF_DOOR,y1+660,z1),solid=False,tint=(130,120,110))
-        # Invisible end cap behind the native door prevents leaving collision
-        # if an event is cancelled; opening the door still triggers its event.
-        self.quad((HALF_DOOR,-250,4200),(-HALF_DOOR,-250,4200),(-HALF_DOOR,600,4200),(HALF_DOOR,600,4200),visible=False)
+        # The native shutter stays at its captured position. Build solid wings
+        # and a lintel around it, tied into both corridor walls and the ceiling.
+        # Recess the door behind a 40-unit stone reveal; keep the centre clear
+        # for the native approach, opening animation and +/-240 goal positions.
+        side_width=HALF_DOOR-EXIT_HALF_WIDTH
+        for sign in (-1,1):
+            self.box(sign*(EXIT_HALF_WIDTH+side_width/2),EXIT_FLOOR,EXIT_Z,
+                side_width,660,80)
+            self.box(sign*(EXIT_HALF_WIDTH+22),EXIT_FLOOR,EXIT_Z-48,
+                44,EXIT_HEIGHT,24)
+        self.box(0,EXIT_FLOOR+EXIT_HEIGHT,EXIT_Z,
+            2*EXIT_HALF_WIDTH,660-EXIT_HEIGHT,80)
+        self.box(0,EXIT_FLOOR+EXIT_HEIGHT,EXIT_Z-48,
+            2*EXIT_HALF_WIDTH+88,40,24)
+        # Keep floor behind the opening for the real door event, and close the
+        # far end visibly as well as physically (rather than a black void).
+        self.box(0,EXIT_FLOOR,4220,2*HALF_DOOR,660,40,tint=(140,132,120))
         return self
 
 

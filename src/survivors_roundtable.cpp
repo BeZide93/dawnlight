@@ -92,7 +92,7 @@ public:
     std::unique_ptr<u8[]> storage;
     JKRExpHeap* heap=nullptr;
     bool installed=false;
-    std::array<u32,9> fire{};
+    std::array<u32,18> fire{};
     LIGHT_INFLUENCE light{},tableLight{};
     bool lit=false;
 
@@ -109,16 +109,22 @@ public:
     }
     void update_fire() {
         constexpr u16 effects[]{0x3ad,0x3af,0x3ae};
-        const cXyz scale(.7f,.7f,.7f);
-        for(unsigned i=0;i<6;++i) {
-            const cXyz position(roundtable_layout::hearthFireX,-330.f,i<3?-90.f:90.f);
-            fire[i]=dComIfGp_particle_set(fire[i],effects[i%3],&position,nullptr,nullptr,&scale,
+        // Overlapping tongues over the log bed. Scale sparks independently
+        // from the taller flames so they remain a subtle part of the fire.
+        for(unsigned i=0;i<15;++i) {
+            const unsigned tongue=i/3,effect=i%3;
+            const float z=-110.f+55.f*tongue;
+            const cXyz position(roundtable_layout::hearthFireX+(tongue%2?12.f:0.f),
+                roundtable_layout::hearthFireY,z);
+            const float height=tongue==2?2.4f:(tongue%2?1.9f:1.5f);
+            const cXyz scale(effect==2?.5f:1.1f,effect==2?.7f:height,effect==2?.5f:1.0f);
+            fire[i]=dComIfGp_particle_set(fire[i],effects[effect],&position,nullptr,nullptr,&scale,
                 0xff,nullptr,-1,nullptr,nullptr,nullptr);
         }
         const cXyz flame(0,roundtable_layout::flameY,0);
         const cXyz flameScale(.85f,2.5f,.85f);
-        for(unsigned i=6;i<fire.size();++i) {
-            fire[i]=dComIfGp_particle_set(fire[i],effects[i-6],&flame,nullptr,nullptr,&flameScale,
+        for(unsigned i=15;i<fire.size();++i) {
+            fire[i]=dComIfGp_particle_set(fire[i],effects[i-15],&flame,nullptr,nullptr,&flameScale,
                 0xff,nullptr,-1,nullptr,nullptr,nullptr);
             if(auto* emitter=dComIfGp_particle_getEmitter(fire[i])) {
                 emitter->setGlobalPrmColor(255,225,120);
@@ -129,8 +135,8 @@ public:
             tableLight.mPosition.set(0,roundtable_layout::flameLightY,0);
             tableLight.mColor={255,205,112,255};tableLight.mPow=1800;
             tableLight.mFluctuation=1;dKy_plight_set(&tableLight);
-            light.mPosition.set(roundtable_layout::hearthLightX,-170,0);light.mColor={188,102,66,255};
-            light.mPow=650;light.mFluctuation=1;dKy_plight_set(&light);lit=true;
+            light.mPosition.set(roundtable_layout::hearthLightX,roundtable_layout::hearthLightY,0);light.mColor={204,123,60,255};
+            light.mPow=850;light.mFluctuation=1;dKy_plight_set(&light);lit=true;
         }
     }
     bool prepare() {
@@ -198,7 +204,7 @@ std::vector<CreateFrame> s_creates;
 void detach(Room& room) {
     // Packets are intrusive and can survive presentation-only frames. Remove
     // every retained reference before freeing the packet or unloading the mod.
-    auto* list=dComIfGd_getOpaList();
+    auto* list=dComIfGd_getOpaListBG();
     if(!list || !list->mpBuffer)return;
     for(u32 i=0;i<list->getEntryTableSize();++i) {
         J3DPacket* previous=nullptr;
@@ -242,7 +248,9 @@ HookAction before_roundtable_process(void* args,void* result,bool createHub) {
     }
     if(method==methods->base.execute_method)it->update_fire();
     if(method!=methods->draw_method)return HOOK_CONTINUE;
-    auto* list=dComIfGd_getOpaList();
+    // Terrain must precede native projected shadows, not overpaint them
+    // in the later actor opaque pass (Link and Zelda both use real shadows).
+    auto* list=dComIfGd_getOpaListBG();
     if(list && list->mpBuffer && list->getEntryTableSize()) {
         bool queued=false;
         for(auto* p=list->mpBuffer[0];p;p=p->getNextPacket())if(p==&*it){queued=true;break;}

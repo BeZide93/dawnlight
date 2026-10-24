@@ -102,7 +102,8 @@ struct J3DDrawBuffer{
  unsigned getEntryTableSize(){return 2;}
  void entryImm(J3DPacket* p,unsigned i){p->setNextPacket(entries[i]);entries[i]=p;}
 } drawList;
-J3DDrawBuffer* dComIfGd_getOpaList(){return &drawList;}
+J3DDrawBuffer* dComIfGd_getOpaListBG(){return &drawList;}
+J3DDrawBuffer* dComIfGd_getOpaList(){assert(false && "Room must precede native shadows, not render with actors");return nullptr;}
 struct J3DSys{void reinitGX(){}void* getViewMtx(){return nullptr;}}j3dSys;
 struct GXTexObj{};
 struct Lighting{void settingTevStruct(int,void*,void*){}}g_env_light;
@@ -152,8 +153,8 @@ int main(int argc,char** argv){
       (unsigned(header[6])<<16)|(unsigned(header[7])<<24);
   submitted=batches=0;packet->draw();
   assert(submitted==expected&&batches==(expected+59999)/60000);
-  dispatch(bg,execute,false);assert(lights==2&&particles==9);
-  dispatch(bg,execute,false);assert(lights==2&&particles==9);
+  dispatch(bg,execute,false);assert(lights==2&&particles==18);
+  dispatch(bg,execute,false);assert(lights==2&&particles==18);
   if(cycle%2==0){
    dispatch(bg,remove,false,1,true); // Post-delete must not inspect the poisoned actor.
   }else dawnlight::shutdown_roundtable();

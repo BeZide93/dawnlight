@@ -162,7 +162,7 @@ void fopAcM_orderItemEvent(fopAc_ac_c* item,int,int){assert(item==&giftItem&&ite
 bool centerReady=true;bool hub_center_ground(cXyz& anchor){anchor={0,-400,0};return centerReady;}
 struct dBgS_ObjGndChk {cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 float floorHeight=-400;
-struct Background {float GroundCross(dBgS_ObjGndChk* ground){++groundCalls;assert(ground->pos.x==-650&&ground->pos.z==0);return floorHeight;}}bg;
+struct Background {float GroundCross(dBgS_ObjGndChk* ground){++groundCalls;assert(ground->pos.x==roundtable_layout::zeldaX&&ground->pos.z==roundtable_layout::zeldaZ);return floorHeight;}}bg;
 Background& dComIfG_Bgsp(){return bg;}
 struct Arena {int8_t room=51;};Arena arenas[1];
 ModResult create_standalone_actor(int profile,const ActorSpawnParams& p,ActorId& out){
@@ -173,7 +173,7 @@ ModResult create_standalone_actor(int profile,const ActorSpawnParams& p,ActorId&
   ++giftSpawns;if(failGift)return MOD_UNAVAILABLE;out=55;giftCreating=true;return MOD_OK;
  }
  assert(profile==fpcNm_NPC_ZELDA_e&&p.parameters==0xffffff01u&&p.room_num==51);
- assert(p.position.x==-650&&p.position.y==-400&&p.position.z==0&&p.angle.x==3001&&p.angle.y==0x4000);
+ assert(p.position.x==roundtable_layout::zeldaX&&p.position.y==-400&&p.position.z==roundtable_layout::zeldaZ&&p.angle.x==3001&&p.angle.y==roundtable_layout::zeldaYaw);
  assert(p.scale.x==1&&p.scale.y==1&&p.scale.z==1&&p.create_function==nullptr);
  ++spawnCalls;if(failSpawn)return MOD_UNAVAILABLE;out=zelda.id;creating=true;return MOD_OK;
 }

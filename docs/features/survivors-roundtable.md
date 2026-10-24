@@ -13,8 +13,8 @@ screenshot**: Link, Zelda, the equipment chest and the floating golden flame
 are added by the game. The former central ceremonial bowl has been removed. Fireplace fire
 and point lighting are native effects; candle flames and coals are simple mesh
 details. The hall combines baked vertex lighting with a static soft-shadow lightmap
-cast from the central flame onto the floor, furniture and architecture. These
-shadows follow the fixed light position, not individual moving particles.
+cast from the central flame and weaker fireplace onto the floor, furniture and
+architecture. These shadows follow the fixed lights, not individual moving particles.
 
 ## Layout and integration
 
@@ -22,14 +22,22 @@ shadows follow the fixed light position, not individual moving particles.
   Y = -400. The south approach reaches
   the existing doorway at Z = 3,900 / Y = -250 via a gentle ramp.
 - The table is centered at X/Z = 0, with twelve chairs, including the front row.
-  Link rests at Z = 760, outside the chair ring; Zelda stands at X = -650 and
-  faces the centre. The title camera follows the relocated rest position.
+  Link rests at Z = 760, outside the chair ring; Zelda stands diagonally in front of the west fireplace at X/Z = -1170/430
+  and faces the centre. The title camera follows the relocated rest position.
   Zelda's sword gift, talents and exit warning remain intact.
 - A tall golden native flame with sparks floats above the tabletop at Y = -220.
   Its warm point light is centered at Y = -50. Five light samples bake soft
   shadows from the actual visible geometry into a 1024×1024 I8 lightmap;
   collision-only furniture proxies do not cast artificial box shadows.
-  Ambient light remains visible within shadows. The hearth retains its fire.
+  Ambient light remains visible within shadows. The fireplace is a second,
+  local source with a maximum 22% contribution before normalization; its
+  weaker shadows fade with distance and either light can fill the other's shadow.
+- The fireplace has a stepped hearth, fluted jambs and corbels, a carved mantel
+  frieze and cornice, recessed chimney panel, soot-darkened masonry firebox,
+  an iron grate, crossed faceted logs and small ember clusters. Five overlapping
+  native flames with varied heights replace the two isolated tiny fires.
+  Its point light has an 850-unit range versus the table flame's 1,800.
+
 - The table is 100.5 units high and 361.8 units in radius; chair seats are
   72.05 units high (including cushions) and the full chair height is 187. Table settings and smaller
   candle holders sit on the tabletop. Memorial plinths extend to the floor.
@@ -50,8 +58,14 @@ shadows follow the fixed light position, not individual moving particles.
   the circumference. Repeats are split into triangles before export, with atlas
   padding to prevent sampling adjacent materials or reserved emissive texels.
   The collider retains unsplit surfaces and does not grow with texture repeats.
-- The equipment chest still probes the east wall. Collision tests cover its
-  approach, Zelda's position, the rest position and the route to the exit.
+- The equipment chest uses the authored east-wall anchor at X = 1640.4135.
+  It no longer traces from inside the central table; its ground probe rejects
+  anything more than 30 units above/below the room floor. Collision tests cover
+  its approach, Zelda's position, the rest position and the route to the exit.
+- The room packet is queued in the background opaque pass, before native
+  shadow projection. The previous actor-opaque queue ran after shadows and
+  overpainted Link's and Zelda's silhouettes. Native moving actor shadows
+  remain responsible for their pose, equipment and lighting direction.
 - Only completed room-51 BG actors created for the Survivors hub/title acquire
   the replacement. Their actor IDs retain ownership until deletion; switching
   game modes cannot convert outgoing rooms or normal combat rooms.
@@ -66,6 +80,8 @@ shadows follow the fixed light position, not individual moving particles.
 - Deletion restores native pointers/registration before native cleanup. Disabling
   the mod also restores the original room; no custom collider vtable or particle
   callback remains attached. Draw packets are removed before their storage dies.
+
+![Offline fireplace geometry; animated flames are supplied by the game](../images/survivors-fireplace.jpg)
 
 The normal **Darknut Arena combat map** keeps its original geometry. No touch UI,
 save format, item reward or title input timing is changed.
@@ -87,8 +103,8 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 26,539 visual triangles and 5,218
-collision triangles, with a balanced collision tree. Resources total about 3.7 MiB
+tools or network image generation. There are 29,451 visual triangles and 5,554
+collision triangles, with a balanced collision tree. Resources total about 4 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
 The runtime fixture executes the production implementation with a fake host,
@@ -100,7 +116,8 @@ grounded memorial plinths, front-facing wall/seat/table blocking at native
 body-check heights, clear door-event paths and uniform wall/column UV density.
 The runtime test checks that every vertex is submitted across multiple GX batches.
 Shadow tests validate source/asset fingerprints, intensity range, the atlas format,
-ray occlusion, double-sided blockers and self-shadow bias.
+ray occlusion, double-sided blockers, self-shadow bias and the weaker secondary
+light. The runtime fixture rejects scheduling room geometry in the actor pass.
 
 In-game visual and native-door validation still requires a playable installation:
 load a new/existing save, finish Zelda's gift, open talents/equipment, start each

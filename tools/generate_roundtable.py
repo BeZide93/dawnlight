@@ -29,10 +29,14 @@ EXIT_FLOOR = -250.0
 EXIT_HALF_WIDTH = 190.0
 EXIT_HEIGHT = 350.0
 REST_Z = 760.0
-ZELDA_X = -650.0
+ZELDA_X = -1170.0
+ZELDA_Z = 430.0
+ZELDA_YAW = round(math.atan2(-ZELDA_X,-ZELDA_Z)*32768/math.pi)
+HEARTH_POSITION = (-FRONT+250.0,FLOOR+200.0,0.0)
+CHEST_X = FRONT+25-150
 LIGHT_POSITION = (0.0, FLOOR+350.0, 0.0)
 LIGHTMAP_SIZE = 1024
-LIGHTMAP_STEP = 24.0
+LIGHTMAP_STEP = 26.0
 
 
 def add(a, b): return tuple(x+y for x, y in zip(a, b))
@@ -75,14 +79,17 @@ class Hall:
             self.receivers.append({'points':p,'origin':origin,'u':u,'v':v,'w':width+2,'h':height+2})
         if uv is None:
             uv = ((.03, .03), (.97, .03), (.97, .97))
-        # Soft baked directional/ambient lighting, plus fire warmth near the
-        # original brazier. Native Link/Zelda still receive its live point light.
+        # Indirect room lighting plus warm local contributions from both fires.
+        # Native actors receive the corresponding runtime point lights.
         shade = .72 + .16*max(0, normal[1]/n) + .10*max(0, -normal[0]/n)
         def emit(points, coords):
             for pos, tex in zip(points, coords):
                 distance = math.hypot(pos[0], pos[2])
                 warm = max(0, 1-distance/1400)*.14
-                light = (shade+warm, shade+warm*.6, shade+warm*.15)
+                hearth_distance=length(sub(pos,HEARTH_POSITION))
+                hearth_warm=.22*max(0,1-hearth_distance/900)
+                light = (shade+warm+hearth_warm, shade+warm*.6+hearth_warm*.45,
+                         shade+warm*.15+hearth_warm*.10)
                 color = tuple(min(255, round(t*c)) for t, c in zip(tint, light))
                 tile = min(material, 3)
                 # Keep bilinear samples inside their atlas quadrant and clear
@@ -197,6 +204,77 @@ class Hall:
         self.box(0,131,-45,150,184,40,visible=False)
         self.reset()
 
+    def log(self, a, b, radius):
+        # A faceted timber along an arbitrary axis, with visible cut end-grain.
+        direction=sub(b,a);span=length(direction);axis=tuple(v/span for v in direction)
+        u=cross(axis,(0,1,0));u=tuple(v/length(u) for v in u);v=cross(axis,u)
+        def rim(p,i,r=radius):
+            angle=i*TAU/8
+            return add(p,tuple(r*(x*math.cos(angle)+y*math.sin(angle)) for x,y in zip(u,v)))
+        for i in range(8):
+            self.quad(rim(a,i),rim(a,i+1),rim(b,i+1),rim(b,i),
+                material=1,solid=False,tint=(92,68,47))
+            for end,reverse in ((a,True),(b,False)):
+                ring=(end,rim(end,i),rim(end,i+1))
+                self.triangle(tuple(reversed(ring)) if reverse else ring,
+                    material=1,solid=False,tint=(150,104,60))
+
+    def fireplace(self):
+        self.local(-FRONT+110,0,-math.pi/2)
+        # Shallow, grounded hearth with a chamfered-looking stepped apron.
+        self.box(0,0,-55,680,14,340,tint=(167,153,128))
+        self.box(0,14,-45,644,14,300,tint=(195,180,151))
+        self.box(0,28,-20,602,14,250,tint=(143,130,110))
+        # The inner walls are stone, not a flat black wooden rectangle.
+        self.box(0,42,82,410,350,28,tint=(88,75,61))
+        for side in (-1,1):self.box(side*204,42,0,32,350,165,tint=(106,89,70))
+        for row in range(7):
+            for col in range(5):
+                x=-158+col*79+(18 if row%2 else 0)
+                self.box(x,44+row*47,65,75,43,7,solid=False,
+                    tint=(95+row*3,79+row*2,62+row*2))
+        # Heavy jambs with layered bases, fluted fronts and capital mouldings.
+        for side in (-1,1):
+            x=side*263
+            self.box(x,42,0,112,330,190)
+            for y,w,h,d in ((28,145,28,225),(56,124,22,207),(330,126,18,215),
+                            (348,145,18,232),(366,165,22,248)):
+                self.box(x,y,-12,w,h,d,tint=(212,196,165))
+            for dx in (-29,0,29):
+                self.column(x+dx,80,-101,10,245,n=6,solid=False,tint=(199,180,146))
+            # Projecting corbel blocks under the mantel's outer ends.
+            for step in range(4):self.box(x,282+step*20,-106-step*9,82+step*12,20,38+step*8)
+        # A broad carved frieze, dentils and projecting mantel shelf.
+        self.box(0,388,0,674,66,238,tint=(194,175,144))
+        self.box(0,402,-123,604,37,12,tint=(123,107,84),solid=False)
+        for x in range(-280,281,40):
+            self.box(x,411,-135,17,17,12,material=3,solid=False,tint=(175,144,89))
+            self.box(x,456,-130,20,20,28,tint=(212,194,160),solid=False)
+        for y,w,h,d in ((454,706,12,270),(476,730,18,305),(494,700,18,280)):
+            self.box(0,y,-8,w,h,d,tint=(213,197,169))
+        # Chimney breast with recessed panel and matching upper cornice.
+        self.box(0,512,25,570,350,150,tint=(172,158,134))
+        self.box(0,548,-55,420,247,10,tint=(133,119,96),solid=False)
+        for x in (-221,221):self.box(x,535,-62,22,270,25,solid=False)
+        for y in (535,797):self.box(0,y,-62,464,17,25,solid=False)
+        for y,w,h,d in ((850,614,20,195),(870,650,24,225),(894,620,22,205)):
+            self.box(0,y,18,w,h,d,tint=(209,193,163))
+        # Low iron andirons and grate; logs lie across it at different angles.
+        for x in (-137,137):
+            self.box(x,42,-38,13,22,175,material=3,tint=(65,60,51),solid=False)
+            self.column(x,42,-117,10,98,top=7,n=6,material=3,tint=(79,69,53),solid=False)
+            self.column(x,140,-117,15,13,n=8,material=3,tint=(118,91,55),solid=False)
+        for z in (-90,-40,10):self.box(0,63,z,288,9,9,material=3,tint=(63,56,46),solid=False)
+        for a,b,r in (((-147,84,-92),(138,83,-60),18),((-130,87,-6),(145,89,20),19),
+                      ((-112,113,-115),(96,116,12),17),((130,113,-109),(-70,116,17),18)):
+            self.log(a,b,r)
+        # Small irregular ember clusters instead of large orange disks.
+        for i in range(23):
+            x=((i*67)%283)-141;z=((i*41)%129)-100
+            self.column(x,43,z,5+(i%4)*2,4+(i%3),top=3,n=5,material=4,
+                tint=((220,76,12) if i%3 else (255,151,34)),solid=False)
+        self.reset()
+
     def build(self):
         boundary=[(RADIUS*math.sin((i+.5)*TAU/SIDES),FLOOR,RADIUS*math.cos((i+.5)*TAU/SIDES)) for i in range(SIDES)]
         for i,a in enumerate(boundary):
@@ -259,8 +337,8 @@ class Hall:
                 normal=(-a[2]/RADIUS*20,0,a[0]/RADIUS*20)
                 self.quad(add(p,normal),sub(p,normal),sub(q,normal),add(q,normal),material=1,solid=False)
         self.column(0,FLOOR+1460,0,100,35,material=3,solid=False)
-        # Round table behind the rest/fire area. Front is left clear so the
-        # existing camera, kneeling pose and Zelda dialogue remain unobstructed.
+        # Central table, with a complete circle of twelve chairs. The rest
+        # pose and interactions remain outside this furniture footprint.
         self.local(0,0,0,scale=(.67,.5,.67))
         self.column(0,0,0,300,55,material=1,solid=False,n=32)
         self.column(0,55,0,175,100,top=240,material=1,solid=False,n=24)
@@ -294,19 +372,8 @@ class Hall:
                 self.column(dx,base+120,0,8,45,material=0,tint=(255,226,164),solid=False,n=6)
                 self.column(dx,base+165,0,9,30,top=0,material=4,tint=(255,212,103),solid=False,n=6)
             self.reset()
-        # Hearth on the west wall; raised stone seat/bench and hood.
-        self.local(-FRONT+110,0,-math.pi/2)
-        self.box(0,0,-40,620,35,270)
-        self.box(0,35,80,450,380,30,material=1,tint=(40,30,25),solid=False)
-        for x in (-260,260):self.box(x,35,15,100,420,200)
-        self.box(0,455,0,690,65,270)
-        self.box(0,520,40,600,370,160)
-        self.box(0,890,25,670,55,220)
-        for x in (-150,-75,0,75,150):
-            self.box(x,40,-10,55,30,140,material=1,solid=False,tint=(90,65,40))
-            # Coals only. The runtime owns native animated fire/sparks and light.
-            self.column(x,70,-10,24,4,material=4,tint=(255,102,30),solid=False,n=7)
-        self.reset()
+        # Recessed masonry firebox, layered carved surround and a real log bed.
+        self.fireplace()
         # Burgundy banners and small stylized robed memorials in rear bays.
         for angle in (math.pi*.75,math.pi,math.pi*1.25):
             self.local((FRONT-200)*math.sin(angle),(FRONT-200)*math.cos(angle),angle)
@@ -426,12 +493,18 @@ def write_assets():
     (ROOT/'src/generated/roundtable_layout.hpp').write_text(
         '// Generated by tools/generate_roundtable.py.\n#pragma once\n'
         'namespace dawnlight::roundtable_layout {\n'
+        f'inline constexpr float floorY = {FLOOR:.1f}f;\n'
+        f'inline constexpr float chestX = {CHEST_X:.6f}f;\n'
+        f'inline constexpr float zeldaZ = {ZELDA_Z:.1f}f;\n'
+        f'inline constexpr short zeldaYaw = {ZELDA_YAW};\n'
         f'inline constexpr float restZ = {REST_Z:.1f}f;\n'
         f'inline constexpr float zeldaX = {ZELDA_X:.1f}f;\n'
         f'inline constexpr float flameY = {FLOOR+180:.1f}f;\n'
         f'inline constexpr float flameLightY = {LIGHT_POSITION[1]:.1f}f;\n'
-        f'inline constexpr float hearthFireX = {-FRONT+120:.6f}f;\n'
-        f'inline constexpr float hearthLightX = {-FRONT+265:.6f}f;\n'
+        f'inline constexpr float hearthFireX = {-FRONT+165:.6f}f;\n'
+        f'inline constexpr float hearthFireY = {FLOOR+62:.1f}f;\n'
+        f'inline constexpr float hearthLightY = {HEARTH_POSITION[1]:.1f}f;\n'
+        f'inline constexpr float hearthLightX = {HEARTH_POSITION[0]:.6f}f;\n'
         '}\n')
     print(f'{len(hall.vertices)//3} visible triangles; {len(hall.collision)} collision triangles; {len(mesh)} mesh bytes')
     return hall

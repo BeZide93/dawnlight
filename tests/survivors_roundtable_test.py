@@ -65,9 +65,9 @@ def ground(x,z,ceiling=1000):
     return max(heights) if heights else None
 
 assert g.RADIUS==1800, 'Keep the compact build-1295 footprint'
-chest_x=g.FRONT+25-150
-for x,z in [(0,g.REST_Z),(g.ZELDA_X,0),(chest_x,0)]:
-    assert abs(ground(x,z)+400)<.01, 'Rest/fire/Zelda/equipment anchor must remain clear'
+chest_x=g.CHEST_X
+for x,z in [(0,g.REST_Z),(g.ZELDA_X,g.ZELDA_Z),(chest_x,0)]:
+    assert abs(ground(x,z)+400)<.01, 'Rest/Zelda/equipment anchor must remain clear'
 assert abs(ground(0,0)-(-299.5))<.01, 'Tabletop is 100.5 units above the floor'
 assert abs(ground(0,-460)-(-327.95))<.01, 'Chair collision reaches the cushion at 72.05 units'
 chair=g.Hall();chair.chair(0,0,0)
@@ -96,7 +96,7 @@ for angle in (math.pi*.75,math.pi,math.pi*1.25):
     assert segment_hits(point(-200),point(0)), 'Memorial must reach the floor'
 
 # Walkable links between all interaction points, including the authored door.
-routes=[((0,g.REST_Z),(-720,650)),((-720,650),(g.ZELDA_X,0)),
+routes=[((0,g.REST_Z),(-720,650)),((-720,650),(g.ZELDA_X,g.ZELDA_Z)),
         ((0,g.REST_Z),(chest_x,0)),((0,g.REST_Z),(0,3900))]
 for start,end in routes:
     last=-400
@@ -165,3 +165,11 @@ assert all(0<=v[5]<1 and 0<=v[6]<1 for v in hall.vertices), 'Valid shadow atlas 
 assert len(hall.vertices)<=100000, 'Stay within renderer resource bounds'
 
 print(f'Roundtable: {tn} native collision triangles, valid tree/room ancestry, clear hub routes')
+
+# The equipment probe starts at the authored perimeter, clear of table/chairs.
+assert chest_x>1500 and abs(ground(chest_x,0)+400)<.01
+assert g.ZELDA_X<-1000 and g.ZELDA_Z>300
+assert abs(math.atan2(-g.ZELDA_X,-g.ZELDA_Z)-g.ZELDA_YAW*math.pi/32768)<.0001
+# Recess is open above the log bed; jambs and hearth remain solid.
+assert not segment_hits((g.HEARTH_POSITION[0]+300,-180,0),(g.HEARTH_POSITION[0]-100,-180,0),True)
+assert segment_hits((g.HEARTH_POSITION[0]+300,-180,260),(g.HEARTH_POSITION[0]-100,-180,260),True)

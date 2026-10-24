@@ -63,24 +63,38 @@ public:
   return hit(0,point+direction*.8f,direction,distance-1.6f);
  }
 };
+float illumination(const Scene& scene,Vec point,Vec light,Vec hearth){
+ const std::array<Vec,5> offsets{{{0,0,0},{40,20,0},{-40,-20,0},{0,20,40},{0,-20,-40}}};
+ int visible=0,hearthVisible=0;
+ for(auto offset:offsets){visible+=!scene.blocked(point,light+offset);hearthVisible+=!scene.blocked(point,hearth+offset*.6f);}
+ const Vec delta=point-hearth;
+ // The fireplace contributes at most 22%, falling off locally. Add the two
+ // lights before normalization: one source can fill the other's shadows.
+ const float hearthWeight=.22f/(1+dot(delta,delta)/(700*700));
+ return (.38f+.62f*visible/offsets.size()+hearthWeight*hearthVisible/offsets.size())/(1+hearthWeight);
+}
 template<class T>void read(std::ifstream& file,T& value){file.read(reinterpret_cast<char*>(&value),sizeof(value));if(!file)throw std::runtime_error("Truncated bake input");}
 int main(int argc,char** argv){try{
  if(argc==2&&std::string(argv[1])=="--self-test"){
   Scene scene;scene.faces={{{-10,0,-10},{10,0,-10},{10,0,10}},{{-10,0,-10},{10,0,10},{-10,0,10}}};scene.build();
   if(!scene.blocked({0,-10,0},{0,10,0})||scene.blocked({30,-10,0},{30,10,0})||
     scene.blocked({0,0,0},{0,10,0})||!scene.blocked({0,10,0},{0,-10,0}))return 1;
-  std::cout<<"Shadow BVH: blocker, clear ray, surface bias and double-sided visibility passed\n";return 0;
+  Scene screen;screen.faces={{{-1000,0,-1000},{1000,0,-1000},{1000,0,1000}},{{-1000,0,-1000},{1000,0,1000},{-1000,0,1000}}};screen.build();
+  const Vec receiver{0,-100,0},blocked{0,100,0},clear{0,-300,0};
+  const float dark=illumination(screen,receiver,blocked,blocked);
+  const float tableBlocked=illumination(screen,receiver,blocked,clear);
+  const float hearthBlocked=illumination(screen,receiver,clear,blocked);
+  if(!(dark<tableBlocked&&tableBlocked<hearthBlocked&&hearthBlocked<1)||
+      std::abs(illumination(screen,receiver,clear,clear)-1)>.00001f)return 1;
+  std::cout<<"Shadow BVH: blocker, clear ray, surface bias, double-sided visibility and weaker secondary light passed\n";return 0;
  }
  if(argc!=3)return 2;
- std::ifstream input(argv[1],std::ios::binary);uint32_t size,count,samples;Vec light;read(input,size);read(input,count);read(input,samples);read(input,light);
+ std::ifstream input(argv[1],std::ios::binary);uint32_t size,count,samples;Vec light,hearth;read(input,size);read(input,count);read(input,samples);read(input,light);read(input,hearth);
  if(size!=1024||count>100000||samples>size*size)throw std::runtime_error("Invalid bake dimensions");
  Scene scene;scene.faces.resize(count);for(auto& face:scene.faces)read(input,face);scene.build();
  std::vector<unsigned char> pixels(size*size,255);
- const std::array<Vec,5> offsets{{{0,0,0},{40,20,0},{-40,-20,0},{0,20,40},{0,-20,-40}}};
  for(uint32_t i=0;i<samples;++i){uint32_t pixel;Vec point;read(input,pixel);read(input,point);if(pixel>=pixels.size())throw std::runtime_error("Invalid pixel index");
-  int visible=0;for(auto offset:offsets)visible+=!scene.blocked(point,light+offset);
-  // Retain indirect room light in the shadow; five samples soften its edge.
-  pixels[pixel]=static_cast<unsigned char>(std::lround(255*(.38f+.62f*visible/offsets.size())));
+  pixels[pixel]=static_cast<unsigned char>(std::lround(255*illumination(scene,point,light,hearth)));
  }
  std::ofstream output(argv[2],std::ios::binary);output.write(reinterpret_cast<char*>(pixels.data()),pixels.size());
  if(!output)throw std::runtime_error("Cannot write shadow atlas");

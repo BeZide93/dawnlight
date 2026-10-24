@@ -202,6 +202,21 @@ int main(){
         }
     }
 
+    // Debug counter uses the same population as the wave cap. Pending actor
+    // slots count once; elites, retired and defeated slots do not count.
+    s_run={};s_run.phase=Phase::Running;hasFont=true;
+    for(unsigned i=0;i<6;++i)s_enemies[i].id=i;
+    s_enemies[1].initialized=false;s_enemies[2].elite=true;
+    s_enemies[3].retiring=true;s_enemies[4].credited=true;
+    assert(normal_enemy_population()==3);
+    for(bool debug:{false,true}){
+        s_run.debug_run=debug;s_run.options.debug.max_normal_enemies=42;printed.clear();
+        draw_hud(nullptr,nullptr,nullptr,nullptr);
+        assert((std::find(printed.begin(),printed.end(),"Enemies: 3 / 42")!=printed.end())==(debug_enabled&&debug));
+    }
+    s_enemies={};printed.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);
+    assert((std::find(printed.begin(),printed.end(),"Enemies: 0 / 42")!=printed.end())==debug_enabled);
+    s_run.debug_run=false;
     // Banner starts outside the right edge, arrives at the right margin and
     // exits right during its final 12 ticks. Icon/stats use the saved item copy.
     s_gearNoticeItem={GearKind::Sword,5,4,3};hasFont=true;
@@ -388,7 +403,7 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'test.cpp'
     binary = Path(tmp) / 'test'
     cpp.write_text(prefix + stubs + '\nunsigned s_gearNoticeTicks=0;const char* s_gearNotice="Weapon acquired";GearItem s_gearNoticeItem{};bool gear_notice_equip_available(){return s_gearNoticeTicks&&s_gearNoticeItem.kind!=GearKind::Empty;}\n' + '\nbool hub=false;unsigned hubLabels=0,prices=0,portalLabels=0,feedback=0;bool survivors_hub_active(){return hub;} void draw_hub_labels(){++hubLabels;} void draw_chest_prices(){++prices;} void draw_horde_portal_labels(){++portalLabels;} void draw_combat_feedback(){++feedback;}\n' + native + '\n' + function(source, 'void label(') + '\n' +
-                   (root/'src/survivors_boss_hud.inc').read_text() + '\n' + (root/'src/survivors_chest_hud.inc').read_text() + '\n' + (root/'src/survivors_gear_notice.inc').read_text() + '\n' + function(source, 'void draw_hud(') + '\n' + main)
+                   (root/'src/survivors_boss_hud.inc').read_text() + '\n' + (root/'src/survivors_chest_hud.inc').read_text() + '\n' + (root/'src/survivors_gear_notice.inc').read_text() + '\n' + function(source, 'unsigned normal_enemy_population(') + '\n' + function(source, 'void draw_hud(') + '\n' + main)
     subprocess.run([os.environ.get('CXX','c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror', '-I', str(root/'src'),
                     str(cpp), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

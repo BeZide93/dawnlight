@@ -738,8 +738,8 @@ struct Run {
         const bool timedBoss=elite && eliteSlot>=0 && unsigned(eliteSlot)<timed_elite_count;
         return enemy_health(base,elite,map,timedBoss && unsigned(eliteSlot)==timed_elite_count-1,timedBoss);
     }
-    // Fixed population ceiling; time and Horde difficulty only affect spawn cadence/batches.
-    unsigned target_population() const { return 345u; }
+    // Debug can lower the normal-wave ceiling; Horde changes cadence/batches only.
+    unsigned target_population() const { return debug_options().max_normal_enemies; }
     unsigned spawn_batch() {
         spawn_progress+=unsigned(RunOptions::difficulty(options.horde,5)*2)*(horde_remaining?3:1);
         const unsigned batch=spawn_progress/2;spawn_progress%=2;return batch;

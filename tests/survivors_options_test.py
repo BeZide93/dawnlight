@@ -256,12 +256,12 @@ int main(){
  controls.clear();s_options.debug={4,10,1,1,5};s_run.options.debug=s_options.debug;
  assert(build_debug(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
  if(debug_enabled){
-  assert(controls.size()==11&&std::string(controls[0].label)=="Enable Debug");
+  assert(controls.size()==12&&std::string(controls[0].label)=="Enable Debug");
   auto enable=controls[0];UiControlValue state=UI_CONTROL_VALUE_INIT;enable.get(nullptr,nullptr,&state);assert(!state.bool_value);
-  for(unsigned i=1;i<10;++i)assert(controls[i].is_disabled(nullptr,controls[i].user_data));
+  for(unsigned i=1;i<11;++i)assert(controls[i].is_disabled(nullptr,controls[i].user_data));
   auto deniedDebug=s_options.debug;UiControlValue deniedValue=UI_CONTROL_VALUE_INIT;deniedValue.int_value=2;
   controls[1].set(nullptr,controls[1].user_data,&deniedValue);assert(s_options.debug.minimum_rarity==deniedDebug.minimum_rarity);
-  deniedValue.bool_value=true;controls[8].set(nullptr,nullptr,&deniedValue);assert(!s_options.debug.unlock_all_maps);
+  deniedValue.bool_value=true;controls[9].set(nullptr,nullptr,&deniedValue);assert(!s_options.debug.unlock_all_maps);
   state.bool_value=true;failNotice=true;enable.set(nullptr,nullptr,&state);assert(!debug_session_enabled&&!s_debugNotice);failNotice=false;
   enable.set(nullptr,nullptr,&state);assert(debug_session_enabled&&notices==1&&s_debugNotice);
   assert(noticeBody.find("permanently unlock maps")!=std::string::npos);
@@ -274,7 +274,7 @@ int main(){
    s_run.phase=Phase::Running;assert(c.is_disabled(nullptr,c.user_data));
    UiControlValue denied=UI_CONTROL_VALUE_INIT;c.set(nullptr,c.user_data,&denied);c.get(nullptr,c.user_data,&denied);assert(value.int_value==denied.int_value);s_run.phase=Phase::Ready;
   }
-  auto meta=controls[9];assert(std::string(meta.label)=="Meta Level"&&meta.kind==UI_CONTROL_NUMBER);
+  auto meta=controls[10];assert(std::string(meta.label)=="Meta Level"&&meta.kind==UI_CONTROL_NUMBER);
   UiControlValue level=UI_CONTROL_VALUE_INIT;level.int_value=50;s_progressSaved=true;
   save.fail=true;meta.set(nullptr,nullptr,&level);assert(s_storeFailed&&s_records.level()==1);
   update_debug_tab(nullptr,nullptr,nullptr);assert(service.summary.find("Save failed")!=std::string::npos);
@@ -294,7 +294,7 @@ int main(){
   level.int_value=INT64_MAX;meta.set(nullptr,nullptr,&level);assert(s_records.level()==1+meta_levels(max_meta_xp));
   assert(loaded.decode(save.blob));
   level.int_value=50;meta.set(nullptr,nullptr,&level);assert(s_records.level()==50);
-  auto progress=controls[10];assert(std::string(progress.label)=="Save progress");
+  auto progress=controls[11];assert(std::string(progress.label)=="Save progress");
   progress.on_pressed(nullptr,nullptr);assert(progressSaves==1);
   auto maximum=controls[6];assert(maximum.kind==UI_CONTROL_TOGGLE&&std::string(maximum.label)=="Max Equipment Drop Rate");
   UiControlValue maximumValue=UI_CONTROL_VALUE_INIT;maximumValue.bool_value=true;
@@ -304,13 +304,22 @@ int main(){
   legendaryValue.bool_value=true;legendary.set(nullptr,legendary.user_data,&legendaryValue);assert(s_options.debug.always_legendary_equipment==1);
   s_run.phase=Phase::Running;legendaryValue.bool_value=false;legendary.set(nullptr,legendary.user_data,&legendaryValue);
   assert(legendary.is_disabled(nullptr,legendary.user_data)&&s_options.debug.always_legendary_equipment==1);s_run.phase=Phase::Ready;
+  auto population=controls[8];assert(std::string(population.label)=="Max Normal Enemies"&&population.kind==UI_CONTROL_NUMBER);
+  assert(population.min==0&&population.max==345&&population.step==1&&!population.prefix);
+  UiControlValue count=UI_CONTROL_VALUE_INIT;population.get(nullptr,population.user_data,&count);assert(count.int_value==345);
+  count.int_value=-10;population.set(nullptr,population.user_data,&count);assert(s_options.debug.max_normal_enemies==0);
+  count.int_value=INT64_MAX;population.set(nullptr,population.user_data,&count);assert(s_options.debug.max_normal_enemies==345);
+  count.int_value=42;population.set(nullptr,population.user_data,&count);assert(s_options.debug.max_normal_enemies==42);
+  s_run.phase=Phase::Running;count.int_value=1;population.set(nullptr,population.user_data,&count);
+  assert(population.is_disabled(nullptr,population.user_data)&&s_options.debug.max_normal_enemies==42);s_run.phase=Phase::Ready;
   Run probe;probe.start(42,s_options);assert(probe.debug_run&&probe.debug_options().max_equipment_drop_rate==1&&probe.debug_options().always_legendary_equipment==1);
-  assert(s_options.debug.run_minutes==5&&s_options.debug.player_damage==10);
+  assert(s_options.debug.run_minutes==5&&s_options.debug.player_damage==10&&probe.target_population()==42);
   s_run.phase=Phase::Running;state.bool_value=false;enable.set(nullptr,nullptr,&state);assert(debug_session_enabled&&notices==1);
   s_run.phase=Phase::Ready;enable.set(nullptr,nullptr,&state);assert(!debug_session_enabled&&notices==2&&s_options.debug.run_minutes==20&&!s_options.debug.always_legendary_equipment);
+  assert(s_options.debug.max_normal_enemies==345);
   assert(s_records.level()==50&&s_records.available_points()==48);
   assert(noticeBody.find("New runs")!=std::string::npos);noticeAction.on_pressed(nullptr,s_debugNotice,nullptr);
-  for(unsigned i=1;i<10;++i)assert(controls[i].is_disabled(nullptr,controls[i].user_data));
+  for(unsigned i=1;i<11;++i)assert(controls[i].is_disabled(nullptr,controls[i].user_data));
  }else{
   assert(controls.empty()&&s_options.debug.run_minutes==20&&s_options.debug.player_damage==1);
   assert(s_options.debug.minimum_rarity==0&&!s_options.debug.infinite_rerolls&&!s_options.debug.infinite_banishes);

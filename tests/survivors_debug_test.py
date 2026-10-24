@@ -20,6 +20,15 @@ int main(){
  assert(run.options.debug.minimum_rarity==(debug_enabled?4u:0u));
  assert(run.options.debug.infinite_rerolls==unsigned(debug_enabled));
  assert(run.options.debug.infinite_banishes==unsigned(debug_enabled));
+ assert(run.target_population()==345);
+ for(unsigned count:{0u,1u,42u,344u,345u,999u}){
+  options.debug.max_normal_enemies=count;run.start(71,options);
+  assert(run.target_population()==(debug_enabled?std::min(count,345u):345u));
+ }
+ options.debug.max_normal_enemies=42;run.start(71,options);
+ options.debug.max_normal_enemies=12;assert(run.target_population()==(debug_enabled?42u:345u));
+ debug_session_enabled=false;run.start(71,options);assert(run.target_population()==345);
+ debug_session_enabled=true;run.start(71,options);
  // Even stale/injected state cannot bypass a disabled build.
  run.options.debug={4,10,1,1,5};
  for(unsigned floor=0;floor<5;++floor){run.options.debug.minimum_rarity=floor;

@@ -344,8 +344,8 @@ Timed bosses take priority over awakened chest guards. With several candidates,
 the nearest is selected and retained until defeated or replaced by a timed boss;
 sleeping guards and ordinary enemies never occupy this bar.
 
-Normal enemies have a fixed ceiling of **345**, from the start at every Horde
-difficulty. Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
+Normal enemies default to a ceiling of **345**, from the start at every Horde
+difficulty. Debug runs can lower it with **Max Normal Enemies** (0–345). Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
 the first 10 minutes; Horde difficulty still controls batch size (1–5).
 Random **HORDE!** events triple spawn batches for 15 seconds, within
 that population limit. They average two events per five minutes, without a quota;
@@ -643,8 +643,16 @@ apply to the next run and are not written to save files.
 | Infinite rerolls | Off / On; free, without consuming charges | Off |
 | Infinite banishes | Off / On; no charge consumption | Off |
 | Run timer | 20 / 10 / 5 minutes | 20 minutes |
+| Max Normal Enemies | 0–345 simultaneous normal wave enemies | 345 |
 | Max Equipment Drop Rate | Off / On; equipment from every boss | Off |
 | Always Legendary Equipment | Off / On; new equipment has Legendary rarity and maximum base stats | Off |
+
+Max Normal Enemies applies to the next run and caps Horde bursts too. Zero
+disables normal waves; bosses, guards and boss summons keep their separate
+limits. Debug runs show **Enemies: current / limit** below the chest information,
+using the Info-Texts HUD position/scale. The counter includes pending spawn slots
+and excludes elites, retired and defeated enemies, matching the wave budget.
+Normal runs and builds without Debug retain 345 and hide the counter.
 
 Minimum Rarity raises lower rarity rolls to the floor for both level-ups and
 all treasure offers, including the starting item. Higher rolls remain higher.

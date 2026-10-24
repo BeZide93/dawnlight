@@ -878,12 +878,16 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
 #include "survivors_elites.inc"
 #include "survivors_pots.inc"
 #include "survivors_save_slot.inc"
+unsigned normal_enemy_population() {
+    return unsigned(std::count_if(s_enemies.begin(),s_enemies.end(),[](const Enemy& enemy) {
+        return enemy.id!=kNone && !enemy.elite && !enemy.retiring && !enemy.credited;
+    }));
+}
 void update_spawns(daAlink_c* link) {
     update_boss_watchdogs(link);
-    unsigned population = 0;
+    unsigned population = normal_enemy_population();
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
-        if (!e.elite && !e.retiring && !e.credited) ++population;
         auto* actor = actor_by_id(e.id);
         if (!actor || !e.initialized) continue;
         ++e.age;
@@ -1546,6 +1550,11 @@ void draw_hud(ModContext*, void* args, void*, void*) {
         drawText(HudPart::Info,14,bossOffset);
     }
     float effectOffset=22+bossOffset;
+    if(debug_enabled && s_run.debug_run) {
+        std::snprintf(text,sizeof(text),"Enemies: %u / %u",normal_enemy_population(),s_run.target_population());
+        drawText(HudPart::Info,13,effectOffset);
+        effectOffset+=22;
+    }
     const bool fateTooltips=show_fate_tooltips();
     for (unsigned i=0;i<unsigned(FateEffect::Count);++i) {
         const auto remaining=s_run.fate_ticks(FateEffect(i));

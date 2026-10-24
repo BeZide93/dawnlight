@@ -14,14 +14,15 @@ struct DebugControl { const char* label; unsigned DebugOptions::*field; const ch
 constexpr const char* kDebugRarities[]{"Common","Uncommon","Rare","Epic","Legendary"};
 constexpr const char* kDebugSwitch[]{"Off","On"};
 constexpr const char* kDebugTimers[]{"20 min","10 min","5 min"};
-std::array<DebugControl,7> s_debugControls{{
+std::array<DebugControl,8> s_debugControls{{
     {"Minimum Rarity",&DebugOptions::minimum_rarity,kDebugRarities,5},
     {"Player damage",&DebugOptions::player_damage,nullptr,0},
     {"Infinite rerolls",&DebugOptions::infinite_rerolls,kDebugSwitch,2},
     {"Infinite banishes",&DebugOptions::infinite_banishes,kDebugSwitch,2},
     {"Run timer",&DebugOptions::run_minutes,kDebugTimers,3},
     {"Max Equipment Drop Rate",&DebugOptions::max_equipment_drop_rate,kDebugSwitch,2},
-    {"Always Legendary Equipment",&DebugOptions::always_legendary_equipment,kDebugSwitch,2}
+    {"Always Legendary Equipment",&DebugOptions::always_legendary_equipment,kDebugSwitch,2},
+    {"Max Normal Enemies",&DebugOptions::max_normal_enemies,nullptr,0}
 }};
 ModResult build_debug(ModContext*,UiWindowHandle,UiElementHandle left,UiElementHandle right,void*,ModError*) {
     s_debugProgressSummary=0;
@@ -59,6 +60,10 @@ ModResult build_debug(ModContext*,UiWindowHandle,UiElementHandle left,UiElementH
             control.help_rml="New equipment drops are always Legendary with maximum base stats and a random Legendary-tier weapon bonus. Weapon/Tunic and weapon variants stay random. Allows saved drops in Debug at the normal talent-adjusted chance; combine with Max Equipment Drop Rate for a drop from every boss. Applies to the next run; existing items are unchanged. Default: off.";
         control.options=control.kind==UI_CONTROL_TOGGLE?nullptr:setting.choices;control.option_count=control.kind==UI_CONTROL_TOGGLE?0:setting.count;
         control.min=1;control.max=10;control.step=1;control.prefix=setting.choices?nullptr:"x";
+        if(setting.field==&DebugOptions::max_normal_enemies) {
+            control.min=0;control.max=normal_enemy_limit;control.prefix=nullptr;
+            control.help_rml="Maximum simultaneous normal wave enemies, including Horde waves. Default and maximum: 345. Set to 0 to disable normal waves. Bosses, guards and boss summons keep their separate limits. Session only; applies to the next run.";
+        }
         control.get=[](ModContext*,void* data,UiControlValue* value) {
             s_options.debug.clamp();
             const auto& setting=*static_cast<DebugControl*>(data);
@@ -74,6 +79,8 @@ ModResult build_debug(ModContext*,UiWindowHandle,UiElementHandle left,UiElementH
             else if (setting.field==&DebugOptions::run_minutes) {
                 constexpr unsigned minutes[]{20,10,5};
                 s_options.debug.run_minutes=minutes[std::clamp<int64_t>(value->int_value,0,2)];
+            } else if(setting.field==&DebugOptions::max_normal_enemies) {
+                s_options.debug.max_normal_enemies=unsigned(std::clamp<int64_t>(value->int_value,0,normal_enemy_limit));
             } else s_options.debug.*setting.field=unsigned(std::clamp<int64_t>(value->int_value,
                 setting.choices?0:1,setting.choices?setting.count-1:10));
             s_options.debug.clamp();

@@ -56,6 +56,8 @@
 #include "d/d_map.h"
 #include "d/d_camera.h"
 #include "d/d_msg_object.h"
+#include "d/actor/d_a_npc_zelda.h"
+#include "d/d_item.h"
 #include "d/d_msg_class.h"
 #include "JSystem/JMessage/control.h"
 #include "JSystem/JParticle/JPAResource.h"
@@ -181,6 +183,7 @@ DEFINE_HOOK(&JPABaseEmitter::deleteAllParticle, SurvivorsFairyParticles);
 DEFINE_HOOK(&dCamera_c::Run, SurvivorsCamera);
 DEFINE_HOOK(&daAlink_c::orderZTalk, SurvivorsMidnaOrder);
 DEFINE_HOOK(&dMsgFlow_c::getInitNodeIndex, SurvivorsMidnaFlow);
+DEFINE_HOOK(&daNpc_Zelda_c::setParam, SurvivorsHubZeldaParam);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
@@ -236,6 +239,8 @@ DEFINE_HOOK(&JMessage::TControl::update, SurvivorsTreasureText);
 DEFINE_HOOK(&daAlink_c::checkUpperGrabItemThrow, SurvivorsBombThrow);
 DEFINE_HOOK(&daAlink_c::cancelUpperItemReadyAnime, SurvivorsRangedCancel);
 DEFINE_HOOK(&daAlink_c::procCoGetItemInit, SurvivorsGetItem);
+DEFINE_HOOK(&daAlink_c::procCoGetItem, SurvivorsGetItemTick);
+DEFINE_HOOK(&daAlink_c::setItemMatrix, SurvivorsItemMatrix);
 DEFINE_HOOK(&fpcLf_Draw, SurvivorsTreasureDraw);
 DEFINE_HOOK(&daAlink_c::draw, SurvivorsDraw);
 DEFINE_HOOK(&daAlink_c::procCoDeadInit, SurvivorsDeath);
@@ -362,6 +367,7 @@ unsigned s_midnaRequestFrames = 0;
 bool s_midnaTalking = false, s_midnaEndPending = false, s_midnaRestartPending = false;
 bool midna_dialog_busy() { return s_midnaRequestFrames || s_midnaTalking || s_midnaEndPending || s_midnaRestartPending; }
 void reset_midna_dialog() { s_midnaRequestFrames=0; s_midnaTalking=s_midnaEndPending=s_midnaRestartPending=false; }
+void retire_hub_zelda();
 enum class SwordAction { None, Normal, Spin, Jump };
 SwordAction s_swordAction = SwordAction::None;
 unsigned s_meleeCooldown = 0;
@@ -661,6 +667,7 @@ void detach_attack_references() {
     }
 }
 void reset_runtime() {
+    retire_hub_zelda();
     clear_player_contacts();
     restore_gear_collection();close_gear_window();s_gear={};s_gearWritable=true;clear_gear_notices();
     clear_zelda_light_orbs();clear_king_waves();
@@ -761,6 +768,7 @@ void finish(bool won) {
 }
 #include "survivors_ending.inc"
 #include "survivors_midna.inc"
+#include "survivors_hub_zelda.inc"
 void add_orb(cXyz position, unsigned value) {
     position.y -= 20;
     cXyz probe = position; probe.y += 500;
@@ -1776,6 +1784,7 @@ bool survivors_dark_link_active() {
         s_run.phase == Phase::Upgrade || s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Treasure);
 }
 void update_survivors() {
+    update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
     update_survivors_registration();
     update_survivors_music();
@@ -1846,6 +1855,8 @@ ModResult initialize_survivors(ModError* error) {
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors HUD settings");
     result=initialize_midna_dialog();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors Midna dialog");
+    result=initialize_hub_zelda();
+    if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors Zelda dialog");
     initialize_menu_handoff();
 #define PRE(H, F) do { result = mods::hook_add_pre<H>(svc_hook, F); \
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to install Hyrule Survivors pre-hook " #H); } while(false)
@@ -1890,6 +1901,9 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsPlayer, before_midna_call);
     PRE(SurvivorsMidnaOrder, before_midna_order);
     PRE(SurvivorsMidnaFlow, before_midna_flow);
+    PRE(SurvivorsMidnaFlow, before_hub_zelda_flow);
+    PRE(SurvivorsHubZeldaParam, before_hub_zelda_param);
+    POST(SurvivorsHubZeldaParam, after_hub_zelda_param);
     PRE(SurvivorsEnemyContact,before_enemy_contact);
     PRE(SurvivorsBlock, before_player_contacts);
     PRE(SurvivorsBlock, before_shield_block); POST(SurvivorsBlock, after_player_damage); PRE(SurvivorsGuard, before_survivors_guard);
@@ -1956,6 +1970,11 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsTreasureDraw, before_key_draw);
     PRE(SurvivorsTreasureDraw, before_treasure_draw);
     PRE(SurvivorsGetItem, before_treasure_get); POST(SurvivorsGetItem, after_treasure_get);
+    PRE(SurvivorsGetItem, before_hub_zelda_get);
+    POST(SurvivorsGetItem, after_hub_zelda_get);
+    PRE(SurvivorsGetItemTick, before_hub_zelda_get_tick);
+    POST(SurvivorsItemMatrix, after_hub_zelda_item_matrix);
+    PRE(SurvivorsTreasureDraw, before_hub_zelda_gift_draw);
     PRE(SurvivorsGameOver, before_game_over);
     PRE(SurvivorsDeath, before_death); PRE(SurvivorsManualAttack, before_cut);
     PRE(SurvivorsManualCharge, before_manual_charge);
@@ -1987,6 +2006,7 @@ void shutdown_survivors() {
     before_survivors_pad(nullptr,nullptr,nullptr,nullptr);
     s_active = false; reset_runtime(); cleanup_enemies(); cleanup_pots(); cleanup_pickups();
     s_midnaGraph.reset(); s_midnaPrompt.reset(); s_midnaOptions.reset(); s_midnaStart=0;
+    s_hubZeldaGraph.reset(); s_hubZeldaMessage.reset(); s_hubZeldaReward={}; s_hubZeldaStart=0;
     s_treasureMessage.reset(); s_itemNameMessage.reset(); s_itemDescriptionMessage.reset();
     if (s_savePrompt != kNone) { d_GameOver_Delete(s_savePrompt); s_savePrompt = kNone; }
     if (s_registered) svc_game_mode->unregister_game_mode(mod_ctx, kMode);

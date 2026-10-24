@@ -17,10 +17,10 @@ void reset_title_presentation() {
 }
 void request_title_preview() {
     reset_title_presentation();
-    // Carousel selection changes callbacks/save namespace, NOT the scene.
-    // Startup's LOGO scene already requests an opening; only reload an existing
-    // opening, and retain the request across rapid changes during its fade.
-    s_titleReloadPending = s_titleReloadPending || opening_scene() != nullptr;
+    // The carousel can change while the old scene is gone and the next opening
+    // is still being created. Keep that selection until an opening request
+    // actually consumes it; a missing scene is not an acknowledgement.
+    s_titleReloadPending = true;
 }
 ModResult play_survivors(void*, ModError*) {
     s_titleFlow.play();
@@ -30,7 +30,9 @@ ModResult play_survivors(void*, ModError*) {
 void update_title_preview() {
     if (!s_titleReloadPending || transitioning() || mDoRst::isReset() || mDoRst::isReturnToMenu()) return;
     auto* scene = opening_scene();
-    if (!scene) return;
+    // An opening is searchable before its asynchronous creation has finished.
+    // Do not replace it in the gap between its fade and actor initialization.
+    if (!scene || fpcM_IsCreating(dStage_roomControl_c::getProcID())) return;
     s_titleReloadPending = false;
     s_titlePoseOwner = kNone;
     // Preserve the host menu. The normal opening hook chooses hub or vanilla
@@ -38,7 +40,9 @@ void update_title_preview() {
     dComIfG_changeOpeningScene(scene,fpcNm_OPENING_SCENE_e);
 }
 bool survivors_title_active() {
-    if (!s_active || s_gameStarted ||
+    // Selection changes immediately, but the outgoing hub can still be loading
+    // Link/story actors. It remains our title until the scene is replaced.
+    if (s_gameStarted ||
         !arena_matches(0,dComIfGp_getStartStageName(),dComIfGp_getStartStageRoomNo())) return false;
     return opening_scene() != nullptr;
 }
@@ -65,7 +69,7 @@ void advance_hub_arrival(float seconds,bool ready) {
 bool survivors_title_preparing() {
     // Resource creation can overlap the native fade-in. Never start a second
     // scene's actors while an outgoing stage/reset request is pending.
-    return survivors_title_active() && !s_titleReloadPending && !dComIfGp_isEnableNextStage() &&
+    return s_active && survivors_title_active() && !s_titleReloadPending && !dComIfGp_isEnableNextStage() &&
         !mDoRst::isReset() && !mDoRst::isReturnToMenu();
 }
 bool title_floor_anchor(cXyz& anchor) {
@@ -78,7 +82,7 @@ bool title_scene_ready() {
         hub_brazier_anchor(anchor) && owned_hub_zelda(actor_by_id(s_hubZelda));
 }
 bool title_ui_blocked() {
-    return s_active && !s_gameStarted && opening_scene() &&
+    return (s_active || survivors_title_active()) && !s_gameStarted && opening_scene() &&
         !(s_titleFlow.show_logo() && survivors_title_active() && title_scene_ready());
 }
 HookAction before_title_controls(ModContext*, void*, void*, void*) {
@@ -108,9 +112,13 @@ HookAction before_title_stage(ModContext*, void* args, void*, void*) {
     const auto* stage = mods::arg<const char*>(args,0);
     // Exact native opening request, including reset-to-title. Do not redirect
     // file selection, new-game setup or an actual gameplay transition.
-    if (!s_active || s_gameStarted || !stage || std::strcmp(stage,"F_SP102") ||
+    if (s_gameStarted || !stage || std::strcmp(stage,"F_SP102") ||
         mods::arg<s16>(args,1) != 100 || mods::arg<s8>(args,2) != 0 ||
         mods::arg<s8>(args,3) != 10) return HOOK_CONTINUE;
+    // This native opening request picks up the latest carousel selection,
+    // including startup. Later changes will arm another refresh independently.
+    s_titleReloadPending = false;
+    if (!s_active) return HOOK_CONTINUE;
     mods::arg_ref<const char*>(args,0) = arenas[0].stage;
     mods::arg_ref<s16>(args,1) = arenas[0].point;
     mods::arg_ref<s8>(args,2) = arenas[0].room;

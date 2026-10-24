@@ -35,7 +35,8 @@ const char* dComIfGp_getStartStageName(){return stageName;}
 s8 dComIfGp_getStartStageRoomNo(){return roomNo;}
 struct scene_class{int name=fpcNm_OPENING_SCENE_e;}scene;
 using Scene=scene_class;
-bool transition=false,resetting=false,returning=false;
+bool transition=false,resetting=false,returning=false,sceneCreating=false;
+bool fpcM_IsCreating(int id){assert(id==17);return sceneCreating;}
 bool transitioning(){return transition;}
 bool paused=false;bool dComIfGp_isPauseFlag(){return paused;}
 struct dScnPly_c{static bool isPause(){return false;}};
@@ -106,8 +107,14 @@ int main(){
  assert(survivors_title_active());
  int startDemoResult=123;
  assert(before_title_start_demo(nullptr,nullptr,&startDemoResult,nullptr)==HOOK_SKIP_ORIGINAL&&startDemoResult==-2);
- for(int which=0;which<5;++which){
-  if(which==0)s_active=false;if(which==1)s_gameStarted=true;if(which==2)scene.name=999;
+ // Deselecting the mode must not release the still-loading custom title.
+ s_active=false;
+ assert(survivors_title_active());
+ assert(!survivors_title_preparing());
+ assert(before_title_start_demo(nullptr,nullptr,&startDemoResult,nullptr)==HOOK_SKIP_ORIGINAL&&startDemoResult==-2);
+ s_active=true;
+ for(int which=1;which<5;++which){
+  if(which==1)s_gameStarted=true;if(which==2)scene.name=999;
   if(which==3)hasScene=false;if(which==4)roomNo=0;
   assert(!survivors_title_active());
   startDemoResult=123;assert(before_title_start_demo(nullptr,nullptr,&startDemoResult,nullptr)==HOOK_CONTINUE&&startDemoResult==123);
@@ -197,7 +204,9 @@ int main(){
  floorY=-400;before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==link.id&&!title_scene_ready());
  bowlLive=true;assert(title_scene_ready());
  // Startup is already loading its first scene: do not request a duplicate.
- scene.name=999;request_title_preview();update_title_preview();assert(!reloads&&!s_titleReloadPending&&!s_titleFlow.launched);
+ scene.name=999;request_title_preview();update_title_preview();assert(!reloads&&s_titleReloadPending&&!s_titleFlow.launched);
+ std::any startup[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
+ before_title_stage(nullptr,startup,nullptr,nullptr);assert(!s_titleReloadPending);
  scene.name=1;
  // Deselect -> vanilla; select again -> hub, including rapid carousel changes.
  s_active=false;request_title_preview();assert(s_titleReloadPending);
@@ -265,6 +274,41 @@ int main(){
  link.mItemButton=7;after_title_input(nullptr,linkArgs,nullptr,nullptr);assert(link.mItemButton==7);
  assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ // Repeated carousel changes at different asynchronous load phases. The hub
+ // request has already been routed when selection changes to vanilla (Play).
+ s_gameStarted=false;scene.name=fpcNm_OPENING_SCENE_e;roomNo=arenas[0].room;
+ for(int cycle=0;cycle<60;++cycle){
+  s_active=true;stageName=arenas[0].stage;roomNo=arenas[0].room;
+  request_title_preview();
+  std::any hub[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
+  before_title_stage(nullptr,hub,nullptr,nullptr);assert(!s_titleReloadPending);
+  s_active=false;request_title_preview();sceneCreating=true;
+  const auto previousReloads=reloads;
+  transition=(cycle%2)==0;update_title_preview();assert(reloads==previousReloads&&s_titleReloadPending);
+  transition=false;update_title_preview();assert(reloads==previousReloads&&s_titleReloadPending);
+  result=123;assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-2);
+  info.procname=fpcNm_ALINK_e;params.base.parameters=0;
+  before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
+  assert(((params.base.parameters>>12)&0x1f)==16&&((params.base.parameters>>24)&0xff)==0xff);
+  info.procname=99;assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+  assert(before_title_controls(nullptr,nullptr,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+  // A further choice while no scene can be looked up must survive the gap.
+  hasScene=false;s_active=(cycle%3)!=0;request_title_preview();
+  if(s_active)play_survivors(nullptr,nullptr);
+  update_title_preview();assert(reloads==previousReloads&&s_titleReloadPending);
+  hasScene=true;sceneCreating=false;update_title_preview();
+  assert(reloads==previousReloads+1&&reloadSelected==s_active&&!s_titleReloadPending);
+  std::any next[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
+  before_title_stage(nullptr,next,nullptr,nullptr);
+  stageName=mods::arg<const char*>(next,0);roomNo=mods::arg<s8>(next,2);
+  assert((std::strcmp(stageName,arenas[0].stage)==0)==s_active);
+  assert(survivors_title_active()==s_active);
+  result=123;
+  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==(s_active?HOOK_SKIP_ORIGINAL:HOOK_CONTINUE));
+  assert(result==(s_active?-2:123));
+  assert(!s_gameStarted&&!s_hubArrivalPending&&s_titleFlow.launched==s_active);
+  update_title_preview();assert(reloads==previousReloads+1);
+ }
  std::cout<<"Survivors title: opening routing, scene isolation, kneeling pose, private input, framing and logo cue passed\n";
 }
 '''

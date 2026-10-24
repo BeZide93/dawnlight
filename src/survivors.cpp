@@ -33,6 +33,7 @@
 #include "ganondorf_barrier.hpp"
 #include "survivors_locomotion.hpp"
 #include "survivors_title_flow.hpp"
+#include "survivors_title_logo.hpp"
 #include "survivors_title_pose.hpp"
 #include "dual_wield_animation.hpp"
 #include "enemy_spawner.hpp"
@@ -195,6 +196,7 @@ DEFINE_HOOK(&daObj_Oiltubo_c::Delete, SurvivorsHubBrazierDelete);
 // d_a_title.h declares a global procFunc typedef conflicting with item headers.
 DEFINE_HOOK_SYMBOL("daTitle_c::getDemoPrm", int(void*), SurvivorsTitleLogo);
 DEFINE_HOOK_SYMBOL("daTitle_c::logoDispWait", void(void*), SurvivorsTitleWaitLogo);
+DEFINE_HOOK_SYMBOL("daTitle_c::logoDispAnm", void(void*), SurvivorsTitleLogoAnimation);
 DEFINE_HOOK_SYMBOL("daTitle_c::keyWait", void(void*), SurvivorsTitleKey);
 DEFINE_HOOK_SYMBOL("daTitle_c::nextScene_proc", void(void*), SurvivorsTitleNext);
 DEFINE_HOOK_SYMBOL("daTitle_c::Draw", int(void*), SurvivorsTitleDraw);
@@ -1945,6 +1947,7 @@ ModResult initialize_survivors(ModError* error) {
     POST(SurvivorsCamera, after_title_camera);
     PRE(SurvivorsTitleLogo, before_title_logo);
     PRE(SurvivorsTitleWaitLogo, before_title_controls);
+    PRE(SurvivorsTitleLogoAnimation, before_title_logo_animation);
     PRE(SurvivorsTitleKey, before_title_controls);
     PRE(SurvivorsTitleNext, before_title_controls);
     PRE(SurvivorsTitleDraw, before_title_ui);

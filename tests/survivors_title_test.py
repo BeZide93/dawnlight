@@ -113,8 +113,25 @@ void* actor_by_id(int id){assert(id==12);return zeldaLive?&scene:nullptr;}
 bool owned_hub_zelda(void* p){return p!=nullptr;}
 bool modelReady=true;bool title_model_ready(daAlink_c*){return modelReady;}
 constexpr unsigned PAD_1=0;
-struct mDoCPd_c{static unsigned getHold(unsigned){return 0;}static unsigned getTrig(unsigned){return 0;}};
-bool ui_visible(){return false;}
+unsigned padTrigger=0;bool menuVisible=false;
+struct mDoCPd_c{
+ static unsigned getHold(unsigned){return 0;}static unsigned getTrig(unsigned){return padTrigger;}
+ static bool getTrigA(unsigned){return padTrigger&1;}static bool getTrigStart(unsigned){return padTrigger&2;}
+};
+bool ui_visible(){return menuVisible;}
+void finish_survivors_title_logo(void*);
+struct LogoAnimation{float frame=3,end=60;void setFrame(float f){frame=f;}float getEndFrame(){return end;}};
+struct LogoPane{unsigned starts=0;void alphaAnimeStart(int n){assert(n==0);++starts;}};
+struct daTitle_c{
+ LogoAnimation mBck,mBpk,mBrk,mBtk;LogoPane pane;LogoPane* field_0x600=&pane;
+ int field_0x604=4,field_0x5f9=0,field_0x5fa=0,mIsDispLogo=1,mProcID=2,mWaitTimer=0;
+ void fastLogoDispInit();void fastLogoDisp();void keyWaitInit();void keyWait();void nextScene_init();
+};
+unsigned presentationSyncs=0,enterSounds=0;
+namespace dusk::interp{void request_presentation_sync(){++presentationSyncs;}}
+#define IF_DUSK(...) __VA_ARGS__
+constexpr int Z2SE_TITLE_ENTER=42;
+void mDoAud_seStart(int sound,void*,int a,int b){assert(sound==42&&a==0&&b==0);++enterSounds;}
 '''
 native_fixture=r'''
 // Model the SDK's next-stage enable latch and Draw's independent PLAY request,
@@ -436,7 +453,31 @@ int main(){
  }
  assert(std::abs(camera.mEye.x-std::sqrt(360.f*360+310.f*310))<.01f&&
   std::abs(camera.mEye.z-260)<.01f&&camera.mEye.y==-210&&camera.fov==40);
- std::cout<<"Survivors title: opening routing, rejected requests, native next-stage latch, smooth camera arc and early logo input passed\n";
+ // Skip the native logo animation with a fresh input, but never reuse the
+ // reveal edge or advance to NAME_SCENE on the animation-completion input.
+ transition=false;s_titleReloadPending=false;s_titlePoseOwner=link.id;
+ s_titleFlow.logo=true;s_titleFlow.revealEdge=false;
+ daTitle_c title;std::any titleArgs[]{static_cast<void*>(&title)};
+ title.mBck.end=40;title.mBpk.end=50;title.mBrk.end=60;title.mBtk.end=70;
+ for(int gate=0;gate<9;++gate){
+  padTrigger=1;
+  if(gate==0)s_active=false;if(gate==1)scene.name=fpcNm_PLAY_SCENE_e;
+  if(gate==2)s_titleFlow.logo=false;if(gate==3)s_titleFlow.revealEdge=true;
+  if(gate==4)s_titleReloadPending=true;if(gate==5)menuVisible=true;
+  if(gate==6)transition=true;if(gate==7)bowlLive=false;if(gate==8)padTrigger=0;
+  assert(before_title_logo_animation(nullptr,titleArgs,nullptr,nullptr)==HOOK_CONTINUE);
+  assert(title.mProcID==2&&title.mBck.frame==3&&!presentationSyncs);
+  s_active=true;scene.name=fpcNm_OPENING_SCENE_e;s_titleFlow.logo=true;s_titleFlow.revealEdge=false;
+  s_titleReloadPending=menuVisible=transition=false;bowlLive=true;
+ }
+ const float cameraProgress=s_titleFlow.camera();padTrigger=16;
+ assert(before_title_logo_animation(nullptr,titleArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(title.mBck.frame==39&&title.mBpk.frame==49&&title.mBrk.frame==59&&title.mBtk.frame==69);
+ assert(title.mWaitTimer==0&&title.mProcID==3&&title.mIsDispLogo==1&&title.field_0x5f9==1&&title.field_0x5fa==1);
+ assert(title.pane.starts==1&&presentationSyncs==1&&!enterSounds&&s_titleFlow.camera()==cameraProgress);
+ padTrigger=0;title.keyWait();assert(title.mProcID==3&&!enterSounds);
+ padTrigger=1;title.keyWait();assert(title.mProcID==4&&enterSounds==1);
+ std::cout<<"Survivors title: scene routing, smooth camera, early logo reveal and native logo animation skip passed\n";
 }
 '''
 native_event=(sdk/'src/d/d_event_manager.cpp').read_text()
@@ -446,6 +487,18 @@ assert 'evId = getEventIdx("DEFAULT_START", 0xFF, -1);' in native_event
 native_title=(sdk/'src/d/actor/d_a_title.cpp').read_text()
 assert 'else if (getDemoPrm() == 1)' in native_title
 assert 'fopScnM_ChangeReq(playScene, fpcNm_NAME_SCENE_e, 0, 5);' in native_title
+def extract_function(text,signature):
+ start=text.index(signature);opening=text.index('{',start);depth=0
+ for end in range(opening,len(text)):
+  depth+=(text[end]=='{')-(text[end]=='}')
+  if not depth:return text[start:end+1]+'\n'
+ raise AssertionError(signature)
+# Execute the real SDK final-frame/key-wait routines with lightweight animation
+# objects, plus our production adapter, rather than mocking successful skipping.
+native_logo=''.join(extract_function(native_title,'void daTitle_c::'+name+'()')
+ for name in ['fastLogoDispInit','fastLogoDisp','keyWaitInit','keyWait','nextScene_init'])
+native_logo+=extract_function((root/'src/survivors_title_logo.cpp').read_text(),
+ 'void finish_survivors_title_logo(void* actor)')
 native_stage=(sdk/'src/d/d_stage.cpp').read_text()
 assert 'if (!enabled) {\n        enabled = true;' in native_stage
 native_scene=(sdk/'src/d/d_s_play.cpp').read_text()
@@ -455,8 +508,10 @@ assert source.index('PRE(SurvivorsStage, before_title_stage)')<source.index('PRE
 assert source.index('PRE(SurvivorsArenaActor, before_title_stage_actor)')<source.index('PRE(SurvivorsArenaActor, before_arena_stage_actor)')
 assert 'PRE(SurvivorsOpening, before_title_opening)' in source
 assert 'POST(SurvivorsOpening, after_title_opening)' in source
+assert 'PRE(SurvivorsTitleLogoAnimation, before_title_logo_animation)' in source
+assert 'src/survivors_title_logo.cpp' in (root/'CMakeLists.txt').read_text()
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'title.cpp';exe=Path(tmp)/'title'
- cpp.write_text(fixture+(root/'src/survivors_title.inc').read_text()+native_fixture+main)
+ cpp.write_text(fixture+(root/'src/survivors_title.inc').read_text()+native_fixture+native_logo+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'include'),'-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

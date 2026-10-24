@@ -118,6 +118,12 @@ HookAction before_title_controls(ModContext*, void*, void*, void*) {
     // finish native asynchronous UI initialization even behind prelaunch.
     return title_ui_blocked() ? HOOK_SKIP_ORIGINAL : HOOK_CONTINUE;
 }
+HookAction before_title_logo_animation(ModContext*,void* args,void*,void*) {
+    if (!s_active || !survivors_title_active() || title_ui_blocked() ||
+        ui_visible() || transitioning() || mDoCPd_c::getTrig(PAD_1)==0) return HOOK_CONTINUE;
+    finish_survivors_title_logo(mods::arg<void*>(args,0));
+    return HOOK_SKIP_ORIGINAL;
+}
 HookAction before_title_ui(ModContext*, void*, void* result, void*) {
     if (!title_ui_blocked()) return HOOK_CONTINUE;
     *static_cast<int*>(result) = 1;

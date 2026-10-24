@@ -57,6 +57,7 @@
 #include "d/d_camera.h"
 #include "d/d_msg_object.h"
 #include "d/actor/d_a_npc_zelda.h"
+#include "d/actor/d_a_obj_oiltubo.h"
 #include "d/d_item.h"
 #include "d/d_msg_class.h"
 #include "JSystem/JMessage/control.h"
@@ -184,6 +185,9 @@ DEFINE_HOOK(&dCamera_c::Run, SurvivorsCamera);
 DEFINE_HOOK(&daAlink_c::orderZTalk, SurvivorsMidnaOrder);
 DEFINE_HOOK(&dMsgFlow_c::getInitNodeIndex, SurvivorsMidnaFlow);
 DEFINE_HOOK(&daNpc_Zelda_c::setParam, SurvivorsHubZeldaParam);
+DEFINE_HOOK(&daObj_Oiltubo_c::Execute, SurvivorsHubBrazierExecute);
+DEFINE_HOOK(&daObj_Oiltubo_c::Draw, SurvivorsHubBrazierDraw);
+DEFINE_HOOK(&daObj_Oiltubo_c::Delete, SurvivorsHubBrazierDelete);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
@@ -1913,6 +1917,9 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsMidnaFlow, before_hub_zelda_flow);
     PRE(SurvivorsHubZeldaParam, before_hub_zelda_param);
     POST(SurvivorsHubZeldaParam, after_hub_zelda_param);
+    PRE(SurvivorsHubBrazierExecute, before_hub_brazier_execute);
+    PRE(SurvivorsHubBrazierDraw, before_hub_brazier_draw);
+    PRE(SurvivorsHubBrazierDelete, before_hub_brazier_delete);
     PRE(SurvivorsEnemyContact,before_enemy_contact);
     PRE(SurvivorsBlock, before_player_contacts);
     PRE(SurvivorsBlock, before_shield_block); POST(SurvivorsBlock, after_player_damage); PRE(SurvivorsGuard, before_survivors_guard);

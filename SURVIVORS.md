@@ -4,8 +4,10 @@
 
 A 20-minute survival mode included in `dawnlight_mod.dusk`. Select **Hyrule
 Survivors** in Dusklight's game-mode menu and create/load its separate save.
-You arrive in the freely walkable Darknut Arena hub. A lit Hyrule Castle fire
-bowl stands in the center. Zelda stands beside it and turns toward Link when
+You arrive in the freely walkable Darknut Arena hub. A ceremonial oil bowl
+(`Obj_otubo`), enlarged to twice its native size and used as a fire bowl, stands
+in the center. Its fire, light and collision follow the enlarged bowl; it has
+no oil-refill interaction. Zelda stands beside it and turns toward Link when
 spoken to. Visit her to open **Talents / Settings**; closing saves automatically.
 Speak to her with A: "It's dangerous to go alone! Take this." She then presents
 the **Ordon Sword**, raised overhead in Link's hand, with the native item message.

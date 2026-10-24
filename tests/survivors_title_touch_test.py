@@ -1,4 +1,4 @@
-"""Run title event scoping against Dusklight's native touch visibility rules."""
+"""Run native title UI rules while proving game event state never changes."""
 from pathlib import Path
 import os, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
@@ -33,6 +33,7 @@ bool survivors_title_presentation_active(){return title;}
 int dummySkip(void*,int){return 1;}
 using ModResult=int;constexpr int MOD_OK=0;struct ModError{};struct ModContext{};
 struct ExtraTouchUpdate{};struct ExtraTouchSync{};
+#define DEFINE_HOOK_SYMBOL(symbol,signature,name) struct name {};
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 struct HookOptions{int priority=0;};
 #define HOOK_OPTIONS_INIT {}
@@ -79,66 +80,89 @@ namespace mods {
 }
 '''
 native_rules='\n'.join(function(s) for s in [
-    'bool game_controls_suppressed() noexcept',
     'FaceButtonState xy_button_state(Control control)',
     'FaceButtonState z_button_state()',
     'FaceButtonState b_button_state()',
     'void TouchControls::sync_visual_state() noexcept',
     'void TouchControls::sync_action_bar_state() noexcept'])
+dispatch=function('bool game_controls_suppressed() noexcept').replace('bool game_controls_suppressed()', 'bool native_game_controls_suppressed()')+r'''
+bool game_controls_suppressed() noexcept {
+ bool suppressed=false;
+ if(before_title_gameplay_controls(nullptr,nullptr,&suppressed,nullptr)==HOOK_CONTINUE)
+  suppressed=native_game_controls_suppressed();
+ return suppressed;
+}
+'''
 main=r'''
+void action_bar(NativeTouch& c){
+ std::any args[]{&c};
+ before_title_action_bar(nullptr,args,nullptr,nullptr);
+ c.sync_action_bar_state();
+ after_title_action_bar(nullptr,nullptr,nullptr,nullptr);
+}
 int main(){
- assert(initialize_title_touch(nullptr)==MOD_OK&&hooks==4);
+ assert(initialize_title_touch(nullptr)==MOD_OK&&hooks==5);
  NativeTouch controls;std::any args[]{&controls};
  for(auto&t:controls.mControlTouches)t.active=true;
  controls.mButtonMask=0xffff;controls.mQueuedActions.set();
  controls.mMoveTouch.active=controls.mCameraTouch.active=true;
  controls.mLPressed=controls.mLLatched=controls.mManualLLatched=true;
  controls.mLReleasePending=controls.mRTriggerHeld=true;
- // The host normally shows gameplay controls and the B sword icon here.
- controls.sync_visual_state();controls.sync_action_bar_state();
+ controls.sync_visual_state();action_bar(controls);
  assert(!controls.actionBar.hidden&&xy_button_state(Control::X).visible&&z_button_state().visible);
  assert(b_button_state().showIcon);
  title=true;event.mSkipFunc=dummySkip;event.flags=4;
  before_title_touch(nullptr,args,nullptr,nullptr);
- assert(event.mEventStatus==1&&!event.mSkipFunc&&event.flags==4);
+ assert(event.mEventStatus==0&&event.mSkipFunc==dummySkip&&event.flags==4);
  assert(controls.mControlTouches[0].active&&controls.mControlTouches[1].active);
  for(size_t i=2;i<controls.mControlTouches.size();++i)assert(!controls.mControlTouches[i].active);
  assert(controls.mButtonMask==(PAD_BUTTON_A|PAD_BUTTON_B)&&controls.mQueuedActions.none());
  assert(!controls.mMoveTouch.active&&!controls.mCameraTouch.active&&!controls.mLLatched&&!controls.mRTriggerHeld);
- controls.sync_visual_state();controls.sync_action_bar_state();
+ controls.sync_visual_state();
+ before_title_action_bar(nullptr,args,nullptr,nullptr);
+ // The game event must stay idle even INSIDE the native UI callback.
+ assert(!dComIfGp_event_runCheck()&&event.mSkipFunc==dummySkip&&event.flags==4);
+ assert(controls.mWasSuppressed);
+ controls.sync_action_bar_state();
  assert(controls.buttons[size_t(Control::L)].hidden&&controls.buttons[size_t(Control::R)].hidden);
  assert(controls.actionBar.hidden&&controls.buttons[size_t(Control::SKIP)].hidden);
+ after_title_action_bar(nullptr,nullptr,nullptr,nullptr);
+ assert(!controls.mWasSuppressed);
  assert(!xy_button_state(Control::X).visible&&!xy_button_state(Control::Y).visible&&!z_button_state().visible);
- assert(b_button_state().visible&&!b_button_state().showIcon); // Native B label, no style override.
- // Nested UI/input calls preserve the outer cutscene, even across a mode change.
- before_title_touch(nullptr,args,nullptr,nullptr);title=false;
- after_title_touch(nullptr,nullptr,nullptr,nullptr);
- assert(event.mEventStatus==1&&!event.mSkipFunc);
- after_title_touch(nullptr,nullptr,nullptr,nullptr);
- assert(event.mEventStatus==0&&event.mSkipFunc==dummySkip&&event.flags==4);
- controls.sync_visual_state();controls.sync_action_bar_state();
+ assert(b_button_state().visible&&!b_button_state().showIcon);
+ assert(!dComIfGp_event_runCheck()&&event.mSkipFunc==dummySkip&&event.flags==4);
+ // Nesting and a mode change restore only the widget's original flag.
+ before_title_action_bar(nullptr,args,nullptr,nullptr);
+ before_title_action_bar(nullptr,args,nullptr,nullptr);title=false;
+ after_title_action_bar(nullptr,nullptr,nullptr,nullptr);assert(controls.mWasSuppressed);
+ after_title_action_bar(nullptr,nullptr,nullptr,nullptr);assert(!controls.mWasSuppressed);
+ controls.sync_visual_state();action_bar(controls);
  assert(!controls.actionBar.hidden&&!controls.buttons[size_t(Control::L)].hidden&&b_button_state().showIcon);
- // A real skippable event is restored exactly; inactive mode is untouched.
- event.mEventStatus=1;
- before_title_touch(nullptr,args,nullptr,nullptr);controls.sync_action_bar_state();
+ // Real skippable events remain completely untouched, including in callbacks.
+ event.mEventStatus=1;action_bar(controls);
  assert(!controls.buttons[size_t(Control::SKIP)].hidden);
- after_title_touch(nullptr,nullptr,nullptr,nullptr);assert(event.mSkipFunc==dummySkip);
  title=true;before_title_touch(nullptr,args,nullptr,nullptr);
+ before_title_action_bar(nullptr,args,nullptr,nullptr);
+ assert(event.mEventStatus==1&&event.mSkipFunc==dummySkip&&event.flags==4);
  controls.sync_action_bar_state();assert(controls.buttons[size_t(Control::SKIP)].hidden);
- shutdown_title_touch();assert(event.mEventStatus==1&&event.mSkipFunc==dummySkip&&s_titleTouchEvents.empty());
- // Missing event/controller during startup and teardown, plus repeated entries.
- haveEvent=false;before_title_touch(nullptr,args,nullptr,nullptr);after_title_touch(nullptr,nullptr,nullptr,nullptr);
- haveEvent=true;std::any empty[]{static_cast<NativeTouch*>(nullptr)};
- before_title_touch(nullptr,empty,nullptr,nullptr);after_title_touch(nullptr,nullptr,nullptr,nullptr);
- for(int i=0;i<3;++i){before_title_touch(nullptr,args,nullptr,nullptr);after_title_touch(nullptr,nullptr,nullptr,nullptr);assert(event.mEventStatus==1&&event.mSkipFunc==dummySkip);}
- assert(s_titleTouchEvents.empty());
- std::cout<<"Native title cutscene: gameplay/Skip hidden, B label and A/B input preserved, nested restoration and mode changes passed\n";
+ shutdown_title_touch();assert(!controls.mWasSuppressed&&s_titleTouchBars.empty());
+ assert(event.mEventStatus==1&&event.mSkipFunc==dummySkip&&event.flags==4);
+ title=false;action_bar(controls);assert(!controls.buttons[size_t(Control::SKIP)].hidden);
+ // Preserve host menu suppression and handle startup/teardown with no widget.
+ title=true;controls.mWasSuppressed=true;action_bar(controls);assert(controls.mWasSuppressed);
+ controls.mWasSuppressed=false;
+ std::any empty[]{static_cast<NativeTouch*>(nullptr)};
+ before_title_touch(nullptr,empty,nullptr,nullptr);
+ before_title_action_bar(nullptr,empty,nullptr,nullptr);after_title_action_bar(nullptr,nullptr,nullptr,nullptr);
+ for(int i=0;i<3;++i){action_bar(controls);assert(!controls.mWasSuppressed&&event.mEventStatus==1&&event.mSkipFunc==dummySkip);}
+ assert(s_titleTouchBars.empty());
+ std::cout<<"Native title UI: game events untouched inside callbacks; gameplay/Skip hidden, A/B preserved, nesting and mode changes passed\n";
 }
 '''
 native=(root/'src/touch_buttons_native.inc').read_text()
 assert native.index('initialize_title_touch(error)')<native.index('if (!s_extraSessionEnabled) return MOD_OK;')
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'touch.cpp';exe=Path(tmp)/'touch'
-    cpp.write_text(fixture+native_rules+source+main)
+    cpp.write_text(fixture+source+dispatch+native_rules+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)

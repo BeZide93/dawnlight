@@ -1,20 +1,34 @@
-// Present the custom title to the host's native touch controller as a running,
-// non-skippable cutscene. Keep this status scoped to UI/input evaluation: the
-// title has no event-manager script, and the game must not sequence a fake one.
-struct TitleTouchEvent {
-    dEvt_control_c* event=nullptr;
-    u8 status=0;
-    dEvt_SkipCb skip=nullptr;
-};
-std::vector<TitleTouchEvent> s_titleTouchEvents;
+// Apply the native cutscene visibility rules inside the UI only. Never change
+// dEvt_control_c: even a temporary running event can be observed by other hooks.
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui12_GLOBAL__N_124game_controls_suppressedEv",
+    bool(), TitleTouchGameplaySuppressed);
+DEFINE_HOOK_SYMBOL("_ZN4dusk2ui13TouchControls21sync_action_bar_stateEv",
+    void(NativeTouch*), TitleTouchActionBar);
+HookAction before_title_gameplay_controls(ModContext*,void*,void* result,void*) {
+    if (!survivors_title_presentation_active()) return HOOK_CONTINUE;
+    *static_cast<bool*>(result)=true;
+    return HOOK_SKIP_ORIGINAL;
+}
+// This flag belongs to the touch widget, not the game. Suppress only its
+// action-bar update (including Skip); native face-button updates still own A/B.
+struct TitleTouchBarState { NativeTouch* controls=nullptr; bool suppressed=false; };
+std::vector<TitleTouchBarState> s_titleTouchBars;
+HookAction before_title_action_bar(ModContext*,void* args,void*,void*) {
+    auto* controls=mods::arg<NativeTouch*>(args,0);
+    const bool title=controls && survivors_title_presentation_active();
+    s_titleTouchBars.push_back(title ? TitleTouchBarState{controls,controls->mWasSuppressed} : TitleTouchBarState{});
+    if (title) controls->mWasSuppressed=true;
+    return HOOK_CONTINUE;
+}
+void after_title_action_bar(ModContext*,void*,void*,void*) {
+    if (s_titleTouchBars.empty()) return;
+    const auto saved=s_titleTouchBars.back();
+    s_titleTouchBars.pop_back();
+    if (saved.controls) saved.controls->mWasSuppressed=saved.suppressed;
+}
 HookAction before_title_touch(ModContext*,void* args,void*,void*) {
     auto* controls=mods::arg<NativeTouch*>(args,0);
-    auto* event=dComIfGp_getEvent();
-    const bool title=controls && event && survivors_title_presentation_active();
-    s_titleTouchEvents.push_back(title ? TitleTouchEvent{event,event->mEventStatus,event->mSkipFunc} : TitleTouchEvent{});
-    if (title) {
-        event->mEventStatus=1;
-        event->mSkipFunc=nullptr;
+    if (controls && survivors_title_presentation_active()) {
         // Cancel old gameplay holds before native long-press and pad handling.
         // A/B retain their native touch state for the logo/Start flow.
         for (size_t i=0;i<controls->mControlTouches.size();++i) {
@@ -32,27 +46,17 @@ HookAction before_title_touch(ModContext*,void* args,void*,void*) {
     }
     return HOOK_CONTINUE;
 }
-void after_title_touch(ModContext*,void*,void*,void*) {
-    if (s_titleTouchEvents.empty()) return;
-    const auto saved=s_titleTouchEvents.back();
-    s_titleTouchEvents.pop_back();
-    if (saved.event) {
-        saved.event->mEventStatus=saved.status;
-        saved.event->mSkipFunc=saved.skip;
-    }
-}
 ModResult initialize_title_touch(ModError* error) {
-    // Enclose other mods' touch callbacks as well as the native implementation.
-    // No RmlUi methods, stylesheet or optional private helper resolution needed.
     HookOptions before=HOOK_OPTIONS_INIT, after=HOOK_OPTIONS_INIT;
     before.priority=INT32_MAX;
     after.priority=INT32_MIN;
-    auto result=mods::hook_add_pre<ExtraTouchUpdate>(svc_hook,before_title_touch,&before);
-    if (result==MOD_OK) result=mods::hook_add_post<ExtraTouchUpdate>(svc_hook,after_title_touch,&after);
+    auto result=mods::hook_add_pre<TitleTouchGameplaySuppressed>(svc_hook,before_title_gameplay_controls,&before);
+    if (result==MOD_OK) result=mods::hook_add_pre<TitleTouchActionBar>(svc_hook,before_title_action_bar,&before);
+    if (result==MOD_OK) result=mods::hook_add_post<TitleTouchActionBar>(svc_hook,after_title_action_bar,&after);
+    if (result==MOD_OK) result=mods::hook_add_pre<ExtraTouchUpdate>(svc_hook,before_title_touch,&before);
     if (result==MOD_OK) result=mods::hook_add_pre<ExtraTouchSync>(svc_hook,before_title_touch,&before);
-    if (result==MOD_OK) result=mods::hook_add_post<ExtraTouchSync>(svc_hook,after_title_touch,&after);
-    return result==MOD_OK ? MOD_OK : mods::set_error(error,result,"failed to initialize Survivors title cutscene touch controls");
+    return result==MOD_OK ? MOD_OK : mods::set_error(error,result,"failed to initialize Survivors title touch visibility");
 }
 void shutdown_title_touch() {
-    while (!s_titleTouchEvents.empty()) after_title_touch(nullptr,nullptr,nullptr,nullptr);
+    while (!s_titleTouchBars.empty()) after_title_action_bar(nullptr,nullptr,nullptr,nullptr);
 }

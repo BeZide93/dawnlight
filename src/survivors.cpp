@@ -198,6 +198,7 @@ DEFINE_HOOK_SYMBOL("daTitle_c::keyWait", void(void*), SurvivorsTitleKey);
 DEFINE_HOOK_SYMBOL("daTitle_c::nextScene_proc", void(void*), SurvivorsTitleNext);
 DEFINE_HOOK_SYMBOL("daTitle_c::Draw", int(void*), SurvivorsTitleDraw);
 DEFINE_HOOK(&daAlink_c::procWait, SurvivorsTitleWait);
+DEFINE_HOOK(&dEvent_manager_c::orderStartDemo, SurvivorsTitleStartDemo);
 DEFINE_HOOK(&daAlink_c::setStickData, SurvivorsTitleInput);
 DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, SurvivorsTitleFall);
 DEFINE_HOOK(&daAlink_c::modelCallBack, SurvivorsTitleJoint);
@@ -1927,6 +1928,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsTitleNext, before_title_controls);
     PRE(SurvivorsTitleDraw, before_title_ui);
     PRE(SurvivorsTitleWait, before_title_wait);
+    PRE(SurvivorsTitleStartDemo, before_title_start_demo);
     POST(SurvivorsTitleInput, after_title_input);
     PRE(SurvivorsTitleFall, before_title_fall);
     PRE(SurvivorsTitleJoint, before_title_joint);

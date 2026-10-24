@@ -99,10 +99,14 @@ int main(){
   flow.play();assert(flow.camera()==0&&!flow.logo&&!flow.armed);
  }
  assert(survivors_title_active());
+ int startDemoResult=123;
+ assert(before_title_start_demo(nullptr,nullptr,&startDemoResult,nullptr)==HOOK_SKIP_ORIGINAL&&startDemoResult==-2);
  for(int which=0;which<5;++which){
   if(which==0)s_active=false;if(which==1)s_gameStarted=true;if(which==2)scene.name=999;
   if(which==3)hasScene=false;if(which==4)roomNo=0;
-  assert(!survivors_title_active());s_active=true;s_gameStarted=false;scene.name=1;hasScene=true;roomNo=51;
+  assert(!survivors_title_active());
+  startDemoResult=123;assert(before_title_start_demo(nullptr,nullptr,&startDemoResult,nullptr)==HOOK_CONTINUE&&startDemoResult==123);
+  s_active=true;s_gameStarted=false;scene.name=1;hasScene=true;roomNo=51;
  }
  std::any args[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
  before_title_stage(nullptr,args,nullptr,nullptr);
@@ -219,6 +223,10 @@ int main(){
  std::cout<<"Survivors title: opening routing, scene isolation, kneeling pose, private input, framing and logo cue passed\n";
 }
 '''
+native_event=(sdk/'src/d/d_event_manager.cpp').read_text()
+# 0xff does not disable DEFAULT_START; -2 is the native no-demo sentinel.
+assert 'if (mException.mEventInfoIdx == -2)' in native_event
+assert 'evId = getEventIdx("DEFAULT_START", 0xFF, -1);' in native_event
 native_title=(sdk/'src/d/actor/d_a_title.cpp').read_text()
 assert 'else if (getDemoPrm() == 1)' in native_title
 assert 'fopScnM_ChangeReq(playScene, fpcNm_NAME_SCENE_e, 0, 5);' in native_title

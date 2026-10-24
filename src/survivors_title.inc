@@ -97,6 +97,14 @@ HookAction before_title_stage(ModContext*, void* args, void*, void*) {
     mods::arg_ref<s8>(args,3) = 0;
     return HOOK_CONTINUE;
 }
+HookAction before_title_start_demo(ModContext*,void*,void* result,void*) {
+    if (!survivors_title_active()) return HOOK_CONTINUE;
+    // Link calls orderStartDemo even with idle spawn mode and event 0xff.
+    // The native fallback then orders this room's DEFAULT_START. The custom
+    // title owns its camera/pose and must not start a dungeon entrance event.
+    *static_cast<int*>(result)=-2; // Native "no start demo" result.
+    return HOOK_SKIP_ORIGINAL;
+}
 HookAction before_title_stage_actor(ModContext*, void* args, void*, void*) {
     if (!survivors_title_active()) return HOOK_CONTINUE;
     const auto* record = mods::arg<stage_actor_data_class*>(args,0);

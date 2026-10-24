@@ -12,7 +12,11 @@ the **Ordon Sword**, raised overhead in Link's hand, with the native item messag
 New saves start without a sword; Zelda's completed gift is saved automatically.
 Trying the exit first turns the conversation camera toward Zelda as she calls
 "Wait! Come here!" Visit her to receive the sword before starting a run.
-Existing saves that already own Ordon keep it.
+Existing saves that already own Ordon keep it. After the first gift Zelda says,
+"Come to me after your journey to get some rest and strengthen your Talents."
+**Talents** is highlighted red in the dialogue. Later conversations say
+"Let me help you on your journey." and open **Talents / Settings** after the
+native dialogue closes, without repeating the sword gift.
 Interact with the exit door beneath **Start Run** to open map selection. Pick a
 map and press **Start run**: the menu closes, the native door opens, and Link walks
 through before the scene changes to the selected arena. Story and Boss Rush saves remain separate.

@@ -2013,7 +2013,9 @@ void shutdown_survivors() {
     s_active = false; reset_runtime(); cleanup_enemies(); cleanup_pots(); cleanup_pickups();
     s_midnaGraph.reset(); s_midnaPrompt.reset(); s_midnaOptions.reset(); s_midnaStart=0;
     s_hubZeldaGraph.reset(); s_hubZeldaMessage.reset(); s_hubZeldaCallMessage.reset();
-    s_hubZeldaReward={}; s_hubZeldaStart=s_hubZeldaCallStart=0;
+    s_hubZeldaAfterGiftMessage.reset(); s_hubZeldaTalentsMessage.reset();
+    s_hubZeldaReward={}; s_hubZeldaTalentsEvent={};
+    s_hubZeldaStart=s_hubZeldaCallStart=s_hubZeldaAfterGiftStart=s_hubZeldaTalentsStart=0;
     s_treasureMessage.reset(); s_itemNameMessage.reset(); s_itemDescriptionMessage.reset();
     if (s_savePrompt != kNone) { d_GameOver_Delete(s_savePrompt); s_savePrompt = kNone; }
     if (s_registered) svc_game_mode->unregister_game_mode(mod_ctx, kMode);

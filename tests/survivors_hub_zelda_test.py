@@ -24,7 +24,7 @@ std::map<u16,FlowNodeData> nodes;std::map<u16,u16> edges;
 std::map<MessageId,std::vector<std::string>> texts;
 std::map<MessageId,unsigned> cameraAttrs;
 u16 nextNode=0x8000,nextEdge=0x8000,nextMessage=0x8000;
-FlowEventFn rewardCallback=nullptr;
+FlowEventFn rewardCallback=nullptr,talentsCallback=nullptr;
 ModResult beginGraph(ModContext*,u16 group,FlowGraphHandle* out){assert(group==0);*out=1;return MOD_OK;}
 ModResult allocNode(ModContext*,FlowGraphHandle,u16* out){*out=nextNode++;return MOD_OK;}
 ModResult addEdges(ModContext*,FlowGraphHandle,const u16* targets,u16 count,u16* out){*out=nextEdge;for(unsigned i=0;i<count;++i)edges[nextEdge++]=targets[i];return MOD_OK;}
@@ -32,7 +32,9 @@ ModResult fillNode(ModContext*,FlowGraphHandle,u16 id,const FlowNodeData* node){
 ModResult commitGraph(ModContext*,FlowGraphHandle){return MOD_OK;}
 ModResult removeGraph(ModContext*,FlowGraphHandle){return MOD_OK;}
 ModResult registerEvent(ModContext*,const char* name,FlowEventFn fn,void*,FlowEventId* out){
- assert(std::string(name)=="Survivors Zelda Ordon Sword");rewardCallback=fn;*out=200;return MOD_OK;}
+ if(std::string(name)=="Survivors Zelda Talents"){talentsCallback=fn;*out=201;}
+ else {assert(std::string(name)=="Survivors Zelda Ordon Sword");rewardCallback=fn;*out=200;}
+ return MOD_OK;}
 ModResult registerMessage(ModContext*,u16 group,const MessageVariantData* variants,size_t count,MessageId* id,MessageHandle* handle){
  assert(group==0&&count==6);*id=nextMessage++;*handle=*id;
  cameraAttrs[*id]=variants[0].entry.bytes[15];
@@ -106,7 +108,9 @@ struct daAlink_c:fopAc_ac_c {
  void setSingleAnimeBase(int n){assert(n==ANM_GET_MASTER_SWORD);animation=n;++animations;}
 }link;
 fopAc_ac_c giftItem;
-bool swordReceived=false;
+bool swordReceived=false,msgTalking=false;unsigned talentOpens=0;
+bool dMsgObject_isTalkNowCheck(){return msgTalking;}
+void survivors_open_talents(){++talentOpens;}
 bool dComIfGs_isItemFirstBit(int item){assert(item==dItemNo_SWORD_e);return swordReceived;}
 struct dKy_tevstr_c {};
 struct Environment {void settingTevStruct(int,cXyz*,dKy_tevstr_c*){}
@@ -173,7 +177,7 @@ main = r'''
 u16 word(const FlowNodeData& n,unsigned offset){return u16(n.bytes[offset]<<8|n.bytes[offset+1]);}
 int main(){
  link.id=s_player;giftItem.id=55;giftItem.name=fpcNm_Demo_Item_e;
- assert(initialize_hub_zelda()==MOD_OK&&nodes.size()==3);
+ assert(initialize_hub_zelda()==MOD_OK&&nodes.size()==6);
  const auto text=nodes.at(s_hubZeldaStart);assert(text.bytes[0]==1);
  for(const auto& t:texts.at(word(text,2)))assert(t.find("It's dangerous to go alone! Take this.")!=t.npos);
  const auto gift=nodes.at(word(text,4));assert(gift.bytes[0]==3&&gift.bytes[1]==s_hubZeldaReward.id());
@@ -216,22 +220,22 @@ int main(){
  const auto call=nodes.at(s_hubZeldaCallStart);assert(call.bytes[0]==1&&word(call,4)==mods::flow::kEnd);
  assert(cameraAttrs.at(word(call,2))==1); // Native camera focuses actor slot 1 (Zelda).
  for(const auto& t:texts.at(word(call,2)))assert(t.find("Wait! Come here!")!=t.npos);
- request_hub_zelda_call();request_hub_zelda_call();assert(s_hubZeldaCallPending);
+ request_hub_zelda_call();request_hub_zelda_call();assert((s_hubZeldaPendingTalk!=HubZeldaTalk::None));
  update_hub_zelda_call();assert(!talkOrders); // Wait for native eligibility.
  link.eventInfo.conditions=zelda.eventInfo.conditions=dEvtCnd_CANTALK_e;
  update_hub_zelda_call();assert(talkOrders==1);
  nativeEvent.mPt2=zelda.id;eventRunning=true;
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);
- assert(entry==s_hubZeldaCallStart&&s_hubZeldaCalling&&!s_hubZeldaCallPending&&cameraSpeaker==&zelda);
+ assert(entry==s_hubZeldaCallStart&&(s_hubZeldaActiveTalk!=HubZeldaTalk::None)&&(s_hubZeldaPendingTalk==HubZeldaTalk::None)&&cameraSpeaker==&zelda);
  rewardCallback(nullptr,&event,nullptr);assert(!hub_zelda_gift_busy()&&!rewardCalls);
- update_hub_zelda_call();assert(s_hubZeldaCalling);
+ update_hub_zelda_call();assert((s_hubZeldaActiveTalk!=HubZeldaTalk::None));
  nativeEvent.mPt2=99;const auto callResets=eventResets;update_hub_zelda_call();
- assert(!s_hubZeldaCalling&&eventResets==callResets); // Foreign events are untouched.
+ assert((s_hubZeldaActiveTalk==HubZeldaTalk::None)&&eventResets==callResets); // Foreign events are untouched.
  eventRunning=false;nativeEvent.mPt2=kNone;
  request_hub_zelda_call();play=false;
  for(int i=0;i<120;++i){update_hub_zelda_call();}assert(s_hubZeldaCallFrames==0);
- play=true;for(int i=0;i<91;++i){update_hub_zelda_call();}assert(!s_hubZeldaCallPending);
- swordReceived=true;request_hub_zelda_call();assert(!s_hubZeldaCallPending);swordReceived=false;
+ play=true;for(int i=0;i<91;++i){update_hub_zelda_call();}assert((s_hubZeldaPendingTalk==HubZeldaTalk::None));
+ swordReceived=true;request_hub_zelda_call();assert((s_hubZeldaPendingTalk==HubZeldaTalk::None));swordReceived=false;
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);assert(entry==s_hubZeldaStart);
  assert(!rewardCalls);rewardCallback(nullptr,&foreign,nullptr);rewardCallback(nullptr,nullptr,nullptr);assert(!rewardCalls);
 
@@ -287,9 +291,49 @@ int main(){
  update_hub_zelda_gift();assert(!rewardCalls);eventEnded=true;
  update_hub_zelda_gift();assert(rewardCalls==1&&s_hubZeldaGift.retiring);
  assert(link.ordon.data.material.shape.hidden&&!s_hubZeldaGift.handSword);
- assert(swordReceived&&s_hubSaveRequested);s_hubSaveRequested=false;
+ assert(swordReceived&&s_hubSaveRequested&&s_hubZeldaPendingTalk==HubZeldaTalk::AfterGift);
+ const auto talksBefore= talkOrders;
+ update_hub_zelda_call();assert(talkOrders==talksBefore); // Wait for item cleanup/save.
  update_hub_zelda_gift();assert(rewardCalls==1);giftLive=false;update_hub_zelda_gift();assert(!hub_zelda_gift_busy());
- // A repeated conversation may present the same ordinary sword again, never rupees or a run upgrade.
+ // Continue automatically after the gift, only once the native save and item are done.
+ update_hub_zelda_call();assert(talkOrders==talksBefore);
+ s_hubSaveRequested=false;update_hub_zelda_call();assert(talkOrders==talksBefore+1);
+ nativeEvent.mPt2=zelda.id;eventRunning=true;
+ before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);
+ assert(entry==s_hubZeldaAfterGiftStart&&s_hubZeldaActiveTalk==HubZeldaTalk::AfterGift);
+ before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);assert(entry==s_hubZeldaAfterGiftStart);
+ const auto afterGift=nodes.at(entry);assert(afterGift.bytes[0]==1&&word(afterGift,4)==mods::flow::kEnd);
+ const std::string prefix="Come to me after your journey to get some rest and strengthen your ";
+ const auto red=mods::flow::MessageBuilder{}.text_color(MESSAGE_COLOR_RED).build(MESSAGE_LANGUAGE_ENGLISH);
+ const auto normal=mods::flow::MessageBuilder{}.text_color(MESSAGE_COLOR_DEFAULT).build(MESSAGE_LANGUAGE_ENGLISH);
+ const std::string redTag(reinterpret_cast<const char*>(red.text().data()),red.text().size()-1);
+ const std::string normalTag(reinterpret_cast<const char*>(normal.text().data()),normal.text().size()-1);
+ for(const auto& t:texts.at(word(afterGift,2)))assert(t==prefix+redTag+"Talents"+normalTag+"."+std::string(1,0));
+ rewardCallback(nullptr,&event,nullptr);talentsCallback(nullptr,&event,nullptr);
+ assert(!hub_zelda_gift_busy()&&!s_hubZeldaTalentsPending&&rewardCalls==1);
+ eventRunning=false;nativeEvent.mPt2=kNone;update_hub_zelda_call();assert(!talentOpens);
+ // Later conversations (including existing saves) open talents instead of another gift.
+ nativeEvent.mPt2=zelda.id;eventRunning=true;
+ before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);assert(entry==s_hubZeldaTalentsStart);
+ const auto help=nodes.at(entry);
+ for(const auto& t:texts.at(word(help,2)))assert(t=="Let me help you on your journey."+std::string(1,0));
+ const auto open=nodes.at(word(help,4));assert(open.bytes[0]==3&&open.bytes[1]==s_hubZeldaTalentsEvent.id());
+ assert(edges.at(word(open,2))==mods::flow::kEnd);
+ rewardCallback(nullptr,&event,nullptr);assert(!hub_zelda_gift_busy());
+ talentsCallback(nullptr,&foreign,nullptr);assert(!s_hubZeldaTalentsPending);
+ talentsCallback(nullptr,&event,nullptr);talentsCallback(nullptr,&event,nullptr);
+ update_hub_zelda_call();assert(!talentOpens); // No UI over an active dialogue.
+ eventRunning=false;nativeEvent.mPt2=kNone;msgTalking=true;
+ update_hub_zelda_call();assert(!talentOpens);
+ msgTalking=false;s_progressSaving=true;update_hub_zelda_call();assert(!talentOpens);
+ s_progressSaving=false;update_hub_zelda_call();update_hub_zelda_call();assert(talentOpens==1);
+ talentsCallback(nullptr,&event,nullptr);update_hub_zelda_call();assert(talentOpens==1);
+ // A replaced/cancelled conversation cannot open a menu over another event.
+ nativeEvent.mPt2=zelda.id;eventRunning=true;before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);
+ talentsCallback(nullptr,&event,nullptr);nativeEvent.mPt2=99;update_hub_zelda_call();
+ eventRunning=false;nativeEvent.mPt2=kNone;update_hub_zelda_call();assert(talentOpens==1&&!s_hubZeldaTalentsPending);
+ // Still allow retrying failed first gifts on a swordless save.
+ swordReceived=false;
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);rewardCallback(nullptr,&event,nullptr);
  failGift=true;update_hub_zelda_gift();assert(!hub_zelda_gift_busy()&&rewardCalls==1);failGift=false;
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);rewardCallback(nullptr,&event,nullptr);
@@ -307,7 +351,7 @@ int main(){
  after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
  assert(link.calculations==calcs&&!s_hubZeldaGift.handSword&&!link.ordon.data.material.shape.hidden);
  update_hub_zelda_gift();assert(rewardCalls==1&&eventResets==resets);
- assert(!swordReceived&&!s_hubSaveRequested);
+ assert(!swordReceived&&!s_hubSaveRequested&&s_hubZeldaPendingTalk==HubZeldaTalk::None);
  giftLive=false;cleanup_hub_zelda_gift();nativeEvent.mPt2=kNone;eventRunning=false;
  // Timeout an unaccepted request; menus do not spend the retry budget.
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);rewardCallback(nullptr,&event,nullptr);

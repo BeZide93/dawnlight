@@ -5,9 +5,12 @@ bool s_hubZeldaRetiring = false, s_hubZeldaRewardPending = false;
 unsigned s_hubZeldaRetry = 0;
 mods::flow::Graph s_hubZeldaGraph;
 mods::flow::RegisteredMessage s_hubZeldaMessage, s_hubZeldaCallMessage;
-mods::flow::Event s_hubZeldaReward;
-u16 s_hubZeldaStart = 0, s_hubZeldaCallStart = 0;
-bool s_hubZeldaCallPending = false, s_hubZeldaCalling = false;
+mods::flow::RegisteredMessage s_hubZeldaAfterGiftMessage, s_hubZeldaTalentsMessage;
+mods::flow::Event s_hubZeldaReward, s_hubZeldaTalentsEvent;
+u16 s_hubZeldaStart = 0, s_hubZeldaCallStart = 0, s_hubZeldaAfterGiftStart = 0, s_hubZeldaTalentsStart = 0;
+enum class HubZeldaTalk { None, Reminder, AfterGift, Talents };
+HubZeldaTalk s_hubZeldaPendingTalk = HubZeldaTalk::None, s_hubZeldaActiveTalk = HubZeldaTalk::None;
+bool s_hubZeldaTalentsPending = false;
 unsigned s_hubZeldaCallFrames = 0;
 constexpr u16 kHubZeldaFlow = 3001; // Native common-message archive selection.
 struct HubZeldaGift {
@@ -90,6 +93,8 @@ void update_hub_zelda_gift() {
         if (owned && !dComIfGp_evmng_endCheck("DEFAULT_GETITEM")) return;
         if (owned) {
             execItemGet(dItemNo_SWORD_e);
+            s_hubZeldaPendingTalk = HubZeldaTalk::AfterGift;
+            s_hubZeldaCallFrames = 0;
             s_hubSaveRequested = true; // Persist the first-get bit after the event closes.
         }
         retire_hub_zelda_gift();
@@ -190,36 +195,46 @@ bool hub_zelda_enabled() {
     return survivors_hub_active() && !s_hubDeparture && !transitioning();
 }
 void clear_hub_zelda_call() {
-    s_hubZeldaCallPending = s_hubZeldaCalling = false;
+    s_hubZeldaPendingTalk = s_hubZeldaActiveTalk = HubZeldaTalk::None;
+    s_hubZeldaTalentsPending = false;
     s_hubZeldaCallFrames = 0;
 }
 void request_hub_zelda_call() {
     if (!hub_zelda_enabled() || s_hubZeldaRetiring || hub_zelda_gift_busy() ||
-        s_hubZeldaCallPending || s_hubZeldaCalling || dComIfGs_isItemFirstBit(dItemNo_SWORD_e) ||
+        s_hubZeldaPendingTalk != HubZeldaTalk::None || s_hubZeldaActiveTalk != HubZeldaTalk::None ||
+        dComIfGs_isItemFirstBit(dItemNo_SWORD_e) ||
         !owned_hub_zelda(actor_by_id(s_hubZelda))) return;
     s_hubZeldaRewardPending = false;
-    s_hubZeldaCallPending = true;
+    s_hubZeldaPendingTalk = HubZeldaTalk::Reminder;
     s_hubZeldaCallFrames = 0;
 }
 void update_hub_zelda_call() {
-    if (!s_hubZeldaCallPending && !s_hubZeldaCalling) return;
+    if (s_hubZeldaPendingTalk == HubZeldaTalk::None && s_hubZeldaActiveTalk == HubZeldaTalk::None) return;
     auto* actor = actor_by_id(s_hubZelda);
     if (!owned_hub_zelda(actor)) {clear_hub_zelda_call(); return;}
-    if (s_hubZeldaCalling) {
-        // Native Zelda closes her talk event and restores the gameplay camera.
-        // Never reset another actor's replacement event.
-        if (dComIfGp_getEvent()->mPt2 != s_hubZelda || !dComIfGp_event_runCheck()) clear_hub_zelda_call();
+    if (s_hubZeldaActiveTalk != HubZeldaTalk::None) {
+        if (dComIfGp_event_runCheck()) {
+            if (dComIfGp_getEvent()->mPt2 != s_hubZelda) clear_hub_zelda_call();
+            return; // Native Zelda still owns input, text and the talk camera.
+        }
+        if (s_hubZeldaTalentsPending) {
+            if (dMsgObject_isTalkNowCheck() || !playable() || s_progressSaving || s_hubSaveRequested) return;
+            clear_hub_zelda_call();
+            survivors_open_talents(); // Only after the native conversation closes.
+        } else clear_hub_zelda_call();
         return;
     }
-    if (!playable() || s_progressSaving || s_hubSaveRequested) return;
-    if (++s_hubZeldaCallFrames > 90 || dComIfGs_isItemFirstBit(dItemNo_SWORD_e)) {
+    // Finish item actor cleanup and any pending native save before ordering
+    // the follow-up conversation. An interrupted gift never queues this path.
+    if (hub_zelda_gift_busy() || !playable() || s_progressSaving || s_hubSaveRequested) return;
+    const bool received = dComIfGs_isItemFirstBit(dItemNo_SWORD_e);
+    if (++s_hubZeldaCallFrames > 90 ||
+        (s_hubZeldaPendingTalk == HubZeldaTalk::Reminder ? received : !received)) {
         clear_hub_zelda_call(); return;
     }
     auto* link = daAlink_getAlinkActorClass();
     if (!link || !link->eventInfo.chkCondition(dEvtCnd_CANTALK_e) ||
         !actor->eventInfo.chkCondition(dEvtCnd_CANTALK_e)) return;
-    // A native NPC-initiated conversation works at the exit's distance too.
-    // Keep native eligibility, input blocking, camera easing and restoration.
     fopAcM_orderTalkEvent(link, actor, 0, 0);
 }
 void cleanup_hub_zelda() {
@@ -234,7 +249,7 @@ void cleanup_hub_zelda() {
     }
 }
 void retire_hub_zelda() {
-    if (s_hubZeldaCalling && in_arena() && !transitioning() &&
+    if (s_hubZeldaActiveTalk != HubZeldaTalk::None && in_arena() && !transitioning() &&
         dComIfGp_getEvent()->mPt2 == s_hubZelda) dComIfGp_event_reset();
     clear_hub_zelda_call();
     retire_hub_zelda_gift();
@@ -248,10 +263,18 @@ void retire_hub_zelda() {
 void hub_zelda_give_sword(ModContext*, const FlowEventContext* event, void*) {
     auto* actor = actor_by_id(s_hubZelda);
     if (!event || event->speaker_actor != actor || !owned_hub_zelda(actor) ||
-        !hub_zelda_enabled() || s_hubZeldaRetiring || !s_hubZeldaRewardPending || hub_zelda_gift_busy()) return;
+        !hub_zelda_enabled() || s_hubZeldaRetiring || !s_hubZeldaRewardPending ||
+        dComIfGs_isItemFirstBit(dItemNo_SWORD_e) || hub_zelda_gift_busy()) return;
     s_hubZeldaRewardPending = false;
     s_hubZeldaGift = {};
     s_hubZeldaGift.queued = true;
+}
+void hub_zelda_open_talents(ModContext*, const FlowEventContext* event, void*) {
+    auto* actor = actor_by_id(s_hubZelda);
+    if (!event || event->speaker_actor != actor || !owned_hub_zelda(actor) ||
+        !hub_zelda_enabled() || s_hubZeldaRetiring || s_hubZeldaActiveTalk != HubZeldaTalk::Talents ||
+        dComIfGp_getEvent()->mPt2 != s_hubZelda || !dComIfGs_isItemFirstBit(dItemNo_SWORD_e)) return;
+    s_hubZeldaTalentsPending = true;
 }
 ModResult initialize_hub_zelda() {
     s_hubZeldaMessage = register_survivors_dialog(mods::flow::MessageBuilder{}
@@ -262,6 +285,17 @@ ModResult initialize_hub_zelda() {
         .box_kind(MESSAGE_BOX_TALK).talk_anim(0).face_anim(0).camera_attr(1)
         .text("Wait! Come here!"));
     if (!s_hubZeldaCallMessage) return s_hubZeldaCallMessage.result();
+    s_hubZeldaAfterGiftMessage = register_survivors_dialog(mods::flow::MessageBuilder{}
+        .box_kind(MESSAGE_BOX_TALK).talk_anim(0).face_anim(0)
+        .text("Come to me after your journey to get some rest and strengthen your ")
+        .text_color(MESSAGE_COLOR_RED).text("Talents").text_color(MESSAGE_COLOR_DEFAULT).text("."));
+    if (!s_hubZeldaAfterGiftMessage) return s_hubZeldaAfterGiftMessage.result();
+    s_hubZeldaTalentsMessage = register_survivors_dialog(mods::flow::MessageBuilder{}
+        .box_kind(MESSAGE_BOX_TALK).talk_anim(0).face_anim(0)
+        .text("Let me help you on your journey."));
+    if (!s_hubZeldaTalentsMessage) return s_hubZeldaTalentsMessage.result();
+    s_hubZeldaTalentsEvent = mods::flow::register_event("Survivors Zelda Talents", hub_zelda_open_talents);
+    if (!s_hubZeldaTalentsEvent) return s_hubZeldaTalentsEvent.result();
     s_hubZeldaReward = mods::flow::register_event("Survivors Zelda Ordon Sword", hub_zelda_give_sword);
     if (!s_hubZeldaReward) return s_hubZeldaReward.result();
     mods::flow::GraphBuilder graph{0};
@@ -270,10 +304,17 @@ ModResult initialize_hub_zelda() {
     text.next(reward); reward.next(mods::flow::kEnd);
     const auto call = graph.add_message(s_hubZeldaCallMessage.id());
     call.next(mods::flow::kEnd); // Calling from the exit never hands out the sword.
+    const auto afterGift = graph.add_message(s_hubZeldaAfterGiftMessage.id());
+    afterGift.next(mods::flow::kEnd);
+    const auto talents = graph.add_message(s_hubZeldaTalentsMessage.id());
+    const auto openTalents = graph.add_event(s_hubZeldaTalentsEvent.id(), {0,0,0,0});
+    talents.next(openTalents); openTalents.next(mods::flow::kEnd);
     s_hubZeldaGraph = graph.commit();
     if (!s_hubZeldaGraph) return s_hubZeldaGraph.result();
     s_hubZeldaStart = text.id();
     s_hubZeldaCallStart = call.id();
+    s_hubZeldaAfterGiftStart = afterGift.id();
+    s_hubZeldaTalentsStart = talents.id();
     return MOD_OK;
 }
 HookAction before_hub_zelda_param(ModContext*, void* args, void*, void*) {
@@ -298,13 +339,22 @@ HookAction before_hub_zelda_flow(ModContext*, void* args, void* result, void*) {
         mods::arg<dMsgFlow_c*>(args, 0) != &static_cast<daNpc_Zelda_c*>(actor)->mFlow ||
         mods::arg<u16>(args, 1) != kHubZeldaFlow) return HOOK_CONTINUE;
     // Retain native init(3001) to bind group 0, then select our private graph.
-    if ((s_hubZeldaCallPending || s_hubZeldaCalling) && dComIfGp_getEvent()->mPt2 == s_hubZelda) {
-        *static_cast<u16*>(result) = s_hubZeldaCallStart;
-        s_hubZeldaCallPending = false; s_hubZeldaCalling = true;
-        s_hubZeldaRewardPending = false;
-        // Flow init has already cleared the old camera actors. Message camera
-        // attribute 1 focuses slot 1 on Zelda using native talk-camera easing.
+    s_hubZeldaRewardPending = false;
+    if ((s_hubZeldaPendingTalk != HubZeldaTalk::None || s_hubZeldaActiveTalk == HubZeldaTalk::Reminder ||
+         s_hubZeldaActiveTalk == HubZeldaTalk::AfterGift) && dComIfGp_getEvent()->mPt2 == s_hubZelda) {
+        if (s_hubZeldaPendingTalk != HubZeldaTalk::None) s_hubZeldaActiveTalk = s_hubZeldaPendingTalk;
+        s_hubZeldaPendingTalk = HubZeldaTalk::None;
+        *static_cast<u16*>(result) = s_hubZeldaActiveTalk == HubZeldaTalk::AfterGift ?
+            s_hubZeldaAfterGiftStart : s_hubZeldaCallStart;
+        // Flow init has already cleared the old camera actors. Attribute 1
+        // on the exit reminder focuses Zelda using native camera easing.
         dComIfGp_setMesgCameraInfoActor(actor,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr);
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if (dComIfGs_isItemFirstBit(dItemNo_SWORD_e)) {
+        *static_cast<u16*>(result) = s_hubZeldaTalentsStart;
+        s_hubZeldaActiveTalk = HubZeldaTalk::Talents;
+        s_hubZeldaTalentsPending = false;
         return HOOK_SKIP_ORIGINAL;
     }
     *static_cast<u16*>(result) = s_hubZeldaStart;

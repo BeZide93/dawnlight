@@ -47,7 +47,10 @@ struct TitleRestPose {
         const float rearShin=dual::length(world[25].p-world[24].p);
         const float rise=std::clamp(ankleHeight-world[24].p.y,-rearShin*.4f,rearShin*.4f);
         aim(24,25,{0,rise,-std::sqrt(rearShin*rearShin-rise*rise)});
-        orient(25,rightFoot);
+        // The trailing foot rests on its instep, not its sole. Flip the idle
+        // foot about actor-local X: the sole faces up and the toes point back.
+        // Left foot and both leg lengths remain unchanged.
+        orient(25,dual::multiply(dual::Quat{1,0,0,0},rightFoot));
         // Left foot is planted in front, its knee raised above the hip.
         const float frontThigh=dual::length(world[19].p-world[18].p);
         const float lift=std::clamp(shin+ankleHeight-world[18].p.y,-frontThigh*.8f,frontThigh*.8f);

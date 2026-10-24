@@ -5,6 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 source=(ROOT/'src/survivors_roundtable.cpp').read_text()
 production=source[source.index('namespace dawnlight {'):]
 fixture=r'''
+#include "generated/roundtable_layout.hpp"
 #include <algorithm>
 #include <any>
 #include <array>
@@ -162,5 +163,5 @@ int main(int argc,char** argv){
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
     cpp.write_text(fixture+production+tests)
-    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer',str(cpp),'-o',str(exe)],check=True)
+    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I',str(ROOT/'src'),str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe),str(ROOT/'res')],check=True)

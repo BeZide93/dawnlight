@@ -59,11 +59,13 @@ def ground(x,z,ceiling=1000):
         if y<=ceiling:heights.append(y)
     return max(heights) if heights else None
 
-for x,z in [(0,0),(0,260),(-320,0),(1640,0)]:
+assert abs(g.RADIUS-2617.437)<25, 'Preserve the captured Darknut main-floor footprint'
+chest_x=g.FRONT+25-150
+for x,z in [(0,0),(0,260),(-320,0),(chest_x,0)]:
     assert abs(ground(x,z)+400)<.01, 'Rest/fire/Zelda/equipment anchor must remain clear'
 assert abs(ground(0,-730)-(-199))<.01, 'Table is solid and its visible top is supported'
 # Walkable links between all interaction points, including the authored door.
-routes=[((0,260),(-320,0)),((0,260),(1640,0)),((0,260),(0,3900))]
+routes=[((0,260),(-320,0)),((0,260),(chest_x,0)),((0,260),(0,3900))]
 for start,end in routes:
     last=-400
     for step in range(101):
@@ -71,5 +73,5 @@ for start,end in routes:
         y=ground(x,z,0);assert y is not None and abs(y-last)<10,(x,z,y,last)
         last=y
 assert abs(ground(0,3900)+250)<.01
-assert ground(2500,0) is None
+assert ground(3000,0) is None
 print(f'Roundtable: {tn} native collision triangles, valid tree/room ancestry, clear hub routes')

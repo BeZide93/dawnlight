@@ -16,7 +16,8 @@ details. The hall uses baked vertex lighting rather than dynamic room shadows.
 
 ## Layout and integration
 
-- Main hall radius: 1,800 game units; floor: Y = -400. The south approach reaches
+- Main hall radius: 2,600 game units, matching the captured native main-floor
+  radius of approximately 2,617 units; floor: Y = -400. The south approach reaches
   the existing doorway at Z = 3,900 / Y = -250 via a gentle ramp.
 - Rest pose, title camera, Zelda and brazier anchors stay unchanged. The round
   table sits just behind the fire/rest area, centered at Z = -730, with the front
@@ -53,7 +54,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 256×256 tiled RGB565 atlas. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 12,061 visual triangles and 3,702
+tools or network image generation. There are 12,657 visual triangles and 3,702
 collision triangles, with a balanced collision tree. Resources total about 1 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 

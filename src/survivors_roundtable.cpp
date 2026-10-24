@@ -1,4 +1,5 @@
 #include "survivors_roundtable.hpp"
+#include "generated/roundtable_layout.hpp"
 #include "service_imports.hpp"
 #include "process_actor.hpp"
 #include "m_Do/m_Do_ext.h"
@@ -105,12 +106,12 @@ public:
         constexpr u16 effects[]{0x3ad,0x3af,0x3ae};
         const cXyz scale(.7f,.7f,.7f);
         for(unsigned i=0;i<fire.size();++i) {
-            const cXyz position(-1645.4135f,-330.f,i<3?-90.f:90.f);
+            const cXyz position(roundtable_layout::hearthFireX,-330.f,i<3?-90.f:90.f);
             fire[i]=dComIfGp_particle_set(fire[i],effects[i%3],&position,nullptr,nullptr,&scale,
                 0xff,nullptr,-1,nullptr,nullptr,nullptr);
         }
         if(!lit) {
-            light.mPosition.set(-1500,-170,0);light.mColor={188,102,66,255};
+            light.mPosition.set(roundtable_layout::hearthLightX,-170,0);light.mColor={188,102,66,255};
             light.mPow=650;light.mFluctuation=1;dKy_plight_set(&light);lit=true;
         }
     }

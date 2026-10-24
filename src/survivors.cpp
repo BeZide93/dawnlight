@@ -1777,8 +1777,16 @@ void open_window() {
         svc_log->warn(mod_ctx, "Hyrule Survivors: could not open run window");
     else if (s_run.phase == Phase::Ready) remember_menu_document(false);
 }
-ModResult activated(void*, ModError*) { s_active = true; reset_runtime(); request_title_preview(); return MOD_OK; }
-ModResult deactivated(void*, ModError*) { s_active = false; reset_runtime(); request_title_preview(); return MOD_OK; }
+#include "survivors_title_texture.inc"
+ModResult activated(void*, ModError* error) {
+    const auto result = register_survivors_title_logo(error);
+    if (result != MOD_OK) return result;
+    s_active = true; reset_runtime(); request_title_preview(); return MOD_OK;
+}
+ModResult deactivated(void*, ModError*) {
+    s_active = false; unregister_survivors_title_logo();
+    reset_runtime(); request_title_preview(); return MOD_OK;
+}
 ModResult new_save(void*, ModError*) {
     reset_runtime(); s_records = {};
     dComIfGs_offItemFirstBit(dItemNo_SWORD_e);
@@ -2063,6 +2071,7 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    unregister_survivors_title_logo();
     enemy_hud::shutdown();
     shutdown_boss_ring();
     stop_survivors_music();

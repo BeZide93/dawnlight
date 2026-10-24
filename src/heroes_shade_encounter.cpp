@@ -72,7 +72,6 @@ constexpr float kApproachSpeed = shade::stride::speed;
 ProfileName sProfile = -1;
 ActorHandle sRegistration = 0;
 ActorId sPedestal = kNone;
-ActorId sSurvivorsPedestal = kNone;
 ActorId sSurvivorsChest = kNone;
 struct Fighter {
     ActorId id = kNone;
@@ -1364,7 +1363,6 @@ public:
     dCcD_Cyl collision;
     ShadeTrials trials;
     bool ready=false;
-    bool survivors=false;
     bool equipment=false;
     mDoExt_bckAnm lid;
     ~Pedestal() {
@@ -1399,7 +1397,6 @@ int create_pedestal(void* ptr) {
     fopAcM_ct(self,Pedestal);
     if (self->ready) return cPhs_COMPLEATE_e;
     self->equipment=fopAcM_GetParam(self)==2;
-    self->survivors=fopAcM_GetParam(self)==1 || self->equipment;
     const auto phase=dComIfG_resLoad(&self->phase,self->equipment?"Dalways":kSwordArchive);
     if (phase!=cPhs_COMPLEATE_e) return phase;
     if (!fopAcM_entrySolidHeap(self,Pedestal::heap,self->equipment?0x10000:0x4000)) {
@@ -1427,14 +1424,13 @@ int create_pedestal(void* ptr) {
     self->collision.SetC(self->current.pos);
     self->collision.SetR(90);
     self->collision.SetH(self->equipment?120:62);
-    if(!self->survivors) {self->trials.init(self);sTrials=&self->trials;}
+    if(!self->equipment) {self->trials.init(self);sTrials=&self->trials;}
     self->ready=true;
     return cPhs_COMPLEATE_e;
 }
 int delete_pedestal(void* ptr) {
-    if(static_cast<Pedestal*>(ptr)->survivors) {
+    if(static_cast<Pedestal*>(ptr)->equipment) {
         const auto id=fopAcM_GetID(static_cast<Pedestal*>(ptr));
-        if(sSurvivorsPedestal==id)sSurvivorsPedestal=kNone;
         if(sSurvivorsChest==id)sSurvivorsChest=kNone;
         static_cast<Pedestal*>(ptr)->~Pedestal();return 1;
     }
@@ -1459,20 +1455,6 @@ int execute_pedestal(void* ptr) {
         return 1; // Inventory input belongs to Survivors, never the talent menu.
     }
     auto* player=daAlink_getAlinkActorClass();
-    if(self->survivors) {
-        if(!survivors_hub_active() || !player || dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
-           dComIfGp_isPauseFlag() || ui_document_visible() || player->checkDeadHP() || player->checkWolf())return 1;
-        const cXyz delta=player->current.pos-self->current.pos;
-        const s16 facing=static_cast<s16>(cLib_targetAngleY(&player->current.pos,&self->current.pos)-player->shape_angle.y);
-        if(delta.absXZ()<=230 && std::abs(delta.y)<=100 && std::abs(int(facing))<=0x3000) {
-            dComIfGp_setDoStatusForce(8,0);
-            if(mDoCPd_c::getTrigA(PAD_1)) {
-                mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags&=~PAD_BUTTON_A;
-                survivors_open_talents();
-            }
-        }
-        return 1;
-    }
     if (!arena() || !player || dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
         dComIfGp_isPauseFlag() || ui_document_visible() || player->checkDeadHP() || player->checkWolf()) return 1;
     // Do both independently: loading effects must not delay wall-target spawn.
@@ -1540,7 +1522,6 @@ int draw_pedestal(void* ptr) {
     mDoExt_modelUpdateDL(self->sword);
     self->btk.remove(data); self->brk.remove(data);
     dComIfGd_getOpaList()->entryImm(&self->plinth,0);
-    if(self->survivors)return 1;
     self->trials.draw(self->tevStr);
     for (const auto id:sProjectiles) {
         auto* actor=actor_by_id(id);
@@ -1648,16 +1629,6 @@ void update_heroes_shade_arena() {
     sStopping=false;
     spawn(sProfile,cXyz(0,height,0),0,0,sPedestal);
 }
-void update_survivors_pedestal(bool enabled) {
-    if(!enabled) {remove_actor(sSurvivorsPedestal);return;}
-    if(!sRegistration || pending_or_live(sSurvivorsPedestal) || !survivors_hub_active())return;
-    auto* player=daAlink_getAlinkActorClass();if(!player)return;
-    cXyz probe(0,player->current.pos.y+1000,0);
-    dBgS_ObjGndChk ground;ground.SetPos(&probe);
-    const float height=dComIfG_Bgsp().GroundCross(&ground);
-    if(!std::isfinite(height)||height<=-1.0e8f)return;
-    spawn(sProfile,cXyz(0,height,0),0,1,sSurvivorsPedestal);
-}
 void update_survivors_equipment_chest(bool enabled,const cXyz& position,s16 yaw) {
     if(!enabled) {remove_actor(sSurvivorsChest);return;}
     if(!sRegistration || pending_or_live(sSurvivorsChest) || !survivors_hub_active())return;
@@ -1666,10 +1637,6 @@ void update_survivors_equipment_chest(bool enabled,const cXyz& position,s16 yaw)
 bool survivors_equipment_chest_anchor(cXyz& position) {
     auto* actor=actor_by_id(sSurvivorsChest);
     if(!actor || !static_cast<Pedestal*>(actor)->ready)return false;
-    position=actor->current.pos;return true;
-}
-bool survivors_pedestal_anchor(cXyz& position) {
-    auto* actor=actor_by_id(sSurvivorsPedestal);if(!actor)return false;
     position=actor->current.pos;return true;
 }
 void shutdown_heroes_shade_encounter() {
@@ -1681,7 +1648,6 @@ void shutdown_heroes_shade_encounter() {
     owned.insert(wolfId);
     for (const auto& entry:sFighters) if (entry.id!=kNone) owned.insert(entry.id);
     owned.insert(sPedestal);
-    owned.insert(sSurvivorsPedestal);
     owned.insert(sSurvivorsChest);
     if (sTrials) {
         cancel_trial();
@@ -1709,7 +1675,7 @@ void shutdown_heroes_shade_encounter() {
     }
     sFighters={};
     sProjectiles.clear();
-    sPedestal=kNone; sSurvivorsPedestal=kNone; sSurvivorsChest=kNone;
+    sPedestal=kNone; sSurvivorsChest=kNone;
     sShadeWolf.id=kNone;
     for (auto& line:sLines) line.reset();
     sBossTitle.reset();

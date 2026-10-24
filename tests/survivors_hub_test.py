@@ -62,7 +62,7 @@ void dComIfGs_setRestartRoomParam(int){}
 const Arena& arena(){return arenas[s_map];}
 unsigned cleared=0,opened=0,orders=0,pedestalRemoves=0;
 void clear_arena_geometry(){++cleared;}
-void update_survivors_pedestal(bool enabled){if(!enabled)++pedestalRemoves;}
+void update_hub_brazier(bool enabled){if(!enabled)++pedestalRemoves;}
 void open_window(){visible=true;++opened;}
 void hub_menu_closed();void close_window(){visible=false;hub_menu_closed();}
 struct Log{void warn(ModContext*,const char*){}void info(ModContext*,const char*){}}logger;auto* svc_log=&logger;ModContext* mod_ctx=nullptr;

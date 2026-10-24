@@ -154,7 +154,7 @@ bool dComIfGp_evmng_endCheck(const char* n){assert(std::string(n)=="DEFAULT_GETI
 void dComIfGp_event_setGtItm(int n){assert(n==dItemNo_SWORD_e);}
 void dComIfGp_event_setItemPartnerId(ActorId id){assert(id==55);}
 void fopAcM_orderItemEvent(fopAc_ac_c* item,int,int){assert(item==&giftItem&&item->eventInfo.conditions==dEvtCnd_CANGETITEM_e);++giftOrders;}
-bool survivors_pedestal_anchor(cXyz& anchor){anchor={0,-400,0};return pedestal;}
+bool hub_brazier_anchor(cXyz& anchor){anchor={0,-400,0};return pedestal;}
 struct dBgS_ObjGndChk {cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 float floorHeight=-400;
 struct Background {float GroundCross(dBgS_ObjGndChk* ground){++groundCalls;assert(ground->pos.x==-320&&ground->pos.z==0);return floorHeight;}}bg;
@@ -394,7 +394,7 @@ assert 'PRE(SurvivorsHubZeldaParam, before_hub_zelda_param);' in core
 assert 'POST(SurvivorsGetItem, after_hub_zelda_get);' in core
 assert 'POST(SurvivorsHubZeldaParam, after_hub_zelda_param);' in core
 assert 'void reset_runtime() {\n    retire_hub_zelda();' in core
-assert 'void update_survivors() {\n    update_hub_zelda();' in core
+assert '    update_hub_zelda();' in core
 def extract_body(source, signature):
     start=source.index(signature)
     native=source

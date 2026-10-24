@@ -371,7 +371,7 @@ void update_hub_zelda() {
     if (s_hubZeldaRetry) { --s_hubZeldaRetry; return; }
     s_hubZeldaRetry = 30;
     cXyz anchor;
-    if (!survivors_pedestal_anchor(anchor)) return;
+    if (!hub_brazier_anchor(anchor)) return;
     cXyz probe = anchor + cXyz(-320, 100, 0);
     dBgS_ObjGndChk ground; ground.SetPos(&probe);
     const float height = dComIfG_Bgsp().GroundCross(&ground);

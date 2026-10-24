@@ -368,6 +368,7 @@ bool s_midnaTalking = false, s_midnaEndPending = false, s_midnaRestartPending = 
 bool midna_dialog_busy() { return s_midnaRequestFrames || s_midnaTalking || s_midnaEndPending || s_midnaRestartPending; }
 void reset_midna_dialog() { s_midnaRequestFrames=0; s_midnaTalking=s_midnaEndPending=s_midnaRestartPending=false; }
 void retire_hub_zelda();
+void update_hub_brazier(bool enabled);
 enum class SwordAction { None, Normal, Spin, Jump };
 SwordAction s_swordAction = SwordAction::None;
 unsigned s_meleeCooldown = 0;
@@ -679,7 +680,7 @@ void reset_runtime() {
     s_hub=true; s_hubDeparture=s_hubDoorStarted=s_arrivingRun=s_allowHubDoor=false;
     s_hubDoor=kNone; s_hubDoorTicks=0;
     update_survivors_equipment_chest(false,{},0);
-    update_survivors_pedestal(false);
+    update_hub_brazier(false);
     s_options.debug.clamp();
     reset_midna_dialog();
     s_saveReady = false; s_gameStarted = false;
@@ -772,6 +773,7 @@ void finish(bool won) {
 }
 #include "survivors_ending.inc"
 #include "survivors_midna.inc"
+#include "survivors_hub_brazier.inc"
 #include "survivors_hub_zelda.inc"
 void add_orb(cXyz position, unsigned value) {
     position.y -= 20;
@@ -1475,7 +1477,7 @@ HookAction before_stage(ModContext*, void* args, void*, void*) {
         s_hubDeparture=s_hubDoorStarted=false; s_hubDoor=kNone;
         clear_arena_geometry();
         update_survivors_equipment_chest(false,{},0);
-        update_survivors_pedestal(false);
+        update_hub_brazier(false);
     } else if (in_arena() && !s_restart && s_run.phase != Phase::Loading) return HOOK_SKIP_ORIGINAL;
     dComIfGs_setRestartRoomParam(0);
     mods::arg_ref<const char*>(args, 0) = arena().stage;
@@ -1790,6 +1792,7 @@ bool survivors_dark_link_active() {
         s_run.phase == Phase::Upgrade || s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Treasure);
 }
 void update_survivors() {
+    update_hub_brazier(survivors_hub_active() && !s_hubDeparture && !transitioning());
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
     update_survivors_registration();

@@ -44,7 +44,10 @@ int main(){
   *handle=100+pushes;return MOD_OK;
  };
  ui.window_close=[](ModContext*,UiWindowHandle h){assert(!s_hudEditorWindow);++closes;onClosed(nullptr,h,nullptr);return MOD_OK;};
- assert(initialize_hud_config()==MOD_OK&&names.size()==31);
+ assert(initialize_hud_config()==MOD_OK&&names.size()==35);
+ assert(!show_enemy_counter());set_enemy_counter(true);assert(show_enemy_counter());
+ assert(initialize_hud_config()==MOD_OK&&show_enemy_counter());set_enemy_counter(false);
+ assert(names.contains("survivors-hud-enemy-counter-scale"));
  assert(show_fate_tooltips()&&values.at(names.at("survivors-fate-tooltips"))==1);
  set_fate_tooltips(false);assert(!show_fate_tooltips());
  assert(initialize_hud_config()==MOD_OK&&!show_fate_tooltips()); // Reload keeps the persisted choice.
@@ -54,9 +57,9 @@ int main(){
  open_hud_editor(nullptr,nullptr);assert(s_hudEditorWindow&&pushes==1);
  open_hud_editor(nullptr,nullptr);assert(pushes==1);
  assert(tab.build(nullptr,s_hudEditorWindow,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==5);
- assert(controls[0].option_count==10&&std::string(controls[0].options[9])=="Item Banner");
+ assert(controls[0].option_count==11&&std::string(controls[0].options[9])=="Item Banner");
  UiControlValue value=UI_CONTROL_VALUE_INIT;
- for(unsigned i=0;i<10;++i){
+ for(unsigned i=0;i<11;++i){
   value.int_value=i;controls[0].set(nullptr,nullptr,&value);
   for(unsigned axis=0;axis<3;++axis){
    auto& c=controls[axis+1];assert(c.kind==UI_CONTROL_NUMBER);
@@ -68,7 +71,7 @@ int main(){
  value.int_value=8;controls[0].set(nullptr,nullptr,&value);
  assert(hud_value(9,2)==159&&names.contains("survivors-hud-item-banner-scale"));
  // Re-registering (new session) and host imports use the same persistent values.
- assert(initialize_hud_config()==MOD_OK&&names.size()==31&&hud_value(8,2)==158);
+ assert(initialize_hud_config()==MOD_OK&&names.size()==35&&hud_value(8,2)==158);
  values[s_hudConfig[8][2]]=-100;assert(hud_position(HudPart::BossBar,304).scale==.1f);
  values[s_hudConfig[8][0]]=100000;assert(hud_value(8,0)==9999);
  values[s_hudConfig[8][2]]=100000;assert(hud_position(HudPart::BossBar,304).scale==4.f);
@@ -99,4 +102,4 @@ with tempfile.TemporaryDirectory() as temp:
  cpp.write_text(fixture+(root/'src/survivors_hud_config.inc').read_text()+(root/'src/survivors_hud_editor.inc').read_text()+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-attributes','-I',str(root/'src'),'-I',str(root/'dusklight/sdk/include'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
-print('Survivors HUD editor: all ten elements, persistence/import bounds, reset, failures and window lifecycle passed')
+print('Survivors HUD editor: all eleven elements, persistence/import bounds, reset, failures and window lifecycle passed')

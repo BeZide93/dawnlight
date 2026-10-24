@@ -15,14 +15,17 @@ void update_reachable_floor() {
     if(s_reachableFloor.empty()) {
         cXyz start=s_arenaSpawnPosition;
         if(!dry_arena_floor(start,60,100))return;
-        s_reachableFloor.seed(start,unsigned(s_eliteFloors.size()));
+        s_reachableFloor.seed(start,unsigned(s_eliteFloors.size()),arena_walk_step_height());
     }
-    s_reachableFloor.build(s_eliteFloors,128);
+    s_reachableFloor.build(s_eliteFloors,1024); // Bounded topology operations, including edge comparisons.
     unsigned budget=64; // Shared by graph edges AND requested spawn landings.
     s_reachableFloor.expand([&](cXyz from,cXyz to){
-        if(!s_reachableWalk.active)s_reachableWalk.begin(from,to,40);
+        if(!s_reachableWalk.active)s_reachableWalk.begin(from,to,40,false);
         const auto result=s_reachableWalk.advance(budget);
-        if(result==WalkResult::Clear && std::abs(s_reachableWalk.to.y-to.y)>=25.f)return WalkResult::Blocked;
+        // A portal lies halfway between both tread heights. A valid 50-unit
+        // riser therefore differs by exactly 25 at its shared boundary.
+        const float tolerance=std::max(25.f,arena_walk_step_height()*.5f+1.f);
+        if(result==WalkResult::Clear && std::abs(s_reachableWalk.to.y-to.y)>=tolerance)return WalkResult::Blocked;
         return result;
     });
     if(s_reachableFloor.ready() && s_reachableSamplePending) {

@@ -8,7 +8,7 @@ root=Path(__file__).resolve().parents[1]
 runtime=(root/'src/survivors.cpp').read_text()
 loot=(root/'src/survivors_loot.inc').read_text()
 def extract(source,name):
-    m=re.search(r'^(?:void|bool|HookAction) '+name+r'\(',source,re.M)
+    m=re.search(r'^(?:void|bool|unsigned|HookAction) '+name+r'\(',source,re.M)
     assert m,name
     start=source.index('{',m.start());depth=0
     for end in range(start,len(source)):
@@ -227,6 +227,23 @@ int main(){
   unsigned normal=0;for(const auto& e:s_enemies)normal+=e.id!=kNone&&!e.elite;
   assert(normal==345);s_spawnFailures=10;s_spawnCooldown=0;update_spawns(&player);assert(ordinarySpawns==1&&s_spawnFailures==0);
  }
+ // Normal settings population caps also bound Horde bursts; bosses and dormant guards
+ // neither consume the normal cap nor disappear when it is zero.
+ {
+  debug_session_enabled=false;
+  for(unsigned limit:{0u,1u,7u,42u,345u}){
+   fresh(0);s_run.options.max_normal_enemies=limit;
+   s_run.options.horde=5;s_run.horde_remaining=horde_duration;
+   assert(create_enemy_at({},0,0,true,4,true));
+   if(limit)for(unsigned n=0;n<limit-1;++n)assert(create_enemy_at({},0,0,false));
+   s_spawnCooldown=0;update_spawns(&player);
+   assert(normal_enemy_population()==limit&&ordinarySpawns==unsigned(limit>0)&&guards()==1);
+   s_spawnCooldown=0;update_spawns(&player);assert(normal_enemy_population()==limit);
+   s_run.ticks=elite_interval;s_spawnCooldown=0;update_spawns(&player);
+   assert(waves()==1&&normal_enemy_population()==limit);
+  }
+  debug_session_enabled=false;
+ }
  // Four spread-out random guards, from the entire current room rather than Link's spawn ring.
  for(unsigned map:{1u,2u}){fresh(map);add_floor(10000);update_elite_spawns(&player);assert(guards()==4);
   for(unsigned i=0;i<4;++i)for(unsigned j=i+1;j<4;++j)assert(s_enemies[i].lootPosition.absXZ(s_enemies[j].lootPosition)>=1800);
@@ -397,6 +414,6 @@ with tempfile.TemporaryDirectory() as temp:
     cpp=Path(temp)/'test.cpp';exe=Path(temp)/'test'
     cpp.write_text(fixture+"\nunsigned s_gearNoticeTicks=0;void update_gear_notice(){if(s_gearNoticeTicks)--s_gearNoticeTicks;}void clear_gear_notices(){s_gearNoticeTicks=0;}\n"+(root/'src/survivors_elite_positions.inc').read_text()+
         (root/'src/survivors_elites.inc').read_text()+extract(loot,'chest_spawning_allowed')+extract(loot,'find_chest_spawn_slot')+extract(loot,'drop_elite_chest')+
-        extract(runtime,'update_spawns')+extract(runtime,'after_player')+main)
+        extract(runtime,'normal_enemy_population')+extract(runtime,'update_spawns')+extract(runtime,'after_player')+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)

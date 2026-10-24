@@ -344,13 +344,42 @@ Timed bosses take priority over awakened chest guards. With several candidates,
 the nearest is selected and retained until defeated or replaced by a timed boss;
 sleeping guards and ordinary enemies never occupy this bar.
 
-Normal enemies have a fixed ceiling of **345**, from the start at every Horde
-difficulty. Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
+Normal enemies default to a ceiling of **345**, from the start at every Horde
+difficulty. Settings → **Enemy Count** can lower it with **Max Normal Enemies** (0–345),
+independently of Debug. This preference is saved and applies to the next run. Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
 the first 10 minutes; Horde difficulty still controls batch size (1–5).
 Random **HORDE!** events triple spawn batches for 15 seconds, within
 that population limit. They average two events per five minutes, without a quota;
 overlaps add 15 seconds instead of stacking the multiplier. The HUD shows the
 remaining duration. Events stop at 20:00 and pause with the run.
+
+Settings → **Enemy Count** also includes **Show Enemy Counter** (default Off).
+The saved toggle applies immediately in normal and Debug runs. The counter shows
+**Enemies: current / limit**, includes pending spawn slots and excludes elites,
+retired and defeated enemies. **Enemy Counter** is a separate HUD-Editor element
+with saved X/Y/scale, visible in editor previews even when the toggle is Off.
+Zero normal enemies disables regular waves; bosses, guards and boss summons keep
+their separate limits. Horde batches respect the cap too.
+
+Darknut Arena's reachable-floor scan starts at Link's position after the native
+entrance demo and grounded loading warmup have finished. The first safe loading
+checkpoint can be outside the door and is used only for early fall recovery.
+No native Darknut placement is required. Chests, pots and Fate portals share the
+resulting arena-side component. During reachability scans, stair transitions do
+not require a flat spawn footprint at every tread. The path still checks ground,
+water, walls and exit barriers; the final spawn landing retains its full footprint
+checks. Wall rays clear accepted short risers in both directions. Floor connectivity
+also matches partially overlapping collinear edges, so a long landing edge can
+connect to several shorter stair edges. Edge matching uses spatial buckets and
+resumes after a bounded number of operations per frame; native collision and
+height checks still decide whether each resulting connection is walkable.
+
+Darknut Arena's entrance contains two native 50-unit stair risers. Its graph and
+walking checks allow 50 units plus a small collision tolerance; all other maps
+retain the 35-unit limit. Shared stair-edge checks account for their midpoint
+height, including the 25-unit offset at a 50-unit riser. Actual spawn footprints
+remain strict. Temporary floor diagnostics have been removed after identifying
+these limits from the runtime floor capture.
 
 Up to **64 EXP crystals** can lie on the ground. Further XP merges into the nearest
 crystal without loss; merged crystals turn **red**, ordinary crystals stay turquoise.

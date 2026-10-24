@@ -19,6 +19,7 @@ struct dBgS_WtrChk{cXyz bottom;float top=0,height=0;void Set(cXyz p,float y){bot
 struct dBgS_LinChk{cXyz a,b;bool link=false;void SetLink(){link=true;}void Set(cXyz* x,cXyz* y,void*){a=*x;b=*y;}};
 struct Arena{int room=6;}data;const Arena& arena(){return data;}
 unsigned groundChecks=0,waterChecks=0,wallChecks=0;
+float stairs(float x){return x<0?0:x<60?30:x<120?60:x<180?90:120;}
 int terrain=0,code=0,room=6;bool wet=false,wall=false,barrier=false;float waterY=50;
 struct Bg{
  float GroundCross(dBgS_ObjGndChk* q){
@@ -27,6 +28,7 @@ struct Bg{
     (q->pos.x>=400&&q->pos.x<=600&&q->pos.z>=0&&q->pos.z<=1600)||
     (q->pos.x>=400&&q->pos.x<=2600&&q->pos.z>=1400&&q->pos.z<=1600)))return -1.e9f;
   if(std::abs(q->pos.x)>3000 || std::abs(q->pos.z)>3000)return -1.e9f;
+  if(terrain==10)return stairs(q->pos.x);
   if(terrain==8&&q->pos.x>0)return 20;
   if(terrain==9&&q->pos.x>0)return 100;
   if(terrain==1&&q->pos.x>400&&q->pos.x<600)return -1.e9f;
@@ -42,6 +44,14 @@ struct Bg{
   // Simulate player-only native collision: an object/default ray would miss it.
   if(q->link && (terrain==5||terrain==6) && ((q->a.x<700)!=(q->b.x<700)) &&
      (terrain==6 || std::min(q->a.z,q->b.z)<1000))return true;
+  // Native wall rays also collide with vertical stair risers.
+  if(terrain==10)for(float x:{0.f,60.f,120.f,180.f}) {
+   if((q->a.x<x)!=(q->b.x<x)) {
+    const float t=(x-q->a.x)/(q->b.x-q->a.x);
+    const float y=q->a.y+t*(q->b.y-q->a.y);
+    if(y<stairs(x)&&y>=stairs(x-1))return true;
+   }
+  }
   return wall;
  }
 }bg;Bg& dComIfG_Bgsp(){return bg;}
@@ -118,6 +128,61 @@ int main(){
   s_arenaSpawnPosition={-1000,0,0};clear_reachable_floor();grow();
   assert(reachable_arena_floor({1500,height,0})==(kind==8));
  }
+ // Descend from the entrance landing over four 30-unit risers. Narrow
+ // treads are valid transit surfaces even though a chest cannot fit on them.
+ terrain=10;s_map=0;
+ for(bool splitEdges:{false,true}) {
+ s_eliteFloors.clear();s_eliteFloorArea=0;
+ const float cuts[]{-1000,0,60,120,180,1000};
+ for(unsigned i=0;i<5;++i){
+  const float a=cuts[i],b=cuts[i+1],y=stairs((a+b)*.5f);
+  // Alternate one long boundary with two shorter boundaries (T-junctions).
+  // Neither shorter edge has both endpoints in common with the long edge.
+  const unsigned pieces=splitEdges&&i%2?2:1;
+  for(unsigned j=0;j<pieces;++j){
+   const float z0=-500+1000.f*j/pieces,z1=-500+1000.f*(j+1)/pieces;
+   s_eliteFloors.push_back({{a,y,z0},{b,y,z0},{a,y,z1}});
+   s_eliteFloors.push_back({{b,y,z1},{a,y,z1},{b,y,z0}});
+  }
+  s_eliteFloorArea+=(b-a)*1000;
+ }
+ for(bool descending:{true,false}) {
+  s_arenaSpawnPosition=descending?cXyz(800,120,0):cXyz(-800,0,0);
+  clear_reachable_floor();grow();
+  assert(reachable_arena_floor({-800,0,0})&&reachable_arena_floor({800,120,0}));
+  unsigned lower=0,upper=0;
+  for(unsigned i=0;i<80;++i){
+   unsigned frames=0;while(!sample_reachable_arena_floor(sampled)){update_reachable_floor();assert(++frames<1000);}
+   lower+=sampled.x<-100;upper+=sampled.x>280;
+  }
+  assert(lower>=15&&upper>=15);
+ }
+ }
+ // Matching also handles diagonal/reversed partial edges, without joining
+ // disjoint collinear intervals or an overlapping floor 100 units above it.
+ {
+  std::vector<Floor> floors{
+   {{0,0,0},{120,0,120},{-120,0,120}},
+   {{120,0,120},{60,0,60},{180,0,0}},
+   {{240,0,240},{300,0,300},{360,0,240}},
+   {{120,100,120},{60,100,60},{180,100,0}}};
+  ReachableFloor<cXyz> graph;graph.seed({-20,0,100},unsigned(floors.size()));
+  graph.build(floors,0);assert(!graph.ready());
+  unsigned ticks=0;
+  while(!graph.ready()){
+   graph.build(floors,1);graph.expand([](cXyz,cXyz){return WalkResult::Clear;});
+   assert(++ticks<1000);
+  }
+  assert(ticks>floors.size()); // One operation per build call resumes mid-edge.
+  assert(graph.valid(graph.containing({120,0,60})));
+  assert(!graph.valid(graph.containing({300,0,260})));
+  assert(!graph.valid(graph.containing({120,100,60})));
+  graph.clear();assert(graph.empty()&&!graph.ready());
+ }
+ // Actual spawn footprints remain strict near a stair edge.
+ to={10,30,0};assert(!walkable_spawn_path({-800,0,0},to,40));
+ to={800,120,0};assert(walkable_spawn_path({-800,0,0},to,40));
+ s_arenaSpawnPosition={0,0,0};
  // Distant segments really suspend at the shared sample budget.
  terrain=0;ArenaWalk path;path.begin({-2000,0,0},{2000,0,0},40);
  unsigned budget=4;assert(path.advance(budget)==WalkResult::Pending&&budget==0&&path.active);
@@ -129,6 +194,16 @@ int main(){
   assert(arena_distribution_ready()&&!reachable_arena_floor({1500,100,0}));
   assert(reachable_arena_floor({300,0,0}));
  }
+ // Darknut uses the finalized post-entry checkpoint on the arena side of
+ // the sealed door, rather than the early loading checkpoint outside it.
+ s_map=0;terrain=6;mesh();s_arenaSpawnPosition={1500,0,0};clear_reachable_floor();
+ grow();assert(reachable_arena_floor({1500,0,0})&&!reachable_arena_floor({300,0,0}));
+ for(unsigned n=0;n<30;++n){
+  unsigned frames=0;while(!sample_reachable_arena_floor(sampled)){update_reachable_floor();assert(++frames<1000);}
+  assert(sampled.x>700);
+ }
+ // Invalid checkpoint ground must not publish any spawn component.
+ s_arenaSpawnPosition={4000,0,0};clear_reachable_floor();update_reachable_floor();assert(!arena_distribution_ready());
  std::cout<<"Survivors ground: water, bridges, ledges, gaps, slopes, footprints and barriers passed\n";
 }
 '''

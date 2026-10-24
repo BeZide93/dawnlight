@@ -27,7 +27,10 @@ using s16=short;using s8=signed char;constexpr unsigned kNone=~0u;
 struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods{template<class T>T& arg_ref(void* p,unsigned i){return *std::any_cast<T>(&static_cast<std::any*>(p)[i]);}}
 namespace mDoRst{bool isReset(){return false;}bool isReturnToMenu(){return false;}}
-struct daAlink_c{}link;
+struct cXyz{float x=0,y=0,z=0;};
+struct daAlink_c{bool demo=false;bool checkPlayerDemoMode()const{return demo;}struct{cXyz pos;}current;struct{s16 y=0;}shape_angle;}link;
+cXyz s_arenaSpawnPosition;s16 s_arenaSpawnYaw=0;bool s_arenaSpawn=false;
+void clear_reachable_floor(){}
 Run s_run;RunOptions s_options;Records s_records;GearInventory s_gear;
 bool s_active=true,s_gameStarted=true,s_restart=false,s_arrivingRun=false,s_hub=false;
 bool s_hubDeparture=false,s_hubDoorStarted=false,s_hubSaveRequested=false,s_resultsStored=false;
@@ -77,7 +80,11 @@ int main(){
   // Scene transition, airborne arrival and missing geometry cannot start combat.
   for(int i=0;i<20;++i)arrival(&link);assert(starts==priorStarts);
   stagePending=false;grounded=false;for(int i=0;i<20;++i)arrival(&link);assert(starts==priorStarts);
-  grounded=true;for(int i=0;i<15;++i)arrival(&link);
+  grounded=true;link.demo=true;for(int i=0;i<35;++i)arrival(&link);
+  assert(s_run.phase==Phase::Loading&&s_warmup==0&&starts==priorStarts);
+  link.demo=false;link.current.pos={1000+float(map),0,0};link.shape_angle.y=2345;
+  for(int i=0;i<15;++i)arrival(&link);
+  if(map==0)assert(s_arenaSpawn&&s_arenaSpawnPosition.x==1000&&s_arenaSpawnYaw==2345);
   assert(s_run.phase==Phase::Ready&&s_arrivingRun&&starts==priorStarts);
   playing=false;s_arenaMeshReady=true;arrival(&link);assert(starts==priorStarts&&s_arrivingRun);
   playing=true;arrival(&link);

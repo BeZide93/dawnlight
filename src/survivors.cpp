@@ -878,12 +878,16 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
 #include "survivors_elites.inc"
 #include "survivors_pots.inc"
 #include "survivors_save_slot.inc"
+unsigned normal_enemy_population() {
+    return unsigned(std::count_if(s_enemies.begin(),s_enemies.end(),[](const Enemy& enemy) {
+        return enemy.id!=kNone && !enemy.elite && !enemy.retiring && !enemy.credited;
+    }));
+}
 void update_spawns(daAlink_c* link) {
     update_boss_watchdogs(link);
-    unsigned population = 0;
+    unsigned population = normal_enemy_population();
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
-        if (!e.elite && !e.retiring && !e.credited) ++population;
         auto* actor = actor_by_id(e.id);
         if (!actor || !e.initialized) continue;
         ++e.age;
@@ -1546,6 +1550,10 @@ void draw_hud(ModContext*, void* args, void*, void*) {
         drawText(HudPart::Info,14,bossOffset);
     }
     float effectOffset=22+bossOffset;
+    if(preview || show_enemy_counter()) {
+        std::snprintf(text,sizeof(text),"Enemies: %u / %u",normal_enemy_population(),s_run.target_population());
+        drawText(HudPart::EnemyCounter,13);
+    }
     const bool fateTooltips=show_fate_tooltips();
     for (unsigned i=0;i<unsigned(FateEffect::Count);++i) {
         const auto remaining=s_run.fate_ticks(FateEffect(i));
@@ -1801,8 +1809,16 @@ void update_survivors() {
     update_arena_safety(link);
     if (s_run.phase == Phase::Loading) {
         // Never freeze a falling or partially initialized Link in the preview.
-        if (!playable() || !arena_grounded(link)) { s_warmup=0; return; }
+        if (!playable() || link->checkPlayerDemoMode() || !arena_grounded(link)) { s_warmup=0; return; }
         if (++s_warmup < 15) return;
+        if(s_map==0) {
+            // The first grounded checkpoint can be outside the entry door.
+            // Only finalize the scan anchor after Link's native entrance demo
+            // and grounded warmup have finished; no story actor is required.
+            s_arenaSpawnPosition=link->current.pos;
+            s_arenaSpawnYaw=link->shape_angle.y;s_arenaSpawn=true;
+            clear_reachable_floor();
+        }
         load_records(); s_run.phase = Phase::Ready;
         if(s_arrivingRun && s_arenaMeshReady) {s_arrivingRun=false;begin_run();}
     }

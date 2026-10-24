@@ -168,6 +168,7 @@ constexpr ManualAbility manual_ability(Upgrade weapon) {
     default:return ManualAbility::Count;
     }
 }
+inline constexpr unsigned normal_enemy_limit = 345;
 struct RunOptions {
     float enemy_hp = 1, enemy_damage = 1, enemy_speed = 1, horde = 1;
     float camera_distance = 200;
@@ -175,6 +176,7 @@ struct RunOptions {
     bool legacy_difficulty = false; // Historical snapshots retain pre-Boss-HP rank/rewards.
     bool weighted_difficulty = false; // v15 five-setting weighted rewards, before the x5 cap.
     DebugOptions debug{};
+    unsigned max_normal_enemies=normal_enemy_limit;
     int reticle_y = 0;
     bool switch_attack_lock = false;
     bool gyro_aim = true;
@@ -208,6 +210,7 @@ struct RunOptions {
     }
     void clamp() {
         debug.clamp();
+        max_normal_enemies=std::min(normal_enemy_limit,max_normal_enemies);
         boss_hp=difficulty(boss_hp,5);
         reticle_y=std::clamp(reticle_y,-40,40);
         enemy_hp=difficulty(enemy_hp,5); enemy_damage=difficulty(enemy_damage,5);
@@ -738,8 +741,8 @@ struct Run {
         const bool timedBoss=elite && eliteSlot>=0 && unsigned(eliteSlot)<timed_elite_count;
         return enemy_health(base,elite,map,timedBoss && unsigned(eliteSlot)==timed_elite_count-1,timedBoss);
     }
-    // Fixed population ceiling; time and Horde difficulty only affect spawn cadence/batches.
-    unsigned target_population() const { return 345u; }
+    // Normal-wave limit is captured at run start; Horde changes cadence/batches only.
+    unsigned target_population() const { return std::min(normal_enemy_limit,options.max_normal_enemies); }
     unsigned spawn_batch() {
         spawn_progress+=unsigned(RunOptions::difficulty(options.horde,5)*2)*(horde_remaining?3:1);
         const unsigned batch=spawn_progress/2;spawn_progress%=2;return batch;

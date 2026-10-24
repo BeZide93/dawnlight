@@ -3,6 +3,7 @@ from pathlib import Path
 import os, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
 fixture=r'''
+bool counterShown=false;bool show_enemy_counter(){return counterShown;}void set_enemy_counter(bool v){counterShown=v;}
 bool fateTips=true;bool show_fate_tooltips(){return fateTips;}void set_fate_tooltips(bool value){fateTips=value;}
 
 #include <any>
@@ -100,6 +101,7 @@ struct Service{
  ModResult pane_add_rml(ModContext*,UiElementHandle,const char*,UiElementHandle* handle){if(handle)*handle=99;return MOD_OK;}
  ModResult elem_set_class(ModContext*,UiElementHandle,const char*,bool){return MOD_OK;}
  ModResult pane_add_control(ModContext*,UiElementHandle pane,const UiControlDesc* c,UiElementHandle*){controls.push_back(*c);controlPanes.push_back(pane);return MOD_OK;}
+ ModResult pane_add_section(ModContext*,UiElementHandle,const char*){return MOD_OK;}
  ModResult pane_add_text(ModContext*,UiElementHandle,const char*,UiElementHandle* handle){if(handle)*handle=100;return MOD_OK;}
 }service;auto* svc_ui=&service;
 ModResult build_reset_scores(UiElementHandle){return MOD_OK;}
@@ -201,12 +203,23 @@ int main(){
  s_run.phase=Phase::Ready;s_options.camera_distance=300;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==300);
  before_run_camera(nullptr,cam,nullptr,nullptr);active=false;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==100);active=true;
  assert(build_difficulty(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
- assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==19);
+ assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==21);
+  auto population=controls[19];assert(std::string(population.label)=="Max Normal Enemies"&&population.kind==UI_CONTROL_NUMBER);
+  assert(population.min==0&&population.max==345&&population.step==1&&!population.prefix);
+  UiControlValue count=UI_CONTROL_VALUE_INIT;population.get(nullptr,population.user_data,&count);assert(count.int_value==345);
+  count.int_value=-10;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==0);
+  count.int_value=INT64_MAX;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==345);
+  count.int_value=42;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==42);
+  s_run.phase=Phase::Running;count.int_value=1;population.set(nullptr,population.user_data,&count);
+  assert(population.is_disabled(nullptr,population.user_data)&&s_options.max_normal_enemies==42);s_run.phase=Phase::Ready;
+  auto counter=controls[20];assert(std::string(counter.label)=="Show Enemy Counter"&&counter.kind==UI_CONTROL_TOGGLE);
+  UiControlValue visible=UI_CONTROL_VALUE_INIT;counter.get(nullptr,nullptr,&visible);assert(!visible.bool_value);
+  visible.bool_value=true;counter.set(nullptr,nullptr,&visible);assert(counterShown);visible.bool_value=false;counter.set(nullptr,nullptr,&visible);assert(!counterShown);
  const auto manual=controls[17];
  assert(manual.kind==UI_CONTROL_GROUP&&std::string(manual.label)=="Manual aiming abilities"&&controlPanes.back()==1);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow&&std::string(pushedTab.title)==manual.label);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==29);
- for(unsigned i=19;i<29;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==31);
+ for(unsigned i=21;i<31;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
  for(unsigned i=0;i<5;++i) {
   auto& minus=controls[2*i];auto& plus=controls[2*i+1];auto& setting=s_runControls[i];
   assert(std::string(minus.label)=="-"&&std::string(plus.label)=="+"&&!minus.get&&!plus.set);
@@ -236,17 +249,17 @@ int main(){
  UiControlValue tipValue=UI_CONTROL_VALUE_INIT;fate.get(nullptr,nullptr,&tipValue);assert(tipValue.bool_value);
  s_run.phase=Phase::Running;tipValue.bool_value=false;fate.set(nullptr,nullptr,&tipValue);
  fate.get(nullptr,nullptr,&tipValue);assert(!tipValue.bool_value);s_run.phase=Phase::Ready;
- for(unsigned i=19;i<29;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
+ for(unsigned i=21;i<31;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
   UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value);
   value.bool_value=false;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
-  assert(!s_options.manual_aim[i-19]);for(unsigned j=i-18;j<10;++j)assert(s_options.manual_aim[j]);
+  assert(!s_options.manual_aim[i-21]);for(unsigned j=i-18;j<10;++j)assert(s_options.manual_aim[j]);
   value.bool_value=true;s_run.phase=Phase::Running;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=true;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);s_restart=false;
  }
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);assert(!s_manualAimSettingsWindow);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==39);
- for(unsigned i=29;i<39;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==41);
+ for(unsigned i=31;i<41;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);
  s_run.start(1,s_options);for(bool enabled:s_run.options.manual_aim)assert(!enabled);
  s_options.manual_aim.fill(true);for(bool enabled:s_run.options.manual_aim)assert(!enabled);

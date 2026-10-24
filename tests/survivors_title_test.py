@@ -154,6 +154,20 @@ int main(){
   flow.tick(1.f/rate,true,false,true,true);assert(flow.logo&&!flow.show_logo());
   flow.tick(1.f/rate,true,false,false,false);assert(flow.show_logo());
   flow.play();assert(flow.camera()==0&&!flow.logo&&!flow.armed);
+  // A held Play input cannot reveal the logo, including during the move.
+  for(int i=0;i<rate*3/2;++i)flow.tick(1.f/rate,true,false,true,true);
+  assert(flow.camera()>0&&flow.camera()<1&&!flow.logo&&!flow.armed);
+  flow.tick(1.f/rate,true,false,false,false);assert(flow.armed);
+  flow.tick(1.f/rate,true,false,true,true);
+  assert(flow.logo&&!flow.show_logo()&&flow.camera()<1);
+  const float revealedAt=flow.camera();
+  flow.tick(1.f/rate,true,false,false,false);
+  assert(flow.show_logo()&&flow.camera()>revealedAt&&flow.camera()<1);
+  for(int i=0;i<rate*3;++i)flow.tick(1.f/rate,true,false,false,false);
+  assert(flow.show_logo()&&flow.camera()==1);
+  // New input during the menu fade still waits for the camera phase.
+  flow.play();flow.tick(.1f,true,false,false,false);
+  flow.tick(.1f,true,false,true,true);assert(!flow.logo&&flow.camera()==0);
  }
  assert(survivors_title_active());
  int startDemoResult=123;
@@ -206,7 +220,7 @@ int main(){
  assert(link.mUnderFrameCtrl[0].rate==0&&link.mUpperFrameCtrl[0].rate==0);
  floorY=std::nanf("");before_title_wait(nullptr,linkArgs,&result,nullptr);assert(link.position.y==-400);
  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
- assert(camera.sets==1&&camera.mEye.x==650&&camera.mEye.y==-70&&camera.mCenter.x==-70&&camera.fov==45);
+ assert(camera.sets==1&&std::abs(camera.mEye.x-650)<.001f&&std::abs(camera.mEye.z-900)<.001f&&camera.mEye.y==-70&&camera.mCenter.x==-70&&camera.fov==45);
  zeldaLive=false;assert(before_title_logo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-1);
  zeldaLive=true;bowlLive=false;before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==-1);
  bowlLive=true;floorY=-400;
@@ -400,7 +414,29 @@ int main(){
   dComIfGp_setNextStage("F_SP108",21,1,13);native_draw_transition();
   assert(nextStage&&!std::strcmp(nextName,"F_SP108")&&nextRoom==1&&nextLayer==13&&queuedScene==fpcNm_PLAY_SCENE_e);
  }
- std::cout<<"Survivors title: opening routing, rejected requests, native next-stage latch, scene isolation, pose and logo flow passed\n";
+ // Sample the production camera through the whole path. Distance, side angle,
+ // height and FOV change together; revealing the logo introduces no jump.
+ s_active=true;s_gameStarted=false;scene.name=fpcNm_OPENING_SCENE_e;
+ stageName=arenas[0].stage;roomNo=51;nextStage=false;transition=true;
+ reset_title_presentation();s_titleFlow.play();
+ float lastRadius=0,lastAngle=0,lastFov=0;cXyz lastEye;
+ for(int i=0;i<=240;++i){
+  s_titleFlow.elapsed=TitleFlow::menuFade+TitleFlow::cameraDuration*(i/240.f);
+  if(i==60)s_titleFlow.logo=true;
+  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
+  const float radius=std::hypot(camera.mEye.x,camera.mEye.z-260);
+  const float angle=std::atan2(camera.mEye.x,camera.mEye.z-260);
+  if(i){
+   assert(radius<lastRadius&&angle>lastAngle&&camera.fov<lastFov);
+   assert(camera.mEye.y<lastEye.y);
+   assert(std::hypot(camera.mEye.x-lastEye.x,camera.mEye.z-lastEye.z)<10);
+  }
+  if(i==120){assert(radius<800&&radius>500&&angle>1&&angle<1.5f&&camera.fov<45&&camera.fov>40);}
+  lastRadius=radius;lastAngle=angle;lastFov=camera.fov;lastEye=camera.mEye;
+ }
+ assert(std::abs(camera.mEye.x-std::sqrt(360.f*360+310.f*310))<.01f&&
+  std::abs(camera.mEye.z-260)<.01f&&camera.mEye.y==-210&&camera.fov==40);
+ std::cout<<"Survivors title: opening routing, rejected requests, native next-stage latch, smooth camera arc and early logo input passed\n";
 }
 '''
 native_event=(sdk/'src/d/d_event_manager.cpp').read_text()

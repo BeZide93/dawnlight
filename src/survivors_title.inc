@@ -249,16 +249,16 @@ void after_title_camera(ModContext*, void* args, void*, void*) {
     const bool held = mDoCPd_c::getHold(PAD_1) != 0;
     const bool pressed = mDoCPd_c::getTrig(PAD_1) != 0;
     s_titleFlow.tick(seconds, title_scene_ready() && !transitioning(), ui_visible(), held, pressed);
-    // Finish the host menu fade first, then ease towards Link while keeping
-    // the bowl and Zelda in frame. The native camera still owns the viewport.
+    // One eased arc: reduce distance/height/FOV while rotating to Link's side.
+    // Logo input does not stop or restart this movement.
     const float t = s_titleFlow.camera();
-    const float orbit = s_titleFlow.orbit();
-    const float startAngle = std::atan2(360.f,310.f);
-    const float angle = startAngle+(1.57079632679f-startAngle)*orbit;
-    const float radius = std::sqrt(360.f*360.f+310.f*310.f);
-    const cXyz eye = orbit>0 ? cXyz(radius*std::sin(angle),190,260+radius*std::cos(angle)) :
-        cXyz(650-290*t,330-140*t,900-330*t);
-    camera->Set(anchor+cXyz(-70+35*t+35*orbit,110-25*t+5*orbit,80+65*t+35*orbit),
+    const float startAngle = std::atan2(650.f,640.f);
+    const float angle = startAngle+(1.57079632679f-startAngle)*t;
+    const float startRadius = std::sqrt(650.f*650.f+640.f*640.f);
+    const float endRadius = std::sqrt(360.f*360.f+310.f*310.f);
+    const float radius = startRadius+(endRadius-startRadius)*t;
+    const cXyz eye(radius*std::sin(angle),330-140*t,260+radius*std::cos(angle));
+    camera->Set(anchor+cXyz(-70+70*t,110-20*t,80+100*t),
                 anchor+eye,45.f-5.f*t,s16(0));
     camera->mUp.set(0,1,0);
     camera->mDirection.Val(camera->mEye-camera->mCenter);

@@ -69,7 +69,7 @@ int main(){
   pose.parent[first+1]=first;pose.local[first+1].p={0,-30,0};
   pose.parent[first+2]=first+1;pose.local[first+2].p={0,-39.363499f,0};
  }
- // Include a non-identity ankle basis and a toe descendant: the flip must
+ // Include a non-identity ankle basis and a toe descendant: the pitch must
  // be in actor space, rather than an arbitrary bone-local rotation.
  pose.local[25].q=dual::from_euler({0,.7f,.4f});
  pose.parent[26]=25;pose.local[26].p=dual::rotate(dual::conjugate(pose.local[25].q),{0,0,14.18f});
@@ -80,8 +80,13 @@ int main(){
  assert(near(pose.world[24].p.y,6)); // Floor knee centre includes its thickness.
  assert(near(pose.world[20].p.y,10)&&near(pose.world[25].p.y,10));
  const auto sole=dual::rotate(pose.world[25].q,originalSole);
- assert(sole.y>.999f&&std::abs(sole.x)<.001f&&std::abs(sole.z)<.001f);
- assert(pose.world[26].p.z<pose.world[25].p.z-14&&near(pose.world[26].p.y,pose.world[25].p.y));
+ // Sole points diagonally up, with the rear toes lower than the heel.
+ // This rejects the previous horizontal sole without prescribing an exact angle.
+ assert(sole.y>.9f&&sole.y<.99f&&std::abs(sole.x)<.001f&&sole.z<-.2f);
+ const auto rearFoot=pose.world[26].p-pose.world[25].p;
+ assert(rearFoot.z<-12&&rearFoot.y<-3&&rearFoot.y>-7);
+ assert(pose.world[26].p.y>0); // Toe joint remains above the ground surface.
+ assert(near(dual::length(rearFoot),14.18f));
  assert(dual::rotate(pose.world[20].q,{0,-1,0}).y<-.999f); // Planted sole still faces down.
  assert(pose.world[19].p.y>pose.world[18].p.y&&pose.world[19].p.z>25);
  assert(pose.world[25].p.z<-35&&near(pose.world[24].p.z,pose.world[23].p.z));

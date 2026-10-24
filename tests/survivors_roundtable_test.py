@@ -43,7 +43,9 @@ for a,b,c,material,group in triangles:
     assert max(a,b,c)<vn and material==0 and group==2
     assert g.length(g.cross(g.sub(vertices[b],vertices[a]),g.sub(vertices[c],vertices[a])))>.001
 info0,info1,info2,passes=struct.unpack_from('>4I',data,io)
-assert info0==63 and info1==255 and passes==0, 'Solid normal ground, no exit/link'
+assert info0&63==63 and info1==255 and passes==0, 'Solid normal ground, no exit/link'
+assert (info0>>6)&255==255, 'Inherit room ambient light; zero turns grounded actors black'
+assert info0>>14==0, 'No unintended special surface flags'
 assert info2&255==0, 'Static room, no moving-background camera'
 assert all((info2>>shift)&255==255 for shift in (8,16,24)), 'No dungeon camera/path references'
 
@@ -62,11 +64,37 @@ def ground(x,z,ceiling=1000):
         if y<=ceiling:heights.append(y)
     return max(heights) if heights else None
 
-assert abs(g.RADIUS-2617.437)<25, 'Preserve the captured Darknut main-floor footprint'
+assert g.RADIUS==1800, 'Keep the compact build-1295 footprint'
 chest_x=g.FRONT+25-150
 for x,z in [(0,0),(0,260),(-320,0),(chest_x,0)]:
     assert abs(ground(x,z)+400)<.01, 'Rest/fire/Zelda/equipment anchor must remain clear'
-assert abs(ground(0,-730)-(-199))<.01, 'Table is solid and its visible top is supported'
+assert abs(ground(0,-650)-(-299.5))<.01, 'Tabletop is 100.5 units above the floor'
+assert abs(ground(0,-1110)-(-333.45))<.01, 'Rear chair seat is 66.55 units high'
+chair=g.Hall();chair.chair(0,0,0)
+assert min(v[1] for v in chair.vertices)==g.FLOOR
+assert abs(max(v[1] for v in chair.vertices)-g.FLOOR-187)<.01
+# A horizontal ray just above the floor must hit each memorial plinth. The
+# old floating box at +150 passed a top-down ground-height check.
+def segment_hits(start,end):
+    direction=g.sub(end,start)
+    dot=lambda a,b:sum(x*y for x,y in zip(a,b))
+    for a,b,c,_,_ in triangles:
+        a,b,c=vertices[a],vertices[b],vertices[c]
+        edge1=g.sub(b,a);edge2=g.sub(c,a);h=g.cross(direction,edge2)
+        det=dot(edge1,h)
+        if abs(det)<1.e-6:continue
+        offset=g.sub(start,a);u=dot(offset,h)/det
+        if u<0 or u>1:continue
+        q=g.cross(offset,edge1);v=dot(direction,q)/det
+        if v<0 or u+v>1:continue
+        if 0<=dot(edge2,q)/det<=1:return True
+    return False
+for angle in (math.pi*.75,math.pi,math.pi*1.25):
+    def point(inset):
+        radius=g.FRONT-200+inset
+        return radius*math.sin(angle),g.FLOOR+1,radius*math.cos(angle)
+    assert segment_hits(point(-200),point(0)), 'Memorial must reach the floor'
+
 # Walkable links between all interaction points, including the authored door.
 routes=[((0,260),(-320,0)),((0,260),(chest_x,0)),((0,260),(0,3900))]
 for start,end in routes:

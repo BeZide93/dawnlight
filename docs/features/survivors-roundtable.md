@@ -16,12 +16,20 @@ details. The hall uses baked vertex lighting rather than dynamic room shadows.
 
 ## Layout and integration
 
-- Main hall radius: 2,600 game units, matching the captured native main-floor
-  radius of approximately 2,617 units; floor: Y = -400. The south approach reaches
+- Main hall radius: 1,800 game units (the compact build-1295 layout); floor:
+  Y = -400. The south approach reaches
   the existing doorway at Z = 3,900 / Y = -250 via a gentle ramp.
 - Rest pose, title camera, Zelda and brazier anchors stay unchanged. The round
-  table sits just behind the fire/rest area, centered at Z = -730, with the front
+  table sits just behind the fire/rest area, centered at Z = -650, with the front
   seating bay open. Zelda's sword gift, talents and exit warning remain intact.
+- The table is 100.5 units high and 361.8 units in radius; chair seats are
+  66.55 units high and the full chair height is 187. Table settings and smaller
+  candle holders sit on the tabletop. Memorial plinths extend to the floor.
+- Floor brightness is explicitly 255 (inherit native room lighting), rather
+  than 0, which multiplies actor ambient light to zero. This fixes the black
+  Link silhouette away from point lights without changing global lighting.
+  Warmer, brighter baked wall lighting retains visible wood in the recesses;
+  planar flagstone UVs remove diagonal seams on clipped floor tiles.
 - The equipment chest still probes the east wall. Collision tests cover its
   approach, Zelda's position, the rest position and the route to the exit.
 - Only completed room-51 BG actors created for the Survivors hub/title acquire
@@ -56,7 +64,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 256×256 tiled RGB565 atlas. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 12,657 visual triangles and 3,702
+tools or network image generation. There are 12,121 visual triangles and 3,762
 collision triangles, with a balanced collision tree. Resources total about 1 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
@@ -64,7 +72,8 @@ The runtime fixture executes the production implementation with a fake host,
 ASan/UBSan and both compilers: partial/failed creation, 30 room lifetimes,
 selection changes, repeated retained draws, native particle/light cleanup,
 deletion and mod shutdown. Geometry tests verify reproducibility, native table
-bounds/tree ancestry, winding, surface heights and interaction paths.
+bounds/tree ancestry, winding, inherited floor lighting, furniture heights,
+grounded memorial plinths and interaction paths.
 
 In-game visual and native-door validation still requires a playable installation:
 load a new/existing save, finish Zelda's gift, open talents/equipment, start each

@@ -13,9 +13,9 @@ import struct
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'res/survivors_roundtable'
 FLOOR = -400.0
-# Captured native main-floor radius is 2617.437 (see darknut_floor_test).
-# Keep its footprint, with a small inset for the replacement wall/column trim.
-RADIUS = 2600.0
+# Compact layout preferred in build 1295; the native door stays connected
+# by the existing approach corridor rather than enlarging the main hall.
+RADIUS = 1800.0
 SIDES = 16
 FRONT = RADIUS * math.cos(math.pi/SIDES)
 HALF_DOOR = RADIUS * math.sin(math.pi/SIDES)
@@ -48,7 +48,7 @@ class Hall:
             uv = ((.03, .03), (.97, .03), (.97, .97))
         # Soft baked directional/ambient lighting, plus fire warmth near the
         # original brazier. Native Link/Zelda still receive its live point light.
-        shade = .62 + .22*max(0, normal[1]/n) + .12*max(0, -normal[0]/n)
+        shade = .72 + .16*max(0, normal[1]/n) + .10*max(0, -normal[0]/n)
         for pos, tex in zip(p, uv):
             distance = math.hypot(pos[0], pos[2])
             warm = max(0, 1-distance/1400)*.14
@@ -87,9 +87,11 @@ class Hall:
             self.quad(p,q,v,u,**kw)
             self.triangle(((x,y+h,z),u,v),uv=((.5,.5),(.5+.46*math.sin(a),.5+.46*math.cos(a)),(.5+.46*math.sin(b),.5+.46*math.cos(b))),**kw)
 
-    def local(self,x,z,angle):
+    def local(self,x,z,angle,scale=(1,1,1)):
         sine=math.sin(angle); cosine=math.cos(angle)
-        self.transform=lambda p:(x+p[0]*cosine+p[2]*sine,p[1]+FLOOR,z-p[0]*sine+p[2]*cosine)
+        self.transform=lambda p:(x+p[0]*scale[0]*cosine+p[2]*scale[2]*sine,
+                                 p[1]*scale[1]+FLOOR,
+                                 z-p[0]*scale[0]*sine+p[2]*scale[2]*cosine)
 
     def reset(self): self.transform=lambda p:p
 
@@ -106,7 +108,7 @@ class Hall:
         self.box(0,height,50,width+250,65,180,solid=False)
 
     def chair(self,x,z,angle):
-        self.local(x,z,angle)
+        self.local(x,z,angle,scale=(.55,.55,.55))
         for px in (-48,48):
             for pz in (-45,45): self.box(px,0,pz,18,110,18,material=1)
         self.box(0,96,0,130,25,120,material=1)
@@ -142,7 +144,11 @@ class Hall:
                     if not polygon:break
                 shade=210+(row*7+col*11)%35
                 for j in range(1,len(polygon)-1):
-                    self.triangle(tuple((p[0],FLOOR+.5,p[1]) for p in (polygon[0],polygon[j+1],polygon[j])),solid=False,tint=(shade,shade,shade))
+                    face=(polygon[0],polygon[j+1],polygon[j])
+                    # Shared planar UVs prevent diagonal seams on clipped tiles.
+                    self.triangle(tuple((p[0],FLOOR+.5,p[1]) for p in face),
+                        uv=tuple(((p[0]-x)/200,(p[1]-z)/200) for p in face),
+                        solid=False,tint=(shade,shade,shade))
         # Sixteen-sided hall. The south bay is open to the original door.
         for i in range(SIDES):
             angle=i*TAU/SIDES
@@ -151,7 +157,7 @@ class Hall:
             if i:
                 self.quad((width/2,0,25),(-width/2,0,25),(-width/2,1200,25),(width/2,1200,25),tint=(180,175,160))
                 # Dark recessed panel visible through a carved arch.
-                self.box(0,0,12,width-130,760,12,material=1,solid=False,tint=(85,77,69))
+                self.box(0,0,12,width-130,760,12,material=1,solid=False,tint=(210,195,175))
             self.arch(width-175,460,920)
             self.box(0,1040,0,width+10,100,100,material=1,solid=False)
             self.box(0,1000,-8,width+10,30,140,material=3,solid=False)
@@ -179,27 +185,35 @@ class Hall:
         self.column(0,FLOOR+1460,0,100,35,material=3,solid=False)
         # Round table behind the rest/fire area. Front is left clear so the
         # existing camera, kneeling pose and Zelda dialogue remain unobstructed.
-        self.column(0,FLOOR,-730,300,55,material=1,n=32)
-        self.column(0,FLOOR+55,-730,175,100,top=240,material=1,n=24)
-        self.column(0,FLOOR+155,-730,540,34,material=1,n=48)
-        self.column(0,FLOOR+189,-730,520,9,material=3,n=48,solid=False)
-        self.column(0,FLOOR+198,-730,495,3,material=1,n=48)
-        self.column(0,FLOOR+201,-730,185,2,material=3,n=32,solid=False)
-        # Radial engraved rings and twelve carved brass settings.
+        self.local(0,-650,0,scale=(.67,.5,.67))
+        self.column(0,0,0,300,55,material=1,n=32)
+        self.column(0,55,0,175,100,top=240,material=1,n=24)
+        self.column(0,155,0,540,34,material=1,n=48)
+        self.column(0,189,0,520,9,material=3,n=48,solid=False)
+        self.column(0,198,0,495,3,material=1,n=48)
+        self.column(0,201,0,185,2,material=3,n=32,solid=False)
+        # Place settings rest on the tabletop, not one unit above its surface.
         for i in range(12):
             angle=i*TAU/12
-            x=400*math.sin(angle);z=-730+400*math.cos(angle)
-            self.column(x,FLOOR+202,z,35,3,material=3,solid=False)
-            self.column(x,FLOOR+205,z,25,2,material=1,solid=False)
-            if i not in (0,1,11):self.chair(680*math.sin(angle),-730+680*math.cos(angle),angle+math.pi)
-        # Candelabra on the table, leaving the foreground seating bay open.
-        for x,z in ((-200,-730),(200,-730),(0,-970)):
-            self.column(x,FLOOR+202,z,37,15,material=3,solid=False)
-            self.column(x,FLOOR+217,z,10,105,material=3,solid=False)
-            self.box(x,FLOOR+310,z,140,12,12,material=3,solid=False)
+            x=400*math.sin(angle);z=400*math.cos(angle)
+            self.column(x,201,z,35,3,material=3,solid=False)
+            self.column(x,204,z,25,2,material=1,solid=False)
+        self.reset()
+        for i in range(2,11):
+            angle=i*TAU/12
+            self.chair(460*math.sin(angle),-650+460*math.cos(angle),angle+math.pi)
+        # Smaller candle holders sit directly on the 100.5-unit-high tabletop.
+        # Their proportions are independent of the broad table's horizontal scale.
+        for x,z in ((-134,-650),(134,-650),(0,-810.8)):
+            self.local(x,z,0,scale=(.4,.4,.4))
+            base=100.5/.4
+            self.column(0,base,0,37,15,material=3,solid=False)
+            self.column(0,base+15,0,10,105,material=3,solid=False)
+            self.box(0,base+108,0,140,12,12,material=3,solid=False)
             for dx in (-60,0,60):
-                self.column(x+dx,FLOOR+322,z,8,45,material=0,tint=(255,226,164),solid=False,n=6)
-                self.column(x+dx,FLOOR+367,z,9,30,top=0,material=4,tint=(255,212,103),solid=False,n=6)
+                self.column(dx,base+120,0,8,45,material=0,tint=(255,226,164),solid=False,n=6)
+                self.column(dx,base+165,0,9,30,top=0,material=4,tint=(255,212,103),solid=False,n=6)
+            self.reset()
         # Hearth on the west wall; raised stone seat/bench and hood.
         self.local(-FRONT+110,0,-math.pi/2)
         self.box(0,0,-40,620,35,270)
@@ -216,9 +230,12 @@ class Hall:
         # Burgundy banners and small stylized robed memorials in rear bays.
         for angle in (math.pi*.75,math.pi,math.pi*1.25):
             self.local((FRONT-200)*math.sin(angle),(FRONT-200)*math.cos(angle),angle)
-            self.box(0,150,0,260,360,200,solid=True)
-            self.column(0,510,0,95,260,top=45,solid=False,n=8)
-            self.column(0,770,0,48,85,top=18,solid=False,n=8)
+            # Grounded plinth, narrower shaft and cap support the entire figure.
+            self.box(0,0,0,280,35,220)
+            self.box(0,35,0,220,290,170)
+            self.box(0,325,0,260,35,200)
+            self.column(0,360,0,95,260,top=45,solid=False,n=8)
+            self.column(0,620,0,48,85,top=18,solid=False,n=8)
             self.box(-180,470,50,135,420,5,material=2,solid=False)
             self.box(-180,890,45,175,12,20,material=3,solid=False)
             self.reset()
@@ -281,7 +298,10 @@ def dzb(hall):
     # Native dBgW: exit=63, link=255, static camera motion=0; room camera,
     # path and path point=255 (none). Zero camera/path IDs would accidentally
     # select the original dungeon's camera/path record zero on our new floor.
-    ti=append(struct.pack('>4I',0x3f,0xff,0xffffff00,0))
+    # Bits 6..13 are the floor brightness (YukaCol). Zero makes Link
+    # black: native lighting multiplies ambient by YukaCol / 100. Use 255
+    # to inherit the room lighting, including when standing on furniture.
+    ti=append(struct.pack('>4I',0x3f | (0xff << 6),0xff,0xffffff00,0))
     struct.pack_into('>13I',data,0,len(vertices),vo,len(triangles),to,len(blocks),bo,len(nodes),no,3,go,1,ti,0)
     assert len(vertices)<65535 and len(triangles)<65535
     return data

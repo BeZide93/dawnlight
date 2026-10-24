@@ -76,6 +76,8 @@ void close_window(){++closed;}
 unsigned map=0;std::string stage=arenas[0].stage;int room=51;
 bool save_modal_active(){return false;}
 bool in_arena(){return arena&&arena_matches(map,stage,room);}
+bool arrivalActive=false;
+bool survivors_hub_arrival_active(){return arrivalActive;}
 bool transitioning(){return transition;}
 bool dComIfGp_isPauseFlag(){return pause;}struct dScnPly_c{static bool isPause(){return false;}};
 bool dComIfGp_event_runCheck(){return event;}bool dMsgObject_isTalkNowCheck(){return message;}
@@ -135,13 +137,14 @@ int main(){
  message=false;update_midna_dialog();assert(ended==1&&s_run.phase==Phase::Defeat);
  update_midna_dialog();assert(ended==1);
  // Stage/actor/phase isolation and failed request recovery.
- for(int reason=0;reason<8;++reason){
+ for(int reason=0;reason<9;++reason){
   reset_midna_dialog();s_run.start(1);arena=reason!=0;transition=reason==1;pause=reason==2;event=reason==3;
   ui=reason==4;link.dead=reason==5;link.mLinkAcch.hit=reason!=6;
+  arrivalActive=reason==8;
   if(reason==7)s_run.phase=Phase::TreasureChoice;
   unsigned orders=ordered;before_midna_call(nullptr,input,nullptr,nullptr);assert(ordered==orders&&!midna_dialog_busy());
  }
- arena=true;transition=pause=event=ui=link.dead=false;link.mLinkAcch.hit=true;s_run.start(1);
+ arena=true;arrivalActive=transition=pause=event=ui=link.dead=false;link.mLinkAcch.hit=true;s_run.start(1);
  before_midna_call(nullptr,input,nullptr,nullptr);for(int i=0;i<30;++i)update_midna_dialog();assert(!midna_dialog_busy());
  dMsgFlow_c other;std::any otherFlow[]={&other,u16(0xbb9)};
  assert(before_midna_flow(nullptr,otherFlow,&node,nullptr)==HOOK_CONTINUE);

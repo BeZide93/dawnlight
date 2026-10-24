@@ -333,7 +333,18 @@ int main(){
 }
 '''
 core=(root/'src/survivors.cpp').read_text()
-window=core[core.index('void open_window() {'):core.index('ModResult activated(')]
+# Extract only the function under test. A range ending at the next unrelated
+# function also pulled in intervening includes (such as the title texture).
+start=core.index('void open_window() {')
+opening=core.index('{',start)
+depth=0
+for end in range(opening,len(core)):
+ depth+=(core[end]=='{')-(core[end]=='}')
+ if depth==0:
+  window=core[start:end+1]
+  break
+else:
+ raise AssertionError('unterminated open_window function')
 ui=(root/'src/survivors_maps_ui.inc').read_text().split('UiElementHandle s_difficultySummary',1)[1]
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'

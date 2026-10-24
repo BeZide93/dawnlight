@@ -47,7 +47,7 @@ void load_records(){}void end_survivors_integrity(){}void reset_ending(){}
 void close_window(){++closes;}void retire_enemies(){++retirements;}
 void clear_attacks(){++attackClears;}void clear_loot(){++lootClears;}
 void clear_arena_geometry(){s_arenaMeshReady=false;s_warmup=0;}
-void update_survivors_equipment_chest(bool,int,int){}void update_survivors_pedestal(bool){}
+void update_survivors_equipment_chest(bool,int,int){}void update_hub_brazier(bool){}
 void prepare_save(){}void dComIfGs_setRestartRoomParam(int){}
 HookAction before_stage(ModContext*,void*,void*,void*);
 void dComIfGp_setNextStage(const char* stage,s16 point,s8 room,s8 layer){

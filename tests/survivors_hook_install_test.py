@@ -35,13 +35,14 @@ int initialize_hud_config(){return init(5,nullptr);}
 namespace enemy_hud {int initialize(){return init(6,nullptr);}}
 int initialize_option_config(){return init(2,nullptr);}
 int initialize_midna_dialog(){return init(3,nullptr);}
+int initialize_hub_zelda(){return init(7,nullptr);}
 void initialize_menu_handoff(){}
-constexpr int activated=0,deactivated=0,loaded=0,new_save=0,reset=0;
+constexpr int activated=0,deactivated=0,loaded=0,new_save=0,reset=0,play_survivors=1;
 constexpr const char* kMode="survivors";
 struct GameModeDesc{unsigned struct_size;const char* game_mode_id;const char* full_name;const char* save_name;void* user_data;
  int on_activated,on_deactivated,on_play,on_save_loaded,on_new_save;void* on_new_save_select;int on_game_reset;void* on_tick;};
 struct Service{
- int register_game_mode(void*,const GameModeDesc* mode){assert(std::string(mode->save_name)=="gczelda2-survivors");++registrations;return modeFailure?MOD_UNAVAILABLE:MOD_OK;}
+ int register_game_mode(void*,const GameModeDesc* mode){assert(std::string(mode->save_name)=="gczelda2-survivors");assert(mode->on_play==play_survivors&&mode->on_play!=mode->on_activated);++registrations;return modeFailure?MOD_UNAVAILABLE:MOD_OK;}
  int unregister_game_mode(void*,const char* id){assert(std::string(id)==kMode);++removals;if(unregisterFailure)return MOD_UNAVAILABLE;if(active){active=false;++deactivations;}return MOD_OK;}
 }service;
 auto* svc_game_mode=&service;
@@ -65,10 +66,10 @@ int main(){
   assert(calls==i&&attempted.back()==expected[i-1]&&error.message.find(expected[i-1])!=std::string::npos);
  }
  failAt=0;
- for(initFailure=1;initFailure<=6;++initFailure){
+ for(initFailure=1;initFailure<=7;++initFailure){
   calls=registrations=0;error={};
   assert(initialize_survivors(&error)==MOD_UNAVAILABLE&&!calls&&!registrations);
-  assert(error.message==((initFailure==1||initFailure==4)?"initializer-specific failure":initFailure==2?
+  assert(error.message==((initFailure==1||initFailure==4)?"initializer-specific failure":initFailure==7?"failed to initialize Hyrule Survivors Zelda dialog":initFailure==2?
    "failed to initialize Hyrule Survivors settings":initFailure==6?"failed to initialize Survivors enemy HUD settings":initFailure==5?"failed to initialize Survivors HUD settings":"failed to initialize Hyrule Survivors Midna dialog"));
  }
  initFailure=0;modeFailure=true;calls=registrations=0;error={};

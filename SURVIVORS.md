@@ -4,8 +4,35 @@
 
 A 20-minute survival mode included in `dawnlight_mod.dusk`. Select **Hyrule
 Survivors** in Dusklight's game-mode menu and create/load its separate save.
-You arrive in the freely walkable Darknut Arena hub. Interact with the central
-Master Sword using A to open **Talents / Settings**; closing saves automatically.
+Its title screen uses the hub as a live scene: Link kneels before the enlarged
+fire bowl, with Zelda visible beside it.
+The scene previews behind the game-mode menu. Clicking **Hyrule Survivors**
+first fades out the menu, then pans and zooms the camera towards Link and arcs
+around to show him from the side. Only A and B remain in the touch UI. Once the
+camera settles, a fresh button press (including touch controls) reveals the
+native logo and A/Start prompt. Holding the selection button does not reveal it.
+Switching modes and back reloads the preview. Link rests on his right knee with his left foot planted
+in front, his hand above the raised knee and his head slightly bowed. He appears
+only once the grounded pose and hub actors are ready. Native file selection
+remains available after Start. Zelda and the bowl load in parallel as soon as
+the room's collision is ready, including during fade-in; only failed spawn
+requests incur a retry delay.
+This presentation does not start a run or grant/save items.
+You arrive in the freely walkable Darknut Arena hub. A ceremonial oil bowl
+(`Obj_otubo`), enlarged to twice its native size and used as a fire bowl, stands
+in the center. Its fire, light and collision follow the enlarged bowl; it has
+no oil-refill interaction. Zelda stands beside it and turns toward Link when
+spoken to. Visit her to open **Talents / Settings**; closing saves automatically.
+Speak to her with A: "It's dangerous to go alone! Take this." She then presents
+the **Ordon Sword**, raised overhead in Link's hand, with the native item message.
+New saves start without a sword; Zelda's completed gift is saved automatically.
+Trying the exit first turns the conversation camera toward Zelda as she calls
+"Wait! Come here!" Visit her to receive the sword before starting a run.
+Existing saves that already own Ordon keep it. After the first gift Zelda says,
+"Come to me after your journey to get some rest and strengthen your Talents."
+**Talents** is highlighted red in the dialogue. Later conversations say
+"Let me help you on your journey." and open **Talents / Settings** after the
+native dialogue closes, without repeating the sword gift.
 Interact with the exit door beneath **Start Run** to open map selection. Pick a
 map and press **Start run**: the menu closes, the native door opens, and Link walks
 through before the scene changes to the selected arena. Story and Boss Rush saves remain separate.
@@ -145,7 +172,7 @@ the next level costs 2,000 XP, then 2,500, 3,000… Each grants **one Unlock Poi
 Abruptly quitting an unfinished run does not award its score. Old saves retain
 previous statistics and start this new progression at level 1.
 
-Interact with the central sword in the hub to open **Talents**. Each rank costs one point;
+Speak to Zelda in the hub after receiving the Ordon Sword to open **Talents**. Each rank costs one point;
 use **+ / −** to spend or refund points in the scrollable list. Click a perk name
 for its description. Removing a prerequisite also refunds its dependent perks;
 **Reset all perks** refunds every rank without changing XP, level or high scores.
@@ -788,7 +815,7 @@ are hidden during native Collection, map/ring menus and pause transitions.
 
 Every scheduled boss and stationary guard boss, including repeated Endless bosses and respawned guards, has a base 20% chance to award permanent equipment directly to the inventory. A successful drop is 80% Weapon / 20% Tunic. Weapons have five equally likely families (Sword, Bow, Boomerang, Bombs, Ball and Chain), each with two equally likely variants: each named weapon is 8% of equipment drops. Luck does not change these odds. Equipment Drop Rate adds 5 percentage points per rank (maximum 10), reaching 70% at Twilit Rank 5. Difficulty scales this toward guaranteed equipment at Rank 25, with 75% Epic and 25% Legendary. Ordinary enemies and the victory cleanup wave do not award equipment. Debug runs award none unless **Max Equipment Drop Rate** or **Always Legendary Equipment** is enabled before the run. This session-only toggle defaults to Off and guarantees an equipment award per timed or stationary boss, with normal type rolls and the run's Equipment Rarity talent applied to stat rolls. **Always Legendary Equipment** also defaults to Off and applies from the next run: all new drops have maximum base stats (tier 5 or +2 for count stats), guaranteeing Legendary rarity. Weapons receive one random bonus from their full Legendary pool; Tunics have no perk. Used alone it preserves the normal talent-adjusted drop chance; combined with Max Equipment Drop Rate, every boss awards Legendary equipment. Existing items are unchanged. These items are saved; Debug score, permanent XP and map-unlock exclusions still apply. A successful award displays a small rarity-colored banner, initially centered vertically near the right screen edge; its position and size can be changed in the HUD-Editor. It slides in from the right toward the left, shows the equipment icon on the left and its name/stats on the right, and slides out after eight active gameplay seconds (including the short entrance/exit animation). Below an acquired-item banner, **Call Midna to Equip** offers immediate equipment replacement via the configured Midna input (including touch). This equips exactly the displayed drop in its Weapon/Tunic slot, preserving the replaced item in inventory. On successful storage the banner disappears immediately and the next queued drop appears. A failed equip save leaves the banner available to retry. Simultaneous awards queue in order until the current banner expires or is equipped. Menus pause the timer and hide the banner. Inventory-full and save-failure notices use the same banner without a misleading acquired item. A full inventory displays only **Inventory Full!** and never replaces an existing item.
 
-Open the large equipment chest in the Darknut Arena hub with A. It is an independent hub actor at the side wall on the +X side of the Master Sword pedestal, with its front facing the center of the room. It does not depend on story chest flags, native appearance events, Link's draw or run-loot resources. The inventory contains **40 shared slots across two tabs**, **Equipment 1 (20 slots)** and **Equipment 2 (20 slots)**. Each page has four rows of five. New items occupy the first empty slot in page order, from top left to bottom right, filling page one before page two. Controller/keyboard navigation and touch/mouse activation use native UI controls. Confirm equips **one Weapon and one Tunic**, replacing the previous item in that slot. Both equipped items remain in the inventory and are marked **Equipped**, with one Weapon and one Tunic shared across both pages. **Tap/click an equipped item again, or select it again with A/Confirm, to unequip it without deleting it.** Toggle Banish, then select an item to open **Delete Equipment?**, showing the exact item and stats. **Cancel** and B/Escape keep it; only **Delete** permanently removes it and unequips it if necessary. A failed save keeps the confirmation open for retry. Closing the inventory, switching pages or leaving the editable hub clears pending confirmations; delayed or stale confirmations cannot delete a changed slot. Closing the inventory saves progress through the existing native background-save flow. A failed storage write leaves the previous inventory intact.
+Open the large equipment chest in the Darknut Arena hub with A. It is an independent hub actor at the side wall on the +X side of the central fire bowl, with its front facing the center of the room. It does not depend on story chest flags, native appearance events, Link's draw or run-loot resources. The inventory contains **40 shared slots across two tabs**, **Equipment 1 (20 slots)** and **Equipment 2 (20 slots)**. Each page has four rows of five. New items occupy the first empty slot in page order, from top left to bottom right, filling page one before page two. Controller/keyboard navigation and touch/mouse activation use native UI controls. Confirm equips **one Weapon and one Tunic**, replacing the previous item in that slot. Both equipped items remain in the inventory and are marked **Equipped**, with one Weapon and one Tunic shared across both pages. **Tap/click an equipped item again, or select it again with A/Confirm, to unequip it without deleting it.** Toggle Banish, then select an item to open **Delete Equipment?**, showing the exact item and stats. **Cancel** and B/Escape keep it; only **Delete** permanently removes it and unequips it if necessary. A failed save keeps the confirmation open for retry. Closing the inventory, switching pages or leaving the editable hub clears pending confirmations; delayed or stale confirmations cannot delete a changed slot. Closing the inventory saves progress through the existing native background-save flow. A failed storage write leaves the previous inventory intact.
 
 The toolbar at the top of each inventory page provides **Sort by Rarity**, **Sort by Type** and **Move Items**, using the same controller/keyboard, mouse and touch controls as the item cards. Sorting covers all 40 slots, places empty slots last and saves the order. Rarity sorts highest first, then by family/variant; Type groups Sword, Bow, Boomerang, Bombs, Ball and Chain, then Tunic, with variants together and highest rarity first within each variant. Equal items retain their order. To move, enable **Move Items**, select an item, then choose any destination, including on the other page. An occupied destination swaps both items. Selecting the source again cancels that selection; selecting **Move Items** again exits move mode. Sorting, Banish or closing the inventory also clears move mode. Equipped items remain equipped after either operation, including identical duplicates. Failed saves preserve the original order and allow retry.
 

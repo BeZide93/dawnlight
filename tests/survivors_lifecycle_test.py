@@ -74,7 +74,11 @@ enum class HubMenu{None,Talents,Run};unsigned s_hubClosingWindow=0;HubMenu s_hub
 bool s_hub=true,s_hubDeparture=false,s_hubDoorStarted=false,s_arrivingRun=false,s_allowHubDoor=false,s_hubSaveRequested=false;
 ActorId s_hubDoor=kNone;unsigned s_hubDoorTicks=0;
 unsigned s_window=0,s_refreshChoices=0;
-void load_option_config(){}void update_survivors_pedestal(bool){}
+void retire_hub_zelda(){}
+void request_title_preview(){}void reset_title_presentation(){}
+ModResult register_survivors_title_logo(ModError*){return MOD_OK;}
+void unregister_survivors_title_logo(){}
+void load_option_config(){}void update_hub_brazier(bool){}
 void update_survivors_equipment_chest(bool,int,int){}
 
 void begin_starting_item_choice(){if(s_run.starting_item_pending)s_run.phase=Phase::TreasureChoice;}
@@ -95,6 +99,7 @@ unsigned s_chestDelay=0;
 void dMeter2Info_setSword(int,bool){}
 bool arenaPresent=true, transition=false, s_active=true, s_restart=false;
 bool s_saveReady=false, s_gameStarted=true;
+bool s_hubArrivalPending=false;float s_hubArrivalSeconds=0;
 bool s_progressSaving=false,s_progressSaved=false;
 bool s_loaded=false, s_resultsStored=false, s_storeFailed=false, s_saveRequested=false;
 ActorId s_player=kNone, s_savePrompt=kNone, s_bossHudTarget=kNone;
@@ -136,10 +141,12 @@ Save* dComIfGs_getSaveData(){return &save;}
 void save_state_set_boss_rush_active(bool){} void save_state_set_intro_skipped(bool){}
 void dComIfGs_onDarkClearLV(int){}
 void dComIfGs_onEventBit(int){} void dComIfGs_setTransformStatus(int){}
-void dComIfGs_onItemFirstBit(int){} void dComIfGs_setCollectClothes(int){}
-void dComIfGs_setSelectEquipClothes(int){} void dComIfGs_setCollectSword(int){}
-void dComIfGs_setSelectEquipSword(int){} void dComIfGs_setSelectEquipShield(int){}
-void dComIfGs_setBButtonItemKey(int){} void dComIfGs_setMaxLife(int){}
+bool swordReceived=false,swordCollected=false;int selectedSword=dItemNo_NONE_e,bItem=dItemNo_NONE_e;
+void dComIfGs_onItemFirstBit(int item){if(item==dItemNo_SWORD_e)swordReceived=true;}
+bool dComIfGs_isItemFirstBit(int item){assert(item==dItemNo_SWORD_e);return swordReceived;} void dComIfGs_setCollectClothes(int){}
+void dComIfGs_setSelectEquipClothes(int){} void dComIfGs_setCollectSword(int item){if(item==COLLECT_ORDON_SWORD)swordCollected=true;}
+void dComIfGs_setSelectEquipSword(int item){selectedSword=item;} void dComIfGs_setSelectEquipShield(int){}
+void dComIfGs_setBButtonItemKey(int item){bItem=item;} void dComIfGs_setMaxLife(int){}
 void dComIfGs_setWalletSize(int){}
 int life=12;int dComIfGs_getLife(){return life;}
 int dComIfGs_getMaxLifeGauge(){return 12;}
@@ -155,8 +162,8 @@ void dComIfGp_clearItemKeyNumCount(){pendingKeys=0;}void dComIfGs_setKeyNum(u8 n
 constexpr int COLLECT_LIGHT_SWORD=12,dItemNo_LIGHT_SWORD_e=13,COLLECT_WOODEN_SHIELD=0,COLLECT_HYLIAN_SHIELD=2;
 void dComIfGs_offCollectShield(int){}
 constexpr int COLLECT_MASTER_SWORD=10,dItemNo_MASTER_SWORD_e=11;
-void dComIfGs_offCollectSword(int){}
-void dComIfGs_offItemFirstBit(int){}
+void dComIfGs_offCollectSword(int item){if(item==COLLECT_ORDON_SWORD)swordCollected=false;}
+void dComIfGs_offItemFirstBit(int item){if(item==dItemNo_SWORD_e)swordReceived=false;}
 void dComIfGs_setSelectItemIndex(int,int){assert(false && "live item hook before Link exists");}
 void dComIfGs_setMixItemIndex(int,int){assert(false && "live mix hook during save preparation");}
 void dComIfGs_setItem(int i,int v){
@@ -170,6 +177,7 @@ struct mDoRst {
     static bool isReset(){return resetting;} static bool isReturnToMenu(){return menu;}
 };
 bool transitioning(){return transition;}
+bool dComIfGp_isEnableNextStage(){return transition;}
 const char kStage[]="D_DLBR0";
 const char* dComIfGp_getStartStageName(){return arenaPresent?arenas[s_map].stage:"F_SP102";}
 int dComIfGp_getStartStageRoomNo(){return arenaPresent?arenas[s_map].room:0;}
@@ -217,6 +225,8 @@ int main() {
     save.player.status.slots.fill(dItemNo_NONE_e);
     save.player.status.mixes.fill(dItemNo_NONE_e);
     prepare_save(); // Even a blank new save must not call live item hooks.
+    assert(!swordReceived&&!swordCollected&&selectedSword==dItemNo_NONE_e&&bItem==dItemNo_NONE_e);
+
     // Cover reused/loaded slots, not only a blank new-save buffer. The HUD's
     // play cache and all saved selections must agree before inventory clears.
     for (int pass=0;pass<2;++pass) {
@@ -312,7 +322,7 @@ int main() {
         opening(); // Preparation alone cannot redirect stages or unlock gameplay.
         if (brightnessScreen) opening(); // Optional TV screen still owns the scene.
         loaded(nullptr,nullptr); // Native new-save flow also calls on_save_loaded.
-        assert(s_saveReady && !s_gameStarted);
+        assert(s_saveReady && !s_gameStarted && s_hubArrivalPending && s_hubArrivalSeconds==0);
         before_game_start(nullptr,nullptr,nullptr,nullptr);
         assert(s_gameStarted && in_arena());
         args[0]=static_cast<const char*>(kStage);
@@ -323,14 +333,14 @@ int main() {
         assert(std::any_cast<s16>(args[1])==0 && std::any_cast<s8>(args[2])==51 && std::any_cast<s8>(args[3])==0);
         s_run.start(1);
         before_opening(nullptr,nullptr,nullptr,nullptr);
-        assert(!s_saveReady && !s_gameStarted && !in_arena());
+        assert(!s_saveReady && !s_gameStarted && !in_arena() && !s_hubArrivalPending && s_hubArrivalSeconds==0);
         opening(); // Return to title disarms even without a reset callback.
     }
     loaded(nullptr,nullptr); // Existing slot / successful command-line load.
     before_game_start(nullptr,nullptr,nullptr,nullptr);
     assert(s_gameStarted);
     reset(nullptr,nullptr);
-    assert(!s_saveReady && !s_gameStarted && !in_arena());
+    assert(!s_saveReady && !s_gameStarted && !in_arena() && !s_hubArrivalPending && s_hubArrivalSeconds==0);
     opening();
     loaded(nullptr,nullptr);mDoRst::resetting=true;
     before_game_start(nullptr,nullptr,nullptr,nullptr);assert(!s_gameStarted);
@@ -385,13 +395,27 @@ int main() {
         assert(std::strcmp(std::any_cast<const char*>(next[0]),"F_SP102")==0);
         s_gameStarted=true;
     }
+    loaded(nullptr,nullptr);assert(!swordReceived&&selectedSword==dItemNo_NONE_e);
+    swordReceived=true;loaded(nullptr,nullptr);
+    assert(swordReceived&&swordCollected&&selectedSword==dItemNo_SWORD_e&&bItem==dItemNo_SWORD_e);
+    new_save(nullptr,nullptr); // A different slot must not inherit the old sword.
+    assert(!swordReceived&&!swordCollected&&selectedSword==dItemNo_NONE_e&&bItem==dItemNo_NONE_e);
+    // Decorations survive arrival completion and the following loading warmup.
+    s_active=s_gameStarted=s_hub=true;s_map=0;s_run.phase=Phase::Loading;
+    assert(survivors_hub_preparing());s_hubArrivalPending=false;s_hubArrivalSeconds=2.2f;
+    assert(survivors_hub_preparing());
+    s_run.phase=Phase::Ready;assert(!survivors_hub_preparing());s_run.phase=Phase::Loading;
+    s_hubDeparture=true;assert(!survivors_hub_preparing());s_hubDeparture=false;
+    transition=true;assert(!survivors_hub_preparing());transition=false;
+    s_hub=false;assert(!survivors_hub_preparing());s_hub=true;
+    reset_runtime();assert(!s_hubArrivalPending&&s_hubArrivalSeconds==0&&!survivors_hub_preparing());
     std::cout<<"Survivors lifecycle: true deaths, pending spawns, cleanup and routing passed\n";
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp'; binary=Path(tmp)/'test'
     cpp.write_text(stubs+'\n'+ '\n'.join(extract(n) for n in [
-        'in_arena','retire_enemies','reset_runtime','prepare_save','activated','deactivated','new_save','loaded','reset',
+        'in_arena','survivors_hub_preparing','retire_enemies','reset_runtime','prepare_save','activated','deactivated','new_save','loaded','reset',
         'begin_run','select_arena','cleanup_enemies','credit_death','before_game_start','before_opening','before_stage','after_power'])+'\n'+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

@@ -62,11 +62,14 @@ void dComIfGs_setRestartRoomParam(int){}
 const Arena& arena(){return arenas[s_map];}
 unsigned cleared=0,opened=0,orders=0,pedestalRemoves=0;
 void clear_arena_geometry(){++cleared;}
-void update_survivors_pedestal(bool enabled){if(!enabled)++pedestalRemoves;}
+void update_hub_brazier(bool enabled){if(!enabled)++pedestalRemoves;}
 void open_window(){visible=true;++opened;}
 void hub_menu_closed();void close_window(){visible=false;hub_menu_closed();}
 struct Log{void warn(ModContext*,const char*){}void info(ModContext*,const char*){}}logger;auto* svc_log=&logger;ModContext* mod_ctx=nullptr;
 HookAction before_hub_door(ModContext*,void*,void*,void*);
+constexpr int dItemNo_SWORD_e=40;bool swordReceived=true;unsigned zeldaCalls=0;
+bool dComIfGs_isItemFirstBit(int item){assert(item==dItemNo_SWORD_e);return swordReceived;}
+void request_hub_zelda_call(){++zeldaCalls;}
 bool acceptOrder=true;
 int fopAcM_orderDoorEvent(fopAc_ac_c* a,fopAc_ac_c* b,u16 priority,u16 flags){
  std::any args[]={a,b,priority,flags};int result=0;
@@ -90,6 +93,11 @@ int main(){
  assert(!visible&&s_hubMenu==HubMenu::None&&!pause_run_actor(false));
  assert(pause_run_actor(true));visible=true;assert(pause_run_actor(false));visible=false;
  std::any request[]={static_cast<fopAc_ac_c*>(&link),&door,u16(7),u16(9)};int result=4;
+ swordReceived=false;
+ assert(before_hub_door(nullptr,request,&result,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(!visible&&zeldaCalls==1&&!orders&&s_hubMenu==HubMenu::None);
+ start_run(nullptr,nullptr);assert(!s_hubDeparture&&!visible);
+ swordReceived=true;
  assert(before_hub_door(nullptr,request,&result,nullptr)==HOOK_SKIP_ORIGINAL);
  assert(!result&&visible&&opened==1&&s_hubMenu==HubMenu::Run&&s_hubDoor==2&&orders==0);
  // A locked destination cannot bypass the disabled UI by calling Start directly.

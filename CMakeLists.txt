@@ -151,6 +151,7 @@ add_mod(dawnlight_mod
         src/model_overlays.cpp
         src/new_save_modes.cpp
         src/survivors.cpp
+        src/survivors_title_logo.cpp
         src/survivors_enemy_hud.cpp
         src/survivors_integrity.cpp
         src/clear_timer.cpp

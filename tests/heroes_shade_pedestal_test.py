@@ -41,7 +41,7 @@ struct Trials {
     bool place(){return ready;}bool prepare_effects(){return ready;}
 };
 struct Animation {void play(){}};
-struct Pedestal {bool equipment=false;bool survivors=false;bool ready=true;Animation btk,brk;int collision=0;Trials trials;Transform current;};
+struct Pedestal {bool equipment=false;bool ready=true;Animation btk,brk;int collision=0;Trials trials;Transform current;};
 int fopAcM_GetID(Pedestal*){return 99;}void remove_actor(int id){assert(id==99);}
 struct Space {void Set(int*){}} space;
 auto dComIfG_Ccsp(){return &space;}
@@ -147,21 +147,12 @@ int main() {
     check_interaction(false);
     check_interaction(true);
     // The equipment variant leaves A for the inventory and never opens Talents.
-    Pedestal chest;chest.equipment=chest.survivors=true;hubActive=true;
+    Pedestal chest;chest.equipment=true;hubActive=true;
     pad.mPressedButtonFlags=PAD_BUTTON_A;const auto beforePrompts=prompts;
     execute_pedestal(&chest);assert(!talentOpens&&prompts==beforePrompts&&pad.mPressedButtonFlags==PAD_BUTTON_A);
-    // The shared Survivors visual only opens Talents; it never starts a trial.
-    Pedestal p;p.survivors=true;p.trials.ready=false;
-    hubActive=true;inArena=false;nextStage=event=paused=menu=false;player={};pad={};
-    const auto beforeSpawns=spawns,beforeRandom=randomCalls;
-    execute_pedestal(&p);assert(!talentOpens);
-    pad.mPressedButtonFlags=PAD_BUTTON_A|2;execute_pedestal(&p);
-    assert(talentOpens==1&&pad.mPressedButtonFlags==2&&spawns==beforeSpawns&&randomCalls==beforeRandom);
-    for(int reason=0;reason<8;++reason){
-        hubActive=reason!=0;nextStage=reason==1;event=reason==2;paused=reason==3;menu=reason==4;
-        player.dead=reason==5;player.wolf=reason==6;player.current.pos.x=reason==7?231:0;
-        pad.mPressedButtonFlags=PAD_BUTTON_A;execute_pedestal(&p);assert(talentOpens==1);
-    }
+    // The removed Survivors sword has no interaction path left in this actor.
+    assert(!talentOpens);
+
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

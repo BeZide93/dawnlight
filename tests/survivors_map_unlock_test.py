@@ -6,6 +6,7 @@ core=(root/'src/survivors.cpp').read_text()
 available=re.search(r'bool map_available\(unsigned map\) \{.*?\n\}',core,re.S).group()
 fixture=r'''
 bool fateTips=true;bool show_fate_tooltips(){return fateTips;}void set_fate_tooltips(bool value){fateTips=value;}
+bool enemyCounter=false;bool show_enemy_counter(){return enemyCounter;}void set_enemy_counter(bool value){enemyCounter=value;}
 
 #include <cassert>
 #include <numeric>

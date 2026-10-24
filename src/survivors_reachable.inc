@@ -20,7 +20,7 @@ void update_reachable_floor() {
     s_reachableFloor.build(s_eliteFloors,128);
     unsigned budget=64; // Shared by graph edges AND requested spawn landings.
     s_reachableFloor.expand([&](cXyz from,cXyz to){
-        if(!s_reachableWalk.active)s_reachableWalk.begin(from,to,40);
+        if(!s_reachableWalk.active)s_reachableWalk.begin(from,to,40,false);
         const auto result=s_reachableWalk.advance(budget);
         if(result==WalkResult::Clear && std::abs(s_reachableWalk.to.y-to.y)>=25.f)return WalkResult::Blocked;
         return result;

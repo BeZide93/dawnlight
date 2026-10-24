@@ -365,7 +365,10 @@ Darknut Arena's reachable-floor scan starts at Link's position after the native
 entrance demo and grounded loading warmup have finished. The first safe loading
 checkpoint can be outside the door and is used only for early fall recovery.
 No native Darknut placement is required. Chests, pots and Fate portals share the
-resulting arena-side component.
+resulting arena-side component. During reachability scans, stair transitions do
+not require a flat spawn footprint at every tread. The path still checks ground,
+water, walls and exit barriers; the final spawn landing retains its full footprint
+checks. Wall rays clear accepted short risers in both directions.
 
 Up to **64 EXP crystals** can lie on the ground. Further XP merges into the nearest
 crystal without loss; merged crystals turn **red**, ordinary crystals stay turquoise.

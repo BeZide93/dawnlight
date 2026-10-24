@@ -20,9 +20,10 @@ struct ArenaWalk {
     cXyz from{},to{},previous{},delta{};
     float footprint=40;
     unsigned steps=0,sample=0,corner=0;
-    bool active=false;
-    void begin(cXyz start,cXyz target,float radius) {
+    bool active=false,checkLanding=true;
+    void begin(cXyz start,cXyz target,float radius,bool landing=true) {
         from=previous=start;to=target;delta=to-from;footprint=radius;
+        checkLanding=landing;
         steps=std::max(1u,unsigned(std::ceil(delta.absXZ()/40.f)));
         sample=corner=0;active=true;
     }
@@ -36,11 +37,18 @@ struct ArenaWalk {
             if(sample<=steps) {
                 cXyz point=from+delta*(float(sample)/steps);point.y=previous.y;
                 if(!dry_arena_floor(point,35,35)){active=false;return WalkResult::Blocked;}
-                cXyz a=previous+cXyz(0,20,0),b=point+cXyz(0,20,0);
+                // Clear a walkable riser from either direction instead of
+                // mistaking its vertical face for a wall. Ground checks above
+                // still reject steps/drop-offs taller than 35 units.
+                const float height=std::max(previous.y,point.y)+20;
+                cXyz a(previous.x,height,previous.z),b(point.x,height,point.z);
                 dBgS_LinChk wall;wall.SetLink();wall.Set(&a,&b,nullptr);
                 if(dComIfG_Bgsp().LineCross(&wall)||!arena_path_clear(a,b,footprint)) {active=false;return WalkResult::Blocked;}
                 previous=point;++sample;continue;
             }
+            // Graph edges pass through stair lips and narrow treads. They do
+            // not need the flat landing required by an actual spawn location.
+            if(!checkLanding){active=false;to=previous;return WalkResult::Clear;}
             const cXyz offsets[4]{cXyz(-footprint,0,0),cXyz(footprint,0,0),cXyz(0,0,-footprint),cXyz(0,0,footprint)};
             cXyz edge=previous+offsets[corner];
             if(!dry_arena_floor(edge,25,25)){active=false;return WalkResult::Blocked;}

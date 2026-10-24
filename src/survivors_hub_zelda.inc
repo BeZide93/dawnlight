@@ -362,11 +362,12 @@ HookAction before_hub_zelda_flow(ModContext*, void* args, void* result, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 void update_hub_zelda() {
-    if (!hub_zelda_enabled()) { retire_hub_zelda(); return; }
-    update_hub_zelda_gift();
+    const bool title = survivors_title_active() && !transitioning();
+    if (!title && !hub_zelda_enabled()) { retire_hub_zelda(); return; }
+    if (!title) update_hub_zelda_gift();
     cleanup_hub_zelda();
-    update_hub_zelda_call();
-    if (s_hubZelda != kNone || !s_hubZeldaStart || !playable() ||
+    if (!title) update_hub_zelda_call();
+    if (s_hubZelda != kNone || !s_hubZeldaStart || (!title && !playable()) ||
         s_progressSaving || s_hubSaveRequested) return;
     if (s_hubZeldaRetry) { --s_hubZeldaRetry; return; }
     s_hubZeldaRetry = 30;

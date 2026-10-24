@@ -127,6 +127,7 @@
 #include "d/d_s_play.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_op/f_op_overlap_mng.h"
+#include "f_op/f_op_scene_mng.h"
 #include "f_pc/f_pc_method.h"
 #include "f_pc/f_pc_create_req.h"
 #include "f_pc/f_pc_create_tag.h"
@@ -188,6 +189,10 @@ DEFINE_HOOK(&daNpc_Zelda_c::setParam, SurvivorsHubZeldaParam);
 DEFINE_HOOK(&daObj_Oiltubo_c::Execute, SurvivorsHubBrazierExecute);
 DEFINE_HOOK(&daObj_Oiltubo_c::Draw, SurvivorsHubBrazierDraw);
 DEFINE_HOOK(&daObj_Oiltubo_c::Delete, SurvivorsHubBrazierDelete);
+// d_a_title.h declares a global procFunc typedef conflicting with item headers.
+DEFINE_HOOK_SYMBOL("daTitle_c::getDemoPrm", int(void*), SurvivorsTitleLogo);
+DEFINE_HOOK(&daAlink_c::procWait, SurvivorsTitleWait);
+DEFINE_HOOK(&daAlink_c::setStickData, SurvivorsTitleInput);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
@@ -303,6 +308,7 @@ bool s_active = false, s_registered = false, s_loaded = false, s_restart = false
 // Selecting a mode starts the title flow, not a game. A slot callback prepares
 // the save; only gameStart commits it after names and optional TV settings.
 bool s_saveReady = false, s_gameStarted = false;
+bool survivors_title_active();
 bool s_resultsStored = false, s_storeFailed = false, s_saveRequested = false;
 unsigned s_saveStartTicks = 0;
 Run s_run;
@@ -779,6 +785,7 @@ void finish(bool won) {
 #include "survivors_midna.inc"
 #include "survivors_hub_brazier.inc"
 #include "survivors_hub_zelda.inc"
+#include "survivors_title.inc"
 void add_orb(cXyz position, unsigned value) {
     position.y -= 20;
     cXyz probe = position; probe.y += 500;
@@ -1796,7 +1803,7 @@ bool survivors_dark_link_active() {
         s_run.phase == Phase::Upgrade || s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Treasure);
 }
 void update_survivors() {
-    update_hub_brazier(survivors_hub_active() && !s_hubDeparture && !transitioning());
+    update_hub_brazier((survivors_title_active() || (survivors_hub_active() && !s_hubDeparture)) && !transitioning());
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
     update_survivors_registration();
@@ -1880,6 +1887,7 @@ ModResult initialize_survivors(ModError* error) {
     s_enemyArchivesAvailable=mods::hook_add_post<SurvivorsArchiveReady>(svc_hook,after_enemy_archive_ready)==MOD_OK;
     if(!s_enemyArchivesAvailable)svc_log->warn(mod_ctx,
         "Survivors archive retention unavailable; using native resource loading");
+    PRE(SurvivorsArenaActor, before_title_stage_actor);
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
     PRE(SurvivorsPalaceFerrySuspend, before_palace_ferry_suspend);
     PRE(SurvivorsPalaceFerryMove, before_palace_ferry_move);
@@ -1900,6 +1908,10 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsSaveMapMove,before_save_gameplay_menu); PRE(SurvivorsSaveMapKeys,before_save_gameplay_menu);
     PRE(SurvivorsSaveMenuKeys,before_save_gameplay_menu);
     PRE(SurvivorsCamera, before_run_camera); POST(SurvivorsCamera, after_run_camera);
+    POST(SurvivorsCamera, after_title_camera);
+    PRE(SurvivorsTitleLogo, before_title_logo);
+    PRE(SurvivorsTitleWait, before_title_wait);
+    POST(SurvivorsTitleInput, after_title_input);
     PRE(SurvivorsArenaExit, before_arena_exit);
     PRE(SurvivorsArenaRestart, before_arena_restart);
     POST(SurvivorsBossAim,after_boss_aim);
@@ -2007,6 +2019,7 @@ ModResult initialize_survivors(ModError* error) {
     POST(SurvivorsSpinMove, after_sword_move); POST(SurvivorsSpinEffect, after_spin_effect);
     PRE(SurvivorsLargeSpin, before_large_spin);
     POST(SurvivorsNormalMove, after_sword_move); POST(SurvivorsFinishMove, after_sword_move);
+    PRE(SurvivorsStage, before_title_stage);
     PRE(SurvivorsStage, before_stage); POST(SurvivorsHud, draw_hud);
     PRE(SurvivorsGameStart, before_game_start); PRE(SurvivorsOpening, before_opening);
     PRE(SurvivorsDrops, before_drop); PRE(SurvivorsDirectDrops, before_drop);

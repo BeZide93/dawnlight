@@ -52,7 +52,7 @@ bool survivors_hub_arrival_active() {
     return scene && fpcM_GetName(scene) == fpcNm_PLAY_SCENE_e;
 }
 bool survivors_rest_active() { return survivors_title_active() || survivors_hub_arrival_active(); }
-float hub_arrival_progress() { return std::clamp((s_hubArrivalSeconds-.35f)/1.2f,0.f,1.f); }
+float hub_arrival_progress() { return std::clamp((s_hubArrivalSeconds-.35f)/.7f,0.f,1.f); }
 void advance_hub_arrival(float seconds,bool ready) {
     if (ready) s_hubArrivalSeconds += std::clamp(seconds,0.f,.1f);
     if (hub_arrival_progress() < 1.f) return;

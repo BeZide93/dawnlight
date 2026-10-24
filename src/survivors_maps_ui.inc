@@ -327,5 +327,26 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     control.set=[](ModContext*,void*,const UiControlValue* value){set_fate_tooltips(value->bool_value);};
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
+    result=svc_ui->pane_add_text(mod_ctx,left,"Enemy Count",nullptr);
+    if(result!=MOD_OK)return result;
+    control=UI_CONTROL_DESC_INIT;
+    control.kind=UI_CONTROL_NUMBER;control.label="Max Normal Enemies";
+    control.min=0;control.max=normal_enemy_limit;control.step=1;
+    control.help_rml="Maximum simultaneous normal wave enemies, including Horde waves. Default and maximum: 345. Zero disables normal waves. Bosses, guards and boss summons have separate limits. Saved for the next run.";
+    control.is_disabled=[](ModContext*,void*){return !settings_editable();};
+    control.get=[](ModContext*,void*,UiControlValue* value){value->int_value=s_options.max_normal_enemies;};
+    control.set=[](ModContext*,void*,const UiControlValue* value){
+        if(!settings_editable())return;
+        s_options.max_normal_enemies=unsigned(std::clamp<int64_t>(value->int_value,0,normal_enemy_limit));
+        store_option_config();
+    };
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
+    control=UI_CONTROL_DESC_INIT;control.kind=UI_CONTROL_TOGGLE;control.label="Show Enemy Counter";
+    control.help_rml="Show the current normal-enemy count and limit in the HUD. Move and resize it with Enemy Counter in the HUD-Editor. Default: off.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=show_enemy_counter();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){set_enemy_counter(value->bool_value);};
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
     return enemy_hud::build(left);
 }

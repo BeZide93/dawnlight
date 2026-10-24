@@ -30,7 +30,7 @@ ModResult build_hud_editor(ModContext*,UiWindowHandle,UiElementHandle left,UiEle
         control=UI_CONTROL_DESC_INIT;control.kind=UI_CONTROL_NUMBER;control.label=names[axis];
         control.min=axis==2?10:-9999;control.max=axis==2?400:9999;control.step=1;
         control.suffix=axis==2?"%":" px";control.user_data=&axis;
-        control.help_rml="Live preview. X is measured from the screen center, Y from the top. Item Banner uses its center as the anchor; its icon, text and equip prompt scale together. Scale preserves proportions. Changes save automatically. Info-Texts move together and leave room for a visible boss. The preview includes sample equipment, a boss and Twilit Rank.";
+        control.help_rml="Live preview. X is measured from the screen center, Y from the top. Item Banner uses its center as the anchor; its icon, text and equip prompt scale together. Scale preserves proportions. Changes save automatically. Info-Texts move together and leave room for a visible boss. The preview includes sample equipment, a boss, Twilit Rank and the Enemy Counter, even when its visibility toggle is off.";
         control.is_disabled=[](ModContext*,void*){return !hud_editor_editable();};
         control.get=[](ModContext*,void* data,UiControlValue* value){value->int_value=hud_value(s_hudEditorPart,*static_cast<unsigned*>(data));};
         control.set=[](ModContext*,void* data,const UiControlValue* value){

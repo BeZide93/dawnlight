@@ -30,7 +30,12 @@ int main(){
  service.get_int=[](ModContext*,ConfigVarHandle h,int64_t* out){*out=persisted.at(h);return MOD_OK;};
  service.set_int=[](ModContext*,ConfigVarHandle h,int64_t value){persisted[h]=value;return MOD_OK;};
  assert(!debug_session_enabled);
- assert(initialize_option_config()==MOD_OK&&configNames.size()==12);
+ assert(initialize_option_config()==MOD_OK&&configNames.size()==13);
+ assert(s_options.max_normal_enemies==345);
+ s_options.max_normal_enemies=42;store_option_config();s_run.start(123,s_options);
+ s_options.max_normal_enemies=1;load_option_config();assert(s_options.max_normal_enemies==42&&s_run.target_population()==42&&!s_run.debug_run);
+ persisted[configNames.at("survivors-max-normal-enemies")]=-1;load_option_config();assert(s_options.max_normal_enemies==0&&s_run.target_population()==42);
+ persisted[configNames.at("survivors-max-normal-enemies")]=9999;load_option_config();assert(s_options.max_normal_enemies==345&&s_run.target_population()==42);
  debug_session_enabled=true;store_option_config();
  debug_session_enabled=false;load_option_config();assert(!debug_session_enabled);
  for(const auto& [name,handle]:configNames){(void)handle;assert(name.find("debug")==std::string::npos);}

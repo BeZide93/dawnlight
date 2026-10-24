@@ -1550,10 +1550,9 @@ void draw_hud(ModContext*, void* args, void*, void*) {
         drawText(HudPart::Info,14,bossOffset);
     }
     float effectOffset=22+bossOffset;
-    if(debug_enabled && s_run.debug_run) {
+    if(preview || show_enemy_counter()) {
         std::snprintf(text,sizeof(text),"Enemies: %u / %u",normal_enemy_population(),s_run.target_population());
-        drawText(HudPart::Info,13,effectOffset);
-        effectOffset+=22;
+        drawText(HudPart::EnemyCounter,13);
     }
     const bool fateTooltips=show_fate_tooltips();
     for (unsigned i=0;i<unsigned(FateEffect::Count);++i) {

@@ -9,13 +9,15 @@ bool s_arenaSafe = false;
 cXyz s_arenaSpawnPosition;
 s16 s_arenaSpawnYaw = 0;
 bool s_arenaSpawn = false;
+cXyz s_arenaCombatPosition;
+bool s_arenaCombat = false;
 barriers::Point map_point(const cXyz& p) { return {p.x,p.y,p.z}; }
 cXyz game_point(barriers::Point p) { return cXyz(p.x,p.y,p.z); }
 void clear_arena_geometry() {
     retire_palace_ferries();
     clear_elite_sites();
     clear_reachable_floor();
-    s_barriers.clear(); s_arenaBackgrounds.clear(); s_arenaMeshReady = false; s_arenaSafe = s_arenaSpawn = false;
+    s_barriers.clear(); s_arenaBackgrounds.clear(); s_arenaMeshReady = false; s_arenaSafe = s_arenaSpawn = s_arenaCombat = false;
 }
 void add_exit_box(const fopAcM_prm_class& params, float width, float depth) {
     const cXyz center = params.base.position;
@@ -61,6 +63,13 @@ HookAction before_arena_stage_actor(ModContext*, void* args, void*, void*) {
         return HOOK_CONTINUE;
     }
     const bool local=params->room_no==arena().room || params->room_no==-1;
+    if(s_map==0 && local && info->procname==fpcNm_B_TN_e && !s_arenaCombat) {
+        // The native entrance starts outside the sealed doorway. Retain the
+        // authored Darknut placement before filtering its story actor, so the
+        // floor scan starts on the combat side, independent of door yaw/region.
+        s_arenaCombatPosition=params->base.position;s_arenaCombat=true;
+        clear_reachable_floor();
+    }
     if (capture_palace_ferry(info->procname,*params)) {
         // Recreate either native light-lift variant from the same route once
         // room paths are ready. Suppress the original to prevent duplicates.

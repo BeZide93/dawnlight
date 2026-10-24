@@ -227,12 +227,12 @@ int main(){
   unsigned normal=0;for(const auto& e:s_enemies)normal+=e.id!=kNone&&!e.elite;
   assert(normal==345);s_spawnFailures=10;s_spawnCooldown=0;update_spawns(&player);assert(ordinarySpawns==1&&s_spawnFailures==0);
  }
- // Debug population caps also bound Horde bursts; bosses and dormant guards
+ // Normal settings population caps also bound Horde bursts; bosses and dormant guards
  // neither consume the normal cap nor disappear when it is zero.
- if(debug_enabled){
-  debug_session_enabled=true;
+ {
+  debug_session_enabled=false;
   for(unsigned limit:{0u,1u,7u,42u,345u}){
-   fresh(0);s_run.options.debug.max_normal_enemies=limit;
+   fresh(0);s_run.options.max_normal_enemies=limit;
    s_run.options.horde=5;s_run.horde_remaining=horde_duration;
    assert(create_enemy_at({},0,0,true,4,true));
    if(limit)for(unsigned n=0;n<limit-1;++n)assert(create_enemy_at({},0,0,false));

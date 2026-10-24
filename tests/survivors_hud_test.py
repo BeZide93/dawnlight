@@ -138,6 +138,7 @@ bool hasFont=true, arena=true, transition=false, window=false, hasGraf=true;
 JUTResFont* mDoExt_getMesgFont(){return hasFont?&font:nullptr;}
 JUTResFont* mDoExt_getRubyFont(){return hasFont?&ruby:nullptr;}
 enum {HBIND_CENTER,HBIND_LEFT,VBIND_TOP};
+bool counterShown=false;bool show_enemy_counter(){return counterShown;}
 bool fateTips=false;bool show_fate_tooltips(){return fateTips;}
 struct DrawText {std::string text;float x,y,size;};std::vector<DrawText> textPositions;
 struct J2DPrint {
@@ -202,21 +203,21 @@ int main(){
         }
     }
 
-    // Debug counter uses the same population as the wave cap. Pending actor
+    // Optional counter uses the same population as the wave cap. Pending actor
     // slots count once; elites, retired and defeated slots do not count.
     s_run={};s_run.phase=Phase::Running;hasFont=true;
     for(unsigned i=0;i<6;++i)s_enemies[i].id=i;
     s_enemies[1].initialized=false;s_enemies[2].elite=true;
     s_enemies[3].retiring=true;s_enemies[4].credited=true;
     assert(normal_enemy_population()==3);
-    for(bool debug:{false,true}){
-        s_run.debug_run=debug;s_run.options.debug.max_normal_enemies=42;printed.clear();
+    for(bool visible:{false,true}){
+        counterShown=visible;s_run.debug_run=false;s_run.options.max_normal_enemies=42;printed.clear();
         draw_hud(nullptr,nullptr,nullptr,nullptr);
-        assert((std::find(printed.begin(),printed.end(),"Enemies: 3 / 42")!=printed.end())==(debug_enabled&&debug));
+        assert((std::find(printed.begin(),printed.end(),"Enemies: 3 / 42")!=printed.end())==visible);
     }
     s_enemies={};printed.clear();draw_hud(nullptr,nullptr,nullptr,nullptr);
-    assert((std::find(printed.begin(),printed.end(),"Enemies: 0 / 42")!=printed.end())==debug_enabled);
-    s_run.debug_run=false;
+    assert((std::find(printed.begin(),printed.end(),"Enemies: 0 / 42")!=printed.end())==true);
+    counterShown=false;
     // Banner starts outside the right edge, arrives at the right margin and
     // exits right during its final 12 ticks. Icon/stats use the saved item copy.
     s_gearNoticeItem={GearKind::Sword,5,4,3};hasFont=true;
@@ -354,6 +355,7 @@ int main(){
         assert(found!=textPositions.rend());near(found->x,p.x+xOffset*p.scale);near(found->y,p.y+offset*p.scale);near(found->size,size*p.scale);
     };
     checkText(HudPart::Timer,"00:00",18);checkText(HudPart::Rank,"5",18,0,10.5f);
+    checkText(HudPart::EnemyCounter,"Enemies:",13);
     checkText(HudPart::Level,"Level",14);checkText(HudPart::Score,"Score",14);checkText(HudPart::ExpText,"XP",14);
     checkText(HudPart::Info,"Next chest:",14,54,-6.5f);checkText(HudPart::BossName,"Darknut",20);
     const auto xpPos=hud_position(HudPart::ExpBar,304);

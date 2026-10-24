@@ -345,12 +345,27 @@ the nearest is selected and retained until defeated or replaced by a timed boss;
 sleeping guards and ordinary enemies never occupy this bar.
 
 Normal enemies default to a ceiling of **345**, from the start at every Horde
-difficulty. Debug runs can lower it with **Max Normal Enemies** (0–345). Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
+difficulty. Settings → **Enemy Count** can lower it with **Max Normal Enemies** (0–345),
+independently of Debug. This preference is saved and applies to the next run. Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
 the first 10 minutes; Horde difficulty still controls batch size (1–5).
 Random **HORDE!** events triple spawn batches for 15 seconds, within
 that population limit. They average two events per five minutes, without a quota;
 overlaps add 15 seconds instead of stacking the multiplier. The HUD shows the
 remaining duration. Events stop at 20:00 and pause with the run.
+
+Settings → **Enemy Count** also includes **Show Enemy Counter** (default Off).
+The saved toggle applies immediately in normal and Debug runs. The counter shows
+**Enemies: current / limit**, includes pending spawn slots and excludes elites,
+retired and defeated enemies. **Enemy Counter** is a separate HUD-Editor element
+with saved X/Y/scale, visible in editor previews even when the toggle is Off.
+Zero normal enemies disables regular waves; bosses, guards and boss summons keep
+their separate limits. Horde batches respect the cap too.
+
+Darknut Arena's reachable-floor scan starts at the native Darknut's authored
+combat position, captured before suppressing story actors. Link's first safe
+loading position can be behind the entrance door, so it is not used for this map.
+The scan waits for a valid combat anchor and does not fall back to the entrance;
+chests, pots and Fate portals share the resulting arena-side component.
 
 Up to **64 EXP crystals** can lie on the ground. Further XP merges into the nearest
 crystal without loss; merged crystals turn **red**, ordinary crystals stay turquoise.
@@ -643,16 +658,8 @@ apply to the next run and are not written to save files.
 | Infinite rerolls | Off / On; free, without consuming charges | Off |
 | Infinite banishes | Off / On; no charge consumption | Off |
 | Run timer | 20 / 10 / 5 minutes | 20 minutes |
-| Max Normal Enemies | 0–345 simultaneous normal wave enemies | 345 |
 | Max Equipment Drop Rate | Off / On; equipment from every boss | Off |
 | Always Legendary Equipment | Off / On; new equipment has Legendary rarity and maximum base stats | Off |
-
-Max Normal Enemies applies to the next run and caps Horde bursts too. Zero
-disables normal waves; bosses, guards and boss summons keep their separate
-limits. Debug runs show **Enemies: current / limit** below the chest information,
-using the Info-Texts HUD position/scale. The counter includes pending spawn slots
-and excludes elites, retired and defeated enemies, matching the wave budget.
-Normal runs and builds without Debug retain 345 and hide the counter.
 
 Minimum Rarity raises lower rarity rolls to the floor for both level-ups and
 all treasure offers, including the starting item. Higher rolls remain higher.

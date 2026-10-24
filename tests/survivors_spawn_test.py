@@ -126,6 +126,12 @@ int main(){
  active=false;
  assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_CONTINUE&&freed==1);
  active=true;ferryCaptured=false;freed=0;
+ // Capture the native Darknut's arena-side location before filtering it.
+ s_map=0;clear_arena_geometry();params.room_no=51;params.base.position={1500,0,100};
+ info.procname=fpcNm_B_TN_e;profile.group=fopAc_ENEMY_e;
+ assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(s_arenaCombat&&s_arenaCombatPosition.x==1500&&s_arenaCombatPosition.z==100);
+ clear_arena_geometry();assert(!s_arenaCombat);profile.group=0;
  // Native story chests remain filtered; the hub chest uses its own actor.
  s_map=0;params.room_no=51;info.procname=fpcNm_TBOX_e;
  assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);

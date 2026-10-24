@@ -1,6 +1,15 @@
 // Presentation preferences are separate from immutable run difficulty/score data.
 std::array<std::array<ConfigVarHandle,3>,unsigned(HudPart::Count)> s_hudConfig{};
-ConfigVarHandle s_fateTooltipsConfig=0;
+ConfigVarHandle s_fateTooltipsConfig=0,s_enemyCounterConfig=0;
+bool show_enemy_counter() {
+    int64_t enabled=0;
+    if(s_enemyCounterConfig)svc_config->get_int(mod_ctx,s_enemyCounterConfig,&enabled);
+    return enabled!=0;
+}
+void set_enemy_counter(bool enabled) {
+    if(s_enemyCounterConfig && svc_config->set_int(mod_ctx,s_enemyCounterConfig,enabled)!=MOD_OK)
+        svc_log->warn(mod_ctx,"Survivors: could not persist enemy counter visibility");
+}
 bool show_fate_tooltips() {
     int64_t enabled=1;
     if(s_fateTooltipsConfig)svc_config->get_int(mod_ctx,s_fateTooltipsConfig,&enabled);
@@ -32,7 +41,10 @@ ModResult initialize_hud_config() {
     }
     ConfigVarDesc desc=CONFIG_VAR_DESC_INIT;
     desc.name="survivors-fate-tooltips";desc.type=CONFIG_VAR_INT;desc.default_int=1;
-    return register_owned_setting(&desc,&s_fateTooltipsConfig);
+    const auto result=register_owned_setting(&desc,&s_fateTooltipsConfig);
+    if(result!=MOD_OK)return result;
+    desc.name="survivors-show-enemy-counter";desc.default_int=0;
+    return register_owned_setting(&desc,&s_enemyCounterConfig);
 }
 void close_hud_editor() {
     const auto handle=s_hudEditorWindow;s_hudEditorWindow=0;

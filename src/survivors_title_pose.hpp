@@ -31,6 +31,30 @@ struct TitleRestPose {
         orient(first+1,solved.lower.q);
         orient(first+2,solved.hand.q);
     }
+    bool rest(float progress) {
+        if (!evaluate()) return false;
+        const auto idle = *this;
+        if (!kneel()) return false;
+        if (progress <= 0.f) return true;
+        if (progress >= 1.f) { *this = idle; return true; }
+        const auto resting = *this;
+        const float t = dual::smooth(progress);
+        for (unsigned i=0;i<count;++i) local[i] = dual::blend(resting.local[i],idle.local[i],t);
+        // Shift weight over the planted front leg while lifting the hips.
+        // Draw that foot back only near the end, rather than sliding both
+        // feet throughout a straight interpolation of the joint rotations.
+        local[0].p.z += resting.world[20].p.z*.6f*std::sin(3.141592654f*t);
+        evaluate();
+        for (unsigned first : {18u,23u}) {
+            const unsigned foot = first+2;
+            const float step = first==18 ? dual::smooth((progress-.6f)/.4f) : t;
+            auto target = resting.world[foot].p*(1-step)+idle.world[foot].p*step;
+            target.y += (first==18 ? 5.f : 14.f)*std::sin(3.141592654f*step);
+            arm(first,target,world[first].p+dual::Vec{0,-20,100});
+            orient(foot,dual::blend(resting.world[foot].q,idle.world[foot].q,t));
+        }
+        return true;
+    }
     bool kneel() {
         if (!evaluate()) return false;
         // Native human rig: left thigh/shin/ankle 18/19/20, right 23/24/25.

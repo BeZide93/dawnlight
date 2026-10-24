@@ -69,6 +69,15 @@ HookAction before_hub_brazier_draw(ModContext*, void* args, void* result, void*)
     g_env_light.settingTevStruct(8,&bowl->current.pos,&bowl->tevStr);
     g_env_light.setLightTevColorType_MAJI(bowl->mpModel,&bowl->tevStr);
     mDoExt_modelUpdateDL(bowl->mpModel); // Container only; no animated oil surface.
+    if (!s_hubBrazierRetiring) {
+        cXyz probe = bowl->current.pos;
+        probe.y += 100.f;
+        dBgS_ObjGndChk ground; ground.SetPos(&probe);
+        const float height = dComIfG_Bgsp().GroundCross(&ground);
+        if (std::isfinite(height) && height > -1.e8f)
+            dComIfGd_setSimpleShadow(&bowl->current.pos,height,50.f*kHubBrazierScale,
+                ground,0,1.f,dDlst_shadowControl_c::getSimpleTex());
+    }
     *static_cast<int*>(result) = 1;
     return HOOK_SKIP_ORIGINAL;
 }

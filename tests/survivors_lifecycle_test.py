@@ -97,6 +97,7 @@ unsigned s_chestDelay=0;
 void dMeter2Info_setSword(int,bool){}
 bool arenaPresent=true, transition=false, s_active=true, s_restart=false;
 bool s_saveReady=false, s_gameStarted=true;
+bool s_hubArrivalPending=false;float s_hubArrivalSeconds=0;
 bool s_progressSaving=false,s_progressSaved=false;
 bool s_loaded=false, s_resultsStored=false, s_storeFailed=false, s_saveRequested=false;
 ActorId s_player=kNone, s_savePrompt=kNone, s_bossHudTarget=kNone;
@@ -174,6 +175,7 @@ struct mDoRst {
     static bool isReset(){return resetting;} static bool isReturnToMenu(){return menu;}
 };
 bool transitioning(){return transition;}
+bool dComIfGp_isEnableNextStage(){return transition;}
 const char kStage[]="D_DLBR0";
 const char* dComIfGp_getStartStageName(){return arenaPresent?arenas[s_map].stage:"F_SP102";}
 int dComIfGp_getStartStageRoomNo(){return arenaPresent?arenas[s_map].room:0;}
@@ -318,7 +320,7 @@ int main() {
         opening(); // Preparation alone cannot redirect stages or unlock gameplay.
         if (brightnessScreen) opening(); // Optional TV screen still owns the scene.
         loaded(nullptr,nullptr); // Native new-save flow also calls on_save_loaded.
-        assert(s_saveReady && !s_gameStarted);
+        assert(s_saveReady && !s_gameStarted && s_hubArrivalPending && s_hubArrivalSeconds==0);
         before_game_start(nullptr,nullptr,nullptr,nullptr);
         assert(s_gameStarted && in_arena());
         args[0]=static_cast<const char*>(kStage);
@@ -329,14 +331,14 @@ int main() {
         assert(std::any_cast<s16>(args[1])==0 && std::any_cast<s8>(args[2])==51 && std::any_cast<s8>(args[3])==0);
         s_run.start(1);
         before_opening(nullptr,nullptr,nullptr,nullptr);
-        assert(!s_saveReady && !s_gameStarted && !in_arena());
+        assert(!s_saveReady && !s_gameStarted && !in_arena() && !s_hubArrivalPending && s_hubArrivalSeconds==0);
         opening(); // Return to title disarms even without a reset callback.
     }
     loaded(nullptr,nullptr); // Existing slot / successful command-line load.
     before_game_start(nullptr,nullptr,nullptr,nullptr);
     assert(s_gameStarted);
     reset(nullptr,nullptr);
-    assert(!s_saveReady && !s_gameStarted && !in_arena());
+    assert(!s_saveReady && !s_gameStarted && !in_arena() && !s_hubArrivalPending && s_hubArrivalSeconds==0);
     opening();
     loaded(nullptr,nullptr);mDoRst::resetting=true;
     before_game_start(nullptr,nullptr,nullptr,nullptr);assert(!s_gameStarted);
@@ -396,13 +398,22 @@ int main() {
     assert(swordReceived&&swordCollected&&selectedSword==dItemNo_SWORD_e&&bItem==dItemNo_SWORD_e);
     new_save(nullptr,nullptr); // A different slot must not inherit the old sword.
     assert(!swordReceived&&!swordCollected&&selectedSword==dItemNo_NONE_e&&bItem==dItemNo_NONE_e);
+    // Decorations survive arrival completion and the following loading warmup.
+    s_active=s_gameStarted=s_hub=true;s_map=0;s_run.phase=Phase::Loading;
+    assert(survivors_hub_preparing());s_hubArrivalPending=false;s_hubArrivalSeconds=2.2f;
+    assert(survivors_hub_preparing());
+    s_run.phase=Phase::Ready;assert(!survivors_hub_preparing());s_run.phase=Phase::Loading;
+    s_hubDeparture=true;assert(!survivors_hub_preparing());s_hubDeparture=false;
+    transition=true;assert(!survivors_hub_preparing());transition=false;
+    s_hub=false;assert(!survivors_hub_preparing());s_hub=true;
+    reset_runtime();assert(!s_hubArrivalPending&&s_hubArrivalSeconds==0&&!survivors_hub_preparing());
     std::cout<<"Survivors lifecycle: true deaths, pending spawns, cleanup and routing passed\n";
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp'; binary=Path(tmp)/'test'
     cpp.write_text(stubs+'\n'+ '\n'.join(extract(n) for n in [
-        'in_arena','retire_enemies','reset_runtime','prepare_save','activated','deactivated','new_save','loaded','reset',
+        'in_arena','survivors_hub_preparing','retire_enemies','reset_runtime','prepare_save','activated','deactivated','new_save','loaded','reset',
         'begin_run','select_arena','cleanup_enemies','credit_death','before_game_start','before_opening','before_stage','after_power'])+'\n'+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

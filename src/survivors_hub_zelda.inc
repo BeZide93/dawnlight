@@ -362,16 +362,16 @@ HookAction before_hub_zelda_flow(ModContext*, void* args, void* result, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 void update_hub_zelda() {
-    const bool title = survivors_title_preparing();
-    if (!title && !hub_zelda_enabled()) { retire_hub_zelda(); return; }
-    if (!title) update_hub_zelda_gift();
+    const bool preparing = survivors_title_preparing() || survivors_hub_preparing();
+    if (!preparing && !hub_zelda_enabled()) { retire_hub_zelda(); return; }
+    if (!preparing) update_hub_zelda_gift();
     cleanup_hub_zelda();
-    if (!title) update_hub_zelda_call();
-    if (s_hubZelda != kNone || !s_hubZeldaStart || (!title && !playable()) ||
+    if (!preparing) update_hub_zelda_call();
+    if (s_hubZelda != kNone || !s_hubZeldaStart || (!preparing && !playable()) ||
         s_progressSaving || s_hubSaveRequested) return;
     if (s_hubZeldaRetry) { --s_hubZeldaRetry; return; }
     cXyz anchor;
-    if (!hub_brazier_anchor(anchor) && !(title && hub_center_ground(anchor))) return;
+    if (!hub_brazier_anchor(anchor) && !(preparing && hub_center_ground(anchor))) return;
     cXyz probe = anchor + cXyz(-320, 100, 0);
     dBgS_ObjGndChk ground; ground.SetPos(&probe);
     const float height = dComIfG_Bgsp().GroundCross(&ground);

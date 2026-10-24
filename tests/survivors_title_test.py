@@ -5,6 +5,7 @@ root=Path(__file__).resolve().parents[1]
 sdk=root/'dusklight'
 fixture=r'''
 #include <any>
+#include <algorithm>
 #include <chrono>
 #include "survivors_title_flow.hpp"
 #include <cassert>
@@ -25,6 +26,8 @@ namespace mods{
  template<class T>T arg(void* a,int n){return std::any_cast<T>(static_cast<std::any*>(a)[n]);}
  template<class T>T& arg_ref(void* a,int n){return *std::any_cast<T>(&static_cast<std::any*>(a)[n]);}
 }
+constexpr int fpcNm_PLAY_SCENE_e=5;
+bool s_hubArrivalPending=false,s_hub=true;float s_hubArrivalSeconds=0;unsigned s_map=0;
 constexpr int fpcNm_OPENING_SCENE_e=1,fpcNm_ALINK_e=2,fpcNm_SCENE_EXIT_e=3,fpcNm_SCENE_EXIT2_e=4;
 bool s_active=true,s_gameStarted=false,hasScene=true,bowlLive=true,zeldaLive=true;
 const char* stageName=arenas[0].stage;s8 roomNo=arenas[0].room;
@@ -34,6 +37,8 @@ struct scene_class{int name=fpcNm_OPENING_SCENE_e;}scene;
 using Scene=scene_class;
 bool transition=false,resetting=false,returning=false;
 bool transitioning(){return transition;}
+bool paused=false;bool dComIfGp_isPauseFlag(){return paused;}
+struct dScnPly_c{static bool isPause(){return false;}};
 bool nextStage=false;bool dComIfGp_isEnableNextStage(){return nextStage;}
 namespace mDoRst {bool isReset(){return resetting;}bool isReturnToMenu(){return returning;}}
 unsigned reloads=0;bool reloadSelected=false;
@@ -61,7 +66,7 @@ struct daAlink_c{
  Frame mUnderFrameCtrl[1],mUpperFrameCtrl[1];
  void procWaitInit(){mProcID=PROC_WAIT;}
  bool checkUnderMove0BckNoArc(int n){return animation==n;}
- void setSingleAnime(int n,float rate,float frame,s16 end,float morf){assert(rate==0&&frame==0&&end==-1&&morf==0);animation=n;++sets;}
+ void setSingleAnime(int n,float rate,float frame,s16 end,float morf){assert((rate==0||rate==1)&&frame==0&&end==-1&&morf==0);animation=n;++sets;for(auto* ctrl:{&mUnderFrameCtrl[0],&mUpperFrameCtrl[0]})ctrl->rate=rate;}
  void setPlayerPosAndAngle(const cXyz* p,s16 a,bool force){assert(force);position=*p;yaw=a;}
 }link,foreign;
 daAlink_c* daAlink_getAlinkActorClass(){return &link;}
@@ -220,6 +225,46 @@ int main(){
   after_title_camera(nullptr,cameraArgs,nullptr,nullptr);assert(camera.sets==2);
   info.procname=99;assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_CONTINUE&&freed==3);
  }
+ // A loaded save replaces only its initial hub entrance, in PLAY_SCENE.
+ s_gameStarted=true;s_hubArrivalPending=true;scene.name=fpcNm_PLAY_SCENE_e;
+ assert(survivors_hub_arrival_active()&&!survivors_title_active());
+ info.procname=fpcNm_ALINK_e;params.base.position.x=999;params.base.position.z=999;
+ before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
+ assert(params.base.position.x==0&&params.base.position.z==260&&params.base.angle.y==s16(0x8000));
+ assert(((params.base.parameters>>12)&0x1f)==16&&((params.base.parameters>>24)&0xff)==0xff);
+ assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-2);
+ info.procname=99;assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_CONTINUE);
+ assert(before_title_logo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ for(int gate=0;gate<9;++gate){
+  if(gate==0)s_active=false;if(gate==1)s_gameStarted=false;if(gate==2)s_hub=false;
+  if(gate==3)s_map=1;if(gate==4)scene.name=1;if(gate==5)scene.name=999;
+  if(gate==6)nextStage=true;if(gate==7)resetting=true;if(gate==8)returning=true;
+  assert(!survivors_hub_arrival_active());
+  s_active=true;s_gameStarted=true;s_hub=true;s_map=0;scene.name=fpcNm_PLAY_SCENE_e;
+  nextStage=resetting=returning=false;
+ }
+ before_title_wait(nullptr,linkArgs,&result,nullptr);
+ assert(link.position.z==260&&link.position.y==-400&&title_scene_ready());
+ // Missing scenery, fade-in and pause must not consume the visible rise.
+ for(int gate=0;gate<4;++gate){
+  if(gate==0)bowlLive=false;if(gate==1)zeldaLive=false;if(gate==2)transition=true;if(gate==3)paused=true;
+  s_titleClock=std::chrono::steady_clock::now()-std::chrono::seconds(1);
+  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);assert(s_hubArrivalSeconds==0);
+  bowlLive=zeldaLive=true;transition=paused=false;
+ }
+ for(int rate:{30,60,120}){
+  s_hubArrivalPending=true;s_hubArrivalSeconds=0;
+  for(int i=0;i<rate*10;++i)advance_hub_arrival(1.f/rate,false);
+  assert(hub_arrival_progress()==0&&s_hubArrivalPending);
+  for(int i=0;i<rate*2;++i)advance_hub_arrival(1.f/rate,true);
+  assert(s_hubArrivalPending&&hub_arrival_progress()>.9f&&hub_arrival_progress()<1);
+  for(int i=0;i<rate;++i)advance_hub_arrival(1.f/rate,true);
+  assert(!s_hubArrivalPending&&hub_arrival_progress()==1&&link.mUnderFrameCtrl[0].rate==1);
+ }
+ link.mItemButton=7;after_title_input(nullptr,linkArgs,nullptr,nullptr);assert(link.mItemButton==7);
+ assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
+ assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
  std::cout<<"Survivors title: opening routing, scene isolation, kneeling pose, private input, framing and logo cue passed\n";
 }
 '''

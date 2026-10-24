@@ -19,6 +19,7 @@ using u32=uint32_t;using u8=uint8_t;using u16=uint16_t;using s16=int16_t;
 constexpr ActorId kNone=~0u;
 bool titleActive=false;bool survivors_title_active(){return titleActive;}
 bool survivors_title_preparing(){return titleActive;}
+bool hubPreparing=false;bool survivors_hub_preparing(){return hubPreparing;}
 constexpr int fpcNm_NPC_ZELDA_e=100,fpcNm_Demo_Item_e=101,dItemNo_SWORD_e=0x28,dEvtCnd_CANGETITEM_e=1,dEvtCnd_CANTALK_e=2;
 enum HookAction {HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods {template<class T>T arg(void* a,int n){return std::any_cast<T>(static_cast<std::any*>(a)[n]);}}
@@ -397,7 +398,12 @@ int main(){
  for(int i=0;i<60;++i)update_hub_zelda();
  assert(spawnCalls==titleSpawns+1&&rewardCalls==1&&!hub_zelda_gift_busy());
  assert(before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr)==HOOK_CONTINUE);
- titleActive=false;update_hub_zelda();assert(deleteCalls==titleDeletes+1);
+ // Loading an actual hub keeps the already-created decoration through
+ // arrival/warmup, even though interactions are not yet playable.
+ titleActive=false;hubPreparing=true;
+ for(int i=0;i<60;++i)update_hub_zelda();
+ assert(deleteCalls==titleDeletes&&spawnCalls==titleSpawns+1&&rewardCalls==1);
+ hubPreparing=false;update_hub_zelda();assert(deleteCalls==titleDeletes+1);
  live=false;update_hub_zelda();assert(s_hubZelda==kNone);
  std::cout<<"Survivors Zelda: standing/turning, sword presentation/pose, deferred grant, event isolation and cleanup passed\n";
 }

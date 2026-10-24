@@ -50,7 +50,14 @@ bool fpcM_IsCreating(ActorId id){return id==55&&creating;}
 int fopAcM_GetName(fopAc_ac_c* a){return a->profile;}
 struct{int8_t room=51;}arenas[1];
 struct dBgS_ObjGndChk{cXyz pos;void SetPos(cXyz* p){pos=*p;}};
-struct Background{float GroundCross(dBgS_ObjGndChk* g){++rays;assert(g->pos.x==0&&g->pos.z==0&&g->pos.y==link.current.pos.y+1000);return floorY;}}bg;
+struct Background{float GroundCross(dBgS_ObjGndChk* g){++rays;assert(g->pos.x==0&&g->pos.z==0&&
+ (g->pos.y==link.current.pos.y+1000 || g->pos.y==brazier.current.pos.y+100));return floorY;}}bg;
+struct dDlst_shadowControl_c{static void* getSimpleTex(){return &brazier;}};
+unsigned shadows=0;
+void dComIfGd_setSimpleShadow(cXyz* p,float h,float size,dBgS_ObjGndChk& ground,int angle,float aspect,void* tex){
+ assert(p==&brazier.current.pos&&h==floorY&&size==100&&angle==0&&aspect==1);
+ assert(ground.pos.y==p->y+100&&tex==dDlst_shadowControl_c::getSimpleTex());++shadows;
+}
 Background& dComIfG_Bgsp(){return bg;}
 ModResult deleteActor(ModContext*,ActorId id){assert(id==55);++deletes;return MOD_OK;}
 ActorService actorService{.delete_actor=deleteActor};auto* svc_actor=&actorService;
@@ -88,13 +95,17 @@ int main(){
  assert(s_hubBrazierLight.mPosition.y==-252&&lights==1&&sounds==1);
  before_hub_brazier_execute(nullptr,&brazier,&result,nullptr);assert(lights==1&&particles==6);
  assert(before_hub_brazier_draw(nullptr,&brazier,&result,nullptr)==HOOK_SKIP_ORIGINAL);
- assert(draws==1&&drawn==brazier.mpModel); // No liquid surface or oil-refill logic.
+ assert(draws==1&&drawn==brazier.mpModel&&shadows==1);
+ floorY=-1.e9f;before_hub_brazier_draw(nullptr,&brazier,&result,nullptr);assert(shadows==1);
+ floorY=std::nanf("");before_hub_brazier_draw(nullptr,&brazier,&result,nullptr);assert(shadows==1);
+ floorY=-400;before_hub_brazier_draw(nullptr,&other,&result,nullptr);assert(shadows==1); // No liquid surface or oil-refill logic.
  const auto placedRays=rays;
  for(int i=0;i<100;++i){update_hub_brazier(true);}assert(spawns==2&&rays==placedRays);
  assert(!hub_brazier_anchor(anchor));creating=false;live=true;
  update_hub_brazier(true);assert(hub_brazier_anchor(anchor)&&anchor.x==0&&anchor.y==-400&&anchor.z==0);
  update_hub_brazier(false);assert(deletes==1&&!hub_brazier_anchor(anchor));
  assert(cuts==1&&invalidated==3&&!s_hubBrazierLightSet);
+ before_hub_brazier_draw(nullptr,&brazier,&result,nullptr);assert(shadows==1);
  before_hub_brazier_execute(nullptr,&brazier,&result,nullptr);assert(particles==6&&lights==1);
  update_hub_brazier(true);assert(deletes==2&&spawns==2); // Rapid re-entry waits for deletion.
  live=false;update_hub_brazier(true);

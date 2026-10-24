@@ -43,7 +43,10 @@ struct Pack{J3DAnmTransform* animation=nullptr;
  J3DAnmTransform* getAnmTransform(){return animation;}void setAnmTransform(J3DAnmTransform* p){animation=p;}};
 struct daAlink_c{ActorId id=7;J3DModel* mpLinkModel=&model;Pack mNowAnmPackUnder[3],mNowAnmPackUpper[3];}link,foreign;
 bool active=true;
-bool survivors_title_active(){return active;}
+bool arrival=false;float arrivalProgress=0;
+bool survivors_rest_active(){return active||arrival;}
+bool survivors_hub_arrival_active(){return arrival;}
+float hub_arrival_progress(){return arrivalProgress;}
 daAlink_c* daAlink_getAlinkActorClass(){return &link;}
 ActorId fopAcM_GetID(daAlink_c* p){return p->id;}
 '''
@@ -96,6 +99,23 @@ int main(){
  }
  assert(dual::length(pose.world[9].p-(pose.world[19].p+dual::Vec{0,8,3}))<.02f);
  assert(near(dual::length(pose.world[10].p-pose.world[9].p),4)); // Socket follows hand.
+ // Every frame rises continuously, retains native limb lengths, keeps the
+ // front ankle planted for the push-off and finishes at the exact idle pose.
+ float previousHeight=pose.world[0].p.y;
+ for(int frame=0;frame<=180;++frame){
+  const float progress=frame/180.f;auto rising=idle;assert(rising.rest(progress));
+  assert(rising.world[0].p.y>=previousHeight-.001f);previousHeight=rising.world[0].p.y;
+  for(unsigned first:{18u,23u}){
+   assert(near(dual::length(rising.world[first+1].p-rising.world[first].p),30));
+   assert(near(dual::length(rising.world[first+2].p-rising.world[first+1].p),39.363499f));
+   assert(rising.world[first+2].p.y>9.9f);
+  }
+  if(progress<.6f)assert(dual::length(rising.world[20].p-pose.world[20].p)<.05f);
+  if(frame==180)for(unsigned i=0;i<35;++i){
+   assert(dual::length(rising.world[i].p-idle.world[i].p)<.001f);
+   assert(dual::length(dual::rotate(rising.world[i].q,{0,1,0})-dual::rotate(idle.world[i].q,{0,1,0}))<.001f);
+  }
+ }
  auto bad=idle;bad.parent[18]=34;assert(!bad.kneel());
  J3DAnmTransformKey original[6];
  for(unsigned i=0;i<35;++i){
@@ -120,6 +140,9 @@ int main(){
   assert(before_title_joint(nullptr,joint,&result,nullptr)==HOOK_CONTINUE);
  }
  active=false;before_title_model(nullptr,args,nullptr,nullptr);assert(!s_titleModel.call);
+ arrival=true;arrivalProgress=.5f;before_title_model(nullptr,args,nullptr,nullptr);
+ assert(s_titleModel.call==args&&s_titleModel.animation.joints[0].mTranslate.y>pose.local[0].p.y);
+ after_title_model(nullptr,args,nullptr,nullptr);arrival=false;
  active=true;link.id=8;assert(!title_model_ready(&link));
  before_title_model(nullptr,args,nullptr,nullptr);assert(title_model_ready(&link));after_title_model(nullptr,args,nullptr,nullptr);
  model.data.count=40;before_title_model(nullptr,args,nullptr,nullptr);assert(!title_model_ready(&link)&&!s_titleModel.call);

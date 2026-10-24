@@ -319,6 +319,9 @@ bool s_active = false, s_registered = false, s_loaded = false, s_restart = false
 bool s_saveReady = false, s_gameStarted = false;
 bool survivors_title_active();
 bool survivors_title_preparing();
+bool survivors_hub_arrival_active();
+bool s_hubArrivalPending = false;
+float s_hubArrivalSeconds = 0.f;
 bool s_resultsStored = false, s_storeFailed = false, s_saveRequested = false;
 unsigned s_saveStartTicks = 0;
 Run s_run;
@@ -521,6 +524,12 @@ const dCcD_SrcSph kAttackSource = {
 bool in_arena() {
     return s_active && s_gameStarted && arena_matches(s_map, dComIfGp_getStartStageName(), dComIfGp_getStartStageRoomNo());
 }
+bool survivors_hub_preparing() {
+    // Keep decorations alive across the arrival -> grounded warmup handoff.
+    // Loading them here also overlaps the fade-in on subsequent hub visits.
+    return s_hub && in_arena() && s_run.phase==Phase::Loading && !s_restart && !s_hubDeparture &&
+        !dComIfGp_isEnableNextStage() && !mDoRst::isReset() && !mDoRst::isReturnToMenu();
+}
 #include "survivors_save_modal.inc"
 #include "survivors_save_pointer.inc"
 bool ui_visible() {
@@ -531,7 +540,7 @@ bool ui_visible() {
 }
 bool transitioning() { return dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek(); }
 bool playable() {
-    return in_arena() && !midna_dialog_busy() && !transitioning() && !dComIfGp_isPauseFlag() &&
+    return in_arena() && !survivors_hub_arrival_active() && !midna_dialog_busy() && !transitioning() && !dComIfGp_isPauseFlag() &&
         !dScnPly_c::isPause() && !dComIfGp_event_runCheck() && !ui_visible() &&
         dMeter2Info_getGameOverType() == 0;
 }
@@ -704,6 +713,7 @@ void reset_runtime() {
     s_options.debug.clamp();
     reset_midna_dialog();
     s_saveReady = false; s_gameStarted = false;
+    s_hubArrivalPending = false; s_hubArrivalSeconds = 0.f;
     s_map = s_requestedMap = 0; clear_arena_geometry();
     close_powerup_window(); close_window(); clear_attacks(); clear_loot(); detach_attack_references(); retire_enemies();
     if (s_savePrompt != kNone) {
@@ -1775,12 +1785,13 @@ ModResult new_save(void*, ModError*) {
     prepare_save();
     if(!store_gear(GearInventory{}))return MOD_UNAVAILABLE;
     s_saveReady = true;
+    s_hubArrivalPending = true;
     const auto bytes = s_records.encode();
     svc_save->set_blob(mod_ctx, kBlob, bytes.data(), bytes.size());
     return MOD_OK;
 }
 ModResult loaded(void*, ModError*) {
-    reset_runtime(); prepare_save(); s_saveReady = true; return MOD_OK;
+    reset_runtime(); prepare_save(); s_saveReady = true; s_hubArrivalPending = true; return MOD_OK;
 }
 ModResult reset(void*, ModError*) { reset_runtime(); reset_title_presentation(); return MOD_OK; }
 #include "survivors_mode.inc"
@@ -1815,7 +1826,8 @@ bool survivors_dark_link_active() {
 }
 void update_survivors() {
     update_title_preview();
-    update_hub_brazier(survivors_title_preparing() || (survivors_hub_active() && !s_hubDeparture && !transitioning()));
+    update_hub_brazier(survivors_title_preparing() || survivors_hub_preparing() ||
+        (survivors_hub_active() && !s_hubDeparture && !transitioning()));
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
     update_survivors_registration();
@@ -1843,6 +1855,7 @@ void update_survivors() {
         s_arenaSafe = s_arenaSpawn = false;
     }
     if (fpcM_IsCreating(s_player)) return;
+    if (survivors_hub_arrival_active()) return; // Finish standing before hub interactions/warmup.
     if (update_ending(link)) return;
     if (!s_hub && !s_resultsStored) prepare_victory_wave();
     update_midna_dialog();

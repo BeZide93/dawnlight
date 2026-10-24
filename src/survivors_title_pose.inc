@@ -27,7 +27,7 @@ bool title_parents(J3DJoint* joint,int parent,TitleRestPose& pose) {
 HookAction before_title_model(ModContext*,void* args,void*,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
     auto* model=mods::arg<J3DModel*>(args,1);
-    if (!survivors_title_active() || link!=daAlink_getAlinkActorClass() || !link ||
+    if (!survivors_rest_active() || link!=daAlink_getAlinkActorClass() || !link ||
         !model || model!=link->mpLinkModel || s_titleModel.call) return HOOK_CONTINUE;
     auto& s=s_titleModel;
     s.owner=kNone;
@@ -43,7 +43,7 @@ HookAction before_title_model(ModContext*,void* args,void*,void*) {
         static_cast<J3DAnmTransformKey*>(source)->calcTransform(0,i,&t);
         pose.local[i]={joint_rotation(t),{t.mTranslate.x,t.mTranslate.y,t.mTranslate.z}};
     }
-    if (!pose.kneel()) return HOOK_CONTINUE;
+    if (!pose.rest(survivors_hub_arrival_active() ? hub_arrival_progress() : 0.f)) return HOOK_CONTINUE;
     for (unsigned i=0;i<pose.count;++i) {
         auto& t=s.animation.joints[i];
         set_joint_rotation(t,pose.local[i].q);
@@ -71,7 +71,7 @@ void after_title_model(ModContext*,void* args,void*,void*) {
 }
 HookAction before_title_joint(ModContext*,void* args,void* result,void*) {
     auto* link=mods::arg<daAlink_c*>(args,0);
-    if (!s_titleModel.call || !title_model_ready(link) || !survivors_title_active()) return HOOK_CONTINUE;
+    if (!s_titleModel.call || !title_model_ready(link) || !survivors_rest_active()) return HOOK_CONTINUE;
     // Standing foot/arm IK and root clearing would undo the authored rest pose.
     // All packs supply the same complete pose, so blend-switch callbacks are
     // unnecessary for this one body calculation. Gameplay retains them.

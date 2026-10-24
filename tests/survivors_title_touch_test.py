@@ -1,88 +1,144 @@
-"""Title touch presentation/input cleanup and restoration, including extras disabled."""
+"""Run title event scoping against Dusklight's native touch visibility rules."""
 from pathlib import Path
-import os,subprocess,tempfile
+import os, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
 source=(root/'src/survivors_title_touch.inc').read_text()
+host=(root/'dusklight/src/dusk/ui/touch_controls.cpp').read_text()
+
+def function(signature):
+    start=host.index(signature)
+    brace=host.index('{',start)
+    depth=1
+    end=brace+1
+    while depth:
+        depth+=(host[end]=='{')-(host[end]=='}')
+        end+=1
+    return host[start:end].replace('TouchControls::','NativeTouch::')
+
 fixture=r'''
 #include <any>
 #include <array>
 #include <bitset>
 #include <cassert>
+#include <cstdint>
 #include <string>
+#include <vector>
 #include <iostream>
-using ModResult=int;constexpr int MOD_OK=0;
-struct ModError{};struct ModContext{};
-using UiStyleHandle=unsigned;constexpr int UI_SCOPE_TOUCH_CONTROLS=4;
-struct ModHook{};struct ExtraTouchUpdate:ModHook{};struct ExtraTouchSync:ModHook{};struct ExtraTouchDelete:ModHook{};
+using u8=uint8_t;using dEvt_SkipCb=int(*)(void*,int);
+struct dEvt_control_c {u8 mEventStatus=0;dEvt_SkipCb mSkipFunc=nullptr;unsigned flags=0;bool chkFlag2(unsigned f){return flags&f;}};
+dEvt_control_c event;bool haveEvent=true,title=false;
+auto*dComIfGp_getEvent(){return haveEvent?&event:nullptr;}
+bool dComIfGp_event_runCheck(){return event.mEventStatus!=0;}
+bool survivors_title_presentation_active(){return title;}
+int dummySkip(void*,int){return 1;}
+using ModResult=int;constexpr int MOD_OK=0;struct ModError{};struct ModContext{};
+struct ExtraTouchUpdate{};struct ExtraTouchSync{};
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
-namespace Rml {using String=std::string;struct Element{bool title=false;bool hidden=false;};}
-namespace dusk::ui {enum class Control {A,B,X,Y,Z,L,R,Items,Map,COUNT};}
+struct HookOptions{int priority=0;};
+#define HOOK_OPTIONS_INIT {}
+constexpr unsigned PAD_BUTTON_A=1,PAD_BUTTON_B=2;
+namespace dusk::ui {enum class Control{A,B,X,Y,Z,L,R,FIRST_PERSON,ITEMS,COLLECTIONS,MAP,SKIP,COUNT};enum class ControlOverride{Default,Action};}
+using dusk::ui::Control;using dusk::ui::ControlOverride;
+std::array<ControlOverride,size_t(Control::COUNT)> sControlOverrides{};
+struct Element{bool hidden=false;void SetPseudoClass(const char*,bool v){hidden=v;}void SetClass(const char*,bool){}};
 struct NativeTouch {
- Rml::Element root;Rml::Element* mRoot=&root;
- struct ControlElement {Rml::Element* root=nullptr;};
- std::array<ControlElement,size_t(dusk::ui::Control::COUNT)> mControlElements{};
- std::array<bool,size_t(dusk::ui::Control::COUNT)> pressed{};
- Rml::Element actionBar;Rml::Element* mActionBar=&actionBar;
- std::bitset<8> mQueuedActions;bool motion=true;
+ struct ControlTouch{bool active=false;};struct Motion{bool active=false;};
+ struct Elements{Element* root=nullptr;};
+ std::array<ControlTouch,size_t(Control::COUNT)> mControlTouches{};
+ std::array<Element,size_t(Control::COUNT)> buttons{};
+ std::array<Elements,size_t(Control::COUNT)> mControlElements{};
+ Element actionBar;Element*mActionBar=&actionBar;
+ std::bitset<8> mQueuedActions;Motion mMoveTouch,mCameraTouch;
+ unsigned mButtonMask=0;
+ bool mLPressed=false,mLLatched=false,mManualLLatched=false,mLReleasePending=false,mRTriggerHeld=false,mWasSuppressed=false;
+ int mLPressStartTime=0,mLastLTapTime=0;
+ NativeTouch(){for(size_t i=0;i<buttons.size();++i)mControlElements[i].root=&buttons[i];}
+ void release_control(Control c){mControlTouches[size_t(c)]={};}
+ void clear_motion_touch_input(){mMoveTouch={};mCameraTouch={};}
+ void sync_visual_state() noexcept;void sync_action_bar_state() noexcept;
 };
-bool title=false;bool survivors_title_presentation_active(){return title;}
-int releases=0,clears=0,registered=0,unregistered=0,hooks=0;
-void setClass(Rml::Element* e,const Rml::String* name,bool value){assert(*name=="dawnlight-survivors-title");e->title=value;}
-void setPseudoClass(Rml::Element* e,const Rml::String* name,bool value){assert(*name=="hidden");e->hidden=value;}
-void release(NativeTouch* c,dusk::ui::Control control){assert(control!=dusk::ui::Control::A&&control!=dusk::ui::Control::B);c->pressed[size_t(control)]=false;++releases;}
-void clearMotion(NativeTouch* c){c->motion=false;++clears;}
-ModContext* mod_ctx=nullptr;void* svc_hook=nullptr;
-struct Ui {
- ModResult register_styles(ModContext*,int scope,const char* css,UiStyleHandle* handle){assert(scope==UI_SCOPE_TOUCH_CONTROLS);assert(std::string(css).find(":not(#button-a):not(#button-b)")!=std::string::npos);*handle=7;++registered;return MOD_OK;}
- void unregister_styles(ModContext*,UiStyleHandle h){assert(h==7);++unregistered;}
-}ui;auto* svc_ui=&ui;
-bool resolve=true;
-template<class F>bool resolve_extra(const char*,F&){return resolve;}
+struct Settings{struct Game{bool enableTouchControls=true;}game;}settings;
+auto&getSettings(){return settings;}
+bool controls_available(bool){return true;}
+void*dComIfGp_getMsgObjectClass(){return nullptr;}bool dMsgObject_isTalkNowCheck(){return false;}
+void*dComIfGp_getLinkPlayer(){return &event;}
+struct daPy_py_c{static int checkNowWolf(){return 0;}};
+bool control_override_active(Control c){return sControlOverrides[size_t(c)]!=ControlOverride::Default;}
+bool player_attention_locked(){return false;}
+std::string item_icon_source_for_button(Control){return "sword";}
+std::string midna_icon_source(){return "midna";}uint64_t midna_icon_revision(){return 1;}
+constexpr int METER2_USEBUTTON_B=1;bool dMeter2Info_isUseButton(int){return true;}
+struct FaceButtonState{std::string iconSource;uint64_t iconRevision=0;bool visible=false,showIcon=false;};
+FaceButtonState override_button_state(Control){return {.iconSource="",.visible=true};}
+void*svc_hook=nullptr;int hooks=0;
 namespace mods {
- template<class T>T arg(void* a,int i){return std::any_cast<T>(static_cast<std::any*>(a)[i]);}
- template<class Hook,class Fn>ModResult hook_add_pre(void*,Fn){++hooks;return MOD_OK;}
- template<class Hook,class Fn>ModResult hook_add_post(void*,Fn){++hooks;return MOD_OK;}
+ template<class T>T arg(void*a,int i){return std::any_cast<T>(static_cast<std::any*>(a)[i]);}
+ template<class H,class F>ModResult hook_add_pre(void*,F,const HookOptions*o){assert(o->priority==INT32_MAX);++hooks;return MOD_OK;}
+ template<class H,class F>ModResult hook_add_post(void*,F,const HookOptions*o){assert(o->priority==INT32_MIN);++hooks;return MOD_OK;}
  ModResult set_error(ModError*,ModResult r,const char*){return r;}
 }
 '''
+native_rules='\n'.join(function(s) for s in [
+    'bool game_controls_suppressed() noexcept',
+    'FaceButtonState xy_button_state(Control control)',
+    'FaceButtonState z_button_state()',
+    'FaceButtonState b_button_state()',
+    'void TouchControls::sync_visual_state() noexcept',
+    'void TouchControls::sync_action_bar_state() noexcept'])
 main=r'''
 int main(){
- NativeTouch controls,other;std::any args[]{&controls},otherArgs[]{&other};
- controls.pressed.fill(true);
- std::array<Rml::Element,size_t(dusk::ui::Control::COUNT)> elements{};
- for(size_t i=0;i<elements.size();++i){controls.mControlElements[i].root=&elements[i];}
- controls.mQueuedActions.set();
- resolve=false;assert(initialize_title_touch(nullptr)==MOD_OK&&!registered&&!hooks);
- resolve=true;assert(initialize_title_touch(nullptr)==MOD_OK&&registered==1&&hooks==5);
- s_titleTouchApi={setClass,setPseudoClass,release,clearMotion};
- before_title_touch(nullptr,args,nullptr,nullptr);assert(!controls.root.title&&!releases&&controls.motion);
+ assert(initialize_title_touch(nullptr)==MOD_OK&&hooks==4);
+ NativeTouch controls;std::any args[]{&controls};
+ for(auto&t:controls.mControlTouches)t.active=true;
+ controls.mButtonMask=0xffff;controls.mQueuedActions.set();
+ controls.mMoveTouch.active=controls.mCameraTouch.active=true;
+ controls.mLPressed=controls.mLLatched=controls.mManualLLatched=true;
+ controls.mLReleasePending=controls.mRTriggerHeld=true;
+ // The host normally shows gameplay controls and the B sword icon here.
+ controls.sync_visual_state();controls.sync_action_bar_state();
+ assert(!controls.actionBar.hidden&&xy_button_state(Control::X).visible&&z_button_state().visible);
+ assert(b_button_state().showIcon);
+ title=true;event.mSkipFunc=dummySkip;event.flags=4;
+ before_title_touch(nullptr,args,nullptr,nullptr);
+ assert(event.mEventStatus==1&&!event.mSkipFunc&&event.flags==4);
+ assert(controls.mControlTouches[0].active&&controls.mControlTouches[1].active);
+ for(size_t i=2;i<controls.mControlTouches.size();++i)assert(!controls.mControlTouches[i].active);
+ assert(controls.mButtonMask==(PAD_BUTTON_A|PAD_BUTTON_B)&&controls.mQueuedActions.none());
+ assert(!controls.mMoveTouch.active&&!controls.mCameraTouch.active&&!controls.mLLatched&&!controls.mRTriggerHeld);
+ controls.sync_visual_state();controls.sync_action_bar_state();
+ assert(controls.buttons[size_t(Control::L)].hidden&&controls.buttons[size_t(Control::R)].hidden);
+ assert(controls.actionBar.hidden&&controls.buttons[size_t(Control::SKIP)].hidden);
+ assert(!xy_button_state(Control::X).visible&&!xy_button_state(Control::Y).visible&&!z_button_state().visible);
+ assert(b_button_state().visible&&!b_button_state().showIcon); // Native B label, no style override.
+ // Nested UI/input calls preserve the outer cutscene, even across a mode change.
+ before_title_touch(nullptr,args,nullptr,nullptr);title=false;
+ after_title_touch(nullptr,nullptr,nullptr,nullptr);
+ assert(event.mEventStatus==1&&!event.mSkipFunc);
+ after_title_touch(nullptr,nullptr,nullptr,nullptr);
+ assert(event.mEventStatus==0&&event.mSkipFunc==dummySkip&&event.flags==4);
+ controls.sync_visual_state();controls.sync_action_bar_state();
+ assert(!controls.actionBar.hidden&&!controls.buttons[size_t(Control::L)].hidden&&b_button_state().showIcon);
+ // A real skippable event is restored exactly; inactive mode is untouched.
+ event.mEventStatus=1;
+ before_title_touch(nullptr,args,nullptr,nullptr);controls.sync_action_bar_state();
+ assert(!controls.buttons[size_t(Control::SKIP)].hidden);
+ after_title_touch(nullptr,nullptr,nullptr,nullptr);assert(event.mSkipFunc==dummySkip);
  title=true;before_title_touch(nullptr,args,nullptr,nullptr);
- assert(controls.root.title&&releases==int(controls.mControlElements.size())-2&&!controls.motion&&controls.mQueuedActions.none());
- assert(controls.pressed[0]&&controls.pressed[1]); // A/B remain pressed and usable.
- for(size_t i=2;i<controls.mControlElements.size();++i)assert(!controls.pressed[i]);
- // Native sync can reveal controls every frame; post-sync restores the mask.
- after_title_touch(nullptr,args,nullptr,nullptr);
- assert(!elements[0].hidden&&!elements[1].hidden&&controls.actionBar.hidden);
- for(size_t i=2;i<elements.size();++i)assert(elements[i].hidden);
- elements[2].hidden=false;after_title_touch(nullptr,args,nullptr,nullptr);assert(elements[2].hidden);
- const int prior=releases;title=false;controls.motion=true;
- for(auto& e:elements){e.hidden=false;}controls.actionBar.hidden=false;
- after_title_touch(nullptr,args,nullptr,nullptr);
- for(auto& e:elements){assert(!e.hidden);}assert(!controls.actionBar.hidden);
- before_title_touch(nullptr,args,nullptr,nullptr);assert(!controls.root.title&&controls.motion&&releases==prior);
- title=true;before_title_touch(nullptr,args,nullptr,nullptr);
- before_title_touch_delete(nullptr,otherArgs,nullptr,nullptr);assert(s_titleTouchOwner==&controls);
- shutdown_title_touch();assert(!controls.root.title&&!s_titleTouchStyle&&!s_titleTouchOwner&&unregistered==1);
- s_titleTouchStyle=7;before_title_touch(nullptr,args,nullptr,nullptr);
- before_title_touch_delete(nullptr,args,nullptr,nullptr);assert(!s_titleTouchOwner);
- shutdown_title_touch();assert(unregistered==2);
- std::cout<<"Survivors title touch: A/B preserved, hidden holds/actions released, scope/teardown and optional extras independence passed\n";
+ controls.sync_action_bar_state();assert(controls.buttons[size_t(Control::SKIP)].hidden);
+ shutdown_title_touch();assert(event.mEventStatus==1&&event.mSkipFunc==dummySkip&&s_titleTouchEvents.empty());
+ // Missing event/controller during startup and teardown, plus repeated entries.
+ haveEvent=false;before_title_touch(nullptr,args,nullptr,nullptr);after_title_touch(nullptr,nullptr,nullptr,nullptr);
+ haveEvent=true;std::any empty[]{static_cast<NativeTouch*>(nullptr)};
+ before_title_touch(nullptr,empty,nullptr,nullptr);after_title_touch(nullptr,nullptr,nullptr,nullptr);
+ for(int i=0;i<3;++i){before_title_touch(nullptr,args,nullptr,nullptr);after_title_touch(nullptr,nullptr,nullptr,nullptr);assert(event.mEventStatus==1&&event.mSkipFunc==dummySkip);}
+ assert(s_titleTouchEvents.empty());
+ std::cout<<"Native title cutscene: gameplay/Skip hidden, B label and A/B input preserved, nested restoration and mode changes passed\n";
 }
 '''
 native=(root/'src/touch_buttons_native.inc').read_text()
 assert native.index('initialize_title_touch(error)')<native.index('if (!s_extraSessionEnabled) return MOD_OK;')
 with tempfile.TemporaryDirectory() as tmp:
- cpp=Path(tmp)/'touch.cpp';exe=Path(tmp)/'touch'
- cpp.write_text(fixture+source+main)
- subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
- subprocess.run([str(exe)],check=True)
+    cpp=Path(tmp)/'touch.cpp';exe=Path(tmp)/'touch'
+    cpp.write_text(fixture+native_rules+source+main)
+    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',str(cpp),'-o',str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)

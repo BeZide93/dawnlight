@@ -1,100 +1,58 @@
-// Separate from Dawnlight's optional extra-button setting: the title needs
-// native A/B controls even when the gameplay touch extensions are disabled.
-struct TitleTouchApi {
-    void (*setClass)(Rml::Element*,const Rml::String*,bool)=nullptr;
-    void (*setPseudoClass)(Rml::Element*,const Rml::String*,bool)=nullptr;
-    void (*release)(NativeTouch*,dusk::ui::Control)=nullptr;
-    void (*clearMotion)(NativeTouch*)=nullptr;
-} s_titleTouchApi;
-UiStyleHandle s_titleTouchStyle=0;
-NativeTouch* s_titleTouchOwner=nullptr;
-constexpr char kTitleTouchStyle[] = R"RCSS(
-#root.dawnlight-survivors-title > :not(#button-a):not(#button-b) {
-    display: none;
-}
-#root.dawnlight-survivors-title > :not(#button-a):not(#button-b),
-#root.dawnlight-survivors-title > :not(#button-a):not(#button-b) * {
-    visibility: hidden;
-    pointer-events: none;
-}
-#root.dawnlight-survivors-title #button-b-icon {
-    display: none;
-}
-#root.dawnlight-survivors-title #button-a,
-#root.dawnlight-survivors-title #button-b {
-    display: flex;
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
-}
-#root.dawnlight-survivors-title #button-b > span {
-    display: block;
-    position: static;
-    font-size: var(--font-size-4xl);
-    color: var(--button-color);
-}
-)RCSS";
-void update_title_touch(NativeTouch* controls) {
-    if (!s_titleTouchStyle || !controls || !controls->mRoot) return;
-    s_titleTouchOwner=controls;
-    const bool title=survivors_title_presentation_active();
-    const Rml::String name="dawnlight-survivors-title";
-    s_titleTouchApi.setClass(controls->mRoot,&name,title);
-    if (!title) return;
-    // Release hidden holds before native long-press/virtual-pad processing.
-    // The stylesheet also covers mod-added child containers, independent of
-    // their update order. Removing the class restores their normal styles.
-    for (size_t i=0;i<controls->mControlElements.size();++i) {
-        const auto control=static_cast<dusk::ui::Control>(i);
-        if (control!=dusk::ui::Control::A && control!=dusk::ui::Control::B)
-            s_titleTouchApi.release(controls,control);
-    }
-    controls->mQueuedActions.reset();
-    s_titleTouchApi.clearMotion(controls);
-}
+// Present the custom title to the host's native touch controller as a running,
+// non-skippable cutscene. Keep this status scoped to UI/input evaluation: the
+// title has no event-manager script, and the game must not sequence a fake one.
+struct TitleTouchEvent {
+    dEvt_control_c* event=nullptr;
+    u8 status=0;
+    dEvt_SkipCb skip=nullptr;
+};
+std::vector<TitleTouchEvent> s_titleTouchEvents;
 HookAction before_title_touch(ModContext*,void* args,void*,void*) {
-    update_title_touch(mods::arg<NativeTouch*>(args,0));
-    return HOOK_CONTINUE;
-}
-void after_title_touch(ModContext*,void* args,void*,void*) {
     auto* controls=mods::arg<NativeTouch*>(args,0);
-    if (!s_titleTouchStyle || !controls || !survivors_title_presentation_active()) return;
-    // Native sync_visual_state/sync_control_displays overwrite :hidden each
-    // update and virtual-input sync. Apply the title mask afterwards, too.
-    // Leave document/menu suppression and the user's touch setting to the host.
-    const Rml::String hidden="hidden";
-    for (size_t i=0;i<controls->mControlElements.size();++i) {
-        const auto control=static_cast<dusk::ui::Control>(i);
-        if (control!=dusk::ui::Control::A && control!=dusk::ui::Control::B) {
-            if (auto* element=controls->mControlElements[i].root)
-                s_titleTouchApi.setPseudoClass(element,&hidden,true);
+    auto* event=dComIfGp_getEvent();
+    const bool title=controls && event && survivors_title_presentation_active();
+    s_titleTouchEvents.push_back(title ? TitleTouchEvent{event,event->mEventStatus,event->mSkipFunc} : TitleTouchEvent{});
+    if (title) {
+        event->mEventStatus=1;
+        event->mSkipFunc=nullptr;
+        // Cancel old gameplay holds before native long-press and pad handling.
+        // A/B retain their native touch state for the logo/Start flow.
+        for (size_t i=0;i<controls->mControlTouches.size();++i) {
+            const auto control=static_cast<dusk::ui::Control>(i);
+            if (control!=dusk::ui::Control::A && control!=dusk::ui::Control::B)
+                controls->mControlTouches[i]={};
         }
+        controls->mButtonMask &= PAD_BUTTON_A | PAD_BUTTON_B;
+        controls->mLPressed=controls->mLLatched=controls->mManualLLatched=false;
+        controls->mLReleasePending=controls->mRTriggerHeld=false;
+        controls->mLPressStartTime=controls->mLastLTapTime={};
+        controls->mQueuedActions.reset();
+        controls->mMoveTouch={};
+        controls->mCameraTouch={};
     }
-    if (controls->mActionBar) s_titleTouchApi.setPseudoClass(controls->mActionBar,&hidden,true);
-}
-HookAction before_title_touch_delete(ModContext*,void* args,void*,void*) {
-    if (s_titleTouchOwner==mods::arg<NativeTouch*>(args,0)) s_titleTouchOwner=nullptr;
     return HOOK_CONTINUE;
+}
+void after_title_touch(ModContext*,void*,void*,void*) {
+    if (s_titleTouchEvents.empty()) return;
+    const auto saved=s_titleTouchEvents.back();
+    s_titleTouchEvents.pop_back();
+    if (saved.event) {
+        saved.event->mEventStatus=saved.status;
+        saved.event->mSkipFunc=saved.skip;
+    }
 }
 ModResult initialize_title_touch(ModError* error) {
-    if (!resolve_extra("_ZN3Rml7Element8SetClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb",s_titleTouchApi.setClass) ||
-        !resolve_extra("_ZN3Rml7Element14SetPseudoClassERKNSt6__ndk112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb",s_titleTouchApi.setPseudoClass) ||
-        !resolve_extra("dusk::ui::TouchControls::release_control",s_titleTouchApi.release) ||
-        !resolve_extra("dusk::ui::TouchControls::clear_motion_touch_input",s_titleTouchApi.clearMotion)) return MOD_OK;
-    auto result=mods::hook_add_pre<ExtraTouchUpdate>(svc_hook,before_title_touch);
-    if (result==MOD_OK) result=mods::hook_add_pre<ExtraTouchSync>(svc_hook,before_title_touch);
-    if (result==MOD_OK) result=mods::hook_add_post<ExtraTouchUpdate>(svc_hook,after_title_touch);
-    if (result==MOD_OK) result=mods::hook_add_post<ExtraTouchSync>(svc_hook,after_title_touch);
-    if (result==MOD_OK) result=mods::hook_add_pre<ExtraTouchDelete>(svc_hook,before_title_touch_delete);
-    if (result==MOD_OK) result=svc_ui->register_styles(mod_ctx,UI_SCOPE_TOUCH_CONTROLS,kTitleTouchStyle,&s_titleTouchStyle);
-    return result==MOD_OK ? MOD_OK : mods::set_error(error,result,"failed to initialize Survivors title touch controls");
+    // Enclose other mods' touch callbacks as well as the native implementation.
+    // No RmlUi methods, stylesheet or optional private helper resolution needed.
+    HookOptions before=HOOK_OPTIONS_INIT, after=HOOK_OPTIONS_INIT;
+    before.priority=INT32_MAX;
+    after.priority=INT32_MIN;
+    auto result=mods::hook_add_pre<ExtraTouchUpdate>(svc_hook,before_title_touch,&before);
+    if (result==MOD_OK) result=mods::hook_add_post<ExtraTouchUpdate>(svc_hook,after_title_touch,&after);
+    if (result==MOD_OK) result=mods::hook_add_pre<ExtraTouchSync>(svc_hook,before_title_touch,&before);
+    if (result==MOD_OK) result=mods::hook_add_post<ExtraTouchSync>(svc_hook,after_title_touch,&after);
+    return result==MOD_OK ? MOD_OK : mods::set_error(error,result,"failed to initialize Survivors title cutscene touch controls");
 }
 void shutdown_title_touch() {
-    if (s_titleTouchOwner && s_titleTouchOwner->mRoot) {
-        const Rml::String name="dawnlight-survivors-title";
-        s_titleTouchApi.setClass(s_titleTouchOwner->mRoot,&name,false);
-    }
-    s_titleTouchOwner=nullptr;
-    if (s_titleTouchStyle) svc_ui->unregister_styles(mod_ctx,s_titleTouchStyle);
-    s_titleTouchStyle=0;
+    while (!s_titleTouchEvents.empty()) after_title_touch(nullptr,nullptr,nullptr,nullptr);
 }

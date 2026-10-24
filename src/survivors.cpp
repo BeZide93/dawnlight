@@ -2,6 +2,7 @@
 #include "platform_compat.hpp"
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
+#include "survivors_roundtable.hpp"
 #include "survivors_enemy_hud.hpp"
 #include "survivors_integrity.hpp"
 #include "d/d_door_param2.h"
@@ -1377,6 +1378,30 @@ bool pause_run_actor(bool enemy) {
     // while a requested departure waits for the native event manager.
     return s_run.phase != Phase::Running && (enemy || (s_run.phase != Phase::Treasure && !(s_hub && s_run.phase==Phase::Ready)));
 }
+HookAction before_roundtable(ModContext*,void* args,void* result,void*) {
+    return before_roundtable_process(args,result,survivors_title_preparing() || (s_hub && in_arena()));
+}
+HookAction before_roundtable_stage_actor(ModContext*,void* args,void*,void*) {
+    if(!(survivors_title_preparing() || (s_hub && in_arena())))return HOOK_CONTINUE;
+    const auto* record=mods::arg<stage_actor_data_class*>(args,0);
+    auto* params=mods::arg<fopAcM_prm_class*>(args,1);
+    if(!record || !params || (params->room_no!=51 && params->room_no!=-1))return HOOK_CONTINUE;
+    char name[9]{};std::memcpy(name,record->name,8);
+    const auto* info=dStage_searchName(name);if(!info)return HOOK_CONTINUE;
+    // The replacement room supplies its own furnishings and lights. Keep the
+    // authored exit and scene infrastructure; standalone Zelda/bowl/chest are
+    // spawned separately, so this cannot remove them or their interactions.
+    switch(info->procname) {
+    case fpcNm_ALINK_e:case fpcNm_BG_e:case fpcNm_KANKYO_e:case fpcNm_ENVSE_e:
+    case fpcNm_DOOR20_e:case fpcNm_KNOB20_e:case fpcNm_DBDOOR_e:
+    case fpcNm_BOSS_DOOR_e:case fpcNm_L1BOSS_DOOR_e:case fpcNm_L1MBOSS_DOOR_e:
+    case fpcNm_L5BOSS_DOOR_e:case fpcNm_SPIRAL_DOOR_e:return HOOK_CONTINUE;
+    default:JKRFree(params);return HOOK_SKIP_ORIGINAL;
+    }
+}
+void after_roundtable(ModContext*,void* args,void* result,void*) {
+    after_roundtable_process(args,result);
+}
 HookAction before_process(ModContext*, void* args, void* result, void*) {
     auto* process = mods::arg<void*>(args, 1);
     if (!process || !is_actor_process(process)) return HOOK_CONTINUE;
@@ -1924,6 +1949,7 @@ ModResult initialize_survivors(ModError* error) {
     if(!s_enemyArchivesAvailable)svc_log->warn(mod_ctx,
         "Survivors archive retention unavailable; using native resource loading");
     PRE(SurvivorsArenaActor, before_title_stage_actor);
+    PRE(SurvivorsArenaActor, before_roundtable_stage_actor);
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
     PRE(SurvivorsPalaceFerrySuspend, before_palace_ferry_suspend);
     PRE(SurvivorsPalaceFerryMove, before_palace_ferry_move);
@@ -1963,6 +1989,7 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsArenaRestart, before_arena_restart);
     POST(SurvivorsBossAim,after_boss_aim);
     PRE(SurvivorsProcess, before_contact_owner_delete);
+    PRE(SurvivorsProcess, before_roundtable); POST(SurvivorsProcess, after_roundtable);
     PRE(SurvivorsProcess, before_process); POST(SurvivorsProcess, after_process);
     POST(SurvivorsPlayer, after_player); POST(SurvivorsDraw, after_draw);
     PRE(SurvivorsPlayer, before_player_contacts);
@@ -2076,6 +2103,7 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    shutdown_roundtable();
     unregister_survivors_title_logo();
     enemy_hud::shutdown();
     shutdown_boss_ring();

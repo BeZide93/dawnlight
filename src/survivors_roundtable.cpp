@@ -1,0 +1,271 @@
+#include "survivors_roundtable.hpp"
+#include "service_imports.hpp"
+#include "process_actor.hpp"
+#include "m_Do/m_Do_ext.h"
+#include "d/d_bg_w.h"
+#include "d/d_particle.h"
+#include "d/actor/d_a_bg.h"
+#include "d/d_com_inf_game.h"
+#include "f_pc/f_pc_name.h"
+#include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
+#include "JSystem/JKernel/JKRExpHeap.h"
+#include "JSystem/JKernel/JKRSolidHeap.h"
+#include "mods/svc/resource.h"
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstring>
+#include <list>
+#include <memory>
+#include <new>
+#include <vector>
+
+namespace dawnlight {
+namespace {
+constexpr ActorId kNoRoom = fpcM_ERROR_PROCESS_ID_e;
+struct Vertex { float x,y,z,u,v; u8 r,g,b,a; };
+static_assert(sizeof(Vertex)==24);
+std::vector<Vertex> s_vertices;
+std::vector<u8> s_collision;
+alignas(32) u8 s_texture[256*256*2];
+GXTexObj s_textureObject{};
+bool s_ready=false;
+
+bool resource(const char* name, std::vector<u8>& out) {
+    ResourceBuffer buffer=RESOURCE_BUFFER_INIT;
+    if(svc_resource->load(mod_ctx,name,&buffer)!=MOD_OK)return false;
+    if(buffer.data && buffer.size && buffer.size<=4*1024*1024)
+        out.assign(static_cast<const u8*>(buffer.data),static_cast<const u8*>(buffer.data)+buffer.size);
+    svc_resource->free(mod_ctx,&buffer);
+    return !out.empty();
+}
+u32 le32(const u8* p) { return u32(p[0])|(u32(p[1])<<8)|(u32(p[2])<<16)|(u32(p[3])<<24); }
+bool load_assets() {
+    if(s_ready)return true;
+    std::vector<u8> mesh,texture,collision;
+    if(!resource("survivors_roundtable/hall.mesh",mesh) ||
+       !resource("survivors_roundtable/hall.dzb",collision) ||
+       !resource("survivors_roundtable/materials.rgb565",texture))return false;
+    if(mesh.size()<8 || std::memcmp(mesh.data(),"RTH1",4) ||
+       texture.size()!=sizeof(s_texture) || collision.size()<52)return false;
+    const u32 count=le32(mesh.data()+4);
+    if(count==0 || count%3 || count>100000 || mesh.size()!=8+size_t(count)*sizeof(Vertex))return false;
+    std::vector<Vertex> vertices(count);
+    for(size_t i=0;i<count;++i) {
+        const auto* p=mesh.data()+8+i*24;
+        float values[5];
+        for(unsigned j=0;j<5;++j) {
+            const u32 bits=le32(p+j*4);std::memcpy(&values[j],&bits,4);
+            if(!std::isfinite(values[j]))return false;
+        }
+        vertices[i]={values[0],values[1],values[2],values[3],values[4],p[20],p[21],p[22],p[23]};
+    }
+    // Validate every DZB table before native pointer relocation. The bundled
+    // format is also checked by the generator test, including tree ancestry.
+    const auto be=[](const u8* p){return (u32(p[0])<<24)|(u32(p[1])<<16)|(u32(p[2])<<8)|p[3];};
+    constexpr size_t sizes[]{12,10,2,20,52,16};
+    for(unsigned i=0;i<6;++i) {
+        const size_t n=be(collision.data()+i*8),offset=be(collision.data()+i*8+4);
+        if(!n || n>65535 || offset<52 || offset>collision.size() ||
+           n>(collision.size()-offset)/sizes[i])return false;
+    }
+    s_vertices=std::move(vertices);s_collision=std::move(collision);
+    std::memcpy(s_texture,texture.data(),sizeof(s_texture));
+    GXInitTexObj(&s_textureObject,s_texture,256,256,GX_TF_RGB565,GX_CLAMP,GX_CLAMP,GX_FALSE);
+    GXInitTexObjLOD(&s_textureObject,GX_LINEAR,GX_LINEAR,0,0,0,GX_FALSE,GX_FALSE,GX_ANISO_1);
+    s_ready=true;
+    return true;
+}
+
+class Room : public J3DPacket {
+public:
+    ActorId owner=kNoRoom;
+    dBgW* originalDzb=nullptr;
+    dBgWKCol* originalKcl=nullptr;
+    dBgW* collision=nullptr;
+    std::unique_ptr<u8[]> storage;
+    JKRExpHeap* heap=nullptr;
+    bool installed=false;
+    std::array<u32,6> fire{};
+    LIGHT_INFLUENCE light{};
+    bool lit=false;
+
+    ~Room() override { if(heap)heap->destroy(); }
+    void extinguish() {
+        for(auto& id:fire) {
+            if(id)if(auto* emitter=dComIfGp_particle_getEmitter(id)) {
+                emitter->stopCreateParticle();emitter->quitImmortalEmitter();emitter->becomeInvalidEmitter();
+            }
+            id=0;
+        }
+        if(lit)dKy_plight_cut(&light);
+        lit=false;
+    }
+    void update_fire() {
+        constexpr u16 effects[]{0x3ad,0x3af,0x3ae};
+        const cXyz scale(.7f,.7f,.7f);
+        for(unsigned i=0;i<fire.size();++i) {
+            const cXyz position(-1645.4135f,-330.f,i<3?-90.f:90.f);
+            fire[i]=dComIfGp_particle_set(fire[i],effects[i%3],&position,nullptr,nullptr,&scale,
+                0xff,nullptr,-1,nullptr,nullptr,nullptr);
+        }
+        if(!lit) {
+            light.mPosition.set(-1500,-170,0);light.mColor={188,102,66,255};
+            light.mPow=650;light.mFluctuation=1;dKy_plight_set(&light);lit=true;
+        }
+    }
+    bool prepare() {
+        constexpr u32 size=2*1024*1024;
+        storage.reset(new(std::nothrow) u8[size+31]);
+        if(!storage)return false;
+        auto* memory=reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(storage.get())+31)&~uintptr_t{31});
+        heap=JKRExpHeap::create(memory,size,JKRHeap::getRootHeap(),false);
+        if(!heap)return false;
+        auto* solid=JKRSolidHeap::create(0x180000,heap,false);
+        if(!solid)return false;
+        auto* previous=solid->becomeCurrentHeap();
+        auto* bytes=solid->alloc(static_cast<u32>(s_collision.size()),32);
+        bool ready=false;
+        if(bytes) {
+            std::memcpy(bytes,s_collision.data(),s_collision.size());
+            auto* dzb=static_cast<cBgD_t*>(cBgS::ConvDzb(bytes));
+            collision=JKR_NEW dBgW();
+            ready=collision && !collision->Set(dzb,cBgW::GLOBAL_e,nullptr);
+            if(ready)collision->SetPriority(dBgW_Base::PRIORITY_0);
+        }
+        previous->becomeCurrentHeap();
+        return ready;
+    }
+    void draw() override {
+        auto* actor=static_cast<fopAc_ac_c*>(fopAcM_SearchByID(owner));
+        if(!installed || !actor || fopAcM_GetName(actor)!=fpcNm_BG_e)return;
+        j3dSys.reinitGX();
+        GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);GXSetCurrentMtx(GX_PNMTX0);
+        GXClearVtxDesc();
+        GXSetVtxDesc(GX_VA_POS,GX_DIRECT);GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);GXSetVtxDesc(GX_VA_TEX0,GX_DIRECT);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_F32,0);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_CLR0,GX_CLR_RGBA,GX_RGBA8,0);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_F32,0);
+        GXSetNumChans(1);
+        GXSetChanCtrl(GX_COLOR0A0,GX_DISABLE,GX_SRC_REG,GX_SRC_VTX,GX_LIGHT_NULL,GX_DF_NONE,GX_AF_NONE);
+        GXSetNumTexGens(1);GXSetTexCoordGen(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_TEX0,GX_IDENTITY);
+        GXLoadTexObj(&s_textureObject,GX_TEXMAP0);
+        GXSetNumTevStages(1);GXSetTevOrder(GX_TEVSTAGE0,GX_TEXCOORD0,GX_TEXMAP0,GX_COLOR0A0);
+        GXSetTevOp(GX_TEVSTAGE0,GX_MODULATE);
+        GXSetZMode(GX_TRUE,GX_LEQUAL,GX_TRUE);
+        GXSetBlendMode(GX_BM_NONE,GX_BL_ONE,GX_BL_ZERO,GX_LO_CLEAR);
+        GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);GXSetCullMode(GX_CULL_NONE);
+        for(size_t start=0;start<s_vertices.size();start+=60000) {
+            const size_t end=std::min(start+60000,s_vertices.size());
+            GXBegin(GX_TRIANGLES,GX_VTXFMT0,static_cast<u16>(end-start));
+            for(size_t i=start;i<end;++i) {
+                const auto& v=s_vertices[i];GXPosition3f32(v.x,v.y,v.z);
+                GXColor4u8(v.r,v.g,v.b,v.a);GXTexCoord2f32(v.u,v.v);
+            }
+            GXEnd();
+        }
+        j3dSys.reinitGX();
+    }
+};
+std::list<Room> s_rooms;
+struct CreateFrame { void* args; bool hub; };
+std::vector<CreateFrame> s_creates;
+
+void detach(Room& room) {
+    // Packets are intrusive and can survive presentation-only frames. Remove
+    // every retained reference before freeing the packet or unloading the mod.
+    auto* list=dComIfGd_getOpaList();
+    if(!list || !list->mpBuffer)return;
+    for(u32 i=0;i<list->getEntryTableSize();++i) {
+        J3DPacket* previous=nullptr;
+        for(auto* p=list->mpBuffer[i];p;) {
+            auto* next=p->getNextPacket();
+            if(p==&room) {
+                if(previous)previous->setNextPacket(next);else list->mpBuffer[i]=next;
+            } else previous=p;
+            p=next;
+        }
+    }
+    room.setNextPacket(nullptr);
+}
+void restore(Room& room,daBg_c* actor,bool registerOriginal) {
+    detach(room);room.extinguish();room.installed=false;
+    dComIfG_Bgsp().Release(room.collision);
+    actor->mpBgW=room.originalDzb;actor->mpKCol=room.originalKcl;
+    auto* original=room.originalDzb?static_cast<dBgW_Base*>(room.originalDzb):room.originalKcl;
+    if(registerOriginal && original)dComIfG_Bgsp().Regist(original,actor);
+    dStage_roomControl_c::setBgW(fopAcM_GetParam(actor),original);
+}
+daBg_c* background(void* args) {
+    auto* process=mods::arg<void*>(args,1);
+    if(!process || !is_actor_process(process))return nullptr;
+    auto* actor=static_cast<fopAc_ac_c*>(process);
+    return fopAcM_GetName(actor)==fpcNm_BG_e?static_cast<daBg_c*>(actor):nullptr;
+}
+}
+
+HookAction before_roundtable_process(void* args,void* result,bool createHub) {
+    auto* actor=background(args);if(!actor)return HOOK_CONTINUE;
+    const auto* methods=reinterpret_cast<const leafdraw_method_class*>(actor->sub_method);
+    if(!methods)return HOOK_CONTINUE;
+    const auto method=mods::arg<process_method_func>(args,0);
+    if(method==methods->base.create_method)s_creates.push_back({args,createHub});
+    auto it=std::find_if(s_rooms.begin(),s_rooms.end(),[&](const Room& r){return r.owner==fopAcM_GetID(actor);});
+    if(it==s_rooms.end())return HOOK_CONTINUE;
+    if(method==methods->base.delete_method) {
+        // Native Delete still owns the original room heap and its models.
+        restore(*it,actor,true);s_rooms.erase(it);return HOOK_CONTINUE;
+    }
+    if(method==methods->base.execute_method)it->update_fire();
+    if(method!=methods->draw_method)return HOOK_CONTINUE;
+    auto* list=dComIfGd_getOpaList();
+    if(list && list->mpBuffer && list->getEntryTableSize()) {
+        bool queued=false;
+        for(auto* p=list->mpBuffer[0];p;p=p->getNextPacket())if(p==&*it){queued=true;break;}
+        if(!queued)list->entryImm(&*it,0);
+    }
+    // Keep room lighting updated for actors, but don't submit the old models
+    // or native room-part decorations over the authored hall.
+    g_env_light.settingTevStruct(0x10,nullptr,dComIfGp_roomControl_getTevStr(fopAcM_GetParam(actor)));
+    *static_cast<int*>(result)=1;return HOOK_SKIP_ORIGINAL;
+}
+
+void after_roundtable_process(void* args,void* result) {
+    // A generic post-hook also runs after Delete, where process may already be
+    // invalid. Only paired, still-live Create callbacks may inspect the actor.
+    if(s_creates.empty() || s_creates.back().args!=args)return;
+    const bool createHub=s_creates.back().hub;s_creates.pop_back();
+    if(!createHub)return;
+    auto* actor=background(args);
+    if(!actor || fopAcM_GetParam(actor)!=51)return;
+    const auto* methods=reinterpret_cast<const process_method_class*>(actor->sub_method);
+    if(!methods || mods::arg<process_method_func>(args,0)!=methods->create_method ||
+       *static_cast<int*>(result)!=cPhs_COMPLEATE_e)return;
+    const auto owner=fopAcM_GetID(actor);
+    if(std::any_of(s_rooms.begin(),s_rooms.end(),[&](const Room& r){return r.owner==owner;}))return;
+    if(!load_assets()) {
+        svc_log->error(mod_ctx,"Roundtable hub: invalid/missing assets; retaining native room");return;
+    }
+    s_rooms.emplace_back();auto& room=s_rooms.back();room.owner=owner;
+    if(!room.prepare()) {s_rooms.pop_back();svc_log->error(mod_ctx,"Roundtable hub: collision allocation failed");return;}
+    room.originalDzb=actor->mpBgW;room.originalKcl=actor->mpKCol;
+    auto* original=actor->mpBgW?static_cast<dBgW_Base*>(actor->mpBgW):actor->mpKCol;
+    // Register first: allocation failure must never leave the room without a
+    // floor. Both registries are changed within this completed create callback.
+    if(dComIfG_Bgsp().Regist(room.collision,actor)) {s_rooms.pop_back();return;}
+    if(original)dComIfG_Bgsp().Release(original);
+    actor->mpBgW=room.collision;actor->mpKCol=nullptr;
+    dStage_roomControl_c::setBgW(51,room.collision);
+    room.installed=true;
+    svc_log->info(mod_ctx,"Roundtable hub: installed private room geometry and collision");
+}
+
+void shutdown_roundtable() {
+    for(auto& room:s_rooms) {
+        auto* actor=static_cast<fopAc_ac_c*>(fopAcM_SearchByID(room.owner));
+        if(actor && fopAcM_GetName(actor)==fpcNm_BG_e)restore(room,static_cast<daBg_c*>(actor),true);
+        else {detach(room);room.extinguish();if(room.installed)dComIfG_Bgsp().Release(room.collision);}
+    }
+    s_rooms.clear();s_creates.clear();s_vertices.clear();s_collision.clear();s_ready=false;
+}
+}

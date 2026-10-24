@@ -48,6 +48,7 @@ add_mod(dawnlight_mod
     FEATURES game webgpu
     SOURCES
         src/aim_hooks.cpp
+        src/survivors_roundtable.cpp
         src/dual_wield.cpp
         src/collection_dual_wield.cpp
         src/collection_service.cpp

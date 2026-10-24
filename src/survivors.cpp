@@ -239,6 +239,8 @@ DEFINE_HOOK(&JMessage::TControl::update, SurvivorsTreasureText);
 DEFINE_HOOK(&daAlink_c::checkUpperGrabItemThrow, SurvivorsBombThrow);
 DEFINE_HOOK(&daAlink_c::cancelUpperItemReadyAnime, SurvivorsRangedCancel);
 DEFINE_HOOK(&daAlink_c::procCoGetItemInit, SurvivorsGetItem);
+DEFINE_HOOK(&daAlink_c::procCoGetItem, SurvivorsGetItemTick);
+DEFINE_HOOK(&daAlink_c::setItemMatrix, SurvivorsItemMatrix);
 DEFINE_HOOK(&fpcLf_Draw, SurvivorsTreasureDraw);
 DEFINE_HOOK(&daAlink_c::draw, SurvivorsDraw);
 DEFINE_HOOK(&daAlink_c::procCoDeadInit, SurvivorsDeath);
@@ -1970,6 +1972,9 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsGetItem, before_treasure_get); POST(SurvivorsGetItem, after_treasure_get);
     PRE(SurvivorsGetItem, before_hub_zelda_get);
     POST(SurvivorsGetItem, after_hub_zelda_get);
+    PRE(SurvivorsGetItemTick, before_hub_zelda_get_tick);
+    POST(SurvivorsItemMatrix, after_hub_zelda_item_matrix);
+    PRE(SurvivorsTreasureDraw, before_hub_zelda_gift_draw);
     PRE(SurvivorsGameOver, before_game_over);
     PRE(SurvivorsDeath, before_death); PRE(SurvivorsManualAttack, before_cut);
     PRE(SurvivorsManualCharge, before_manual_charge);

@@ -12,6 +12,9 @@ struct HubZeldaGift {
     ActorId id = kNone;
     bool queued = false, started = false, poseStarted = false, retiring = false;
     unsigned waitFrames = 0;
+    ActorId poseOwner = kNone;
+    J3DModel* handSword = nullptr;
+    bool bladeWasHidden = false;
 } s_hubZeldaGift;
 
 bool owns_hub_zelda_gift_event() {
@@ -22,15 +25,35 @@ fopAc_ac_c* hub_zelda_gift_actor() {
     auto* actor = actor_by_id(s_hubZeldaGift.id);
     return actor && fopAcM_GetName(actor) == fpcNm_Demo_Item_e ? actor : nullptr;
 }
+// The hub loadout already owns/equips Ordon. Reuse its correctly oriented
+// weapon model rather than the differently authored, spinning Demo_Item mesh.
+bool hub_zelda_gift_pose(daAlink_c* link) {
+    return link && s_hubZeldaGift.poseStarted && !s_hubZeldaGift.retiring &&
+        owns_hub_zelda_gift_event() && fopAcM_GetID(link) == s_hubZeldaGift.poseOwner &&
+        link->mProcID == daAlink_c::PROC_GET_ITEM &&
+        link->checkUnderMove0BckNoArc(daAlink_c::ANM_GET_MASTER_SWORD);
+}
+void restore_hub_zelda_sword() {
+    auto* link = daAlink_getAlinkActorClass();
+    // Do not dereference a model from a deleted/replaced player on scene exit.
+    if (s_hubZeldaGift.handSword && link && fopAcM_GetID(link) == s_hubZeldaGift.poseOwner &&
+        link->mpSwAModel == s_hubZeldaGift.handSword) {
+        auto* shape = link->mpSwAModel->getModelData()->getMaterialNodePointer(0)->getShape();
+        if (s_hubZeldaGift.bladeWasHidden) shape->hide(); else shape->show();
+    }
+    s_hubZeldaGift.handSword = nullptr;
+}
 void cleanup_hub_zelda_gift() {
     if (s_hubZeldaGift.id == kNone || fpcM_IsCreating(s_hubZeldaGift.id)) return;
     if (!hub_zelda_gift_actor()) {
         if (in_arena() && !transitioning() && owns_hub_zelda_gift_event()) dComIfGp_event_reset();
+        restore_hub_zelda_sword();
         s_hubZeldaGift = {};
     }
     else if (s_hubZeldaGift.retiring) svc_actor->delete_actor(mod_ctx, s_hubZeldaGift.id);
 }
 void retire_hub_zelda_gift() {
+    restore_hub_zelda_sword();
     if (in_arena() && !transitioning() && owns_hub_zelda_gift_event()) dComIfGp_event_reset();
     s_hubZeldaGift.queued = false;
     s_hubZeldaGift.retiring = true;
@@ -90,11 +113,57 @@ void after_hub_zelda_get(ModContext*, void* args, void*, void*) {
     if (!link || !s_hubZeldaGift.started || s_hubZeldaGift.poseStarted ||
         s_hubZeldaGift.retiring || !owns_hub_zelda_gift_event() ||
         fopAcM_GetID(link) != s_player || link->mProcID != daAlink_c::PROC_GET_ITEM) return;
-    // Ordinary NPC gifts initialize GET_A_WAIT. Start the full raise-item
-    // animation once, after any native sheathing action has actually finished.
-    link->setSingleAnimeBase(daAlink_c::ANM_GET_A);
+    // GETSWL is the overhead, closed-grip pose also used for Copy Rod revival.
+    // Wait for native sheathing to finish before starting it, exactly once.
+    link->setSingleAnimeBase(daAlink_c::ANM_GET_MASTER_SWORD);
     link->mProcVar1.field_0x300a = 0;
     s_hubZeldaGift.poseStarted = true;
+    s_hubZeldaGift.poseOwner = fopAcM_GetID(link);
+}
+
+HookAction before_hub_zelda_get_tick(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!hub_zelda_gift_pose(link)) return HOOK_CONTINUE;
+    auto& lower = link->mUnderFrameCtrl[0];
+    if (lower.getEndFlg() || lower.getFrame() >= lower.getEnd() - 1.0f) {
+        // Keep the final raised pose. Allow the native message/cut-end branch
+        // to run, but not its transition back to the chest-height GET_A_WAIT.
+        for (auto* ctrl : {&lower, &link->mUpperFrameCtrl[0]}) {
+            ctrl->setFrame(ctrl->getEnd() - 1.0f);
+            ctrl->setRate(0.0f);
+            // checkAnmEnd marks a zero-rate controller ended each call.
+            // Clear both flags each tick so it keeps returning false.
+            ctrl->offEndFlg();
+        }
+        link->mProcVar1.field_0x300a = 1;
+    }
+    return HOOK_CONTINUE;
+}
+void after_hub_zelda_item_matrix(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    if (!hub_zelda_gift_pose(link) || !link->mpSwAModel ||
+        link->mSwordModel != link->mpSwAModel || !link->checkSwordDraw()) {
+        restore_hub_zelda_sword();
+        return;
+    }
+    auto* sword = link->mpSwAModel;
+    auto* shape = sword->getModelData()->getMaterialNodePointer(0)->getShape();
+    if (!s_hubZeldaGift.handSword) {
+        s_hubZeldaGift.handSword = sword;
+        s_hubZeldaGift.bladeWasHidden = shape->checkFlag(J3DShpFlag_Visible);
+    }
+    shape->show();
+    sword->setBaseTRMtx(link->getLeftHandMatrix());
+    link->modelCalc(sword);
+}
+HookAction before_hub_zelda_gift_draw(ModContext*, void* args, void* result, void*) {
+    auto* process = mods::arg<leafdraw_class*>(args, 0);
+    if (!process || fopAcM_GetID(process) != s_hubZeldaGift.id ||
+        !s_hubZeldaGift.handSword || !hub_zelda_gift_pose(daAlink_getAlinkActorClass())) return HOOK_CONTINUE;
+    // Only suppress this event's floating display. Its actor still executes
+    // the native item message, fanfare and event completion normally.
+    *static_cast<int*>(result) = 1;
+    return HOOK_SKIP_ORIGINAL;
 }
 
 bool owned_hub_zelda(fopAc_ac_c* actor) {

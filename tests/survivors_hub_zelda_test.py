@@ -72,11 +72,33 @@ struct daNpc_Zelda_c:fopAc_ac_c {
  bool talkProc(void*,int,void*,int){return talkDone;}
  int wait(void*);int talk(void*);
 }zelda,other;
+using leafdraw_class=fopAc_ac_c;
+constexpr int J3DShpFlag_Visible=1;
+struct Shape {bool hidden=true;bool checkFlag(int){return hidden;}void show(){hidden=false;}void hide(){hidden=true;}};
+struct Material {Shape shape;Shape* getShape(){return &shape;}};
+struct ModelData {Material material;Material* getMaterialNodePointer(int i){assert(i==0);return &material;}};
+struct J3DModel {ModelData data;int matrix=0;ModelData* getModelData(){return &data;}
+ void setBaseTRMtx(int m){matrix=m;}};
+struct daPy_frameCtrl_c {
+ float frame=0,rate=1;int end=50;bool ended=false,now=false;
+ float getFrame(){return frame;}int getEnd(){return end;}float getRate(){return rate;}
+ bool getEndFlg(){return ended;}bool getNowSetFlg(){return now;}
+ void onEndFlg(){ended=true;}void onNowSetFlg(){now=true;}
+ void setFrame(float f){frame=f;}void setRate(float r){rate=r;}void offEndFlg(){ended=now=false;}
+ bool checkAnmEnd();
+};
 struct daAlink_c:fopAc_ac_c {
- enum{PROC_GET_ITEM=10,ANM_GET_A=20};int mProcID=0;unsigned animations=0;
+ enum{PROC_GET_ITEM=10,ANM_GET_MASTER_SWORD=20};int mProcID=0,animation=-1;unsigned animations=0,calculations=0;
+ daPy_frameCtrl_c mUnderFrameCtrl[1],mUpperFrameCtrl[1];
+ J3DModel ordon,master;J3DModel* mpSwAModel=&ordon;J3DModel* mSwordModel=&ordon;
+ bool swordDraw=true;
+ bool checkUnderMove0BckNoArc(int n){return animation==n;}
+ bool checkSwordDraw(){return swordDraw;}
+ int getLeftHandMatrix(){return 42;}
+ void modelCalc(J3DModel* m){assert(m==mpSwAModel);++calculations;}
  struct{int p0=777,p1=888;void setParam0(int n){p0=n;}void setParam1(int n){p1=n;}}mDemo;
  struct{int field_0x300a=-7;}mProcVar1;
- void setSingleAnimeBase(int n){assert(n==ANM_GET_A);++animations;}
+ void setSingleAnimeBase(int n){assert(n==ANM_GET_MASTER_SWORD);animation=n;++animations;}
 }link;
 fopAc_ac_c giftItem;
 ActorId s_player=7;
@@ -189,8 +211,36 @@ int main(){
  link.mProcID=daAlink_c::PROC_GET_ITEM;
  after_hub_zelda_get(nullptr,linkArgs,nullptr,nullptr);after_hub_zelda_get(nullptr,linkArgs,nullptr,nullptr);
  assert(link.animations==1&&link.mProcVar1.field_0x300a==0); // Full raise-item pose, once.
+ // The equipped sword follows the weapon grip; only this gift loses its floating mesh.
+ std::any itemDraw[]={static_cast<leafdraw_class*>(&giftItem)},foreignDraw[]={static_cast<leafdraw_class*>(&other)};
+ int drawResult=0;
+ assert(before_hub_zelda_gift_draw(nullptr,itemDraw,&drawResult,nullptr)==HOOK_CONTINUE);
+ after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
+ assert(link.ordon.matrix==42&&!link.ordon.data.material.shape.hidden&&link.calculations==1);
+ assert(before_hub_zelda_gift_draw(nullptr,itemDraw,&drawResult,nullptr)==HOOK_SKIP_ORIGINAL&&drawResult==1);
+ assert(before_hub_zelda_gift_draw(nullptr,foreignDraw,&drawResult,nullptr)==HOOK_CONTINUE);
+ auto& lower=link.mUnderFrameCtrl[0];auto& upper=link.mUpperFrameCtrl[0];
+ lower.frame=20;upper.frame=20;
+ before_hub_zelda_get_tick(nullptr,linkArgs,nullptr,nullptr);
+ assert(lower.rate==1&&upper.rate==1&&link.mProcVar1.field_0x300a==0); // Raise plays first.
+ lower.frame=49;upper.frame=49;
+ for(int i=0;i<120;++i){
+  before_hub_zelda_get_tick(nullptr,linkArgs,nullptr,nullptr);
+  assert(lower.frame==49&&upper.frame==49&&lower.rate==0&&upper.rate==0);
+  // Execute the SDK's real zero-rate/end-flag logic. The native item proc
+  // must take its message branch, never replace GETSWL with GET_A_WAIT.
+  assert(!lower.checkAnmEnd()&&link.mProcVar1.field_0x300a==1);
+  lower.now=false; // Native updateFrame clears the just-set marker next tick.
+ }
+ assert(link.animations==1);
+ // Model/draw fallback does not hide an item when the hand model cannot draw.
+ link.swordDraw=false;after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
+ assert(link.ordon.data.material.shape.hidden&&!s_hubZeldaGift.handSword);
+ assert(before_hub_zelda_gift_draw(nullptr,itemDraw,&drawResult,nullptr)==HOOK_CONTINUE);
+ link.swordDraw=true;after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
  update_hub_zelda_gift();assert(!rewardCalls);eventEnded=true;
  update_hub_zelda_gift();assert(rewardCalls==1&&s_hubZeldaGift.retiring);
+ assert(link.ordon.data.material.shape.hidden&&!s_hubZeldaGift.handSword);
  update_hub_zelda_gift();assert(rewardCalls==1);giftLive=false;update_hub_zelda_gift();assert(!hub_zelda_gift_busy());
  // A repeated conversation may present the same ordinary sword again, never rupees or a run upgrade.
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);rewardCallback(nullptr,&event,nullptr);
@@ -198,8 +248,16 @@ int main(){
  before_hub_zelda_flow(nullptr,flowArgs,&entry,nullptr);rewardCallback(nullptr,&event,nullptr);
  update_hub_zelda_gift();giftCreating=false;giftLive=true;
  nativeEvent.mPt2=55;eventEnded=false;eventRunning=true;update_hub_zelda_gift();assert(s_hubZeldaGift.started);
+ after_hub_zelda_get(nullptr,linkArgs,nullptr,nullptr);
+ link.ordon.data.material.shape.show(); // Preserve originally visible blades too.
+ after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
+ assert(s_hubZeldaGift.handSword);
  // Losing ownership/cancellation must not award a sword or reset the replacement event.
  nativeEvent.mPt2=99;const auto resets=eventResets;
+ const auto calcs=link.calculations;lower.rate=1;lower.ended=false;
+ before_hub_zelda_get_tick(nullptr,linkArgs,nullptr,nullptr);assert(lower.rate==1);
+ after_hub_zelda_item_matrix(nullptr,linkArgs,nullptr,nullptr);
+ assert(link.calculations==calcs&&!s_hubZeldaGift.handSword&&!link.ordon.data.material.shape.hidden);
  update_hub_zelda_gift();assert(rewardCalls==1&&eventResets==resets);
  giftLive=false;cleanup_hub_zelda_gift();nativeEvent.mPt2=kNone;eventRunning=false;
  // Timeout an unaccepted request; menus do not spend the retry budget.
@@ -244,14 +302,19 @@ assert 'POST(SurvivorsGetItem, after_hub_zelda_get);' in core
 assert 'POST(SurvivorsHubZeldaParam, after_hub_zelda_param);' in core
 assert 'void reset_runtime() {\n    retire_hub_zelda();' in core
 assert 'void update_survivors() {\n    update_hub_zelda();' in core
-def extract_native(name):
-    start=native.index('int daNpc_Zelda_c::'+name+'(')
+def extract_body(source, signature):
+    start=source.index(signature)
+    native=source
     brace=native.index('{',start);depth=0
     for end in range(brace,len(native)):
         depth+=(native[end]=='{')-(native[end]=='}')
         if not depth:return native[start:end+1]
-    raise AssertionError(name)
-native_actions=extract_native('wait')+extract_native('talk')
+    raise AssertionError(signature)
+native_actions=''.join(extract_body(native,'int daNpc_Zelda_c::'+name+'(') for name in ('wait','talk'))
+native_actions+=extract_body((sdk/'src/d/actor/d_a_player.cpp').read_text(),'bool daPy_frameCtrl_c::checkAnmEnd()')
+assert 'PRE(SurvivorsGetItemTick, before_hub_zelda_get_tick);' in core
+assert 'POST(SurvivorsItemMatrix, after_hub_zelda_item_matrix);' in core
+assert 'PRE(SurvivorsTreasureDraw, before_hub_zelda_gift_draw);' in core
 with tempfile.TemporaryDirectory() as temp:
     cpp,binary=Path(temp)/'test.cpp',Path(temp)/'test'
     cpp.write_text(fixture+native_actions+register+(root/'src/survivors_hub_zelda.inc').read_text()+main)

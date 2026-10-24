@@ -1791,7 +1791,6 @@ ModResult build_survivors_settings(ModContext* ctx,UiWindowHandle window,UiEleme
     load_option_config();
     return build_run_settings(ctx,window,left,right,data,error);
 }
-bool survivors_title_presentation_active() { return s_active && !s_gameStarted && opening_scene(); }
 bool survivors_hub_active() {return s_hub && in_arena() && s_run.phase==Phase::Ready && !s_restart;}
 void survivors_open_talents() {
     if(!survivors_hub_active() || !playable() || s_hubDeparture || s_progressSaving)return;

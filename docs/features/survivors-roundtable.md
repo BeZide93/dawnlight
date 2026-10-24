@@ -29,6 +29,8 @@ details. The hall uses baked vertex lighting rather than dynamic room shadows.
   game modes cannot convert outgoing rooms or normal combat rooms.
 - Native stage props are filtered for this hub; the original door actors and
   scene infrastructure stay. Standalone hub decorations are unaffected.
+- New collision surfaces explicitly carry no native room-camera/path references,
+  preventing them from selecting camera or path record zero of the dungeon.
 - Original archive data and native room models remain untouched. Native room
   creation completes first; a private native DZB replaces its registered
   collision atomically. A custom J3D packet renders the hall. Missing resources,

@@ -278,7 +278,10 @@ def dzb(hall):
             i-1 if i else 0xffff,0xffff,i+1 if i<2 else 0xffff,
             51,0,0 if i==2 else 0xffff,0))
     go=append(b''.join(groups))
-    ti=append(struct.pack('>4I',0x3f,0,0,0)) # no exit; normal, solid ground
+    # Native dBgW: exit=63, link=255, static camera motion=0; room camera,
+    # path and path point=255 (none). Zero camera/path IDs would accidentally
+    # select the original dungeon's camera/path record zero on our new floor.
+    ti=append(struct.pack('>4I',0x3f,0xff,0xffffff00,0))
     struct.pack_into('>13I',data,0,len(vertices),vo,len(triangles),to,len(blocks),bo,len(nodes),no,3,go,1,ti,0)
     assert len(vertices)<65535 and len(triangles)<65535
     return data

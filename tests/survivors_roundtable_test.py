@@ -42,7 +42,10 @@ for i in range(3):
 for a,b,c,material,group in triangles:
     assert max(a,b,c)<vn and material==0 and group==2
     assert g.length(g.cross(g.sub(vertices[b],vertices[a]),g.sub(vertices[c],vertices[a])))>.001
-assert struct.unpack_from('>I',data,io)[0]&63==63, 'No automatic scene exit surfaces'
+info0,info1,info2,passes=struct.unpack_from('>4I',data,io)
+assert info0==63 and info1==255 and passes==0, 'Solid normal ground, no exit/link'
+assert info2&255==0, 'Static room, no moving-background camera'
+assert all((info2>>shift)&255==255 for shift in (8,16,24)), 'No dungeon camera/path references'
 
 def ground(x,z,ceiling=1000):
     heights=[]

@@ -361,11 +361,11 @@ with saved X/Y/scale, visible in editor previews even when the toggle is Off.
 Zero normal enemies disables regular waves; bosses, guards and boss summons keep
 their separate limits. Horde batches respect the cap too.
 
-Darknut Arena's reachable-floor scan starts at the native Darknut's authored
-combat position, captured before suppressing story actors. Link's first safe
-loading position can be behind the entrance door, so it is not used for this map.
-The scan waits for a valid combat anchor and does not fall back to the entrance;
-chests, pots and Fate portals share the resulting arena-side component.
+Darknut Arena's reachable-floor scan starts at Link's position after the native
+entrance demo and grounded loading warmup have finished. The first safe loading
+checkpoint can be outside the door and is used only for early fall recovery.
+No native Darknut placement is required. Chests, pots and Fate portals share the
+resulting arena-side component.
 
 Up to **64 EXP crystals** can lie on the ground. Further XP merges into the nearest
 crystal without loss; merged crystals turn **red**, ordinary crystals stay turquoise.

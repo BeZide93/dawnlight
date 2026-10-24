@@ -14,13 +14,7 @@ void update_reachable_floor() {
     if(!needs_reachable_floor() || !s_arenaMeshReady || !s_arenaSpawn || s_eliteFloors.empty())return;
     if(s_reachableFloor.empty()) {
         cXyz start=s_arenaSpawnPosition;
-        if(s_map==0) {
-            // Loading may save Link's first safe position behind the entry door.
-            // Never publish that vestibule as the Darknut combat component.
-            if(!s_arenaCombat)return;
-            start=s_arenaCombatPosition;
-            if(!dry_arena_floor(start,250,20000))return;
-        } else if(!dry_arena_floor(start,60,100))return;
+        if(!dry_arena_floor(start,60,100))return;
         s_reachableFloor.seed(start,unsigned(s_eliteFloors.size()));
     }
     s_reachableFloor.build(s_eliteFloors,128);

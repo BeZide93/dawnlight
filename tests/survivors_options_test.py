@@ -101,6 +101,7 @@ struct Service{
  ModResult pane_add_rml(ModContext*,UiElementHandle,const char*,UiElementHandle* handle){if(handle)*handle=99;return MOD_OK;}
  ModResult elem_set_class(ModContext*,UiElementHandle,const char*,bool){return MOD_OK;}
  ModResult pane_add_control(ModContext*,UiElementHandle pane,const UiControlDesc* c,UiElementHandle*){controls.push_back(*c);controlPanes.push_back(pane);return MOD_OK;}
+ ModResult pane_add_section(ModContext*,UiElementHandle,const char*){return MOD_OK;}
  ModResult pane_add_text(ModContext*,UiElementHandle,const char*,UiElementHandle* handle){if(handle)*handle=100;return MOD_OK;}
 }service;auto* svc_ui=&service;
 ModResult build_reset_scores(UiElementHandle){return MOD_OK;}

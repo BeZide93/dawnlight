@@ -54,7 +54,7 @@ void cell(float x,float z,float size=500){
  s_eliteFloorArea+=size*size;
 }
 void mesh(){s_eliteFloors.clear();s_eliteFloorArea=0;for(int x=-3000;x<3000;x+=500)for(int z=-3000;z<3000;z+=500)cell(float(x),float(z));}
-unsigned s_map=1;bool s_arenaMeshReady=true,s_arenaSpawn=true;cXyz s_arenaSpawnPosition,s_arenaCombatPosition;bool s_arenaCombat=true;
+unsigned s_map=1;bool s_arenaMeshReady=true,s_arenaSpawn=true;cXyz s_arenaSpawnPosition;
 '''
 main=r'''
 int main(){
@@ -129,17 +129,16 @@ int main(){
   assert(arena_distribution_ready()&&!reachable_arena_floor({1500,100,0}));
   assert(reachable_arena_floor({300,0,0}));
  }
- // Darknut's loading checkpoint lies outside the sealed door. The authored
- // boss stands inside: all map-wide samples must come from that side instead.
- s_map=0;terrain=6;mesh();s_arenaSpawnPosition={0,0,0};s_arenaCombatPosition={1500,0,0};
- s_arenaCombat=false;clear_reachable_floor();update_reachable_floor();assert(s_reachableFloor.empty()&&!arena_distribution_ready());
- s_arenaCombat=true;grow();assert(reachable_arena_floor({1500,0,0})&&!reachable_arena_floor({300,0,0}));
+ // Darknut uses the finalized post-entry checkpoint on the arena side of
+ // the sealed door, rather than the early loading checkpoint outside it.
+ s_map=0;terrain=6;mesh();s_arenaSpawnPosition={1500,0,0};clear_reachable_floor();
+ grow();assert(reachable_arena_floor({1500,0,0})&&!reachable_arena_floor({300,0,0}));
  for(unsigned n=0;n<30;++n){
   unsigned frames=0;while(!sample_reachable_arena_floor(sampled)){update_reachable_floor();assert(++frames<1000);}
   assert(sampled.x>700);
  }
- // Invalid authored ground does not fall back to the wrong entrance side.
- s_arenaCombatPosition={4000,0,0};clear_reachable_floor();update_reachable_floor();assert(!arena_distribution_ready());
+ // Invalid checkpoint ground must not publish any spawn component.
+ s_arenaSpawnPosition={4000,0,0};clear_reachable_floor();update_reachable_floor();assert(!arena_distribution_ready());
  std::cout<<"Survivors ground: water, bridges, ledges, gaps, slopes, footprints and barriers passed\n";
 }
 '''

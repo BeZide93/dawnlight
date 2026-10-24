@@ -46,6 +46,7 @@ struct Service {
  ModResult elem_set_text(ModContext*,UiElementHandle h,const char* s){text[h]=s;return MOD_OK;}
  ModResult elem_set_rml(ModContext* c,UiElementHandle h,const char* s){return elem_set_text(c,h,s);}
  ModResult elem_set_visible(ModContext*,UiElementHandle h,bool v){visible[h]=v;return MOD_OK;}
+ ModResult pane_add_section(ModContext*,UiElementHandle,const char*){return MOD_OK;}
  ModResult pane_add_text(ModContext*,UiElementHandle,const char* s,UiElementHandle* h){if(h){*h=nextHandle++;text[*h]=s;}return MOD_OK;}
  ModResult pane_add_rml(ModContext* c,UiElementHandle p,const char* s,UiElementHandle* h){return pane_add_text(c,p,s,h);}
  ModResult pane_add_row(ModContext*,UiElementHandle,const UiRowDesc*,UiElementHandle* h){*h=nextHandle++;return MOD_OK;}

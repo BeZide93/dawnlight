@@ -1809,8 +1809,16 @@ void update_survivors() {
     update_arena_safety(link);
     if (s_run.phase == Phase::Loading) {
         // Never freeze a falling or partially initialized Link in the preview.
-        if (!playable() || !arena_grounded(link)) { s_warmup=0; return; }
+        if (!playable() || link->checkPlayerDemoMode() || !arena_grounded(link)) { s_warmup=0; return; }
         if (++s_warmup < 15) return;
+        if(s_map==0) {
+            // The first grounded checkpoint can be outside the entry door.
+            // Only finalize the scan anchor after Link's native entrance demo
+            // and grounded warmup have finished; no story actor is required.
+            s_arenaSpawnPosition=link->current.pos;
+            s_arenaSpawnYaw=link->shape_angle.y;s_arenaSpawn=true;
+            clear_reachable_floor();
+        }
         load_records(); s_run.phase = Phase::Ready;
         if(s_arrivingRun && s_arenaMeshReady) {s_arrivingRun=false;begin_run();}
     }

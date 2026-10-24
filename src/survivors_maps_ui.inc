@@ -327,7 +327,7 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     control.set=[](ModContext*,void*,const UiControlValue* value){set_fate_tooltips(value->bool_value);};
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
-    result=svc_ui->pane_add_text(mod_ctx,left,"Enemy Count",nullptr);
+    result=svc_ui->pane_add_section(mod_ctx,left,"Enemy Count");
     if(result!=MOD_OK)return result;
     control=UI_CONTROL_DESC_INIT;
     control.kind=UI_CONTROL_NUMBER;control.label="Max Normal Enemies";

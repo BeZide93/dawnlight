@@ -362,7 +362,7 @@ HookAction before_hub_zelda_flow(ModContext*, void* args, void* result, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 void update_hub_zelda() {
-    const bool title = survivors_title_active() && !transitioning();
+    const bool title = survivors_title_preparing();
     if (!title && !hub_zelda_enabled()) { retire_hub_zelda(); return; }
     if (!title) update_hub_zelda_gift();
     cleanup_hub_zelda();
@@ -370,9 +370,8 @@ void update_hub_zelda() {
     if (s_hubZelda != kNone || !s_hubZeldaStart || (!title && !playable()) ||
         s_progressSaving || s_hubSaveRequested) return;
     if (s_hubZeldaRetry) { --s_hubZeldaRetry; return; }
-    s_hubZeldaRetry = 30;
     cXyz anchor;
-    if (!hub_brazier_anchor(anchor)) return;
+    if (!hub_brazier_anchor(anchor) && !(title && hub_center_ground(anchor))) return;
     cXyz probe = anchor + cXyz(-320, 100, 0);
     dBgS_ObjGndChk ground; ground.SetPos(&probe);
     const float height = dComIfG_Bgsp().GroundCross(&ground);
@@ -386,5 +385,5 @@ void update_hub_zelda() {
     if (create_standalone_actor(fpcNm_NPC_ZELDA_e, params, id) == MOD_OK && id != kNone) {
         s_hubZelda = id;
         s_hubZeldaRetiring = s_hubZeldaRewardPending = false;
-    }
+    } else s_hubZeldaRetry = 30;
 }

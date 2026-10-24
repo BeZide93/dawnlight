@@ -34,6 +34,7 @@ struct scene_class{int name=fpcNm_OPENING_SCENE_e;}scene;
 using Scene=scene_class;
 bool transition=false,resetting=false,returning=false;
 bool transitioning(){return transition;}
+bool nextStage=false;bool dComIfGp_isEnableNextStage(){return nextStage;}
 namespace mDoRst {bool isReset(){return resetting;}bool isReturnToMenu(){return returning;}}
 unsigned reloads=0;bool reloadSelected=false;
 int dComIfG_changeOpeningScene(Scene*,int name){assert(name==fpcNm_OPENING_SCENE_e);++reloads;reloadSelected=s_active;return 1;}
@@ -70,6 +71,11 @@ struct dBgS_ObjGndChk{cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 float floorY=-400;
 struct Bg{float GroundCross(dBgS_ObjGndChk* p){assert(p->pos.x==0&&((p->pos.y==-300&&p->pos.z==260)||(p->pos.y==600&&p->pos.z==0)));return floorY;}}bg;
 Bg& dComIfG_Bgsp(){return bg;}
+bool hub_center_ground(cXyz& anchor){
+ cXyz probe(0,link.current.pos.y+1000,0);dBgS_ObjGndChk ground;ground.SetPos(&probe);
+ const float height=dComIfG_Bgsp().GroundCross(&ground);
+ if(!std::isfinite(height)||height<=-1.e8f)return false;anchor.set(0,height,0);return true;
+}
 struct dCamera_c{cXyz mEye,mCenter,mUp;float fov=0;int sets=0;struct{void Val(cXyz){}}mDirection;
  void Set(cXyz c,cXyz e,float f,s16 bank){assert(bank==0);mCenter=c;mEye=e;fov=f;++sets;}}camera;
 int s_hubZelda=12;
@@ -86,7 +92,7 @@ int main(){
   TitleFlow flow;flow.play();
   for(int i=0;i<rate*5;++i)flow.tick(1.f/rate,false,false,false,false);
   assert(flow.camera()==0&&!flow.logo);
-  for(int i=0;i<rate*4;++i)flow.tick(1.f/rate,true,false,false,false);
+  for(int i=0;i<rate*6;++i)flow.tick(1.f/rate,true,false,false,false);
   assert(flow.camera()==1&&!flow.logo&&flow.armed);
   flow.tick(1.f/rate,true,false,true,true);assert(flow.logo&&!flow.show_logo());
   flow.tick(1.f/rate,true,false,false,false);assert(flow.show_logo());
@@ -163,7 +169,12 @@ int main(){
  assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_controls(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
- assert(camera.sets==2&&camera.mEye.x==360&&camera.mEye.y==-210&&camera.mEye.z==570&&camera.fov==40);
+ assert(camera.sets==2&&std::abs(camera.mEye.x-std::sqrt(360.f*360+310.f*310))<.01f&&
+  camera.mEye.y==-210&&std::abs(camera.mEye.z-260)<.01f&&camera.fov==40);
+ assert(survivors_title_preparing());
+ transition=true;assert(survivors_title_preparing()); // Fade-in does not serialize resource loads.
+ nextStage=true;assert(!survivors_title_preparing());nextStage=false;
+ resetting=true;assert(!survivors_title_preparing());resetting=false;transition=false;
  modelReady=false;assert(!title_scene_ready());modelReady=true;
  // Fall detection runs after private input. It must not replace WAIT with FALL.
  result=123;assert(before_title_fall(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==0);

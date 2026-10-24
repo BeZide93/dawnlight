@@ -62,7 +62,7 @@ void extra_property(Rml::Element* element, const char* name, const std::string& 
 #include "touch_button_visibility.inc"
 
 bool extra_controls_available(NativeTouch* controls) {
-    if (!s_extraHooksReady || !s_extraSessionEnabled || controls == nullptr || controls->mWasSuppressed ||
+    if (survivors_title_presentation_active() || !s_extraHooksReady || !s_extraSessionEnabled || controls == nullptr || controls->mWasSuppressed ||
         !s_touchApi.visible(controls)) return false;
     const auto* config = s_touchApi.config("game.enableTouchControls");
     if (config == nullptr || !static_cast<const dusk::config::ConfigVar<bool>*>(config)->getValue()) return false;
@@ -351,8 +351,11 @@ template<class Fn> bool resolve_extra(const char* name, Fn& function) {
     return true;
 }
 #include "touch_button_editor.inc"
+#include "survivors_title_touch.inc"
 
 ModResult install_native_buttons(ModError* error) {
+    const auto titleResult=initialize_title_touch(error);
+    if (titleResult!=MOD_OK) return titleResult;
     s_extraSessionEnabled = dawnlight_touch_ui_enabled();
     if (!s_extraSessionEnabled) return MOD_OK;
     // Resolve host methods rather than adding mandatory RmlUi imports. A host
@@ -402,6 +405,7 @@ ModResult install_native_buttons(ModError* error) {
     return install_extra_editor(error);
 }
 void shutdown_native_buttons() {
+    shutdown_title_touch();
     close_extra_editor();
     s_extraHooksReady = false;
     s_touchRuntimeAvailable = false;

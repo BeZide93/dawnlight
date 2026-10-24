@@ -68,7 +68,7 @@ int main(){
  update_hub_brazier(false);assert(!spawns&&!hub_brazier_anchor(anchor));
  hasLink=false;update_hub_brazier(true);assert(!rays);hasLink=true;
  for(float invalid:{-1.e9f,std::nanf("")}){
-  s_hubBrazierRetry=0;floorY=invalid;update_hub_brazier(true);assert(!spawns);
+  floorY=invalid;update_hub_brazier(true);assert(!spawns&&s_hubBrazierRetry==0);
  }
  floorY=-400;s_hubBrazierRetry=0;failSpawn=true;update_hub_brazier(true);assert(spawns==1&&s_hubBrazier==kNone);
  for(int i=0;i<30;++i){update_hub_brazier(true);}assert(spawns==1);

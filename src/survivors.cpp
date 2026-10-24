@@ -317,6 +317,7 @@ bool s_active = false, s_registered = false, s_loaded = false, s_restart = false
 // the save; only gameStart commits it after names and optional TV settings.
 bool s_saveReady = false, s_gameStarted = false;
 bool survivors_title_active();
+bool survivors_title_preparing();
 bool s_resultsStored = false, s_storeFailed = false, s_saveRequested = false;
 unsigned s_saveStartTicks = 0;
 Run s_run;
@@ -1789,6 +1790,7 @@ ModResult build_survivors_settings(ModContext* ctx,UiWindowHandle window,UiEleme
     load_option_config();
     return build_run_settings(ctx,window,left,right,data,error);
 }
+bool survivors_title_presentation_active() { return s_active && !s_gameStarted && opening_scene(); }
 bool survivors_hub_active() {return s_hub && in_arena() && s_run.phase==Phase::Ready && !s_restart;}
 void survivors_open_talents() {
     if(!survivors_hub_active() || !playable() || s_hubDeparture || s_progressSaving)return;
@@ -1813,7 +1815,7 @@ bool survivors_dark_link_active() {
 }
 void update_survivors() {
     update_title_preview();
-    update_hub_brazier((survivors_title_active() || (survivors_hub_active() && !s_hubDeparture)) && !transitioning());
+    update_hub_brazier(survivors_title_preparing() || (survivors_hub_active() && !s_hubDeparture && !transitioning()));
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
     update_survivors_registration();

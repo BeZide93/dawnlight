@@ -18,6 +18,7 @@ fixture = r'''
 using u32=uint32_t;using u8=uint8_t;using u16=uint16_t;using s16=int16_t;
 constexpr ActorId kNone=~0u;
 bool titleActive=false;bool survivors_title_active(){return titleActive;}
+bool survivors_title_preparing(){return titleActive;}
 constexpr int fpcNm_NPC_ZELDA_e=100,fpcNm_Demo_Item_e=101,dItemNo_SWORD_e=0x28,dEvtCnd_CANGETITEM_e=1,dEvtCnd_CANTALK_e=2;
 enum HookAction {HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods {template<class T>T arg(void* a,int n){return std::any_cast<T>(static_cast<std::any*>(a)[n]);}}
@@ -156,6 +157,7 @@ void dComIfGp_event_setGtItm(int n){assert(n==dItemNo_SWORD_e);}
 void dComIfGp_event_setItemPartnerId(ActorId id){assert(id==55);}
 void fopAcM_orderItemEvent(fopAc_ac_c* item,int,int){assert(item==&giftItem&&item->eventInfo.conditions==dEvtCnd_CANGETITEM_e);++giftOrders;}
 bool hub_brazier_anchor(cXyz& anchor){anchor={0,-400,0};return pedestal;}
+bool centerReady=true;bool hub_center_ground(cXyz& anchor){anchor={0,-400,0};return centerReady;}
 struct dBgS_ObjGndChk {cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 float floorHeight=-400;
 struct Background {float GroundCross(dBgS_ObjGndChk* ground){++groundCalls;assert(ground->pos.x==-320&&ground->pos.z==0);return floorHeight;}}bg;
@@ -189,7 +191,7 @@ int main(){
  s_hubSaveRequested=true;update_hub_zelda();assert(!spawnCalls);s_hubSaveRequested=false;
  pedestal=false;update_hub_zelda();assert(!spawnCalls&&!groundCalls);pedestal=true;
  for(float invalid:{-1.e9f,-100.f,std::nanf("")}){
-  s_hubZeldaRetry=0;floorHeight=invalid;update_hub_zelda();assert(!spawnCalls);
+  floorHeight=invalid;update_hub_zelda();assert(!spawnCalls&&s_hubZeldaRetry==0);
  }
  floorHeight=-400;failSpawn=true;s_hubZeldaRetry=0;update_hub_zelda();assert(spawnCalls==1&&s_hubZelda==kNone);
  for(int i=0;i<30;++i){update_hub_zelda();}assert(spawnCalls==1);
@@ -384,9 +386,10 @@ int main(){
  giftLive=false;cleanup_hub_zelda_gift();assert(!hub_zelda_gift_busy()&&rewardCalls==1);
  // Title presentation may spawn Zelda before any playable hub/save exists.
  // She remains decorative: no talk, gift, talents or gameplay readiness.
- titleActive=true;play=false;s_hubZeldaRetry=0;
+ titleActive=true;play=false;s_hubZeldaRetry=0;pedestal=false;
+ centerReady=false;update_hub_zelda();assert(s_hubZeldaRetry==0);centerReady=true;
  const auto titleSpawns=spawnCalls;const auto titleDeletes=deleteCalls;
- update_hub_zelda();assert(spawnCalls==titleSpawns+1&&creating&&!hub_zelda_enabled());
+ update_hub_zelda();assert(spawnCalls==titleSpawns+1&&creating&&!hub_zelda_enabled()&&!pedestal);
  creating=false;live=true;zelda.attention_info.flags=3;
  before_hub_zelda_param(nullptr,ownArgs,nullptr,nullptr);
  after_hub_zelda_param(nullptr,ownArgs,nullptr,nullptr);

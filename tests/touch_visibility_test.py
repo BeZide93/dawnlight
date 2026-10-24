@@ -27,6 +27,7 @@ namespace dusk::config {
 }
 dusk::config::ConfigVar<bool> touchConfig;
 bool configPresent=true;
+bool title=false;bool survivors_title_presentation_active(){return title;}
 struct NativeTouch {bool mWasSuppressed=false,visible=true;Rml::Element* mActionBar=nullptr;};
 struct {
  bool (*visible)(const NativeTouch*)=[](const NativeTouch* p){return p->visible;};
@@ -61,7 +62,9 @@ bool s_midnaTouchPending=false,s_midnaTouchTriggered=false;
 // PRUNE
 int main(){
  Rml::Element bar,utility,host;bar.child=&utility;
- NativeTouch controls;controls.mActionBar=&host;enabled.fill(true);
+ NativeTouch controls;
+ controls.mActionBar=&host;enabled.fill(true);
+ title=true;assert(!extra_controls_available(&controls));title=false;
  assert(extra_controls_available(&controls));
  for(const char* name:{"F_SP102","title","opening","name",""}){
   stage=name;assert(!extra_controls_available(&controls));

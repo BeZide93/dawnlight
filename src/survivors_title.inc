@@ -42,16 +42,14 @@ bool survivors_title_active() {
         !arena_matches(0,dComIfGp_getStartStageName(),dComIfGp_getStartStageRoomNo())) return false;
     return opening_scene() != nullptr;
 }
+bool survivors_title_preparing() {
+    // Resource creation can overlap the native fade-in. Never start a second
+    // scene's actors while an outgoing stage/reset request is pending.
+    return survivors_title_active() && !s_titleReloadPending && !dComIfGp_isEnableNextStage() &&
+        !mDoRst::isReset() && !mDoRst::isReturnToMenu();
+}
 bool title_floor_anchor(cXyz& anchor) {
-    if (hub_brazier_anchor(anchor)) return true;
-    auto* link = daAlink_getAlinkActorClass();
-    if (!link) return false;
-    cXyz probe(0,link->current.pos.y+1000,0);
-    dBgS_ObjGndChk ground; ground.SetPos(&probe);
-    const float height = dComIfG_Bgsp().GroundCross(&ground);
-    if (!std::isfinite(height) || height <= -1.e8f) return false;
-    anchor.set(0,height,0);
-    return true;
+    return hub_brazier_anchor(anchor) || hub_center_ground(anchor);
 }
 bool title_scene_ready() {
     auto* link = daAlink_getAlinkActorClass();
@@ -170,8 +168,14 @@ void after_title_camera(ModContext*, void* args, void*, void*) {
     // Finish the host menu fade first, then ease towards Link while keeping
     // the bowl and Zelda in frame. The native camera still owns the viewport.
     const float t = s_titleFlow.camera();
-    camera->Set(anchor+cXyz(-70+35*t,110-25*t,80+65*t),
-                anchor+cXyz(650-290*t,330-140*t,900-330*t),45.f-5.f*t,s16(0));
+    const float orbit = s_titleFlow.orbit();
+    const float startAngle = std::atan2(360.f,310.f);
+    const float angle = startAngle+(1.57079632679f-startAngle)*orbit;
+    const float radius = std::sqrt(360.f*360.f+310.f*310.f);
+    const cXyz eye = orbit>0 ? cXyz(radius*std::sin(angle),190,260+radius*std::cos(angle)) :
+        cXyz(650-290*t,330-140*t,900-330*t);
+    camera->Set(anchor+cXyz(-70+35*t+35*orbit,110-25*t+5*orbit,80+65*t+35*orbit),
+                anchor+eye,45.f-5.f*t,s16(0));
     camera->mUp.set(0,1,0);
     camera->mDirection.Val(camera->mEye-camera->mCenter);
 }

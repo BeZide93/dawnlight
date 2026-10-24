@@ -17,5 +17,6 @@ bool survivors_save_screen_active();
 bool survivors_dark_link_active();
 ModResult build_survivors_settings(ModContext*, UiWindowHandle, UiElementHandle, UiElementHandle, void*, ModError*);
 bool survivors_hub_active();
+bool survivors_title_presentation_active();
 void survivors_open_talents();
 } // namespace dawnlight

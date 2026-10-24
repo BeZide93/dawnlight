@@ -5,15 +5,18 @@
 A 20-minute survival mode included in `dawnlight_mod.dusk`. Select **Hyrule
 Survivors** in Dusklight's game-mode menu and create/load its separate save.
 Its title screen uses the hub as a live scene: Link kneels before the enlarged
-fire bowl, with Zelda visible beside it in a fixed three-quarter camera view.
+fire bowl, with Zelda visible beside it.
 The scene previews behind the game-mode menu. Clicking **Hyrule Survivors**
-first fades out the menu, then pans and zooms the camera towards Link. Once the
+first fades out the menu, then pans and zooms the camera towards Link and arcs
+around to show him from the side. Only A and B remain in the touch UI. Once the
 camera settles, a fresh button press (including touch controls) reveals the
-native logo and A/Start prompt. Holding the selection button does not reveal it. Switching modes and
-back reloads the preview. Link rests on his right knee with his left foot planted
+native logo and A/Start prompt. Holding the selection button does not reveal it.
+Switching modes and back reloads the preview. Link rests on his right knee with his left foot planted
 in front, his hand above the raised knee and his head slightly bowed. He appears
 only once the grounded pose and hub actors are ready. Native file selection
-remains available after Start.
+remains available after Start. Zelda and the bowl load in parallel as soon as
+the room's collision is ready, including during fade-in; only failed spawn
+requests incur a retry delay.
 This presentation does not start a run or grant/save items.
 You arrive in the freely walkable Darknut Arena hub. A ceremonial oil bowl
 (`Obj_otubo`), enlarged to twice its native size and used as a fire bowl, stands

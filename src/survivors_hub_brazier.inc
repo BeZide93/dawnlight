@@ -86,6 +86,18 @@ bool hub_brazier_anchor(cXyz& position) {
     position = actor->current.pos;
     return true;
 }
+// Available as soon as the room's collision and Link exist. Decorative actors
+// can use this together instead of waiting for each other's resource loads.
+bool hub_center_ground(cXyz& position) {
+    auto* link = daAlink_getAlinkActorClass();
+    if (!link) return false;
+    cXyz probe(0, link->current.pos.y + 1000, 0);
+    dBgS_ObjGndChk ground; ground.SetPos(&probe);
+    const float height = dComIfG_Bgsp().GroundCross(&ground);
+    if (!std::isfinite(height) || height <= -1.e8f) return false;
+    position.set(0,height,0);
+    return true;
+}
 void update_hub_brazier(bool enabled) {
     if (!enabled) {
         s_hubBrazierRetiring = true; s_hubBrazierRetry = 0;
@@ -102,18 +114,15 @@ void update_hub_brazier(bool enabled) {
     if (!enabled || s_hubBrazier != kNone) return;
     s_hubBrazierRetiring = false;
     if (s_hubBrazierRetry) {--s_hubBrazierRetry; return;}
-    s_hubBrazierRetry = 30;
-    auto* link = daAlink_getAlinkActorClass();
-    if (!link) return;
-    cXyz probe(0, link->current.pos.y + 1000, 0);
-    dBgS_ObjGndChk ground; ground.SetPos(&probe);
-    const float height = dComIfG_Bgsp().GroundCross(&ground);
-    if (!std::isfinite(height) || height <= -1.e8f) return;
+    cXyz center;
+    if (!hub_center_ground(center)) return;
     const ActorSpawnParams params{
         .parameters=0, .argument=-1, .room_num=arenas[0].room,
-        .position={0,height,0}, .angle={0,0,0},
+        .position={center.x,center.y,center.z}, .angle={0,0,0},
         .scale={kHubBrazierScale,kHubBrazierScale,kHubBrazierScale}, .create_function=nullptr,
     };
     ActorId id = kNone;
-    if (create_standalone_actor(fpcNm_OBJ_OILTUBO_e, params, id) == MOD_OK) s_hubBrazier = id;
+    if (create_standalone_actor(fpcNm_OBJ_OILTUBO_e, params, id) == MOD_OK && id != kNone)
+        s_hubBrazier = id;
+    else s_hubBrazierRetry = 30; // Back off only after an actual spawn failure.
 }

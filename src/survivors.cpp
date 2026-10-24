@@ -32,6 +32,8 @@
 #include "survivors_barriers.hpp"
 #include "ganondorf_barrier.hpp"
 #include "survivors_locomotion.hpp"
+#include "survivors_title_flow.hpp"
+#include "survivors_title_pose.hpp"
 #include "dual_wield_animation.hpp"
 #include "enemy_spawner.hpp"
 #include "bow_fire_resource.hpp"
@@ -198,6 +200,7 @@ DEFINE_HOOK_SYMBOL("daTitle_c::Draw", int(void*), SurvivorsTitleDraw);
 DEFINE_HOOK(&daAlink_c::procWait, SurvivorsTitleWait);
 DEFINE_HOOK(&daAlink_c::setStickData, SurvivorsTitleInput);
 DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, SurvivorsTitleFall);
+DEFINE_HOOK(&daAlink_c::modelCallBack, SurvivorsTitleJoint);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
@@ -791,6 +794,7 @@ void finish(bool won) {
 #include "survivors_hub_brazier.inc"
 #include "survivors_hub_zelda.inc"
 #include "survivors_title.inc"
+#include "survivors_title_pose.inc"
 void add_orb(cXyz position, unsigned value) {
     position.y -= 20;
     cXyz probe = position; probe.y += 500;
@@ -1923,6 +1927,9 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsTitleWait, before_title_wait);
     POST(SurvivorsTitleInput, after_title_input);
     PRE(SurvivorsTitleFall, before_title_fall);
+    PRE(SurvivorsTitleJoint, before_title_joint);
+    PRE(SurvivorsLocomotionModel, before_title_model);
+    POST(SurvivorsLocomotionModel, after_title_model);
     PRE(SurvivorsDraw, before_title_player_draw);
     PRE(SurvivorsArenaExit, before_arena_exit);
     PRE(SurvivorsArenaRestart, before_arena_restart);

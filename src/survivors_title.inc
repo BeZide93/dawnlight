@@ -1,14 +1,18 @@
 // Keep the native OPENING_SCENE and TITLE actor (logo, Start, NAME_SCENE).
 // Only its stage and presentation change. A title is never a started run or
 // a loaded save; gameplay, rewards, talent UI and save callbacks stay gated.
-bool s_titleLaunched = false, s_titleReloadPending = false;
+bool s_titleReloadPending = false;
+TitleFlow s_titleFlow;
+auto s_titleClock = std::chrono::steady_clock::now();
+bool title_model_ready(daAlink_c* link);
 ActorId s_titlePoseOwner = kNone;
 scene_class* opening_scene() {
     auto* scene = fopScnM_SearchByID(dStage_roomControl_c::getProcID());
     return scene && fpcM_GetName(scene) == fpcNm_OPENING_SCENE_e ? scene : nullptr;
 }
 void reset_title_presentation() {
-    s_titleLaunched = false;
+    s_titleFlow = {};
+    s_titleClock = std::chrono::steady_clock::now();
     s_titlePoseOwner = kNone;
 }
 void request_title_preview() {
@@ -19,7 +23,8 @@ void request_title_preview() {
     s_titleReloadPending = s_titleReloadPending || opening_scene() != nullptr;
 }
 ModResult play_survivors(void*, ModError*) {
-    s_titleLaunched = true;
+    s_titleFlow.play();
+    s_titleClock = std::chrono::steady_clock::now();
     return MOD_OK; // Keep the prepared preview actors; Play is not activation.
 }
 void update_title_preview() {
@@ -51,12 +56,12 @@ bool title_floor_anchor(cXyz& anchor) {
 bool title_scene_ready() {
     auto* link = daAlink_getAlinkActorClass();
     cXyz anchor;
-    return !s_titleReloadPending && link && s_titlePoseOwner == fopAcM_GetID(link) &&
+    return !s_titleReloadPending && link && s_titlePoseOwner == fopAcM_GetID(link) && title_model_ready(link) &&
         hub_brazier_anchor(anchor) && owned_hub_zelda(actor_by_id(s_hubZelda));
 }
 bool title_ui_blocked() {
     return s_active && !s_gameStarted && opening_scene() &&
-        !(s_titleLaunched && survivors_title_active() && title_scene_ready());
+        !(s_titleFlow.show_logo() && survivors_title_active() && title_scene_ready());
 }
 HookAction before_title_controls(ModContext*, void*, void*, void*) {
     // Gate the input/scene-changing procs as well as drawing. Let loadWait_proc
@@ -141,12 +146,12 @@ HookAction before_title_wait(ModContext*, void* args, void* result, void*) {
             s_titlePoseOwner = fopAcM_GetID(link);
         }
     }
-    // Native GET_READY_SIT enters TRES_OPEN_SMALL at frame 36, already kneeling.
-    // Hold that pose instead of playing chest-opening or item-get event logic.
-    if (!link->checkUnderMove0BckNoArc(daAlink_c::ANM_TRES_OPEN_SMALL))
-        link->setSingleAnime(daAlink_c::ANM_TRES_OPEN_SMALL,0.f,36.f,-1,0.f);
+    // The title model overlay authors the one-knee rest pose from idle.
+    // Keep native chest-opening and item-get procedures out of this scene.
+    if (!link->checkUnderMove0BckNoArc(daAlink_c::ANM_WAIT))
+        link->setSingleAnime(daAlink_c::ANM_WAIT,0.f,0.f,-1,0.f);
     for (auto* ctrl : {&link->mUnderFrameCtrl[0],&link->mUpperFrameCtrl[0]}) {
-        ctrl->setFrame(36.f); ctrl->setRate(0.f);
+        ctrl->setFrame(0.f); ctrl->setRate(0.f);
     }
     *static_cast<int*>(result) = 1;
     return HOOK_SKIP_ORIGINAL;
@@ -155,9 +160,18 @@ void after_title_camera(ModContext*, void* args, void*, void*) {
     auto* camera = mods::arg<dCamera_c*>(args,0);
     cXyz anchor;
     if (!survivors_title_active() || !camera || !title_floor_anchor(anchor)) return;
-    // Three-quarter view: Link in front, bowl in the middle, Zelda to its left.
-    // Native Run still maintains viewport, interpolation, audio and room state.
-    camera->Set(anchor+cXyz(-70,110,80),anchor+cXyz(650,330,900),45.f,s16(0));
+    const auto now = std::chrono::steady_clock::now();
+    const float seconds = std::chrono::duration<float>(now-s_titleClock).count();
+    s_titleClock = now;
+    // Native pad input includes keyboard bindings and virtual touch buttons.
+    const bool held = mDoCPd_c::getHold(PAD_1) != 0;
+    const bool pressed = mDoCPd_c::getTrig(PAD_1) != 0;
+    s_titleFlow.tick(seconds, title_scene_ready() && !transitioning(), ui_visible(), held, pressed);
+    // Finish the host menu fade first, then ease towards Link while keeping
+    // the bowl and Zelda in frame. The native camera still owns the viewport.
+    const float t = s_titleFlow.camera();
+    camera->Set(anchor+cXyz(-70+35*t,110-25*t,80+65*t),
+                anchor+cXyz(650-290*t,330-140*t,900-330*t),45.f-5.f*t,s16(0));
     camera->mUp.set(0,1,0);
     camera->mDirection.Val(camera->mEye-camera->mCenter);
 }
@@ -165,6 +179,6 @@ HookAction before_title_logo(ModContext*, void*, void* result, void*) {
     if (!survivors_title_active()) return HOOK_CONTINUE;
     // Replace only the missing STB cue. Native A/Start fast-forward, logo
     // animation, keyWait and NAME_SCENE transitions still run unchanged.
-    *static_cast<int*>(result) = s_titleLaunched && title_scene_ready() ? 1 : -1;
+    *static_cast<int*>(result) = s_titleFlow.show_logo() && title_scene_ready() ? 1 : -1;
     return HOOK_SKIP_ORIGINAL;
 }

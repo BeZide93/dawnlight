@@ -1,11 +1,85 @@
 // Keep the native OPENING_SCENE and TITLE actor (logo, Start, NAME_SCENE).
 // Only its stage and presentation change. A title is never a started run or
 // a loaded save; gameplay, rewards, talent UI and save callbacks stay gated.
+bool s_titleLaunched = false, s_titleReloadPending = false;
+ActorId s_titlePoseOwner = kNone;
+scene_class* opening_scene() {
+    auto* scene = fopScnM_SearchByID(dStage_roomControl_c::getProcID());
+    return scene && fpcM_GetName(scene) == fpcNm_OPENING_SCENE_e ? scene : nullptr;
+}
+void reset_title_presentation() {
+    s_titleLaunched = false;
+    s_titlePoseOwner = kNone;
+}
+void request_title_preview() {
+    reset_title_presentation();
+    // Carousel selection changes callbacks/save namespace, NOT the scene.
+    // Startup's LOGO scene already requests an opening; only reload an existing
+    // opening, and retain the request across rapid changes during its fade.
+    s_titleReloadPending = s_titleReloadPending || opening_scene() != nullptr;
+}
+ModResult play_survivors(void*, ModError*) {
+    s_titleLaunched = true;
+    return MOD_OK; // Keep the prepared preview actors; Play is not activation.
+}
+void update_title_preview() {
+    if (!s_titleReloadPending || transitioning() || mDoRst::isReset() || mDoRst::isReturnToMenu()) return;
+    auto* scene = opening_scene();
+    if (!scene) return;
+    s_titleReloadPending = false;
+    s_titlePoseOwner = kNone;
+    // Preserve the host menu. The normal opening hook chooses hub or vanilla
+    // from the final selected mode, also when Survivors has been deselected.
+    dComIfG_changeOpeningScene(scene,fpcNm_OPENING_SCENE_e);
+}
 bool survivors_title_active() {
     if (!s_active || s_gameStarted ||
         !arena_matches(0,dComIfGp_getStartStageName(),dComIfGp_getStartStageRoomNo())) return false;
-    auto* scene = fopScnM_SearchByID(dStage_roomControl_c::getProcID());
-    return scene && fpcM_GetName(scene) == fpcNm_OPENING_SCENE_e;
+    return opening_scene() != nullptr;
+}
+bool title_floor_anchor(cXyz& anchor) {
+    if (hub_brazier_anchor(anchor)) return true;
+    auto* link = daAlink_getAlinkActorClass();
+    if (!link) return false;
+    cXyz probe(0,link->current.pos.y+1000,0);
+    dBgS_ObjGndChk ground; ground.SetPos(&probe);
+    const float height = dComIfG_Bgsp().GroundCross(&ground);
+    if (!std::isfinite(height) || height <= -1.e8f) return false;
+    anchor.set(0,height,0);
+    return true;
+}
+bool title_scene_ready() {
+    auto* link = daAlink_getAlinkActorClass();
+    cXyz anchor;
+    return !s_titleReloadPending && link && s_titlePoseOwner == fopAcM_GetID(link) &&
+        hub_brazier_anchor(anchor) && owned_hub_zelda(actor_by_id(s_hubZelda));
+}
+bool title_ui_blocked() {
+    return s_active && !s_gameStarted && opening_scene() &&
+        !(s_titleLaunched && survivors_title_active() && title_scene_ready());
+}
+HookAction before_title_controls(ModContext*, void*, void*, void*) {
+    // Gate the input/scene-changing procs as well as drawing. Let loadWait_proc
+    // finish native asynchronous UI initialization even behind prelaunch.
+    return title_ui_blocked() ? HOOK_SKIP_ORIGINAL : HOOK_CONTINUE;
+}
+HookAction before_title_ui(ModContext*, void*, void* result, void*) {
+    if (!title_ui_blocked()) return HOOK_CONTINUE;
+    *static_cast<int*>(result) = 1;
+    return HOOK_SKIP_ORIGINAL;
+}
+HookAction before_title_player_draw(ModContext*, void* args, void* result, void*) {
+    auto* link = mods::arg<daAlink_c*>(args,0);
+    if (!survivors_title_active() || link != daAlink_getAlinkActorClass() || title_scene_ready()) return HOOK_CONTINUE;
+    *static_cast<int*>(result) = 1;
+    return HOOK_SKIP_ORIGINAL;
+}
+HookAction before_title_fall(ModContext*, void* args, void* result, void*) {
+    if (!survivors_title_active() || mods::arg<daAlink_c*>(args,0) != daAlink_getAlinkActorClass()) return HOOK_CONTINUE;
+    // checkAutoJumpAction runs AFTER setStickData and otherwise replaces WAIT
+    // with a fall while initial ground collision is still being established.
+    *static_cast<BOOL*>(result) = FALSE;
+    return HOOK_SKIP_ORIGINAL;
 }
 HookAction before_title_stage(ModContext*, void* args, void*, void*) {
     const auto* stage = mods::arg<const char*>(args,0);
@@ -55,7 +129,8 @@ HookAction before_title_wait(ModContext*, void* args, void* result, void*) {
     auto* link = mods::arg<daAlink_c*>(args,0);
     if (!survivors_title_active() || !link || link != daAlink_getAlinkActorClass()) return HOOK_CONTINUE;
     cXyz anchor;
-    if (hub_brazier_anchor(anchor)) {
+    s_titlePoseOwner = kNone;
+    if (title_floor_anchor(anchor)) {
         cXyz position = anchor + cXyz(0,0,260);
         cXyz probe = position + cXyz(0,100,0);
         dBgS_ObjGndChk ground; ground.SetPos(&probe);
@@ -63,6 +138,7 @@ HookAction before_title_wait(ModContext*, void* args, void* result, void*) {
         if (std::isfinite(height) && height > -1.e8f && std::abs(height-anchor.y) <= 50) {
             position.y = height;
             link->setPlayerPosAndAngle(&position,static_cast<s16>(0x8000),true);
+            s_titlePoseOwner = fopAcM_GetID(link);
         }
     }
     // Native GET_READY_SIT enters TRES_OPEN_SMALL at frame 36, already kneeling.
@@ -78,7 +154,7 @@ HookAction before_title_wait(ModContext*, void* args, void* result, void*) {
 void after_title_camera(ModContext*, void* args, void*, void*) {
     auto* camera = mods::arg<dCamera_c*>(args,0);
     cXyz anchor;
-    if (!survivors_title_active() || !camera || !hub_brazier_anchor(anchor)) return;
+    if (!survivors_title_active() || !camera || !title_floor_anchor(anchor)) return;
     // Three-quarter view: Link in front, bowl in the middle, Zelda to its left.
     // Native Run still maintains viewport, interpolation, audio and room state.
     camera->Set(anchor+cXyz(-70,110,80),anchor+cXyz(650,330,900),45.f,s16(0));
@@ -87,10 +163,8 @@ void after_title_camera(ModContext*, void* args, void*, void*) {
 }
 HookAction before_title_logo(ModContext*, void*, void* result, void*) {
     if (!survivors_title_active()) return HOOK_CONTINUE;
-    cXyz anchor;
     // Replace only the missing STB cue. Native A/Start fast-forward, logo
     // animation, keyWait and NAME_SCENE transitions still run unchanged.
-    *static_cast<int*>(result) = hub_brazier_anchor(anchor) &&
-        owned_hub_zelda(actor_by_id(s_hubZelda)) ? 1 : -1;
+    *static_cast<int*>(result) = s_titleLaunched && title_scene_ready() ? 1 : -1;
     return HOOK_SKIP_ORIGINAL;
 }

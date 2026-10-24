@@ -75,6 +75,7 @@ bool s_hub=true,s_hubDeparture=false,s_hubDoorStarted=false,s_arrivingRun=false,
 ActorId s_hubDoor=kNone;unsigned s_hubDoorTicks=0;
 unsigned s_window=0,s_refreshChoices=0;
 void retire_hub_zelda(){}
+void request_title_preview(){}void reset_title_presentation(){}
 void load_option_config(){}void update_hub_brazier(bool){}
 void update_survivors_equipment_chest(bool,int,int){}
 

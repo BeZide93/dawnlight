@@ -13,6 +13,10 @@ fixture=r'''
 #include "survivors_maps.hpp"
 using namespace dawnlight::survivors;
 using s8=signed char;using s16=short;using u32=unsigned;
+using ActorId=unsigned;constexpr ActorId kNone=~0u;
+using BOOL=int;constexpr BOOL FALSE=0;
+using ModResult=int;constexpr ModResult MOD_OK=0;
+struct ModError{};
 struct ModContext{};
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
 namespace mods{
@@ -24,7 +28,13 @@ bool s_active=true,s_gameStarted=false,hasScene=true,bowlLive=true,zeldaLive=tru
 const char* stageName=arenas[0].stage;s8 roomNo=arenas[0].room;
 const char* dComIfGp_getStartStageName(){return stageName;}
 s8 dComIfGp_getStartStageRoomNo(){return roomNo;}
-struct Scene{int name=fpcNm_OPENING_SCENE_e;}scene;
+struct scene_class{int name=fpcNm_OPENING_SCENE_e;}scene;
+using Scene=scene_class;
+bool transition=false,resetting=false,returning=false;
+bool transitioning(){return transition;}
+namespace mDoRst {bool isReset(){return resetting;}bool isReturnToMenu(){return returning;}}
+unsigned reloads=0;bool reloadSelected=false;
+int dComIfG_changeOpeningScene(Scene*,int name){assert(name==fpcNm_OPENING_SCENE_e);++reloads;reloadSelected=s_active;return 1;}
 struct dStage_roomControl_c{static int getProcID(){return 17;}};
 Scene* fopScnM_SearchByID(int id){assert(id==17);return hasScene?&scene:nullptr;}
 int fpcM_GetName(Scene* s){return s->name;}
@@ -40,6 +50,7 @@ bool arena_story_actor(int n){return n==99;}
 unsigned freed=0;void JKRFree(void*){++freed;}
 struct Frame{float frame=0,rate=1;void setFrame(float f){frame=f;}void setRate(float f){rate=f;}};
 struct daAlink_c{
+ ActorId id=7;struct{cXyz pos{0,-400,260};}current;
  enum{PROC_WAIT=1,ANM_TRES_OPEN_SMALL=207};int mProcID=99,animation=0,sets=0;
  unsigned mItemButton=7,mItemTrigger=3;
  float mStickValue=1,mMoveValue=1,mNormalSpeed=4,speedF=4;
@@ -51,10 +62,11 @@ struct daAlink_c{
  void setPlayerPosAndAngle(const cXyz* p,s16 a,bool force){assert(force);position=*p;yaw=a;}
 }link,foreign;
 daAlink_c* daAlink_getAlinkActorClass(){return &link;}
+ActorId fopAcM_GetID(daAlink_c* a){return a->id;}
 bool hub_brazier_anchor(cXyz& p){p={0,-400,0};return bowlLive;}
 struct dBgS_ObjGndChk{cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 float floorY=-400;
-struct Bg{float GroundCross(dBgS_ObjGndChk* p){assert(p->pos.x==0&&p->pos.y==-300&&p->pos.z==260);return floorY;}}bg;
+struct Bg{float GroundCross(dBgS_ObjGndChk* p){assert(p->pos.x==0&&((p->pos.y==-300&&p->pos.z==260)||(p->pos.y==600&&p->pos.z==0)));return floorY;}}bg;
 Bg& dComIfG_Bgsp(){return bg;}
 struct dCamera_c{cXyz mEye,mCenter,mUp;float fov=0;int sets=0;struct{void Val(cXyz){}}mDirection;
  void Set(cXyz c,cXyz e,float f,s16 bank){assert(bank==0);mCenter=c;mEye=e;fov=f;++sets;}}camera;
@@ -108,13 +120,55 @@ int main(){
  assert(camera.sets==1&&camera.mEye.x==650&&camera.mEye.y==-70&&camera.mCenter.x==-70&&camera.fov==45);
  zeldaLive=false;assert(before_title_logo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-1);
  zeldaLive=true;bowlLive=false;before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==-1);
- bowlLive=true;before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==1);
+ bowlLive=true;floorY=-400;
+ // Selection alone never starts logo/input, even if native A/Start is pressed.
+ before_title_wait(nullptr,linkArgs,&result,nullptr);
+ assert(title_scene_ready()&&!s_titleLaunched);
+ before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==-1);
+ assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(before_title_controls(nullptr,nullptr,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
+ const auto poseOwner=s_titlePoseOwner;
+ assert(play_survivors(nullptr,nullptr)==MOD_OK&&s_titleLaunched&&s_titlePoseOwner==poseOwner);
+ before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==1);
+ assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ assert(before_title_controls(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+ // Fall detection runs after private input. It must not replace WAIT with FALL.
+ result=123;assert(before_title_fall(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==0);
+ assert(before_title_fall(nullptr,otherArgs,&result,nullptr)==HOOK_CONTINUE);
+ assert(before_title_player_draw(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
+ bowlLive=false;floorY=std::nanf("");
+ before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==kNone);
+ assert(before_title_player_draw(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL);
+ assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL);
+ // Grounding and pose do not have to wait for the asynchronous bowl model.
+ floorY=-400;before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==link.id&&!title_scene_ready());
+ bowlLive=true;assert(title_scene_ready());
+ // Startup is already loading its first scene: do not request a duplicate.
+ scene.name=999;request_title_preview();update_title_preview();assert(!reloads&&!s_titleReloadPending&&!s_titleLaunched);
+ scene.name=1;
+ // Deselect -> vanilla; select again -> hub, including rapid carousel changes.
+ s_active=false;request_title_preview();assert(s_titleReloadPending);
+ transition=true;update_title_preview();assert(!reloads&&s_titleReloadPending);
+ transition=false;update_title_preview();assert(reloads==1&&!reloadSelected&&!s_titleReloadPending);
+ s_active=true;request_title_preview();resetting=true;update_title_preview();assert(reloads==1);
+ resetting=false;returning=true;update_title_preview();assert(reloads==1);
+ returning=false;update_title_preview();assert(reloads==2&&reloadSelected&&!s_titleReloadPending&&!s_titleLaunched);
+ request_title_preview();transition=true;s_active=false;request_title_preview();s_active=true;request_title_preview();
+ play_survivors(nullptr,nullptr);update_title_preview();assert(reloads==2);
+ transition=false;update_title_preview();assert(reloads==3&&reloadSelected&&s_titleLaunched);
+ // A click during a pending reload is retained, but the old actor stays hidden.
+ assert(before_title_player_draw(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL);
+ before_title_wait(nullptr,linkArgs,&result,nullptr);assert(title_scene_ready());
+ reset_title_presentation();assert(!s_titleLaunched&&s_titlePoseOwner==kNone);
  // File selection and gameplay in the SAME hub stage are not a title scene.
  for(int which=0;which<2;++which){
   if(which==0)scene.name=999;else{scene.name=1;s_gameStarted=true;}
   link.mItemButton=7;after_title_input(nullptr,linkArgs,nullptr,nullptr);assert(link.mItemButton==7);
   assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
   assert(before_title_logo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+  assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+  assert(before_title_controls(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
+  assert(before_title_fall(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
   after_title_camera(nullptr,cameraArgs,nullptr,nullptr);assert(camera.sets==1);
   info.procname=99;assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_CONTINUE&&freed==3);
  }

@@ -191,8 +191,13 @@ DEFINE_HOOK(&daObj_Oiltubo_c::Draw, SurvivorsHubBrazierDraw);
 DEFINE_HOOK(&daObj_Oiltubo_c::Delete, SurvivorsHubBrazierDelete);
 // d_a_title.h declares a global procFunc typedef conflicting with item headers.
 DEFINE_HOOK_SYMBOL("daTitle_c::getDemoPrm", int(void*), SurvivorsTitleLogo);
+DEFINE_HOOK_SYMBOL("daTitle_c::logoDispWait", void(void*), SurvivorsTitleWaitLogo);
+DEFINE_HOOK_SYMBOL("daTitle_c::keyWait", void(void*), SurvivorsTitleKey);
+DEFINE_HOOK_SYMBOL("daTitle_c::nextScene_proc", void(void*), SurvivorsTitleNext);
+DEFINE_HOOK_SYMBOL("daTitle_c::Draw", int(void*), SurvivorsTitleDraw);
 DEFINE_HOOK(&daAlink_c::procWait, SurvivorsTitleWait);
 DEFINE_HOOK(&daAlink_c::setStickData, SurvivorsTitleInput);
+DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, SurvivorsTitleFall);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
@@ -1756,8 +1761,8 @@ void open_window() {
         svc_log->warn(mod_ctx, "Hyrule Survivors: could not open run window");
     else if (s_run.phase == Phase::Ready) remember_menu_document(false);
 }
-ModResult activated(void*, ModError*) { s_active = true; reset_runtime(); return MOD_OK; }
-ModResult deactivated(void*, ModError*) { s_active = false; reset_runtime(); return MOD_OK; }
+ModResult activated(void*, ModError*) { s_active = true; reset_runtime(); request_title_preview(); return MOD_OK; }
+ModResult deactivated(void*, ModError*) { s_active = false; reset_runtime(); request_title_preview(); return MOD_OK; }
 ModResult new_save(void*, ModError*) {
     reset_runtime(); s_records = {};
     dComIfGs_offItemFirstBit(dItemNo_SWORD_e);
@@ -1771,7 +1776,7 @@ ModResult new_save(void*, ModError*) {
 ModResult loaded(void*, ModError*) {
     reset_runtime(); prepare_save(); s_saveReady = true; return MOD_OK;
 }
-ModResult reset(void*, ModError*) { reset_runtime(); return MOD_OK; }
+ModResult reset(void*, ModError*) { reset_runtime(); reset_title_presentation(); return MOD_OK; }
 #include "survivors_mode.inc"
 #include "survivors_music.inc"
 } // namespace
@@ -1803,6 +1808,7 @@ bool survivors_dark_link_active() {
         s_run.phase == Phase::Upgrade || s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Treasure);
 }
 void update_survivors() {
+    update_title_preview();
     update_hub_brazier((survivors_title_active() || (survivors_hub_active() && !s_hubDeparture)) && !transitioning());
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
@@ -1910,8 +1916,14 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsCamera, before_run_camera); POST(SurvivorsCamera, after_run_camera);
     POST(SurvivorsCamera, after_title_camera);
     PRE(SurvivorsTitleLogo, before_title_logo);
+    PRE(SurvivorsTitleWaitLogo, before_title_controls);
+    PRE(SurvivorsTitleKey, before_title_controls);
+    PRE(SurvivorsTitleNext, before_title_controls);
+    PRE(SurvivorsTitleDraw, before_title_ui);
     PRE(SurvivorsTitleWait, before_title_wait);
     POST(SurvivorsTitleInput, after_title_input);
+    PRE(SurvivorsTitleFall, before_title_fall);
+    PRE(SurvivorsDraw, before_title_player_draw);
     PRE(SurvivorsArenaExit, before_arena_exit);
     PRE(SurvivorsArenaRestart, before_arena_restart);
     POST(SurvivorsBossAim,after_boss_aim);

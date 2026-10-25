@@ -74,8 +74,8 @@ bool survivors_title_active() {
         !arena_matches(0,dComIfGp_getStartStageName(),dComIfGp_getStartStageRoomNo())) return false;
     return opening_scene() != nullptr;
 }
-// Armed only by file creation/loading, never by returning from a run. The
-// gameplay scene gate excludes the old title actors and NAME_SCENE callbacks.
+// Armed by file creation/loading and returning from a run. The gameplay
+// scene gate excludes outgoing transitions, title actors and NAME_SCENE.
 bool survivors_hub_arrival_active() {
     if (!s_hubArrivalPending || !s_active || !s_gameStarted || !s_hub || s_map != 0 ||
         !arena_matches(0,dComIfGp_getStartStageName(),dComIfGp_getStartStageRoomNo()) ||
@@ -175,7 +175,7 @@ HookAction before_title_start_demo(ModContext*,void*,void* result,void*) {
     if (!survivors_rest_active()) return HOOK_CONTINUE;
     // Link calls orderStartDemo even with idle spawn mode and event 0xff.
     // The native fallback then orders this room's DEFAULT_START. The custom
-    // title/save arrival owns its pose and must not start a dungeon entrance event.
+    // title/hub arrival owns its pose and must not start a dungeon entrance event.
     *static_cast<int*>(result)=-2; // Native "no start demo" result.
     return HOOK_SKIP_ORIGINAL;
 }
@@ -191,6 +191,7 @@ HookAction before_title_stage_actor(ModContext*, void* args, void*, void*) {
         // Idle spawn 16, no entrance event; the ground is probed once loaded.
         params->base.parameters = (params->base.parameters & 0x00fe0fffu) | 0xff010000u;
         params->base.position.x = 0;
+        params->base.position.y = roundtable_layout::floorY;
         params->base.position.z = roundtable_layout::restZ;
         params->base.angle.y = static_cast<s16>(0x8000);
     } else if (survivors_title_active() && (arena_story_actor(info->procname) ||

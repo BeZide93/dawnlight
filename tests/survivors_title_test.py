@@ -30,9 +30,19 @@ namespace mods{
  template<class T>T& arg_ref(void* a,int n){return *std::any_cast<T>(&static_cast<std::any*>(a)[n]);}
 }
 constexpr int fpcNm_PLAY_SCENE_e=5;
+bool s_arrivingRun=false,s_restart=false,s_hubDeparture=false,s_hubDoorStarted=false,s_hubSaveRequested=false,s_resultsStored=false;
+unsigned s_requestedMap=0,s_hubDoor=kNone,s_player=kNone,s_spawnFailures=0;
+int s_run=0,s_orbs=0;
+enum class HubMenu{None,Run};HubMenu s_hubMenu=HubMenu::None;
+unsigned cleanupCalls=0;bool checkReloadOrdering=false;
+void end_survivors_integrity(){++cleanupCalls;}void reset_ending(){++cleanupCalls;}
+void retire_enemies(){++cleanupCalls;}void clear_attacks(){++cleanupCalls;}
+void clear_loot(){++cleanupCalls;}void clear_arena_geometry(){++cleanupCalls;}
+void prepare_save(){++cleanupCalls;}void close_window(){}
 bool s_hubArrivalPending=false,s_hub=true;float s_hubArrivalSeconds=0;unsigned s_map=0;
 constexpr int fpcNm_OPENING_SCENE_e=1,fpcNm_ALINK_e=2,fpcNm_SCENE_EXIT_e=3,fpcNm_SCENE_EXIT2_e=4;
 bool s_active=true,s_gameStarted=false,hasScene=true,roomReady=true,zeldaLive=true;
+const Arena& arena(){return arenas[s_map];}
 const char* stageName=arenas[0].stage;s8 roomNo=arenas[0].room;
 const char* dComIfGp_getStartStageName(){return stageName;}
 s8 dComIfGp_getStartStageRoomNo(){return roomNo;}
@@ -138,6 +148,7 @@ native_fixture=r'''
 // Model the SDK's next-stage enable latch and Draw's independent PLAY request,
 // which the old always-successful changeOpeningScene stub did not exercise.
 void dComIfGp_setNextStage(const char* name,s16 point,s8 room,s8 layer){
+ if(checkReloadOrdering){assert(s_hubArrivalPending==!s_arrivingRun&&s_hubArrivalSeconds==0);assert(s_restart);}
  std::any args[]{name,point,room,layer};
  if(before_title_stage(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL)return;
  ++stageWrites;
@@ -359,6 +370,40 @@ int main(){
  link.mItemButton=7;after_title_input(nullptr,linkArgs,nullptr,nullptr);assert(link.mItemButton==7);
  assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ // Return from every run map must prepare arrival before scene creation.
+ // Previously this took the native shutter entrance outside the new collider.
+ for(unsigned map=0;map<arenas.size();++map)for(int cycle=0;cycle<2;++cycle){
+  s_active=s_gameStarted=true;scene.name=fpcNm_PLAY_SCENE_e;
+  s_map=map;s_hub=false;s_hubArrivalPending=false;s_hubArrivalSeconds=5.f;
+  stageName=arenas[map].stage;roomNo=arenas[map].room;nextStage=false;
+  const auto cleanups=cleanupCalls;
+  replay(nullptr,nullptr);assert(s_restart&&!s_arrivingRun&&s_requestedMap==map);
+  checkReloadOrdering=true;reload_run_scene();checkReloadOrdering=false;
+  assert(cleanupCalls==cleanups+7&&nextStage&&s_hub&&s_map==0&&!s_restart);
+  assert(!survivors_hub_arrival_active()); // Outgoing scene cannot consume the pose.
+  stageName=nextName;roomNo=nextRoom;nextStage=false;
+  assert(survivors_hub_arrival_active());
+  info.procname=fpcNm_ALINK_e;params.base.parameters=0;params.base.position={0,-250,3900};
+  before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
+  assert(params.base.position.x==0&&params.base.position.y==roundtable_layout::floorY&&params.base.position.z==roundtable_layout::restZ);
+  assert(((params.base.parameters>>12)&0x1f)==16&&((params.base.parameters>>24)&0xff)==0xff);
+  result=123;assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-2);
+  before_title_wait(nullptr,linkArgs,&result,nullptr);
+  for(int frame=0;frame<70;++frame)advance_hub_arrival(1.f/60,true);
+  assert(!s_hubArrivalPending&&link.mUnderFrameCtrl[0].rate==1);
+  assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
+  // Restart bypasses the hub, including the combat version of room 51.
+  s_map=map;s_hub=false;stageName=arenas[map].stage;roomNo=arenas[map].room;
+  s_hubArrivalPending=true;s_hubArrivalSeconds=4.f;
+  restart_run(nullptr,nullptr);checkReloadOrdering=true;reload_run_scene();checkReloadOrdering=false;
+  assert(s_arrivingRun&&!s_hub&&s_map==map&&!s_hubArrivalPending&&nextStage);
+  nextStage=false;assert(!survivors_hub_arrival_active());
+  params.base.position={11,-250,3900};params.base.parameters=42;
+  before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
+  assert(params.base.position.x==11&&params.base.position.z==3900&&params.base.parameters==42);
+  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ }
+ s_arrivingRun=false;s_hub=true;s_map=0;
  // Repeated carousel changes at different asynchronous load phases. The hub
  // request has already been routed when selection changes to vanilla (Play).
  s_gameStarted=false;scene.name=fpcNm_OPENING_SCENE_e;roomNo=arenas[0].room;
@@ -480,7 +525,7 @@ int main(){
  assert(title.pane.starts==1&&presentationSyncs==1&&!enterSounds&&s_titleFlow.camera()==cameraProgress);
  padTrigger=0;title.keyWait();assert(title.mProcID==3&&!enterSounds);
  padTrigger=1;title.keyWait();assert(title.mProcID==4&&enterSounds==1);
- std::cout<<"Survivors title: scene routing, smooth camera, early logo reveal and native logo animation skip passed\n";
+ std::cout<<"Survivors title: scene routing, hub returns/restarts, smooth camera, early logo reveal and native logo animation skip passed\n";
 }
 '''
 native_event=(sdk/'src/d/d_event_manager.cpp').read_text()
@@ -515,6 +560,7 @@ assert 'PRE(SurvivorsTitleLogoAnimation, before_title_logo_animation)' in source
 assert 'src/survivors_title_logo.cpp' in (root/'CMakeLists.txt').read_text()
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'title.cpp';exe=Path(tmp)/'title'
- cpp.write_text(fixture+(root/'src/survivors_title.inc').read_text()+native_fixture+native_logo+main)
+ reload_code=''.join(extract_function(source,sig) for sig in ['void replay(ModContext*, void*) {', 'void restart_run(ModContext*, void*) {', 'void reload_run_scene() {'])
+ cpp.write_text(fixture+reload_code+(root/'src/survivors_title.inc').read_text()+native_fixture+native_logo+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'include'),'-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

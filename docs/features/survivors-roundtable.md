@@ -25,6 +25,12 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   Link rests at Z = 760, outside the chair ring; Zelda stands diagonally in front of the west fireplace at X/Z = -1170/430
   and faces the centre. The title camera follows the relocated rest position.
   Zelda's sword gift, talents and exit warning remain intact.
+- Returning from any run arms the same kneeling arrival as loading a save,
+  before requesting the new scene. Link spawns at the authored floor/rest anchor
+  in idle mode and skips the original shutter entrance demo. The old return path
+  still used the removed corridor's native player start, despite relocating the
+  door. Each visit resets the arrival timer; the 0.7-second rise starts only once
+  the scene is ready. Direct run restarts retain their native map entrances.
 - A tall golden native flame with sparks floats above the tabletop at Y = -220.
   Its warm point light is centered at Y = -50. Five light samples bake soft
   shadows from the actual visible geometry into a 1024×1024 I8 lightmap;
@@ -169,7 +175,7 @@ light. The runtime fixture rejects scheduling room geometry in the actor pass.
 In-game visual and native-door validation still requires a playable installation:
 load a new/existing save, finish Zelda's gift, open talents/equipment, start each
 run map and return, repeatedly switch Play/Survivors, then check both the moving
-title camera and the 0.7-second save arrival. The offline preview and fake-host
+title camera and the 0.7-second save/return arrival. The offline preview and fake-host
 tests cannot establish the exact appearance or door-event timing on a device.
 
 ## Material source

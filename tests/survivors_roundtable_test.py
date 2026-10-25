@@ -255,10 +255,10 @@ print('Native Carry: real shelf support, open compartments, no permanent prop co
 assert max(v[1] for v in hall.vertices)>g.FLOOR+2200
 assert sum(v[1]>g.FLOOR+1600 for v in hall.vertices)>1000
 # Torch sources are on paired inward pier faces, above the player's head.
-torches=g.torch_layout();assert len(torches)==8
+torches=g.torch_layout();assert len(torches)==6
 for x,y,z in torches:
  assert 1500<math.hypot(x,z)<1650 and y>g.FLOOR+400
- assert any(abs(tx+x)<.001 and abs(tz-z)<.001 for tx,_,tz in torches)
+ assert any(abs(tx-x)<.001 and abs(tz+z)<.001 for tx,_,tz in torches)
 # The old pointed memorials have no separate head, hands or deep robe folds.
 sculpt=g.Hall();sculpt.statue()
 head=[v for v in sculpt.vertices if v[1]>760]

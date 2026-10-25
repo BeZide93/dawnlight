@@ -32,13 +32,15 @@ arches and bronze leaf motifs continue the fireplace's restrained palette.
 
 ![Offline raised vault](../images/survivors-vault.jpg)
 
-Eight paired inward-facing pier sconces use the actual `Obj_Lv2Candle` native
+Six paired inward-facing pier sconces use the actual `Obj_Lv2Candle` native
 simple-particle trio (`0x100`, `0x101`, `0x103`) used by `L4candl` in Arbiter's
 Grounds. Their metal brackets and baskets are authored room geometry; fire,
 smoke and sparks are native. Every source registers a local 500-unit warm point
 light for native actors. The room bake includes their weaker, occluded light
 contribution with a 550-unit falloff. The central flame remains dominant.
-Simple effects are submitted per update and naturally expire; all eight point
+The two piers immediately beside the west fireplace have no sconces, fire effects
+or torch lights; the fireplace supplies their local illumination.
+Simple effects are submitted per update and naturally expire; all six point
 lights are removed with the room, alongside the existing two fire lights and
 18 persistent central/hearth emitters. No global cutscene or UI state is changed.
 
@@ -256,7 +258,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 64,753 visual triangles and 6,488
+tools or network image generation. There are 64,521 visual triangles and 6,488
 collision triangles, with a balanced collision tree. The vertex limit is 195,000 (65,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. Resources total about 8.9 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
@@ -305,8 +307,8 @@ The RTH2 source asset keeps its floats. Loading validates ranges and converts
 once to signed 16-bit positions with 3 fractional bits, 16-bit UVs with 16
 fractional bits, and unchanged RGBA8 colours. GX declarations match those writes.
 The original fix reduced that hall to **3,215,862 bytes (3.07 MiB)**, 43.75% less.
-The raised vault, statues and sconces now use **3,496,662 bytes
-(3.33 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. UV grid tessellation avoids diagonal slivers, and invisible exterior faces behind the closed shell are omitted; the black entrance passage is explicitly retained. Maximum position
+The raised vault, statues and sconces now use **3,484,134 bytes
+(3.32 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. UV grid tessellation avoids diagonal slivers, and invisible exterior faces behind the closed shell are omitted; the black entrance passage is explicitly retained. Maximum position
 error is 0.0625 game units and maximum UV error is 1/128 atlas texel. That packing fix did not alter the source geometry,
 textures, shadows or collision; subsequent room revisions rebake their shadows. The runtime regression limits
 frame uploads to the real 5 MiB capacity, reserves 1.5 MiB for other scene draws,

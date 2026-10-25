@@ -11,7 +11,7 @@ assert len(set(texture))>=5, 'Area light samples should produce soft intermediat
 assert metadata['light']==[0,-50,0]
 assert metadata['hearth'][0]<-1500 and metadata['hearth'][1:]==[-200,0]
 assert metadata['hearth_weight']==.22
-assert len(metadata['torches'])==8
+assert len(metadata['torches'])==6
 assert all(t[1]==35 for t in metadata['torches'])
 with tempfile.TemporaryDirectory() as temp:
  exe=Path(temp)/'baker'

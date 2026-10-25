@@ -19,7 +19,7 @@ RADIUS = 1800.0
 SIDES = 16
 EAVES_HEIGHT = 1660.0
 CROWN_HEIGHT = 2250.0
-TORCH_PILLARS = (0,3,4,7,8,11,12,15)
+TORCH_PILLARS = (0,3,4,7,8,15) # Leave the two west fireplace piers bare.
 # Mirror paired bays about the entrance/centre axis (index -> -index mod 16).
 NICHE_BAYS = (1,3,7,9,13,15)
 SHELF_BAYS = (5,11)
@@ -52,7 +52,7 @@ ROOM_TINTS = {0:(212,196,165), 1:(194,166,128),
               2:(180,146,121), 3:(154,125,81)}
 
 def torch_layout():
-    # Inward faces of eight symmetrically paired piers; flame above Link's head.
+    # Inward faces of six paired piers; flame above Link's head.
     return tuple(((RADIUS*.965-148)*math.sin((i+.5)*TAU/SIDES), FLOOR+435,
                   (RADIUS*.965-148)*math.cos((i+.5)*TAU/SIDES)) for i in TORCH_PILLARS)
 

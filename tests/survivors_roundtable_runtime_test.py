@@ -201,8 +201,8 @@ int main(int argc,char** argv){
    if(i)assert(positions[i][2]<=positions[i-1][2]);
   }
   assert(colors.front()[3]==255&&colors.back()[3]==45);
-  simpleParticles=0;dispatch(bg,execute,false);assert(lights==10&&particles==18&&simpleParticles==24);
-  simpleParticles=0;dispatch(bg,execute,false);assert(lights==10&&particles==18&&simpleParticles==24);
+  simpleParticles=0;dispatch(bg,execute,false);assert(lights==8&&particles==18&&simpleParticles==18);
+  simpleParticles=0;dispatch(bg,execute,false);assert(lights==8&&particles==18&&simpleParticles==18);
   if(cycle%2==0){
    dispatch(bg,remove,false,1,true); // Post-delete must not inspect the poisoned actor.
   }else dawnlight::shutdown_roundtable();

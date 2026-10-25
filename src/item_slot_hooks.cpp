@@ -23,7 +23,6 @@
 #include "d/d_menu_item_explain.h"
 #include "d/d_pane_class.h"
 #include "d/d_msg_object.h"
-#include "f_pc/f_pc_profile_lst.h"
 #include "JSystem/J2DGraph/J2DPane.h"
 #include "JSystem/J2DGraph/J2DScreen.h"
 #include "JSystem/J2DGraph/J2DPicture.h"
@@ -194,7 +193,6 @@ bool s_touchZItemHeld = false;
 bool s_touchZItemTrig = false;
 bool s_touchRingCombineRequested = false;
 bool s_ringComboChanged = false;
-u32 s_ringNativeRPressed = 0;
 bool s_midnaPromptThisFrame = false;
 bool s_zPromptCustomVisualsActive = false;
 bool s_hideZPromptButton = false;
@@ -292,40 +290,6 @@ bool select_dawnlight_z_slot() {
 
 bool z_item_slot_active() {
     return s_zItemSlotSessionEnabled;
-}
-
-bool external_ring_combine_active() {
-    void* address = nullptr;
-    if (svc_hook == nullptr || svc_hook->resolve == nullptr ||
-        svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) != MOD_OK ||
-        address == nullptr) {
-        // An unknown slot owner is not evidence of a replacement combine path.
-        return false;
-    }
-    const auto getVar = reinterpret_cast<ZSlotGetConfigVarFn>(address);
-    if (z_slot_provider_enabled(getVar,
-            "mod.org_twilight_hd__hud.enabled", "mod.org_twilight_hd__hud.third-item-slot")) {
-        // HD HUD leaves the ring to hosts that supply native companion slots.
-        // Match DualScreenHost::owns_item_slots(), not whether its HUD is visible.
-        void* slotTrigger = nullptr;
-        void* slotHold = nullptr;
-        const bool nativeSlots =
-            svc_hook->resolve(mod_ctx, "dusk::companion::slotTriggerBits", &slotTrigger, nullptr) == MOD_OK &&
-            slotTrigger != nullptr &&
-            svc_hook->resolve(mod_ctx, "dusk::companion::slotHoldBits", &slotHold, nullptr) == MOD_OK &&
-            slotHold != nullptr;
-        if (!nativeSlots) return true;
-    }
-    if (z_slot_provider_enabled(getVar, "mod.com_dusklight_twilit__essentials.enabled",
-            "mod.com_dusklight_twilit__essentials.customZButtonEnabled")) {
-        // TE's init_z_button returns before installing its ring hooks on Lazy
-        // Tweaks. Match both its current CVar marker and legacy actor-size probe.
-        const bool nativeZ = getVar("game.zItemScale") != nullptr ||
-            static_cast<size_t>(g_profile_ALINK.base.base.process_size) ==
-                sizeof(daAlink_c) + sizeof(daPy_anmHeap_c);
-        if (!nativeZ) return true;
-    }
-    return false;
 }
 
 bool dawnlight_touch_ui_active() {
@@ -3372,28 +3336,6 @@ void after_meter_map_draw(ModContext*, void* args, void*, void*) {
     restore_wii_u_minimap_layout(mods::arg<dMeterMap_c*>(args, 0));
 }
 
-HookAction before_ring_native_combine(ModContext*, void*, void*, void*) {
-    s_ringNativeRPressed = 0;
-    if (external_ring_combine_active()) {
-        // External providers have already handled their own L/Z inputs. The
-        // original setActiveCursor still accepts R for X/Y combinations, even
-        // when Dawnlight's dispatcher is disabled. Mask only that native read.
-        auto& pad = mDoCPd_c::getCpadInfo(PAD_1);
-        s_ringNativeRPressed = pad.mPressedButtonFlags & PAD_TRIGGER_R;
-        pad.mPressedButtonFlags &= ~PAD_TRIGGER_R;
-    }
-    return HOOK_CONTINUE;
-}
-
-void after_ring_native_combine(ModContext*, void*, void*, void*) {
-    // Restore before external post-hooks (TE combines on an L release).
-    // A provider may skip our late pre-hook; in that case there is no saved R.
-    if (s_ringNativeRPressed != 0) {
-        mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags |= s_ringNativeRPressed;
-        s_ringNativeRPressed = 0;
-    }
-}
-
 HookAction before_ring_combine(ModContext*, void* args, void*, void*) {
     s_ringComboChanged = false;
     auto* ring = mods::arg<dMenu_Ring_c*>(args, 0);
@@ -4036,18 +3978,10 @@ ModResult install_item_slot_hooks(ModError* error) {
     // combination before assignment, but leave external providers in control.
     HookOptions comboOptions = HOOK_OPTIONS_INIT;
     comboOptions.priority = 1000;
-    // Run after provider pre-hooks, then restore before provider post-hooks.
-    // Suppressing R globally would interfere with gameplay and provider input.
-    HookOptions nativeComboPreOptions = HOOK_OPTIONS_INIT;
-    nativeComboPreOptions.priority = -1000;
-    HookOptions nativeComboPostOptions = HOOK_OPTIONS_INIT;
-    nativeComboPostOptions.priority = 1000;
-    ModResult result = mods::hook_add_pre<RingSetActiveCursorHook>(
-        svc_hook, before_ring_native_combine, &nativeComboPreOptions);
-    if (result == MOD_OK) {
-        result = mods::hook_add_post<RingSetActiveCursorHook>(
-            svc_hook, after_ring_native_combine, &nativeComboPostOptions);
-    }
+    // External slot ownership only disables our custom dispatcher. Keep the
+    // native R path available: provider settings do not prove that another
+    // combine handler is installed or will handle this input.
+    ModResult result = MOD_OK;
     if (result == MOD_OK && dawnlight_combine_active()) {
         result = mods::hook_add_pre<RingSetActiveCursorHook>(
             svc_hook, before_ring_combine, &comboOptions);
@@ -4309,7 +4243,6 @@ ModResult install_item_slot_hooks(ModError* error) {
 
 void shutdown_item_slot_hooks() {
     s_midnaGetConfigVar = nullptr;
-    after_ring_native_combine(nullptr, nullptr, nullptr, nullptr);
     s_touchRingCombineRequested = false;
     s_ringComboChanged = false;
     s_hdHudGetConfigVar = nullptr;

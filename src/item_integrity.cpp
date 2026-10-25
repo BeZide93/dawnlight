@@ -35,11 +35,8 @@ bool valid_mix_pair(const dSv_player_item_c* items, u8 selectSlot, u8 mixSlot) {
     const u8 mixed = items->mItems[mixSlot];
     if (selected == dItemNo_BOW_e || mixed == dItemNo_BOW_e) {
         const u8 other = selected == dItemNo_BOW_e ? mixed : selected;
-        // Fire Arrows Standalone restores the Lantern after briefly disguising
-        // it as Hawkeye. Keep that combo instead of dropping its Bow mix slot.
         return other == dItemNo_NORMAL_BOMB_e || other == dItemNo_WATER_BOMB_e ||
-               other == dItemNo_POKE_BOMB_e || other == dItemNo_HAWK_EYE_e ||
-               other == dItemNo_KANTERA_e;
+               other == dItemNo_POKE_BOMB_e || other == dItemNo_HAWK_EYE_e;
     }
     if (selected == dItemNo_FISHING_ROD_1_e || mixed == dItemNo_FISHING_ROD_1_e) {
         const u8 other = selected == dItemNo_FISHING_ROD_1_e ? mixed : selected;

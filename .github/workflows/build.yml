@@ -171,10 +171,6 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/z_item_provider_guard_test.py
 
-      - name: Test Fire Arrows item and HUD compatibility
-        if: matrix.platform == 'linux-x86_64'
-        run: python3 tests/fire_arrow_compat_test.py
-
       - name: Test Bullet Time gyro compatibility
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/bullet_time_gyro_compat_test.py

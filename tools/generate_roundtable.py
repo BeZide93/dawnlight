@@ -160,7 +160,7 @@ class Hall:
                 grade=(.70,.71,.72) if material>=6 else (1,1,1)
                 light=tuple(a*b for a,b in zip(light,grade))
                 dirt=1.0
-                if FLOOR<=pos[1]<=FLOOR+1 and normal[1]>0:
+                if FLOOR<=pos[1]<=FLOOR+5 and normal[1]>0:
                     radius=math.hypot(pos[0],pos[2])
                     dirt=1-.24*max(0,1-abs(radius-1450)/380)*(0.55+.45*math.sin(pos[0]*.011+pos[2]*.007)**2)
                 # Light dies out behind the shutter; keep the visible hall untouched.
@@ -538,32 +538,49 @@ class Hall:
                 t=a/(a-b);result.append((p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])))
         return result
 
-    def floor_stone(self,polygon,rng,y=FLOOR+.5,tint=None):
+    def floor_stone(self,polygon,rng,y=FLOOR+.5,tint=None,tilt=(0,0),origin=(0,0),edges=False,material=None,uv_polygon=None):
         if len(polygon)<3:return
         # One chart/UV plane per convex slab prevents diagonal texture seams.
         if sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(polygon,polygon[1:]+polygon[:1]))>0:
             polygon=polygon[::-1]
-        points=[(x,y,z) for x,z in polygon]
+        points=[(x,y+tilt[0]*(x-origin[0])+tilt[1]*(z-origin[1]),z) for x,z in polygon]
         if length(cross(sub(points[1],points[0]),sub(points[2],points[0])))<.001:return
         face=self.receiver(points)
         angle=rng.uniform(0,TAU);co=math.cos(angle);si=math.sin(angle)
         coords=[(x*co-z*si,x*si+z*co) for x,z in polygon]
-        xmin=min(u for u,v in coords);zmin=min(v for u,v in coords)
-        span=max(max(u for u,v in coords)-xmin,max(v for u,v in coords)-zmin,1)
+        bounds=[(x*co-z*si,x*si+z*co) for x,z in (uv_polygon or polygon)]
+        xmin=min(u for u,v in bounds);zmin=min(v for u,v in bounds)
+        span=max(max(u for u,v in bounds)-xmin,max(v for u,v in bounds)-zmin,1)
         crop=rng.uniform(.65,.93);u0=rng.uniform(0,1-crop);v0=rng.uniform(0,1-crop)
         uv=[(u0+(u-xmin)/span*crop,v0+(v-zmin)/span*crop) for u,v in coords]
-        shade=rng.randrange(188,218)
-        tint=tint or (shade,shade-12+rng.randrange(-3,4),shade-28+rng.randrange(-8,3))
-        material=rng.randrange(6,10)
+        # Warm, restrained limestone tones: no bright/cool checkerboard tiles.
+        shade=190+round(4*math.sin(origin[0]*.003)+3*math.cos(origin[1]*.004))+rng.randrange(-4,5)
+        tint=tint or (shade,shade-21,shade-44)
+        material=material if material is not None else rng.choice((6,6,7,7,8,9))
         for j in range(1,len(points)-1):
             self.triangle((points[0],points[j],points[j+1]),uv=(uv[0],uv[j],uv[j+1]),
                 material=material,tint=tint,solid=False,shadow_face=face)
+        if edges:
+            # Closed thin stone edges reach the backing floor; no floating slabs
+            # or undersides in native collision. Dark fresh fractures read at a
+            # grazing angle even below the static lightmap's sample spacing.
+            edge_tint=tuple(round(v*.67) for v in tint)
+            for a,b in zip(points,points[1:]+points[:1]):
+                self.quad(a,(a[0],FLOOR+.05,a[2]),(b[0],FLOOR+.05,b[2]),b,
+                          material=material,tint=edge_tint,solid=False)
 
     def paving(self,boundary):
         # Worn rectangular flags in staggered, unequal courses, like the reference
         # hall. No large polygon cells or decorative circular floor inlay.
         # This is visual paving over the unchanged continuous native collider.
         rng=random.Random(0x524F554E44)
+        wear=random.Random(0x57454152)
+        anchors=[(ZELDA_X,ZELDA_Z,200),(CHEST_X,0,220),(0,REST_Z,170),
+                 (0,EXIT_Z-100,280),(-FRONT+200,0,430)]
+        # Keep the supply alcoves level, independently of live/broken Carry
+        # objects. Their removal must never change baked room geometry/shadows.
+        anchors.extend((1420*math.sin(bay*TAU/SIDES),1420*math.cos(bay*TAU/SIDES),280)
+                       for bay in (2,6,8,10,14))
         z=-RADIUS-160
         while z<RADIUS:
             depth=rng.uniform(55,82)
@@ -574,16 +591,42 @@ class Hall:
                 x0=x+gap;x1=x+width-gap;z0=z+gap;z1=z+depth-gap
                 # Each corner has its own small chip, not repeated rectangular
                 # outlines. Thin gray-brown mortar stays below the stone tops.
-                c=[rng.uniform(1,5) for _ in range(4)]
-                poly=[(x0+c[0],z0),(x1-c[1],z0),(x1,z0+c[1]),
-                      (x1,z1-c[2]),(x1-c[2],z1),(x0+c[3],z1),
-                      (x0,z1-c[3]),(x0,z0+c[0])]
+                cx=(x0+x1)/2;cz=(z0+z1)/2
+                clear=math.hypot(cx,cz)>650 and all(math.hypot(cx-a,cz-b)>r for a,b,r in anchors)
+                damage=wear.random() if clear else 1.0
+                broken=damage<.055;raised=.055<=damage<.12
+                # A few chipped corners per intact plate; larger irregular
+                # losses on the damaged plates rather than the same eight edges.
+                corners=[(x0,z0),(x1,z0),(x1,z1),(x0,z1)]
+                chipped=wear.sample(range(4),4 if broken or raised else (1 if wear.random()<.6 else 2))
+                poly=[]
+                for i,c in enumerate(corners):
+                    if i not in chipped:poly.append(c);continue
+                    amount=wear.uniform(4,13) if broken else wear.uniform(1,4)
+                    for neighbour in (corners[(i-1)%4],corners[(i+1)%4]):
+                        dx=neighbour[0]-c[0];dz=neighbour[1]-c[1];dist=math.hypot(dx,dz)
+                        poly.append((c[0]+dx/dist*amount,c[1]+dz/dist*amount))
                 for i,a in enumerate(boundary):
                     b=boundary[(i+1)%len(boundary)]
                     nx=a[2]-b[2];nz=b[0]-a[0]
                     poly=self.clip_polygon(poly,nx,nz,nx*a[0]+nz*a[2])
                     if not poly:break
-                self.floor_stone(poly,rng)
+                if poly:
+                    if broken:
+                        angle=wear.uniform(.25,2.8);nx=math.cos(angle);nz=math.sin(angle)
+                        line=nx*cx+nz*cz
+                        pieces=(self.clip_polygon(poly,nx,nz,line-1.1),
+                                self.clip_polygon(poly,-nx,-nz,-line-1.1))
+                    else:pieces=(poly,)
+                    material=wear.choice((6,6,7,7,8,9))
+                    stone_seed=wear.randrange(1<<30)
+                    for part in pieces:
+                        slope=wear.uniform(0,TAU)
+                        # Less than five units of relief: visible unevenness,
+                        # while the continuous support stays safely at FLOOR.
+                        tilt=(.025*math.cos(slope),.025*math.sin(slope)) if broken or raised else (0,0)
+                        self.floor_stone(part,random.Random(stone_seed),y=FLOOR+(2.3 if broken or raised else .5),
+                            tilt=tilt,origin=(cx,cz),edges=broken or raised,material=material,uv_polygon=poly)
                 x+=width
             z+=depth
 
@@ -775,7 +818,7 @@ class Hall:
         boundary=[(RADIUS*math.sin((i+.5)*TAU/SIDES),FLOOR,RADIUS*math.cos((i+.5)*TAU/SIDES)) for i in range(SIDES)]
         for i,a in enumerate(boundary):
             b=boundary[(i+1)%SIDES]
-            self.triangle(((0,FLOOR,0),a,b),material=5,tint=(87,79,66))
+            self.triangle(((0,FLOOR,0),a,b),material=5,tint=(83,69,51))
         self.paving(boundary)
         support=[(x*(RADIUS+180)/RADIUS,FLOOR,z*(RADIUS+180)/RADIUS) for x,_,z in boundary]
         for i,a in enumerate(support):

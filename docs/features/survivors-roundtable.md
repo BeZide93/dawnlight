@@ -104,7 +104,14 @@ still needed for flame appearance and actual performance.
   Interaction anchors remain clear; clutter is non-solid.
 - The floor follows the reference's smaller rectangular stone flags: staggered
   courses 55–82 units deep, unequal widths 65–135 units, independently chipped
-  corners and fine gray-brown mortar. The oversized polygon slabs and circular
+  corners and fine warm-brown mortar. Their darker limestone tint follows the
+  fireplace and piers, with restrained local colour variation. Scattered plates
+  have larger corner losses, open diagonal fractures and independently tilted
+  fragments. Texture coordinates stay continuous across each fractured plate.
+  Thin closed edges extend to the underlying floor; relief is below five world
+  units. The continuous DZB is unchanged, and functional/supply areas remain
+  level. These are visual irregularities, not new walkable steps or collision
+  holes. The oversized polygon slabs and circular
   inlay are removed. Four stone surfaces retain independent crops/rotations.
 - Room ambient shading is substantially darker, with warm gray-brown stone and
   localized amber pools around the central flame and weaker hearth. Bare floor
@@ -258,7 +265,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 64,521 visual triangles and 6,488
+tools or network image generation. There are 63,832 visual triangles and 6,488
 collision triangles, with a balanced collision tree. The vertex limit is 195,000 (65,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. Resources total about 8.9 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
@@ -307,8 +314,8 @@ The RTH2 source asset keeps its floats. Loading validates ranges and converts
 once to signed 16-bit positions with 3 fractional bits, 16-bit UVs with 16
 fractional bits, and unchanged RGBA8 colours. GX declarations match those writes.
 The original fix reduced that hall to **3,215,862 bytes (3.07 MiB)**, 43.75% less.
-The raised vault, statues and sconces now use **3,484,134 bytes
-(3.32 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. UV grid tessellation avoids diagonal slivers, and invisible exterior faces behind the closed shell are omitted; the black entrance passage is explicitly retained. Maximum position
+The raised vault, statues and sconces now use **3,446,928 bytes
+(3.29 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. UV grid tessellation avoids diagonal slivers, and invisible exterior faces behind the closed shell are omitted; the black entrance passage is explicitly retained. Maximum position
 error is 0.0625 game units and maximum UV error is 1/128 atlas texel. That packing fix did not alter the source geometry,
 textures, shadows or collision; subsequent room revisions rebake their shadows. The runtime regression limits
 frame uploads to the real 5 MiB capacity, reserves 1.5 MiB for other scene draws,

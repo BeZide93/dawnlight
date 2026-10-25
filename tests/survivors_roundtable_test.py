@@ -272,3 +272,16 @@ area=sum(g.length(g.cross(g.sub(b[:3],a[:3]),g.sub(c[:3],a[:3])))/2
          for a,b,c in zip(tiled.vertices[::3],tiled.vertices[1::3],tiled.vertices[2::3]))
 assert abs(area-640*640)<.01
 print('Raised vault, sculpted figures, paired native torches and UV surface coverage passed')
+
+# Wear is shallow visible relief over the continuous native support, never
+# a downward-facing Acch ceiling or a new hole in the room collider.
+paving=g.Hall()
+boundary=[(g.RADIUS*math.sin((i+.5)*g.TAU/g.SIDES),g.FLOOR,
+           g.RADIUS*math.cos((i+.5)*g.TAU/g.SIDES)) for i in range(g.SIDES)]
+paving.paving(boundary)
+assert not paving.collision
+assert all(g.FLOOR<=v[1]<=g.FLOOR+5 for v in paving.vertices)
+assert sum(v[1]>g.FLOOR+2 for v in paving.vertices)>100
+assert any(max(v[1] for v in face)-min(v[1] for v in face)>.5
+           for face in zip(paving.vertices[::3],paving.vertices[1::3],paving.vertices[2::3]))
+print('Worn paving: bounded relief, closed native support and no low ceiling colliders passed')

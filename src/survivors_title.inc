@@ -95,10 +95,13 @@ void advance_hub_arrival(float seconds,bool ready) {
         link->setSingleAnime(daAlink_c::ANM_WAIT,1.f,0.f,-1,0.f);
 }
 bool survivors_title_preparing() {
-    // Resource creation can overlap the native fade-in. Never start a second
-    // scene's actors while an outgoing stage/reset request is pending.
+    // Reset stays set through incoming OPENING/room creation; the native scene
+    // clears it only in Execute. Allow that creation phase so BG replacement
+    // and stage-actor filtering run before the room is finalized. A live,
+    // outgoing scene still cannot spawn preview actors during reset.
     return s_active && survivors_title_active() && !s_titleReloadPending && !dComIfGp_isEnableNextStage() &&
-        !mDoRst::isReset() && !mDoRst::isReturnToMenu();
+        !mDoRst::isReturnToMenu() &&
+        (!mDoRst::isReset() || fpcM_IsCreating(dStage_roomControl_c::getProcID()));
 }
 bool title_floor_anchor(cXyz& anchor) {
     return hub_center_ground(anchor);

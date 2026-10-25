@@ -303,6 +303,25 @@ int main(){
  transition=true;assert(survivors_title_preparing()); // Fade-in does not serialize resource loads.
  nextStage=true;assert(!survivors_title_preparing());nextStage=false;
  resetting=true;assert(!survivors_title_preparing());resetting=false;transition=false;
+ // Reset retains its flag while the incoming OPENING and its room children
+ // are created. Geometry replacement and native furnishing filtering must be
+ // eligible before offReset() first runs in the scene's Execute.
+ for(int cycle=0;cycle<3;++cycle){
+  resetting=true;assert(!survivors_title_preparing()); // Outgoing live title.
+  nextStage=true;sceneCreating=true;assert(!survivors_title_preparing());
+  nextStage=false; // Incoming phase_1 consumes the stage request.
+  assert(survivors_title_preparing());
+  for(int gate=0;gate<7;++gate){
+   if(gate==0)s_active=false;if(gate==1)s_gameStarted=true;
+   if(gate==2)scene.name=fpcNm_PLAY_SCENE_e;if(gate==3)stageName="F_SP102";
+   if(gate==4)returning=true;if(gate==5)s_titleReloadPending=true;if(gate==6)hasScene=false;
+   assert(!survivors_title_preparing());
+   s_active=true;s_gameStarted=false;scene.name=fpcNm_OPENING_SCENE_e;stageName=arenas[0].stage;
+   returning=false;s_titleReloadPending=false;hasScene=true;
+  }
+  resetting=false;sceneCreating=false;assert(survivors_title_preparing());
+ }
+
  modelReady=false;assert(!title_scene_ready());modelReady=true;
  // Fall detection runs after private input. It must not replace WAIT with FALL.
  result=123;assert(before_title_fall(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==0);
@@ -582,7 +601,7 @@ int main(){
  assert(title.pane.starts==1&&presentationSyncs==1&&!enterSounds&&s_titleFlow.camera()==cameraProgress);
  padTrigger=0;title.keyWait();assert(title.mProcID==3&&!enterSounds);
  padTrigger=1;title.keyWait();assert(title.mProcID==4&&enterSounds==1);
- std::cout<<"Survivors title: scene routing, hub returns/restarts, smooth camera, early logo reveal and native logo animation skip passed\n";
+ std::cout<<"Survivors title: scene routing, incoming Reset creation, hub returns/restarts, smooth camera, early logo reveal and native logo animation skip passed\n";
 }
 '''
 native_event=(sdk/'src/d/d_event_manager.cpp').read_text()

@@ -1,11 +1,11 @@
-"""Exercise production stage-creation relocation; live door transforms stay native."""
+"""Exercise production room eligibility and stage relocation, including Reset."""
 from pathlib import Path
 import os,re,subprocess,tempfile
 ROOT=Path(__file__).resolve().parents[1]
 source=(ROOT/'src/survivors_roundtable.inc').read_text()
-start=source.index('HookAction before_roundtable_stage_actor(')
-end=source.index('\nvoid after_roundtable',start)
-production=source[start:end]
+title=(ROOT/'src/survivors_title.inc').read_text()
+gate=title[title.index('bool survivors_title_preparing() {'):title.index('bool title_floor_anchor(')]
+production=gate+source
 names=sorted(set(re.findall(r'fpcNm_\w+',production)))
 fixture=r'''
 #include <any>
@@ -23,7 +23,15 @@ struct fopAcM_prm_class{struct{unsigned parameters=0x12345678;Vec position;struc
 struct stage_actor_data_class{char name[8]={'S','h','u','t','t','e','r',0};};
 namespace mods{template<class T>T arg(void* p,int i){return std::any_cast<T>(static_cast<std::any*>(p)[i]);}}
 bool preparing=false,s_hub=true,arena=true;
-bool survivors_title_preparing(){return preparing;}bool in_arena(){return arena;}
+bool s_active=true,s_titleReloadPending=false,nextStage=false,resetting=false,returning=false,creating=false;
+bool survivors_title_active(){return preparing;}bool in_arena(){return arena;}
+bool dComIfGp_isEnableNextStage(){return nextStage;}
+namespace mDoRst{bool isReset(){return resetting;}bool isReturnToMenu(){return returning;}}
+struct dStage_roomControl_c{static int getProcID(){return 17;}};
+bool fpcM_IsCreating(int id){assert(id==17);return creating;}
+bool installRoom=false;
+HookAction before_roundtable_process(void*,void*,bool install){installRoom=install;return HOOK_CONTINUE;}
+void after_roundtable_process(void*,void*){}
 struct Info{int procname=0;}info;bool found=true;
 Info* dStage_searchName(const char*){return found?&info:nullptr;}
 int freed=0;void JKRFree(void*){++freed;}
@@ -77,6 +85,23 @@ int main(){
  }
  info.procname=999;auto decoration=original();assert(invoke(decoration)==HOOK_SKIP_ORIGINAL && freed==1);
  found=false;auto unknown=original();assert(invoke(unknown)==HOOK_CONTINUE && freed==1);
+ // Both production hooks must accept the incoming title while reset is
+ // still set, but reject an outgoing title and unconsumed stage request.
+ found=true;arena=false;s_hub=false;preparing=true;resetting=true;
+ for(int cycle=0;cycle<3;++cycle){
+  creating=false;info.procname=999;const int oldFreed=freed;
+  before_roundtable(nullptr,nullptr,nullptr,nullptr);assert(!installRoom);
+  assert(invoke(unknown)==HOOK_CONTINUE && freed==oldFreed);
+  creating=true;nextStage=true;
+  before_roundtable(nullptr,nullptr,nullptr,nullptr);assert(!installRoom);
+  assert(invoke(unknown)==HOOK_CONTINUE && freed==oldFreed);
+  nextStage=false;
+  before_roundtable(nullptr,nullptr,nullptr,nullptr);assert(installRoom);
+  assert(invoke(unknown)==HOOK_SKIP_ORIGINAL && freed==oldFreed+1);
+  info.procname=fpcNm_L1MBOSS_DOOR_e;auto resetDoor=original();invoke(resetDoor);
+  assert(resetDoor.base.position.z==roundtable_layout::exitZ);
+  info.procname=fpcNm_BG_e;assert(invoke(unknown)==HOOK_CONTINUE);
+ }
  assert(std::strcmp(record.name,"Shutter")==0); // Shared stage record is never edited.
 }
 '''
@@ -87,4 +112,4 @@ with tempfile.TemporaryDirectory() as temp:
  cpp.write_text(fixture+'\nenum {'+','.join(names)+'};\n'+production+cast+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(ROOT/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
-print('Roundtable entry: southern corridor records, pre-construction anchor, hub/title scoping, unrelated doors and replay safety passed')
+print('Roundtable entry: southern corridor records, pre-construction anchor, hub/title scoping, reset-time room/filter gates, unrelated doors and replay safety passed')

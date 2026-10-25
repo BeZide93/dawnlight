@@ -50,9 +50,6 @@ using BOOL=int;
 constexpr BOOL TRUE=1,FALSE=0;
 struct daAlink_c {};
 bool zActive=false,touchActive=true,s_dpadLeftTrig=false,s_touchZItemHeld=false,s_touchZItemTrig=false;
-bool s_touchRingCombineRequested=false;
-int windowStatus=0;
-int dMeter2Info_getWindowStatus(){return windowStatus;}
 bool z_item_slot_active(){return zActive;}
 bool custom_midna_binding_configured(){return false;}
 bool dawnlight_touch_ui_active(){return touchActive;}
@@ -95,16 +92,6 @@ int main(){
  auto control=dusk::ui::Control::SKIP;bool pressed=true;void* args[]={&s_touchOwner,&control,&pressed};
  assert(before_touch_set_control_pressed(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
  assert(!s_touchZItemHeld&&!talk());
- control=dusk::ui::Control::R;
- before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
- assert(!s_touchRingCombineRequested); // gameplay R is not an item combination
- windowStatus=2;
- before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
- assert(s_touchRingCombineRequested); // capture before HD rebuilds pad buttons
- s_touchRingCombineRequested=false;pressed=false;
- before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
- assert(!s_touchRingCombineRequested); // release cannot request another combo
- pressed=true;windowStatus=0;
  control=dusk::ui::Control::Z;
  assert(before_touch_set_control_pressed(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
  assert(s_touchZItemHeld&&s_touchZItemTrig&&!talk());

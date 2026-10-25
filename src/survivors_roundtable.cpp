@@ -1,4 +1,5 @@
 #include "survivors_roundtable.hpp"
+#include "survivors_roundtable_props.hpp"
 #include "generated/roundtable_layout.hpp"
 #include "service_imports.hpp"
 #include "process_actor.hpp"
@@ -275,7 +276,7 @@ void detach(Room& room) {
     detach_packet(portal_list(),&room.shade);
 }
 void restore(Room& room,daBg_c* actor,bool registerOriginal) {
-    detach(room);room.extinguish();room.installed=false;
+    detach(room);room.extinguish();room.installed=false;release_roundtable_props(room.owner);
     dComIfG_Bgsp().Release(room.collision);
     actor->mpBgW=room.originalDzb;actor->mpKCol=room.originalKcl;
     auto* original=room.originalDzb?static_cast<dBgW_Base*>(room.originalDzb):room.originalKcl;
@@ -302,7 +303,7 @@ HookAction before_roundtable_process(void* args,void* result,bool createHub) {
         // Native Delete still owns the original room heap and its models.
         restore(*it,actor,true);s_rooms.erase(it);return HOOK_CONTINUE;
     }
-    if(method==methods->base.execute_method)it->update_fire();
+    if(method==methods->base.execute_method){it->update_fire();update_roundtable_props(it->owner);}
     if(method!=methods->draw_method)return HOOK_CONTINUE;
     // Terrain must precede native projected shadows, not overpaint them
     // in the later actor opaque pass (Link and Zelda both use real shadows).
@@ -358,7 +359,7 @@ void shutdown_roundtable() {
     for(auto& room:s_rooms) {
         auto* actor=static_cast<fopAc_ac_c*>(fopAcM_SearchByID(room.owner));
         if(actor && fopAcM_GetName(actor)==fpcNm_BG_e)restore(room,static_cast<daBg_c*>(actor),true);
-        else {detach(room);room.extinguish();if(room.installed)dComIfG_Bgsp().Release(room.collision);}
+        else {release_roundtable_props(room.owner);detach(room);room.extinguish();if(room.installed)dComIfG_Bgsp().Release(room.collision);}
     }
     s_rooms.clear();s_creates.clear();s_vertices.clear();s_collision.clear();s_ready=false;
 }

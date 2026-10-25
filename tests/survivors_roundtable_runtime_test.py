@@ -4,6 +4,7 @@ import os,re,subprocess,tempfile
 ROOT=Path(__file__).resolve().parents[1]
 source=(ROOT/'src/survivors_roundtable.cpp').read_text()
 production=source[source.index('namespace dawnlight {'):]
+production=production.replace('namespace dawnlight {','namespace dawnlight {\nvoid update_roundtable_props(ActorId) {}\nvoid release_roundtable_props(ActorId) {}',1)
 fixture=r'''
 #include "generated/roundtable_layout.hpp"
 #include <algorithm>

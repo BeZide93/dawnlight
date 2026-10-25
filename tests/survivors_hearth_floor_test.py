@@ -38,3 +38,23 @@ for lateral in (-160,-80,0,80,160):
    assert floor>=-400.01 and abs(floor-foot)<=30, ('Lost support or oversized step',x,z,foot,floor)
    foot=floor;steps+=1
 print(f'Hearth floor: {steps} native-style approach/retreat probes, no false ceilings or lost support')
+
+# The chest bay's backing wall is behind the visible floor boundary. Probe
+# through the complete wall thickness, including arch feet and adjacent piers.
+# Repeat around the hall so another wall bay cannot retain the same failure.
+front=1800*math.cos(math.pi/16)
+perimeter=0
+for bay in range(16):
+ angle=bay*math.tau/16
+ for lateral in (-320,-280,-180,0,180,280,320):
+  for depth in range(-140,41,5):
+   x=(front+depth)*math.sin(angle)+lateral*math.cos(angle)
+   z=(front+depth)*math.cos(angle)-lateral*math.sin(angle)
+   surfaces=hits(x,z);current=-403
+   roof=min((y for y,up in surfaces if not up and y>current),default=math.inf)
+   assert roof-current>=180, ('False ceiling at wall footing',bay,lateral,depth,roof)
+   probe=min(current+100,roof)
+   floor=max((y for y,up in surfaces if up and y<probe),default=-math.inf)
+   assert floor>=-400.01, ('Lost perimeter support',bay,lateral,depth,floor)
+   perimeter+=1
+print(f'Perimeter floor: {perimeter} chest/wall/column probes retain support')

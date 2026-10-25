@@ -49,6 +49,12 @@ jobs:
       - name: Test Hyrule Survivors rules and lifecycle
         if: matrix.platform == 'linux-x86_64'
         run: |
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/survivors_roundtable_props_test.cpp -o /tmp/roundtable-props-test
+          /tmp/roundtable-props-test
+          clang++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/survivors_roundtable_props_test.cpp -o /tmp/roundtable-props-clang-test
+          /tmp/roundtable-props-clang-test
+          python3 tests/survivors_roundtable_props_runtime_test.py
+          CXX=clang++ python3 tests/survivors_roundtable_props_runtime_test.py
           python3 tests/survivors_hearth_floor_test.py
           python3 tests/survivors_roundtable_test.py
           python3 tests/survivors_roundtable_shadows_test.py

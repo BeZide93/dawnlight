@@ -218,3 +218,25 @@ assert any(len(face['points'])==4 for face in hall.receivers), 'Share quad shado
 # Native source extraction must run only after CMake fetched the pinned SDK.
 workflow=(ROOT/'.github/workflows/build.yml').read_text()
 assert workflow.index('name: Configure CMake') < workflow.index('python3 tests/survivors_roundtable_entry_test.py')
+
+# Native dressing must fit the authored supports and leave interaction paths.
+props=g.prop_layout()
+assert len(props)==36 and sum(p[2]==g.FLOOR for p in props)==12
+assert {p[0] for p in props}=={0,1,2,3}
+for i,p in enumerate(props):
+ kind,x,y,z,yaw,w,h,d=p
+ for q in props[i+1:]:
+  if y==q[2]:
+   assert math.hypot(x-q[1],z-q[3])>(math.hypot(w,d)+math.hypot(q[5],q[7]))/2, 'Dressing bounds overlap'
+ if y==g.FLOOR:
+  assert abs(ground(x,z,y+1)-g.FLOOR)<.01
+  assert min(math.hypot(x-a,z-b) for a,b in ((g.CHEST_X,0),(g.ZELDA_X,g.ZELDA_Z),(0,g.EXIT_Z),(0,g.REST_Z)))>220
+ else:
+  bay=round(math.atan2(x,z)*g.SIDES/math.tau)%g.SIDES
+  assert bay in g.NICHE_BAYS+g.SHELF_BAYS
+  a=bay*math.tau/g.SIDES
+  xx=x*math.cos(a)-z*math.sin(a);zz=x*math.sin(a)+z*math.cos(a)-g.FRONT
+  radius=math.hypot(w,d)/2
+  assert abs(xx)+radius<170 and zz-radius>-115 and zz+radius<-2, 'Dressing extends beyond support'
+  assert y-g.FLOOR in ((95,335,575) if bay in g.NICHE_BAYS else (77,262,447))
+print('Native dressing: 36 separated placements, grounded supports and clear anchors')

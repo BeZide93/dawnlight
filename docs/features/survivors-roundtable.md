@@ -50,7 +50,7 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   angular bronze centre inlay, apron ornaments and framed pedestal panels. Chairs
   have tapered legs, block feet, stretchers, framed front/rear panels, rear
   lozenge inlays and curved bevelled crests. Their playable footprints stay fixed.
-- Six three-tier stone niche bays and two empty walnut shelf bays form mirrored
+- Six three-tier stone niche bays and two walnut shelf bays form mirrored
   pairs about the entrance/centre axis. The other bays retain layered panels,
   projecting piers, corbels and relief bands. Functional fireplace and equipment
   anchors remain at their established positions.
@@ -61,7 +61,7 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   with independently offset drum UVs. Walnut shelving has framed recessed
   back panels, layered shelf lips, small corbels, fluted side stiles and a dentil
   cornice. These details echo the mantel's proportions without adding objects.
-  Books, vessels and stacks have been removed from all shelves and niches.
+  Books remain removed. Native crates, barrels and small/large pots now dress selected shelves and niches.
   Perimeter clutter uses a fixed random seed, unequal cluster sizes, different
   mixtures and independently rotated/scaled papers, splinters and stone chips.
   Interaction anchors remain clear; clutter is non-solid.
@@ -149,11 +149,50 @@ save format, item reward or title input timing is changed.
 
 ![Offline furniture detail](../images/survivors-furniture.jpg)
 
-![Offline close-up of empty niches and floor clutter](../images/survivors-wall-bays.jpg)
+![Offline close-up of niche geometry and floor clutter](../images/survivors-wall-bays.jpg)
 
 ![Offline view of smaller staggered rectangular flags](../images/survivors-floor.jpg)
 
 ![Offline portal; the native shutter is supplied by the game](../images/survivors-entry.jpg)
+
+## Native Room 8 dressing and perimeter support
+
+The private floor collider extends 180 units beneath the outer wall envelope.
+The visible paving is unchanged. The old floor ended at the hall polygon while
+backing walls sat farther out; Link could lose support behind the equipment
+chest. All downward decorative collision faces below floor + 180 are removed,
+including arch-foot bottoms at floor height. Sides, tops and overhead arches
+remain solid. A 4,144-point perimeter regression checks the equipment bay and
+all wall/column bays with native roof-before-ground ordering. The old DZB fails.
+
+Thirty-six static native props replace some empty space: twelve pieces in unequal
+perimeter groups and twenty-four on irregularly selected shelf/niche tiers.
+There are crates, barrels, small pots and large pots, with varied yaw and offsets.
+Nearby supports can remain empty or hold a pair. Bounds and interaction clearance
+are checked by the geometry regression. Floor props have solid collision volumes;
+shelf props remain behind the cabinet/niche collision envelopes. Simple static
+silhouette proxies add their shadows to the room lightmap.
+
+On the first hub update, a private mount of the installed game's
+`/res/Stage/D_MN09/R08_00.arc` reads only the archive directory and `room.dzr`, without loading its room models. A bounded big-endian parser examines
+ACT/SCO actor records and selects the Carry model variants actually used there,
+including alternate small/large pot skins. The archive is immediately unmounted
+and the selection is cached until mod shutdown. No room 8 actors, stage events,
+geometry or collision are installed. If the source is missing/invalid, a warning
+is logged and the native dressing is skipped; the hub stays usable.
+
+Native model archives are reference-counted per decorative actor. Their real
+shape bounds determine a uniform fit and exact base placement on each support.
+Creation is staggered three actors per update. These are fixed decorations, not
+breakable/loot-producing Carry actors. Deleting the owning hub retires its props;
+pending creates reject retired owners and live actors retry deferred deletion.
+The actor service drains the profile before unregistering callbacks. Model load
+failure does not replace or remove the room. Runtime tests cover delayed/failed
+creation, ownership, archive cleanup and source caching with GCC/Clang sanitizers.
+
+The offline previews show the authored room only; these additional native models
+require the installed game data and are not pictured. On-device checks remain
+necessary for their exact appearance and runtime model rendering cost.
 
 ## Reproduction
 
@@ -175,7 +214,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 62,755 visual triangles and 5,942
+tools or network image generation. There are 62,755 visual triangles and 5,954
 collision triangles, with a balanced collision tree. The vertex limit is 195,000 (65,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. Resources total about 8.9 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 

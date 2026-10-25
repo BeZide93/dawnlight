@@ -2,8 +2,8 @@
 
 The Survivors hub and its title scene use an original, simplified interpretation
 of the Roundtable Hold: a sixteen-sided stone hall, round walnut table, twelve
-high-backed chairs, carved arches, drum columns, a ribbed ceiling, burgundy
-banners, stylized memorials and a west-wall fireplace. This is new geometry and
+high-backed chairs, carved arches, drum columns, a ribbed ceiling, stylized
+memorials and a west-wall fireplace. Ceiling banners and their rods are removed. This is new geometry and
 an original generated material atlas, not extracted Elden Ring assets.
 
 ![Offline render of the exported room geometry](../images/survivors-roundtable.jpg)
@@ -19,8 +19,8 @@ architecture. These shadows follow the fixed lights, not individual moving parti
 ## Layout and integration
 
 - Main hall radius: 1,800 game units (the compact build-1295 layout); floor:
-  Y = -400. The south approach reaches
-  the existing doorway at Z = 3,900 / Y = -250 via a gentle ramp.
+  Y = -400. The exit now sits directly at the south hall edge,
+  Z = 1815.4135 / Y = -400. The long rising corridor is removed.
 - The table is centered at X/Z = 0, with twelve chairs, including the front row.
   Link rests at Z = 760, outside the chair ring; Zelda stands diagonally in front of the west fireplace at X/Z = -1170/430
   and faces the centre. The title camera follows the relocated rest position.
@@ -66,9 +66,14 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   Link silhouette away from point lights without changing global lighting.
   Low ambient lighting keeps recesses dark while local firelight defines the room;
   one planar UV projection per irregular slab avoids diagonal texture seams.
-- A 600-unit-deep stone reveal encloses the native door frame at Z = 3,900
-  and joins both corridor walls and the ceiling. Solid wings, a lintel and a visible back wall replace the
-  freestanding shutter/black void; its approach and native event goals stay clear.
+- A detailed stone portal frames the exit with grounded bases, fluted jambs,
+  joint bands, capitals, two segmented archivolts, a keystone and a carved
+  cornice with bronze insets. Solid wings and a lintel enclose the shutter.
+  A flat 300-unit pocket behind the door supports the native event goals;
+  there is no corridor to walk down before reaching the door. The stage-actor
+  hook relocates only the captured south-door spawn before native construction,
+  so its matrices, collision and cached event positions use the new anchor.
+  Door parameters, yaw, interactions and normal combat doors are preserved.
 - Recessed wall panels and arch pilasters collide at their visible front faces.
   The table has a continuous collision skirt to the floor, and chairs have
   full seat/body and back volumes. These cover Link's native +30.01-unit wall
@@ -111,11 +116,15 @@ save format, item reward or title input timing is changed.
 
 ![Offline view of smaller staggered rectangular flags](../images/survivors-floor.jpg)
 
+![Offline portal; the native shutter is supplied by the game](../images/survivors-entry.jpg)
+
 ## Reproduction
 
 ```sh
 python3 tools/generate_roundtable.py --texture tools/assets/roundtable_materials.png
 python3 tools/bake_roundtable_shadows.py
+python3 tests/survivors_roundtable_entry_test.py
+CXX=clang++ python3 tests/survivors_roundtable_entry_test.py
 python3 tests/survivors_hearth_floor_test.py
 python3 tests/survivors_roundtable_test.py
 python3 tests/survivors_roundtable_shadows_test.py
@@ -129,7 +138,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 44,783 visual triangles and 5,840
+tools or network image generation. There are 44,677 visual triangles and 5,772
 collision triangles, with a balanced collision tree. Resources total about 7.2 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
@@ -140,6 +149,11 @@ deletion and mod shutdown. Geometry tests verify reproducibility, native table
 bounds/tree ancestry, winding, inherited floor lighting, furniture heights,
 grounded memorial plinths, front-facing wall/seat/table blocking at native
 body-check heights, clear door-event paths and uniform wall/column UV density.
+The entry fixture executes the production stage hook with GCC and Clang,
+covering hub/title scoping, all supported door profiles, exact anchor matching,
+unchanged actor metadata and replay safety. Geometry probes check both event
+approaches, portal walls/backstop and the absence of old corridor ground and
+high cloth banners.
 The hearth regression follows 630 approach/retreat steps with gravity and the
 native roof-before-ground query order; it fails on the previous exported collider.
 The shadow baker shares one receiver chart across each convex stone slab or quad,

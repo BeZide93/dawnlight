@@ -14,10 +14,20 @@ HookAction before_roundtable_stage_actor(ModContext*,void* args,void*,void*) {
     // authored exit and scene infrastructure; standalone Zelda/bowl/chest are
     // spawned separately, so this cannot remove them or their interactions.
     switch(info->procname) {
-    case fpcNm_ALINK_e:case fpcNm_BG_e:case fpcNm_KANKYO_e:case fpcNm_ENVSE_e:
+    case fpcNm_ALINK_e:case fpcNm_BG_e:case fpcNm_KANKYO_e:case fpcNm_ENVSE_e:return HOOK_CONTINUE;
     case fpcNm_DOOR20_e:case fpcNm_KNOB20_e:case fpcNm_DBDOOR_e:
     case fpcNm_BOSS_DOOR_e:case fpcNm_L1BOSS_DOOR_e:case fpcNm_L1MBOSS_DOOR_e:
-    case fpcNm_L5BOSS_DOOR_e:case fpcNm_SPIRAL_DOOR_e:return HOOK_CONTINUE;
+    case fpcNm_L5BOSS_DOOR_e:case fpcNm_SPIRAL_DOOR_e:
+        // Relocate before native construction: home/current position, cached
+        // model/collision matrices, attention and event goals share one anchor.
+        // Only the captured south exit moves; other doors/rooms stay authored.
+        if(std::abs(float(params->base.position.x))<1.f &&
+           std::abs(float(params->base.position.y)-roundtable_layout::nativeExitY)<1.f &&
+           std::abs(float(params->base.position.z)-roundtable_layout::nativeExitZ)<1.f) {
+            params->base.position.y=roundtable_layout::floorY;
+            params->base.position.z=roundtable_layout::exitZ;
+        }
+        return HOOK_CONTINUE;
     default:JKRFree(params);return HOOK_SKIP_ORIGINAL;
     }
 }

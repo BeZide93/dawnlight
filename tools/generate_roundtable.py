@@ -26,8 +26,11 @@ TAU = math.tau
 # neighbouring atlas materials. Collision keeps the unsplit source triangles.
 TEXEL_SPAN = 200.0
 MASONRY_SPAN = 320.0
-EXIT_Z = 3900.0  # captured native BS_SHUTTER_START actor position
-EXIT_FLOOR = -250.0
+NATIVE_EXIT_Z = 3900.0
+NATIVE_EXIT_FLOOR = -250.0
+EXIT_Z = FRONT+50.0
+EXIT_FLOOR = FLOOR
+EXIT_BACK_Z = EXIT_Z+300.0
 EXIT_HALF_WIDTH = 190.0
 EXIT_HEIGHT = 350.0
 REST_Z = 760.0
@@ -523,7 +526,7 @@ class Hall:
             self.chair(460*math.sin(angle),460*math.cos(angle),angle+math.pi)
         # Recessed masonry firebox, layered carved surround and a real log bed.
         self.fireplace()
-        # Burgundy banners and small stylized robed memorials in rear bays.
+        # Small stylized robed memorials in rear bays; no hanging banners.
         for angle in (math.pi*.75,math.pi,math.pi*1.25):
             self.local((FRONT-200)*math.sin(angle),(FRONT-200)*math.cos(angle),angle)
             # Grounded plinth, narrower shaft and cap support the entire figure.
@@ -532,40 +535,46 @@ class Hall:
             self.box(0,325,0,260,35,200)
             self.column(0,360,0,95,260,top=45,solid=False,n=8)
             self.column(0,620,0,48,85,top=18,solid=False,n=8)
-            self.box(-180,470,50,135,420,5,material=2,solid=False)
-            self.box(-180,890,45,175,12,20,material=3,solid=False)
             self.reset()
         self.floor_clutter()
-        # Native south doorway at z=3900: retain its event and collision
-        # footprint. The approach ramp meets its authored floor y=-250.
-        for i in range(12):
-            z0=FRONT+i*(4200-FRONT)/12;z1=FRONT+(i+1)*(4200-FRONT)/12
-            y0=FLOOR+min(150,max(0,(z0-2600)*150/1000))
-            y1=FLOOR+min(150,max(0,(z1-2600)*150/1000))
-            self.quad((-HALF_DOOR,y0,z0),(-HALF_DOOR,y1,z1),(HALF_DOOR,y1,z1),(HALF_DOOR,y0,z0))
-            for sign in (-1,1):
-                x=sign*HALF_DOOR
-                points=[(x,y0,z0),(x,y1,z1),(x,y1+660,z1),(x,y0+660,z0)]
-                if sign<0: points.reverse()
-                self.quad(*points,tint=(200,190,170))
-            self.quad((-HALF_DOOR,y0+660,z0),(HALF_DOOR,y0+660,z0),(HALF_DOOR,y1+660,z1),(-HALF_DOOR,y1+660,z1),solid=False,tint=(130,120,110))
-        # The native shutter stays at its captured position. Build solid wings
-        # and a lintel around it, tied into both corridor walls and the ceiling.
-        # Enclose the full door-frame depth in a 600-unit stone reveal; keep the centre clear
-        # for the native approach, opening animation and +/-240 goal positions.
+        # The native shutter is authored directly into the south bay. Its
+        # creation parameters use the same generated anchor as this surround.
+        # Only a shallow pocket behind it accommodates the native +/-240 goals.
+        self.quad((-HALF_DOOR,FLOOR,FRONT),(-HALF_DOOR,FLOOR,EXIT_BACK_Z),
+                  (HALF_DOOR,FLOOR,EXIT_BACK_Z),(HALF_DOOR,FLOOR,FRONT),material=6,tint=(204,201,192))
+        for sign in (-1,1):
+            points=[(sign*HALF_DOOR,FLOOR,FRONT),(sign*HALF_DOOR,FLOOR,EXIT_BACK_Z),
+                    (sign*HALF_DOOR,FLOOR+660,EXIT_BACK_Z),(sign*HALF_DOOR,FLOOR+660,FRONT)]
+            if sign<0:points.reverse()
+            self.quad(*points,tint=(180,175,160))
+        self.quad((-HALF_DOOR,FLOOR+660,FRONT),(HALF_DOOR,FLOOR+660,FRONT),
+                  (HALF_DOOR,FLOOR+660,EXIT_BACK_Z),(-HALF_DOOR,FLOOR+660,EXIT_BACK_Z),solid=False,tint=(130,120,110))
         side_width=HALF_DOOR-EXIT_HALF_WIDTH
         for sign in (-1,1):
-            self.box(sign*(EXIT_HALF_WIDTH+side_width/2),EXIT_FLOOR,EXIT_Z,
-                side_width,660,600)
-            self.box(sign*(EXIT_HALF_WIDTH+22),EXIT_FLOOR,EXIT_Z-310,
-                44,EXIT_HEIGHT,24)
-        self.box(0,EXIT_FLOOR+EXIT_HEIGHT,EXIT_Z,
-            2*EXIT_HALF_WIDTH,660-EXIT_HEIGHT,600)
-        self.box(0,EXIT_FLOOR+EXIT_HEIGHT,EXIT_Z-310,
-            2*EXIT_HALF_WIDTH+88,40,24)
-        # Keep floor behind the opening for the real door event, and close the
-        # far end visibly as well as physically (rather than a black void).
-        self.box(0,EXIT_FLOOR,4220,2*HALF_DOOR,660,40,tint=(140,132,120))
+            self.box(sign*(EXIT_HALF_WIDTH+side_width/2),FLOOR,FRONT+60,
+                     side_width,1200,170,bottom_solid=False,tint=(180,175,160))
+            # Layered jambs with grounded bases, recessed flutes and capitals.
+            x=sign*(EXIT_HALF_WIDTH+26)
+            self.box(x,FLOOR,FRONT-45,76,26,94,bottom_solid=False)
+            self.box(x,FLOOR+26,FRONT-44,48,EXIT_HEIGHT-26,68,bottom_solid=False)
+            for dx in (-13,13):self.box(x+dx,FLOOR+48,FRONT-81,5,EXIT_HEIGHT-74,6,solid=False,tint=(144,138,123))
+            for y in (92,158,224,290):self.box(x,FLOOR+y,FRONT-48,54,6,80,solid=False)
+            self.box(x,FLOOR+EXIT_HEIGHT-8,FRONT-48,82,30,90,solid=False)
+        self.box(0,FLOOR+EXIT_HEIGHT,FRONT+60,2*EXIT_HALF_WIDTH,1200-EXIT_HEIGHT,170,tint=(180,175,160))
+        # A double archivolt and central keystone frame the recessed lunette
+        # above the rectangular shutter, using the same stone as the hall.
+        for r0,r1,z in ((197,220,FRONT-85),(224,250,FRONT-68)):
+            for i in range(16):
+                a=(i+.025)*math.pi/16;b=(i+.975)*math.pi/16
+                pt=lambda r,t:(r*math.cos(t),FLOOR+EXIT_HEIGHT+r*math.sin(t),z)
+                self.quad(pt(r0,a),pt(r0,b),pt(r1,b),pt(r1,a),solid=False)
+                self.quad(pt(r0,a),add(pt(r0,a),(0,0,30)),add(pt(r0,b),(0,0,30)),pt(r0,b),solid=False,tint=(167,156,135))
+        self.box(0,FLOOR+EXIT_HEIGHT+204,FRONT-86,38,65,38,solid=False)
+        self.box(0,FLOOR+EXIT_HEIGHT+85,FRONT-32,86,86,16,material=3,tint=(139,114,75),solid=False)
+        for y,width,height,depth in ((626,560,25,58),(657,590,18,82),(680,616,24,104)):
+            self.box(0,FLOOR+y,FRONT-28,width,height,depth,solid=False)
+        for x in (-220,-110,0,110,220):self.box(x,FLOOR+630,FRONT-61,48,18,9,material=3,tint=(143,119,78),solid=False)
+        self.box(0,FLOOR,EXIT_BACK_Z+20,2*HALF_DOOR,660,40,bottom_solid=False,tint=(140,132,120))
         self.pack_lightmaps()
         return self
 
@@ -644,6 +653,9 @@ def write_assets():
         '// Generated by tools/generate_roundtable.py.\n#pragma once\n'
         'namespace dawnlight::roundtable_layout {\n'
         f'inline constexpr float floorY = {FLOOR:.1f}f;\n'
+        f'inline constexpr float exitZ = {EXIT_Z:.6f}f;\n'
+        f'inline constexpr float nativeExitZ = {NATIVE_EXIT_Z:.1f}f;\n'
+        f'inline constexpr float nativeExitY = {NATIVE_EXIT_FLOOR:.1f}f;\n'
         f'inline constexpr float chestX = {CHEST_X:.6f}f;\n'
         f'inline constexpr float zeldaZ = {ZELDA_Z:.1f}f;\n'
         f'inline constexpr short zeldaYaw = {ZELDA_YAW};\n'

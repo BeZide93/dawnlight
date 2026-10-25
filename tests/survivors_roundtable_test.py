@@ -97,14 +97,15 @@ for angle in (math.pi*.75,math.pi,math.pi*1.25):
 
 # Walkable links between all interaction points, including the authored door.
 routes=[((0,g.REST_Z),(-720,650)),((-720,650),(g.ZELDA_X,g.ZELDA_Z)),
-        ((0,g.REST_Z),(chest_x,0)),((0,g.REST_Z),(0,3900))]
+        ((0,g.REST_Z),(chest_x,0)),((0,g.REST_Z),(0,g.EXIT_Z))]
 for start,end in routes:
     last=-400
     for step in range(101):
         t=step/100;x=start[0]+t*(end[0]-start[0]);z=start[1]+t*(end[1]-start[1])
         y=ground(x,z,0);assert y is not None and abs(y-last)<10,(x,z,y,last)
         last=y
-assert abs(ground(0,3900,0)+250)<.01
+assert abs(ground(0,g.EXIT_Z,0)-g.FLOOR)<.01
+assert ground(0,3000) is None, "Remove the former long corridor"
 assert ground(3000,0) is None
 # Native Link wall checks use +30.01 and +129.99, not a complete body capsule.
 # The old tabletop/seat surfaces missed the low circle and allowed penetration.
@@ -131,14 +132,20 @@ for i in range(1,g.SIDES):
     assert segment_hits(wall_point(0,-230),wall_point(0,10),True), 'Panel collision at its visible front'
     pillar_x=(2*g.HALF_DOOR-175)/2+38
     assert segment_hits(wall_point(pillar_x,-80),wall_point(pillar_x,0),True), 'Arch pilaster must be solid'
-# Door wings cover the full corridor width, but leave native interaction and
-# the opening/closing path unblocked. The back wall closes the previous void.
+# The doorway sits directly at the hall edge, at the same floor height.
+# Its solid surround must leave native +/-240-unit event goals unobstructed.
+assert g.EXIT_Z-g.FRONT<=60 and g.EXIT_BACK_Z-g.FRONT<400
 for x in (-g.HALF_DOOR+2,-230,230,g.HALF_DOOR-2):
-    assert segment_hits((x,-200,3500),(x,-200,3950),True)
+    assert segment_hits((x,g.FLOOR+130,g.FRONT-150),(x,g.FLOOR+130,g.EXIT_Z+100),True)
 for x in (-120,0,120):
-    assert not segment_hits((x,-120,3600),(x,-120,4140),True), 'Door event route must remain clear'
-assert segment_hits((0,150,3500),(0,150,3950),True), 'Door lintel closes overhead gap'
-assert segment_hits((0,-120,4140),(0,-120,4250),True), 'Visible back wall has collision'
+    assert not segment_hits((x,g.FLOOR+130,g.EXIT_Z-240),(x,g.FLOOR+130,g.EXIT_Z+240),True), 'Clear door event path'
+    assert abs(ground(x,g.EXIT_Z+240,g.FLOOR+100)-g.FLOOR)<.01
+assert segment_hits((0,g.FLOOR+400,g.FRONT-150),(0,g.FLOOR+400,g.EXIT_Z+100),True)
+assert segment_hits((0,g.FLOOR+130,g.EXIT_BACK_Z-60),(0,g.FLOOR+130,g.EXIT_BACK_Z+40),True)
+# Red cloth remains on chair cushions only, never on walls or ceiling.
+cloth=g.MATERIAL_RECTS[2]
+assert not any(cloth[0]/1024<v[3]<(cloth[0]+cloth[2])/1024 and
+               cloth[1]/1024<v[4]<(cloth[1]+cloth[3])/1024 and v[1]>g.FLOOR+200 for v in hall.vertices)
 # Each textured triangle remains inside one padded material rectangle.
 for start in range(0,len(hall.vertices),3):
     face=hall.vertices[start:start+3]

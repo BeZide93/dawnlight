@@ -331,6 +331,8 @@ jobs:
           CXX=clang++ python3 tests/survivors_map_unlock_test.py
           python3 tests/survivors_cheat_guard_test.py
           CXX=clang++ python3 tests/survivors_cheat_guard_test.py
+          python3 tests/survivors_cheat_persistence_test.py
+          CXX=clang++ python3 tests/survivors_cheat_persistence_test.py
           python3 tests/survivors_settings_config_test.py
           CXX=clang++ python3 tests/survivors_settings_config_test.py
           CXX=clang++ python3 tests/survivors_hub_test.py

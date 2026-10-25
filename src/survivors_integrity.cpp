@@ -41,7 +41,6 @@ std::array<survivors::CheatGuard<bool>,kBoolCheats.size()> s_bools;
 survivors::CheatGuard<dusk::AlwaysGreatspinMode> s_spin;
 survivors::CheatGuard<dusk::MagicArmorMode> s_armor;
 std::array<Subscription,18> s_subscriptions{};
-ConfigVar<bool>* s_speedrun=nullptr;
 bool s_running=false, s_locked=false;
 using LoaderFn=dusk::mods::ModLoader& (*)();
 LoaderFn s_loader=nullptr;
@@ -83,8 +82,7 @@ ModResult initialize_survivors_integrity(ModError* error) {
     for(size_t i=0;i<kBoolCheats.size();++i)s_bools[i].var=static_cast<ConfigVar<bool>*>(s_get(kBoolCheats[i]));
     s_spin.var=static_cast<ConfigVar<dusk::AlwaysGreatspinMode>*>(s_get("game.alwaysGreatspin"));
     s_armor.var=static_cast<ConfigVar<dusk::MagicArmorMode>*>(s_get("game.armorRupeeDrain"));
-    s_speedrun=static_cast<ConfigVar<bool>*>(s_get("game.speedrunMode"));
-    if(!s_spin.var || !s_armor.var || !s_speedrun ||
+    if(!s_spin.var || !s_armor.var ||
        std::any_of(s_bools.begin(),s_bools.end(),[](const auto& guard){return !guard.var;}))
         return mods::set_error(error,MOD_UNAVAILABLE,"Survivors could not find all host Cheats settings");
     return MOD_OK;
@@ -106,19 +104,16 @@ void update_survivors_integrity(bool& modded) {
 }
 void end_survivors_integrity() {
     s_running=s_locked=false;
-    const bool speedrun=s_speedrun && s_speedrun->getValue();
-    for(size_t i=0;i<s_bools.size();++i) {
-        // Dusklight's native speedrun policy does not override Easy Quick Spin.
-        // Restore that preference normally instead of adding a new host policy.
-        s_bools[i].release(speedrun && std::string_view(kBoolCheats[i])!="game.easyQuickSpin");
-    }
-    s_spin.release(speedrun);s_armor.release(speedrun);
+    // Only remove our runtime masks. The host's speedrunMode preference merely
+    // exposes another game mode; it does not mean that mode is currently active.
+    for(auto& cheat:s_bools)cheat.release();
+    s_spin.release();s_armor.release();
     for(auto& token:s_subscriptions) {if(token && s_unsubscribe)s_unsubscribe(token);token=0;}
 }
 void shutdown_survivors_integrity() {
     end_survivors_integrity();
     for(auto& cheat:s_bools)cheat={};
-    s_spin={};s_armor={};s_speedrun=nullptr;
+    s_spin={};s_armor={};
     s_loader=nullptr;s_get=nullptr;s_subscribe=nullptr;s_unsubscribe=nullptr;
     s_nativeHasSubscribers=nullptr;s_nativeNotifyChanged=nullptr;
 }

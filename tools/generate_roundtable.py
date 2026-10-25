@@ -14,8 +14,7 @@ import struct
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'res/survivors_roundtable'
 FLOOR = -400.0
-# Compact layout preferred in build 1295; the native door stays connected
-# by the existing approach corridor rather than enlarging the main hall.
+# Compact layout preferred in build 1295; the exit sits at the hall edge.
 RADIUS = 1800.0
 SIDES = 16
 FRONT = RADIUS * math.cos(math.pi/SIDES)
@@ -26,8 +25,6 @@ TAU = math.tau
 # neighbouring atlas materials. Collision keeps the unsplit source triangles.
 TEXEL_SPAN = 200.0
 MASONRY_SPAN = 320.0
-NATIVE_EXIT_Z = 3900.0
-NATIVE_EXIT_FLOOR = -250.0
 EXIT_Z = FRONT+50.0
 EXIT_FLOOR = FLOOR
 EXIT_BACK_Z = EXIT_Z+300.0
@@ -654,8 +651,6 @@ def write_assets():
         'namespace dawnlight::roundtable_layout {\n'
         f'inline constexpr float floorY = {FLOOR:.1f}f;\n'
         f'inline constexpr float exitZ = {EXIT_Z:.6f}f;\n'
-        f'inline constexpr float nativeExitZ = {NATIVE_EXIT_Z:.1f}f;\n'
-        f'inline constexpr float nativeExitY = {NATIVE_EXIT_FLOOR:.1f}f;\n'
         f'inline constexpr float chestX = {CHEST_X:.6f}f;\n'
         f'inline constexpr float zeldaZ = {ZELDA_Z:.1f}f;\n'
         f'inline constexpr short zeldaYaw = {ZELDA_YAW};\n'

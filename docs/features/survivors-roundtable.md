@@ -71,9 +71,12 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   cornice with bronze insets. Solid wings and a lintel enclose the shutter.
   A flat 300-unit pocket behind the door supports the native event goals;
   there is no corridor to walk down before reaching the door. The stage-actor
-  hook relocates only the captured south-door spawn before native construction,
+  hook relocates only door spawns in the former southern corridor before native construction,
   so its matrices, collision and cached event positions use the new anchor.
   Door parameters, yaw, interactions and normal combat doors are preserved.
+  The old exact-position filter incorrectly used Link's logged
+  `BS_SHUTTER_START` position as the door anchor. The new filter identifies
+  south-corridor door records independently of that player spawn.
 - Recessed wall panels and arch pilasters collide at their visible front faces.
   The table has a continuous collision skirt to the floor, and chairs have
   full seat/body and back volumes. These cover Link's native +30.01-unit wall
@@ -150,7 +153,7 @@ bounds/tree ancestry, winding, inherited floor lighting, furniture heights,
 grounded memorial plinths, front-facing wall/seat/table blocking at native
 body-check heights, clear door-event paths and uniform wall/column UV density.
 The entry fixture executes the production stage hook with GCC and Clang,
-covering hub/title scoping, all supported door profiles, exact anchor matching,
+covering hub/title scoping, all supported door profiles, southern-corridor selection at several heights/depths,
 unchanged actor metadata and replay safety. Geometry probes check both event
 approaches, portal walls/backstop and the absence of old corridor ground and
 high cloth banners.

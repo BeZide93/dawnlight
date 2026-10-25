@@ -20,10 +20,13 @@ HookAction before_roundtable_stage_actor(ModContext*,void* args,void*,void*) {
     case fpcNm_L5BOSS_DOOR_e:case fpcNm_SPIRAL_DOOR_e:
         // Relocate before native construction: home/current position, cached
         // model/collision matrices, attention and event goals share one anchor.
-        // Only the captured south exit moves; other doors/rooms stay authored.
-        if(std::abs(float(params->base.position.x))<1.f &&
-           std::abs(float(params->base.position.y)-roundtable_layout::nativeExitY)<1.f &&
-           std::abs(float(params->base.position.z)-roundtable_layout::nativeExitZ)<1.f) {
+        // Identify the southern exit by its corridor region, not Link's
+        // BS_SHUTTER_START event position (which is NOT the door anchor).
+        // Room/profile gating above keeps unrelated doors untouched.
+        if(std::abs(float(params->base.position.x))<400.f &&
+           std::isfinite(float(params->base.position.z)) &&
+           float(params->base.position.z)>roundtable_layout::exitZ+300.f) {
+            params->base.position.x=0;
             params->base.position.y=roundtable_layout::floorY;
             params->base.position.z=roundtable_layout::exitZ;
         }

@@ -26,6 +26,7 @@ struct fopAc_ac_c{unsigned id=1,param=0,parentActorID=10;struct{cXyz pos;}curren
 unsigned fopAcM_GetParam(fopAc_ac_c* a){return a->param;}unsigned fopAcM_GetID(fopAc_ac_c* a){return a->id;}
 void fopAcM_SetMtx(fopAc_ac_c*,void*){}
 struct request_of_phase_process_class{bool held=false;};
+int sourceMode=0;
 int archiveRefs=0,archiveLoads=0,archiveDeletes=0,archiveMounts=0,draws=0;bool delayed=false,failLoad=false,failHeap=false,failModel=false,ownerDeleted=false;
 int dComIfG_resLoad(request_of_phase_process_class* p,const char*){++archiveLoads;if(!p->held){p->held=true;++archiveRefs;}return failLoad?5:delayed?1:4;}
 void dComIfG_resDelete(request_of_phase_process_class* p,const char*){if(p->held){--archiveRefs;++archiveDeletes;p->held=false;}}
@@ -41,8 +42,8 @@ void mDoExt_modelUpdateDL(J3DModel*){++draws;}
 void* mDoExt_getArchiveHeap(){return nullptr;}
 struct JKRArchive{
  enum{MOUNT_DVD,MOUNT_DIRECTION_HEAD};std::vector<u8> bytes;
- static JKRArchive* mount(const char* path,int,void*,int){assert(std::string(path)=="/res/Stage/D_MN09/R08_00.arc");++archiveMounts;auto* a=new JKRArchive;a->bytes.resize(144);a->bytes[3]=1;std::memcpy(a->bytes.data()+4,"ACTR",4);a->bytes[11]=4;a->bytes[15]=16;unsigned types[]{7,13,2,4};for(int i=0;i<4;++i){std::memcpy(a->bytes.data()+16+i*32,"carry00",7);a->bytes[16+i*32+29]=types[i]*2;}return a;}
- void* getResource(unsigned,const char* path){assert(std::string(path)=="room.dzr");return bytes.data();}unsigned getExpandedResSize(const void*){return bytes.size();}void unmount(){delete this;}
+ static JKRArchive* mount(const char* path,int,void*,int){assert(std::string(path)=="/res/Stage/D_MN09/R08_00.arc");++archiveMounts;if(sourceMode==2)return nullptr;auto* a=new JKRArchive;a->bytes.resize(144);a->bytes[3]=1;std::memcpy(a->bytes.data()+4,"ACTR",4);a->bytes[11]=4;a->bytes[15]=16;unsigned types[]{7,13,2,4};for(int i=0;i<4;++i){std::memcpy(a->bytes.data()+16+i*32,"carry00",7);a->bytes[16+i*32+29]=types[i]*2;}if(sourceMode==1){a->bytes.resize(48);a->bytes[11]=1;}if(sourceMode==3)a->bytes[0]=255;return a;}
+ void* getResource(unsigned,const char* path){assert(std::string(path)=="room.dzr");return sourceMode==4?nullptr:bytes.data();}unsigned getExpandedResSize(const void*){return bytes.size();}void unmount(){delete this;}
 };
 struct Log{void warn(void*,const char*){}}logService;auto* svc_log=&logService;
 struct ActorSpawnParams{unsigned parameters;int argument,room_num;struct{float x,y,z;}position,scale;};
@@ -58,6 +59,20 @@ struct Service{
 main=r'''
 int main(){
  using namespace dawnlight;
+ // Optional source discovery must never suppress all models. Exercise partial,
+ // missing, malformed and missing-resource archives through the production path.
+ for(sourceMode=1;sourceMode<=4;++sourceMode){
+  const auto mounts=archiveMounts;assert(initialize_roundtable_props(nullptr)==0);
+  for(int i=0;i<20;++i)update_roundtable_props(10);
+  assert(spawned.size()==std::size(roundtable_layout::props));assert(archiveMounts==mounts+1);
+  auto expected=roundtable_props::default_types;if(sourceMode==1)expected[0]=7;
+  assert(types==expected);
+  const unsigned representatives[]{4,6,0,1};
+  for(auto index:representatives){PropActor a;a.param=index;assert(create_prop(&a)==4);draw_prop(&a);}
+  assert(archiveRefs==0);
+  shutdown_roundtable_props();spawned.clear();deleted.clear();
+ }
+ sourceMode=0;archiveMounts=draws=0;
  assert(initialize_roundtable_props(nullptr)==0);
  for(int i=0;i<20;++i)update_roundtable_props(10);
  assert(spawned.size()==std::size(roundtable_layout::props));assert(archiveMounts==1);

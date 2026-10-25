@@ -20,12 +20,14 @@ ProfileName profile=-1;
 ActorHandle registration=0;
 struct Dressing { unsigned next=0; std::vector<ActorId> actors; };
 std::map<ActorId,Dressing> rooms;
-std::array<unsigned,4> types{{0,1,2,4}};
-bool sourceRead=false,sourceReady=false;
+auto types=roundtable_props::default_types;
+bool sourceRead=false;
 
-bool read_source() {
-    if(sourceRead)return sourceReady;
+void read_source() {
+    if(sourceRead)return;
     sourceRead=true;
+    types=roundtable_props::default_types;
+    bool selected=false;
     // Mount a private archive only to inspect its actor records. Never install
     // room 8 as a stage resource or run its actors, events or collision.
     auto* archive=JKRArchive::mount("/res/Stage/D_MN09/R08_00.arc",
@@ -33,11 +35,10 @@ bool read_source() {
     if(archive) {
         const auto* bytes=static_cast<const u8*>(archive->getResource(0,"room.dzr"));
         const auto size=bytes?archive->getExpandedResSize(bytes):0;
-        sourceReady=size<=1024*1024 && roundtable_props::select_room_models(bytes,size,types);
+        selected=size<=1024*1024 && roundtable_props::select_room_models(bytes,size,types);
         archive->unmount();
     }
-    if(!sourceReady)svc_log->warn(mod_ctx,"Roundtable dressing: D_MN09 room 8 carry variants unavailable; skipping native props");
-    return sourceReady;
+    if(!selected)svc_log->warn(mod_ctx,"Roundtable dressing: optional room 8 variants unavailable; using native Carry models");
 }
 
 class PropActor : public fopAc_ac_c {
@@ -112,7 +113,8 @@ ModResult initialize_roundtable_props(ModError* error) {
     return result==MOD_OK?MOD_OK:mods::set_error(error,result,"failed to register Roundtable dressing");
 }
 void update_roundtable_props(ActorId owner) {
-    if(!registration || !read_source())return;
+    if(!registration)return;
+    read_source();
     auto& room=rooms[owner];
     // Stagger archive/model creation without adding work to presentation frames.
     for(unsigned count=0;count<3 && room.next<std::size(roundtable_layout::props);++count) {
@@ -132,6 +134,6 @@ void release_roundtable_props(ActorId owner) {
 void shutdown_roundtable_props() {
     while(!rooms.empty())release_roundtable_props(rooms.begin()->first);
     if(registration && svc_actor->unregister_actor(mod_ctx,registration)==MOD_OK){registration=0;profile=-1;}
-    sourceRead=sourceReady=false;
+    sourceRead=false;types=roundtable_props::default_types;
 }
 }

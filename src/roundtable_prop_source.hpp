@@ -14,7 +14,9 @@ inline constexpr ModelSource sources[]{
     {"D_aotubo0","D_aotubo00.bmd"}, {nullptr,nullptr},
     {"O_tuboS","O_tuboS_LV8.bmd"}, {"O_tuboB","O_tuboB_LV8.bmd"}
 };
-// Read the installed game's D_MN09/R08_00.arc room.dzr, not a guessed pot skin.
+// Room 8 may supply alternate skins, but is not a dependency for decoration.
+inline constexpr std::array<unsigned,4> default_types{{0,1,2,4}};
+// Read the installed game's D_MN09/R08_00.arc room.dzr.
 // DZS actor records remain big-endian on PC; Carry's variant is angle.z >> 1.
 inline bool select_room_models(const uint8_t* bytes,size_t size,std::array<unsigned,4>& types) {
     if(!bytes || size<4)return false;
@@ -37,7 +39,8 @@ inline bool select_room_models(const uint8_t* bytes,size_t size,std::array<unsig
             if(kind>=0 && !found[kind]) {selected[kind]=type;found[kind]=true;}
         }
     }
-    if(!found[0]||!found[1]||!found[2]||!found[3])return false;
+    // Valid rooms need not contain all four categories. Preserve the caller's
+    // native default for missing categories; malformed input still commits none.
     types=selected;return true;
 }
 }

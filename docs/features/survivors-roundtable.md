@@ -178,8 +178,11 @@ On the first hub update, a private mount of the installed game's
 ACT/SCO actor records and selects the Carry model variants actually used there,
 including alternate small/large pot skins. The archive is immediately unmounted
 and the selection is cached until mod shutdown. No room 8 actors, stage events,
-geometry or collision are installed. If the source is missing/invalid, a warning
-is logged and the native dressing is skipped; the hub stays usable.
+geometry or collision are installed. Room 8 discovery is optional: each missing category keeps its native Carry
+default. If the archive or actor records are missing/invalid, a warning is logged
+and all four defaults still spawn. Previously one missing category suppressed
+all 36 models while leaving their baked shadows and colliders visible; parser and
+actor-lifecycle regressions now cover partial, absent and malformed sources.
 
 Native model archives are reference-counted per decorative actor. Their real
 shape bounds determine a uniform fit and exact base placement on each support.

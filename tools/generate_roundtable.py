@@ -569,7 +569,7 @@ class Hall:
                 self.quad(a,(a[0],FLOOR+.05,a[2]),(b[0],FLOOR+.05,b[2]),b,
                           material=material,tint=edge_tint,solid=False)
 
-    def paving(self,boundary):
+    def paving(self,boundary,end_z=RADIUS,level=False):
         # Worn rectangular flags in staggered, unequal courses, like the reference
         # hall. No large polygon cells or decorative circular floor inlay.
         # This is visual paving over the unchanged continuous native collider.
@@ -582,7 +582,7 @@ class Hall:
         anchors.extend((1420*math.sin(bay*TAU/SIDES),1420*math.cos(bay*TAU/SIDES),280)
                        for bay in (2,6,8,10,14))
         z=-RADIUS-160
-        while z<RADIUS:
+        while z<end_z:
             depth=rng.uniform(55,82)
             x=-RADIUS-rng.uniform(60,230)
             while x<RADIUS:
@@ -592,7 +592,7 @@ class Hall:
                 # Each corner has its own small chip, not repeated rectangular
                 # outlines. Thin gray-brown mortar stays below the stone tops.
                 cx=(x0+x1)/2;cz=(z0+z1)/2
-                clear=math.hypot(cx,cz)>650 and all(math.hypot(cx-a,cz-b)>r for a,b,r in anchors)
+                clear=not level and math.hypot(cx,cz)>650 and all(math.hypot(cx-a,cz-b)>r for a,b,r in anchors)
                 damage=wear.random() if clear else 1.0
                 broken=damage<.055;raised=.055<=damage<.12
                 # A few chipped corners per intact plate; larger irregular
@@ -942,11 +942,16 @@ class Hall:
         # The native shutter is authored directly into the south bay. Its
         # creation parameters use the same generated anchor as this surround.
         # Hidden passage behind the door supports native entrance/exit travel.
+        # Continue the hall's small warm limestone flags behind the shutter.
+        # Keep the native door-event route level and its existing solid floor.
+        passage=[(-HALF_DOOR,FLOOR,FRONT),(-HALF_DOOR,FLOOR,EXIT_BACK_Z),
+                 (HALF_DOOR,FLOOR,EXIT_BACK_Z),(HALF_DOOR,FLOOR,FRONT)]
+        self.paving(passage,end_z=EXIT_BACK_Z,level=True)
         # Segment the surfaces so vertex shading can fade them into black.
         cuts=[FRONT,EXIT_Z,EXIT_Z+60,EXIT_Z+120,EXIT_Z+180,EXIT_Z+240,EXIT_BACK_Z]
         for z0,z1 in zip(cuts,cuts[1:]):
             self.quad((-HALF_DOOR,FLOOR,z0),(-HALF_DOOR,FLOOR,z1),
-                      (HALF_DOOR,FLOOR,z1),(HALF_DOOR,FLOOR,z0),material=6,tint=(204,201,192))
+                      (HALF_DOOR,FLOOR,z1),(HALF_DOOR,FLOOR,z0),material=5,tint=(83,69,51))
             for sign in (-1,1):
                 points=[(sign*HALF_DOOR,FLOOR,z0),(sign*HALF_DOOR,FLOOR,z1),
                         (sign*HALF_DOOR,FLOOR+660,z1),(sign*HALF_DOOR,FLOOR+660,z0)]

@@ -134,7 +134,9 @@ still needed for flame appearance and actual performance.
 - A detailed stone portal frames the exit with grounded bases, fluted jambs,
   joint bands, capitals, two segmented archivolts, a keystone and a carved
   cornice with bronze insets. Solid wings and a lintel enclose the shutter.
-  A flat 900-unit passage behind the door supports native entry/exit travel;
+  A flat 900-unit passage behind the door supports native entry/exit travel.
+  Its visible floor continues the hall's small warm limestone flags and mortar,
+  with level stones along the native door-event route;
   there is no corridor to walk down before reaching the door. Its segmented
   floor and side walls fade to black within 240 units. The distant backstop
   remains solid but completely black, with no visible masonry. The stage-actor
@@ -265,7 +267,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 63,832 visual triangles and 6,488
+tools or network image generation. There are 64,178 visual triangles and 6,488
 collision triangles, with a balanced collision tree. The vertex limit is 195,000 (65,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. Resources total about 8.9 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
@@ -314,8 +316,8 @@ The RTH2 source asset keeps its floats. Loading validates ranges and converts
 once to signed 16-bit positions with 3 fractional bits, 16-bit UVs with 16
 fractional bits, and unchanged RGBA8 colours. GX declarations match those writes.
 The original fix reduced that hall to **3,215,862 bytes (3.07 MiB)**, 43.75% less.
-The raised vault, statues and sconces now use **3,446,928 bytes
-(3.29 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. UV grid tessellation avoids diagonal slivers, and invisible exterior faces behind the closed shell are omitted; the black entrance passage is explicitly retained. Maximum position
+The raised vault, statues and sconces now use **3,465,612 bytes
+(3.31 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. UV grid tessellation avoids diagonal slivers, and invisible exterior faces behind the closed shell are omitted; the black entrance passage is explicitly retained. Maximum position
 error is 0.0625 game units and maximum UV error is 1/128 atlas texel. That packing fix did not alter the source geometry,
 textures, shadows or collision; subsequent room revisions rebake their shadows. The runtime regression limits
 frame uploads to the real 5 MiB capacity, reserves 1.5 MiB for other scene draws,

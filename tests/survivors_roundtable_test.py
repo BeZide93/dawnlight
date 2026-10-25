@@ -170,6 +170,14 @@ for z in (g.EXIT_Z+400,g.EXIT_Z+700,g.EXIT_BACK_Z-50):
     assert not segment_hits((0,g.FLOOR+130,g.EXIT_Z),(0,g.FLOOR+130,z),True)
 rear=[v for v in hall.vertices if abs(v[0])<=g.HALF_DOOR+1 and v[2]>=g.EXIT_Z+260]
 assert rear and all(v[7:10]==(0,0,0) for v in rear), 'No lit rear masonry remains'
+# The open shutter reveals the same small limestone flags as the hall, not
+# the former continuous texture stretched over the corridor support quad.
+passage_flags=[v for v in hall.vertices if abs(v[0])<g.HALF_DOOR and
+               g.EXIT_Z<v[2]<g.EXIT_BACK_Z and abs(v[1]-(g.FLOOR+.5))<.001]
+assert len(passage_flags)>300, 'Passage needs individual hall paving stones'
+assert all(v[4]>.5 for v in passage_flags), 'Use the shared bare-limestone atlas regions'
+for z0,z1 in ((g.EXIT_Z,g.EXIT_Z+120),(g.EXIT_Z+120,g.EXIT_Z+240),(g.EXIT_Z+240,g.EXIT_BACK_Z)):
+    assert any(z0<v[2]<z1 for v in passage_flags), 'Continue the paving through the passage'
 # Red cloth remains on chair cushions only, never on walls or ceiling.
 cloth=g.MATERIAL_RECTS[2]
 assert not any(cloth[0]/1024<v[3]<(cloth[0]+cloth[2])/1024 and

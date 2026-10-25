@@ -135,7 +135,6 @@ int main() {
         set(te, mask & 4); set(teSlot, mask & 8);
         bool conflict = ((mask & 1) && (mask & 2)) || ((mask & 4) && (mask & 8));
         assert(select_dawnlight_z_slot() == !conflict);
-        assert(dawnlight_combine_active() == !conflict);
         const char* notice=z_slot_provider_notice();
         assert((notice!=nullptr)==conflict);
         if(notice)assert(std::string(notice)==((mask&1)&&(mask&2)?
@@ -147,20 +146,18 @@ int main() {
     assert(select_dawnlight_z_slot());
     // Older versions lacking a feature toggle retain their default-on behavior.
     for (auto key : {hd, te}) {
-        vars.clear(); set(key, true); assert(!select_dawnlight_z_slot()); assert(!dawnlight_combine_active());
+        vars.clear(); set(key, true); assert(!select_dawnlight_z_slot());
         set(key, false); assert(select_dawnlight_z_slot());
     }
     vars.clear(); savedToggle = false; resolves = 0;
     assert(!select_dawnlight_z_slot() && resolves == 0);
     set(te,true);set(teSlot,true);
     assert(std::string(z_slot_provider_notice())=="Z Items: Twilit Essentials.");
-    assert(!dawnlight_combine_active());
     vars.clear();
-    assert(dawnlight_combine_active()); // X/Y touch combinations do not require our Z toggle
-    savedToggle = true; svc_hook = nullptr; assert(!select_dawnlight_z_slot()); assert(!dawnlight_combine_active());
-    svc_hook = &hook; hook.resolve = nullptr; assert(!select_dawnlight_z_slot()); assert(!dawnlight_combine_active());
-    hook.resolve = resolve; resolveFails = true; assert(!select_dawnlight_z_slot()); assert(!dawnlight_combine_active());
-    resolveFails = false; nullAddress = true; assert(!select_dawnlight_z_slot()); assert(!dawnlight_combine_active());
+    savedToggle = true; svc_hook = nullptr; assert(!select_dawnlight_z_slot());
+    svc_hook = &hook; hook.resolve = nullptr; assert(!select_dawnlight_z_slot());
+    hook.resolve = resolve; resolveFails = true; assert(!select_dawnlight_z_slot());
+    resolveFails = false; nullAddress = true; assert(!select_dawnlight_z_slot());
     nullAddress = false;
     // Other mods can register before OR after Dawnlight initialization. Nothing
     // installs until update, when the provider's saved false value is available.

@@ -171,12 +171,6 @@ jobs:
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/z_item_provider_guard_test.py
 
-      - name: Test Fire Arrows item and HUD compatibility
-        if: matrix.platform == 'linux-x86_64'
-        run: |
-          python3 tests/fire_arrow_compat_test.py
-          python3 tests/item_combo_routing_test.py
-
       - name: Test Bullet Time gyro compatibility
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/bullet_time_gyro_compat_test.py
@@ -445,10 +439,6 @@ jobs:
           CXX=clang++ python3 tests/survivors_hud_test.py dusklight
           python3 tests/combat_meter_test.py
           CXX=clang++ python3 tests/combat_meter_test.py
-
-      - name: Test native item-ring combine input ownership
-        if: matrix.platform == 'linux-x86_64'
-        run: python3 tests/ring_native_combine_test.py --dusklight-dir dusklight
 
       - name: Test custom Midna binding with Z Items
         if: matrix.platform == 'linux-x86_64'

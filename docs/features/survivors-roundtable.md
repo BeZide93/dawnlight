@@ -196,6 +196,32 @@ run map and return, repeatedly switch Play/Survivors, then check both the moving
 title camera, native return through the door and the 0.7-second save arrival. The offline preview and fake-host
 tests cannot establish the exact appearance or door-event timing on a device.
 
+
+## Frame vertex budget and CI ordering
+
+The 59,553-triangle hall previously submitted 5,717,088 bytes per frame using
+32-byte float vertices. Aurora v2.0.3 has a **shared 5 MiB vertex arena**: the hall
+alone overflowed it. The Android log from 2026-10-25 was matched against the
+release APK's exact build ID (`e5fcdd6af182b596ebf50dcaf4fd11356529f87a`);
+`draw_prim → push → ByteBuffer::append` ends in the non-owned buffer overflow
+abort. The shader compilation overlay was visible, but this stack is the FIFO
+vertex upload worker, not the shader compiler.
+
+The RTH2 source asset keeps its floats. Loading validates ranges and converts
+once to signed 16-bit positions with 3 fractional bits, 16-bit UVs with 16
+fractional bits, and unchanged RGBA8 colours. GX declarations match those writes.
+The hall now submits **3,215,862 bytes (3.07 MiB)**, 43.75% less. Maximum position
+error is 0.0625 game units and maximum UV error is 1/128 atlas texel. Geometry,
+textures, shadows and collision are unchanged. The runtime regression limits
+frame uploads to the real 5 MiB capacity, reserves 1.5 MiB for other scene draws,
+counts both room/portal packets and checks quantization against the source mesh.
+The former float stream fails that same capacity check.
+
+The native doorway test reads `d_event_manager.cpp` from the pinned Dusklight
+checkout. CI runs it after Configure CMake has fetched the SDK; it cannot run
+in the earlier standalone test step. A local checkout had hidden this ordering
+bug. The geometry regression also checks this ordering.
+
 ## Material source
 
 Image generation mode: built-in image generation, new opaque image. The original

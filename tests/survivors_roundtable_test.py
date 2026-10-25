@@ -192,3 +192,7 @@ for x,z in ((-220,0),(220,0),(0,-240)):
  assert not any(abs(v[0]-x)<20 and abs(v[2]-z)<20 and -295<v[1]<-100 for v in hall.vertices)
 assert all(len(face['points'])>=3 for face in hall.receivers)
 assert any(len(face['points'])==4 for face in hall.receivers), 'Share quad shadow charts'
+
+# Native source extraction must run only after CMake fetched the pinned SDK.
+workflow=(ROOT/'.github/workflows/build.yml').read_text()
+assert workflow.index('name: Configure CMake') < workflow.index('python3 tests/survivors_roundtable_entry_test.py')

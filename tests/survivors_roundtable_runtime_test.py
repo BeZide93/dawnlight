@@ -21,7 +21,7 @@ fixture=r'''
 #include <set>
 #include <string>
 #include <vector>
-using u8=unsigned char;using u16=unsigned short;using u32=unsigned;using ActorId=unsigned;
+using s16=short;using u8=unsigned char;using u16=unsigned short;using u32=unsigned;using ActorId=unsigned;
 constexpr unsigned fpcM_ERROR_PROCESS_ID_e=~0u;
 constexpr int fpcNm_BG_e=1,cPhs_COMPLEATE_e=4,MOD_OK=0;
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
@@ -111,18 +111,27 @@ struct GXTexObj{};
 struct Lighting{void settingTevStruct(int,void*,void*){}}g_env_light;
 void* dComIfGp_roomControl_getTevStr(unsigned){return nullptr;}
 unsigned submitted=0,batches=0;int zTest=0,zWrite=0,blendMode=0,cullMode=0;
+// Mirror Aurora's shared, fixed-size per-frame arena, including other actors.
+constexpr size_t frameCapacity=5*1024*1024,otherSceneBytes=1536*1024;
+size_t frameBytes=otherSceneBytes;
+void stream(size_t bytes){frameBytes+=bytes;assert(frameBytes<=frameCapacity && "Shared Aurora vertex arena overflow");}
+std::map<int,std::pair<int,int>> formats;
+void GXSetVtxAttrFmt(int,int attr,int,int type,int frac){formats[attr]={type,frac};}
 std::vector<std::array<float,3>> positions;std::vector<std::array<unsigned,4>> colors;
-void GXPosition3f32(float x,float y,float z){positions.push_back({x,y,z});}
-void GXColor4u8(u8 r,u8 g,u8 b,u8 a){colors.push_back({r,g,b,a});}
+void GXPosition3f32(float x,float y,float z){stream(12);positions.push_back({x,y,z});}
+void GXPosition3s16(s16 x,s16 y,s16 z){stream(6);positions.push_back({x/8.f,y/8.f,z/8.f});}
+void GXTexCoord2f32(float,float){stream(8);}
+void GXTexCoord2u16(u16,u16){stream(4);}
+void GXColor4u8(u8 r,u8 g,u8 b,u8 a){stream(4);colors.push_back({r,g,b,a});}
 void GXSetZMode(int test,int,int write){zTest=test;zWrite=write;}
 void GXSetBlendMode(int mode,int,int,int){blendMode=mode;}
 void GXSetCullMode(int mode){cullMode=mode;}
 void GXBegin(int,int,unsigned count){assert(count<=60000&&count%3==0);submitted+=count;++batches;}
 '''
-constants=sorted(set(re.findall(r'\bGX_[A-Z0-9a-z_]+',production)))
+constants=sorted(set(re.findall(r'\bGX_[A-Z0-9a-z_]+',production)) | {'GX_S16','GX_U16'})
 fixture+='\nenum {'+','.join(constants)+'};\n'
 for fn in sorted(set(re.findall(r'\b(GX\w+)\(',production))):
-    if fn not in {'GXBegin','GXPosition3f32','GXColor4u8','GXSetZMode','GXSetBlendMode','GXSetCullMode'}:fixture+=f'template<class... T>void {fn}(T...){{}}\n'
+    if fn not in {'GXBegin','GXPosition3f32','GXColor4u8','GXSetZMode','GXSetBlendMode','GXSetCullMode','GXSetVtxAttrFmt','GXPosition3s16','GXTexCoord2u16','GXTexCoord2f32'}:fixture+=f'template<class... T>void {fn}(T...){{}}\n'
 tests=r'''
 int create(void*){return 4;}int remove(void*){return 1;}int execute(void*){return 1;}int draw(void*){return 1;}
 leafdraw_method_class methods{{create,remove,execute,nullptr},draw};
@@ -159,10 +168,24 @@ int main(int argc,char** argv){
   unsigned char header[8]{};mesh.read(reinterpret_cast<char*>(header),8);assert(mesh);
   const unsigned expected=unsigned(header[4])|(unsigned(header[5])<<8)|
       (unsigned(header[6])<<16)|(unsigned(header[7])<<24);
-  submitted=batches=0;packet->draw();
+  submitted=batches=0;frameBytes=otherSceneBytes;positions.clear();packet->draw();
+  assert(frameBytes==otherSceneBytes+size_t(expected)*18);
+  assert(formats[GX_VA_POS]==std::make_pair(int(GX_S16),3));
+  assert(formats[GX_VA_TEX0]==std::make_pair(int(GX_U16),16));
+  assert(formats[GX_VA_TEX1]==std::make_pair(int(GX_U16),16));
+  if(cycle==0){
+   for(unsigned i=0;i<expected;++i){
+    float v[7];unsigned char rgba[4];mesh.read(reinterpret_cast<char*>(v),28);mesh.read(reinterpret_cast<char*>(rgba),4);assert(mesh);
+    const auto& packed=dawnlight::s_vertices[i];
+    for(unsigned axis=0;axis<3;++axis)assert(std::abs(positions[i][axis]-v[axis])<=.0625f);
+    const u16 uv[]{packed.u,packed.v,packed.lu,packed.lv};
+    for(unsigned axis=0;axis<4;++axis)assert(std::abs(uv[axis]/65536.f-v[axis+3])*1024<=1.f/128);
+   }
+  }
   assert(submitted==expected&&batches==(expected+59999)/60000);
   auto* shade=shadeList.entries[0];assert(shade!=&otherShade&&shade->getNextPacket()==&otherShade);
   submitted=batches=0;positions.clear();colors.clear();shade->draw();
+  assert(frameBytes==otherSceneBytes+size_t(expected)*18+36*16);
   assert(submitted==36&&batches==6&&zTest==GX_TRUE&&zWrite==GX_FALSE&&blendMode==GX_BM_BLEND&&cullMode==GX_CULL_BACK);
   for(unsigned i=0;i<colors.size();++i){
    assert(colors[i][0]==0&&colors[i][1]==0&&colors[i][2]==0&&colors[i][3]>0);

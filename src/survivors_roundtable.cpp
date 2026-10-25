@@ -24,8 +24,13 @@
 namespace dawnlight {
 namespace {
 constexpr ActorId kNoRoom = fpcM_ERROR_PROCESS_ID_e;
-struct Vertex { float x,y,z,u,v,lu,lv; u8 r,g,b,a; };
-static_assert(sizeof(Vertex)==32);
+// Aurora has a shared 5 MiB per-frame vertex arena. Keep the authored RTH2
+// floats on disk, but cache/send fixed-point vertices (18 instead of 32 bytes).
+// Position error <= 1/16 world unit; UV error <= 1/128 texel in the 1024 atlas.
+struct Vertex { s16 x,y,z; u16 u,v,lu,lv; u8 r,g,b,a; };
+static_assert(sizeof(Vertex)==18);
+constexpr size_t kMaxVertices=180000;
+static_assert(kMaxVertices*sizeof(Vertex) < 5*1024*1024 - 1536*1024);
 std::vector<Vertex> s_vertices;
 std::vector<u8> s_collision;
 alignas(32) u8 s_texture[1024*1024*2];
@@ -52,7 +57,7 @@ bool load_assets() {
     if(mesh.size()<8 || std::memcmp(mesh.data(),"RTH2",4) ||
        shadow.size()!=sizeof(s_shadow) || texture.size()!=sizeof(s_texture) || collision.size()<52)return false;
     const u32 count=le32(mesh.data()+4);
-    if(count==0 || count%3 || count>180000 || mesh.size()!=8+size_t(count)*sizeof(Vertex))return false;
+    if(count==0 || count%3 || count>kMaxVertices || mesh.size()!=8+size_t(count)*32)return false;
     std::vector<Vertex> vertices(count);
     for(size_t i=0;i<count;++i) {
         const auto* p=mesh.data()+8+i*32;
@@ -61,7 +66,14 @@ bool load_assets() {
             const u32 bits=le32(p+j*4);std::memcpy(&values[j],&bits,4);
             if(!std::isfinite(values[j]))return false;
         }
-        vertices[i]={values[0],values[1],values[2],values[3],values[4],values[5],values[6],p[28],p[29],p[30],p[31]};
+        for(unsigned j=0;j<3;++j)
+            if(values[j]<-4096.f || values[j]>4095.875f)return false;
+        for(unsigned j=3;j<7;++j)
+            if(values[j]<0.f || values[j]>=1.f)return false;
+        const auto position=[](float v){return static_cast<s16>(std::lround(v*8.f));};
+        const auto uv=[](float v){return static_cast<u16>(std::min(65535l,std::lround(v*65536.f)));};
+        vertices[i]={position(values[0]),position(values[1]),position(values[2]),
+            uv(values[3]),uv(values[4]),uv(values[5]),uv(values[6]),p[28],p[29],p[30],p[31]};
     }
     // Validate every DZB table before native pointer relocation. The bundled
     // format is also checked by the generator test, including tree ancestry.
@@ -208,10 +220,10 @@ public:
         GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);GXSetCurrentMtx(GX_PNMTX0);
         GXClearVtxDesc();
         GXSetVtxDesc(GX_VA_POS,GX_DIRECT);GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);GXSetVtxDesc(GX_VA_TEX0,GX_DIRECT);GXSetVtxDesc(GX_VA_TEX1,GX_DIRECT);
-        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_F32,0);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_S16,3);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_CLR0,GX_CLR_RGBA,GX_RGBA8,0);
-        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_F32,0);
-        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX1,GX_TEX_ST,GX_F32,0);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_U16,16);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX1,GX_TEX_ST,GX_U16,16);
         GXSetNumChans(1);
         GXSetChanCtrl(GX_COLOR0A0,GX_DISABLE,GX_SRC_REG,GX_SRC_VTX,GX_LIGHT_NULL,GX_DF_NONE,GX_AF_NONE);
         GXSetNumTexGens(2);GXSetTexCoordGen(GX_TEXCOORD0,GX_TG_MTX2x4,GX_TG_TEX0,GX_IDENTITY);
@@ -229,8 +241,8 @@ public:
             const size_t end=std::min(start+60000,s_vertices.size());
             GXBegin(GX_TRIANGLES,GX_VTXFMT0,static_cast<u16>(end-start));
             for(size_t i=start;i<end;++i) {
-                const auto& v=s_vertices[i];GXPosition3f32(v.x,v.y,v.z);
-                GXColor4u8(v.r,v.g,v.b,v.a);GXTexCoord2f32(v.u,v.v);GXTexCoord2f32(v.lu,v.lv);
+                const auto& v=s_vertices[i];GXPosition3s16(v.x,v.y,v.z);
+                GXColor4u8(v.r,v.g,v.b,v.a);GXTexCoord2u16(v.u,v.v);GXTexCoord2u16(v.lu,v.lv);
             }
             GXEnd();
         }

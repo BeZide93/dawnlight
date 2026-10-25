@@ -32,6 +32,7 @@ struct daAlink_c{bool demo=false;bool checkPlayerDemoMode()const{return demo;}st
 cXyz s_arenaSpawnPosition;s16 s_arenaSpawnYaw=0;bool s_arenaSpawn=false;
 void clear_reachable_floor(){}
 Run s_run;RunOptions s_options;Records s_records;GearInventory s_gear;
+bool s_hubArrivalPending=false;float s_hubArrivalSeconds=0.f;
 bool s_active=true,s_gameStarted=true,s_restart=false,s_arrivingRun=false,s_hub=false;
 bool s_hubDeparture=false,s_hubDoorStarted=false,s_hubSaveRequested=false,s_resultsStored=false;
 bool s_arenaMeshReady=false,playing=true,grounded=true,stagePending=false;
@@ -71,8 +72,9 @@ int main(){
   s_run.start(42,s_options,s_records.talents);s_run.ticks=1234;s_run.kills=50;s_run.ranks[0]=10;s_run.end(false);
   s_resultsStored=true;s_orbs.fill(9);s_player=7;
   const auto priorStarts=starts,priorReloads=reloads,priorRetired=retirements;
+  s_hubArrivalPending=true;s_hubArrivalSeconds=.5f;
   restart_run(nullptr,nullptr);assert(s_restart&&s_arrivingRun&&s_requestedMap==map);
-  reload_run_scene();assert(reloads==priorReloads+1&&retirements==priorRetired+1);
+  reload_run_scene();assert(!s_hubArrivalPending&&s_hubArrivalSeconds==0.f);assert(reloads==priorReloads+1&&retirements==priorRetired+1);
   assert(s_map==map&&!s_hub&&s_arrivingRun&&!s_restart&&s_player==kNone&&!s_resultsStored);
   assert(destination==arenas[map].stage&&destinationRoom==arenas[map].room&&destinationPoint==arenas[map].point);
   assert(s_run.phase==Phase::Loading&&s_run.ticks==0&&s_run.kills==0&&s_run.ranks[0]==0);
@@ -92,7 +94,9 @@ int main(){
   assert(s_run.phase==(startingItem?Phase::TreasureChoice:Phase::Running));
   arrival(&link);assert(starts==priorStarts+1);
   // Results' Return to hub clears any stale direct-start intent.
+  s_hubArrivalPending=true;s_hubArrivalSeconds=.5f;
   s_arrivingRun=true;s_run.end(false);replay(nullptr,nullptr);reload_run_scene();
+  assert(!s_hubArrivalPending&&s_hubArrivalSeconds==0.f);
   assert(s_map==0&&s_hub&&!s_arrivingRun&&s_requestedMap==map&&destination==arenas[0].stage);
   stagePending=false;s_arenaMeshReady=true;for(int i=0;i<20;++i)arrival(&link);
   assert(s_run.phase==Phase::Ready&&starts==priorStarts+1);

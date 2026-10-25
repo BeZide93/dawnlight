@@ -32,7 +32,10 @@ namespace mods{
 constexpr int fpcNm_PLAY_SCENE_e=5;
 bool s_arrivingRun=false,s_restart=false,s_hubDeparture=false,s_hubDoorStarted=false,s_hubSaveRequested=false,s_resultsStored=false;
 unsigned s_requestedMap=0,s_hubDoor=kNone,s_player=kNone,s_spawnFailures=0;
-int s_run=0,s_orbs=0;
+enum class Phase {Loading,Ready,Running};
+struct CameraOptions {unsigned camera_distance=200;}s_options;
+struct Run {Phase phase=Phase::Loading;CameraOptions options;}s_run;
+int s_orbs=0;
 enum class HubMenu{None,Run};HubMenu s_hubMenu=HubMenu::None;
 unsigned cleanupCalls=0;bool checkReloadOrdering=false;
 void end_survivors_integrity(){++cleanupCalls;}void reset_ending(){++cleanupCalls;}
@@ -86,7 +89,11 @@ int fpcM_GetName(Scene* s){return s->name;}
 struct cXyz{float x=0,y=0,z=0;cXyz()=default;cXyz(float a,float b,float c):x(a),y(b),z(c){}
  void set(float a,float b,float c){x=a;y=b;z=c;}
  cXyz operator+(cXyz b)const{return{x+b.x,y+b.y,z+b.z};}
- cXyz operator-(cXyz b)const{return{x-b.x,y-b.y,z-b.z};}};
+ cXyz operator-(cXyz b)const{return{x-b.x,y-b.y,z-b.z};}
+ cXyz operator*(float v)const{return{x*v,y*v,z*v};}
+ float abs2()const{return x*x+y*y+z*z;}
+ float abs2(cXyz b)const{return (*this-b).abs2();}
+ float abs()const{return std::sqrt(abs2());}};
 struct stage_actor_data_class{char name[8];};
 struct fopAcM_prm_class{struct{u32 parameters=0xdeadbeef;cXyz position{999,-400,999};struct{s16 x=0,y=0,z=0;}angle;}base;};
 struct Info{int procname;}info{fpcNm_ALINK_e};
@@ -117,8 +124,17 @@ bool hub_center_ground(cXyz& anchor){
  const float height=dComIfG_Bgsp().GroundCross(&ground);
  if(!std::isfinite(height)||height<=-1.e8f)return false;anchor.set(0,height,0);return true;
 }
-struct dCamera_c{cXyz mEye,mCenter,mUp;float fov=0;int sets=0;struct{void Val(cXyz){}}mDirection;
- void Set(cXyz c,cXyz e,float f,s16 bank){assert(bank==0);mCenter=c;mEye=e;fov=f;++sets;}}camera;
+bool cameraBlocked=false;
+struct dBgS_CamLinChk{cXyz GetCross(){return {0,-200,1200};}};
+struct dCamera_c{cXyz mEye,mCenter,mUp;float mFovy=0;s16 mBank=0;int sets=0,mPadID=0;
+ struct{cXyz value;void Val(cXyz v){value=v;}}mDirection;
+ static bool isAimActive(){return false;}
+ bool lineBGCheck(cXyz*,cXyz*,dBgS_CamLinChk*,int){return cameraBlocked;}
+ void Set(cXyz c,cXyz e,float f,s16 bank){mBank=bank;mCenter=c;mEye=e;mFovy=f;++sets;}}camera;
+bool in_arena(){return s_active&&s_gameStarted;}
+bool dComIfGp_event_runCheck(){return false;}
+void restore_sword_aim_camera(dCamera_c*){}bool update_sword_aim_camera(dCamera_c*){return false;}
+void resolve_manual_projectiles(dCamera_c*){}
 int s_hubZelda=12;
 void* actor_by_id(int id){assert(id==12);return zeldaLive?&scene:nullptr;}
 bool owned_hub_zelda(void* p){return p!=nullptr;}
@@ -251,7 +267,7 @@ int main(){
  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
  assert(camera.sets==0); // No valid floor: do not install a camera on a NaN anchor.
  floorY=-400;after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
- assert(camera.sets==1&&std::abs(camera.mEye.x-700)<.001f&&std::abs(camera.mEye.z-1250)<.001f&&camera.mEye.y==0&&camera.mCenter.x==-80&&camera.fov==52);
+ assert(camera.sets==1&&std::abs(camera.mEye.x-700)<.001f&&std::abs(camera.mEye.z-1250)<.001f&&camera.mEye.y==0&&camera.mCenter.x==-80&&camera.mFovy==52);
  zeldaLive=false;assert(before_title_logo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-1);
  zeldaLive=true;roomReady=false;before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==-1);
  roomReady=true;floorY=-400;
@@ -282,7 +298,7 @@ int main(){
  assert(before_title_controls(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
  assert(camera.sets==2&&std::abs(camera.mEye.x-640.f)<.01f&&
-  camera.mEye.y==-150&&std::abs(camera.mEye.z-850)<.01f&&camera.fov==48);
+  camera.mEye.y==-150&&std::abs(camera.mEye.z-850)<.01f&&camera.mFovy==48);
  assert(survivors_title_preparing());
  transition=true;assert(survivors_title_preparing()); // Fade-in does not serialize resource loads.
  nextStage=true;assert(!survivors_title_preparing());nextStage=false;
@@ -370,6 +386,52 @@ int main(){
  link.mItemButton=7;after_title_input(nullptr,linkArgs,nullptr,nullptr);assert(link.mItemButton==7);
  assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ // Exercise production zoom + arrival overlay + pre-Run restoration together.
+ // Vary framerate, user distance and collision-clamped endpoints. Native output
+ // is supplied each frame, like Run; the overlay must never feed back into it.
+ for(int rate:{30,60,120})for(unsigned percent:{100u,200u,500u})for(bool wall:{false,true}){
+  s_hubArrivalPending=true;s_hubArrivalSeconds=0;s_run.phase=Phase::Loading;
+  s_options.camera_distance=percent;cameraBlocked=wall;
+  s_hubArrivalCamera.owner=nullptr;s_zoomCamera=nullptr;
+  const cXyz nativeEye(0,-200,1100),nativeCenter(0,-230,760),anchor(0,-400,0);
+  cXyz previous(640,-150,850);
+  bool sawBlend=false,sawEndpoint=false;
+  for(int i=0;i<rate*3;++i){
+   before_run_camera(nullptr,cameraArgs,nullptr,nullptr);
+   if(i>0){assert(camera.mEye.abs2(nativeEye)<.001f);assert(camera.mCenter.abs2(nativeCenter)<.001f);
+    assert(camera.mFovy==60&&camera.mBank==300);}
+   camera.Set(nativeCenter,nativeEye,60,300);camera.mUp.set(0,1,0);
+   camera.mDirection.Val(nativeEye-nativeCenter);
+   after_run_camera(nullptr,cameraArgs,nullptr,nullptr);
+   const cXyz target=camera.mEye;
+   if(s_hubArrivalPending){
+    advance_hub_arrival(1.f/rate,true);
+    blend_hub_arrival_camera(&camera,anchor);
+    assert((camera.mEye-previous).abs()<(target-cXyz(640,-150,850)).abs()*2.f/(.8f*rate)+1); // No release-frame snap, even at 500%.
+    if(s_hubArrivalSeconds<1.05f)assert(camera.mEye.abs2(cXyz(640,-150,850))<.001f);
+    else if(s_hubArrivalSeconds<1.85f){sawBlend=true;assert(camera.mFovy>=48&&camera.mFovy<=60);}
+    if(!s_hubArrivalPending){sawEndpoint=true;assert(camera.mEye.abs2(target)<.001f);
+     assert(camera.mCenter.abs2(nativeCenter)<.001f&&camera.mFovy==60&&camera.mBank==300);}
+   }
+   previous=camera.mEye;
+  }
+  assert(sawBlend&&sawEndpoint);
+  before_run_camera(nullptr,cameraArgs,nullptr,nullptr);
+ }
+ cameraBlocked=false;
+ // Menu/pause holds the handoff, and cancellation restores native state once.
+ s_hubArrivalPending=true;s_hubArrivalSeconds=1.4f;
+ camera.Set({0,-230,760},{0,-200,1100},60,0);camera.mUp.set(0,1,0);
+ blend_hub_arrival_camera(&camera,{0,-400,0});const cXyz held=camera.mEye;
+ advance_hub_arrival(10,false);assert(s_hubArrivalSeconds==1.4f);
+ restore_hub_arrival_camera(&camera);blend_hub_arrival_camera(&camera,{0,-400,0});
+ assert(camera.mEye.abs2(held)<.001f);
+ s_hubArrivalPending=false;before_run_camera(nullptr,cameraArgs,nullptr,nullptr);
+ assert(camera.mEye.abs2(cXyz(0,-200,1100))<.001f&&!s_hubArrivalCamera.owner);
+ // A replacement camera cannot inherit an old scene's saved presentation.
+ s_hubArrivalSeconds=1.4f;blend_hub_arrival_camera(&camera,{0,-400,0});
+ dCamera_c otherCamera;otherCamera.mEye={1,2,3};restore_hub_arrival_camera(&otherCamera);
+ assert(otherCamera.mEye.abs2(cXyz(1,2,3))<.001f&&!s_hubArrivalCamera.owner);
  // Run returns retain the native entrance; only save loading gets the rest pose.
  for(unsigned map=0;map<arenas.size();++map)for(int cycle=0;cycle<2;++cycle){
   s_active=s_gameStarted=true;scene.name=fpcNm_PLAY_SCENE_e;
@@ -487,15 +549,15 @@ int main(){
   const float radius=std::hypot(camera.mEye.x,camera.mEye.z-760);
   const float angle=std::atan2(camera.mEye.x,camera.mEye.z-760);
   if(i){
-   assert(radius<lastRadius&&angle>lastAngle&&camera.fov<lastFov);
+   assert(radius<lastRadius&&angle>lastAngle&&camera.mFovy<lastFov);
    assert(camera.mEye.y<lastEye.y);
    assert(std::hypot(camera.mEye.x-lastEye.x,camera.mEye.z-lastEye.z)<10);
   }
-  if(i==120){assert(radius<800&&radius>500&&angle>1&&angle<1.5f&&camera.fov<52&&camera.fov>48);}
-  lastRadius=radius;lastAngle=angle;lastFov=camera.fov;lastEye=camera.mEye;
+  if(i==120){assert(radius<800&&radius>500&&angle>1&&angle<1.5f&&camera.mFovy<52&&camera.mFovy>48);}
+  lastRadius=radius;lastAngle=angle;lastFov=camera.mFovy;lastEye=camera.mEye;
  }
  assert(std::abs(camera.mEye.x-640.f)<.01f&&
-  std::abs(camera.mEye.z-850)<.01f&&camera.mEye.y==-150&&camera.fov==48);
+  std::abs(camera.mEye.z-850)<.01f&&camera.mEye.y==-150&&camera.mFovy==48);
  // Skip the native logo animation with a fresh input, but never reuse the
  // reveal edge or advance to NAME_SCENE on the animation-completion input.
  transition=false;s_titleReloadPending=false;s_titlePoseOwner=link.id;
@@ -552,10 +614,13 @@ assert source.index('PRE(SurvivorsArenaActor, before_title_stage_actor)')<source
 assert 'PRE(SurvivorsOpening, before_title_opening)' in source
 assert 'POST(SurvivorsOpening, after_title_opening)' in source
 assert 'PRE(SurvivorsTitleLogoAnimation, before_title_logo_animation)' in source
+assert source.index('POST(SurvivorsCamera, after_run_camera)')<source.index('POST(SurvivorsCamera, after_title_camera)')
 assert 'src/survivors_title_logo.cpp' in (root/'CMakeLists.txt').read_text()
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'title.cpp';exe=Path(tmp)/'title'
  reload_code=''.join(extract_function(source,sig) for sig in ['void replay(ModContext*, void*) {', 'void restart_run(ModContext*, void*) {', 'void reload_run_scene() {'])
- cpp.write_text(fixture+reload_code+(root/'src/survivors_title.inc').read_text()+native_fixture+native_logo+main)
+ camera_code=(root/'src/survivors_options.inc').read_text().split('// Scale only the final rendered camera.')[1]
+ camera_code='// Scale only the final rendered camera.'+camera_code
+ cpp.write_text(fixture+reload_code+(root/'src/survivors_title.inc').read_text()+camera_code+native_fixture+native_logo+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'include'),'-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

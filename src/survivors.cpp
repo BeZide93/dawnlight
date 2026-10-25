@@ -322,6 +322,7 @@ bool s_saveReady = false, s_gameStarted = false;
 bool survivors_title_active();
 bool survivors_title_preparing();
 bool survivors_hub_arrival_active();
+void restore_hub_arrival_camera(dCamera_c* camera);
 bool s_hubArrivalPending = false;
 float s_hubArrivalSeconds = 0.f;
 bool s_resultsStored = false, s_storeFailed = false, s_saveRequested = false;

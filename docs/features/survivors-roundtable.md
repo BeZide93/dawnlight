@@ -30,7 +30,13 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   the engine's `findShutterCallBack` requires all three coordinates to agree
   within 10 units. Spawn mode, facing and door event remain native. The kneeling
   pose and 0.7-second rise are armed only when creating/loading a save; return
-  and direct-restart paths clear that flag and reset its timer.
+  and direct-restart paths clear that flag and reset its timer. After standing,
+  a 0.8-second smoothstep handoff blends the eye, focus, FOV and bank into the
+  live native camera. The hub distance setting and native wall clamp are applied
+  before blending, including during hub warmup, so release does not change zoom.
+  The cinematic output is restored before each native camera update to prevent
+  feedback into orbit smoothing. Pause/loading holds the arrival timer; input
+  returns once the handoff reaches the exact native endpoint.
 - A tall golden native flame with sparks floats above the tabletop at Y = -220.
   Its warm point light is centered at Y = -50. Five light samples bake soft
   shadows from the actual visible geometry into a 1024×1024 I8 lightmap;

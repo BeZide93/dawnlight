@@ -87,7 +87,7 @@ bool survivors_rest_active() { return survivors_title_active() || survivors_hub_
 float hub_arrival_progress() { return std::clamp((s_hubArrivalSeconds-.35f)/.7f,0.f,1.f); }
 void advance_hub_arrival(float seconds,bool ready) {
     if (ready) s_hubArrivalSeconds += std::clamp(seconds,0.f,.1f);
-    if (hub_arrival_progress() < 1.f) return;
+    if (s_hubArrivalSeconds < .35f + .7f + .8f) return;
     s_hubArrivalPending = false;
     // Restore the idle playback frozen by before_title_wait before handing
     // input back. No event status, cutscene flags or global pad state is edited.
@@ -237,6 +237,42 @@ HookAction before_title_wait(ModContext*, void* args, void* result, void*) {
     *static_cast<int*>(result) = 1;
     return HOOK_SKIP_ORIGINAL;
 }
+// The arrival is a presentation overlay. Restore the native output (including
+// this frame's distance modifier) BEFORE before_run_camera removes that zoom.
+// Native orbit smoothing therefore never consumes the cinematic viewpoint.
+struct HubArrivalCamera {
+    dCamera_c* owner = nullptr;
+    cXyz eye{}, center{}, up{}, shownEye{}, shownCenter{};
+    float fovy = 0;
+    decltype(dCamera_c::mBank) bank{};
+    decltype(dCamera_c::mDirection) direction{};
+} s_hubArrivalCamera;
+void restore_hub_arrival_camera(dCamera_c* camera) {
+    const auto& saved = s_hubArrivalCamera;
+    if (camera && saved.owner == camera && camera->mEye.abs2(saved.shownEye)<.001f &&
+        camera->mCenter.abs2(saved.shownCenter)<.001f) {
+        camera->mEye=saved.eye; camera->mCenter=saved.center; camera->mUp=saved.up;
+        camera->mFovy=saved.fovy; camera->mBank=saved.bank; camera->mDirection=saved.direction;
+    }
+    s_hubArrivalCamera.owner=nullptr;
+}
+void blend_hub_arrival_camera(dCamera_c* camera, const cXyz& anchor) {
+    const float progress=std::clamp((s_hubArrivalSeconds-.35f-.7f)/.8f,0.f,1.f);
+    if (progress>=1.f) return; // Exact native endpoint, including its zoom and bank.
+    const float t=progress*progress*(3.f-2.f*progress);
+    auto& saved=s_hubArrivalCamera;
+    saved.owner=camera; saved.eye=camera->mEye; saved.center=camera->mCenter;
+    saved.up=camera->mUp; saved.fovy=camera->mFovy; saved.bank=camera->mBank;
+    saved.direction=camera->mDirection;
+    const cXyz startCenter=anchor+cXyz(0,170,350);
+    const cXyz startEye=anchor+cXyz(640,250,roundtable_layout::restZ+90);
+    camera->Set(startCenter+(saved.center-startCenter)*t,
+                startEye+(saved.eye-startEye)*t,48.f+(saved.fovy-48.f)*t,
+                static_cast<s16>(static_cast<s16>(saved.bank)*t));
+    camera->mUp=cXyz(0,1,0)+(saved.up-cXyz(0,1,0))*t;
+    camera->mDirection.Val(camera->mEye-camera->mCenter);
+    saved.shownEye=camera->mEye; saved.shownCenter=camera->mCenter;
+}
 void after_title_camera(ModContext*, void* args, void*, void*) {
     auto* camera = mods::arg<dCamera_c*>(args,0);
     cXyz anchor;
@@ -247,11 +283,11 @@ void after_title_camera(ModContext*, void* args, void*, void*) {
     if (survivors_hub_arrival_active()) {
         // Keep the rest pose visible through fade-in and decoration loading,
         // then show the rise from the same side as the title's final view.
-        camera->Set(anchor+cXyz(0,170,350),anchor+cXyz(640,250,roundtable_layout::restZ+90),48.f,s16(0));
-        camera->mUp.set(0,1,0);
-        camera->mDirection.Val(camera->mEye-camera->mCenter);
+        // Keep input/pose ownership until the 0.8-second eased handoff ends.
+        // after_run_camera has already applied the configured distance and walls.
         advance_hub_arrival(seconds,title_scene_ready() && !transitioning() && !ui_visible() &&
             !dComIfGp_isPauseFlag() && !dScnPly_c::isPause());
+        blend_hub_arrival_camera(camera,anchor);
         return;
     }
     // Native pad input includes keyboard bindings and virtual touch buttons.

@@ -4,6 +4,8 @@ import os,re,subprocess,tempfile
 root=Path(__file__).resolve().parents[1]
 sdk=root/'dusklight'
 fixture=r'''
+#include "generated/roundtable_layout.hpp"
+namespace roundtable_layout=dawnlight::roundtable_layout;
 #include <any>
 #include <algorithm>
 #include <chrono>
@@ -28,9 +30,22 @@ namespace mods{
  template<class T>T& arg_ref(void* a,int n){return *std::any_cast<T>(&static_cast<std::any*>(a)[n]);}
 }
 constexpr int fpcNm_PLAY_SCENE_e=5;
+bool s_arrivingRun=false,s_restart=false,s_hubDeparture=false,s_hubDoorStarted=false,s_hubSaveRequested=false,s_resultsStored=false;
+unsigned s_requestedMap=0,s_hubDoor=kNone,s_player=kNone,s_spawnFailures=0;
+enum class Phase {Loading,Ready,Running};
+struct CameraOptions {unsigned camera_distance=200;}s_options;
+struct Run {Phase phase=Phase::Loading;CameraOptions options;}s_run;
+int s_orbs=0;
+enum class HubMenu{None,Run};HubMenu s_hubMenu=HubMenu::None;
+unsigned cleanupCalls=0;bool checkReloadOrdering=false;
+void end_survivors_integrity(){++cleanupCalls;}void reset_ending(){++cleanupCalls;}
+void retire_enemies(){++cleanupCalls;}void clear_attacks(){++cleanupCalls;}
+void clear_loot(){++cleanupCalls;}void clear_arena_geometry(){++cleanupCalls;}
+void prepare_save(){++cleanupCalls;}void close_window(){}
 bool s_hubArrivalPending=false,s_hub=true;float s_hubArrivalSeconds=0;unsigned s_map=0;
 constexpr int fpcNm_OPENING_SCENE_e=1,fpcNm_ALINK_e=2,fpcNm_SCENE_EXIT_e=3,fpcNm_SCENE_EXIT2_e=4;
-bool s_active=true,s_gameStarted=false,hasScene=true,bowlLive=true,zeldaLive=true;
+bool s_active=true,s_gameStarted=false,hasScene=true,roomReady=true,zeldaLive=true;
+const Arena& arena(){return arenas[s_map];}
 const char* stageName=arenas[0].stage;s8 roomNo=arenas[0].room;
 const char* dComIfGp_getStartStageName(){return stageName;}
 s8 dComIfGp_getStartStageRoomNo(){return roomNo;}
@@ -74,7 +89,11 @@ int fpcM_GetName(Scene* s){return s->name;}
 struct cXyz{float x=0,y=0,z=0;cXyz()=default;cXyz(float a,float b,float c):x(a),y(b),z(c){}
  void set(float a,float b,float c){x=a;y=b;z=c;}
  cXyz operator+(cXyz b)const{return{x+b.x,y+b.y,z+b.z};}
- cXyz operator-(cXyz b)const{return{x-b.x,y-b.y,z-b.z};}};
+ cXyz operator-(cXyz b)const{return{x-b.x,y-b.y,z-b.z};}
+ cXyz operator*(float v)const{return{x*v,y*v,z*v};}
+ float abs2()const{return x*x+y*y+z*z;}
+ float abs2(cXyz b)const{return (*this-b).abs2();}
+ float abs()const{return std::sqrt(abs2());}};
 struct stage_actor_data_class{char name[8];};
 struct fopAcM_prm_class{struct{u32 parameters=0xdeadbeef;cXyz position{999,-400,999};struct{s16 x=0,y=0,z=0;}angle;}base;};
 struct Info{int procname;}info{fpcNm_ALINK_e};
@@ -83,7 +102,7 @@ bool arena_story_actor(int n){return n==99;}
 unsigned freed=0;void JKRFree(void*){++freed;}
 struct Frame{float frame=0,rate=1;void setFrame(float f){frame=f;}void setRate(float f){rate=f;}};
 struct daAlink_c{
- ActorId id=7;struct{cXyz pos{0,-400,260};}current;
+ ActorId id=7;struct{cXyz pos{0,-400,760};}current;
  enum{PROC_WAIT=1,ANM_WAIT=25};int mProcID=99,animation=0,sets=0;
  unsigned mItemButton=7,mItemTrigger=3;
  float mStickValue=1,mMoveValue=1,mNormalSpeed=4,speedF=4;
@@ -96,18 +115,26 @@ struct daAlink_c{
 }link,foreign;
 daAlink_c* daAlink_getAlinkActorClass(){return &link;}
 ActorId fopAcM_GetID(daAlink_c* a){return a->id;}
-bool hub_brazier_anchor(cXyz& p){p={0,-400,0};return bowlLive;}
 struct dBgS_ObjGndChk{cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 float floorY=-400;
-struct Bg{float GroundCross(dBgS_ObjGndChk* p){assert(p->pos.x==0&&((p->pos.y==-300&&p->pos.z==260)||(p->pos.y==600&&p->pos.z==0)));return floorY;}}bg;
+struct Bg{float GroundCross(dBgS_ObjGndChk* p){assert(p->pos.x==0&&((p->pos.y==-300&&p->pos.z==760)||(p->pos.y==600&&p->pos.z==760)));return roomReady?floorY:std::nanf("");}}bg;
 Bg& dComIfG_Bgsp(){return bg;}
 bool hub_center_ground(cXyz& anchor){
- cXyz probe(0,link.current.pos.y+1000,0);dBgS_ObjGndChk ground;ground.SetPos(&probe);
+ cXyz probe(0,link.current.pos.y+1000,760);dBgS_ObjGndChk ground;ground.SetPos(&probe);
  const float height=dComIfG_Bgsp().GroundCross(&ground);
  if(!std::isfinite(height)||height<=-1.e8f)return false;anchor.set(0,height,0);return true;
 }
-struct dCamera_c{cXyz mEye,mCenter,mUp;float fov=0;int sets=0;struct{void Val(cXyz){}}mDirection;
- void Set(cXyz c,cXyz e,float f,s16 bank){assert(bank==0);mCenter=c;mEye=e;fov=f;++sets;}}camera;
+bool cameraBlocked=false;
+struct dBgS_CamLinChk{cXyz GetCross(){return {0,-200,1200};}};
+struct dCamera_c{cXyz mEye,mCenter,mUp;float mFovy=0;s16 mBank=0;int sets=0,mPadID=0;
+ struct{cXyz value;void Val(cXyz v){value=v;}}mDirection;
+ static bool isAimActive(){return false;}
+ bool lineBGCheck(cXyz*,cXyz*,dBgS_CamLinChk*,int){return cameraBlocked;}
+ void Set(cXyz c,cXyz e,float f,s16 bank){mBank=bank;mCenter=c;mEye=e;mFovy=f;++sets;}}camera;
+bool in_arena(){return s_active&&s_gameStarted;}
+bool dComIfGp_event_runCheck(){return false;}
+void restore_sword_aim_camera(dCamera_c*){}bool update_sword_aim_camera(dCamera_c*){return false;}
+void resolve_manual_projectiles(dCamera_c*){}
 int s_hubZelda=12;
 void* actor_by_id(int id){assert(id==12);return zeldaLive?&scene:nullptr;}
 bool owned_hub_zelda(void* p){return p!=nullptr;}
@@ -137,6 +164,7 @@ native_fixture=r'''
 // Model the SDK's next-stage enable latch and Draw's independent PLAY request,
 // which the old always-successful changeOpeningScene stub did not exercise.
 void dComIfGp_setNextStage(const char* name,s16 point,s8 room,s8 layer){
+ if(checkReloadOrdering){assert(!s_hubArrivalPending&&s_hubArrivalSeconds==0);assert(s_restart);}
  std::any args[]{name,point,room,layer};
  if(before_title_stage(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL)return;
  ++stageWrites;
@@ -218,7 +246,7 @@ int main(){
  std::any actorArgs[]{&record,&params};
  assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_CONTINUE);
  assert(((params.base.parameters>>12)&0x1f)==16&&((params.base.parameters>>24)&0xff)==0xff);
- assert(params.base.position.x==0&&params.base.position.z==260&&params.base.position.y==-400);
+ assert(params.base.position.x==0&&params.base.position.z==760&&params.base.position.y==-400);
  assert(params.base.angle.y==s16(0x8000));
  for(int n:{99,fpcNm_SCENE_EXIT_e,fpcNm_SCENE_EXIT2_e}){
   info.procname=n;assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
@@ -232,15 +260,17 @@ int main(){
  assert(!link.speedF&&!link.mNormalSpeed&&!link.speed.y&&link.mProcID==daAlink_c::PROC_WAIT);
  int result=0;assert(before_title_wait(nullptr,otherArgs,&result,nullptr)==HOOK_CONTINUE);
  for(int i=0;i<200;++i)assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==1);
- assert(link.sets==1&&link.position.z==260&&link.position.y==-400&&link.yaw==s16(0x8000));
+ assert(link.sets==1&&link.position.z==760&&link.position.y==-400&&link.yaw==s16(0x8000));
  assert(link.mUnderFrameCtrl[0].frame==0&&link.mUpperFrameCtrl[0].frame==0);
  assert(link.mUnderFrameCtrl[0].rate==0&&link.mUpperFrameCtrl[0].rate==0);
  floorY=std::nanf("");before_title_wait(nullptr,linkArgs,&result,nullptr);assert(link.position.y==-400);
  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
- assert(camera.sets==1&&std::abs(camera.mEye.x-650)<.001f&&std::abs(camera.mEye.z-900)<.001f&&camera.mEye.y==-70&&camera.mCenter.x==-70&&camera.fov==45);
+ assert(camera.sets==0); // No valid floor: do not install a camera on a NaN anchor.
+ floorY=-400;after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
+ assert(camera.sets==1&&std::abs(camera.mEye.x-700)<.001f&&std::abs(camera.mEye.z-1250)<.001f&&camera.mEye.y==0&&camera.mCenter.x==-80&&camera.mFovy==52);
  zeldaLive=false;assert(before_title_logo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-1);
- zeldaLive=true;bowlLive=false;before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==-1);
- bowlLive=true;floorY=-400;
+ zeldaLive=true;roomReady=false;before_title_logo(nullptr,nullptr,&result,nullptr);assert(result==-1);
+ roomReady=true;floorY=-400;
  // Selection alone never starts logo/input, even if native A/Start is pressed.
  before_title_wait(nullptr,linkArgs,&result,nullptr);
  assert(title_scene_ready()&&!s_titleFlow.launched);
@@ -267,24 +297,43 @@ int main(){
  assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_controls(nullptr,nullptr,nullptr,nullptr)==HOOK_CONTINUE);
  after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
- assert(camera.sets==2&&std::abs(camera.mEye.x-std::sqrt(360.f*360+310.f*310))<.01f&&
-  camera.mEye.y==-210&&std::abs(camera.mEye.z-260)<.01f&&camera.fov==40);
+ assert(camera.sets==2&&std::abs(camera.mEye.x-640.f)<.01f&&
+  camera.mEye.y==-150&&std::abs(camera.mEye.z-850)<.01f&&camera.mFovy==48);
  assert(survivors_title_preparing());
  transition=true;assert(survivors_title_preparing()); // Fade-in does not serialize resource loads.
  nextStage=true;assert(!survivors_title_preparing());nextStage=false;
  resetting=true;assert(!survivors_title_preparing());resetting=false;transition=false;
+ // Reset retains its flag while the incoming OPENING and its room children
+ // are created. Geometry replacement and native furnishing filtering must be
+ // eligible before offReset() first runs in the scene's Execute.
+ for(int cycle=0;cycle<3;++cycle){
+  resetting=true;assert(!survivors_title_preparing()); // Outgoing live title.
+  nextStage=true;sceneCreating=true;assert(!survivors_title_preparing());
+  nextStage=false; // Incoming phase_1 consumes the stage request.
+  assert(survivors_title_preparing());
+  for(int gate=0;gate<7;++gate){
+   if(gate==0)s_active=false;if(gate==1)s_gameStarted=true;
+   if(gate==2)scene.name=fpcNm_PLAY_SCENE_e;if(gate==3)stageName="F_SP102";
+   if(gate==4)returning=true;if(gate==5)s_titleReloadPending=true;if(gate==6)hasScene=false;
+   assert(!survivors_title_preparing());
+   s_active=true;s_gameStarted=false;scene.name=fpcNm_OPENING_SCENE_e;stageName=arenas[0].stage;
+   returning=false;s_titleReloadPending=false;hasScene=true;
+  }
+  resetting=false;sceneCreating=false;assert(survivors_title_preparing());
+ }
+
  modelReady=false;assert(!title_scene_ready());modelReady=true;
  // Fall detection runs after private input. It must not replace WAIT with FALL.
  result=123;assert(before_title_fall(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==0);
  assert(before_title_fall(nullptr,otherArgs,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_player_draw(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
- bowlLive=false;floorY=std::nanf("");
+ roomReady=false;floorY=std::nanf("");
  before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==kNone);
  assert(before_title_player_draw(nullptr,linkArgs,&result,nullptr)==HOOK_SKIP_ORIGINAL);
  assert(before_title_ui(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL);
- // Grounding and pose do not have to wait for the asynchronous bowl model.
- floorY=-400;before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==link.id&&!title_scene_ready());
- bowlLive=true;assert(title_scene_ready());
+ // Grounding and pose do not have to wait for Zelda to finish loading.
+ roomReady=true;zeldaLive=false;floorY=-400;before_title_wait(nullptr,linkArgs,&result,nullptr);assert(s_titlePoseOwner==link.id&&!title_scene_ready());
+ zeldaLive=true;assert(title_scene_ready());
  // Startup is already loading its first scene: do not request a duplicate.
  scene.name=999;request_title_preview();update_title_preview();assert(!reloads&&s_titleReloadPending&&!s_titleFlow.launched);
  std::any startup[]{static_cast<const char*>("F_SP102"),s16(100),s8(0),s8(10)};
@@ -321,7 +370,7 @@ int main(){
  assert(survivors_hub_arrival_active()&&!survivors_title_active());
  info.procname=fpcNm_ALINK_e;params.base.position.x=999;params.base.position.z=999;
  before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
- assert(params.base.position.x==0&&params.base.position.z==260&&params.base.angle.y==s16(0x8000));
+ assert(params.base.position.x==0&&params.base.position.z==760&&params.base.angle.y==s16(0x8000));
  assert(((params.base.parameters>>12)&0x1f)==16&&((params.base.parameters>>24)&0xff)==0xff);
  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-2);
  info.procname=99;assert(before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr)==HOOK_CONTINUE);
@@ -336,13 +385,13 @@ int main(){
   nextStage=resetting=returning=false;
  }
  before_title_wait(nullptr,linkArgs,&result,nullptr);
- assert(link.position.z==260&&link.position.y==-400&&title_scene_ready());
+ assert(link.position.z==760&&link.position.y==-400&&title_scene_ready());
  // Missing scenery, fade-in and pause must not consume the visible rise.
  for(int gate=0;gate<4;++gate){
-  if(gate==0)bowlLive=false;if(gate==1)zeldaLive=false;if(gate==2)transition=true;if(gate==3)paused=true;
+  if(gate==0)roomReady=false;if(gate==1)zeldaLive=false;if(gate==2)transition=true;if(gate==3)paused=true;
   s_titleClock=std::chrono::steady_clock::now()-std::chrono::seconds(1);
   after_title_camera(nullptr,cameraArgs,nullptr,nullptr);assert(s_hubArrivalSeconds==0);
-  bowlLive=zeldaLive=true;transition=paused=false;
+  roomReady=zeldaLive=true;transition=paused=false;
  }
  for(int rate:{30,60,120}){
   s_hubArrivalPending=true;s_hubArrivalSeconds=0;
@@ -356,6 +405,81 @@ int main(){
  link.mItemButton=7;after_title_input(nullptr,linkArgs,nullptr,nullptr);assert(link.mItemButton==7);
  assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ // Exercise production zoom + arrival overlay + pre-Run restoration together.
+ // Vary framerate, user distance and collision-clamped endpoints. Native output
+ // is supplied each frame, like Run; the overlay must never feed back into it.
+ for(int rate:{30,60,120})for(unsigned percent:{100u,200u,500u})for(bool wall:{false,true}){
+  s_hubArrivalPending=true;s_hubArrivalSeconds=0;s_run.phase=Phase::Loading;
+  s_options.camera_distance=percent;cameraBlocked=wall;
+  s_hubArrivalCamera.owner=nullptr;s_zoomCamera=nullptr;
+  const cXyz nativeEye(0,-200,1100),nativeCenter(0,-230,760),anchor(0,-400,0);
+  cXyz previous(640,-150,850);
+  bool sawBlend=false,sawEndpoint=false;
+  for(int i=0;i<rate*3;++i){
+   before_run_camera(nullptr,cameraArgs,nullptr,nullptr);
+   if(i>0){assert(camera.mEye.abs2(nativeEye)<.001f);assert(camera.mCenter.abs2(nativeCenter)<.001f);
+    assert(camera.mFovy==60&&camera.mBank==300);}
+   camera.Set(nativeCenter,nativeEye,60,300);camera.mUp.set(0,1,0);
+   camera.mDirection.Val(nativeEye-nativeCenter);
+   after_run_camera(nullptr,cameraArgs,nullptr,nullptr);
+   const cXyz target=camera.mEye;
+   if(s_hubArrivalPending){
+    advance_hub_arrival(1.f/rate,true);
+    blend_hub_arrival_camera(&camera,anchor);
+    assert((camera.mEye-previous).abs()<(target-cXyz(640,-150,850)).abs()*2.f/(.8f*rate)+1); // No release-frame snap, even at 500%.
+    if(s_hubArrivalSeconds<1.05f)assert(camera.mEye.abs2(cXyz(640,-150,850))<.001f);
+    else if(s_hubArrivalSeconds<1.85f){sawBlend=true;assert(camera.mFovy>=48&&camera.mFovy<=60);}
+    if(!s_hubArrivalPending){sawEndpoint=true;assert(camera.mEye.abs2(target)<.001f);
+     assert(camera.mCenter.abs2(nativeCenter)<.001f&&camera.mFovy==60&&camera.mBank==300);}
+   }
+   previous=camera.mEye;
+  }
+  assert(sawBlend&&sawEndpoint);
+  before_run_camera(nullptr,cameraArgs,nullptr,nullptr);
+ }
+ cameraBlocked=false;
+ // Menu/pause holds the handoff, and cancellation restores native state once.
+ s_hubArrivalPending=true;s_hubArrivalSeconds=1.4f;
+ camera.Set({0,-230,760},{0,-200,1100},60,0);camera.mUp.set(0,1,0);
+ blend_hub_arrival_camera(&camera,{0,-400,0});const cXyz held=camera.mEye;
+ advance_hub_arrival(10,false);assert(s_hubArrivalSeconds==1.4f);
+ restore_hub_arrival_camera(&camera);blend_hub_arrival_camera(&camera,{0,-400,0});
+ assert(camera.mEye.abs2(held)<.001f);
+ s_hubArrivalPending=false;before_run_camera(nullptr,cameraArgs,nullptr,nullptr);
+ assert(camera.mEye.abs2(cXyz(0,-200,1100))<.001f&&!s_hubArrivalCamera.owner);
+ // A replacement camera cannot inherit an old scene's saved presentation.
+ s_hubArrivalSeconds=1.4f;blend_hub_arrival_camera(&camera,{0,-400,0});
+ dCamera_c otherCamera;otherCamera.mEye={1,2,3};restore_hub_arrival_camera(&otherCamera);
+ assert(otherCamera.mEye.abs2(cXyz(1,2,3))<.001f&&!s_hubArrivalCamera.owner);
+ // Run returns retain the native entrance; only save loading gets the rest pose.
+ for(unsigned map=0;map<arenas.size();++map)for(int cycle=0;cycle<2;++cycle){
+  s_active=s_gameStarted=true;scene.name=fpcNm_PLAY_SCENE_e;
+  s_map=map;s_hub=false;s_hubArrivalPending=false;s_hubArrivalSeconds=5.f;
+  stageName=arenas[map].stage;roomNo=arenas[map].room;nextStage=false;
+  const auto cleanups=cleanupCalls;
+  replay(nullptr,nullptr);assert(s_restart&&!s_arrivingRun&&s_requestedMap==map);
+  checkReloadOrdering=true;reload_run_scene();checkReloadOrdering=false;
+  assert(cleanupCalls==cleanups+7&&nextStage&&s_hub&&s_map==0&&!s_restart);
+  assert(!survivors_hub_arrival_active()); // Outgoing scene cannot consume the pose.
+  stageName=nextName;roomNo=nextRoom;nextStage=false;
+  assert(!survivors_hub_arrival_active());
+  info.procname=fpcNm_ALINK_e;params.base.parameters=0;params.base.position={0,-250,3900};
+  before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
+  assert(params.base.position.z==3900&&params.base.parameters==0);
+  result=123;assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE&&result==123);
+  assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
+  // Restart bypasses the hub, including the combat version of room 51.
+  s_map=map;s_hub=false;stageName=arenas[map].stage;roomNo=arenas[map].room;
+  s_hubArrivalPending=true;s_hubArrivalSeconds=4.f;
+  restart_run(nullptr,nullptr);checkReloadOrdering=true;reload_run_scene();checkReloadOrdering=false;
+  assert(s_arrivingRun&&!s_hub&&s_map==map&&!s_hubArrivalPending&&nextStage);
+  nextStage=false;assert(!survivors_hub_arrival_active());
+  params.base.position={11,-250,3900};params.base.parameters=42;
+  before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
+  assert(params.base.position.x==11&&params.base.position.z==3900&&params.base.parameters==42);
+  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
+ }
+ s_arrivingRun=false;s_hub=true;s_map=0;
  // Repeated carousel changes at different asynchronous load phases. The hub
  // request has already been routed when selection changes to vanilla (Play).
  s_gameStarted=false;scene.name=fpcNm_OPENING_SCENE_e;roomNo=arenas[0].room;
@@ -441,18 +565,18 @@ int main(){
   s_titleFlow.elapsed=TitleFlow::menuFade+TitleFlow::cameraDuration*(i/240.f);
   if(i==60)s_titleFlow.logo=true;
   after_title_camera(nullptr,cameraArgs,nullptr,nullptr);
-  const float radius=std::hypot(camera.mEye.x,camera.mEye.z-260);
-  const float angle=std::atan2(camera.mEye.x,camera.mEye.z-260);
+  const float radius=std::hypot(camera.mEye.x,camera.mEye.z-760);
+  const float angle=std::atan2(camera.mEye.x,camera.mEye.z-760);
   if(i){
-   assert(radius<lastRadius&&angle>lastAngle&&camera.fov<lastFov);
+   assert(radius<lastRadius&&angle>lastAngle&&camera.mFovy<lastFov);
    assert(camera.mEye.y<lastEye.y);
    assert(std::hypot(camera.mEye.x-lastEye.x,camera.mEye.z-lastEye.z)<10);
   }
-  if(i==120){assert(radius<800&&radius>500&&angle>1&&angle<1.5f&&camera.fov<45&&camera.fov>40);}
-  lastRadius=radius;lastAngle=angle;lastFov=camera.fov;lastEye=camera.mEye;
+  if(i==120){assert(radius<800&&radius>500&&angle>1&&angle<1.5f&&camera.mFovy<52&&camera.mFovy>48);}
+  lastRadius=radius;lastAngle=angle;lastFov=camera.mFovy;lastEye=camera.mEye;
  }
- assert(std::abs(camera.mEye.x-std::sqrt(360.f*360+310.f*310))<.01f&&
-  std::abs(camera.mEye.z-260)<.01f&&camera.mEye.y==-210&&camera.fov==40);
+ assert(std::abs(camera.mEye.x-640.f)<.01f&&
+  std::abs(camera.mEye.z-850)<.01f&&camera.mEye.y==-150&&camera.mFovy==48);
  // Skip the native logo animation with a fresh input, but never reuse the
  // reveal edge or advance to NAME_SCENE on the animation-completion input.
  transition=false;s_titleReloadPending=false;s_titlePoseOwner=link.id;
@@ -464,11 +588,11 @@ int main(){
   if(gate==0)s_active=false;if(gate==1)scene.name=fpcNm_PLAY_SCENE_e;
   if(gate==2)s_titleFlow.logo=false;if(gate==3)s_titleFlow.revealEdge=true;
   if(gate==4)s_titleReloadPending=true;if(gate==5)menuVisible=true;
-  if(gate==6)transition=true;if(gate==7)bowlLive=false;if(gate==8)padTrigger=0;
+  if(gate==6)transition=true;if(gate==7)roomReady=false;if(gate==8)padTrigger=0;
   assert(before_title_logo_animation(nullptr,titleArgs,nullptr,nullptr)==HOOK_CONTINUE);
   assert(title.mProcID==2&&title.mBck.frame==3&&!presentationSyncs);
   s_active=true;scene.name=fpcNm_OPENING_SCENE_e;s_titleFlow.logo=true;s_titleFlow.revealEdge=false;
-  s_titleReloadPending=menuVisible=transition=false;bowlLive=true;
+  s_titleReloadPending=menuVisible=transition=false;roomReady=true;
  }
  const float cameraProgress=s_titleFlow.camera();padTrigger=16;
  assert(before_title_logo_animation(nullptr,titleArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
@@ -477,7 +601,7 @@ int main(){
  assert(title.pane.starts==1&&presentationSyncs==1&&!enterSounds&&s_titleFlow.camera()==cameraProgress);
  padTrigger=0;title.keyWait();assert(title.mProcID==3&&!enterSounds);
  padTrigger=1;title.keyWait();assert(title.mProcID==4&&enterSounds==1);
- std::cout<<"Survivors title: scene routing, smooth camera, early logo reveal and native logo animation skip passed\n";
+ std::cout<<"Survivors title: scene routing, incoming Reset creation, hub returns/restarts, smooth camera, early logo reveal and native logo animation skip passed\n";
 }
 '''
 native_event=(sdk/'src/d/d_event_manager.cpp').read_text()
@@ -509,9 +633,13 @@ assert source.index('PRE(SurvivorsArenaActor, before_title_stage_actor)')<source
 assert 'PRE(SurvivorsOpening, before_title_opening)' in source
 assert 'POST(SurvivorsOpening, after_title_opening)' in source
 assert 'PRE(SurvivorsTitleLogoAnimation, before_title_logo_animation)' in source
+assert source.index('POST(SurvivorsCamera, after_run_camera)')<source.index('POST(SurvivorsCamera, after_title_camera)')
 assert 'src/survivors_title_logo.cpp' in (root/'CMakeLists.txt').read_text()
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'title.cpp';exe=Path(tmp)/'title'
- cpp.write_text(fixture+(root/'src/survivors_title.inc').read_text()+native_fixture+native_logo+main)
+ reload_code=''.join(extract_function(source,sig) for sig in ['void replay(ModContext*, void*) {', 'void restart_run(ModContext*, void*) {', 'void reload_run_scene() {'])
+ camera_code=(root/'src/survivors_options.inc').read_text().split('// Scale only the final rendered camera.')[1]
+ camera_code='// Scale only the final rendered camera.'+camera_code
+ cpp.write_text(fixture+reload_code+(root/'src/survivors_title.inc').read_text()+camera_code+native_fixture+native_logo+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(root/'include'),'-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

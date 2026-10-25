@@ -371,14 +371,14 @@ void update_hub_zelda() {
         s_progressSaving || s_hubSaveRequested) return;
     if (s_hubZeldaRetry) { --s_hubZeldaRetry; return; }
     cXyz anchor;
-    if (!hub_brazier_anchor(anchor) && !(preparing && hub_center_ground(anchor))) return;
-    cXyz probe = anchor + cXyz(-320, 100, 0);
+    if (!hub_center_ground(anchor)) return;
+    cXyz probe = anchor + cXyz(roundtable_layout::zeldaX, 100, roundtable_layout::zeldaZ);
     dBgS_ObjGndChk ground; ground.SetPos(&probe);
     const float height = dComIfG_Bgsp().GroundCross(&ground);
     if (!std::isfinite(height) || height <= -1.e8f || std::abs(height-anchor.y) > 50) return;
     const ActorSpawnParams params{
         .parameters=0xffffff01u, .argument=-1, .room_num=arenas[0].room,
-        .position={probe.x,height,probe.z}, .angle={kHubZeldaFlow,0x4000,0},
+        .position={probe.x,height,probe.z}, .angle={kHubZeldaFlow,roundtable_layout::zeldaYaw,0},
         .scale={1,1,1}, .create_function=nullptr,
     };
     ActorId id = kNone;

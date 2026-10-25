@@ -49,6 +49,17 @@ jobs:
       - name: Test Hyrule Survivors rules and lifecycle
         if: matrix.platform == 'linux-x86_64'
         run: |
+          g++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/survivors_roundtable_props_test.cpp -o /tmp/roundtable-props-test
+          /tmp/roundtable-props-test
+          clang++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/survivors_roundtable_props_test.cpp -o /tmp/roundtable-props-clang-test
+          /tmp/roundtable-props-clang-test
+          python3 tests/survivors_roundtable_props_runtime_test.py
+          CXX=clang++ python3 tests/survivors_roundtable_props_runtime_test.py
+          python3 tests/survivors_hearth_floor_test.py
+          python3 tests/survivors_roundtable_test.py
+          python3 tests/survivors_roundtable_shadows_test.py
+          python3 tests/survivors_roundtable_runtime_test.py
+          CXX=clang++ python3 tests/survivors_roundtable_runtime_test.py
           python3 tests/survivors_enemy_archives_test.py
           CXX=clang++ python3 tests/survivors_enemy_archives_test.py
           python3 tests/survivors_process_index_test.py
@@ -301,6 +312,12 @@ jobs:
           fi
           cmake -B build "${args[@]}"
 
+      - name: Test native hub entrance against SDK
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          python3 tests/survivors_roundtable_entry_test.py
+          CXX=clang++ python3 tests/survivors_roundtable_entry_test.py
+
       - name: Test shared Survivors settings against SDK
         if: matrix.platform == 'linux-x86_64'
         run: |
@@ -344,8 +361,8 @@ jobs:
           CXX=clang++ python3 tests/survivors_progress_save_test.py
           python3 tests/survivors_spawn_test.py dusklight
           CXX=clang++ python3 tests/survivors_spawn_test.py dusklight
-          python3 tests/survivors_hub_brazier_test.py
-          CXX=clang++ python3 tests/survivors_hub_brazier_test.py
+          python3 tests/survivors_hub_layout_test.py
+          CXX=clang++ python3 tests/survivors_hub_layout_test.py
           python3 tests/survivors_title_test.py
           CXX=clang++ python3 tests/survivors_title_test.py
           python3 tests/survivors_title_texture_test.py

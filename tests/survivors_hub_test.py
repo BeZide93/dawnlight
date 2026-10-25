@@ -18,6 +18,8 @@ bool s_victory=false,s_deathPending=false;
 #include <cassert>
 #include <string>
 #include <vector>
+#include "generated/roundtable_layout.hpp"
+namespace roundtable_layout=dawnlight::roundtable_layout;
 #include "survivors_rules.hpp"
 #include "survivors_maps.hpp"
 using namespace dawnlight::survivors;
@@ -30,6 +32,7 @@ constexpr unsigned dEvtCnd_CANDOOR_e=4;
 struct EventInfo{bool eligible=false,doorCommand=false;
  bool chkCondition(unsigned)const{return eligible;}bool checkCommandDoor()const{return doorCommand;}};
 struct cXyz{float x=0,y=0,z=0;cXyz()=default;cXyz(float a,float b,float c):x(a),y(b),z(c){}
+ void set(float a,float b,float c){x=a;y=b;z=c;}
  cXyz operator+(cXyz b)const{return{x+b.x,y+b.y,z+b.z};}};
 struct fopAc_ac_c{unsigned id;EventInfo eventInfo{};int room=51,frontRoom=51,backRoom=0,name=1;bool isActor=true;struct{cXyz pos{};}current{};};
 constexpr int fpcNm_DOOR20_e=1,fpcNm_KNOB20_e=2,fpcNm_DBDOOR_e=3,fpcNm_BOSS_DOOR_e=4,
@@ -60,9 +63,8 @@ bool playable(){return in_arena()&&!visible&&!event&&!transition;}
 namespace mDoRst{bool isReset(){return resetting;}bool isReturnToMenu(){return false;}}
 void dComIfGs_setRestartRoomParam(int){}
 const Arena& arena(){return arenas[s_map];}
-unsigned cleared=0,opened=0,orders=0,pedestalRemoves=0;
+unsigned cleared=0,opened=0,orders=0;
 void clear_arena_geometry(){++cleared;}
-void update_hub_brazier(bool enabled){if(!enabled)++pedestalRemoves;}
 void open_window(){visible=true;++opened;}
 void hub_menu_closed();void close_window(){visible=false;hub_menu_closed();}
 struct Log{void warn(ModContext*,const char*){}void info(ModContext*,const char*){}}logger;auto* svc_log=&logger;ModContext* mod_ctx=nullptr;
@@ -82,11 +84,12 @@ main=r'''
 int main(){
  s_run.phase=Phase::Ready;
  // The wall-side hub chest waits for geometry and faces the room center.
- wallReady=false;update_hub(&link);assert(!chestActor.active);wallReady=true;
+ floorHeight=-299.5f;update_hub(&link);assert(!chestActor.active); // Never accept the tabletop.
+ floorHeight=-400;
  floorReady=false;update_hub(&link);assert(!chestActor.active);
  floorReady=true;update_hub(&link);
- assert(chestActor.active&&chestActor.position.x==1650&&chestActor.position.z==0);
- assert(chestActor.position.y==40&&chestActor.yaw==-0x4000);
+ assert(chestActor.active&&chestActor.position.x==roundtable_layout::chestX&&chestActor.position.z==0);
+ assert(chestActor.position.y==-400&&chestActor.yaw==-0x4000);
  s_hubDeparture=true;update_hub(&link);assert(!chestActor.active);s_hubDeparture=false;
 
  // Loading the save never opens a window and Ready leaves Link executable.
@@ -189,10 +192,9 @@ int main(){
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
  cpp.write_text(fixture+'''
-bool floorReady=true,wallReady=true;
-struct dBgS_LinChk{void Set(cXyz* a,cXyz* b,void*){assert(a->x==0&&b->x==10000&&a->z==0&&b->z==0);}cXyz GetCross(){return {1800,100,0};}};
-struct dBgS_ObjGndChk{void SetPos(cXyz*){}};
-struct Ground{bool LineCross(dBgS_LinChk*){return wallReady;}float GroundCross(dBgS_ObjGndChk*){return floorReady?40:-1.e9f;}}ground;
+bool floorReady=true;float floorHeight=-400;
+struct dBgS_ObjGndChk{void SetPos(cXyz* p){assert(p->x==roundtable_layout::chestX&&p->x>1500&&p->y==200&&p->z==0);}};
+struct Ground{float GroundCross(dBgS_ObjGndChk*){return floorReady?floorHeight:-1.e9f;}}ground;
 Ground& dComIfG_Bgsp(){return ground;}
 struct GearChest {bool active=false;cXyz position;s16 yaw=0;}chestActor;
 void update_survivors_equipment_chest(bool enabled,const cXyz& p,s16 yaw){

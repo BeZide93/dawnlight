@@ -6,6 +6,8 @@ sdk = Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'dusklight'
 midna = (root / 'src/survivors_midna.inc').read_text()
 register = midna[midna.index('mods::flow::RegisteredMessage register_survivors_dialog('):midna.index('ModResult initialize_midna_dialog()')]
 fixture = r'''
+#include "generated/roundtable_layout.hpp"
+namespace roundtable_layout=dawnlight::roundtable_layout;
 #include <any>
 #include <cassert>
 #include <cmath>
@@ -131,7 +133,7 @@ fopAc_ac_c* daPy_getPlayerActorClass(){return &link;}
 ActorId fopAcM_GetID(const fopAc_ac_c* actor){return actor->id;}
 int fopAcM_GetName(const fopAc_ac_c* actor){return actor->name;}
 int8_t fopAcM_GetRoomNo(const fopAc_ac_c*){return 51;}
-bool active=true,transition=false,play=true,pedestal=true,creating=false,live=false,failSpawn=false;
+bool active=true,transition=false,play=true,creating=false,live=false,failSpawn=false;
 bool giftCreating=false,giftLive=false,failGift=false,eventEnded=false,eventRunning=false;
 bool s_hubDeparture=false,s_progressSaving=false,s_hubSaveRequested=false;
 bool survivors_hub_active(){return active;}
@@ -157,11 +159,10 @@ bool dComIfGp_evmng_endCheck(const char* n){assert(std::string(n)=="DEFAULT_GETI
 void dComIfGp_event_setGtItm(int n){assert(n==dItemNo_SWORD_e);}
 void dComIfGp_event_setItemPartnerId(ActorId id){assert(id==55);}
 void fopAcM_orderItemEvent(fopAc_ac_c* item,int,int){assert(item==&giftItem&&item->eventInfo.conditions==dEvtCnd_CANGETITEM_e);++giftOrders;}
-bool hub_brazier_anchor(cXyz& anchor){anchor={0,-400,0};return pedestal;}
 bool centerReady=true;bool hub_center_ground(cXyz& anchor){anchor={0,-400,0};return centerReady;}
 struct dBgS_ObjGndChk {cXyz pos;void SetPos(cXyz* p){pos=*p;}};
 float floorHeight=-400;
-struct Background {float GroundCross(dBgS_ObjGndChk* ground){++groundCalls;assert(ground->pos.x==-320&&ground->pos.z==0);return floorHeight;}}bg;
+struct Background {float GroundCross(dBgS_ObjGndChk* ground){++groundCalls;assert(ground->pos.x==roundtable_layout::zeldaX&&ground->pos.z==roundtable_layout::zeldaZ);return floorHeight;}}bg;
 Background& dComIfG_Bgsp(){return bg;}
 struct Arena {int8_t room=51;};Arena arenas[1];
 ModResult create_standalone_actor(int profile,const ActorSpawnParams& p,ActorId& out){
@@ -172,7 +173,7 @@ ModResult create_standalone_actor(int profile,const ActorSpawnParams& p,ActorId&
   ++giftSpawns;if(failGift)return MOD_UNAVAILABLE;out=55;giftCreating=true;return MOD_OK;
  }
  assert(profile==fpcNm_NPC_ZELDA_e&&p.parameters==0xffffff01u&&p.room_num==51);
- assert(p.position.x==-320&&p.position.y==-400&&p.position.z==0&&p.angle.x==3001&&p.angle.y==0x4000);
+ assert(p.position.x==roundtable_layout::zeldaX&&p.position.y==-400&&p.position.z==roundtable_layout::zeldaZ&&p.angle.x==3001&&p.angle.y==roundtable_layout::zeldaYaw);
  assert(p.scale.x==1&&p.scale.y==1&&p.scale.z==1&&p.create_function==nullptr);
  ++spawnCalls;if(failSpawn)return MOD_UNAVAILABLE;out=zelda.id;creating=true;return MOD_OK;
 }
@@ -190,7 +191,7 @@ int main(){
  active=true;play=false;update_hub_zelda();assert(!spawnCalls);play=true;
  s_progressSaving=true;update_hub_zelda();assert(!spawnCalls);s_progressSaving=false;
  s_hubSaveRequested=true;update_hub_zelda();assert(!spawnCalls);s_hubSaveRequested=false;
- pedestal=false;update_hub_zelda();assert(!spawnCalls&&!groundCalls);pedestal=true;
+ centerReady=false;update_hub_zelda();assert(!spawnCalls&&!groundCalls);centerReady=true;
  for(float invalid:{-1.e9f,-100.f,std::nanf("")}){
   floorHeight=invalid;update_hub_zelda();assert(!spawnCalls&&s_hubZeldaRetry==0);
  }
@@ -387,10 +388,10 @@ int main(){
  giftLive=false;cleanup_hub_zelda_gift();assert(!hub_zelda_gift_busy()&&rewardCalls==1);
  // Title presentation may spawn Zelda before any playable hub/save exists.
  // She remains decorative: no talk, gift, talents or gameplay readiness.
- titleActive=true;play=false;s_hubZeldaRetry=0;pedestal=false;
+ titleActive=true;play=false;s_hubZeldaRetry=0;
  centerReady=false;update_hub_zelda();assert(s_hubZeldaRetry==0);centerReady=true;
  const auto titleSpawns=spawnCalls;const auto titleDeletes=deleteCalls;
- update_hub_zelda();assert(spawnCalls==titleSpawns+1&&creating&&!hub_zelda_enabled()&&!pedestal);
+ update_hub_zelda();assert(spawnCalls==titleSpawns+1&&creating&&!hub_zelda_enabled());
  creating=false;live=true;zelda.attention_info.flags=3;
  before_hub_zelda_param(nullptr,ownArgs,nullptr,nullptr);
  after_hub_zelda_param(nullptr,ownArgs,nullptr,nullptr);
@@ -440,5 +441,5 @@ with tempfile.TemporaryDirectory() as temp:
     cpp,binary=Path(temp)/'test.cpp',Path(temp)/'test'
     cpp.write_text(fixture+native_actions+register+(root/'src/survivors_hub_zelda.inc').read_text()+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-attributes','-Wno-unused-parameter','-Wno-unused-variable','-Wno-implicit-fallthrough','-Wno-missing-field-initializers',
-        '-I',str(sdk/'sdk/include'),str(cpp),'-o',str(binary)],check=True)
+        '-I',str(root/'src'),'-I',str(sdk/'sdk/include'),str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

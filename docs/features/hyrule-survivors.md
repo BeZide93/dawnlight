@@ -11,10 +11,11 @@ to the title screen disarms the run until another save is selected and started.
 
 ## Hub and arena selection
 
-Loading a Survivors save enters the Darknut Arena hub with normal movement and
-no automatically opened menu. The Master Sword in its stone pedestal stands in
-the room's center. The floating **Talents** label uses the native boss-name font.
-Face the sword and press A (including touch A) to open **Talents / Settings**.
+Loading a Survivors save enters the [Roundtable-inspired hub](survivors-roundtable.md).
+Link rises from his resting position beside the ceremonial brazier, then has
+normal movement with no automatically opened menu. Zelda gives new saves the
+Ordon Sword; subsequent conversations open **Talents / Settings**. The equipment
+chest remains at the east wall. The round table and fireplace are scenery.
 Closing the menu automatically saves talent progress to the current Survivors
 slot. **Save progress** remains available for an explicit retry after a failed save.
 

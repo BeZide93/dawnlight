@@ -65,6 +65,8 @@ struct dBgS_CamLinChk{cXyz cross{0,0,150};cXyz GetCross(){return cross;}};
 struct Direction{cXyz v;void Val(cXyz a){v=a;}};
 struct dCamera_c{cXyz mEye{0,0,100},mCenter{};Direction mDirection;int mPadID=0;
  static bool isAimActive(){return aim;}bool lineBGCheck(cXyz*,cXyz*,dBgS_CamLinChk*,int){return blocked;}};
+bool s_hub=false;
+void restore_hub_arrival_camera(dCamera_c*){}
 void restore_sword_aim_camera(dCamera_c*){}bool update_sword_aim_camera(dCamera_c*){return false;}
 void resolve_manual_projectiles(dCamera_c*){}
 void open_hud_editor(ModContext*,void*){}

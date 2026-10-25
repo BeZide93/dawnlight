@@ -1,0 +1,56 @@
+{
+  "torches": [
+    [
+      309.9985216836278,
+      35.0,
+      1558.4678105607331
+    ],
+    [
+      1558.4678105607331,
+      35.0,
+      309.9985216836279
+    ],
+    [
+      1558.4678105607331,
+      35.0,
+      -309.9985216836277
+    ],
+    [
+      309.9985216836284,
+      35.0,
+      -1558.4678105607331
+    ],
+    [
+      -309.998521683628,
+      35.0,
+      -1558.4678105607331
+    ],
+    [
+      -309.99852168362855,
+      35.0,
+      1558.467810560733
+    ]
+  ],
+  "light": [
+    0.0,
+    -50.0,
+    0.0
+  ],
+  "hearth": [
+    -1515.4135047258148,
+    -200.0,
+    0.0
+  ],
+  "hearth_weight": 0.22,
+  "size": 1024,
+  "step": 24.0,
+  "min": 80,
+  "max": 255,
+  "sources": {
+    "res/survivors_roundtable/hall.mesh": "b66b62314d82eb6489808957cbd0fd1069b5732c648e9a35d24d66fc6add8b76",
+    "tools/generate_roundtable.py": "9cc4d76d8e3f15a99737169a3a319c7ed0c29e68ed6314d2190de8c7b8e5ad7c",
+    "tools/bake_roundtable_shadows.cpp": "3da2b7c6a07bd2e89e1ea87a208a865f3d614fe08f352e9bc3d7fda396853d33",
+    "tools/bake_roundtable_shadows.py": "eeb885a72d410f4205446f1abdbcbe0e2d50fa67d0299ffd352e4cba166e2bdd",
+    "res/survivors_roundtable/shadows.i8": "5e2cde2f5c75984a0284bd49afe916660408ac4a9f834eae65068cfda1b7d129"
+  }
+}

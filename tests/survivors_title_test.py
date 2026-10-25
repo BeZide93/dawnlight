@@ -148,7 +148,7 @@ native_fixture=r'''
 // Model the SDK's next-stage enable latch and Draw's independent PLAY request,
 // which the old always-successful changeOpeningScene stub did not exercise.
 void dComIfGp_setNextStage(const char* name,s16 point,s8 room,s8 layer){
- if(checkReloadOrdering){assert(s_hubArrivalPending==!s_arrivingRun&&s_hubArrivalSeconds==0);assert(s_restart);}
+ if(checkReloadOrdering){assert(!s_hubArrivalPending&&s_hubArrivalSeconds==0);assert(s_restart);}
  std::any args[]{name,point,room,layer};
  if(before_title_stage(nullptr,args,nullptr,nullptr)==HOOK_SKIP_ORIGINAL)return;
  ++stageWrites;
@@ -370,8 +370,7 @@ int main(){
  link.mItemButton=7;after_title_input(nullptr,linkArgs,nullptr,nullptr);assert(link.mItemButton==7);
  assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
  assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE);
- // Return from every run map must prepare arrival before scene creation.
- // Previously this took the native shutter entrance outside the new collider.
+ // Run returns retain the native entrance; only save loading gets the rest pose.
  for(unsigned map=0;map<arenas.size();++map)for(int cycle=0;cycle<2;++cycle){
   s_active=s_gameStarted=true;scene.name=fpcNm_PLAY_SCENE_e;
   s_map=map;s_hub=false;s_hubArrivalPending=false;s_hubArrivalSeconds=5.f;
@@ -382,15 +381,11 @@ int main(){
   assert(cleanupCalls==cleanups+7&&nextStage&&s_hub&&s_map==0&&!s_restart);
   assert(!survivors_hub_arrival_active()); // Outgoing scene cannot consume the pose.
   stageName=nextName;roomNo=nextRoom;nextStage=false;
-  assert(survivors_hub_arrival_active());
+  assert(!survivors_hub_arrival_active());
   info.procname=fpcNm_ALINK_e;params.base.parameters=0;params.base.position={0,-250,3900};
   before_title_stage_actor(nullptr,actorArgs,nullptr,nullptr);
-  assert(params.base.position.x==0&&params.base.position.y==roundtable_layout::floorY&&params.base.position.z==roundtable_layout::restZ);
-  assert(((params.base.parameters>>12)&0x1f)==16&&((params.base.parameters>>24)&0xff)==0xff);
-  result=123;assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_SKIP_ORIGINAL&&result==-2);
-  before_title_wait(nullptr,linkArgs,&result,nullptr);
-  for(int frame=0;frame<70;++frame)advance_hub_arrival(1.f/60,true);
-  assert(!s_hubArrivalPending&&link.mUnderFrameCtrl[0].rate==1);
+  assert(params.base.position.z==3900&&params.base.parameters==0);
+  result=123;assert(before_title_start_demo(nullptr,nullptr,&result,nullptr)==HOOK_CONTINUE&&result==123);
   assert(before_title_wait(nullptr,linkArgs,&result,nullptr)==HOOK_CONTINUE);
   // Restart bypasses the hub, including the combat version of room 51.
   s_map=map;s_hub=false;stageName=arenas[map].stage;roomNo=arenas[map].room;

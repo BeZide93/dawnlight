@@ -14,7 +14,20 @@ HookAction before_roundtable_stage_actor(ModContext*,void* args,void*,void*) {
     // authored exit and scene infrastructure; standalone Zelda/bowl/chest are
     // spawned separately, so this cannot remove them or their interactions.
     switch(info->procname) {
-    case fpcNm_ALINK_e:case fpcNm_BG_e:case fpcNm_KANKYO_e:case fpcNm_ENVSE_e:return HOOK_CONTINUE;
+    case fpcNm_ALINK_e:
+        // Title/save hooks already moved Link to restZ. Only the original
+        // southern player start remains here on a run return. Keep its native
+        // shutter event, spawn mode and facing. Native findShutterCallBack
+        // requires Link and door home positions to match within 10 units.
+        if(std::abs(float(params->base.position.x))<400.f &&
+           std::isfinite(float(params->base.position.z)) &&
+           float(params->base.position.z)>roundtable_layout::exitZ+300.f) {
+            params->base.position.x=0;
+            params->base.position.y=roundtable_layout::floorY;
+            params->base.position.z=roundtable_layout::exitZ;
+        }
+        return HOOK_CONTINUE;
+    case fpcNm_BG_e:case fpcNm_KANKYO_e:case fpcNm_ENVSE_e:return HOOK_CONTINUE;
     case fpcNm_DOOR20_e:case fpcNm_KNOB20_e:case fpcNm_DBDOOR_e:
     case fpcNm_BOSS_DOOR_e:case fpcNm_L1BOSS_DOOR_e:case fpcNm_L1MBOSS_DOOR_e:
     case fpcNm_L5BOSS_DOOR_e:case fpcNm_SPIRAL_DOOR_e:

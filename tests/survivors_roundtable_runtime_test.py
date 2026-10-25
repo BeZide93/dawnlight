@@ -101,20 +101,28 @@ struct J3DDrawBuffer{
  J3DPacket* entries[2]{};J3DPacket** mpBuffer=entries;
  unsigned getEntryTableSize(){return 2;}
  void entryImm(J3DPacket* p,unsigned i){p->setNextPacket(entries[i]);entries[i]=p;}
-} drawList;
+} drawList,shadeList;
+struct dDlst_list_c{enum{DB_XLU_LIST=0};J3DDrawBuffer* mDrawBuffers[1]{&shadeList};};
+struct{dDlst_list_c drawlist;}g_dComIfG_gameInfo;
 J3DDrawBuffer* dComIfGd_getOpaListBG(){return &drawList;}
 J3DDrawBuffer* dComIfGd_getOpaList(){assert(false && "Room must precede native shadows, not render with actors");return nullptr;}
 struct J3DSys{void reinitGX(){}void* getViewMtx(){return nullptr;}}j3dSys;
 struct GXTexObj{};
 struct Lighting{void settingTevStruct(int,void*,void*){}}g_env_light;
 void* dComIfGp_roomControl_getTevStr(unsigned){return nullptr;}
-unsigned submitted=0,batches=0;
+unsigned submitted=0,batches=0;int zTest=0,zWrite=0,blendMode=0,cullMode=0;
+std::vector<std::array<float,3>> positions;std::vector<std::array<unsigned,4>> colors;
+void GXPosition3f32(float x,float y,float z){positions.push_back({x,y,z});}
+void GXColor4u8(u8 r,u8 g,u8 b,u8 a){colors.push_back({r,g,b,a});}
+void GXSetZMode(int test,int,int write){zTest=test;zWrite=write;}
+void GXSetBlendMode(int mode,int,int,int){blendMode=mode;}
+void GXSetCullMode(int mode){cullMode=mode;}
 void GXBegin(int,int,unsigned count){assert(count<=60000&&count%3==0);submitted+=count;++batches;}
 '''
 constants=sorted(set(re.findall(r'\bGX_[A-Z0-9a-z_]+',production)))
 fixture+='\nenum {'+','.join(constants)+'};\n'
 for fn in sorted(set(re.findall(r'\b(GX\w+)\(',production))):
-    if fn!='GXBegin':fixture+=f'template<class... T>void {fn}(T...){{}}\n'
+    if fn not in {'GXBegin','GXPosition3f32','GXColor4u8','GXSetZMode','GXSetBlendMode','GXSetCullMode'}:fixture+=f'template<class... T>void {fn}(T...){{}}\n'
 tests=r'''
 int create(void*){return 4;}int remove(void*){return 1;}int execute(void*){return 1;}int draw(void*){return 1;}
 leafdraw_method_class methods{{create,remove,execute,nullptr},draw};
@@ -143,7 +151,7 @@ int main(int argc,char** argv){
   auto* custom=bg.mpBgW;assert(custom==roomCollision&&registry.entries.count(custom));
   dispatch(bg,create,true);assert(bg.mpBgW==custom&&liveHeaps==1);
   // Mode selection is now false: this outgoing actor must keep its own room.
-  J3DPacket other;drawList.entryImm(&other,0);
+  J3DPacket other,otherShade;drawList.entryImm(&other,0);shadeList.entryImm(&otherShade,0);
   dispatch(bg,draw,false);auto* packet=drawList.entries[0];assert(packet!=&other);
   for(int i=0;i<5;++i)dispatch(bg,draw,false);
   assert(packet==drawList.entries[0]&&packet->getNextPacket()==&other&&other.getNextPacket()==nullptr);
@@ -153,6 +161,15 @@ int main(int argc,char** argv){
       (unsigned(header[6])<<16)|(unsigned(header[7])<<24);
   submitted=batches=0;packet->draw();
   assert(submitted==expected&&batches==(expected+59999)/60000);
+  auto* shade=shadeList.entries[0];assert(shade!=&otherShade&&shade->getNextPacket()==&otherShade);
+  submitted=batches=0;positions.clear();colors.clear();shade->draw();
+  assert(submitted==36&&batches==6&&zTest==GX_TRUE&&zWrite==GX_FALSE&&blendMode==GX_BM_BLEND&&cullMode==GX_CULL_BACK);
+  for(unsigned i=0;i<colors.size();++i){
+   assert(colors[i][0]==0&&colors[i][1]==0&&colors[i][2]==0&&colors[i][3]>0);
+   assert(positions[i][2]>dawnlight::roundtable_layout::exitZ);
+   if(i)assert(positions[i][2]<=positions[i-1][2]);
+  }
+  assert(colors.front()[3]==255&&colors.back()[3]==45);
   dispatch(bg,execute,false);assert(lights==2&&particles==18);
   dispatch(bg,execute,false);assert(lights==2&&particles==18);
   if(cycle%2==0){
@@ -161,7 +178,8 @@ int main(int argc,char** argv){
   assert(liveHeaps==0&&lights==0&&particles==0);
   assert(bg.mpKCol==&native&&!bg.mpBgW&&native.used&&roomCollision==&native);
   assert(drawList.entries[0]==&other&&other.getNextPacket()==nullptr);
-  registry.Release(&native);actors.clear();drawList.entries[0]=nullptr;
+  assert(shadeList.entries[0]==&otherShade&&otherShade.getNextPacket()==nullptr);
+  registry.Release(&native);actors.clear();drawList.entries[0]=nullptr;shadeList.entries[0]=nullptr;
  }
  dawnlight::shutdown_roundtable();assert(loads>=frees&&JKRHeap::current==&rootHeap&&registry.entries.empty());
  std::cout<<"Roundtable runtime: repeated creation, mode switches, deferred drawing, fire and cleanup passed\n";

@@ -25,12 +25,12 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   Link rests at Z = 760, outside the chair ring; Zelda stands diagonally in front of the west fireplace at X/Z = -1170/430
   and faces the centre. The title camera follows the relocated rest position.
   Zelda's sword gift, talents and exit warning remain intact.
-- Returning from any run arms the same kneeling arrival as loading a save,
-  before requesting the new scene. Link spawns at the authored floor/rest anchor
-  in idle mode and skips the original shutter entrance demo. The old return path
-  still used the removed corridor's native player start, despite relocating the
-  door. Each visit resets the arrival timer; the 0.7-second rise starts only once
-  the scene is ready. Direct run restarts retain their native map entrances.
+- Returning from a run uses the native shutter entrance. Both Link's home
+  position and the relocated door start at X/Z = 0/1815.4135, Y = -400:
+  the engine's `findShutterCallBack` requires all three coordinates to agree
+  within 10 units. Spawn mode, facing and door event remain native. The kneeling
+  pose and 0.7-second rise are armed only when creating/loading a save; return
+  and direct-restart paths clear that flag and reset its timer.
 - A tall golden native flame with sparks floats above the tabletop at Y = -220.
   Its warm point light is centered at Y = -50. Five light samples bake soft
   shadows from the actual visible geometry into a 1024×1024 I8 lightmap;
@@ -75,14 +75,22 @@ architecture. These shadows follow the fixed lights, not individual moving parti
 - A detailed stone portal frames the exit with grounded bases, fluted jambs,
   joint bands, capitals, two segmented archivolts, a keystone and a carved
   cornice with bronze insets. Solid wings and a lintel enclose the shutter.
-  A flat 300-unit pocket behind the door supports the native event goals;
-  there is no corridor to walk down before reaching the door. The stage-actor
+  A flat 900-unit passage behind the door supports native entry/exit travel;
+  there is no corridor to walk down before reaching the door. Its segmented
+  floor and side walls fade to black within 240 units. The distant backstop
+  remains solid but completely black, with no visible masonry. The stage-actor
   hook relocates only door spawns in the former southern corridor before native construction,
   so its matrices, collision and cached event positions use the new anchor.
   Door parameters, yaw, interactions and normal combat doors are preserved.
   The old exact-position filter incorrectly used Link's logged
   `BS_SHUTTER_START` position as the door anchor. The new filter identifies
   south-corridor door records independently of that player spawn.
+- Six depth-tested black planes inside the passage render after opaque actors,
+  progressively obscuring Link as he walks away from the hall. They have no
+  collision or depth writes and face the hall only, so an entrance camera
+  looking back into the room is not covered. Their retained translucent packet
+  is removed alongside the room packet during deletion/shutdown. This is a
+  local doorway effect, not a fullscreen fade or a change to Link's materials.
 - Recessed wall panels and arch pilasters collide at their visible front faces.
   The table has a continuous collision skirt to the floor, and chairs have
   full seat/body and back volumes. These cover Link's native +30.01-unit wall
@@ -147,7 +155,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 44,677 visual triangles and 5,772
+tools or network image generation. There are 44,925 visual triangles and 5,802
 collision triangles, with a balanced collision tree. Resources total about 7.2 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
@@ -167,7 +175,10 @@ The hearth regression follows 630 approach/retreat steps with gravity and the
 native roof-before-ground query order; it fails on the previous exported collider.
 The shadow baker shares one receiver chart across each convex stone slab or quad,
 retaining a 24-unit sample spacing within the 1024-square atlas.
-The runtime test checks that every vertex is submitted across multiple GX batches.
+The runtime test checks that every vertex is submitted across multiple GX batches,
+that the six passage planes use back-to-front blending with depth writes disabled,
+and that both retained packets are detached safely. The entry regression executes
+the actual SDK shutter-casting callback against the relocated player/door anchors.
 Shadow tests validate source/asset fingerprints, intensity range, the atlas format,
 ray occlusion, double-sided blockers, self-shadow bias and the weaker secondary
 light. The runtime fixture rejects scheduling room geometry in the actor pass.
@@ -175,7 +186,7 @@ light. The runtime fixture rejects scheduling room geometry in the actor pass.
 In-game visual and native-door validation still requires a playable installation:
 load a new/existing save, finish Zelda's gift, open talents/equipment, start each
 run map and return, repeatedly switch Play/Survivors, then check both the moving
-title camera and the 0.7-second save/return arrival. The offline preview and fake-host
+title camera, native return through the door and the 0.7-second save arrival. The offline preview and fake-host
 tests cannot establish the exact appearance or door-event timing on a device.
 
 ## Material source

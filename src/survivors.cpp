@@ -1697,10 +1697,9 @@ void reload_run_scene() {
     s_hub=!s_arrivingRun; s_hubMenu=HubMenu::None; s_hubDeparture=s_hubDoorStarted=false;
     s_hubDoor=kNone; s_hubSaveRequested=false;
     s_map=s_arrivingRun?s_requestedMap:0;
-    // The native entry is beyond the removed corridor and expects its old
-    // shutter demo. Arm the hub pose before destination actors are created;
-    // direct run restarts must still use their map's native entrance.
-    s_hubArrivalPending=s_hub;
+    // Rest arrival belongs to save loading only. On run return the stage hook
+    // moves Link's native shutter entrance alongside the relocated hub door.
+    s_hubArrivalPending=false;
     s_hubArrivalSeconds=0.f;
     prepare_save();
     dComIfGp_setNextStage(arena().stage, arena().point, arena().room, 0);

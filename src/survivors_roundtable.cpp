@@ -83,9 +83,49 @@ bool load_assets() {
     return true;
 }
 
+// Draw after opaque actors: layered, depth-tested black planes obscure only
+// actors inside the passage. Back-face culling leaves the view into the hall
+// clear when a native entrance camera is behind the shutter.
+J3DDrawBuffer* portal_list() {
+    return g_dComIfG_gameInfo.drawlist.mDrawBuffers[dDlst_list_c::DB_XLU_LIST];
+}
+class PortalShade : public J3DPacket {
+public:
+    ActorId owner=kNoRoom;
+    void draw() override {
+        auto* actor=static_cast<fopAc_ac_c*>(fopAcM_SearchByID(owner));
+        if(!actor || fopAcM_GetName(actor)!=fpcNm_BG_e)return;
+        j3dSys.reinitGX(); // Also disables fog so the passage stays black.
+        GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);GXSetCurrentMtx(GX_PNMTX0);
+        GXClearVtxDesc();GXSetVtxDesc(GX_VA_POS,GX_DIRECT);GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_F32,0);
+        GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_CLR0,GX_CLR_RGBA,GX_RGBA8,0);
+        GXSetNumChans(1);GXSetChanCtrl(GX_COLOR0A0,GX_DISABLE,GX_SRC_REG,GX_SRC_VTX,GX_LIGHT_NULL,GX_DF_NONE,GX_AF_NONE);
+        GXSetNumTexGens(0);GXSetNumTevStages(1);
+        GXSetTevOrder(GX_TEVSTAGE0,GX_TEXCOORD_NULL,GX_TEXMAP_NULL,GX_COLOR0A0);
+        GXSetTevOp(GX_TEVSTAGE0,GX_PASSCLR);
+        GXSetZMode(GX_TRUE,GX_LEQUAL,GX_FALSE);
+        GXSetBlendMode(GX_BM_BLEND,GX_BL_SRCALPHA,GX_BL_INVSRCALPHA,GX_LO_CLEAR);
+        GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);GXSetCullMode(GX_CULL_BACK);
+        constexpr float depths[]{60,100,140,180,220,260};
+        constexpr u8 alpha[]{45,65,90,120,170,255};
+        constexpr float w=roundtable_layout::exitHalfWidth,y=roundtable_layout::floorY;
+        // Back-to-front; no depth writes or collisions on the shadow planes.
+        for(int i=5;i>=0;--i) {
+            const float z=roundtable_layout::exitZ+depths[i];
+            const float corners[6][2]{{-w,y},{-w,y+660},{w,y+660},{-w,y},{w,y+660},{w,y}};
+            GXBegin(GX_TRIANGLES,GX_VTXFMT0,6);
+            for(const auto& corner:corners) {GXPosition3f32(corner[0],corner[1],z);GXColor4u8(0,0,0,alpha[i]);}
+            GXEnd();
+        }
+        j3dSys.reinitGX();
+    }
+};
+
 class Room : public J3DPacket {
 public:
     ActorId owner=kNoRoom;
+    PortalShade shade;
     dBgW* originalDzb=nullptr;
     dBgWKCol* originalKcl=nullptr;
     dBgW* collision=nullptr;
@@ -201,22 +241,25 @@ std::list<Room> s_rooms;
 struct CreateFrame { void* args; bool hub; };
 std::vector<CreateFrame> s_creates;
 
-void detach(Room& room) {
+void detach_packet(J3DDrawBuffer* list,J3DPacket* packet) {
     // Packets are intrusive and can survive presentation-only frames. Remove
     // every retained reference before freeing the packet or unloading the mod.
-    auto* list=dComIfGd_getOpaListBG();
     if(!list || !list->mpBuffer)return;
     for(u32 i=0;i<list->getEntryTableSize();++i) {
         J3DPacket* previous=nullptr;
         for(auto* p=list->mpBuffer[i];p;) {
             auto* next=p->getNextPacket();
-            if(p==&room) {
+            if(p==packet) {
                 if(previous)previous->setNextPacket(next);else list->mpBuffer[i]=next;
             } else previous=p;
             p=next;
         }
     }
-    room.setNextPacket(nullptr);
+    packet->setNextPacket(nullptr);
+}
+void detach(Room& room) {
+    detach_packet(dComIfGd_getOpaListBG(),&room);
+    detach_packet(portal_list(),&room.shade);
 }
 void restore(Room& room,daBg_c* actor,bool registerOriginal) {
     detach(room);room.extinguish();room.installed=false;
@@ -256,6 +299,12 @@ HookAction before_roundtable_process(void* args,void* result,bool createHub) {
         for(auto* p=list->mpBuffer[0];p;p=p->getNextPacket())if(p==&*it){queued=true;break;}
         if(!queued)list->entryImm(&*it,0);
     }
+    auto* shadeList=portal_list();
+    if(shadeList && shadeList->mpBuffer && shadeList->getEntryTableSize()) {
+        bool queued=false;
+        for(auto* p=shadeList->mpBuffer[0];p;p=p->getNextPacket())if(p==&it->shade){queued=true;break;}
+        if(!queued)shadeList->entryImm(&it->shade,0);
+    }
     // Keep room lighting updated for actors, but don't submit the old models
     // or native room-part decorations over the authored hall.
     g_env_light.settingTevStruct(0x10,nullptr,dComIfGp_roomControl_getTevStr(fopAcM_GetParam(actor)));
@@ -278,7 +327,7 @@ void after_roundtable_process(void* args,void* result) {
     if(!load_assets()) {
         svc_log->error(mod_ctx,"Roundtable hub: invalid/missing assets; retaining native room");return;
     }
-    s_rooms.emplace_back();auto& room=s_rooms.back();room.owner=owner;
+    s_rooms.emplace_back();auto& room=s_rooms.back();room.owner=owner;room.shade.owner=owner;
     if(!room.prepare()) {s_rooms.pop_back();svc_log->error(mod_ctx,"Roundtable hub: collision allocation failed");return;}
     room.originalDzb=actor->mpBgW;room.originalKcl=actor->mpKCol;
     auto* original=actor->mpBgW?static_cast<dBgW_Base*>(actor->mpBgW):actor->mpKCol;

@@ -3,6 +3,7 @@
 namespace dawnlight::roundtable_layout {
 inline constexpr float floorY = -400.0f;
 inline constexpr float exitZ = 1815.413505f;
+inline constexpr float exitHalfWidth = 351.162580f;
 inline constexpr float chestX = 1640.413505f;
 inline constexpr float zeldaZ = 430.0f;
 inline constexpr short zeldaYaw = 20058;

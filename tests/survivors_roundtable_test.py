@@ -134,7 +134,7 @@ for i in range(1,g.SIDES):
     assert segment_hits(wall_point(pillar_x,-80),wall_point(pillar_x,0),True), 'Arch pilaster must be solid'
 # The doorway sits directly at the hall edge, at the same floor height.
 # Its solid surround must leave native +/-240-unit event goals unobstructed.
-assert g.EXIT_Z-g.FRONT<=60 and g.EXIT_BACK_Z-g.FRONT<400
+assert g.EXIT_Z-g.FRONT<=60 and g.EXIT_BACK_Z-g.EXIT_Z>=900
 for x in (-g.HALF_DOOR+2,-230,230,g.HALF_DOOR-2):
     assert segment_hits((x,g.FLOOR+130,g.FRONT-150),(x,g.FLOOR+130,g.EXIT_Z+100),True)
 for x in (-120,0,120):
@@ -142,6 +142,12 @@ for x in (-120,0,120):
     assert abs(ground(x,g.EXIT_Z+240,g.FLOOR+100)-g.FLOOR)<.01
 assert segment_hits((0,g.FLOOR+400,g.FRONT-150),(0,g.FLOOR+400,g.EXIT_Z+100),True)
 assert segment_hits((0,g.FLOOR+130,g.EXIT_BACK_Z-60),(0,g.FLOOR+130,g.EXIT_BACK_Z+40),True)
+# Extended interior is supported, unobstructed and uniformly black at depth.
+for z in (g.EXIT_Z+400,g.EXIT_Z+700,g.EXIT_BACK_Z-50):
+    assert abs(ground(0,z,g.FLOOR+100)-g.FLOOR)<.01
+    assert not segment_hits((0,g.FLOOR+130,g.EXIT_Z),(0,g.FLOOR+130,z),True)
+rear=[v for v in hall.vertices if abs(v[0])<=g.HALF_DOOR+1 and v[2]>=g.EXIT_Z+260]
+assert rear and all(v[7:10]==(0,0,0) for v in rear), 'No lit rear masonry remains'
 # Red cloth remains on chair cushions only, never on walls or ceiling.
 cloth=g.MATERIAL_RECTS[2]
 assert not any(cloth[0]/1024<v[3]<(cloth[0]+cloth[2])/1024 and

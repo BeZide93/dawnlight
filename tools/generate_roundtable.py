@@ -27,7 +27,7 @@ TEXEL_SPAN = 200.0
 MASONRY_SPAN = 320.0
 EXIT_Z = FRONT+50.0
 EXIT_FLOOR = FLOOR
-EXIT_BACK_Z = EXIT_Z+300.0
+EXIT_BACK_Z = EXIT_Z+900.0
 EXIT_HALF_WIDTH = 190.0
 EXIT_HEIGHT = 350.0
 REST_Z = 760.0
@@ -103,7 +103,11 @@ class Hall:
                 if FLOOR<=pos[1]<=FLOOR+1 and normal[1]>0:
                     radius=math.hypot(pos[0],pos[2])
                     dirt=1-.24*max(0,1-abs(radius-1450)/380)*(0.55+.45*math.sin(pos[0]*.011+pos[2]*.007)**2)
-                color = tuple(min(255, round(t*c*dirt)) for t, c in zip(tint, light))
+                # Light dies out behind the shutter; keep the visible hall untouched.
+                portal_dark=1.0
+                if abs(pos[0])<=HALF_DOOR+1 and pos[2]>EXIT_Z:
+                    portal_dark=max(0.0,1-(pos[2]-EXIT_Z)/240.0)**2
+                color = tuple(min(255, round(t*c*dirt*portal_dark)) for t, c in zip(tint, light))
                 # Keep bilinear samples inside their atlas rectangle and clear
                 # of the reserved 4x4 emissive texels in the stone corner.
                 rx,ry,rw,rh=MATERIAL_RECTS.get(material,MATERIAL_RECTS[0])
@@ -536,16 +540,19 @@ class Hall:
         self.floor_clutter()
         # The native shutter is authored directly into the south bay. Its
         # creation parameters use the same generated anchor as this surround.
-        # Only a shallow pocket behind it accommodates the native +/-240 goals.
-        self.quad((-HALF_DOOR,FLOOR,FRONT),(-HALF_DOOR,FLOOR,EXIT_BACK_Z),
-                  (HALF_DOOR,FLOOR,EXIT_BACK_Z),(HALF_DOOR,FLOOR,FRONT),material=6,tint=(204,201,192))
-        for sign in (-1,1):
-            points=[(sign*HALF_DOOR,FLOOR,FRONT),(sign*HALF_DOOR,FLOOR,EXIT_BACK_Z),
-                    (sign*HALF_DOOR,FLOOR+660,EXIT_BACK_Z),(sign*HALF_DOOR,FLOOR+660,FRONT)]
-            if sign<0:points.reverse()
-            self.quad(*points,tint=(180,175,160))
-        self.quad((-HALF_DOOR,FLOOR+660,FRONT),(HALF_DOOR,FLOOR+660,FRONT),
-                  (HALF_DOOR,FLOOR+660,EXIT_BACK_Z),(-HALF_DOOR,FLOOR+660,EXIT_BACK_Z),solid=False,tint=(130,120,110))
+        # Hidden passage behind the door supports native entrance/exit travel.
+        # Segment the surfaces so vertex shading can fade them into black.
+        cuts=[FRONT,EXIT_Z,EXIT_Z+60,EXIT_Z+120,EXIT_Z+180,EXIT_Z+240,EXIT_BACK_Z]
+        for z0,z1 in zip(cuts,cuts[1:]):
+            self.quad((-HALF_DOOR,FLOOR,z0),(-HALF_DOOR,FLOOR,z1),
+                      (HALF_DOOR,FLOOR,z1),(HALF_DOOR,FLOOR,z0),material=6,tint=(204,201,192))
+            for sign in (-1,1):
+                points=[(sign*HALF_DOOR,FLOOR,z0),(sign*HALF_DOOR,FLOOR,z1),
+                        (sign*HALF_DOOR,FLOOR+660,z1),(sign*HALF_DOOR,FLOOR+660,z0)]
+                if sign<0:points.reverse()
+                self.quad(*points,tint=(180,175,160))
+            self.quad((-HALF_DOOR,FLOOR+660,z0),(HALF_DOOR,FLOOR+660,z0),
+                      (HALF_DOOR,FLOOR+660,z1),(-HALF_DOOR,FLOOR+660,z1),solid=False,tint=(130,120,110))
         side_width=HALF_DOOR-EXIT_HALF_WIDTH
         for sign in (-1,1):
             self.box(sign*(EXIT_HALF_WIDTH+side_width/2),FLOOR,FRONT+60,
@@ -651,6 +658,7 @@ def write_assets():
         'namespace dawnlight::roundtable_layout {\n'
         f'inline constexpr float floorY = {FLOOR:.1f}f;\n'
         f'inline constexpr float exitZ = {EXIT_Z:.6f}f;\n'
+        f'inline constexpr float exitHalfWidth = {HALF_DOOR:.6f}f;\n'
         f'inline constexpr float chestX = {CHEST_X:.6f}f;\n'
         f'inline constexpr float zeldaZ = {ZELDA_Z:.1f}f;\n'
         f'inline constexpr short zeldaYaw = {ZELDA_YAW};\n'

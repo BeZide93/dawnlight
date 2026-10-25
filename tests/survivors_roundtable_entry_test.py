@@ -15,7 +15,10 @@ fixture=r'''
 #include "generated/roundtable_layout.hpp"
 using namespace dawnlight;
 struct ModContext{};enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
-struct Vec{float x=0,y=0,z=0;};
+struct Vec{float x=0,y=0,z=0;Vec operator-(Vec v)const{return{x-v.x,y-v.y,z-v.z};}};
+using s16=short;using cXyz=Vec;
+struct fopAc_ac_c{int name;struct{Vec pos;}home;};
+int fopAcM_GetProfName(fopAc_ac_c* a){return a->name;}
 struct fopAcM_prm_class{struct{unsigned parameters=0x12345678;Vec position;struct{short x=0,y=123,z=0;}angle;}base;int room_no=51;};
 struct stage_actor_data_class{char name[8]={'S','h','u','t','t','e','r',0};};
 namespace mods{template<class T>T arg(void* p,int i){return std::any_cast<T>(static_cast<std::any*>(p)[i]);}}
@@ -56,7 +59,19 @@ int main(){
   assert(title.base.position.z==roundtable_layout::exitZ); // Hub title uses the same doorway.
   preparing=false;s_hub=true;arena=true;
  }
- for(int profile:{fpcNm_ALINK_e,fpcNm_BG_e,fpcNm_KANKYO_e,fpcNm_ENVSE_e}){
+ // Native event casting requires equal home anchors, not merely nearby actors.
+ info.procname=fpcNm_L1MBOSS_DOOR_e;auto shutter=original();invoke(shutter);
+ info.procname=fpcNm_ALINK_e;auto player=original();player.base.parameters=0xff006000;invoke(player);
+ assert(player.base.parameters==0xff006000 && player.base.angle.y==123);
+ assert(player.base.position.x==shutter.base.position.x && player.base.position.y==shutter.base.position.y && player.base.position.z==shutter.base.position.z);
+ fopAc_ac_c door{fpcNm_L1MBOSS_DOOR_e,{shutter.base.position}},link{fpcNm_ALINK_e,{player.base.position}};
+ FindShtrCbPrms cast{fpcNm_L1MBOSS_DOOR_e,&link};
+ assert(findShutterCallBack(&door,&cast)==&door);
+ link.home.pos.z=3900;assert(findShutterCallBack(&door,&cast)==nullptr);
+ // Save/title has already moved Link to restZ; a direct run restart is untouched.
+ player.base.position.z=roundtable_layout::restZ;invoke(player);assert(player.base.position.z==roundtable_layout::restZ);
+ s_hub=false;player=original();invoke(player);assert(player.base.position.z==4000);s_hub=true;
+ for(int profile:{fpcNm_BG_e,fpcNm_KANKYO_e,fpcNm_ENVSE_e}){
   info.procname=profile;auto p=original();assert(invoke(p)==HOOK_CONTINUE);
   assert(p.base.position.z==4000);
  }
@@ -65,9 +80,11 @@ int main(){
  assert(std::strcmp(record.name,"Shutter")==0); // Shared stage record is never edited.
 }
 '''
+native=(ROOT/'dusklight/src/d/d_event_manager.cpp').read_text()
+cast=native[native.index('struct FindShtrCbPrms {'):native.index('fopAc_ac_c* dEvent_manager_c::specialCast_Shutter(')]
 with tempfile.TemporaryDirectory() as temp:
  cpp=Path(temp)/'entry.cpp';exe=Path(temp)/'entry'
- cpp.write_text(fixture+'\nenum {'+','.join(names)+'};\n'+production+main)
+ cpp.write_text(fixture+'\nenum {'+','.join(names)+'};\n'+production+cast+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(ROOT/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
 print('Roundtable entry: southern corridor records, pre-construction anchor, hub/title scoping, unrelated doors and replay safety passed')

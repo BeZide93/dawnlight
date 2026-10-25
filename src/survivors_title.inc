@@ -74,8 +74,8 @@ bool survivors_title_active() {
         !arena_matches(0,dComIfGp_getStartStageName(),dComIfGp_getStartStageRoomNo())) return false;
     return opening_scene() != nullptr;
 }
-// Armed by file creation/loading and returning from a run. The gameplay
-// scene gate excludes outgoing transitions, title actors and NAME_SCENE.
+// Armed only by file creation/loading. Run returns use the relocated native
+// door entrance. The scene gate excludes outgoing transitions and title actors.
 bool survivors_hub_arrival_active() {
     if (!s_hubArrivalPending || !s_active || !s_gameStarted || !s_hub || s_map != 0 ||
         !arena_matches(0,dComIfGp_getStartStageName(),dComIfGp_getStartStageRoomNo()) ||

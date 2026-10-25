@@ -446,7 +446,7 @@ jobs:
           python3 tests/combat_meter_test.py
           CXX=clang++ python3 tests/combat_meter_test.py
 
-      - name: Test native item-ring combine input ownership
+      - name: Test native R bow combinations with item providers
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/ring_native_combine_test.py --dusklight-dir dusklight
 

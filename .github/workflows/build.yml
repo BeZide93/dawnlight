@@ -135,8 +135,6 @@ jobs:
           /tmp/survivors-damage
           python3 tests/survivors_status_test.py
           python3 tests/survivors_potions_test.py
-          python3 tests/survivors_treasure_test.py
-          CXX=clang++ python3 tests/survivors_treasure_test.py
           python3 tests/survivors_loot_test.py
           CXX=clang++ python3 tests/survivors_loot_test.py
           python3 tests/survivors_loot_resources_test.py
@@ -339,6 +337,9 @@ jobs:
       - name: Test Survivors combat and native combo selection
         if: matrix.platform == 'linux-x86_64'
         run: |
+          # Reads the native shield loader; Configure CMake provides the SDK.
+          python3 tests/survivors_treasure_test.py dusklight
+          CXX=clang++ python3 tests/survivors_treasure_test.py dusklight
           python3 tests/survivors_arena_behavior_test.py
           CXX=clang++ python3 tests/survivors_arena_behavior_test.py
           python3 tests/survivors_post_run_save_test.py

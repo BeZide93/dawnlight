@@ -1899,9 +1899,7 @@ void update_survivors() {
         s_run.phase == Phase::Victory || s_run.phase == Phase::Defeat) open_window();
 }
 ModResult initialize_survivors(ModError* error) {
-    ModResult result = initialize_roundtable_props(error);
-    if(result!=MOD_OK)return result;
-    result = initialize_survivors_integrity(error);
+    ModResult result = initialize_survivors_integrity(error);
     if(result!=MOD_OK)return result; // Preserve the initializer's specific error.
     result=initialize_save_pointer(error);
     if(result!=MOD_OK)return result;

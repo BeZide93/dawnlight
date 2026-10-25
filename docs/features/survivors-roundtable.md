@@ -117,9 +117,9 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   full seat/body and back volumes. These cover Link's native +30.01-unit wall
   check, which previously passed below the tabletops/seats between thin legs.
   The upper collision surfaces match the tabletop and chair cushion heights.
-  Each niche bank has a continuous closed front/side collision volume at its
-  foremost sill. This prevents both native body circles from passing through
-  gaps below or between shelves; the volume has no low underside roof face.
+  Niche banks have solid low plinths, sills and side posts. The plinth stops
+  Link's low wall circle; open compartments provide real support for native
+  Carry props without enclosing them inside invisible collision volumes.
 - Masonry uses a coarser 320-unit repeat for legible block courses; bare stone,
   wood and other materials retain a 200-unit reference scale. Shaft UVs wrap
   around the circumference and shift independently between stone drums. Repeats are split into triangles before export, with atlas
@@ -171,33 +171,37 @@ including arch-foot bottoms at floor height. Sides, tops and overhead arches
 remain solid. A 4,144-point perimeter regression checks the equipment bay and
 all wall/column bays with native roof-before-ground ordering. The old DZB fails.
 
-Thirty-six static native props replace some empty space: twelve pieces in unequal
-perimeter groups and twenty-four on irregularly selected shelf/niche tiers.
-There are crates, barrels, small pots and large pots, with varied yaw and offsets.
-Nearby supports can remain empty or hold a pair. Bounds and interaction clearance
-are checked by the geometry regression. Floor props have solid collision volumes;
-shelf props remain behind the cabinet/niche collision envelopes. Simple static
-silhouette proxies add their shadows to the room lightmap.
+All thirty-six pieces are native `Obj_Carry` actors: twelve in unequal perimeter
+clusters and twenty-four on selected shelf/niche tiers. Pots, crates and barrels
+use the game's normal size, pickup/throwing, damage, break effects, contacts and
+projected shadows. There are no custom model actors, baked prop shadows or
+permanent prop collision boxes. Breaking/removing a piece leaves no obstacle or
+shadow at its former position. Pieces are created once per room visit and return
+on the next visit; their parameters have no save bit, switch or item reward.
 
 On the first hub update, a private mount of the installed game's
-`/res/Stage/D_MN09/R08_00.arc` reads only the archive directory and `room.dzr`, without loading its room models. A bounded big-endian parser examines
-ACT/SCO actor records and selects the Carry model variants actually used there,
-including alternate small/large pot skins. The archive is immediately unmounted
-and the selection is cached until mod shutdown. No room 8 actors, stage events,
-geometry or collision are installed. Room 8 discovery is optional: each missing category keeps its native Carry
-default. If the archive or actor records are missing/invalid, a warning is logged
-and all four defaults still spawn. Previously one missing category suppressed
-all 36 models while leaving their baked shadows and colliders visible; parser and
-actor-lifecycle regressions now cover partial, absent and malformed sources.
+`/res/Stage/D_MN09/R08_00.arc` reads only its `room.dzr`. A bounded big-endian
+parser selects supported native Carry variants from ACT/SCO records. Missing
+categories keep their normal native defaults; unavailable source data never
+blocks spawning. Room 8 geometry and events are not installed. The native Carry
+implementation loads its own archives and handles model/physics/shadow cleanup.
 
-Native model archives are reference-counted per decorative actor. Their real
-shape bounds determine a uniform fit and exact base placement on each support.
-Creation is staggered three actors per update. These are fixed decorations, not
-breakable/loot-producing Carry actors. Deleting the owning hub retires its props;
-pending creates reject retired owners and live actors retry deferred deletion.
-The actor service drains the profile before unregistering callbacks. Model load
-failure does not replace or remove the room. Runtime tests cover delayed/failed
-creation, ownership, archive cleanup and source caching with GCC/Clang sanitizers.
+Shelves and niche sills now have physical support surfaces, with solid low
+plinths stopping Link from walking underneath. Compartments are hollow, rather
+than full-height invisible boxes that would push native objects out or onto the
+cabinet roof. Side posts remain solid. Placement allows native object footprints
+and varied yaw without shrinking models to fit. Geometry regressions probe the
+support at each placement, open compartments, low walking collision and all hub
+interaction routes.
+
+Creation is staggered three actors per room update. Rejected spawn requests retry;
+broken pieces do not immediately respawn. Room ownership gates only teardown:
+native Create, Execute and Draw run unchanged while the hub exists. Pending
+creation rejects a retired room, and live props retry deferred deletion with
+carry/hook attachments released. Native Delete always runs. The custom `DLRProp`
+profile and its bespoke model loader have been removed. GCC/Clang sanitizer
+fixtures cover source fallbacks, all 36 native spawn parameters, native callback
+dispatch, break/removal and deferred room teardown.
 
 The offline previews show the authored room only; these additional native models
 require the installed game data and are not pictured. On-device checks remain
@@ -223,7 +227,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 62,755 visual triangles and 5,954
+tools or network image generation. There are 63,011 visual triangles and 6,494
 collision triangles, with a balanced collision tree. The vertex limit is 195,000 (65,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. Resources total about 8.9 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
@@ -272,8 +276,8 @@ The RTH2 source asset keeps its floats. Loading validates ranges and converts
 once to signed 16-bit positions with 3 fractional bits, 16-bit UVs with 16
 fractional bits, and unchanged RGBA8 colours. GX declarations match those writes.
 The original fix reduced that hall to **3,215,862 bytes (3.07 MiB)**, 43.75% less.
-The detailed furniture and mirrored six-niche layout now use **3,388,770 bytes
-(3.23 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. Maximum position
+The detailed furniture and mirrored six-niche layout now use **3,402,594 bytes
+(3.25 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. Maximum position
 error is 0.0625 game units and maximum UV error is 1/128 atlas texel. That packing fix did not alter the source geometry,
 textures, shadows or collision; subsequent room revisions rebake their shadows. The runtime regression limits
 frame uploads to the real 5 MiB capacity, reserves 1.5 MiB for other scene draws,

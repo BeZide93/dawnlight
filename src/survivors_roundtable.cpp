@@ -292,6 +292,7 @@ daBg_c* background(void* args) {
 }
 
 HookAction before_roundtable_process(void* args,void* result,bool createHub) {
+    if(before_roundtable_prop_process(args,result)==HOOK_SKIP_ORIGINAL)return HOOK_SKIP_ORIGINAL;
     auto* actor=background(args);if(!actor)return HOOK_CONTINUE;
     const auto* methods=reinterpret_cast<const leafdraw_method_class*>(actor->sub_method);
     if(!methods)return HOOK_CONTINUE;

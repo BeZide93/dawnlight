@@ -132,9 +132,8 @@ for i in range(1,g.SIDES):
     assert segment_hits(wall_point(0,-230),wall_point(0,10),True), 'Panel collision at its visible front'
     pillar_x=(2*g.HALF_DOOR-175)/2+38
     assert segment_hits(wall_point(pillar_x,-80),wall_point(pillar_x,0),True), 'Arch pilaster must be solid'
-# Niche shelves must block the body at their front edge, not only at the
-# backing wall. Include the low circle that previously walked under the shelf,
-# the upper circle, gaps between tiers, and approaches around both side posts.
+# Solid plinths block Link's low wall circle; actual shelf slabs and side posts
+# stay solid. Compartments must remain hollow for native Carry physics.
 assert len(g.NICHE_BAYS)==6 and len(g.SHELF_BAYS)==2
 for bays in (g.NICHE_BAYS,g.SHELF_BAYS):
     assert set(bays)=={(-i)%g.SIDES for i in bays}, 'Mirror bay types about the entrance axis'
@@ -145,11 +144,12 @@ for i in g.NICHE_BAYS:
         return (g.FRONT*math.sin(angle)+x*math.cos(angle)+z*math.sin(angle),
                 g.FLOOR+y,g.FRONT*math.cos(angle)-x*math.sin(angle)+z*math.cos(angle))
     for x in (-185,-120,-60,0,60,120,185):
-        for y in (1,30.01,65,86,129.99,230,300,540,770):
-            assert segment_hits(niche_point(x,y,-230),niche_point(x,y,-120),True), 'Continuous niche front, before Link overlaps the sill'
+        for y in (1,30.01,64):
+            assert segment_hits(niche_point(x,y,-230),niche_point(x,y,-120),True), 'Solid niche plinth/sill stops walking below the first shelf'
     for side in (-1,1):
         for y in (30.01,129.99,400):
-            assert segment_hits(niche_point(side*240,y,-125),niche_point(side*180,y,-125),True), 'Closed niche side approach'
+            assert segment_hits(niche_point(side*300,y,-125),niche_point(side*180,y,-125),True), 'Closed niche side approach'
+    assert not segment_hits(niche_point(0,135,-230),niche_point(0,135,-30),True), 'Native props can leave the open recess'
     for x in (-185,0,185):
         q=niche_point(x,0,-155)
         assert abs(ground(q[0],q[2],g.FLOOR+50)-g.FLOOR)<.01, 'Grounded niche approach'
@@ -229,14 +229,24 @@ for i,p in enumerate(props):
   if y==q[2]:
    assert math.hypot(x-q[1],z-q[3])>(math.hypot(w,d)+math.hypot(q[5],q[7]))/2, 'Dressing bounds overlap'
  if y==g.FLOOR:
-  assert abs(ground(x,z,y+1)-g.FLOOR)<.01
+  assert abs(ground(x,z,y+120)-g.FLOOR)<.01, 'No permanent prop box after moving or breaking Carry'
   assert min(math.hypot(x-a,z-b) for a,b in ((g.CHEST_X,0),(g.ZELDA_X,g.ZELDA_Z),(0,g.EXIT_Z),(0,g.REST_Z)))>220
  else:
   bay=round(math.atan2(x,z)*g.SIDES/math.tau)%g.SIDES
   assert bay in g.NICHE_BAYS+g.SHELF_BAYS
   a=bay*math.tau/g.SIDES
   xx=x*math.cos(a)-z*math.sin(a);zz=x*math.sin(a)+z*math.cos(a)-g.FRONT
-  radius=math.hypot(w,d)/2
-  assert abs(xx)+radius<170 and zz-radius>-115 and zz+radius<-2, 'Dressing extends beyond support'
+  radius=w/2 if kind!=2 else w/2*(abs(math.sin(yaw-a))+abs(math.cos(yaw-a)))
+  assert abs(xx)+radius<170 and zz-radius>-129.5 and zz+radius<-15, 'Native footprint extends beyond support'
+  assert abs(ground(x,z,y+10)-y)<.01, 'Native Carry spawn must find its own support, not a hidden cabinet roof'
+  assert not segment_hits((x,y+30,z),(x+math.sin(a)*-90,y+30,z+math.cos(a)*-90),True), 'No invisible front wall traps Carry objects'
   assert y-g.FLOOR in ((95,335,575) if bay in g.NICHE_BAYS else (77,262,447))
 print('Native dressing: 36 separated placements, grounded supports and clear anchors')
+
+# Dynamic objects must contribute neither baked occluders nor permanent DZB.
+original_layout=g.prop_layout
+g.prop_layout=lambda:[]
+empty=g.Hall().build()
+g.prop_layout=original_layout
+assert hall.casters==empty.casters and hall.collision==empty.collision
+print('Native Carry: real shelf support, open compartments, no permanent prop colliders/shadows')

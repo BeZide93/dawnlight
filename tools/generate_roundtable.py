@@ -49,7 +49,7 @@ ROOM_TINTS = {0:(212,196,165), 1:(194,166,128),
               2:(180,146,121), 3:(154,125,81)}
 
 def prop_layout():
-    """Fixed irregular dressing; native models fit these authored support boxes.
+    """Irregular native Carry placement; bounds reserve their unscaled footprints.
     kind: small pot, large pot, wooden crate, barrel. Dimensions are full extents.
     """
     rng=random.Random(90813);items=[]
@@ -61,7 +61,8 @@ def prop_layout():
         a=bay*TAU/SIDES
         for j,x in enumerate(locals_):
             kind=(bay+j)%4;r=1420+rng.uniform(-50,55)
-            width,height,depth=((45,61,45),(70,105,70),(88,88,88),(74,103,74))[kind]
+            if bay==6 and j==1:r-=160 # Keep the native barrel clear of the memorial plinth.
+            width,height,depth=((60,100,60),(100,120,100),(75,100,75),(100,120,100))[kind]
             add_prop(kind,r*math.sin(a)+x*math.cos(a),FLOOR,
                      r*math.cos(a)-x*math.sin(a),rng.uniform(-math.pi,math.pi),width,height,depth)
     # A few pieces on unevenly selected tiers, with clear sill and arch margins.
@@ -73,11 +74,11 @@ def prop_layout():
         occupied={}
         for item,row in enumerate(rows):
             y=levels[row];kind=(bay+item)%4
-            width,height,depth=((39,53,39),(53,80,53),(55,55,55),(51,71,51))[kind]
+            width,height,depth=((60,100,60),(100,120,100),(75,100,75),(100,120,100))[kind]
             slot=occupied.get(row,0);occupied[row]=slot+1
             x=(rng.uniform(-110,-65) if rows.count(row)>1 and slot==0 else
                rng.uniform(65,110) if rows.count(row)>1 else rng.uniform(-95,95))
-            z=-56+rng.uniform(-8,8)
+            z=-69+rng.uniform(-1,1)
             add_prop(kind,FRONT*math.sin(a)+x*math.cos(a)+z*math.sin(a),FLOOR+y,
                      FRONT*math.cos(a)-x*math.sin(a)+z*math.cos(a),a+rng.uniform(-.55,.55),width,height,depth)
     return items
@@ -408,12 +409,13 @@ class Hall:
             bottom_solid=False,tint=(145,137,116) if niches else ROOM_TINTS[1])
         if shelving:
             # Walnut joinery echoes the mantel: recessed panels, moulded rails,
-            # stepped cornice and small corbels. Keep all compartments empty.
-            self.box(0,0,-52,460,638,138,visible=False,bottom_solid=False)
+            # stepped cornice and small corbels. A solid low plinth blocks Link,
+            # while open compartments let native Carry objects rest and move.
+            self.box(0,0,-52,460,60,138,material=1,bottom_solid=False,tint=(194,166,128))
             wood=dict(material=1,solid=False,tint=(194,166,128))
             dark=dict(material=1,solid=False,tint=(115,92,66))
             for x in (-216,216):
-                self.box(x,0,-50,28,652,126,**wood)
+                self.box(x,0,-50,28,652,126,**dict(wood,solid=True),bottom_solid=False)
                 self.box(x,34,-117,42,594,18,**wood)
                 self.box(x,80,-128,19,488,8,**dark)
                 for dx in (-13,13):self.box(x+dx,74,-134,5,501,9,**wood)
@@ -427,7 +429,7 @@ class Hall:
                         self.box(x,y+31,-3,116,147,10,**dark)
                         for dx in (-58,58):self.box(x+dx,y+24,-13,7,160,13,**wood)
                     for py in (y+24,y+177):self.box(0,py,-13,390,7,13,**wood)
-                self.box(0,y,-57,458,17,145,**wood)
+                self.box(0,y,-57,458,17,145,**dict(wood,solid=True),bottom_solid=False)
                 for py,w,h,d in ((y-5,470,8,15),(y+3,476,8,19),(y+11,465,9,12)):
                     self.box(0,py,-132,w,h,d,**wood)
                 for x in (-182,182):
@@ -437,26 +439,25 @@ class Hall:
                 self.box(0,y,-50,w,h,d,**wood)
             for x in range(-180,181,45):self.box(x,635,-128,15,15,17,**wood)
         elif niches:
-            # Native wall circles sample at +30/+130, missing the separated
-            # shelf slabs. A continuous backing volume closes those gaps at
-            # the foremost sill, including lateral approaches and upper tiers.
-            # No low underside: it must never act as a false Acch roof.
-            self.box(0,0,-54,430,782,160,visible=False,bottom_solid=False)
+            # A real stone plinth stops Link's low wall circle below the first
+            # sill. Keep the recesses hollow for native Carry physics; a tall
+            # invisible box would push pots out or onto the top of the cabinet.
+            self.box(0,0,-49,430,65,160,bottom_solid=False,tint=(194,175,144))
             # Warm carved limestone matches the fireplace rather than the cool
             # smooth shaft atlas. Layered archivolts have real stone joints.
             stone=dict(solid=False,tint=(212,196,165))
             for x in (-238,238):
-                self.box(x,0,-45,85,775,140,bottom_solid=False,tint=(194,175,144))
+                self.box(x,0,-49,85,775,160,bottom_solid=False,tint=(194,175,144))
                 for y,w,h,d in ((0,110,26,159),(26,96,18,150),(746,105,18,158),(764,120,18,171)):
                     self.box(x,y,-49,w,h,d,**stone)
                 for y in (116,356,596):
                     self.box(x,y,-117,55,112,12,tint=(133,119,96),solid=False)
                     for dx in (-23,23):self.box(x+dx,y-4,-126,9,120,14,**stone)
             for row,y in enumerate((65,305,545)):
-                self.box(0,y,-43,402,22,139,bottom_solid=False,tint=(194,175,144))
+                self.box(0,y,-43,402,30,139,bottom_solid=False,tint=(194,175,144))
                 self.box(0,y+22,4,390,175,8,tint=(88,75,61),solid=False)
                 for py,w,h,d in ((y-12,432,12,160),(y,418,10,151),(y+22,408,8,147)):
-                    self.box(0,py,-49,w,h,d,**stone)
+                    self.box(0,py,-49,w,h,d,**dict(stone,solid=True),bottom_solid=False)
                 for side in (-1,1):
                     self.box(side*187,y+30,-57,27,48,120,**stone)
                     self.box(side*187,y+69,-63,45,13,134,**stone)
@@ -760,17 +761,8 @@ class Hall:
             self.box(0,FLOOR+y,FRONT-28,width,height,depth,solid=False)
         for x in (-220,-110,0,110,220):self.box(x,FLOOR+630,FRONT-61,48,18,9,material=3,tint=(143,119,78),solid=False)
         self.box(0,FLOOR,EXIT_BACK_Z+20,2*HALF_DOOR,660,40,bottom_solid=False,tint=(140,132,120))
-        # Fixed native dressing: collision only on the floor. Shelf items sit
-        # behind the existing continuous cabinet/niche collision envelope.
-        for kind,x,y,z,yaw,w,h,d in prop_layout():
-            self.local(x,z,yaw)
-            first=len(self.collision)
-            self.box(0,y-FLOOR,0,w,h,d,visible=False,bottom_solid=False)
-            # Simple silhouettes cast static shadows without spending vertices
-            # in the room stream; the real native models render at runtime.
-            self.casters.extend(self.collision[first:])
-            if y>FLOOR+1:del self.collision[first:]
-            self.reset()
+        # Carry actors supply their own collision and transient projected
+        # shadows. No decoration proxies remain in the DZB or lightmap bake.
         # Ground-level decorative bottoms are false Acch ceilings after gravity.
         # Keep sides/tops and real overhead arches; apply to every wall bay.
         self.collision=[p for p in self.collision if not

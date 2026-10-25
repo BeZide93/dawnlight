@@ -5,15 +5,6 @@
 #include <cstring>
 
 namespace dawnlight::roundtable_props {
-struct ModelSource { const char* archive; const char* model; };
-inline constexpr ModelSource sources[]{
-    {"J_tubo_00","J_tubo_00.bmd"}, {"J_tubo_01","J_tubo_01.bmd"},
-    {"Kkiba_00","J_hako_00.bmd"}, {nullptr,nullptr},
-    {"J_taru00","J_taru_00.bmd"}, {nullptr,nullptr}, {nullptr,nullptr},
-    {"K_tubo02","K_tubo02.bmd"}, {nullptr,nullptr}, {nullptr,nullptr},
-    {"D_aotubo0","D_aotubo00.bmd"}, {nullptr,nullptr},
-    {"O_tuboS","O_tuboS_LV8.bmd"}, {"O_tuboB","O_tuboB_LV8.bmd"}
-};
 // Room 8 may supply alternate skins, but is not a dependency for decoration.
 inline constexpr std::array<unsigned,4> default_types{{0,1,2,4}};
 // Read the installed game's D_MN09/R08_00.arc room.dzr.
@@ -34,8 +25,8 @@ inline bool select_room_models(const uint8_t* bytes,size_t size,std::array<unsig
             const auto* record=bytes+offset+j*stride;
             if(std::memcmp(record,"carry",5))continue;
             const unsigned type=((unsigned(record[28])<<8)|record[29])>>1&31;
-            const int kind=(type==0||type==7||type==10||type==12)?0:
-                (type==1||type==13)?1:type==2?2:type==4?3:-1;
+            const int kind=(type==0||type==7||type==12)?0:
+                (type==1||type==10||type==13)?1:type==2?2:type==4?3:-1;
             if(kind>=0 && !found[kind]) {selected[kind]=type;found[kind]=true;}
         }
     }

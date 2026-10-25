@@ -13,9 +13,6 @@ int main(){
  for(unsigned i=0;i<5;++i){auto p=16+i*32;std::memcpy(b.data()+p,"carry00",7);b[p+29]=variants[i]*2;}
  assert(select_room_models(b.data(),b.size(),types));
  assert((types==std::array<unsigned,4>{{7,13,2,4}}));
- assert(!std::strcmp(sources[types[0]].archive,"K_tubo02"));
- assert(!std::strcmp(sources[types[0]].model,"K_tubo02.bmd"));
- assert(!std::strcmp(sources[types[1]].model,"O_tuboB_LV8.bmd"));
  auto keep=types;
  for(size_t n=0;n<b.size();++n){assert(!select_room_models(b.data(),n,types));assert(types==keep);}
  auto bad=b;put32(bad,12,0xfffffff0);assert(!select_room_models(bad.data(),bad.size(),types));
@@ -26,6 +23,9 @@ int main(){
  std::memcpy(partial.data()+16,"carry00",7);partial[45]=7*2;types=default_types;
  assert(select_room_models(partial.data(),partial.size(),types));
  assert((types==std::array<unsigned,4>{{7,1,2,4}}));
+ partial[45]=10*2;types=default_types;
+ assert(select_room_models(partial.data(),partial.size(),types));
+ assert((types==std::array<unsigned,4>{{0,10,2,4}})); // Native AOTSUBO is a large pot.
  std::vector<uint8_t> empty(4);types=default_types;
  assert(select_room_models(empty.data(),empty.size(),types));assert(types==default_types);
  // SCOB uses a longer stride, not ACTR's 32 bytes.

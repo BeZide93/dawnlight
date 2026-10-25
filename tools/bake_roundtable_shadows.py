@@ -11,7 +11,7 @@ def main():
     samples=[]
     for face in hall.receivers:
         yy,xx=np.mgrid[0:face['h'],0:face['w']]
-        points=np.array(face['origin'])+(xx[...,None]-1)*g.LIGHTMAP_STEP*np.array(face['u'])+(yy[...,None]-1)*g.LIGHTMAP_STEP*np.array(face['v'])
+        points=np.array(face['origin'])+(xx[...,None]-1)*face['step']*np.array(face['u'])+(yy[...,None]-1)*face['step']*np.array(face['v'])
         polygon=np.array(face['points']);closest=None;best=None
         for j in range(1,len(polygon)-1):
             a,b,c=polygon[[0,j,j+1]];e1=b-a;e2=c-a;delta=points-a
@@ -34,13 +34,13 @@ def main():
         subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-O2','-Wall','-Wextra',str(source),'-o',str(binary)],check=True)
         subprocess.run([str(binary),'--self-test'],check=True)
         data=temp/'scene.bin';raw=temp/'shadow.bin'
-        data.write_bytes(struct.pack('<3I6f',size,len(hall.casters),len(targets),*g.LIGHT_POSITION,*g.HEARTH_POSITION)+np.array(hall.casters,dtype='<f4').tobytes()+targets.tobytes())
+        data.write_bytes(struct.pack('<3I6f',size,len(hall.casters),len(targets),*g.LIGHT_POSITION,*g.HEARTH_POSITION)+struct.pack('<I',len(g.torch_layout()))+np.array(g.torch_layout(),dtype='<f4').tobytes()+np.array(hall.casters,dtype='<f4').tobytes()+targets.tobytes())
         subprocess.run([str(binary),str(data),str(raw)],check=True)
         pixels=np.frombuffer(raw.read_bytes(),dtype=np.uint8).reshape(size,size)
         # Native GX I8 stores 8x4 texel blocks, not linear scanlines.
         tiled=pixels.reshape(size//4,4,size//8,8).transpose(0,2,1,3).tobytes()
         (g.OUT/'shadows.i8').write_bytes(tiled)
-        metadata={'light':g.LIGHT_POSITION,'hearth':g.HEARTH_POSITION,'hearth_weight':.22,'size':size,'step':g.LIGHTMAP_STEP,'min':int(pixels.min()),'max':int(pixels.max())}
+        metadata={'torches':g.torch_layout(),'light':g.LIGHT_POSITION,'hearth':g.HEARTH_POSITION,'hearth_weight':.22,'size':size,'step':g.LIGHTMAP_STEP,'min':int(pixels.min()),'max':int(pixels.max())}
         metadata['sources']={p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in
             ('res/survivors_roundtable/hall.mesh','tools/generate_roundtable.py','tools/bake_roundtable_shadows.cpp','tools/bake_roundtable_shadows.py','res/survivors_roundtable/shadows.i8')}
         (g.OUT/'shadows.json').write_text(json.dumps(metadata,indent=2)+'\n')

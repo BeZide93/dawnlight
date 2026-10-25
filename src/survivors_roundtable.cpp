@@ -148,6 +148,7 @@ public:
     bool installed=false;
     std::array<u32,18> fire{};
     LIGHT_INFLUENCE light{},tableLight{};
+    std::array<LIGHT_INFLUENCE,std::size(roundtable_layout::torches)> torchLights{};
     bool lit=false;
 
     ~Room() override { if(heap)heap->destroy(); }
@@ -158,7 +159,10 @@ public:
             }
             id=0;
         }
-        if(lit){dKy_plight_cut(&light);dKy_plight_cut(&tableLight);}
+        if(lit){
+            dKy_plight_cut(&light);dKy_plight_cut(&tableLight);
+            for(auto& torch:torchLights)dKy_plight_cut(&torch);
+        }
         lit=false;
     }
     void update_fire() {
@@ -185,12 +189,27 @@ public:
                 emitter->setGlobalEnvColor(255,130,18);
             }
         }
+        // The same shared native flame/smoke/spark trio as Obj_Lv2Candle
+        // (L4candl in Arbiter's Grounds). Simple effects are submitted each
+        // frame and expire naturally once this room stops updating.
+        for(const auto& torch:roundtable_layout::torches) {
+            cXyz position(torch.x,torch.y,torch.z);
+            for(u16 effect: {u16(0x100),u16(0x101),u16(0x103)})
+                dComIfGp_particle_setSimple(effect,&position,0xff,g_whiteColor,g_whiteColor,0,0.0f);
+        }
         if(!lit) {
             tableLight.mPosition.set(0,roundtable_layout::flameLightY,0);
             tableLight.mColor={255,205,112,255};tableLight.mPow=1800;
             tableLight.mFluctuation=1;dKy_plight_set(&tableLight);
             light.mPosition.set(roundtable_layout::hearthLightX,roundtable_layout::hearthLightY,0);light.mColor={204,123,60,255};
-            light.mPow=850;light.mFluctuation=1;dKy_plight_set(&light);lit=true;
+            light.mPow=850;light.mFluctuation=1;dKy_plight_set(&light);
+            for(size_t i=0;i<torchLights.size();++i) {
+                const auto& source=roundtable_layout::torches[i];auto& torch=torchLights[i];
+                torch.mPosition.set(source.x,source.y,source.z);
+                torch.mColor={188,102,66,255};torch.mPow=500;torch.mFluctuation=1;
+                dKy_plight_set(&torch);
+            }
+            lit=true;
         }
     }
     bool prepare() {

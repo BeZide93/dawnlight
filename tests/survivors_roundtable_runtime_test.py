@@ -89,7 +89,14 @@ struct Logs{void info(void*,const char*){}void error(void*,const char*){}} logs;
 struct cXyz{float x,y,z;cXyz(float a=0,float b=0,float c=0):x(a),y(b),z(c){}void set(float a,float b,float c){x=a;y=b;z=c;}};
 struct Color{int r,g,b,a;};
 struct LIGHT_INFLUENCE{cXyz mPosition;Color mColor;float mPow,mFluctuation;};
-int lights=0,particles=0;
+const Color g_whiteColor{255,255,255,255};
+int lights=0,particles=0,simpleParticles=0;
+void dComIfGp_particle_setSimple(u16 effect,const cXyz* p,u8 alpha,Color,Color,int,float) {
+ assert(effect==0x100 || effect==0x101 || effect==0x103);assert(alpha==255);
+ bool matched=false;for(const auto& t:dawnlight::roundtable_layout::torches)
+  matched |= std::abs(p->x-t.x)<.001f && std::abs(p->y-t.y)<.001f && std::abs(p->z-t.z)<.001f;
+ assert(matched);++simpleParticles;
+}
 void dKy_plight_set(LIGHT_INFLUENCE*){++lights;}void dKy_plight_cut(LIGHT_INFLUENCE*){assert(lights>0);--lights;}
 struct Emitter{void setGlobalPrmColor(u8 r,u8 g,u8 b){assert(r==255&&g==225&&b==120);}void setGlobalEnvColor(u8 r,u8 g,u8 b){assert(r==255&&g==130&&b==18);}void stopCreateParticle(){}void quitImmortalEmitter(){}void becomeInvalidEmitter(){--particles;}} emitter;
 Emitter* dComIfGp_particle_getEmitter(unsigned id){return id?&emitter:nullptr;}
@@ -194,8 +201,8 @@ int main(int argc,char** argv){
    if(i)assert(positions[i][2]<=positions[i-1][2]);
   }
   assert(colors.front()[3]==255&&colors.back()[3]==45);
-  dispatch(bg,execute,false);assert(lights==2&&particles==18);
-  dispatch(bg,execute,false);assert(lights==2&&particles==18);
+  simpleParticles=0;dispatch(bg,execute,false);assert(lights==10&&particles==18&&simpleParticles==24);
+  simpleParticles=0;dispatch(bg,execute,false);assert(lights==10&&particles==18&&simpleParticles==24);
   if(cycle%2==0){
    dispatch(bg,remove,false,1,true); // Post-delete must not inspect the poisoned actor.
   }else dawnlight::shutdown_roundtable();

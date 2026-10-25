@@ -3,7 +3,7 @@
 The Survivors hub and its title scene use an original, simplified interpretation
 of the Roundtable Hold: a sixteen-sided stone hall, round walnut table, twelve
 high-backed chairs, carved arches, drum columns, a ribbed ceiling, stylized
-memorials and a west-wall fireplace. Ceiling banners and their rods are removed. This is new geometry and
+robed memorial figures and a west-wall fireplace. Ceiling banners and their rods are removed. This is new geometry and
 an original generated material atlas, not extracted Elden Ring assets.
 
 ![Offline render of the exported room geometry](../images/survivors-roundtable.jpg)
@@ -15,6 +15,35 @@ and point lighting are native effects; coals are simple mesh details. The handma
 table candle holders have been removed, leaving the floating centre flame. The hall combines baked vertex lighting with a static soft-shadow lightmap
 cast from the central flame and weaker fireplace onto the floor, furniture and
 architecture. These shadows follow the fixed lights, not individual moving particles.
+
+## Sculptures, torchlight and raised vault
+
+Three original stone figures replace the pointed memorial placeholders. Each has
+an oval face, carved brows/nose/eyes, side hair or cowl, bent sleeves, cupped hands
+and a small bronze votive bowl. Deep asymmetric robe folds and raised mantle seams
+break up the silhouette. The existing grounded plinth positions remain.
+
+![Offline sculpted memorial](../images/survivors-statues.jpg)
+
+The eaves rise from 1,180 to 1,660 units above the floor; the crown rises from
+1,510 to 2,250. Eight curved stone ribs support the timber vault. Extended piers,
+layered capitals, cornice bands and paired recessed clerestory panels with pointed
+arches and bronze leaf motifs continue the fireplace's restrained palette.
+
+![Offline raised vault](../images/survivors-vault.jpg)
+
+Eight paired inward-facing pier sconces use the actual `Obj_Lv2Candle` native
+simple-particle trio (`0x100`, `0x101`, `0x103`) used by `L4candl` in Arbiter's
+Grounds. Their metal brackets and baskets are authored room geometry; fire,
+smoke and sparks are native. Every source registers a local 500-unit warm point
+light for native actors. The room bake includes their weaker, occluded light
+contribution with a 550-unit falloff. The central flame remains dominant.
+Simple effects are submitted per update and naturally expire; all eight point
+lights are removed with the room, alongside the existing two fire lights and
+18 persistent central/hearth emitters. No global cutscene or UI state is changed.
+
+These offline images omit native particles and actors. Device verification is
+still needed for flame appearance and actual performance.
 
 ## Layout and integration
 
@@ -227,7 +256,7 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 63,011 visual triangles and 6,494
+tools or network image generation. There are 64,753 visual triangles and 6,488
 collision triangles, with a balanced collision tree. The vertex limit is 195,000 (65,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. Resources total about 8.9 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
@@ -246,7 +275,7 @@ high cloth banners.
 The hearth regression follows 630 approach/retreat steps with gravity and the
 native roof-before-ground query order; it fails on the previous exported collider.
 The shadow baker shares one receiver chart across each convex stone slab or quad,
-retaining a 24-unit sample spacing within the 1024-square atlas.
+using 24-unit floor samples, 28-unit lower architecture samples and 48-unit distant upper samples within the 1024-square atlas.
 The runtime test checks that every vertex is submitted across multiple GX batches,
 that the six passage planes use back-to-front blending with depth writes disabled,
 and that both retained packets are detached safely. The entry regression executes
@@ -276,8 +305,8 @@ The RTH2 source asset keeps its floats. Loading validates ranges and converts
 once to signed 16-bit positions with 3 fractional bits, 16-bit UVs with 16
 fractional bits, and unchanged RGBA8 colours. GX declarations match those writes.
 The original fix reduced that hall to **3,215,862 bytes (3.07 MiB)**, 43.75% less.
-The detailed furniture and mirrored six-niche layout now use **3,402,594 bytes
-(3.25 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. Maximum position
+The raised vault, statues and sconces now use **3,496,662 bytes
+(3.33 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. UV grid tessellation avoids diagonal slivers, and invisible exterior faces behind the closed shell are omitted; the black entrance passage is explicitly retained. Maximum position
 error is 0.0625 game units and maximum UV error is 1/128 atlas texel. That packing fix did not alter the source geometry,
 textures, shadows or collision; subsequent room revisions rebake their shadows. The runtime regression limits
 frame uploads to the real 5 MiB capacity, reserves 1.5 MiB for other scene draws,

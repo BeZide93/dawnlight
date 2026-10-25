@@ -15,4 +15,6 @@ inline constexpr float hearthFireX = -1600.413505f;
 inline constexpr float hearthFireY = -338.0f;
 inline constexpr float hearthLightY = -200.0f;
 inline constexpr float hearthLightX = -1515.413505f;
+struct Torch { float x,y,z; };
+inline constexpr Torch torches[]{{309.998522f,35.000000f,1558.467811f},{1558.467811f,35.000000f,309.998522f},{1558.467811f,35.000000f,-309.998522f},{309.998522f,35.000000f,-1558.467811f},{-309.998522f,35.000000f,-1558.467811f},{-1558.467811f,35.000000f,-309.998522f},{-1558.467811f,35.000000f,309.998522f},{-309.998522f,35.000000f,1558.467811f}};
 }

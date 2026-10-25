@@ -17,6 +17,9 @@ FLOOR = -400.0
 # Compact layout preferred in build 1295; the exit sits at the hall edge.
 RADIUS = 1800.0
 SIDES = 16
+EAVES_HEIGHT = 1660.0
+CROWN_HEIGHT = 2250.0
+TORCH_PILLARS = (0,3,4,7,8,11,12,15)
 # Mirror paired bays about the entrance/centre axis (index -> -index mod 16).
 NICHE_BAYS = (1,3,7,9,13,15)
 SHELF_BAYS = (5,11)
@@ -47,6 +50,11 @@ TEXTURE_SIZE = 1024
 # Explicit local tints still supply recess dirt and firelight-facing highlights.
 ROOM_TINTS = {0:(212,196,165), 1:(194,166,128),
               2:(180,146,121), 3:(154,125,81)}
+
+def torch_layout():
+    # Inward faces of eight symmetrically paired piers; flame above Link's head.
+    return tuple(((RADIUS*.965-148)*math.sin((i+.5)*TAU/SIDES), FLOOR+435,
+                  (RADIUS*.965-148)*math.cos((i+.5)*TAU/SIDES)) for i in TORCH_PILLARS)
 
 def prop_layout():
     """Irregular native Carry placement; bounds reserve their unscaled footprints.
@@ -106,6 +114,8 @@ class Hall:
         self.receivers = []
         self.casters = []
         self.light_faces = []
+        self.texel_scale = 1.0
+        self.sculpture = False
 
     def triangle(self, points, material=0, tint=None, solid=True, visible=True, uv=None, shadow_face=None):
         if tint is None:tint=self.palette.get(material,(255,255,255))
@@ -130,16 +140,21 @@ class Hall:
         # Indirect room lighting plus warm local contributions from both fires.
         # Native actors receive the corresponding runtime point lights.
         shade = .42 + .08*max(0, normal[1]/n) + .04*max(0, -normal[0]/n)
+        if self.sculpture:
+            center=tuple(sum(q[k] for q in p)/3 for k in range(3))
+            direction=sub(LIGHT_POSITION,center);distance=max(1,length(direction))
+            shade=.29+.25*max(0,sum(normal[k]*direction[k] for k in range(3))/(n*distance))
         def emit(points, coords):
             for pos, tex in zip(points, coords):
                 distance = length(sub(pos,LIGHT_POSITION))
                 warm = .65*max(0, 1-distance/1800)**2
                 hearth_distance=length(sub(pos,HEARTH_POSITION))
                 hearth_warm=.30*max(0,1-hearth_distance/900)**2
-                # Cool, low ambient stone with localized amber pools from both fires.
-                light = (shade*.94+warm+hearth_warm,
-                         shade*.97+warm*.68+hearth_warm*.55,
-                         shade+warm*.32+hearth_warm*.20)
+                torch_warm=max((.32*max(0,1-length(sub(pos,t))/550)**2 for t in torch_layout()),default=0)
+                # Local amber pools on the piers, subordinate to the central flame.
+                light = (shade*.94+warm+hearth_warm+torch_warm,
+                         shade*.97+warm*.68+hearth_warm*.55+torch_warm*.55,
+                         shade+warm*.32+hearth_warm*.20+torch_warm*.18)
                 # Bare limestone has a brighter source albedo than masonry.
                 # Match both materials before applying the shared room lighting.
                 grade=(.70,.71,.72) if material>=6 else (1,1,1)
@@ -198,10 +213,12 @@ class Hall:
         dot=lambda a,b:sum(x*y for x,y in zip(a,b))
         xs=[dot(sub(q,p[0]),u) for q in p];ys=[dot(sub(q,p[0]),v) for q in p]
         origin=add(p[0],tuple(x*min(xs)+y*min(ys) for x,y in zip(u,v)))
-        w=max(2,math.ceil((max(xs)-min(xs))/LIGHTMAP_STEP)+1)+2
-        h=max(2,math.ceil((max(ys)-min(ys))/LIGHTMAP_STEP)+1)+2
+        # Distant upper architecture needs fewer lightmap texels than the floor.
+        step=48.0 if min(q[1] for q in p)>FLOOR+1000 else (LIGHTMAP_STEP if max(q[1] for q in p)<=FLOOR+1 else 28.0)
+        w=max(2,math.ceil((max(xs)-min(xs))/step)+1)+2
+        h=max(2,math.ceil((max(ys)-min(ys))/step)+1)+2
         result=len(self.receivers)
-        self.receivers.append({'points':p,'origin':origin,'u':u,'v':v,'w':w,'h':h})
+        self.receivers.append({'points':p,'origin':origin,'u':u,'v':v,'w':w,'h':h,'step':step})
         return result
 
     def quad(self, a, b, c, d, uv=None, **kw):
@@ -210,12 +227,34 @@ class Hall:
             # change the apparent size of wood grain or stone courses.
             pa,pb,pc,pd=[self.transform(p) for p in (a,b,c,d)]
             span=MASONRY_SPAN if kw.get("material",0)==0 else TEXEL_SPAN
+            span*=self.texel_scale
             width=max(length(sub(pb,pa)),length(sub(pc,pd)))/span
             height=max(length(sub(pd,pa)),length(sub(pc,pb)))/span
             uv=((0,0),(width,0),(width,height),(0,height))
         points=[self.transform(p) for p in (a,b,c,d)]
         if kw.get('visible',True) and kw.get('material',0)!=4 and length(cross(sub(points[1],points[0]),sub(points[2],points[0])))>.001:
             kw['shadow_face']=self.receiver(points)
+        # Bilinear quad UV grids need only two triangles per tile. Clipping two
+        # large diagonal triangles independently adds redundant sliver triangles.
+        # Preserve the original two collision faces and one lightmap chart.
+        rectangular=(
+            uv[0]==(0,0) and uv[1][1]==0 and uv[3][0]==0 and
+            uv[2]==(uv[1][0],uv[3][1]))
+        if rectangular and (uv[1][0]>1 or uv[3][1]>1):
+            if kw.get('solid',True):
+                self.triangle((a,b,c),visible=False)
+                self.triangle((a,c,d),visible=False)
+            if not kw.get('visible',True):return
+            width,height=uv[1][0],uv[3][1]
+            point=lambda u,v:tuple(a[k]*(1-u/width)*(1-v/height)+b[k]*(u/width)*(1-v/height)+c[k]*(u/width)*(v/height)+d[k]*(1-u/width)*(v/height) for k in range(3))
+            for row in range(math.ceil(height)):
+                for col in range(math.ceil(width)):
+                    u1=min(col+1,width);v1=min(row+1,height)
+                    pts=(point(col,row),point(u1,row),point(u1,v1),point(col,v1))
+                    tex=((0,0),(u1-col,0),(u1-col,v1-row),(0,v1-row))
+                    self.triangle(pts[:3],uv=tex[:3],**dict(kw,solid=False))
+                    self.triangle((pts[0],pts[2],pts[3]),uv=(tex[0],tex[2],tex[3]),**dict(kw,solid=False))
+            return
         self.triangle((a,b,c), uv=uv[:3], **kw)
         self.triangle((a,c,d), uv=(uv[0],uv[2],uv[3]), **kw)
 
@@ -582,6 +621,156 @@ class Hall:
                         tint=(165,150,126),solid=False)
                 self.reset()
 
+    def ellipsoid(self,center,radii,segments=12,rings=6,**kw):
+        # Sculpted volumes, with deliberate seams along the back rather than
+        # stacked cones. All statue detail is visual; the plinth owns collision.
+        def pt(j,i):
+            v=-math.pi/2+math.pi*j/rings;u=TAU*i/segments
+            return (center[0]+radii[0]*math.cos(v)*math.sin(u),
+                    center[1]+radii[1]*math.sin(v),center[2]+radii[2]*math.cos(v)*math.cos(u))
+        for j in range(rings):
+            for i in range(segments):
+                self.quad(pt(j,i),pt(j,i+1),pt(j+1,i+1),pt(j+1,i),
+                    uv=((i/segments,j/rings),((i+1)/segments,j/rings),
+                        ((i+1)/segments,(j+1)/rings),(i/segments,(j+1)/rings)),solid=False,**kw)
+
+    def limb(self,points,radii,**kw):
+        # Tube along a bent arm/sleeve, avoiding straight rectangular appendages.
+        rings=[];sides=8
+        for i,(p,r) in enumerate(zip(points,radii)):
+            tangent=sub(points[min(i+1,len(points)-1)],points[max(i-1,0)])
+            tangent=tuple(v/length(tangent) for v in tangent)
+            u=cross(tangent,(0,0,1));u=tuple(v/length(u) for v in u);v=cross(tangent,u)
+            rings.append([tuple(p[k]+r*(math.cos(j*TAU/sides)*u[k]+math.sin(j*TAU/sides)*v[k]) for k in range(3)) for j in range(sides)])
+        for a,b in zip(rings,rings[1:]):
+            for j in range(sides):self.quad(a[j],a[(j+1)%sides],b[(j+1)%sides],b[j],solid=False,**kw)
+
+    def statue(self):
+        stone=dict(material=7,tint=(236,222,195))
+        # Existing grounded plinth footprint remains solid and walk-blocking.
+        self.box(0,0,0,280,35,220)
+        self.box(0,35,0,220,290,170)
+        for y,w,h,d in ((35,236,18,186),(302,232,23,186),(325,260,35,200)):
+            self.box(0,y,0,w,h,d,solid=False,tint=(194,175,144))
+        for x in (-91,91):self.box(x,68,-89,13,205,11,solid=False)
+        self.box(0,86,-88,130,170,8,solid=False,tint=(145,127,99))
+        for x in (-74,74):self.box(x,78,-94,8,188,12,solid=False)
+        for y in (78,258):self.box(0,y,-94,156,8,12,solid=False)
+        # Broad hem -> hips -> shoulders. Alternating pleats continue down the
+        # robe, with a draped asymmetric fold instead of a pointed cone body.
+        self.sculpture=True
+        levels=((360,87,54),(386,83,50),(455,73,42),(535,58,33),
+                (610,47,30),(674,54,32),(719,53,28),(746,33,23))
+        count=24
+        def point(level,j):
+            y,w,d=level;a=j*TAU/count+.07*math.sin((y-360)/120)
+            fold=(14 if j%3==0 else -5)*(1-(y-360)/650)
+            sway=7*math.sin((y-360)/480*math.pi)
+            return (sway+(w+fold)*math.sin(a),y+(3*math.sin(a*3) if y==360 else 0),(d+fold)*math.cos(a))
+        for row in range(len(levels)-1):
+            for j in range(count):
+                self.quad(point(levels[row],j),point(levels[row],(j+1)%count),
+                          point(levels[row+1],(j+1)%count),point(levels[row+1],j),solid=False,**stone)
+        # Front mantle sweeping from shoulders to the opposite hip.
+        for side in (-1,1):
+            self.limb([(side*45,724,-3),(side*64,674,-13),(side*61,633,-39)], [21,18,16],**stone)
+            self.limb([(side*61,633,-39),(side*47,635,-61),(side*18,641,-70)], [17,14,10],**stone)
+            self.ellipsoid((side*16,641,-70),(15,10,13),segments=6,rings=4,**stone)
+            # Finger ridges and a deep edge on the cuffs.
+            for k in range(3):self.limb([(side*(8+k*5),638,-82),(side*(8+k*5),646,-80)],[1.6,1.4],**stone)
+        self.ellipsoid((0,752,0),(18,27,18),segments=10,rings=4,**stone)
+        self.ellipsoid((0,790,-1),(29,44,26),segments=12,rings=6,**stone)
+        # Hair/cowl behind the face, cheekbones, brows, nose and closed mouth.
+        for side in (-1,1):
+            self.ellipsoid((side*26,781,7),(9,41,22),segments=6,rings=5,**stone)
+            self.ellipsoid((side*12,786,-22),(10,9,4),segments=6,rings=4,**stone)
+            self.ellipsoid((side*11,803,-24),(10,2,3),segments=6,rings=3,**stone)
+            self.ellipsoid((side*11,798,-25),(5,1.6,1.4),segments=6,rings=3,material=7,tint=(112,99,79))
+        self.ellipsoid((0,786,-31),(4,11,7),segments=6,rings=4,**stone)
+        self.ellipsoid((0,770,-25),(7,1.4,2),segments=6,rings=3,material=7,tint=(145,125,98))
+        # Raised mantle seams sweep over the torso into the long robe folds.
+        for side in (-1,1):
+            points=[(side*44,724,-24),(side*30,704,-36),(side*10,676,-41),
+                    (-side*14,622,-38),(-side*30,552,-42),(-side*41,455,-51)]
+            for a,b in zip(points,points[1:]):
+                self.quad(add(a,(-3,0,0)),add(b,(-3,0,0)),add(b,(3,0,-3)),add(a,(3,0,-3)),solid=False,**stone)
+        self.sculpture=False
+        # A carved votive bowl cradled in both hands, with a bronze leaf motif.
+        self.column(0,649,-70,18,8,top=25,n=10,material=3,solid=False)
+        for i in range(5):
+            a=i*TAU/5
+            self.triangle(((0,656,-70),(25*math.sin(a),671,-70+25*math.cos(a)),
+                           (12*math.sin(a+.6),658,-70+12*math.cos(a+.6))),material=3,solid=False)
+
+    def pillar_torches(self):
+        for i in TORCH_PILLARS:
+            a=(i+.5)*TAU/SIDES
+            self.local(RADIUS*.965*math.sin(a),RADIUS*.965*math.cos(a),a)
+            metal=dict(material=3,solid=False,tint=(122,96,62))
+            self.box(0,275,-83,28,145,13,**metal)
+            for y in (285,402):self.column(0,y,-92,9,8,n=6,cap=False,**metal)
+            self.box(0,309,-116,15,15,66,**metal)
+            self.column(0,307,-148,12,98,top=18,n=6,cap=False,material=1,solid=False,tint=(102,77,47))
+            self.column(0,398,-148,18,31,top=32,n=6,cap=False,**metal)
+            self.column(0,429,-148,33,6,n=6,cap=False,**metal)
+            for side in (-1,1):
+                self.box(side*27,422,-148,5,29,8,**metal)
+            self.reset()
+
+    def upper_hall(self,boundary):
+        self.texel_scale=2.0
+        # Raised clerestory: recessed walnut panels framed by carved stone.
+        for i in range(SIDES):
+            a=i*TAU/SIDES;self.local(FRONT*math.sin(a),FRONT*math.cos(a),a)
+            width=2*HALF_DOOR
+            for y,h,d in ((1100,26,90),(1450,24,100),(1510,32,130),(1595,35,160)):
+                self.quad((-width/2,y,-15-d/2),(width/2,y,-15-d/2),(width/2,y+h,-15-d/2),(-width/2,y+h,-15-d/2),solid=False,tint=(194,175,144))
+                self.quad((-width/2,y,-15-d/2),(-width/2,y,25),(width/2,y,25),(width/2,y,-15-d/2),solid=False)
+            for x in (-155,155):
+                self.quad((x-85,1140,-13),(x+85,1140,-13),(x+85,1422,-13),(x-85,1422,-13),material=1,solid=False,tint=(117,88,56))
+                for dx in (-82,82):
+                    l=x+dx-6.5;r=x+dx+6.5
+                    self.quad((l,1135,-40),(r,1135,-40),(r,1375,-40),(l,1375,-40),solid=False)
+                    for side in (l,r):self.quad((side,1135,-40),(side,1375,-40),(side,1375,-10),(side,1135,-10),solid=False)
+                # Small pointed blind arches with a central carved leaf.
+                for side in (-1,1):
+                    for j in range(4):
+                        t=j/4;u=(j+1)/4
+                        p=(x+side*82*(1-t),1370+75*math.sin(t*math.pi/2),-41)
+                        q=(x+side*82*(1-u),1370+75*math.sin(u*math.pi/2),-41)
+                        self.quad(p,q,add(q,(0,11,0)),add(p,(0,11,0)),solid=False)
+                self.quad((x,1190,-27),(x+20,1224,-27),(x,1260,-27),(x-20,1224,-27),material=3,solid=False)
+            self.reset()
+        # Piers continue above the existing capitals into ornate corbels.
+        for x,_,z in boundary:
+            x*=.965;z*=.965
+            for y,r,h,top in ((1032,70,430,62),(1462,96,28,110),(1490,110,35,130),(1525,130,35,145)):
+                self.column(x,FLOOR+y,z,r,h,top=top,n=8,cap=False,solid=False)
+        # Curved stone ribs, three exposed faces, spring from each capital and
+        # converge on a layered central rosette. Timber infill follows the vault.
+        def roof(r):return EAVES_HEIGHT+(CROWN_HEIGHT-EAVES_HEIGHT)*math.sqrt(max(0,1-(r/RADIUS)**2))
+        for i,a in enumerate(boundary):
+            b=boundary[(i+1)%SIDES];radial=(a[0]/RADIUS,0,a[2]/RADIUS);side=(-radial[2],0,radial[0])
+            for j in range(8):
+                r0=RADIUS*j/8;r1=RADIUS*(j+1)/8
+                p=(radial[0]*r0,FLOOR+roof(r0)-30,radial[2]*r0)
+                q=(radial[0]*r1,FLOOR+roof(r1)-30,radial[2]*r1)
+                edge=lambda v,w:tuple(v[k]+side[k]*w for k in range(3))
+                if i%2==0:
+                    for sideSign in (-1,1):
+                        self.quad(edge(p,sideSign*34),edge(q,sideSign*34),
+                                  add(edge(q,sideSign*34),(0,48,0)),add(edge(p,sideSign*34),(0,48,0)),solid=False)
+                    self.quad(edge(p,-34),edge(q,-34),edge(q,34),edge(p,34),solid=False,tint=(212,196,165))
+                pa=(a[0]*r0/RADIUS,FLOOR+roof(r0)+20,a[2]*r0/RADIUS)
+                pb=(b[0]*r0/RADIUS,FLOOR+roof(r0)+20,b[2]*r0/RADIUS)
+                qa=(a[0]*r1/RADIUS,FLOOR+roof(r1)+20,a[2]*r1/RADIUS)
+                qb=(b[0]*r1/RADIUS,FLOOR+roof(r1)+20,b[2]*r1/RADIUS)
+                self.quad(pa,pb,qb,qa,material=1,solid=False,tint=(142,112,79))
+        for y,r,h,top in ((CROWN_HEIGHT-92,90,18,120),(CROWN_HEIGHT-74,120,24,150),(CROWN_HEIGHT-50,150,20,150)):
+            self.column(0,FLOOR+y,0,r,h,top=top,n=16,material=0,solid=False,cap=False)
+        self.column(0,FLOOR+CROWN_HEIGHT-95,0,90,10,n=16,material=3,solid=False)
+        self.texel_scale=1.0
+
     def build(self):
         boundary=[(RADIUS*math.sin((i+.5)*TAU/SIDES),FLOOR,RADIUS*math.cos((i+.5)*TAU/SIDES)) for i in range(SIDES)]
         for i,a in enumerate(boundary):
@@ -597,7 +786,10 @@ class Hall:
             width=2*HALF_DOOR
             self.local(FRONT*math.sin(angle),FRONT*math.cos(angle),angle)
             if i:
-                self.quad((width/2,0,25),(-width/2,0,25),(-width/2,1200,25),(width/2,1200,25),tint=(194,175,144))
+                self.quad((width/2,0,25),(-width/2,0,25),(-width/2,1100,25),(width/2,1100,25),tint=(194,175,144))
+                self.texel_scale=2.0
+                self.quad((width/2,1100,25),(-width/2,1100,25),(-width/2,EAVES_HEIGHT,25),(width/2,EAVES_HEIGHT,25),tint=(194,175,144))
+                self.texel_scale=1.0
                 self.wall_bay(i,width)
             self.arch(width-175,460,920)
             self.box(0,1040,0,width+10,100,100,material=1,solid=False)
@@ -639,18 +831,7 @@ class Hall:
                 px=x+69*math.sin(a);pz=z+69*math.cos(a)
                 self.column(px,FLOOR+126,pz,9,746,top=8,n=5,**stone)
                 for y in (110,872):self.column(px,FLOOR+y,pz,14,16,n=5,**stone)
-        # Ceiling vault, oak radial ribs and central bronze boss.
-        for i,a in enumerate(boundary):
-            b=boundary[(i+1)%SIDES]
-            self.triangle(((0,FLOOR+1510,0),(b[0],FLOOR+1180,b[2]),(a[0],FLOOR+1180,a[2])),solid=False,tint=(130,113,91))
-            # Rib is a tapered strip, seen from below.
-            for t in range(10):
-                t0=t/10;t1=(t+1)/10
-                p=(a[0]*t0,FLOOR+1500-330*t0,a[2]*t0)
-                q=(a[0]*t1,FLOOR+1500-330*t1,a[2]*t1)
-                normal=(-a[2]/RADIUS*20,0,a[0]/RADIUS*20)
-                self.quad(add(p,normal),sub(p,normal),sub(q,normal),add(q,normal),material=1,solid=False)
-        self.column(0,FLOOR+1460,0,100,35,material=3,solid=False)
+        self.upper_hall(boundary)
         # Central table, with a complete circle of twelve chairs. The rest
         # pose and interactions remain outside this furniture footprint.
         self.local(0,0,0,scale=(.67,.5,.67))
@@ -709,16 +890,11 @@ class Hall:
             self.chair(460*math.sin(angle),460*math.cos(angle),angle+math.pi)
         # Recessed masonry firebox, layered carved surround and a real log bed.
         self.fireplace()
-        # Small stylized robed memorials in rear bays; no hanging banners.
         for angle in (math.pi*.75,math.pi,math.pi*1.25):
             self.local((FRONT-200)*math.sin(angle),(FRONT-200)*math.cos(angle),angle)
-            # Grounded plinth, narrower shaft and cap support the entire figure.
-            self.box(0,0,0,280,35,220)
-            self.box(0,35,0,220,290,170)
-            self.box(0,325,0,260,35,200)
-            self.column(0,360,0,95,260,top=45,solid=False,n=8)
-            self.column(0,620,0,48,85,top=18,solid=False,n=8)
+            self.statue()
             self.reset()
+        self.pillar_torches()
         self.floor_clutter()
         # The native shutter is authored directly into the south bay. Its
         # creation parameters use the same generated anchor as this surround.
@@ -738,7 +914,7 @@ class Hall:
         side_width=HALF_DOOR-EXIT_HALF_WIDTH
         for sign in (-1,1):
             self.box(sign*(EXIT_HALF_WIDTH+side_width/2),FLOOR,FRONT+60,
-                     side_width,1200,170,bottom_solid=False,tint=(194,175,144))
+                     side_width,EAVES_HEIGHT,170,bottom_solid=False,tint=(194,175,144))
             # Layered jambs with grounded bases, recessed flutes and capitals.
             x=sign*(EXIT_HALF_WIDTH+26)
             self.box(x,FLOOR,FRONT-45,76,26,94,bottom_solid=False)
@@ -746,7 +922,7 @@ class Hall:
             for dx in (-13,13):self.box(x+dx,FLOOR+48,FRONT-81,5,EXIT_HEIGHT-74,6,solid=False,tint=(144,138,123))
             for y in (92,158,224,290):self.box(x,FLOOR+y,FRONT-48,54,6,80,solid=False)
             self.box(x,FLOOR+EXIT_HEIGHT-8,FRONT-48,82,30,90,solid=False)
-        self.box(0,FLOOR+EXIT_HEIGHT,FRONT+60,2*EXIT_HALF_WIDTH,1200-EXIT_HEIGHT,170,tint=(194,175,144))
+        self.box(0,FLOOR+EXIT_HEIGHT,FRONT+60,2*EXIT_HALF_WIDTH,EAVES_HEIGHT-EXIT_HEIGHT,170,tint=(194,175,144))
         # A double archivolt and central keystone frame the recessed lunette
         # above the rectangular shutter, using the same stone as the hall.
         for r0,r1,z in ((197,220,FRONT-85),(224,250,FRONT-68)):
@@ -767,6 +943,17 @@ class Hall:
         # Keep sides/tops and real overhead arches; apply to every wall bay.
         self.collision=[p for p in self.collision if not
             (cross(sub(p[1],p[0]),sub(p[2],p[0]))[1]<-.001 and max(v[1] for v in p)<FLOOR+180)]
+        # The closed stone shell hides exterior column backs and buried trim.
+        # Keep the entrance bay open and retain all collision independently.
+        kept=[];faces=[]
+        normals=[(math.sin(i*TAU/SIDES),math.cos(i*TAU/SIDES)) for i in range(1,SIDES)]
+        for start in range(0,len(self.vertices),3):
+            tri=self.vertices[start:start+3]
+            if max(v[1] for v in tri)<FLOOR-.01:continue
+            portal=any(v[2]>FRONT and abs(v[0])<=HALF_DOOR+50 for v in tri)
+            if not portal and any(min(v[0]*nx+v[2]*nz for v in tri)>FRONT+25.01 for nx,nz in normals):continue
+            kept.extend(tri);faces.extend(self.light_faces[start:start+3])
+        self.vertices=kept;self.light_faces=faces
         self.pack_lightmaps()
         return self
 
@@ -781,7 +968,7 @@ class Hall:
             if face_id<0:uv=(.5/LIGHTMAP_SIZE,.5/LIGHTMAP_SIZE)
             else:
                 face=self.receivers[face_id];delta=sub(vertex[:3],face['origin'])
-                uv=tuple((face[axis]+1.5+sum(a*b for a,b in zip(delta,face[basis]))/LIGHTMAP_STEP)/LIGHTMAP_SIZE
+                uv=tuple((face[axis]+1.5+sum(a*b for a,b in zip(delta,face[basis]))/face['step'])/LIGHTMAP_SIZE
                          for axis,basis in (('x','u'),('y','v')))
             self.vertices[i]=vertex[:5]+uv+vertex[7:]
 
@@ -859,6 +1046,9 @@ def write_assets():
         f'inline constexpr float hearthLightY = {HEARTH_POSITION[1]:.1f}f;\n'
         f'inline constexpr float hearthLightX = {HEARTH_POSITION[0]:.6f}f;\n'
         '}\n')
+    torches=','.join('{'+','.join(f'{v:.6f}f' for v in t)+'}' for t in torch_layout())
+    layout=ROOT/'src/generated/roundtable_layout.hpp'
+    layout.write_text(layout.read_text().rsplit('}',1)[0]+f'struct Torch {{ float x,y,z; }};\ninline constexpr Torch torches[]{{{torches}}};\n}}\n')
     rows=[]
     for kind,x,y,z,yaw,w,h,d in prop_layout():
         rows.append('    {'+str(kind)+','+','.join(f'{v:.6f}f' for v in (x,y,z,yaw,w,h,d))+'},')

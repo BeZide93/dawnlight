@@ -250,3 +250,25 @@ empty=g.Hall().build()
 g.prop_layout=original_layout
 assert hall.casters==empty.casters and hall.collision==empty.collision
 print('Native Carry: real shelf support, open compartments, no permanent prop colliders/shadows')
+
+# The new vault has actual height and three-dimensional ribs above the old roof.
+assert max(v[1] for v in hall.vertices)>g.FLOOR+2200
+assert sum(v[1]>g.FLOOR+1600 for v in hall.vertices)>1000
+# Torch sources are on paired inward pier faces, above the player's head.
+torches=g.torch_layout();assert len(torches)==8
+for x,y,z in torches:
+ assert 1500<math.hypot(x,z)<1650 and y>g.FLOOR+400
+ assert any(abs(tx+x)<.001 and abs(tz-z)<.001 for tx,_,tz in torches)
+# The old pointed memorials have no separate head, hands or deep robe folds.
+sculpt=g.Hall();sculpt.statue()
+head=[v for v in sculpt.vertices if v[1]>760]
+hands=[v for v in sculpt.vertices if 630<v[1]<660 and v[2]<-60]
+assert head and max(v[0] for v in head)-min(v[0] for v in head)>55
+assert hands and min(v[0] for v in hands)<-20 and max(v[0] for v in hands)>20
+# UV tiling preserves area and the unsplit collision surface.
+tiled=g.Hall();tiled.quad((0,0,0),(640,0,0),(640,640,0),(0,640,0))
+assert len(tiled.collision)==2 and len(tiled.vertices)==24
+area=sum(g.length(g.cross(g.sub(b[:3],a[:3]),g.sub(c[:3],a[:3])))/2
+         for a,b,c in zip(tiled.vertices[::3],tiled.vertices[1::3],tiled.vertices[2::3]))
+assert abs(area-640*640)<.01
+print('Raised vault, sculpted figures, paired native torches and UV surface coverage passed')

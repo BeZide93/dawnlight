@@ -63,7 +63,7 @@ public:
   return hit(0,point+direction*.8f,direction,distance-1.6f);
  }
 };
-float illumination(const Scene& scene,Vec point,Vec light,Vec hearth){
+float illumination(const Scene& scene,Vec point,Vec light,Vec hearth,const std::vector<Vec>& torches={}){
  const std::array<Vec,5> offsets{{{0,0,0},{40,20,0},{-40,-20,0},{0,20,40},{0,-20,-40}}};
  int visible=0,hearthVisible=0;
  for(auto offset:offsets){visible+=!scene.blocked(point,light+offset);hearthVisible+=!scene.blocked(point,hearth+offset*.6f);}
@@ -71,7 +71,14 @@ float illumination(const Scene& scene,Vec point,Vec light,Vec hearth){
  // The fireplace contributes at most 22%, falling off locally. Add the two
  // lights before normalization: one source can fill the other's shadows.
  const float hearthWeight=.22f/(1+dot(delta,delta)/(700*700));
- return (.38f+.62f*visible/offsets.size()+hearthWeight*hearthVisible/offsets.size())/(1+hearthWeight);
+ float sum=.38f+.62f*visible/offsets.size()+hearthWeight*hearthVisible/offsets.size(),weight=1+hearthWeight;
+ for(auto torch:torches){
+  const Vec d=point-torch;const float falloff=std::max(0.f,1-std::sqrt(dot(d,d))/550.f);
+  const float w=.18f*falloff*falloff;if(w==0)continue;
+  int lit=0;for(auto offset:offsets)lit+=!scene.blocked(point,torch+offset*.25f);
+  sum+=w*lit/offsets.size();weight+=w;
+ }
+ return sum/weight;
 }
 template<class T>void read(std::ifstream& file,T& value){file.read(reinterpret_cast<char*>(&value),sizeof(value));if(!file)throw std::runtime_error("Truncated bake input");}
 int main(int argc,char** argv){try{
@@ -86,15 +93,21 @@ int main(int argc,char** argv){try{
   const float hearthBlocked=illumination(screen,receiver,clear,blocked);
   if(!(dark<tableBlocked&&tableBlocked<hearthBlocked&&hearthBlocked<1)||
       std::abs(illumination(screen,receiver,clear,clear)-1)>.00001f)return 1;
+  const float torchClear=illumination(screen,receiver,blocked,blocked,{clear});
+  const float torchBlocked=illumination(screen,receiver,blocked,blocked,{blocked});
+  if(!(torchBlocked<dark && torchClear>dark && torchClear<tableBlocked) ||
+      std::abs(illumination(screen,receiver,clear,clear,{{2000,-100,0}})-1)>.00001f)return 1;
   std::cout<<"Shadow BVH: blocker, clear ray, surface bias, double-sided visibility and weaker secondary light passed\n";return 0;
  }
  if(argc!=3)return 2;
  std::ifstream input(argv[1],std::ios::binary);uint32_t size,count,samples;Vec light,hearth;read(input,size);read(input,count);read(input,samples);read(input,light);read(input,hearth);
  if(size!=1024||count>100000||samples>size*size)throw std::runtime_error("Invalid bake dimensions");
+ uint32_t torchCount;read(input,torchCount);if(torchCount>16)throw std::runtime_error("Too many torch lights");
+ std::vector<Vec> torches(torchCount);for(auto& torch:torches)read(input,torch);
  Scene scene;scene.faces.resize(count);for(auto& face:scene.faces)read(input,face);scene.build();
  std::vector<unsigned char> pixels(size*size,255);
  for(uint32_t i=0;i<samples;++i){uint32_t pixel;Vec point;read(input,pixel);read(input,point);if(pixel>=pixels.size())throw std::runtime_error("Invalid pixel index");
-  pixels[pixel]=static_cast<unsigned char>(std::lround(255*illumination(scene,point,light,hearth)));
+  pixels[pixel]=static_cast<unsigned char>(std::lround(255*illumination(scene,point,light,hearth,torches)));
  }
  std::ofstream output(argv[2],std::ios::binary);output.write(reinterpret_cast<char*>(pixels.data()),pixels.size());
  if(!output)throw std::runtime_error("Cannot write shadow atlas");

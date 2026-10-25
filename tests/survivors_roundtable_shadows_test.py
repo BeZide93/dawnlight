@@ -6,11 +6,13 @@ metadata=json.loads((ROOT/'res/survivors_roundtable/shadows.json').read_text())
 for path,digest in metadata['sources'].items():
  assert hashlib.sha256((ROOT/path).read_bytes()).hexdigest()==digest, f'Rebake shadows after changing {path}'
 texture=(ROOT/'res/survivors_roundtable/shadows.i8').read_bytes()
-assert len(texture)==1024*1024 and 75<=min(texture)<=97 and max(texture)==255
+assert len(texture)==1024*1024 and 70<=min(texture)<=97 and max(texture)==255
 assert len(set(texture))>=5, 'Area light samples should produce soft intermediate shadows'
 assert metadata['light']==[0,-50,0]
 assert metadata['hearth'][0]<-1500 and metadata['hearth'][1:]==[-200,0]
 assert metadata['hearth_weight']==.22
+assert len(metadata['torches'])==8
+assert all(t[1]==35 for t in metadata['torches'])
 with tempfile.TemporaryDirectory() as temp:
  exe=Path(temp)/'baker'
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-O2','-Wall','-Wextra','-Werror',str(ROOT/'tools/bake_roundtable_shadows.cpp'),'-o',str(exe)],check=True)

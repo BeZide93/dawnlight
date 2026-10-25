@@ -25,6 +25,25 @@ def render(output,eye=(850,360,1100),target=(0,-100,0),width=1280,height=800):
     lightmap=np.frombuffer((ROOT/'res/survivors_roundtable/shadows.i8').read_bytes(),dtype=np.uint8).reshape(256,128,4,8).transpose(0,2,1,3).reshape(1024,1024)/255
     eye=np.array(eye);forward=np.array(target)-eye;forward=forward/np.linalg.norm(forward)
     right=np.cross(forward,(0,1,0));right/=np.linalg.norm(right);up=np.cross(right,forward)
+    # Clip large ground/wall triangles at the near plane like the GPU does.
+    # Dropping an entire crossing triangle produced false black mortar gaps
+    # in close-up previews when the underlying floor fan went behind the eye.
+    packed=np.column_stack((vertices['position'],vertices['uv'],vertices['light_uv'],vertices['color']))
+    distances=(vertices['position']-eye)@forward-10
+    clipped=[]
+    for face,ds in zip(packed.reshape(-1,3,11),distances.reshape(-1,3)):
+        if min(ds)>=0:clipped.append(face);continue
+        if max(ds)<0:continue
+        polygon=[]
+        for i,a in enumerate(face):
+            b=face[(i+1)%3];da=ds[i];db=ds[(i+1)%3]
+            if da>=0:polygon.append(a)
+            if (da<0)!=(db<0):polygon.append(a+da/(da-db)*(b-a))
+        for j in range(1,len(polygon)-1):clipped.append(np.array((polygon[0],polygon[j],polygon[j+1])))
+    packed=np.concatenate(clipped);count=len(packed)
+    vertices=np.empty(count,dtype=dtype)
+    vertices['position']=packed[:,:3];vertices['uv']=packed[:,3:5]
+    vertices['light_uv']=packed[:,5:7];vertices['color']=np.clip(packed[:,7:],0,255)
     points=vertices['position']-eye
     depth=points@forward
     focal=width/(2*np.tan(np.radians(76)/2))
@@ -33,7 +52,6 @@ def render(output,eye=(850,360,1100),target=(0,-100,0),width=1280,height=800):
     zbuffer=np.full((height,width),np.inf)
     for start in range(0,count,3):
         depths=depth[start:start+3]
-        if np.any(depths<10):continue # preview only; the GPU clips the actual room
         p=screen[start:start+3]
         x0,y0=np.maximum(np.floor(p.min(0)).astype(int),(0,0));x1,y1=np.minimum(np.ceil(p.max(0)).astype(int),(width-1,height-1))
         if x1<x0 or y1<y0:continue

@@ -8,6 +8,7 @@ Run from any directory. Pillow is needed only for --texture / --preview.
 from pathlib import Path
 import argparse
 import math
+import random
 import struct
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,12 @@ LIGHT_POSITION = (0.0, FLOOR+350.0, 0.0)
 LIGHTMAP_SIZE = 1024
 LIGHTMAP_STEP = 24.0
 TEXTURE_SIZE = 1024
+# Keep masonry at its original resolution; wood, cloth and bronze share the
+# upper-right area. Four bare-stone variants fill the lower half of the atlas.
+MATERIAL_RECTS = {0:(0,0,512,512), 1:(512,0,512,256),
+                  2:(512,256,256,256), 3:(768,256,256,256),
+                  6:(0,512,512,256), 7:(512,512,512,256),
+                  8:(0,768,512,256), 9:(512,768,512,256)}
 
 
 def add(a, b): return tuple(x+y for x, y in zip(a, b))
@@ -67,7 +74,10 @@ class Hall:
             return
         face_id = -1
         if material != 4:
-            self.casters.append(tuple(p))
+            # Flush paving receives furniture shadows but must not cast onto
+            # its own mortar/base plane half a unit below it.
+            if not (normal[1]>0 and min(q[1] for q in p)>=FLOOR-.01 and max(q[1] for q in p)<=FLOOR+1):
+                self.casters.append(tuple(p))
             face_id=self.receiver(p) if shadow_face is None else shadow_face
         if uv is None:
             uv = ((.03, .03), (.97, .03), (.97, .97))
@@ -87,17 +97,17 @@ class Hall:
                     radius=math.hypot(pos[0],pos[2])
                     dirt=1-.24*max(0,1-abs(radius-1450)/380)*(0.55+.45*math.sin(pos[0]*.011+pos[2]*.007)**2)
                 color = tuple(min(255, round(t*c*dirt)) for t, c in zip(tint, light))
-                tile = min(material, 3)
-                # Keep bilinear samples inside their atlas quadrant and clear
+                # Keep bilinear samples inside their atlas rectangle and clear
                 # of the reserved 4x4 emissive texels in the stone corner.
-                u = (tile % 2 + .04 + tex[0]*.92)*.5
-                v = (tile // 2 + .04 + tex[1]*.92)*.5
-                if material >= 4:
+                rx,ry,rw,rh=MATERIAL_RECTS.get(material,MATERIAL_RECTS[0])
+                u = (rx+(.04+tex[0]*.92)*rw)/TEXTURE_SIZE
+                v = (ry+(.04+tex[1]*.92)*rh)/TEXTURE_SIZE
+                if material in (4,5):
                     u=v=1.5/TEXTURE_SIZE
                     if material == 4:color=tint
                 self.vertices.append((*pos, u, v, 0.0, 0.0, *color, 255))
                 self.light_faces.append(face_id)
-        if material >= 4:
+        if material in (4,5):
             emit(p, uv)
             return
         # Clip the textured triangle at integer UV boundaries. Each resulting
@@ -165,7 +175,7 @@ class Hall:
         if not bottom_solid:bottom["solid"]=False
         self.quad(a,b,c,e,**bottom)
 
-    def column(self,x,y,z,r,h,top=None,n=12,**kw):
+    def column(self,x,y,z,r,h,top=None,n=12,uv_offset=(0,0),**kw):
         top=r if top is None else top
         for i in range(n):
             a=i*TAU/n; b=(i+1)*TAU/n
@@ -178,8 +188,8 @@ class Hall:
             scale_r=length(sub(self.transform((x+r,y,z)),self.transform((x,y,z))))/r
             arc=TAU*max(r,top)*scale_r/TEXEL_SPAN
             height=length(sub(self.transform((x,y+h,z)),self.transform((x,y,z))))/TEXEL_SPAN
-            self.quad(p,q,v,u,uv=((i*arc/n,0),((i+1)*arc/n,0),
-                ((i+1)*arc/n,height),(i*arc/n,height)),**kw)
+            self.quad(p,q,v,u,uv=tuple((u+uv_offset[0],v+uv_offset[1]) for u,v in
+                ((i*arc/n,0),((i+1)*arc/n,0),((i+1)*arc/n,height),(i*arc/n,height))),**kw)
             self.triangle(((x,y+h,z),u,v),uv=((.5,.5),(.5+.46*math.sin(a),.5+.46*math.cos(a)),(.5+.46*math.sin(b),.5+.46*math.cos(b))),**kw)
 
     def local(self,x,z,angle,scale=(1,1,1)):
@@ -297,21 +307,6 @@ class Hall:
             if not (cross(sub(p[1],p[0]),sub(p[2],p[0]))[1]<-.001 and max(v[1] for v in p)<FLOOR+180)]
         self.reset()
 
-    def vessel(self,x,y,z,r=19,h=55,material=0):
-        self.column(x,y,z,r*.65,h*.18,top=r,n=6,material=material,solid=False,tint=(171,153,125))
-        self.column(x,y+h*.18,z,r,h*.55,top=r*.72,n=6,material=material,solid=False,tint=(171,153,125))
-        self.column(x,y+h*.73,z,r*.72,h*.27,top=r*.48,n=6,material=material,solid=False,tint=(186,166,128))
-
-    def book(self,x,y,z,w,h,seed):
-        # Unequal bindings, recessed page edges and narrow bronze spine bands.
-        colors=((110,57,43),(67,83,70),(97,76,42),(84,58,69))
-        self.box(x,y,z,w,h,45,material=5,tint=(173,158,122),solid=False)
-        for side in (-1,1):self.box(x+side*w/2,y,z,3,h+3,51,material=5,tint=colors[seed%4],solid=False)
-        self.box(x,y,z-25,w+3,h+3,4,material=5,tint=colors[seed%4],solid=False)
-        for yy in (y+12,y+h-12):
-            self.quad((x-w/2,yy,z-27.2),(x+w/2,yy,z-27.2),
-                (x+w/2,yy+3,z-27.2),(x-w/2,yy+3,z-27.2),material=3,solid=False)
-
     def wall_bay(self,index,width):
         # Structural backing stays behind the recesses. Each bay projects into
         # the room by at most 140 units, away from every interaction route.
@@ -325,11 +320,6 @@ class Hall:
             for y in (60,245,430,615):
                 self.box(0,y,-57,458,17,145,material=1,solid=False)
                 self.box(0,y+2,-132,476,15,12,material=3,tint=(154,125,81),solid=False)
-            for row,y in enumerate((77,262,447)):
-                for j in range(6):
-                    self.book(-165+j*43,y,-64,21+(j*7+index)%12,
-                        76+(j*13+row*17)%52,j+row+index)
-                self.vessel(143,y,-66,22,64,3 if row%2 else 0)
             self.box(0,652,-50,495,25,158,material=1,solid=False)
         elif niches:
             # Three deep alcoves with stone shelves and curved archivolts.
@@ -342,9 +332,6 @@ class Hall:
                     pt=lambda r,t,z:(r*math.cos(t),y+78+r*.7*math.sin(t),z)
                     self.quad(pt(177,a,-116),pt(177,b,-116),pt(199,b,-116),pt(199,a,-116),solid=False)
                     self.quad(pt(177,a,-116),pt(177,a,0),pt(177,b,0),pt(177,b,-116),solid=False,tint=(137,125,103))
-                self.vessel(-72,y+22,-47,25,73)
-                self.vessel(40,y+22,-44,18,52,3)
-                for j in range(3):self.box(108,y+22+j*7,-43,51-j*5,6,35,material=5,tint=(138,117,81),solid=False)
         elif index not in (0,4,12):
             # Layered wall panels and projecting stone buttresses break up the
             # remaining bays without blocking memorials or the equipment chest.
@@ -359,55 +346,120 @@ class Hall:
                 self.box(x,928,-26,154,14,55,solid=False)
                 self.box(x,970,-25,40,30,78,solid=False)
 
+    @staticmethod
+    def clip_polygon(polygon,nx,nz,limit):
+        result=[]
+        for i,p in enumerate(polygon):
+            q=polygon[(i+1)%len(polygon)]
+            a=nx*p[0]+nz*p[1]-limit;b=nx*q[0]+nz*q[1]-limit
+            if a<=0:result.append(p)
+            if (a<0)!=(b<0):
+                t=a/(a-b);result.append((p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])))
+        return result
+
+    def floor_stone(self,polygon,rng,y=FLOOR+.5,tint=None):
+        if len(polygon)<3:return
+        # One chart/UV plane per convex slab prevents diagonal texture seams.
+        if sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(polygon,polygon[1:]+polygon[:1]))>0:
+            polygon=polygon[::-1]
+        points=[(x,y,z) for x,z in polygon]
+        if length(cross(sub(points[1],points[0]),sub(points[2],points[0])))<.001:return
+        face=self.receiver(points)
+        angle=rng.uniform(0,TAU);co=math.cos(angle);si=math.sin(angle)
+        coords=[(x*co-z*si,x*si+z*co) for x,z in polygon]
+        xmin=min(u for u,v in coords);zmin=min(v for u,v in coords)
+        span=max(max(u for u,v in coords)-xmin,max(v for u,v in coords)-zmin,1)
+        crop=rng.uniform(.65,.93);u0=rng.uniform(0,1-crop);v0=rng.uniform(0,1-crop)
+        uv=[(u0+(u-xmin)/span*crop,v0+(v-zmin)/span*crop) for u,v in coords]
+        shade=rng.randrange(182,221)
+        tint=tint or (shade,min(255,shade+rng.randrange(-3,4)),shade+rng.randrange(-8,3))
+        material=rng.randrange(6,10)
+        for j in range(1,len(points)-1):
+            self.triangle((points[0],points[j],points[j+1]),uv=(uv[0],uv[j],uv[j+1]),
+                material=material,tint=tint,solid=False,shadow_face=face)
+
+    def paving(self,boundary):
+        # Continuous native floor remains underneath the purely visual paving.
+        # Jittered Voronoi cells produce unequal, interlocking flagstones rather
+        # than a repeated rectangular grid. All randomness is export-time only.
+        rng=random.Random(0x524F554E44)
+        sites=[(x*310+rng.uniform(-112,112),z*310+rng.uniform(-112,112))
+               for x in range(-7,8) for z in range(-7,8)]
+        rim=[(x,z) for x,y,z in boundary]
+        for x,z in sites:
+            poly=rim[:]
+            for qx,qz in sorted(sites,key=lambda q:(q[0]-x)**2+(q[1]-z)**2)[1:]:
+                nx=qx-x;nz=qz-z
+                poly=self.clip_polygon(poly,nx,nz,(qx*qx+qz*qz-x*x-z*z)/2)
+                if not poly:break
+            if len(poly)<3:continue
+            # Inset each edge by 1.2 units: fine warm mortar instead of black gaps.
+            original=poly[:]
+            for i,a in enumerate(original):
+                b=original[(i+1)%len(original)];nx=a[1]-b[1];nz=b[0]-a[0]
+                # The hall boundary is clockwise, so its outward normal is left.
+                limit=nx*a[0]+nz*a[1]-1.2*math.hypot(nx,nz)
+                poly=self.clip_polygon(poly,nx,nz,limit)
+                if not poly:break
+            if len(poly)<3:continue
+            # Small uneven corner chips, with no raised collision lip.
+            chipped=[]
+            for i,a in enumerate(poly):
+                before=poly[i-1];after=poly[(i+1)%len(poly)]
+                for b in (before,after):
+                    t=min(.15,rng.uniform(1,4)/max(math.dist(a,b),1))
+                    chipped.append((a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])))
+            self.floor_stone(chipped,rng)
+        # A restrained inlaid circular border relates the paving to the round
+        # table. Everything stays at floor height, including the rest position.
+        for r0,r1,count in ((605,622,48),(624,690,40),(692,709,48)):
+            offset=.012 if r1-r0>30 else 0
+            for i in range(count):
+                a=(i+.018)*TAU/count+offset;b=(i+.982)*TAU/count+offset
+                poly=[(r*math.sin(t),r*math.cos(t)) for r,t in ((r0,a),(r0,b),(r1,b),(r1,a))]
+                shade=rng.randrange(142,164) if r1-r0<30 else rng.randrange(193,218)
+                self.floor_stone(poly,rng,y=FLOOR+.8,tint=(shade,shade-2,shade-8))
+
     def floor_clutter(self):
-        # Repeatable little clusters near wall bays. These thin decorations
-        # never enter the DZB or make Link climb floating collision surfaces.
-        for i in (1,2,3,5,6,7,8,9,10,14,15):
-            angle=i*TAU/SIDES+.06;radius=RADIUS-390-(i%3)*45
-            x=radius*math.sin(angle);z=radius*math.cos(angle)
-            self.local(x,z,angle+.25)
-            for j in range(3):
-                px=-75+j*53;pz=(j*47+i*13)%95-45
-                self.quad((px-18,1.1,pz-25),(px-16,1.1,pz+27),(px+21,1.1,pz+22),(px+17,1.1,pz-24),
-                    material=5,tint=(149+j*9,133+j*7,96+j*5),solid=False)
-                for line in range(4):
-                    yy=1.2;zz=pz-12+line*6
-                    self.quad((px-11,yy,zz),(px-11,yy,zz+1),(px+9-line,yy,zz+1),(px+9-line,yy,zz),
-                        material=5,tint=(77,70,54),solid=False)
-            for j in range(2):self.box(-48+j*105,1,62-j*105,84,4,16,material=1,tint=(143,121,90),solid=False)
-            for j in range(4):
-                self.column(-87+(j*59)%164,.7,-72+(j*37)%130,7+(j%3)*3,5+j*2,top=2,n=5,
-                    tint=(141,134,119),solid=False)
-            self.reset()
+        # Unequal, asymmetric scatter patches, with independently rotated pieces.
+        # Keep travel/interaction anchors free. No decorative piece enters DZB.
+        rng=random.Random(0xC1A77E2)
+        anchors=((ZELDA_X,ZELDA_Z),(CHEST_X,0),(0,REST_Z),(-1515,0))
+        for cluster in range(19):
+            angle=rng.uniform(.35,TAU-.35);radius=rng.uniform(1120,1490)
+            cx=radius*math.sin(angle);cz=radius*math.cos(angle)
+            spread=rng.uniform(35,135);kind=rng.randrange(3)
+            for j in range(rng.randrange(2,11)):
+                x=cx+rng.gauss(0,spread);z=cz+rng.gauss(0,spread*.6)
+                if math.hypot(x,z)>1550 or any(math.hypot(x-a,z-b)<240 for a,b in anchors):continue
+                self.local(x,z,rng.uniform(0,TAU))
+                item=kind if rng.random()<.65 else rng.randrange(3)
+                if item==0:
+                    w=rng.uniform(19,45);d=rng.uniform(24,57);shade=rng.randrange(125,184)
+                    poly=[(-w*.5,-d*.5),(-w*.5,d*.38),(-w*.25,d*.5),(w*.48,d*.43),(w*.5,-d*.46)]
+                    for k in range(1,len(poly)-1):
+                        self.triangle(tuple((a,1.1,b) for a,b in (poly[0],poly[k],poly[k+1])),
+                            material=5,tint=(shade,shade-14,shade-42),solid=False)
+                    for line in range(rng.randrange(2,6)):
+                        zz=-d*.25+line*4
+                        self.quad((-w*.3,1.2,zz),(-w*.3,1.2,zz+1),
+                            (w*rng.uniform(.05,.3),1.2,zz+1),(w*.25,1.2,zz),
+                            material=5,tint=(75,69,55),solid=False)
+                elif item==1:
+                    w=rng.uniform(35,110);d=rng.uniform(7,19)
+                    self.box(0,1,0,w,rng.uniform(2,5),d,material=1,tint=(144,126,97),solid=False)
+                else:
+                    self.column(0,.7,0,rng.uniform(4,15),rng.uniform(3,10),
+                        top=rng.uniform(1,4),n=rng.randrange(4,7),material=rng.randrange(6,10),
+                        tint=(165,159,144),solid=False)
+                self.reset()
 
     def build(self):
         boundary=[(RADIUS*math.sin((i+.5)*TAU/SIDES),FLOOR,RADIUS*math.cos((i+.5)*TAU/SIDES)) for i in range(SIDES)]
         for i,a in enumerate(boundary):
             b=boundary[(i+1)%SIDES]
-            self.triangle(((0,FLOOR,0),a,b),tint=(65,57,47))
-        # Individually clipped, staggered flagstones, with narrow mortar joints.
-        extent=math.ceil(RADIUS/200)+1
-        for row in range(-extent,extent):
-            for col in range(-extent,extent):
-                x=col*200+(row%2)*100;z=row*200
-                polygon=[(x+3,z+3),(x+197,z+3),(x+197,z+197),(x+3,z+197)]
-                for i,a in enumerate(boundary):
-                    b=boundary[(i+1)%SIDES]; result=[]
-                    side=lambda p:(b[0]-a[0])*(p[1]-a[2])-(b[2]-a[2])*(p[0]-a[0])
-                    for j,p in enumerate(polygon):
-                        q=polygon[(j+1)%len(polygon)];sp=side(p);sq=side(q)
-                        if sp<=0: result.append(p)
-                        if (sp<0)!=(sq<0):
-                            t=sp/(sp-sq);result.append((p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])))
-                    polygon=result
-                    if not polygon:break
-                shade=210+(row*7+col*11)%35
-                for j in range(1,len(polygon)-1):
-                    face=(polygon[0],polygon[j+1],polygon[j])
-                    # Shared planar UVs prevent diagonal seams on clipped tiles.
-                    self.triangle(tuple((p[0],FLOOR+.5,p[1]) for p in face),
-                        uv=tuple(((p[0]-x)/200,(p[1]-z)/200) for p in face),
-                        solid=False,tint=(shade,shade,shade))
+            self.triangle(((0,FLOOR,0),a,b),material=5,tint=(175,168,155))
+        self.paving(boundary)
         # Sixteen-sided hall. The south bay is open to the original door.
         for i in range(SIDES):
             angle=i*TAU/SIDES
@@ -425,7 +477,17 @@ class Hall:
             x*=.965;z*=.965
             self.column(x,FLOOR,z,123,52,n=8)
             self.column(x,FLOOR+52,z,103,50,n=12)
-            self.column(x,FLOOR+102,z,78,830,top=70,n=12)
+            self.column(x,FLOOR+102,z,78,830,top=70,n=12,visible=False)
+            rng=random.Random(round(x*17+z*31))
+            base=102
+            for height in (108,140,140,140,140,162):
+                radius0=78-(base-102)*8/830;radius1=78-(base+height-102)*8/830
+                shade=rng.randrange(204,229)
+                self.column(x,FLOOR+base,z,radius0,height,top=radius1,n=12,
+                    material=rng.randrange(6,10),solid=False,
+                    uv_offset=(rng.random()*4,rng.random()*4),
+                    tint=(shade,shade-4,shade-12))
+                base+=height
             for y in range(210,900,140):self.column(x,FLOOR+y,z,80,12,solid=False)
             self.column(x,FLOOR+932,z,98,45,n=12)
             self.column(x,FLOOR+977,z,130,55,n=8)
@@ -605,7 +667,14 @@ def write_assets():
 
 def texture(path):
     from PIL import Image
-    im=Image.open(path).convert('RGB').resize((TEXTURE_SIZE,TEXTURE_SIZE),Image.Resampling.LANCZOS)
+    source=Image.open(path).convert('RGB')
+    stone=Image.open(ROOT/'tools/assets/roundtable_stone_variants.png').convert('RGB')
+    im=Image.new('RGB',(TEXTURE_SIZE,TEXTURE_SIZE))
+    for material,rect in MATERIAL_RECTS.items():
+        src=stone if material>=6 else source;tile=material-6 if material>=6 else material
+        w,h=src.size;qx=tile%2;qy=tile//2
+        crop=src.crop((qx*w//2,qy*h//2,(qx+1)*w//2,(qy+1)*h//2))
+        rx,ry,rw,rh=rect;im.paste(crop.resize((rw,rh),Image.Resampling.LANCZOS),(rx,ry))
     for y in range(4):
         for x in range(4):im.putpixel((x,y),(255,255,255))
     data=bytearray()

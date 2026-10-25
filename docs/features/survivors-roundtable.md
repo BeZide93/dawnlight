@@ -40,11 +40,19 @@ architecture. These shadows follow the fixed lights, not individual moving parti
 
 - The table is 100.5 units high and 361.8 units in radius; chair seats are
   72.05 units high (including cushions) and the full chair height is 187. Table settings sit on the tabletop. Memorial plinths extend to the floor.
-- Wall bays alternate between filled walnut bookcases, three-tier arched stone
+- Wall bays alternate between empty walnut shelves, three-tier arched stone
   niches and layered panels with projecting piers, corbels and relief bands.
-  Unequal books, bronze vessels and small stacks break up the shelves. Papers,
-  broken boards, chips and subtle dirt collect near the perimeter; these thin
-  details are non-solid and keep interaction routes clear.
+  Books, vessels and stacks have been removed from all shelves and niches.
+  Perimeter clutter uses a fixed random seed, unequal cluster sizes, different
+  mixtures and independently rotated/scaled papers, splinters and stone chips.
+  Interaction anchors remain clear; clutter is non-solid.
+- The floor uses interlocking irregular flagstones with chipped corners, narrow
+  warm mortar and a flush circular inlay around the table. Four bare limestone
+  surfaces, independent rotations/crops and small tint differences break up
+  repetition. The floor collider is unchanged. Column shafts use separately
+  textured stone drums with offset UVs and varied tones while retaining the
+  original continuous collision shaft. Flush paving receives shadows but is
+  excluded from shadow casters, avoiding false dark seams on the mortar below.
 - Low fireplace undersides no longer enter collision. Native Acch checks roofs
   after gravity and before the ground ray: the thin hearth slabs previously
   became false ceilings beneath Link and could hide the supporting floor.
@@ -54,7 +62,7 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   than 0, which multiplies actor ambient light to zero. This fixes the black
   Link silhouette away from point lights without changing global lighting.
   Warmer, brighter baked wall lighting retains visible wood in the recesses;
-  planar flagstone UVs remove diagonal seams on clipped floor tiles.
+  one planar UV projection per irregular slab avoids diagonal texture seams.
 - A 600-unit-deep stone reveal encloses the native door frame at Z = 3,900
   and joins both corridor walls and the ceiling. Solid wings, a lintel and a visible back wall replace the
   freestanding shutter/black void; its approach and native event goals stay clear.
@@ -63,8 +71,8 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   full seat/body and back volumes. These cover Link's native +30.01-unit wall
   check, which previously passed below the tabletops/seats between thin legs.
   The upper collision surfaces match the tabletop and chair cushion heights.
-- Wall and column textures repeat every 200 world units; shaft UVs wrap around
-  the circumference. Repeats are split into triangles before export, with atlas
+- Wall and column textures retain a 200-unit reference scale; shaft UVs wrap
+  around the circumference and shift independently between stone drums. Repeats are split into triangles before export, with atlas
   padding to prevent sampling adjacent materials or reserved emissive texels.
   The collider retains unsplit surfaces and does not grow with texture repeats.
 - The equipment chest uses the authored east-wall anchor at X = 1640.4135.
@@ -95,7 +103,9 @@ architecture. These shadows follow the fixed lights, not individual moving parti
 The normal **Darknut Arena combat map** keeps its original geometry. No touch UI,
 save format, item reward or title input timing is changed.
 
-![Offline close-up of shelves and floor clutter](../images/survivors-wall-bays.jpg)
+![Offline close-up of empty shelves and floor clutter](../images/survivors-wall-bays.jpg)
+
+![Offline view of irregular paving and the circular inlay](../images/survivors-floor.jpg)
 
 ## Reproduction
 
@@ -115,8 +125,8 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 43,801 visual triangles and 5,840
-collision triangles, with a balanced collision tree. Resources total about 7.2 MiB
+tools or network image generation. There are 42,736 visual triangles and 5,840
+collision triangles, with a balanced collision tree. Resources total about 7 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
 The runtime fixture executes the production implementation with a fake host,
@@ -128,7 +138,7 @@ grounded memorial plinths, front-facing wall/seat/table blocking at native
 body-check heights, clear door-event paths and uniform wall/column UV density.
 The hearth regression follows 630 approach/retreat steps with gravity and the
 native roof-before-ground query order; it fails on the previous exported collider.
-The shadow baker shares one receiver chart between the two triangles of a quad,
+The shadow baker shares one receiver chart across each convex stone slab or quad,
 retaining a 24-unit sample spacing within the 1024-square atlas.
 The runtime test checks that every vertex is submitted across multiple GX batches.
 Shadow tests validate source/asset fingerprints, intensity range, the atlas format,
@@ -145,7 +155,15 @@ tests cannot establish the exact appearance or door-event timing on a device.
 
 Image generation mode: built-in image generation, new opaque image. The original
 output is preserved in `tools/assets/roundtable_materials.png` (1254×1254);
-`materials.rgb565` is its mechanically resized 1024×1024 encoding. No image
-service is needed to reproduce builds. Exact prompt:
+`materials.rgb565` packs its four materials together with four bare-stone variants
+from `tools/assets/roundtable_stone_variants.png` into one 1024×1024 texture.
+Masonry keeps its 512-square region; the other materials occupy padded rectangles.
+No image service is needed to reproduce builds. Original material prompt:
 
 > Use case: stylized-concept. Asset type: original high-detail diffuse game material texture atlas for a medieval circular hall inspired by a warm ruined castle library. Produce a square 1024x1024 bitmap, exactly FOUR equally sized square quadrants, touching at the exact centre, no gutters or labels. Top-left quadrant: weathered warm grey-brown limestone ashlar masonry, varied medium-small rectangular stone courses, crisp fine pits, chipped edges, aged mortar, subtle soot and hairline cracks, delicate carved incisions on a few stones. Top-right: old dark walnut planks, narrow grain, worn scratches, muted aged wood. Bottom-left: deep muted burgundy cloth with fine woven fabric, subtle faded patches. Bottom-right: dark aged bronze with fine understated engraved scroll motifs and patina. Each quadrant a perfectly FLAT orthographic seamlessly tileable material scan, no objects, no perspective, no directional lighting or cast shadows, evenly lit albedo, no text, no border, no watermark. Restrained natural palette, detailed surfaces readable at close range without high-contrast noise. This is a production texture atlas, NOT an image of a room.
+
+
+Additional stone asset: built-in image generation, new opaque image, saved as
+`tools/assets/roundtable_stone_variants.png`. Exact prompt:
+
+> Use case: stylized-concept. Asset type: production diffuse stone texture atlas for a medieval game floor and carved columns. Create one square image with exactly four equal square quadrants, touching at the centre, no gutters. Each quadrant shows a DIFFERENT seamless close-up of a single continuous worn limestone surface, not paving: top-left warm grey limestone with subtle mineral clouds and tiny pores; top-right muted sandy taupe stone with faint thin veins and smooth foot-polished patches; bottom-left cooler grey-brown stone with gentle irregular mottling and a few fine hairline cracks; bottom-right warm ash-grey stone with scattered tiny chips and softened scratches. Keep all four close in brightness and restrained in colour, moderately light rather than black. Fine readable realistic game surface detail, broad natural variation without conspicuous repeated spots. Perfectly flat orthographic albedo scan, even lighting. NO bricks, NO tiles, NO mortar, NO grid, NO borders, NO floor scene, NO perspective, NO cast shadows, NO objects, NO text, NO watermark. Each quadrant itself must tile seamlessly. Original asset.

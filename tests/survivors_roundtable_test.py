@@ -139,15 +139,15 @@ for x in (-120,0,120):
     assert not segment_hits((x,-120,3600),(x,-120,4140),True), 'Door event route must remain clear'
 assert segment_hits((0,150,3500),(0,150,3950),True), 'Door lintel closes overhead gap'
 assert segment_hits((0,-120,4140),(0,-120,4250),True), 'Visible back wall has collision'
-# Atlas repeats must remain within one quadrant, including triangles split at
-# UV repeat boundaries. The GPU uses clamp and cannot repeat a whole atlas.
+# Each textured triangle remains inside one padded material rectangle.
 for start in range(0,len(hall.vertices),3):
     face=hall.vertices[start:start+3]
-    tiles={(int(v[3]*2),int(v[4]*2)) for v in face}
-    assert len(tiles)==1, 'UV triangle crosses into another material'
-    for v in face:
-        if v[3:5] != (1.5/1024,1.5/1024):
-            assert all(.02-1.e-6<=coord%.5<=.48+1.e-6 for coord in v[3:5]), 'Avoid emissive texel bleed'
+    if all(v[3:5]==(1.5/1024,1.5/1024) for v in face):continue
+    candidates=[]
+    for material,(x,y,w,h) in g.MATERIAL_RECTS.items():
+        if all(x+w*.04-1.e-4<=v[3]*1024<=x+w*.96+1.e-4 and
+               y+h*.04-1.e-4<=v[4]*1024<=y+h*.96+1.e-4 for v in face):candidates.append(material)
+    assert len(candidates)==1, 'Triangle crosses material border or padding'
 # A tall column must contain complete vertical repeats of the stone tile at
 # the same world scale as a broad wall, not one tile stretched over the shaft.
 column=g.Hall();column.column(0,0,0,78,830,n=12)
@@ -177,5 +177,5 @@ assert segment_hits((g.HEARTH_POSITION[0]+300,-180,260),(g.HEARTH_POSITION[0]-10
 # Removed table candelabra: nothing remains above the tabletop away from flame.
 for x,z in ((-220,0),(220,0),(0,-240)):
  assert not any(abs(v[0]-x)<20 and abs(v[2]-z)<20 and -295<v[1]<-100 for v in hall.vertices)
-assert all(len(face['points']) in (3,4) for face in hall.receivers)
+assert all(len(face['points'])>=3 for face in hall.receivers)
 assert any(len(face['points'])==4 for face in hall.receivers), 'Share quad shadow charts'

@@ -49,6 +49,7 @@ jobs:
       - name: Test Hyrule Survivors rules and lifecycle
         if: matrix.platform == 'linux-x86_64'
         run: |
+          python3 tests/survivors_hearth_floor_test.py
           python3 tests/survivors_roundtable_test.py
           python3 tests/survivors_roundtable_shadows_test.py
           python3 tests/survivors_roundtable_runtime_test.py

@@ -28,7 +28,7 @@ struct Vertex { float x,y,z,u,v,lu,lv; u8 r,g,b,a; };
 static_assert(sizeof(Vertex)==32);
 std::vector<Vertex> s_vertices;
 std::vector<u8> s_collision;
-alignas(32) u8 s_texture[256*256*2];
+alignas(32) u8 s_texture[1024*1024*2];
 GXTexObj s_textureObject{},s_shadowObject{};
 alignas(32) u8 s_shadow[1024*1024];
 bool s_ready=false;
@@ -36,7 +36,7 @@ bool s_ready=false;
 bool resource(const char* name, std::vector<u8>& out) {
     ResourceBuffer buffer=RESOURCE_BUFFER_INIT;
     if(svc_resource->load(mod_ctx,name,&buffer)!=MOD_OK)return false;
-    if(buffer.data && buffer.size && buffer.size<=4*1024*1024)
+    if(buffer.data && buffer.size && buffer.size<=6*1024*1024)
         out.assign(static_cast<const u8*>(buffer.data),static_cast<const u8*>(buffer.data)+buffer.size);
     svc_resource->free(mod_ctx,&buffer);
     return !out.empty();
@@ -52,7 +52,7 @@ bool load_assets() {
     if(mesh.size()<8 || std::memcmp(mesh.data(),"RTH2",4) ||
        shadow.size()!=sizeof(s_shadow) || texture.size()!=sizeof(s_texture) || collision.size()<52)return false;
     const u32 count=le32(mesh.data()+4);
-    if(count==0 || count%3 || count>100000 || mesh.size()!=8+size_t(count)*sizeof(Vertex))return false;
+    if(count==0 || count%3 || count>150000 || mesh.size()!=8+size_t(count)*sizeof(Vertex))return false;
     std::vector<Vertex> vertices(count);
     for(size_t i=0;i<count;++i) {
         const auto* p=mesh.data()+8+i*32;
@@ -74,7 +74,7 @@ bool load_assets() {
     }
     s_vertices=std::move(vertices);s_collision=std::move(collision);
     std::memcpy(s_texture,texture.data(),sizeof(s_texture));
-    GXInitTexObj(&s_textureObject,s_texture,256,256,GX_TF_RGB565,GX_CLAMP,GX_CLAMP,GX_FALSE);
+    GXInitTexObj(&s_textureObject,s_texture,1024,1024,GX_TF_RGB565,GX_CLAMP,GX_CLAMP,GX_FALSE);
     GXInitTexObjLOD(&s_textureObject,GX_LINEAR,GX_LINEAR,0,0,0,GX_FALSE,GX_FALSE,GX_ANISO_1);
     std::memcpy(s_shadow,shadow.data(),sizeof(s_shadow));
     GXInitTexObj(&s_shadowObject,s_shadow,1024,1024,GX_TF_I8,GX_CLAMP,GX_CLAMP,GX_FALSE);

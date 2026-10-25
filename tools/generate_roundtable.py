@@ -36,7 +36,8 @@ HEARTH_POSITION = (-FRONT+250.0,FLOOR+200.0,0.0)
 CHEST_X = FRONT+25-150
 LIGHT_POSITION = (0.0, FLOOR+350.0, 0.0)
 LIGHTMAP_SIZE = 1024
-LIGHTMAP_STEP = 26.0
+LIGHTMAP_STEP = 24.0
+TEXTURE_SIZE = 1024
 
 
 def add(a, b): return tuple(x+y for x, y in zip(a, b))
@@ -54,7 +55,7 @@ class Hall:
         self.casters = []
         self.light_faces = []
 
-    def triangle(self, points, material=0, tint=(255, 255, 255), solid=True, visible=True, uv=None):
+    def triangle(self, points, material=0, tint=(255, 255, 255), solid=True, visible=True, uv=None, shadow_face=None):
         p = [self.transform(v) for v in points]
         normal = cross(sub(p[1], p[0]), sub(p[2], p[0]))
         n = length(normal)
@@ -67,16 +68,7 @@ class Hall:
         face_id = -1
         if material != 4:
             self.casters.append(tuple(p))
-            u = tuple(v/length(sub(p[1],p[0])) for v in sub(p[1],p[0]))
-            v = cross(tuple(x/n for x in normal),u)
-            dot=lambda a,b:sum(x*y for x,y in zip(a,b))
-            xs=[dot(sub(q,p[0]),u) for q in p]
-            ys=[dot(sub(q,p[0]),v) for q in p]
-            origin=add(p[0],tuple(x*min(xs)+y*min(ys) for x,y in zip(u,v)))
-            width=max(2,math.ceil((max(xs)-min(xs))/LIGHTMAP_STEP)+1)
-            height=max(2,math.ceil((max(ys)-min(ys))/LIGHTMAP_STEP)+1)
-            face_id=len(self.receivers)
-            self.receivers.append({'points':p,'origin':origin,'u':u,'v':v,'w':width+2,'h':height+2})
+            face_id=self.receiver(p) if shadow_face is None else shadow_face
         if uv is None:
             uv = ((.03, .03), (.97, .03), (.97, .97))
         # Indirect room lighting plus warm local contributions from both fires.
@@ -90,18 +82,22 @@ class Hall:
                 hearth_warm=.22*max(0,1-hearth_distance/900)
                 light = (shade+warm+hearth_warm, shade+warm*.6+hearth_warm*.45,
                          shade+warm*.15+hearth_warm*.10)
-                color = tuple(min(255, round(t*c)) for t, c in zip(tint, light))
+                dirt=1.0
+                if FLOOR<=pos[1]<=FLOOR+1 and normal[1]>0:
+                    radius=math.hypot(pos[0],pos[2])
+                    dirt=1-.24*max(0,1-abs(radius-1450)/380)*(0.55+.45*math.sin(pos[0]*.011+pos[2]*.007)**2)
+                color = tuple(min(255, round(t*c*dirt)) for t, c in zip(tint, light))
                 tile = min(material, 3)
                 # Keep bilinear samples inside their atlas quadrant and clear
                 # of the reserved 4x4 emissive texels in the stone corner.
                 u = (tile % 2 + .04 + tex[0]*.92)*.5
                 v = (tile // 2 + .04 + tex[1]*.92)*.5
-                if material == 4:
-                    u=v=1.5/256
-                    color=tint
+                if material >= 4:
+                    u=v=1.5/TEXTURE_SIZE
+                    if material == 4:color=tint
                 self.vertices.append((*pos, u, v, 0.0, 0.0, *color, 255))
                 self.light_faces.append(face_id)
-        if material == 4:
+        if material >= 4:
             emit(p, uv)
             return
         # Clip the textured triangle at integer UV boundaries. Each resulting
@@ -127,6 +123,21 @@ class Hall:
                     if length(cross(sub(points[1],points[0]),sub(points[2],points[0])))<.001:continue
                     emit(points,[(v[3]-col,v[4]-row) for v in face])
 
+    def receiver(self,p):
+        # Both triangles of a quad share one chart, preserving shadow density
+        # while avoiding a second rectangular allocation for the same surface.
+        edge=sub(p[1],p[0]);normal=cross(edge,sub(p[2],p[0]))
+        u=tuple(x/length(edge) for x in edge)
+        v=cross(tuple(x/length(normal) for x in normal),u)
+        dot=lambda a,b:sum(x*y for x,y in zip(a,b))
+        xs=[dot(sub(q,p[0]),u) for q in p];ys=[dot(sub(q,p[0]),v) for q in p]
+        origin=add(p[0],tuple(x*min(xs)+y*min(ys) for x,y in zip(u,v)))
+        w=max(2,math.ceil((max(xs)-min(xs))/LIGHTMAP_STEP)+1)+2
+        h=max(2,math.ceil((max(ys)-min(ys))/LIGHTMAP_STEP)+1)+2
+        result=len(self.receivers)
+        self.receivers.append({'points':p,'origin':origin,'u':u,'v':v,'w':w,'h':h})
+        return result
+
     def quad(self, a, b, c, d, uv=None, **kw):
         if uv is None:
             # Measure after the object transform: scaled furniture must not
@@ -135,10 +146,13 @@ class Hall:
             width=max(length(sub(pb,pa)),length(sub(pc,pd)))/TEXEL_SPAN
             height=max(length(sub(pd,pa)),length(sub(pc,pb)))/TEXEL_SPAN
             uv=((0,0),(width,0),(width,height),(0,height))
+        points=[self.transform(p) for p in (a,b,c,d)]
+        if kw.get('visible',True) and kw.get('material',0)!=4 and length(cross(sub(points[1],points[0]),sub(points[2],points[0])))>.001:
+            kw['shadow_face']=self.receiver(points)
         self.triangle((a,b,c), uv=uv[:3], **kw)
         self.triangle((a,c,d), uv=(uv[0],uv[2],uv[3]), **kw)
 
-    def box(self, x, y, z, w, h, d, **kw):
+    def box(self, x, y, z, w, h, d, bottom_solid=True, **kw):
         a=(x-w/2,y,z-d/2); b=(x+w/2,y,z-d/2)
         c=(x+w/2,y,z+d/2); e=(x-w/2,y,z+d/2)
         up=lambda p:add(p,(0,h,0))
@@ -147,7 +161,9 @@ class Hall:
         self.quad(e,c,up(c),up(e),**kw)
         self.quad(a,e,up(e),up(a),**kw)
         self.quad(up(a),up(e),up(c),up(b),**kw)
-        self.quad(a,b,c,e,**kw)
+        bottom=dict(kw)
+        if not bottom_solid:bottom["solid"]=False
+        self.quad(a,b,c,e,**bottom)
 
     def column(self,x,y,z,r,h,top=None,n=12,**kw):
         top=r if top is None else top
@@ -220,6 +236,7 @@ class Hall:
                     material=1,solid=False,tint=(150,104,60))
 
     def fireplace(self):
+        first_collision=len(self.collision)
         self.local(-FRONT+110,0,-math.pi/2)
         # Shallow, grounded hearth with a chamfered-looking stepped apron.
         self.box(0,0,-55,680,14,340,tint=(167,153,128))
@@ -273,7 +290,95 @@ class Hall:
             x=((i*67)%283)-141;z=((i*41)%129)-100
             self.column(x,43,z,5+(i%4)*2,4+(i%3),top=3,n=5,material=4,
                 tint=((220,76,12) if i%3 else (255,151,34)),solid=False)
+        # Low decorative undersides are not ceilings. Native Acch clamps its
+        # ground ray against RoofChk; stacked 14-unit slabs otherwise present
+        # a false roof below Link's body and can drive him beneath the floor.
+        self.collision[first_collision:]=[p for p in self.collision[first_collision:]
+            if not (cross(sub(p[1],p[0]),sub(p[2],p[0]))[1]<-.001 and max(v[1] for v in p)<FLOOR+180)]
         self.reset()
+
+    def vessel(self,x,y,z,r=19,h=55,material=0):
+        self.column(x,y,z,r*.65,h*.18,top=r,n=6,material=material,solid=False,tint=(171,153,125))
+        self.column(x,y+h*.18,z,r,h*.55,top=r*.72,n=6,material=material,solid=False,tint=(171,153,125))
+        self.column(x,y+h*.73,z,r*.72,h*.27,top=r*.48,n=6,material=material,solid=False,tint=(186,166,128))
+
+    def book(self,x,y,z,w,h,seed):
+        # Unequal bindings, recessed page edges and narrow bronze spine bands.
+        colors=((110,57,43),(67,83,70),(97,76,42),(84,58,69))
+        self.box(x,y,z,w,h,45,material=5,tint=(173,158,122),solid=False)
+        for side in (-1,1):self.box(x+side*w/2,y,z,3,h+3,51,material=5,tint=colors[seed%4],solid=False)
+        self.box(x,y,z-25,w+3,h+3,4,material=5,tint=colors[seed%4],solid=False)
+        for yy in (y+12,y+h-12):
+            self.quad((x-w/2,yy,z-27.2),(x+w/2,yy,z-27.2),
+                (x+w/2,yy+3,z-27.2),(x-w/2,yy+3,z-27.2),material=3,solid=False)
+
+    def wall_bay(self,index,width):
+        # Structural backing stays behind the recesses. Each bay projects into
+        # the room by at most 140 units, away from every interaction route.
+        shelving=index in (1,5,9,13)
+        niches=index in (3,7,11,15)
+        self.box(0,0,12,width-130,760,12,material=0 if niches else 1,
+            bottom_solid=False,tint=(145,137,116) if niches else (168,151,126))
+        if shelving:
+            self.box(0,0,-52,460,638,138,visible=False,bottom_solid=False)
+            for x in (-216,216):self.box(x,0,-50,28,652,126,material=1,solid=False)
+            for y in (60,245,430,615):
+                self.box(0,y,-57,458,17,145,material=1,solid=False)
+                self.box(0,y+2,-132,476,15,12,material=3,tint=(154,125,81),solid=False)
+            for row,y in enumerate((77,262,447)):
+                for j in range(6):
+                    self.book(-165+j*43,y,-64,21+(j*7+index)%12,
+                        76+(j*13+row*17)%52,j+row+index)
+                self.vessel(143,y,-66,22,64,3 if row%2 else 0)
+            self.box(0,652,-50,495,25,158,material=1,solid=False)
+        elif niches:
+            # Three deep alcoves with stone shelves and curved archivolts.
+            for x in (-238,238):self.box(x,0,-45,85,775,140,bottom_solid=False)
+            for row,y in enumerate((65,305,545)):
+                self.box(0,y,-43,402,22,139,bottom_solid=False)
+                self.box(0,y+22,4,390,175,8,tint=(78,72,59),solid=False)
+                for j in range(8):
+                    a=j*math.pi/8;b=(j+1)*math.pi/8
+                    pt=lambda r,t,z:(r*math.cos(t),y+78+r*.7*math.sin(t),z)
+                    self.quad(pt(177,a,-116),pt(177,b,-116),pt(199,b,-116),pt(199,a,-116),solid=False)
+                    self.quad(pt(177,a,-116),pt(177,a,0),pt(177,b,0),pt(177,b,-116),solid=False,tint=(137,125,103))
+                self.vessel(-72,y+22,-47,25,73)
+                self.vessel(40,y+22,-44,18,52,3)
+                for j in range(3):self.box(108,y+22+j*7,-43,51-j*5,6,35,material=5,tint=(138,117,81),solid=False)
+        elif index not in (0,4,12):
+            # Layered wall panels and projecting stone buttresses break up the
+            # remaining bays without blocking memorials or the equipment chest.
+            for x in (-185,185):self.box(x,0,-25,36,700,60,bottom_solid=False)
+            for y in (120,400,680):self.box(0,y,-16,350,18,40,material=3,tint=(143,119,78),solid=False)
+        if index not in (0,12):
+            # Upper stone course, alternating corbels and inset relief panels.
+            self.box(0,790,-18,width-145,32,65,solid=False)
+            for x in (-190,0,190):
+                self.box(x,824,-8,140,104,25,tint=(147,135,111),solid=False)
+                self.box(x,812,-26,154,14,55,solid=False)
+                self.box(x,928,-26,154,14,55,solid=False)
+                self.box(x,970,-25,40,30,78,solid=False)
+
+    def floor_clutter(self):
+        # Repeatable little clusters near wall bays. These thin decorations
+        # never enter the DZB or make Link climb floating collision surfaces.
+        for i in (1,2,3,5,6,7,8,9,10,14,15):
+            angle=i*TAU/SIDES+.06;radius=RADIUS-390-(i%3)*45
+            x=radius*math.sin(angle);z=radius*math.cos(angle)
+            self.local(x,z,angle+.25)
+            for j in range(3):
+                px=-75+j*53;pz=(j*47+i*13)%95-45
+                self.quad((px-18,1.1,pz-25),(px-16,1.1,pz+27),(px+21,1.1,pz+22),(px+17,1.1,pz-24),
+                    material=5,tint=(149+j*9,133+j*7,96+j*5),solid=False)
+                for line in range(4):
+                    yy=1.2;zz=pz-12+line*6
+                    self.quad((px-11,yy,zz),(px-11,yy,zz+1),(px+9-line,yy,zz+1),(px+9-line,yy,zz),
+                        material=5,tint=(77,70,54),solid=False)
+            for j in range(2):self.box(-48+j*105,1,62-j*105,84,4,16,material=1,tint=(143,121,90),solid=False)
+            for j in range(4):
+                self.column(-87+(j*59)%164,.7,-72+(j*37)%130,7+(j%3)*3,5+j*2,top=2,n=5,
+                    tint=(141,134,119),solid=False)
+            self.reset()
 
     def build(self):
         boundary=[(RADIUS*math.sin((i+.5)*TAU/SIDES),FLOOR,RADIUS*math.cos((i+.5)*TAU/SIDES)) for i in range(SIDES)]
@@ -310,8 +415,7 @@ class Hall:
             self.local(FRONT*math.sin(angle),FRONT*math.cos(angle),angle)
             if i:
                 self.quad((width/2,0,25),(-width/2,0,25),(-width/2,1200,25),(width/2,1200,25),tint=(180,175,160))
-                # Dark recessed panel visible through a carved arch.
-                self.box(0,0,12,width-130,760,12,material=1,solid=True,tint=(210,195,175))
+                self.wall_bay(i,width)
             self.arch(width-175,460,920)
             self.box(0,1040,0,width+10,100,100,material=1,solid=False)
             self.box(0,1000,-8,width+10,30,140,material=3,solid=False)
@@ -360,18 +464,6 @@ class Hall:
         for i in range(12):
             angle=i*TAU/12
             self.chair(460*math.sin(angle),460*math.cos(angle),angle+math.pi)
-        # Smaller candle holders sit directly on the 100.5-unit-high tabletop.
-        # Their proportions are independent of the broad table's horizontal scale.
-        for x,z in ((-220,0),(220,0),(0,-240)):
-            self.local(x,z,0,scale=(.4,.4,.4))
-            base=100.5/.4
-            self.column(0,base,0,37,15,material=3,solid=False)
-            self.column(0,base+15,0,10,105,material=3,solid=False)
-            self.box(0,base+108,0,140,12,12,material=3,solid=False)
-            for dx in (-60,0,60):
-                self.column(dx,base+120,0,8,45,material=0,tint=(255,226,164),solid=False,n=6)
-                self.column(dx,base+165,0,9,30,top=0,material=4,tint=(255,212,103),solid=False,n=6)
-            self.reset()
         # Recessed masonry firebox, layered carved surround and a real log bed.
         self.fireplace()
         # Burgundy banners and small stylized robed memorials in rear bays.
@@ -386,6 +478,7 @@ class Hall:
             self.box(-180,470,50,135,420,5,material=2,solid=False)
             self.box(-180,890,45,175,12,20,material=3,solid=False)
             self.reset()
+        self.floor_clutter()
         # Native south doorway at z=3900: retain its event and collision
         # footprint. The approach ramp meets its authored floor y=-250.
         for i in range(12):
@@ -512,12 +605,12 @@ def write_assets():
 
 def texture(path):
     from PIL import Image
-    im=Image.open(path).convert('RGB').resize((256,256),Image.Resampling.LANCZOS)
+    im=Image.open(path).convert('RGB').resize((TEXTURE_SIZE,TEXTURE_SIZE),Image.Resampling.LANCZOS)
     for y in range(4):
         for x in range(4):im.putpixel((x,y),(255,255,255))
     data=bytearray()
-    for by in range(0,256,4):
-        for bx in range(0,256,4):
+    for by in range(0,TEXTURE_SIZE,4):
+        for bx in range(0,TEXTURE_SIZE,4):
             for y in range(4):
                 for x in range(4):
                     r,g,b=im.getpixel((bx+x,by+y))

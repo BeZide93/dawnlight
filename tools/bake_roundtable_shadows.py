@@ -12,11 +12,19 @@ def main():
     for face in hall.receivers:
         yy,xx=np.mgrid[0:face['h'],0:face['w']]
         points=np.array(face['origin'])+(xx[...,None]-1)*g.LIGHTMAP_STEP*np.array(face['u'])+(yy[...,None]-1)*g.LIGHTMAP_STEP*np.array(face['v'])
-        a,b,c=np.array(face['points']);e1=b-a;e2=c-a;delta=points-a
-        d00=e1@e1;d01=e1@e2;d11=e2@e2;den=d00*d11-d01*d01
-        v=(d11*(delta@e1)-d01*(delta@e2))/den;w=(d00*(delta@e2)-d01*(delta@e1))/den
-        bary=np.maximum(np.stack((1-v-w,v,w),-1),0);bary/=bary.sum(-1)[...,None]
-        points=bary@np.array(face['points']) # extend edge lighting into chart padding
+        polygon=np.array(face['points']);closest=None;best=None
+        for j in range(1,len(polygon)-1):
+            a,b,c=polygon[[0,j,j+1]];e1=b-a;e2=c-a;delta=points-a
+            d00=e1@e1;d01=e1@e2;d11=e2@e2;den=d00*d11-d01*d01
+            if abs(den)<1.e-8:continue # a cone quad can have a repeated tip
+            v=(d11*(delta@e1)-d01*(delta@e2))/den;w=(d00*(delta@e2)-d01*(delta@e1))/den
+            bary=np.maximum(np.stack((1-v-w,v,w),-1),0);bary/=bary.sum(-1)[...,None]
+            candidate=bary@np.array((a,b,c));distance=((candidate-points)**2).sum(-1)
+            if closest is None:closest=candidate;best=distance
+            else:
+                select=distance<best;closest[select]=candidate[select];best=np.minimum(best,distance)
+        assert closest is not None and np.isfinite(closest).all(), "Invalid shadow receiver"
+        points=closest # extend polygon edge lighting into chart padding
         block=np.empty(xx.size,dtype=[('pixel','<u4'),('point','<f4',3)])
         block['pixel']=((yy+face['y'])*size+xx+face['x']).ravel();block['point']=points.reshape(-1,3)
         samples.append(block)

@@ -13,7 +13,7 @@ assert mesh[:4]==b'RTH2'
 assert mesh==b'RTH2'+struct.pack('<I',len(hall.vertices))+b''.join(struct.pack('<7f4B',*v) for v in hall.vertices)
 data=(g.OUT/'hall.dzb').read_bytes()
 assert data==g.dzb(hall), 'Regenerate collision from the same authoring source'
-assert len((g.OUT/'materials.rgb565').read_bytes())==256*256*2
+assert len((g.OUT/'materials.rgb565').read_bytes())==1024*1024*2
 vn,vo,tn,to,bn,bo,nn,no,gn,go,inf,io,flags=struct.unpack_from('>13I',data)
 assert flags==0 and gn==3 and inf==1
 vertices=[struct.unpack_from('>3f',data,vo+i*12) for i in range(vn)]
@@ -128,7 +128,7 @@ for i in range(1,g.SIDES):
         return (g.FRONT*math.sin(angle)+x*math.cos(angle)+z*math.sin(angle),
                 g.FLOOR+129.99,
                 g.FRONT*math.cos(angle)-x*math.sin(angle)+z*math.cos(angle))
-    assert segment_hits(wall_point(0,-80),wall_point(0,10),True), 'Panel collision at its visible front'
+    assert segment_hits(wall_point(0,-230),wall_point(0,10),True), 'Panel collision at its visible front'
     pillar_x=(2*g.HALF_DOOR-175)/2+38
     assert segment_hits(wall_point(pillar_x,-80),wall_point(pillar_x,0),True), 'Arch pilaster must be solid'
 # Door wings cover the full corridor width, but leave native interaction and
@@ -146,7 +146,7 @@ for start in range(0,len(hall.vertices),3):
     tiles={(int(v[3]*2),int(v[4]*2)) for v in face}
     assert len(tiles)==1, 'UV triangle crosses into another material'
     for v in face:
-        if v[3:5] != (1.5/256,1.5/256):
+        if v[3:5] != (1.5/1024,1.5/1024):
             assert all(.02-1.e-6<=coord%.5<=.48+1.e-6 for coord in v[3:5]), 'Avoid emissive texel bleed'
 # A tall column must contain complete vertical repeats of the stone tile at
 # the same world scale as a broad wall, not one tile stretched over the shaft.
@@ -162,7 +162,7 @@ for surface in (column,wall):
                     span=abs(a[1]-b[1])/(abs(a[4]-b[4])*2/.92)
                     assert abs(span-g.TEXEL_SPAN)<.01, 'Unequal vertical texture density'
 assert all(0<=v[5]<1 and 0<=v[6]<1 for v in hall.vertices), 'Valid shadow atlas coordinates'
-assert len(hall.vertices)<=100000, 'Stay within renderer resource bounds'
+assert len(hall.vertices)<=150000, 'Stay within renderer resource bounds'
 
 print(f'Roundtable: {tn} native collision triangles, valid tree/room ancestry, clear hub routes')
 
@@ -173,3 +173,9 @@ assert abs(math.atan2(-g.ZELDA_X,-g.ZELDA_Z)-g.ZELDA_YAW*math.pi/32768)<.0001
 # Recess is open above the log bed; jambs and hearth remain solid.
 assert not segment_hits((g.HEARTH_POSITION[0]+300,-180,0),(g.HEARTH_POSITION[0]-100,-180,0),True)
 assert segment_hits((g.HEARTH_POSITION[0]+300,-180,260),(g.HEARTH_POSITION[0]-100,-180,260),True)
+
+# Removed table candelabra: nothing remains above the tabletop away from flame.
+for x,z in ((-220,0),(220,0),(0,-240)):
+ assert not any(abs(v[0]-x)<20 and abs(v[2]-z)<20 and -295<v[1]<-100 for v in hall.vertices)
+assert all(len(face['points']) in (3,4) for face in hall.receivers)
+assert any(len(face['points'])==4 for face in hall.receivers), 'Share quad shadow charts'

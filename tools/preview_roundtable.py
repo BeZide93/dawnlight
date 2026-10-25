@@ -8,16 +8,16 @@ from PIL import Image
 
 ROOT=Path(__file__).resolve().parents[1]
 
-def render(output,eye=(1100,430,1400),target=(0,-100,0),width=1280,height=800):
+def render(output,eye=(850,360,1100),target=(0,-100,0),width=1280,height=800):
     mesh=(ROOT/'res/survivors_roundtable/hall.mesh').read_bytes()
     count=struct.unpack_from('<I',mesh,4)[0]
     dtype=np.dtype([('position','<f4',3),('uv','<f4',2),('light_uv','<f4',2),('color','u1',4)])
     vertices=np.frombuffer(mesh,dtype=dtype,count=count,offset=8)
-    texture=np.zeros((256,256,3),np.float32)
+    texture=np.zeros((1024,1024,3),np.float32)
     raw=(ROOT/'res/survivors_roundtable/materials.rgb565').read_bytes()
     offset=0
-    for by in range(0,256,4):
-        for bx in range(0,256,4):
+    for by in range(0,1024,4):
+        for bx in range(0,1024,4):
             for y in range(4):
                 for x in range(4):
                     p=struct.unpack_from('>H',raw,offset)[0];offset+=2
@@ -53,7 +53,7 @@ def render(output,eye=(1100,430,1400),target=(0,-100,0),width=1280,height=800):
         weights/=np.maximum(inverse[...,None],1.e-9)
         uv=weights@vertices['uv'][start:start+3]
         color=weights@vertices['color'][start:start+3,:3]/255
-        tex=np.clip((uv*256).astype(int),0,255)
+        tex=np.clip((uv*1024).astype(int),0,1023)
         luv=weights@vertices['light_uv'][start:start+3]
         lightxy=np.clip(luv*1024-.5,0,1023);lo=lightxy.astype(int);hi=np.minimum(lo+1,1023);fraction=lightxy-lo
         light=(lightmap[lo[...,1],lo[...,0]]*(1-fraction[...,0])+lightmap[lo[...,1],hi[...,0]]*fraction[...,0])*(1-fraction[...,1])+(lightmap[hi[...,1],lo[...,0]]*(1-fraction[...,0])+lightmap[hi[...,1],hi[...,0]]*fraction[...,0])*fraction[...,1]

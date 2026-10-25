@@ -11,8 +11,8 @@ an original generated material atlas, not extracted Elden Ring assets.
 This preview renders the shipped mesh and texture. It is **not an in-game
 screenshot**: Link, Zelda, the equipment chest and the floating golden flame
 are added by the game. The former central ceremonial bowl has been removed. Fireplace fire
-and point lighting are native effects; candle flames and coals are simple mesh
-details. The hall combines baked vertex lighting with a static soft-shadow lightmap
+and point lighting are native effects; coals are simple mesh details. The handmade
+table candle holders have been removed, leaving the floating centre flame. The hall combines baked vertex lighting with a static soft-shadow lightmap
 cast from the central flame and weaker fireplace onto the floor, furniture and
 architecture. These shadows follow the fixed lights, not individual moving particles.
 
@@ -39,8 +39,17 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   Its point light has an 850-unit range versus the table flame's 1,800.
 
 - The table is 100.5 units high and 361.8 units in radius; chair seats are
-  72.05 units high (including cushions) and the full chair height is 187. Table settings and smaller
-  candle holders sit on the tabletop. Memorial plinths extend to the floor.
+  72.05 units high (including cushions) and the full chair height is 187. Table settings sit on the tabletop. Memorial plinths extend to the floor.
+- Wall bays alternate between filled walnut bookcases, three-tier arched stone
+  niches and layered panels with projecting piers, corbels and relief bands.
+  Unequal books, bronze vessels and small stacks break up the shelves. Papers,
+  broken boards, chips and subtle dirt collect near the perimeter; these thin
+  details are non-solid and keep interaction routes clear.
+- Low fireplace undersides no longer enter collision. Native Acch checks roofs
+  after gravity and before the ground ray: the thin hearth slabs previously
+  became false ceilings beneath Link and could hide the supporting floor.
+  The stepped tops and side walls remain solid. New shelf/cabinet bases also
+  omit their bottom collider faces.
 - Floor brightness is explicitly 255 (inherit native room lighting), rather
   than 0, which multiplies actor ambient light to zero. This fixes the black
   Link silhouette away from point lights without changing global lighting.
@@ -86,11 +95,14 @@ architecture. These shadows follow the fixed lights, not individual moving parti
 The normal **Darknut Arena combat map** keeps its original geometry. No touch UI,
 save format, item reward or title input timing is changed.
 
+![Offline close-up of shelves and floor clutter](../images/survivors-wall-bays.jpg)
+
 ## Reproduction
 
 ```sh
 python3 tools/generate_roundtable.py --texture tools/assets/roundtable_materials.png
 python3 tools/bake_roundtable_shadows.py
+python3 tests/survivors_hearth_floor_test.py
 python3 tests/survivors_roundtable_test.py
 python3 tests/survivors_roundtable_shadows_test.py
 python3 tests/survivors_roundtable_runtime_test.py
@@ -99,12 +111,12 @@ python3 tools/preview_roundtable.py /tmp/roundtable.png
 ```
 
 The generator emits a little-endian vertex stream, big-endian native DZB and a
-256×256 tiled RGB565 atlas. The shadow baker needs NumPy and a C++20 compiler;
+1024×1024 tiled RGB565 atlas. The shadow baker needs NumPy and a C++20 compiler;
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 29,451 visual triangles and 5,554
-collision triangles, with a balanced collision tree. Resources total about 4 MiB
+tools or network image generation. There are 43,801 visual triangles and 5,840
+collision triangles, with a balanced collision tree. Resources total about 7.2 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
 The runtime fixture executes the production implementation with a fake host,
@@ -114,6 +126,10 @@ deletion and mod shutdown. Geometry tests verify reproducibility, native table
 bounds/tree ancestry, winding, inherited floor lighting, furniture heights,
 grounded memorial plinths, front-facing wall/seat/table blocking at native
 body-check heights, clear door-event paths and uniform wall/column UV density.
+The hearth regression follows 630 approach/retreat steps with gravity and the
+native roof-before-ground query order; it fails on the previous exported collider.
+The shadow baker shares one receiver chart between the two triangles of a quad,
+retaining a 24-unit sample spacing within the 1024-square atlas.
 The runtime test checks that every vertex is submitted across multiple GX batches.
 Shadow tests validate source/asset fingerprints, intensity range, the atlas format,
 ray occlusion, double-sided blockers, self-shadow bias and the weaker secondary
@@ -127,19 +143,9 @@ tests cannot establish the exact appearance or door-event timing on a device.
 
 ## Material source
 
-Image generation mode: new opaque image. The checked-in source is a 256×256
-downsample of the generated atlas; `materials.rgb565` is its mechanical encoding.
-Prompt:
+Image generation mode: built-in image generation, new opaque image. The original
+output is preserved in `tools/assets/roundtable_materials.png` (1254×1254);
+`materials.rgb565` is its mechanically resized 1024×1024 encoding. No image
+service is needed to reproduce builds. Exact prompt:
 
-> Create an original game environment material texture atlas, square 1024x1024
-> image, opaque. Exactly four equally sized square quadrants, no gaps or frames.
-> Top-left: warm grey-brown worn medieval limestone ashlar blocks with subtle
-> fine cracks, joints, rough pores. Top-right: dark aged walnut wood grain,
-> boards, restrained scratches, no furniture. Bottom-left: muted deep burgundy
-> woven cloth, slightly faded, evenly spread weave, no folds. Bottom-right:
-> aged warm bronze metal surface, delicate engraved concentric scrolls, gentle
-> patina. Each quadrant perfectly flat orthographic material scan, no
-> perspective, no cast shadows, no directional highlights, diffuse albedo only.
-> Consistent low contrast, natural realistic painted game texture, muted warm
-> palette, no letters, no text, no objects, no logos. These textures will be
-> tiled over a newly authored low-poly medieval fantasy hall.
+> Use case: stylized-concept. Asset type: original high-detail diffuse game material texture atlas for a medieval circular hall inspired by a warm ruined castle library. Produce a square 1024x1024 bitmap, exactly FOUR equally sized square quadrants, touching at the exact centre, no gutters or labels. Top-left quadrant: weathered warm grey-brown limestone ashlar masonry, varied medium-small rectangular stone courses, crisp fine pits, chipped edges, aged mortar, subtle soot and hairline cracks, delicate carved incisions on a few stones. Top-right: old dark walnut planks, narrow grain, worn scratches, muted aged wood. Bottom-left: deep muted burgundy cloth with fine woven fabric, subtle faded patches. Bottom-right: dark aged bronze with fine understated engraved scroll motifs and patina. Each quadrant a perfectly FLAT orthographic seamlessly tileable material scan, no objects, no perspective, no directional lighting or cast shadows, evenly lit albedo, no text, no border, no watermark. Restrained natural palette, detailed surfaces readable at close range without high-contrast noise. This is a production texture atlas, NOT an image of a room.

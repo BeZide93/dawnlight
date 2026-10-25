@@ -187,7 +187,7 @@ class Hall:
         if not bottom_solid:bottom["solid"]=False
         self.quad(a,b,c,e,**bottom)
 
-    def column(self,x,y,z,r,h,top=None,n=12,uv_offset=(0,0),**kw):
+    def column(self,x,y,z,r,h,top=None,n=12,uv_offset=(0,0),cap=True,**kw):
         top=r if top is None else top
         for i in range(n):
             a=i*TAU/n; b=(i+1)*TAU/n
@@ -203,7 +203,7 @@ class Hall:
             height=length(sub(self.transform((x,y+h,z)),self.transform((x,y,z))))/span
             self.quad(p,q,v,u,uv=tuple((u+uv_offset[0],v+uv_offset[1]) for u,v in
                 ((i*arc/n,0),((i+1)*arc/n,0),((i+1)*arc/n,height),(i*arc/n,height))),**kw)
-            self.triangle(((x,y+h,z),u,v),uv=((.5,.5),(.5+.46*math.sin(a),.5+.46*math.cos(a)),(.5+.46*math.sin(b),.5+.46*math.cos(b))),**kw)
+            if cap:self.triangle(((x,y+h,z),u,v),uv=((.5,.5),(.5+.46*math.sin(a),.5+.46*math.cos(a)),(.5+.46*math.sin(b),.5+.46*math.cos(b))),**kw)
 
     def local(self,x,z,angle,scale=(1,1,1)):
         sine=math.sin(angle); cosine=math.cos(angle)
@@ -328,23 +328,67 @@ class Hall:
         self.box(0,0,12,width-130,760,12,material=0 if niches else 1,
             bottom_solid=False,tint=(145,137,116) if niches else (168,151,126))
         if shelving:
+            # Walnut joinery echoes the mantel: recessed panels, moulded rails,
+            # stepped cornice and small corbels. Keep all compartments empty.
             self.box(0,0,-52,460,638,138,visible=False,bottom_solid=False)
-            for x in (-216,216):self.box(x,0,-50,28,652,126,material=1,solid=False)
+            wood=dict(material=1,solid=False,tint=(194,166,128))
+            dark=dict(material=1,solid=False,tint=(115,92,66))
+            for x in (-216,216):
+                self.box(x,0,-50,28,652,126,**wood)
+                self.box(x,34,-117,42,594,18,**wood)
+                self.box(x,80,-128,19,488,8,**dark)
+                for dx in (-13,13):self.box(x+dx,74,-134,5,501,9,**wood)
+                for y,w,h,d in ((0,62,26,156),(26,48,18,143),
+                                  (610,49,15,144),(625,62,22,158)):
+                    self.box(x,y,-51,w,h,d,**wood)
             for y in (60,245,430,615):
-                self.box(0,y,-57,458,17,145,material=1,solid=False)
-                self.box(0,y+2,-132,476,15,12,material=3,tint=(154,125,81),solid=False)
-            self.box(0,652,-50,495,25,158,material=1,solid=False)
+                # Separate recessed back panels give the grain a smaller scale.
+                if y<615:
+                    for x in (-128,0,128):
+                        self.box(x,y+31,-3,116,147,10,**dark)
+                        for dx in (-58,58):self.box(x+dx,y+24,-13,7,160,13,**wood)
+                    for py in (y+24,y+177):self.box(0,py,-13,390,7,13,**wood)
+                self.box(0,y,-57,458,17,145,**wood)
+                for py,w,h,d in ((y-5,470,8,15),(y+3,476,8,19),(y+11,465,9,12)):
+                    self.box(0,py,-132,w,h,d,**wood)
+                for x in (-182,182):
+                    for step in range(3):
+                        self.box(x,y-36+step*10,-104-step*8,24+step*4,10,20+step*10,**wood)
+            for y,w,h,d in ((647,480,12,153),(659,508,16,178),(675,492,12,164)):
+                self.box(0,y,-50,w,h,d,**wood)
+            for x in range(-180,181,45):self.box(x,635,-128,15,15,17,**wood)
         elif niches:
-            # Three deep alcoves with stone shelves and curved archivolts.
-            for x in (-238,238):self.box(x,0,-45,85,775,140,bottom_solid=False)
+            # Warm carved limestone matches the fireplace rather than the cool
+            # smooth shaft atlas. Layered archivolts have real stone joints.
+            stone=dict(solid=False,tint=(212,196,165))
+            for x in (-238,238):
+                self.box(x,0,-45,85,775,140,bottom_solid=False,tint=(194,175,144))
+                for y,w,h,d in ((0,110,26,159),(26,96,18,150),(746,105,18,158),(764,120,18,171)):
+                    self.box(x,y,-49,w,h,d,**stone)
+                for y in (116,356,596):
+                    self.box(x,y,-117,55,112,12,tint=(133,119,96),solid=False)
+                    for dx in (-23,23):self.box(x+dx,y-4,-126,9,120,14,**stone)
             for row,y in enumerate((65,305,545)):
-                self.box(0,y,-43,402,22,139,bottom_solid=False)
-                self.box(0,y+22,4,390,175,8,tint=(78,72,59),solid=False)
-                for j in range(8):
-                    a=j*math.pi/8;b=(j+1)*math.pi/8
-                    pt=lambda r,t,z:(r*math.cos(t),y+78+r*.7*math.sin(t),z)
-                    self.quad(pt(177,a,-116),pt(177,b,-116),pt(199,b,-116),pt(199,a,-116),solid=False)
-                    self.quad(pt(177,a,-116),pt(177,a,0),pt(177,b,0),pt(177,b,-116),solid=False,tint=(137,125,103))
+                self.box(0,y,-43,402,22,139,bottom_solid=False,tint=(194,175,144))
+                self.box(0,y+22,4,390,175,8,tint=(88,75,61),solid=False)
+                for py,w,h,d in ((y-12,432,12,160),(y,418,10,151),(y+22,408,8,147)):
+                    self.box(0,py,-49,w,h,d,**stone)
+                for side in (-1,1):
+                    self.box(side*187,y+30,-57,27,48,120,**stone)
+                    self.box(side*187,y+69,-63,45,13,134,**stone)
+                for j in range(11):
+                    a=j*math.pi/11+.006;b=(j+1)*math.pi/11-.006
+                    pt=lambda r,t,z:(r*math.cos(t),y+78+r*.65*math.sin(t),z)
+                    for inner,outer,front in ((173,204,-119),(204,214,-126)):
+                        tone=202+(j*7+row*5)%17
+                        kw=dict(solid=False,tint=(tone,tone-17,tone-44))
+                        self.quad(pt(inner,a,front),pt(inner,b,front),pt(outer,b,front),pt(outer,a,front),**kw)
+                        self.quad(pt(inner,a,front),pt(inner,a,0),pt(inner,b,0),pt(inner,b,front),solid=False,tint=(143,125,99))
+                        # Joint reveals and outer returns make each voussoir solid.
+                        self.quad(pt(inner,a,0),pt(inner,a,front),pt(outer,a,front),pt(outer,a,0),**kw)
+                        self.quad(pt(outer,b,0),pt(outer,b,front),pt(inner,b,front),pt(inner,b,0),**kw)
+                self.box(0,y+185,-130,33,45,24,**stone)
+                self.box(0,y+225,-130,45,8,29,**stone)
         elif index not in (0,4,12):
             # Layered wall panels and projecting stone buttresses break up the
             # remaining bays without blocking memorials or the equipment chest.
@@ -471,25 +515,42 @@ class Hall:
             self.box(0,1040,0,width+10,100,100,material=1,solid=False)
             self.box(0,1000,-8,width+10,30,140,material=3,solid=False)
             self.reset()
-        # Ring of substantial stone columns with drum joints and capitals.
+        # Carved limestone piers share the fireplace's material and warm tint.
+        # Retain the existing simple collision envelope; small mouldings are visual.
         for x,_,z in boundary:
             x*=.965;z*=.965
-            self.column(x,FLOOR,z,123,52,n=8)
-            self.column(x,FLOOR+52,z,103,50,n=12)
+            self.column(x,FLOOR,z,123,52,n=8,visible=False)
+            self.column(x,FLOOR+52,z,103,50,n=12,visible=False)
             self.column(x,FLOOR+102,z,78,830,top=70,n=12,visible=False)
+            self.column(x,FLOOR+932,z,98,45,n=12,visible=False)
+            self.column(x,FLOOR+977,z,130,55,n=8,visible=False)
+            stone=dict(material=0,solid=False,cap=False,tint=(212,196,165))
+            for y,r,h,top,n in ((0,123,22,123,8),(22,123,13,112,8),
+                    (35,112,17,112,12),(52,103,18,103,12),
+                    (70,103,16,88,12),(86,88,16,88,12),
+                    (912,78,20,90,12),(932,98,16,98,12),
+                    (948,98,29,116,12),(977,130,18,130,8),
+                    (995,130,12,120,8),(1007,120,25,120,8)):
+                self.column(x,FLOOR+y,z,r,h,top=top,n=n,**stone)
             rng=random.Random(round(x*17+z*31))
             base=102
-            for height in (108,140,140,140,140,162):
+            for height in (108,140,140,140,140,142):
                 radius0=78-(base-102)*8/830;radius1=78-(base+height-102)*8/830
-                shade=rng.randrange(204,229)
-                self.column(x,FLOOR+base,z,radius0,height,top=radius1,n=12,
-                    material=rng.randrange(6,10),solid=False,
-                    uv_offset=(rng.random()*4,rng.random()*4),
-                    tint=(shade,shade-4,shade-12))
+                tone=rng.randrange(193,213)
+                self.column(x,FLOOR+base,z,radius0,height-3,top=radius1,n=12,
+                    material=0,solid=False,cap=False,uv_offset=(rng.random()*4,rng.random()*4),
+                    tint=(tone,tone-17,tone-43))
+                # Recessed drum seam, with a narrow bevel on each dressed edge.
+                self.column(x,FLOOR+base+height-3,z,radius1-2,3,n=12,
+                    solid=False,cap=False,tint=(123,107,84))
                 base+=height
-            for y in range(210,900,140):self.column(x,FLOOR+y,z,80,12,solid=False)
-            self.column(x,FLOOR+932,z,98,45,n=12)
-            self.column(x,FLOOR+977,z,130,55,n=8)
+            # Clustered attached shafts and their feet give the broad pier relief.
+            inward=math.atan2(-x,-z)
+            for offset in (-.65,0,.65):
+                a=inward+offset
+                px=x+69*math.sin(a);pz=z+69*math.cos(a)
+                self.column(px,FLOOR+126,pz,9,746,top=8,n=5,**stone)
+                for y in (110,872):self.column(px,FLOOR+y,pz,14,16,n=5,**stone)
         # Ceiling vault, oak radial ribs and central bronze boss.
         for i,a in enumerate(boundary):
             b=boundary[(i+1)%SIDES]

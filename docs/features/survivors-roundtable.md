@@ -48,6 +48,13 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   72.05 units high (including cushions) and the full chair height is 187. Table settings sit on the tabletop. Memorial plinths extend to the floor.
 - Wall bays alternate between empty walnut shelves, three-tier arched stone
   niches and layered panels with projecting piers, corbels and relief bands.
+  Niches and columns now use the fireplace's weathered masonry and warm
+  limestone tint. The niche arches have two projecting archivolts, separate
+  stone joints, keystones, moulded sills and recessed side panels. Columns have
+  stepped bases/capitals and three attached slender shafts facing the room,
+  with independently offset drum UVs. Walnut shelving has framed recessed
+  back panels, layered shelf lips, small corbels, fluted side stiles and a dentil
+  cornice. These details echo the mantel's proportions without adding objects.
   Books, vessels and stacks have been removed from all shelves and niches.
   Perimeter clutter uses a fixed random seed, unequal cluster sizes, different
   mixtures and independently rotated/scaled papers, splinters and stone chips.
@@ -58,7 +65,7 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   inlay are removed. Four stone surfaces retain independent crops/rotations.
 - Room ambient shading is substantially darker, with cool gray-brown stone and
   localized amber pools around the central flame and weaker hearth. Bare floor
-  and shaft limestone is balanced against the darker masonry albedo, instead
+  limestone is balanced against the darker masonry albedo, instead
   of leaving chalk-white columns beside brown walls. This changes only the
   authored room's vertex colours; native actor illumination and collision stay
   intact. Flush paving receives shadows without casting onto its own mortar.
@@ -155,8 +162,8 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 44,925 visual triangles and 5,802
-collision triangles, with a balanced collision tree. Resources total about 7.2 MiB
+tools or network image generation. There are 59,553 visual triangles and 5,802
+collision triangles, with a balanced collision tree. The vertex limit is 180,000 (60,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. The collider is byte-identical to the preceding version. Resources total about 8.6 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
 The runtime fixture executes the production implementation with a fake host,

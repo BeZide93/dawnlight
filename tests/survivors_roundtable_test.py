@@ -175,7 +175,7 @@ for surface in (column,wall):
                     span=abs(a[1]-b[1])/(abs(a[4]-b[4])*2/.92)
                     assert abs(span-g.MASONRY_SPAN)<.01, 'Unequal vertical texture density'
 assert all(0<=v[5]<1 and 0<=v[6]<1 for v in hall.vertices), 'Valid shadow atlas coordinates'
-assert len(hall.vertices)<=150000, 'Stay within renderer resource bounds'
+assert len(hall.vertices)<=180000, 'Stay within renderer resource bounds'
 
 print(f'Roundtable: {tn} native collision triangles, valid tree/room ancestry, clear hub routes')
 

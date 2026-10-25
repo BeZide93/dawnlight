@@ -52,7 +52,7 @@ bool load_assets() {
     if(mesh.size()<8 || std::memcmp(mesh.data(),"RTH2",4) ||
        shadow.size()!=sizeof(s_shadow) || texture.size()!=sizeof(s_texture) || collision.size()<52)return false;
     const u32 count=le32(mesh.data()+4);
-    if(count==0 || count%3 || count>150000 || mesh.size()!=8+size_t(count)*sizeof(Vertex))return false;
+    if(count==0 || count%3 || count>180000 || mesh.size()!=8+size_t(count)*sizeof(Vertex))return false;
     std::vector<Vertex> vertices(count);
     for(size_t i=0;i<count;++i) {
         const auto* p=mesh.data()+8+i*32;

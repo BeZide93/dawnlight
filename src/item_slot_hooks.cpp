@@ -44,7 +44,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -151,8 +150,6 @@ DEFINE_HOOK_SYMBOL("_ZN3Rml7Element11SetInnerRMLERKNSt6__ndk112basic_stringIcNS1
     void(Rml::Element*, const Rml::String*), RmlSetInnerRMLHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui17midna_icon_sourceEv", std::string(), MidnaIconSourceHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui19midna_icon_revisionEv", uint64_t(), MidnaIconRevisionHook);
-DEFINE_HOOK_SYMBOL("_ZN4dusk2ui24item_oil_fill_for_buttonENS0_7ControlE",
-    std::optional<float>(dusk::ui::Control), TouchItemOilHook);
 DEFINE_HOOK_SYMBOL("_ZN4dusk2ui25update_midna_icon_textureEP7J2DPane",
     void(J2DPane*), UpdateMidnaIconTextureHook);
 #endif
@@ -191,8 +188,6 @@ bool s_dpadLeftHeld = false;
 bool s_dpadLeftTrig = false;
 bool s_touchZItemHeld = false;
 bool s_touchZItemTrig = false;
-bool s_touchRingCombineRequested = false;
-bool s_ringComboChanged = false;
 bool s_midnaPromptThisFrame = false;
 bool s_zPromptCustomVisualsActive = false;
 bool s_hideZPromptButton = false;
@@ -254,25 +249,6 @@ const char* z_slot_provider_notice() {
             "mod.com_dusklight_twilit__essentials.customZButtonEnabled"))
         return "Z Items: Twilit Essentials.";
     return nullptr;
-}
-
-bool external_item_feature_enabled(const char* enabledKey, const char* featureKey = nullptr) {
-    void* address = nullptr;
-    if (svc_hook == nullptr || svc_hook->resolve == nullptr ||
-        svc_hook->resolve(mod_ctx, "dusk::config::GetConfigVar", &address, nullptr) != MOD_OK ||
-        address == nullptr) return false;
-    const auto getVar = reinterpret_cast<ZSlotGetConfigVarFn>(address);
-    const auto* enabled = getVar(enabledKey);
-    if (enabled == nullptr ||
-        !static_cast<const dusk::config::ConfigVar<bool>*>(enabled)->getValue()) return false;
-    const auto* feature = featureKey != nullptr ? getVar(featureKey) : nullptr;
-    return feature == nullptr ||
-        static_cast<const dusk::config::ConfigVar<bool>*>(feature)->getValue();
-}
-
-bool hd_item_slot_active() {
-    return external_item_feature_enabled("mod.org_twilight_hd__hud.enabled",
-        "mod.org_twilight_hd__hud.third-item-slot");
 }
 
 bool select_dawnlight_z_slot() {
@@ -2105,7 +2081,7 @@ void layout_z_hud_item(dMeter2Draw_c* meter, const u8 itemNo) {
         g_drawHIO.mButtonZItemBasePosY);
 }
 
-bool select_item_uses_oil(int index, const u8 itemNo) {
+bool z_item_uses_oil(const u8 itemNo) {
     if (itemNo == dItemNo_KANTERA_e || itemNo == dItemNo_KANTERA2_e) {
         return true;
     }
@@ -2113,10 +2089,10 @@ bool select_item_uses_oil(int index, const u8 itemNo) {
         return false;
     }
 
-    // The native touch HUD and our Z HUD do not use drawKanteraMeter.
-    // Read the saved combo, not just its resolved Bow icon.
-    const u8 selectedSlot = dComIfGs_getSelectItemIndex(index);
-    const u8 mixSlot = dComIfGs_getMixItemIndex(index);
+    // The Z HUD is drawn separately from drawKanteraMeter (which Standalone
+    // hooks for X/Y). Read the saved combo, not just its resolved Bow icon.
+    const u8 selectedSlot = dComIfGs_getSelectItemIndex(kZItemSlot);
+    const u8 mixSlot = dComIfGs_getMixItemIndex(kZItemSlot);
     if (selectedSlot >= MAX_ITEM_SLOTS || mixSlot >= MAX_ITEM_SLOTS) {
         return false;
     }
@@ -2124,10 +2100,6 @@ bool select_item_uses_oil(int index, const u8 itemNo) {
     const u8 mixed = dComIfGs_getItem(mixSlot, false);
     return (selected == dItemNo_KANTERA_e && mixed == dItemNo_BOW_e) ||
            (selected == dItemNo_BOW_e && mixed == dItemNo_KANTERA_e);
-}
-
-bool z_item_uses_oil(const u8 itemNo) {
-    return select_item_uses_oil(kZItemSlot, itemNo);
 }
 
 bool z_item_has_ammo(const u8 itemNo) {
@@ -2468,10 +2440,6 @@ bool bow_mix_item(u8 itemNo) {
     case dItemNo_POKE_BOMB_e:
     case dItemNo_HAWK_EYE_e:
         return true;
-    case dItemNo_KANTERA_e:
-        // Also accept the real item: nested Standalone menu hooks may have
-        // already restored the temporary Hawkeye disguise.
-        return external_item_feature_enabled("mod.dev_baxlek_fire__arrows.enabled");
     default:
         return false;
     }
@@ -2691,8 +2659,8 @@ void fix_z_select_item_animation(dMenu_Ring_c* ring) {
     ring->field_0x538[kZItemSlot] = g_ringHIO.mSelectItemScale;
 }
 
-bool bow_mix_item_on(dMenu_Ring_c* ring, u8 targetSlot) {
-    if (ring == nullptr || ring->mPlayerIsWolf ||
+bool z_mix_item_on(dMenu_Ring_c* ring) {
+    if (!z_item_slot_active() || ring == nullptr || ring->mPlayerIsWolf ||
         dComIfGs_getItem(ring->mItemSlots[ring->mCurrentSlot], false) == dItemNo_NONE_e)
     {
         return false;
@@ -2702,20 +2670,20 @@ bool bow_mix_item_on(dMenu_Ring_c* ring, u8 targetSlot) {
         return false;
     }
 
-    return (dComIfGs_getSelectItemIndex(targetSlot) == SLOT_4 &&
-               dComIfGs_getMixItemIndex(targetSlot) == dItemNo_NONE_e) ||
-           dComIfGs_getMixItemIndex(targetSlot) == SLOT_4;
+    return (dComIfGs_getSelectItemIndex(kZItemSlot) == SLOT_4 &&
+               dComIfGs_getMixItemIndex(kZItemSlot) == dItemNo_NONE_e) ||
+           dComIfGs_getMixItemIndex(kZItemSlot) == SLOT_4;
 }
 
-bool bow_mix_item_off(dMenu_Ring_c* ring, u8 targetSlot) {
-    return ring != nullptr && !ring->mPlayerIsWolf &&
+bool z_mix_item_off(dMenu_Ring_c* ring) {
+    return z_item_slot_active() && ring != nullptr && !ring->mPlayerIsWolf &&
            dComIfGs_getItem(ring->mItemSlots[ring->mCurrentSlot], false) != dItemNo_NONE_e &&
-           dComIfGs_getMixItemIndex(targetSlot) == SLOT_4 &&
-           ring->mItemSlots[ring->mCurrentSlot] == dComIfGs_getSelectItemIndex(targetSlot);
+           dComIfGs_getMixItemIndex(kZItemSlot) == SLOT_4 &&
+           ring->mItemSlots[ring->mCurrentSlot] == dComIfGs_getSelectItemIndex(kZItemSlot);
 }
 
-bool set_bow_mix_item(dMenu_Ring_c* ring, u8 targetSlot) {
-    if (!bow_mix_item_on(ring, targetSlot) && !bow_mix_item_off(ring, targetSlot)) {
+bool set_z_mix_item(dMenu_Ring_c* ring) {
+    if (!z_mix_item_on(ring) && !z_mix_item_off(ring)) {
         return false;
     }
 
@@ -2734,25 +2702,25 @@ bool set_bow_mix_item(dMenu_Ring_c* ring, u8 targetSlot) {
         dComIfGs_getMixItemIndex(kZItemSlot),
     };
 
-    if (bow_mix_item_off(ring, targetSlot)) {
+    if (z_mix_item_off(ring)) {
         Z2GetAudioMgr()->seStart(Z2SE_SY_ITEM_COMBINE_OFF, nullptr, 0, 0, 1.0f, 1.0f,
             -1.0f, -1.0f, 0);
-        slots[targetSlot] = SLOT_4;
-        mixes[targetSlot] = dItemNo_NONE_e;
-        ring->field_0x6cb = dComIfGs_getSelectItemIndex(targetSlot);
-        ring->field_0x6cd = targetSlot;
+        slots[kZItemSlot] = SLOT_4;
+        mixes[kZItemSlot] = dItemNo_NONE_e;
+        ring->field_0x6cb = dComIfGs_getSelectItemIndex(kZItemSlot);
+        ring->field_0x6cd = kZItemSlot;
     } else {
         Z2GetAudioMgr()->seStart(Z2SE_SY_ITEM_COMBINE_ON, nullptr, 0, 0, 1.0f, 1.0f,
             -1.0f, -1.0f, 0);
-        slots[targetSlot] = ring->mItemSlots[ring->mCurrentSlot];
-        mixes[targetSlot] = SLOT_4;
+        slots[kZItemSlot] = ring->mItemSlots[ring->mCurrentSlot];
+        mixes[kZItemSlot] = SLOT_4;
         ring->field_0x6cd = dItemNo_NONE_e;
 
         for (u8 i = 0; i < kExtendedSelectItemCount; ++i) {
-            if (i == targetSlot) {
+            if (i == kZItemSlot) {
                 continue;
             }
-            if (slots[i] == slots[targetSlot]) {
+            if (slots[i] == slots[kZItemSlot]) {
                 slots[i] = dItemNo_NONE_e;
                 mixes[i] = dItemNo_NONE_e;
             }
@@ -2761,19 +2729,12 @@ bool set_bow_mix_item(dMenu_Ring_c* ring, u8 targetSlot) {
 
     store_select_slots(slots, mixes);
     sync_ring_fields(ring);
-    ring->field_0x6b3 = targetSlot;
-    ring->field_0x674[targetSlot] = 1;
+    ring->field_0x6ac = cursor_for_slot(ring, slots[kZItemSlot]);
+    ring->field_0x6b3 = kZItemSlot;
+    ring->field_0x674[kZItemSlot] = 1;
     ring->setJumpItem(false);
-    if (targetSlot == kZItemSlot) fix_z_select_item_animation(ring);
+    fix_z_select_item_animation(ring);
     return true;
-}
-
-bool z_mix_item_on(dMenu_Ring_c* ring) {
-    return z_item_slot_active() && bow_mix_item_on(ring, kZItemSlot);
-}
-
-bool z_mix_item_off(dMenu_Ring_c* ring) {
-    return z_item_slot_active() && bow_mix_item_off(ring, kZItemSlot);
 }
 
 void assign_current_item(dMenu_Ring_c* ring, u8 targetSlot) {
@@ -2979,7 +2940,6 @@ void after_set_select_item(ModContext*, void* args, void*, void*) {
 }
 
 void after_pad_read(ModContext*, void*, void*, void*) {
-    if (dMeter2Info_getWindowStatus() != 2) s_touchRingCombineRequested = false;
     const bool zItemsActive = z_item_slot_active();
     const bool touchUiActive = dawnlight_touch_ui_active();
     if (!zItemsActive && !touchUiActive) {
@@ -3330,43 +3290,6 @@ void after_meter_map_draw(ModContext*, void* args, void*, void*) {
     restore_wii_u_minimap_layout(mods::arg<dMeterMap_c*>(args, 0));
 }
 
-HookAction before_ring_combine(ModContext*, void* args, void*, void*) {
-    s_ringComboChanged = false;
-    auto* ring = mods::arg<dMenu_Ring_c*>(args, 0);
-    const bool touchCombine = s_touchRingCombineRequested;
-    s_touchRingCombineRequested = false;
-    const bool hdSlot = hd_item_slot_active();
-    const bool controllerCombine = hdSlot ? mDoCPd_c::getTrigL(PAD_1) :
-        (z_item_slot_active() && mDoCPd_c::getTrigR(PAD_1));
-    if ((!touchCombine && !controllerCombine) || !item_assign_allowed(ring)) {
-        return HOOK_CONTINUE;
-    }
-    // Use one path for X/Y and either provider's Z. Touch R is a combine
-    // request even when HD's controller mapping rebuilds/clears logical R.
-    const u8 count = z_item_slot_active() || hdSlot ? kExtendedSelectItemCount : SELECT_ITEM_NUM;
-    s_pendingAssign = {};
-    for (u8 slot = 0; slot < count; ++slot) {
-        if (set_bow_mix_item(ring, slot)) {
-            s_ringComboChanged = true;
-            return HOOK_SKIP_ORIGINAL;
-        }
-    }
-    return HOOK_CONTINUE;
-}
-
-void after_ring_combine(ModContext*, void* args, void*, void*) {
-    if (!s_ringComboChanged) return;
-    s_ringComboChanged = false;
-    auto* ring = mods::arg<dMenu_Ring_c*>(args, 0);
-    // Standalone has now restored the Lantern. Refresh textures/play state
-    // after that restore so no temporary Hawkeye icon survives on Z.
-    for (int slot = 0; slot < kExtendedSelectItemCount; ++slot) {
-        dComIfGp_setSelectItem(slot);
-    }
-    ring->setJumpItem(false);
-    if (ring->field_0x6b3 == kZItemSlot) fix_z_select_item_animation(ring);
-}
-
 HookAction before_ring_set_active_cursor(ModContext*, void* args, void*, void*) {
     auto* ring = mods::arg<dMenu_Ring_c*>(args, 0);
     if (ring == nullptr) {
@@ -3375,11 +3298,12 @@ HookAction before_ring_set_active_cursor(ModContext*, void* args, void*, void*) 
     }
 
     const bool touchOnly = !z_item_slot_active() && dawnlight_touch_ui_active();
-    if (touchOnly && (hd_item_slot_active() || !s_touchZItemHeld ||
-            !mDoCPd_c::getTrigZ(PAD_1))) {
-        // An external Z provider owns physical input, including its combo
-        // button. Only supply our touch-only slot when no such handler owns it.
+    if (touchOnly && !mDoCPd_c::getTrigZ(PAD_1)) {
         return HOOK_CONTINUE;
+    }
+
+    if (!touchOnly && mDoCPd_c::getTrigR(PAD_1) && set_z_mix_item(ring)) {
+        return HOOK_SKIP_ORIGINAL;
     }
 
     if (!mDoCPd_c::getTrigZ(PAD_1)) {
@@ -3874,27 +3798,10 @@ HookAction before_rml_set_class(ModContext*, void* args, void*, void*) {
 }
 #endif
 
-#if defined(__ANDROID__)
-void after_touch_item_oil(ModContext*, void* args, void* retval, void*) {
-    auto& fill = *static_cast<std::optional<float>*>(retval);
-    if (fill.has_value()) return;
-    const auto control = mods::arg<dusk::ui::Control>(args, 0);
-    const int slot = control == dusk::ui::Control::X ? SELECT_ITEM_X :
-        control == dusk::ui::Control::Y ? SELECT_ITEM_Y : -1;
-    if (slot < 0 || !select_item_uses_oil(slot, dComIfGp_getSelectItem(slot)) ||
-        dComIfGs_getMaxOil() == 0) return;
-    fill = std::clamp(static_cast<float>(dComIfGs_getOil()) /
-        static_cast<float>(dComIfGs_getMaxOil()), 0.0f, 1.0f);
-}
-#endif
-
 HookAction before_touch_set_control_pressed(ModContext*, void* args, void*, void*) {
     const auto control = mods::arg<dusk::ui::Control>(args, 1);
     const bool pressed = mods::arg<bool>(args, 2);
-    if (control == dusk::ui::Control::R) {
-        fierce_deity_touch_button(PAD_TRIGGER_R, pressed);
-        if (pressed && dMeter2Info_getWindowStatus() == 2) s_touchRingCombineRequested = true;
-    }
+    if (control == dusk::ui::Control::R) fierce_deity_touch_button(PAD_TRIGGER_R, pressed);
     if (control == dusk::ui::Control::A) fierce_deity_touch_button(PAD_BUTTON_A, pressed);
     if (control == dusk::ui::Control::Z) {
         fierce_deity_touch_button(PAD_TRIGGER_Z, pressed);
@@ -3965,17 +3872,8 @@ ModResult install_item_slot_hooks(ModError* error) {
     HookOptions touchInputApplyOptions = HOOK_OPTIONS_INIT;
     touchInputApplyOptions.priority = -100;
 
-    // Standalone's temporary item disguise runs at 1,000,000. Handle the
-    // accepted combination before either HUD's default-priority assignment.
-    HookOptions comboOptions = HOOK_OPTIONS_INIT;
-    comboOptions.priority = 1000;
-    ModResult result = mods::hook_add_pre<RingSetActiveCursorHook>(
-        svc_hook, before_ring_combine, &comboOptions);
-    if (result == MOD_OK) {
-        result = mods::hook_add_post<RingSetActiveCursorHook>(
-            svc_hook, after_ring_combine, &comboOptions);
-    }
-    if (result == MOD_OK && s_zItemSlotSessionEnabled) {
+    ModResult result = MOD_OK;
+    if (s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<GetSelectItemHook>(svc_hook, before_get_select_item);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
@@ -4142,9 +4040,6 @@ ModResult install_item_slot_hooks(ModError* error) {
         result = mods::hook_add_post<NativeWolfHowlHook>(svc_hook, after_native_shortcut);
     }
 #if defined(__ANDROID__)
-    if (result == MOD_OK) {
-        result = mods::hook_add_post<TouchItemOilHook>(svc_hook, after_touch_item_oil);
-    }
     if (result == MOD_OK && s_dawnlightTouchUiSessionEnabled) {
         // Optional lookup: avoid depending on UserSettings offsets in forks.
         (void)resolve_z_touch_symbol("dusk::config::GetConfigVar", s_touchGetConfigVar);
@@ -4228,8 +4123,6 @@ ModResult install_item_slot_hooks(ModError* error) {
 
 void shutdown_item_slot_hooks() {
     s_midnaGetConfigVar = nullptr;
-    s_touchRingCombineRequested = false;
-    s_ringComboChanged = false;
     s_hdHudGetConfigVar = nullptr;
     s_hdHudConfigLookupAttempted = false;
     clear_ring_z_prompt_refs();

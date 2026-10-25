@@ -24,11 +24,9 @@ fixture = r'''
 #include <array>
 #include <cassert>
 #include <cstdio>
-#include <optional>
 #include <string>
 using u8 = unsigned char;
 using f32 = float;
-constexpr int SELECT_ITEM_X = 0, SELECT_ITEM_Y = 1;
 constexpr int SELECT_ITEM_NUM = 2, kZItemSlot = 2, MAX_ITEM_SLOTS = 24;
 constexpr u8 dItemNo_BOW_e = 1, dItemNo_KANTERA_e = 2, dItemNo_KANTERA2_e = 3,
     dItemNo_NORMAL_BOMB_e = 4, dItemNo_WATER_BOMB_e = 5, dItemNo_POKE_BOMB_e = 6,
@@ -77,16 +75,6 @@ int oil = 50;
 int dComIfGs_getMaxOil() { return 100; }
 int dComIfGs_getOil() { return oil; }
 // TOUCH HUD
-
-namespace dusk::ui { enum class Control { X, Y, Z, B }; }
-struct ModContext {};
-namespace mods {
-template<class T> T arg(void* args, int) { return *static_cast<T*>(args); }
-}
-u8 dComIfGp_getSelectItem(int slot) {
-    return mixed[slot] == 4 ? dItemNo_BOW_e : inventory.mItems[selected[slot]];
-}
-// XY OIL
 
 int main() {
     // Vanilla stores the partner in select and the Bow in mix. The Standalone
@@ -147,33 +135,13 @@ int main() {
     paused = true;
     sync_z_touch_item_meter(&button);
     assert(rendered.find("<count ") == std::string::npos);
-    // Native touch X/Y oil hook works independently of custom HUD styling.
-    for (auto control : {dusk::ui::Control::X, dusk::ui::Control::Y}) {
-        const int slot = control == dusk::ui::Control::X ? 0 : 1;
-        selected[slot] = 1; mixed[slot] = 4;
-        for (int value : {0, 50, 100}) {
-            oil = value;
-            std::optional<float> fill;
-            after_touch_item_oil(nullptr, &control, &fill, nullptr);
-            assert(fill && *fill == value / 100.0f);
-        }
-        std::optional<float> provided = .25f;
-        after_touch_item_oil(nullptr, &control, &provided, nullptr);
-        assert(*provided == .25f);
-        selected[slot] = 4; mixed[slot] = dItemNo_NONE_e;
-        std::optional<float> plain;
-        after_touch_item_oil(nullptr, &control, &plain, nullptr);
-        assert(!plain);
-    }
 }
 '''
 fixture = fixture.replace('// INTEGRITY', '\n'.join(
     function(integrity, signature) for signature in
     ('bool valid_slot(', 'bool valid_mix_pair(', 'void repair_mix_pairs(')))
-fixture = fixture.replace('// OIL PREDICATE',
-    function(items, 'bool select_item_uses_oil(') + '\n' + function(items, 'bool z_item_uses_oil(const'))
+fixture = fixture.replace('// OIL PREDICATE', function(items, 'bool z_item_uses_oil(const'))
 fixture = fixture.replace('// TOUCH HUD', function(items, 'void sync_z_touch_item_meter('))
-fixture = fixture.replace('// XY OIL', function(items, 'void after_touch_item_oil('))
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'test.cpp'
     exe = Path(tmp) / 'test'

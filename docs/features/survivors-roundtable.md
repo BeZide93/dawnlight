@@ -46,8 +46,14 @@ architecture. These shadows follow the fixed lights, not individual moving parti
 
 - The table is 100.5 units high and 361.8 units in radius; chair seats are
   72.05 units high (including cushions) and the full chair height is 187. Table settings sit on the tabletop. Memorial plinths extend to the floor.
-- Wall bays alternate between empty walnut shelves, three-tier arched stone
-  niches and layered panels with projecting piers, corbels and relief bands.
+  The table now has individual radial wood panels, bevelled layered edges, an
+  angular bronze centre inlay, apron ornaments and framed pedestal panels. Chairs
+  have tapered legs, block feet, stretchers, framed front/rear panels, rear
+  lozenge inlays and curved bevelled crests. Their playable footprints stay fixed.
+- Six three-tier stone niche bays and two empty walnut shelf bays form mirrored
+  pairs about the entrance/centre axis. The other bays retain layered panels,
+  projecting piers, corbels and relief bands. Functional fireplace and equipment
+  anchors remain at their established positions.
   Niches and columns now use the fireplace's weathered masonry and warm
   limestone tint. The niche arches have two projecting archivolts, separate
   stone joints, keystones, moulded sills and recessed side panels. Columns have
@@ -63,12 +69,14 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   courses 55–82 units deep, unequal widths 65–135 units, independently chipped
   corners and fine gray-brown mortar. The oversized polygon slabs and circular
   inlay are removed. Four stone surfaces retain independent crops/rotations.
-- Room ambient shading is substantially darker, with cool gray-brown stone and
+- Room ambient shading is substantially darker, with warm gray-brown stone and
   localized amber pools around the central flame and weaker hearth. Bare floor
   limestone is balanced against the darker masonry albedo, instead
   of leaving chalk-white columns beside brown walls. This changes only the
-  authored room's vertex colours; native actor illumination and collision stay
-  intact. Flush paving receives shadows without casting onto its own mortar.
+  authored room's vertex colours; native actor illumination stays intact.
+  A shared warm limestone/walnut/aged-bronze palette also covers the remaining
+  arches, walls, roof ribs, furniture, floor, mortar and litter. The approved
+  fireplace colours are preserved exactly. Flush paving receives shadows without casting onto its own mortar.
 - Low fireplace undersides no longer enter collision. Native Acch checks roofs
   after gravity and before the ground ray: the thin hearth slabs previously
   became false ceilings beneath Link and could hide the supporting floor.
@@ -103,6 +111,9 @@ architecture. These shadows follow the fixed lights, not individual moving parti
   full seat/body and back volumes. These cover Link's native +30.01-unit wall
   check, which previously passed below the tabletops/seats between thin legs.
   The upper collision surfaces match the tabletop and chair cushion heights.
+  Each niche bank has a continuous closed front/side collision volume at its
+  foremost sill. This prevents both native body circles from passing through
+  gaps below or between shelves; the volume has no low underside roof face.
 - Masonry uses a coarser 320-unit repeat for legible block courses; bare stone,
   wood and other materials retain a 200-unit reference scale. Shaft UVs wrap
   around the circumference and shift independently between stone drums. Repeats are split into triangles before export, with atlas
@@ -136,7 +147,9 @@ architecture. These shadows follow the fixed lights, not individual moving parti
 The normal **Darknut Arena combat map** keeps its original geometry. No touch UI,
 save format, item reward or title input timing is changed.
 
-![Offline close-up of empty shelves and floor clutter](../images/survivors-wall-bays.jpg)
+![Offline furniture detail](../images/survivors-furniture.jpg)
+
+![Offline close-up of empty niches and floor clutter](../images/survivors-wall-bays.jpg)
 
 ![Offline view of smaller staggered rectangular flags](../images/survivors-floor.jpg)
 
@@ -162,8 +175,8 @@ The generator emits a little-endian vertex stream, big-endian native DZB and a
 its output is a GX-tiled I8 lightmap with a second UV set in the RTH2 mesh. Geometry generation and tests need only Python's
 standard library; texture conversion needs Pillow and the optional preview
 needs Pillow plus NumPy. Assets are checked in, so builds never need generation
-tools or network image generation. There are 59,553 visual triangles and 5,802
-collision triangles, with a balanced collision tree. The vertex limit is 180,000 (60,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. The collider is byte-identical to the preceding version. Resources total about 8.6 MiB
+tools or network image generation. There are 62,755 visual triangles and 5,942
+collision triangles, with a balanced collision tree. The vertex limit is 195,000 (65,000 triangles), within the existing 6 MiB per-resource limit; the texture and shadow atlases remain 1024 square. Resources total about 8.9 MiB
 and are cached until mod shutdown; each live room uses a private 2 MiB heap.
 
 The runtime fixture executes the production implementation with a fake host,
@@ -210,9 +223,11 @@ vertex upload worker, not the shader compiler.
 The RTH2 source asset keeps its floats. Loading validates ranges and converts
 once to signed 16-bit positions with 3 fractional bits, 16-bit UVs with 16
 fractional bits, and unchanged RGBA8 colours. GX declarations match those writes.
-The hall now submits **3,215,862 bytes (3.07 MiB)**, 43.75% less. Maximum position
-error is 0.0625 game units and maximum UV error is 1/128 atlas texel. Geometry,
-textures, shadows and collision are unchanged. The runtime regression limits
+The original fix reduced that hall to **3,215,862 bytes (3.07 MiB)**, 43.75% less.
+The detailed furniture and mirrored six-niche layout now use **3,388,770 bytes
+(3.23 MiB)**, still leaving the tested 1.5 MiB reserve plus portal overhead. Maximum position
+error is 0.0625 game units and maximum UV error is 1/128 atlas texel. That packing fix did not alter the source geometry,
+textures, shadows or collision; subsequent room revisions rebake their shadows. The runtime regression limits
 frame uploads to the real 5 MiB capacity, reserves 1.5 MiB for other scene draws,
 counts both room/portal packets and checks quantization against the source mesh.
 The former float stream fails that same capacity check.

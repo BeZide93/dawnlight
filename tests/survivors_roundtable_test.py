@@ -132,6 +132,28 @@ for i in range(1,g.SIDES):
     assert segment_hits(wall_point(0,-230),wall_point(0,10),True), 'Panel collision at its visible front'
     pillar_x=(2*g.HALF_DOOR-175)/2+38
     assert segment_hits(wall_point(pillar_x,-80),wall_point(pillar_x,0),True), 'Arch pilaster must be solid'
+# Niche shelves must block the body at their front edge, not only at the
+# backing wall. Include the low circle that previously walked under the shelf,
+# the upper circle, gaps between tiers, and approaches around both side posts.
+assert len(g.NICHE_BAYS)==6 and len(g.SHELF_BAYS)==2
+for bays in (g.NICHE_BAYS,g.SHELF_BAYS):
+    assert set(bays)=={(-i)%g.SIDES for i in bays}, 'Mirror bay types about the entrance axis'
+assert not set(g.NICHE_BAYS)&set(g.SHELF_BAYS)
+for i in g.NICHE_BAYS:
+    angle=i*math.tau/g.SIDES
+    def niche_point(x,y,z):
+        return (g.FRONT*math.sin(angle)+x*math.cos(angle)+z*math.sin(angle),
+                g.FLOOR+y,g.FRONT*math.cos(angle)-x*math.sin(angle)+z*math.cos(angle))
+    for x in (-185,-120,-60,0,60,120,185):
+        for y in (1,30.01,65,86,129.99,230,300,540,770):
+            assert segment_hits(niche_point(x,y,-230),niche_point(x,y,-120),True), 'Continuous niche front, before Link overlaps the sill'
+    for side in (-1,1):
+        for y in (30.01,129.99,400):
+            assert segment_hits(niche_point(side*240,y,-125),niche_point(side*180,y,-125),True), 'Closed niche side approach'
+    for x in (-185,0,185):
+        q=niche_point(x,0,-155)
+        assert abs(ground(q[0],q[2],g.FLOOR+50)-g.FLOOR)<.01, 'Grounded niche approach'
+
 # The doorway sits directly at the hall edge, at the same floor height.
 # Its solid surround must leave native +/-240-unit event goals unobstructed.
 assert g.EXIT_Z-g.FRONT<=60 and g.EXIT_BACK_Z-g.EXIT_Z>=900
@@ -175,7 +197,7 @@ for surface in (column,wall):
                     span=abs(a[1]-b[1])/(abs(a[4]-b[4])*2/.92)
                     assert abs(span-g.MASONRY_SPAN)<.01, 'Unequal vertical texture density'
 assert all(0<=v[5]<1 and 0<=v[6]<1 for v in hall.vertices), 'Valid shadow atlas coordinates'
-assert len(hall.vertices)<=180000, 'Stay within renderer resource bounds'
+assert len(hall.vertices)<=195000, 'Stay within renderer resource bounds'
 
 print(f'Roundtable: {tn} native collision triangles, valid tree/room ancestry, clear hub routes')
 

@@ -17,6 +17,9 @@ FLOOR = -400.0
 # Compact layout preferred in build 1295; the exit sits at the hall edge.
 RADIUS = 1800.0
 SIDES = 16
+# Mirror paired bays about the entrance/centre axis (index -> -index mod 16).
+NICHE_BAYS = (1,3,7,9,13,15)
+SHELF_BAYS = (5,11)
 FRONT = RADIUS * math.cos(math.pi/SIDES)
 HALF_DOOR = RADIUS * math.sin(math.pi/SIDES)
 TAU = math.tau
@@ -40,6 +43,10 @@ LIGHT_POSITION = (0.0, FLOOR+350.0, 0.0)
 LIGHTMAP_SIZE = 1024
 LIGHTMAP_STEP = 24.0
 TEXTURE_SIZE = 1024
+# Shared dressing palette: limestone, walnut, faded upholstery and aged bronze.
+# Explicit local tints still supply recess dirt and firelight-facing highlights.
+ROOM_TINTS = {0:(212,196,165), 1:(194,166,128),
+              2:(180,146,121), 3:(154,125,81)}
 # Keep masonry at its original resolution; wood, cloth and bronze share the
 # upper-right area. Four bare-stone variants fill the lower half of the atlas.
 MATERIAL_RECTS = {0:(0,0,512,512), 1:(512,0,512,256),
@@ -56,6 +63,7 @@ def length(a): return math.sqrt(sum(x*x for x in a))
 
 class Hall:
     def __init__(self):
+        self.palette = ROOM_TINTS
         self.vertices = []
         self.collision = []
         self.transform = lambda p: p
@@ -63,7 +71,8 @@ class Hall:
         self.casters = []
         self.light_faces = []
 
-    def triangle(self, points, material=0, tint=(255, 255, 255), solid=True, visible=True, uv=None, shadow_face=None):
+    def triangle(self, points, material=0, tint=None, solid=True, visible=True, uv=None, shadow_face=None):
+        if tint is None:tint=self.palette.get(material,(255,255,255))
         p = [self.transform(v) for v in points]
         normal = cross(sub(p[1], p[0]), sub(p[2], p[0]))
         n = length(normal)
@@ -219,16 +228,31 @@ class Hall:
             a=i*math.pi/12; b=(i+1)*math.pi/12
             point=lambda r,t,z:(r*math.cos(t),bottom+r*math.sin(t),z)
             self.quad(point(radius,a,0),point(radius,b,0),point(radius+75,b,0),point(radius+75,a,0),solid=True)
-            self.quad(point(radius,a,0),point(radius,a,depth),point(radius,b,depth),point(radius,b,0),solid=True,tint=(195,185,165))
+            self.quad(point(radius,a,0),point(radius,a,depth),point(radius,b,depth),point(radius,b,0),solid=True,tint=(194,175,144))
         for side in (-1,1):
             self.box(side*(radius+38),0,40,76,bottom,depth,solid=True)
             self.box(side*(radius+38),bottom-24,20,110,40,140,solid=True)
         self.box(0,height,50,width+250,65,180,solid=True)
 
+    def ring(self,inner,y0,outer,y1,n=48,material=1,tint=None):
+        # Open annular moulding: no hidden full disks behind the tabletop.
+        for i in range(n):
+            a=i*TAU/n;b=(i+1)*TAU/n
+            point=lambda r,y,t:(r*math.sin(t),y,r*math.cos(t))
+            self.quad(point(inner,y0,a),point(outer,y1,a),
+                      point(outer,y1,b),point(inner,y0,b),
+                      material=material,tint=tint,solid=False)
+
     def chair(self,x,z,angle):
         self.local(x,z,angle,scale=(.55,.55,.55))
         for px in (-48,48):
-            for pz in (-45,45): self.box(px,0,pz,18,110,18,material=1,solid=False)
+            for pz in (-45,45):
+                # Tapered legs with block feet and a turned shoulder.
+                self.column(px,0,pz,10,79,top=7,n=4,material=1,solid=False,cap=False)
+                self.box(px,0,pz,19,13,19,material=1,solid=False)
+                self.box(px,79,pz,18,31,18,material=1,solid=False)
+            self.box(px,34,0,9,12,90,material=1,solid=False)
+        self.box(0,38,-45,96,10,9,material=1,solid=False)
         self.box(0,96,0,130,25,120,material=1,solid=False)
         self.box(0,121,0,109,10,98,material=2,solid=False)
         self.box(0,120,-49,130,174,24,material=1,solid=False)
@@ -236,7 +260,24 @@ class Hall:
         for px in (-66,66):
             self.box(px,110,-45,18,205,20,material=1,solid=False)
             self.column(px,315,-45,17,25,top=0,material=3,solid=False,n=6)
-        self.box(0,282,-49,155,22,32,material=3,solid=False)
+        # Front and rear framed panels, with a small carved lozenge on the back.
+        for depth in (-66,-28):
+            for px in (-48,48):self.box(px,139,depth,9,129,8,material=1,solid=False)
+            for y in (136,265):self.box(0,y,depth,105,9,8,material=1,solid=False)
+        self.box(0,150,-63,77,103,5,material=1,tint=(125,99,68),solid=False)
+        for sign in (-1,1):
+            for side in (-1,1):
+                a=(0,200+sign*39,-67);b=(side*25,200,-67)
+                self.quad(a,b,(b[0]-side*5,b[1],b[2]),(0,a[1]-sign*7,a[2]),material=3,solid=False)
+        # A curved, bevelled crest replaces the flat rectangular top rail.
+        for i in range(8):
+            a=-math.pi/2+i*math.pi/8;b=-math.pi/2+(i+1)*math.pi/8
+            point=lambda t,y,z:(76*math.sin(t),284+34*math.cos(t)+y,z)
+            self.quad(point(a,0,-68),point(b,0,-68),point(b,13,-64),point(a,13,-64),material=1,solid=False)
+            self.quad(point(b,0,-28),point(a,0,-28),point(a,13,-32),point(b,13,-32),material=1,solid=False)
+            self.quad(point(a,13,-64),point(b,13,-64),point(b,13,-32),point(a,13,-32),material=3,solid=False)
+        self.box(0,96,57,116,14,8,material=1,tint=(145,116,81),solid=False)
+        for px in (-48,0,48):self.box(px,100,62,6,6,3,material=3,solid=False)
         # Continuous seat/body and back volumes: Link's lowest wall circle
         # is 30 units high, so separate thin legs leave a walk-through gap.
         self.box(0,0,0,130,131,120,visible=False)
@@ -259,6 +300,8 @@ class Hall:
                     material=1,solid=False,tint=(150,104,60))
 
     def fireplace(self):
+        # Preserve the approved hearth colours, including its untinted highlights.
+        palette=self.palette;self.palette={}
         first_collision=len(self.collision)
         self.local(-FRONT+110,0,-math.pi/2)
         # Shallow, grounded hearth with a chamfered-looking stepped apron.
@@ -319,14 +362,15 @@ class Hall:
         self.collision[first_collision:]=[p for p in self.collision[first_collision:]
             if not (cross(sub(p[1],p[0]),sub(p[2],p[0]))[1]<-.001 and max(v[1] for v in p)<FLOOR+180)]
         self.reset()
+        self.palette=palette
 
     def wall_bay(self,index,width):
         # Structural backing stays behind the recesses. Each bay projects into
         # the room by at most 140 units, away from every interaction route.
-        shelving=index in (1,5,9,13)
-        niches=index in (3,7,11,15)
+        shelving=index in SHELF_BAYS
+        niches=index in NICHE_BAYS
         self.box(0,0,12,width-130,760,12,material=0 if niches else 1,
-            bottom_solid=False,tint=(145,137,116) if niches else (168,151,126))
+            bottom_solid=False,tint=(145,137,116) if niches else ROOM_TINTS[1])
         if shelving:
             # Walnut joinery echoes the mantel: recessed panels, moulded rails,
             # stepped cornice and small corbels. Keep all compartments empty.
@@ -358,6 +402,11 @@ class Hall:
                 self.box(0,y,-50,w,h,d,**wood)
             for x in range(-180,181,45):self.box(x,635,-128,15,15,17,**wood)
         elif niches:
+            # Native wall circles sample at +30/+130, missing the separated
+            # shelf slabs. A continuous backing volume closes those gaps at
+            # the foremost sill, including lateral approaches and upper tiers.
+            # No low underside: it must never act as a false Acch roof.
+            self.box(0,0,-54,430,782,160,visible=False,bottom_solid=False)
             # Warm carved limestone matches the fireplace rather than the cool
             # smooth shaft atlas. Layered archivolts have real stone joints.
             stone=dict(solid=False,tint=(212,196,165))
@@ -429,7 +478,7 @@ class Hall:
         crop=rng.uniform(.65,.93);u0=rng.uniform(0,1-crop);v0=rng.uniform(0,1-crop)
         uv=[(u0+(u-xmin)/span*crop,v0+(v-zmin)/span*crop) for u,v in coords]
         shade=rng.randrange(188,218)
-        tint=tint or (shade,min(255,shade+rng.randrange(-3,4)),shade+rng.randrange(-8,3))
+        tint=tint or (shade,shade-12+rng.randrange(-3,4),shade-28+rng.randrange(-8,3))
         material=rng.randrange(6,10)
         for j in range(1,len(points)-1):
             self.triangle((points[0],points[j],points[j+1]),uv=(uv[0],uv[j],uv[j+1]),
@@ -482,7 +531,7 @@ class Hall:
                     poly=[(-w*.5,-d*.5),(-w*.5,d*.38),(-w*.25,d*.5),(w*.48,d*.43),(w*.5,-d*.46)]
                     for k in range(1,len(poly)-1):
                         self.triangle(tuple((a,1.1,b) for a,b in (poly[0],poly[k],poly[k+1])),
-                            material=5,tint=(shade,shade-14,shade-42),solid=False)
+                            material=5,tint=(round(shade*.76),round((shade-14)*.76),round((shade-42)*.76)),solid=False)
                     for line in range(rng.randrange(2,6)):
                         zz=-d*.25+line*4
                         self.quad((-w*.3,1.2,zz),(-w*.3,1.2,zz+1),
@@ -494,14 +543,14 @@ class Hall:
                 else:
                     self.column(0,.7,0,rng.uniform(4,15),rng.uniform(3,10),
                         top=rng.uniform(1,4),n=rng.randrange(4,7),material=rng.randrange(6,10),
-                        tint=(165,159,144),solid=False)
+                        tint=(165,150,126),solid=False)
                 self.reset()
 
     def build(self):
         boundary=[(RADIUS*math.sin((i+.5)*TAU/SIDES),FLOOR,RADIUS*math.cos((i+.5)*TAU/SIDES)) for i in range(SIDES)]
         for i,a in enumerate(boundary):
             b=boundary[(i+1)%SIDES]
-            self.triangle(((0,FLOOR,0),a,b),material=5,tint=(87,86,80))
+            self.triangle(((0,FLOOR,0),a,b),material=5,tint=(87,79,66))
         self.paving(boundary)
         # Sixteen-sided hall. The south bay is open to the original door.
         for i in range(SIDES):
@@ -509,7 +558,7 @@ class Hall:
             width=2*HALF_DOOR
             self.local(FRONT*math.sin(angle),FRONT*math.cos(angle),angle)
             if i:
-                self.quad((width/2,0,25),(-width/2,0,25),(-width/2,1200,25),(width/2,1200,25),tint=(180,175,160))
+                self.quad((width/2,0,25),(-width/2,0,25),(-width/2,1200,25),(width/2,1200,25),tint=(194,175,144))
                 self.wall_bay(i,width)
             self.arch(width-175,460,920)
             self.box(0,1040,0,width+10,100,100,material=1,solid=False)
@@ -554,7 +603,7 @@ class Hall:
         # Ceiling vault, oak radial ribs and central bronze boss.
         for i,a in enumerate(boundary):
             b=boundary[(i+1)%SIDES]
-            self.triangle(((0,FLOOR+1510,0),(b[0],FLOOR+1180,b[2]),(a[0],FLOOR+1180,a[2])),solid=False,tint=(130,119,105))
+            self.triangle(((0,FLOOR+1510,0),(b[0],FLOOR+1180,b[2]),(a[0],FLOOR+1180,a[2])),solid=False,tint=(130,113,91))
             # Rib is a tapered strip, seen from below.
             for t in range(10):
                 t0=t/10;t1=(t+1)/10
@@ -566,12 +615,45 @@ class Hall:
         # Central table, with a complete circle of twelve chairs. The rest
         # pose and interactions remain outside this furniture footprint.
         self.local(0,0,0,scale=(.67,.5,.67))
-        self.column(0,0,0,300,55,material=1,solid=False,n=32)
-        self.column(0,55,0,175,100,top=240,material=1,solid=False,n=24)
-        self.column(0,155,0,540,34,material=1,solid=False,n=48)
-        self.column(0,189,0,520,9,material=3,n=48,solid=False)
-        self.column(0,198,0,495,3,material=1,solid=False,n=48)
-        self.column(0,201,0,185,2,material=3,n=32,solid=False)
+        self.column(0,0,0,300,24,material=1,solid=False,n=32,cap=False)
+        self.ring(300,24,280,38,n=32)
+        self.column(0,38,0,280,17,material=1,solid=False,n=32)
+        self.column(0,55,0,175,100,top=240,material=1,solid=False,n=24,cap=False)
+        for y,r in ((60,182),(135,228)):
+            self.column(0,y,0,r,9,material=3,n=24,solid=False,cap=False)
+        # Raised panels on the central pedestal, framed by narrow carved ribs.
+        for i in range(12):
+            a=i*TAU/12;b=(i+1)*TAU/12
+            pt=lambda r,y,t:(r*math.sin(t),y,r*math.cos(t))
+            self.quad(pt(190,74,a+.05),pt(190,74,b-.05),pt(224,128,b-.05),pt(224,128,a+.05),material=1,tint=(135,105,73),solid=False)
+            self.quad(pt(189,74,a-.015),pt(189,74,a+.015),pt(226,132,a+.015),pt(226,132,a-.015),material=3,solid=False)
+        self.column(0,155,0,540,23,material=1,solid=False,n=48,cap=False)
+        self.ring(540,178,530,189)
+        self.column(0,189,0,530,5,material=3,n=48,solid=False,cap=False)
+        self.ring(530,194,515,201,material=1)
+        self.ring(495,201,515,201,material=3)
+        # Radial wood panels use world-scale grain, not one enlarged texture
+        # across the whole table. Fine joints expose the darker layer below.
+        self.ring(174,200,495,200,material=1,tint=(99,77,53))
+        for i in range(32):
+            a=i*TAU/32+.001;b=(i+1)*TAU/32-.001
+            pt=lambda r,t:(r*math.sin(t),201,r*math.cos(t))
+            self.quad(pt(174,a),pt(495,a),pt(495,b),pt(174,b),
+                uv=((0,0),(1.075,0),(1.075,.325),(0,.115)),
+                material=1,tint=(185+i%3*6,158+i%3*5,119+i%3*4),solid=False)
+        self.column(0,200,0,174,3,material=1,n=32,solid=False)
+        self.ring(160,203.1,174,203.1,n=32,material=3)
+        # Interlaced angular inlay around the flame; a restrained carved motif.
+        for i in range(16):
+            a=i*TAU/16;b=(i+1)*TAU/16
+            pt=lambda r,t:(r*math.sin(t),203.2,r*math.cos(t))
+            self.quad(pt(80,a),pt(150,(a+b)/2),pt(143,(a+b)/2),pt(73,a),material=3,solid=False)
+            self.quad(pt(150,(a+b)/2),pt(80,b),pt(73,b),pt(143,(a+b)/2),material=3,solid=False)
+        # Repeated carved diamonds on the apron instead of a plain thick slab.
+        for i in range(24):
+            a=i*TAU/24;sn=math.sin(a);co=math.cos(a)
+            pt=lambda x,y:(541*sn+x*co,y,541*co-x*sn)
+            self.quad(pt(0,158),pt(20,167),pt(0,176),pt(-20,167),material=3,solid=False)
         # The native wall solver samples at +30/+130 units, straddling
         # the thin tabletop. A perimeter down to the floor prevents Link's torso
         # entering the overhang while preserving a flat, walkable top.
@@ -611,13 +693,13 @@ class Hall:
                 points=[(sign*HALF_DOOR,FLOOR,z0),(sign*HALF_DOOR,FLOOR,z1),
                         (sign*HALF_DOOR,FLOOR+660,z1),(sign*HALF_DOOR,FLOOR+660,z0)]
                 if sign<0:points.reverse()
-                self.quad(*points,tint=(180,175,160))
+                self.quad(*points,tint=(194,175,144))
             self.quad((-HALF_DOOR,FLOOR+660,z0),(HALF_DOOR,FLOOR+660,z0),
                       (HALF_DOOR,FLOOR+660,z1),(-HALF_DOOR,FLOOR+660,z1),solid=False,tint=(130,120,110))
         side_width=HALF_DOOR-EXIT_HALF_WIDTH
         for sign in (-1,1):
             self.box(sign*(EXIT_HALF_WIDTH+side_width/2),FLOOR,FRONT+60,
-                     side_width,1200,170,bottom_solid=False,tint=(180,175,160))
+                     side_width,1200,170,bottom_solid=False,tint=(194,175,144))
             # Layered jambs with grounded bases, recessed flutes and capitals.
             x=sign*(EXIT_HALF_WIDTH+26)
             self.box(x,FLOOR,FRONT-45,76,26,94,bottom_solid=False)
@@ -625,7 +707,7 @@ class Hall:
             for dx in (-13,13):self.box(x+dx,FLOOR+48,FRONT-81,5,EXIT_HEIGHT-74,6,solid=False,tint=(144,138,123))
             for y in (92,158,224,290):self.box(x,FLOOR+y,FRONT-48,54,6,80,solid=False)
             self.box(x,FLOOR+EXIT_HEIGHT-8,FRONT-48,82,30,90,solid=False)
-        self.box(0,FLOOR+EXIT_HEIGHT,FRONT+60,2*EXIT_HALF_WIDTH,1200-EXIT_HEIGHT,170,tint=(180,175,160))
+        self.box(0,FLOOR+EXIT_HEIGHT,FRONT+60,2*EXIT_HALF_WIDTH,1200-EXIT_HEIGHT,170,tint=(194,175,144))
         # A double archivolt and central keystone frame the recessed lunette
         # above the rectangular shutter, using the same stone as the hall.
         for r0,r1,z in ((197,220,FRONT-85),(224,250,FRONT-68)):

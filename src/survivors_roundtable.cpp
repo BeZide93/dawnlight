@@ -29,7 +29,8 @@ constexpr ActorId kNoRoom = fpcM_ERROR_PROCESS_ID_e;
 // Position error <= 1/16 world unit; UV error <= 1/128 texel in the 1024 atlas.
 struct Vertex { s16 x,y,z; u16 u,v,lu,lv; u8 r,g,b,a; };
 static_assert(sizeof(Vertex)==18);
-constexpr size_t kMaxVertices=180000;
+constexpr size_t kMaxVertices=195000;
+static_assert(8+kMaxVertices*32 < 6*1024*1024); // RTH2 resource limit
 static_assert(kMaxVertices*sizeof(Vertex) < 5*1024*1024 - 1536*1024);
 std::vector<Vertex> s_vertices;
 std::vector<u8> s_collision;

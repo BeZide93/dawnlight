@@ -275,13 +275,6 @@ bool hd_item_slot_active() {
         "mod.org_twilight_hd__hud.third-item-slot");
 }
 
-bool dawnlight_combine_active() {
-    // Keep the same provider ownership rules as Z Items, including missing
-    // feature settings and a failed provider lookup. Each provider owns its
-    // controller mapping and Touch-L; Dawnlight must not interpret either.
-    return z_slot_provider_notice() == nullptr;
-}
-
 bool select_dawnlight_z_slot() {
     if (!z_item_slot_enabled()) return false;
     const char* notice = z_slot_provider_notice();
@@ -3342,14 +3335,15 @@ HookAction before_ring_combine(ModContext*, void* args, void*, void*) {
     auto* ring = mods::arg<dMenu_Ring_c*>(args, 0);
     const bool touchCombine = s_touchRingCombineRequested;
     s_touchRingCombineRequested = false;
-    if (!dawnlight_combine_active()) return HOOK_CONTINUE;
-    const bool controllerCombine = z_item_slot_active() && mDoCPd_c::getTrigR(PAD_1);
+    const bool hdSlot = hd_item_slot_active();
+    const bool controllerCombine = hdSlot ? mDoCPd_c::getTrigL(PAD_1) :
+        (z_item_slot_active() && mDoCPd_c::getTrigR(PAD_1));
     if ((!touchCombine && !controllerCombine) || !item_assign_allowed(ring)) {
         return HOOK_CONTINUE;
     }
-    // Only handle Dawnlight's R/Touch-R input. External providers handle
-    // their own combinations without our slot dispatcher running first.
-    const u8 count = z_item_slot_active() ? kExtendedSelectItemCount : SELECT_ITEM_NUM;
+    // Use one path for X/Y and either provider's Z. Touch R is a combine
+    // request even when HD's controller mapping rebuilds/clears logical R.
+    const u8 count = z_item_slot_active() || hdSlot ? kExtendedSelectItemCount : SELECT_ITEM_NUM;
     s_pendingAssign = {};
     for (u8 slot = 0; slot < count; ++slot) {
         if (set_bow_mix_item(ring, slot)) {
@@ -3899,11 +3893,7 @@ HookAction before_touch_set_control_pressed(ModContext*, void* args, void*, void
     const bool pressed = mods::arg<bool>(args, 2);
     if (control == dusk::ui::Control::R) {
         fierce_deity_touch_button(PAD_TRIGGER_R, pressed);
-        if (!dawnlight_combine_active()) {
-            s_touchRingCombineRequested = false;
-        } else if (pressed && dMeter2Info_getWindowStatus() == 2) {
-            s_touchRingCombineRequested = true;
-        }
+        if (pressed && dMeter2Info_getWindowStatus() == 2) s_touchRingCombineRequested = true;
     }
     if (control == dusk::ui::Control::A) fierce_deity_touch_button(PAD_BUTTON_A, pressed);
     if (control == dusk::ui::Control::Z) {
@@ -3975,18 +3965,15 @@ ModResult install_item_slot_hooks(ModError* error) {
     HookOptions touchInputApplyOptions = HOOK_OPTIONS_INIT;
     touchInputApplyOptions.priority = -100;
 
-    // Standalone's temporary item disguise runs at 1,000,000. Handle our
-    // combination before assignment, but leave external providers in control.
+    // Standalone's temporary item disguise runs at 1,000,000. Handle the
+    // accepted combination before either HUD's default-priority assignment.
     HookOptions comboOptions = HOOK_OPTIONS_INIT;
     comboOptions.priority = 1000;
-    ModResult result = MOD_OK;
-    if (dawnlight_combine_active()) {
-        result = mods::hook_add_pre<RingSetActiveCursorHook>(
-            svc_hook, before_ring_combine, &comboOptions);
-        if (result == MOD_OK) {
-            result = mods::hook_add_post<RingSetActiveCursorHook>(
-                svc_hook, after_ring_combine, &comboOptions);
-        }
+    ModResult result = mods::hook_add_pre<RingSetActiveCursorHook>(
+        svc_hook, before_ring_combine, &comboOptions);
+    if (result == MOD_OK) {
+        result = mods::hook_add_post<RingSetActiveCursorHook>(
+            svc_hook, after_ring_combine, &comboOptions);
     }
     if (result == MOD_OK && s_zItemSlotSessionEnabled) {
         result = mods::hook_add_pre<GetSelectItemHook>(svc_hook, before_get_select_item);

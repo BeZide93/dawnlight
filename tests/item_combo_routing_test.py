@@ -29,11 +29,10 @@ enum HookAction { HOOK_CONTINUE, HOOK_SKIP_ORIGINAL };
 namespace mods { template<class T> T arg(void* args,int) { return *static_cast<T*>(args); } }
 std::array<u8,3> selected, mixed;
 std::array<u8,24> inventory;
-bool te=false, hd=false, own=true, touchUi=true, standalone=true, left=false, right=false, z=false;
+bool hd=false, own=true, touchUi=true, standalone=true, left=false, right=false, z=false;
 bool s_touchZItemHeld=false, s_touchRingCombineRequested=false, s_ringComboChanged=false;
 int s_pendingAssign=0, assignments=0, restores=0, jumps=0;
 bool hd_item_slot_active() { return hd; }
-const char* z_slot_provider_notice() { return hd ? "HD" : te ? "TE" : nullptr; }
 bool z_item_slot_active() { return own; }
 bool dawnlight_touch_ui_active() { return touchUi; }
 bool external_item_feature_enabled(const char* key) {
@@ -73,15 +72,16 @@ void assign_current_item(dMenu_Ring_c*,u8){++assignments;}
 // FUNCTIONS
 int main() {
     dMenu_Ring_c ring; auto* arg=&ring;
-    // Dawnlight alone keeps R and Touch-R combinations on every slot.
-    for(bool touch:{false,true})
+    // L under HD and R under Dawnlight must combine every supported item on
+    // every slot. Touch requests remain valid after HD clears logical R.
+    for(bool provider:{false,true}) for(bool touch:{false,true})
     for(int slot=0;slot<3;++slot)
     for(u8 item:{dItemNo_NORMAL_BOMB_e,dItemNo_WATER_BOMB_e,dItemNo_POKE_BOMB_e,
             dItemNo_HAWK_EYE_e,dItemNo_KANTERA_e}) {
-        hd=te=false;own=true;standalone=true;
+        hd=provider;own=!provider;standalone=true;
         selected.fill(255);mixed.fill(255);selected[slot]=SLOT_4;
         inventory.fill(255);inventory[4]=dItemNo_BOW_e;inventory[1]=item;
-        left=false;right=!touch;s_touchRingCombineRequested=touch;
+        left=!touch && hd;right=!touch && own;s_touchRingCombineRequested=touch;
         assert(before_ring_combine(nullptr,&arg,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
         assert(selected[slot]==1 && mixed[slot]==4);
         assert(ring.field_0x6b3==slot && ring.field_0x674[slot]==1);
@@ -96,29 +96,8 @@ int main() {
         assert(selected[slot]==4 && mixed[slot]==255);
         after_ring_combine(nullptr,&arg,nullptr,nullptr);
     }
-    // Either provider owns all controller/touch combination inputs. Even a
-    // queued Touch-R request or a stale enabled Dawnlight slot cannot mutate
-    // inventory, consume input, or refresh the provider's presentation.
-    for(int provider=1;provider<=3;++provider) for(bool staleOwn:{false,true})
-    for(int inputs=0;inputs<8;++inputs) for(int slot=0;slot<3;++slot)
-    for(u8 item:{dItemNo_NORMAL_BOMB_e,dItemNo_HAWK_EYE_e,dItemNo_KANTERA_e}) {
-        hd=provider&1;te=provider&2;own=staleOwn;
-        left=inputs&1;right=inputs&2;s_touchRingCombineRequested=inputs&4;
-        selected.fill(255);mixed.fill(255);selected[slot]=4;
-        inventory.fill(255);inventory[4]=dItemNo_BOW_e;inventory[1]=item;
-        const auto savedSelected=selected,savedMixed=mixed;
-        const auto savedInventory=inventory;
-        const int savedRestores=restores,savedJumps=jumps;
-        s_pendingAssign=73;s_ringComboChanged=true;
-        assert(before_ring_combine(nullptr,&arg,nullptr,nullptr)==HOOK_CONTINUE);
-        assert(!s_touchRingCombineRequested && !s_ringComboChanged);
-        after_ring_combine(nullptr,&arg,nullptr,nullptr);
-        assert(selected==savedSelected && mixed==savedMixed && inventory==savedInventory);
-        assert(restores==savedRestores && jumps==savedJumps && s_pendingAssign==73);
-        assert(left==bool(inputs&1) && right==bool(inputs&2));
-    }
     // Without Standalone, ordinary Lantern assignment remains untouched.
-    hd=te=false;own=true;left=false;right=true;standalone=false;
+    hd=true;own=false;left=true;right=false;standalone=false;
     selected.fill(255);mixed.fill(255);selected[0]=4;inventory[1]=dItemNo_KANTERA_e;
     assert(before_ring_combine(nullptr,&arg,nullptr,nullptr)==HOOK_CONTINUE);
     assert(selected[0]==4 && mixed[0]==255);
@@ -127,15 +106,10 @@ int main() {
     s_touchRingCombineRequested=true;
     assert(before_ring_combine(nullptr,&arg,nullptr,nullptr)==HOOK_CONTINUE);
     assert(selected[2]==4 && mixed[2]==255);
-    // With no provider, Touch-R still combines X/Y when Dawnlight Z is off.
-    selected[2]=255;selected[0]=4;s_touchRingCombineRequested=true;
-    assert(before_ring_combine(nullptr,&arg,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
-    after_ring_combine(nullptr,&arg,nullptr,nullptr);
-    selected[0]=4;mixed.fill(255);
     // No button: do not steal X/Y assignment. Wolf/explanation states are gated.
-    own=true;left=right=false;selected[2]=255;selected[0]=4;
+    hd=true;left=right=false;selected[2]=255;selected[0]=4;
     assert(before_ring_combine(nullptr,&arg,nullptr,nullptr)==HOOK_CONTINUE);
-    right=true;ring.mPlayerIsWolf=true;
+    left=true;ring.mPlayerIsWolf=true;
     assert(before_ring_combine(nullptr,&arg,nullptr,nullptr)==HOOK_CONTINUE);
     ring.mPlayerIsWolf=false;ring.mOldStatus=dMenu_Ring_c::STATUS_EXPLAIN;
     assert(before_ring_combine(nullptr,&arg,nullptr,nullptr)==HOOK_CONTINUE);
@@ -154,7 +128,7 @@ int main() {
     assert(assignments==1);
 }
 '''
-names = ['bool dawnlight_combine_active(', 'bool bow_mix_item(', 'bool bow_mix_item_on(', 'bool bow_mix_item_off(',
+names = ['bool bow_mix_item(', 'bool bow_mix_item_on(', 'bool bow_mix_item_off(',
          'bool set_bow_mix_item(', 'bool item_assign_allowed(',
          'HookAction before_ring_combine(', 'void after_ring_combine(',
          'HookAction before_ring_set_active_cursor(']
@@ -165,4 +139,4 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp.write_text(fixture)
     subprocess.run(['c++', '-std=c++20', '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Combo routing passed: Dawnlight R/Touch-R on X/Y/Z; HD/TE inputs untouched; native and Lantern combos')
+print('Combo routing passed: HD/Dawnlight, controller/touch, X/Y/Z, native and Lantern combos')

@@ -51,8 +51,6 @@ constexpr BOOL TRUE=1,FALSE=0;
 struct daAlink_c {};
 bool zActive=false,touchActive=true,s_dpadLeftTrig=false,s_touchZItemHeld=false,s_touchZItemTrig=false;
 bool s_touchRingCombineRequested=false;
-const char* providerNotice=nullptr;
-const char* z_slot_provider_notice(){return providerNotice;}
 int windowStatus=0;
 int dMeter2Info_getWindowStatus(){return windowStatus;}
 bool z_item_slot_active(){return zActive;}
@@ -102,18 +100,7 @@ int main(){
  assert(!s_touchRingCombineRequested); // gameplay R is not an item combination
  windowStatus=2;
  before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
- assert(s_touchRingCombineRequested); // Dawnlight alone owns Touch-R
- for(const char* notice:{"Z Items: Twilight HD HUD.","Z Items: Twilit Essentials.",
-                         "Z Items unavailable: provider check failed."}) {
-  providerNotice=notice;
-  s_touchRingCombineRequested=true;
-  assert(before_touch_set_control_pressed(nullptr,args,nullptr,nullptr)==HOOK_CONTINUE);
-  assert(!s_touchRingCombineRequested);
-  assert(observedButton==PAD_TRIGGER_R && observedPressed); // Dark Link unchanged
- }
- providerNotice=nullptr;
- before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
- assert(s_touchRingCombineRequested);
+ assert(s_touchRingCombineRequested); // capture before HD rebuilds pad buttons
  s_touchRingCombineRequested=false;pressed=false;
  before_touch_set_control_pressed(nullptr,args,nullptr,nullptr);
  assert(!s_touchRingCombineRequested); // release cannot request another combo
@@ -172,7 +159,7 @@ fixture = fixture.replace('// INPUT', '\n'.join(function(native, sig) for sig in
     'HookAction extra_touch_up', 'HookAction extra_touch_cancel', 'void sample_midna_touch_press')) + '\n' +
     '\n'.join(function(buttons, sig) for sig in ('bool consume_midna_touch_press','bool touch_jump_pressed','bool touch_jump_held','bool consume_dark_link_touch_press')))
 fixture = fixture.replace('// GAME', '\n'.join(function(items, sig) for sig in (
-    'bool dawnlight_combine_active', 'HookAction before_midna_talk_trigger', 'HookAction before_touch_set_control_pressed')))
+    'HookAction before_midna_talk_trigger', 'HookAction before_touch_set_control_pressed')))
 with tempfile.TemporaryDirectory() as tmp:
     cpp, exe = Path(tmp) / 'test.cpp', Path(tmp) / 'test'
     cpp.write_text(fixture)

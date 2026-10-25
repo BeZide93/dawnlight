@@ -307,6 +307,14 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     };
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
+    control.label="Autosave";
+    control.help_rml="Automatically save Survivors progress when closing hub menus and after hub changes. Independent of Dusklight's Autosave setting. Save progress and Save records remain available when off. Default: on.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivors_autosave_enabled();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){
+        if(settings_editable())set_survivors_autosave(value->bool_value);
+    };
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
     result=build_reset_scores(left);
     if(result!=MOD_OK)return result;
     control=UI_CONTROL_DESC_INIT;

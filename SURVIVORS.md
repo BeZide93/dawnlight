@@ -176,8 +176,12 @@ Speak to Zelda in the hub after receiving the Ordon Sword to open **Talents**. E
 use **+ / −** to spend or refund points in the scrollable list. Click a perk name
 for its description. Removing a prerequisite also refunds its dependent perks;
 **Reset all perks** refunds every rank without changing XP, level or high scores.
-Changes apply next run; run power-up ranks remain separate. Closing the menu
-saves the native slot in the background automatically. **Save progress** also
+Changes apply next run; run power-up ranks remain separate. **Settings → Autosave**
+is on by default and controls automatic background saves when closing hub menus
+or making other hub changes, independently of Dusklight's Autosave setting. Turning
+it off discards pending automatic requests; writes already started finish normally.
+The preference persists across sessions and is included in settings export/import.
+**Save progress** works even with Autosave off and
 allows an explicit save/retry while keeping the menu open. A failed write leaves
 you in the hub and displays a retry message. The results screen also offers **Save records**.
 

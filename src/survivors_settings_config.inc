@@ -1,6 +1,17 @@
 // Shared by the hub and Dawnlight Settings. ConfigService owns persistence and
 // export/import; active runs retain their immutable RunOptions snapshot.
 std::array<ConfigVarHandle,13> s_optionConfig{};
+// Saving is a live preference, not part of a run's difficulty/score snapshot.
+ConfigVarHandle s_autosaveConfig=0;
+bool survivors_autosave_enabled() {
+    int64_t value=1;
+    if(s_autosaveConfig)svc_config->get_int(mod_ctx,s_autosaveConfig,&value);
+    return value!=0;
+}
+void set_survivors_autosave(bool enabled) {
+    if(s_autosaveConfig && svc_config->set_int(mod_ctx,s_autosaveConfig,enabled)!=MOD_OK)
+        svc_log->warn(mod_ctx,"Survivors: could not persist the autosave setting");
+}
 // Controls place Boss HP before camera; retain established config slot identities.
 constexpr std::array<unsigned,6> s_runControlConfigSlots{0,1,2,3,11,4};
 bool settings_editable() {
@@ -61,5 +72,9 @@ ModResult initialize_option_config() {
         const auto result=register_owned_setting(&desc,&s_optionConfig[i]);
         if(result!=MOD_OK)return result;
     }
+    ConfigVarDesc autosave=CONFIG_VAR_DESC_INIT;
+    autosave.name="survivors-autosave";autosave.type=CONFIG_VAR_INT;autosave.default_int=1;
+    const auto result=register_owned_setting(&autosave,&s_autosaveConfig);
+    if(result!=MOD_OK)return result;
     load_option_config();return MOD_OK;
 }

@@ -345,6 +345,8 @@ u16 s_hubDoorPriority=0, s_hubDoorFlags=0;
 void open_window();
 void load_option_config();
 void store_option_config();
+bool survivors_autosave_enabled();
+void set_survivors_autosave(bool enabled);
 bool settings_editable();
 void hub_menu_closed() {
     if(s_hubMenu==HubMenu::None)return;

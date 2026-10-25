@@ -26,6 +26,7 @@ struct Log{std::vector<std::string> warnings;void warn(ModContext*,const char* t
 auto* svc_log=&logger;
 Run s_run;Records s_records;bool s_restart=false,s_progressSaving=false,s_progressSaved=false,s_storeFailed=false,s_saveRequested=false;
 bool s_hubDeparture=false,s_hubSaveRequested=false,transition=false,event=false;
+bool autosaveEnabled=true;bool survivors_autosave_enabled(){return autosaveEnabled;}
 bool in_arena(){return true;}bool transitioning(){return transition;}bool dComIfGp_event_runCheck(){return event;}
 unsigned s_window=42;void close_window(){s_window=0;}
 constexpr char kBlob[]="records";unsigned flushes=0,returnWrites=0;
@@ -128,7 +129,28 @@ int main(){
  s_hubSaveRequested=s_hubDeparture=true;assert(update_hub_save());
  autoSaving();saveSync=2;waitingForWrite();assert(update_hub_save());
  assert(s_storeFailed&&!s_hubDeparture&&!s_progressSaving);
-
+ // Disabled requests must not touch storage, resolve native symbols, report
+ // failure, or hold the door closed, even during events/transitions/host saves.
+ const auto loadsBefore=nativeLoads,writesBefore=nativeWrites,flushesBefore=flushes;
+ const auto resolutionsBefore=hook.requests.size();
+ autosaveEnabled=false;s_storeFailed=false;save.fail=true;hook.fail=true;status=3;
+ for(int gate=0;gate<4;++gate){
+  event=gate==1;transition=gate==2;mAutoSaveProc=gate==3?3:0;
+  s_hubSaveRequested=s_hubDeparture=true;
+  assert(!update_hub_save()&&!s_hubSaveRequested&&s_hubDeparture&&!s_storeFailed);
+ }
+ assert(nativeLoads==loadsBefore&&nativeWrites==writesBefore&&flushes==flushesBefore);
+ assert(hook.requests.size()==resolutionsBefore);
+ event=transition=false;mAutoSaveProc=0;save.fail=hook.fail=false;status=2;saveSync=1;
+ autosaveEnabled=true;assert(!update_hub_save()&&nativeLoads==loadsBefore); // No stale request.
+ // Explicit saves still work with autosave disabled.
+ autosaveEnabled=false;save_progress(nullptr,nullptr);assert(s_progressSaving&&nativeLoads==loadsBefore+1);
+ autoSaving();waitingForWrite();endAutoSave();assert(update_hub_save()&&s_progressSaved);
+ // Turning autosave off during an automatic write allows that write to finish.
+ autosaveEnabled=true;s_hubSaveRequested=true;assert(update_hub_save()&&s_progressSaving);
+ autosaveEnabled=false;assert(update_hub_save()&&s_progressSaving);
+ autoSaving();waitingForWrite();endAutoSave();assert(update_hub_save()&&s_progressSaved&&!s_progressSaving);
+ assert(flushes==flushesBefore+2);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

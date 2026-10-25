@@ -56,6 +56,8 @@ struct Save{bool fail=false;unsigned writes=0;std::vector<uint8_t> blob;
 UiDialogHandle s_debugNotice=0;void close_debug_notice(){s_debugNotice=0;}
 Run s_run;RunOptions s_options;int s_player=1;bool s_restart=false;
 enum class HubMenu{None,Talents,Run};unsigned s_hubClosingWindow=0;HubMenu s_hubMenu=HubMenu::Run;
+bool autosaveEnabled=true;bool survivors_autosave_enabled(){return autosaveEnabled;}
+void set_survivors_autosave(bool enabled){autosaveEnabled=enabled;}
 void hub_menu_closed(){} void load_option_config(){} void store_option_config(){}
 bool settings_editable(){return s_run.phase==Phase::Ready&&!s_restart&&!s_progressSaving;}
 
@@ -205,8 +207,14 @@ int main(){
  s_run.phase=Phase::Ready;s_options.camera_distance=300;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==300);
  before_run_camera(nullptr,cam,nullptr,nullptr);active=false;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==100);active=true;
  assert(build_difficulty(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
- assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==21);
-  auto population=controls[19];assert(std::string(population.label)=="Max Normal Enemies"&&population.kind==UI_CONTROL_NUMBER);
+ assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==22);
+  auto autosave=controls[16];assert(std::string(autosave.label)=="Autosave"&&autosave.kind==UI_CONTROL_TOGGLE);
+  UiControlValue saving=UI_CONTROL_VALUE_INIT;autosave.get(nullptr,nullptr,&saving);assert(saving.bool_value);
+  saving.bool_value=false;autosave.set(nullptr,nullptr,&saving);assert(!autosaveEnabled);
+  s_run.phase=Phase::Running;saving.bool_value=true;autosave.set(nullptr,nullptr,&saving);
+  assert(autosave.is_disabled(nullptr,nullptr)&&!autosaveEnabled);s_run.phase=Phase::Ready;
+  autosave.set(nullptr,nullptr,&saving);assert(autosaveEnabled);
+  auto population=controls[20];assert(std::string(population.label)=="Max Normal Enemies"&&population.kind==UI_CONTROL_NUMBER);
   assert(population.min==0&&population.max==345&&population.step==1&&!population.prefix);
   UiControlValue count=UI_CONTROL_VALUE_INIT;population.get(nullptr,population.user_data,&count);assert(count.int_value==345);
   count.int_value=-10;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==0);
@@ -214,14 +222,14 @@ int main(){
   count.int_value=42;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==42);
   s_run.phase=Phase::Running;count.int_value=1;population.set(nullptr,population.user_data,&count);
   assert(population.is_disabled(nullptr,population.user_data)&&s_options.max_normal_enemies==42);s_run.phase=Phase::Ready;
-  auto counter=controls[20];assert(std::string(counter.label)=="Show Enemy Counter"&&counter.kind==UI_CONTROL_TOGGLE);
+  auto counter=controls[21];assert(std::string(counter.label)=="Show Enemy Counter"&&counter.kind==UI_CONTROL_TOGGLE);
   UiControlValue visible=UI_CONTROL_VALUE_INIT;counter.get(nullptr,nullptr,&visible);assert(!visible.bool_value);
   visible.bool_value=true;counter.set(nullptr,nullptr,&visible);assert(counterShown);visible.bool_value=false;counter.set(nullptr,nullptr,&visible);assert(!counterShown);
- const auto manual=controls[17];
+ const auto manual=controls[18];
  assert(manual.kind==UI_CONTROL_GROUP&&std::string(manual.label)=="Manual aiming abilities"&&controlPanes.back()==1);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow&&std::string(pushedTab.title)==manual.label);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==31);
- for(unsigned i=21;i<31;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==32);
+ for(unsigned i=22;i<32;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
  for(unsigned i=0;i<5;++i) {
   auto& minus=controls[2*i];auto& plus=controls[2*i+1];auto& setting=s_runControls[i];
   assert(std::string(minus.label)=="-"&&std::string(plus.label)=="+"&&!minus.get&&!plus.set);
@@ -247,21 +255,21 @@ int main(){
   s_run.phase=Phase::Running;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));s_restart=false;
  }
- auto& fate=controls[18];assert(std::string(fate.label)=="Show Fate Tooltips"&&fate.kind==UI_CONTROL_TOGGLE&&!fate.is_disabled);
+ auto& fate=controls[19];assert(std::string(fate.label)=="Show Fate Tooltips"&&fate.kind==UI_CONTROL_TOGGLE&&!fate.is_disabled);
  UiControlValue tipValue=UI_CONTROL_VALUE_INIT;fate.get(nullptr,nullptr,&tipValue);assert(tipValue.bool_value);
  s_run.phase=Phase::Running;tipValue.bool_value=false;fate.set(nullptr,nullptr,&tipValue);
  fate.get(nullptr,nullptr,&tipValue);assert(!tipValue.bool_value);s_run.phase=Phase::Ready;
- for(unsigned i=21;i<31;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
+ for(unsigned i=22;i<32;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
   UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value);
   value.bool_value=false;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
-  assert(!s_options.manual_aim[i-21]);for(unsigned j=i-18;j<10;++j)assert(s_options.manual_aim[j]);
+  assert(!s_options.manual_aim[i-22]);for(unsigned j=i-19;j<10;++j)assert(s_options.manual_aim[j]);
   value.bool_value=true;s_run.phase=Phase::Running;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=true;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);s_restart=false;
  }
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);assert(!s_manualAimSettingsWindow);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==41);
- for(unsigned i=31;i<41;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==42);
+ for(unsigned i=32;i<42;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);
  s_run.start(1,s_options);for(bool enabled:s_run.options.manual_aim)assert(!enabled);
  s_options.manual_aim.fill(true);for(bool enabled:s_run.options.manual_aim)assert(!enabled);

@@ -71,6 +71,7 @@ void request_delete_score(ModContext*,void*);
 ModResult button(UiElementHandle pane,const char* label,UiPressedFn callback){UiControlDesc c=UI_CONTROL_DESC_INIT;c.label=label;c.on_pressed=callback;return svc_ui->pane_add_control(nullptr,pane,&c,nullptr);}
 void start_run(ModContext*,void*){}
 void save_progress(ModContext*,void*){}
+bool survivors_autosave_enabled(){return true;}void set_survivors_autosave(bool){}
 void store_option_config(){}
 void close_window(){s_window=0;}
 '''

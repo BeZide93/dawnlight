@@ -58,15 +58,18 @@ void update_progress_save() {
     if(s_storeFailed)progress_save_failed("native write failed (result "+std::to_string(*s_hostSaveResult)+")");
 }
 
-// Closing a hub menu queues exactly one background save. Let an existing host
-// save finish first, and keep failed writes in the hub where they can be retried.
+// All automatic hub saves share the Survivors toggle. Finish writes already
+// started, but discard disabled requests so they cannot block hub departure or
+// run later when autosave is re-enabled. Explicit Save progress bypasses this gate.
 bool update_hub_save() {
     if(s_progressSaving) {
         update_progress_save();
         if(!s_progressSaving && s_storeFailed)s_hubDeparture=false;
         return true;
     }
-    if(!s_hubSaveRequested || !in_arena() || transitioning() || dComIfGp_event_runCheck())return false;
+    if(!s_hubSaveRequested)return false;
+    if(!survivors_autosave_enabled()) {s_hubSaveRequested=false;return false;}
+    if(!in_arena() || transitioning() || dComIfGp_event_runCheck())return false;
     if(resolve_progress_save() && *s_hostSavePhase!=0)return true;
     s_hubSaveRequested=false;save_progress(nullptr,nullptr);
     if(s_storeFailed)s_hubDeparture=false;

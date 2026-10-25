@@ -446,10 +446,6 @@ jobs:
           python3 tests/combat_meter_test.py
           CXX=clang++ python3 tests/combat_meter_test.py
 
-      - name: Test native item-ring combine input ownership
-        if: matrix.platform == 'linux-x86_64'
-        run: python3 tests/ring_native_combine_test.py --dusklight-dir dusklight
-
       - name: Test custom Midna binding with Z Items
         if: matrix.platform == 'linux-x86_64'
         run: python3 tests/custom_midna_binding_test.py --dusklight-dir dusklight

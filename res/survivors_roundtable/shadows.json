@@ -15,10 +15,10 @@
   "min": 80,
   "max": 255,
   "sources": {
-    "res/survivors_roundtable/hall.mesh": "f2e26c218ee322d034b0d2b9ce7a6e2a5025faac72198b6bae59219ed1f8e0af",
-    "tools/generate_roundtable.py": "6fb608eb44fc17e624b843470011903ca1f016ec509dc5b3ae9f93f727d6bd0a",
+    "res/survivors_roundtable/hall.mesh": "8979cdadb5587faf7e075993c9dbe4e5473a35b22669b41a1688c7e977b0603f",
+    "tools/generate_roundtable.py": "b0f71e9705d2cf5fb2ca51a233bf1a995303938cdda4fd66fadeb4c713ca808b",
     "tools/bake_roundtable_shadows.cpp": "ccc06c56da9166d711fdd197f24ce4bd4a741d3fa67fb0f80fae056223bea6c0",
     "tools/bake_roundtable_shadows.py": "f8615a02c3727c33b539c0a06b2a42cf3ed8e5fbad4f619083f0c7224584858e",
-    "res/survivors_roundtable/shadows.i8": "0e7e496f9216ff78c1614093026e4a46e82ca3dd82f76bf8502a23d01b1b7a4d"
+    "res/survivors_roundtable/shadows.i8": "da76a199e474a9f51cf2f6473c668b8d2993365b137b91a3bd8d1559bd80b82f"
   }
 }

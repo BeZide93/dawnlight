@@ -25,6 +25,7 @@ TAU = math.tau
 # UV repeats are split in the authoring step so GX_CLAMP cannot bleed into
 # neighbouring atlas materials. Collision keeps the unsplit source triangles.
 TEXEL_SPAN = 200.0
+MASONRY_SPAN = 320.0
 EXIT_Z = 3900.0  # captured native BS_SHUTTER_START actor position
 EXIT_FLOOR = -250.0
 EXIT_HALF_WIDTH = 190.0
@@ -83,15 +84,21 @@ class Hall:
             uv = ((.03, .03), (.97, .03), (.97, .97))
         # Indirect room lighting plus warm local contributions from both fires.
         # Native actors receive the corresponding runtime point lights.
-        shade = .72 + .16*max(0, normal[1]/n) + .10*max(0, -normal[0]/n)
+        shade = .42 + .08*max(0, normal[1]/n) + .04*max(0, -normal[0]/n)
         def emit(points, coords):
             for pos, tex in zip(points, coords):
-                distance = math.hypot(pos[0], pos[2])
-                warm = max(0, 1-distance/1400)*.14
+                distance = length(sub(pos,LIGHT_POSITION))
+                warm = .65*max(0, 1-distance/1800)**2
                 hearth_distance=length(sub(pos,HEARTH_POSITION))
-                hearth_warm=.22*max(0,1-hearth_distance/900)
-                light = (shade+warm+hearth_warm, shade+warm*.6+hearth_warm*.45,
-                         shade+warm*.15+hearth_warm*.10)
+                hearth_warm=.30*max(0,1-hearth_distance/900)**2
+                # Cool, low ambient stone with localized amber pools from both fires.
+                light = (shade*.94+warm+hearth_warm,
+                         shade*.97+warm*.68+hearth_warm*.55,
+                         shade+warm*.32+hearth_warm*.20)
+                # Bare limestone has a brighter source albedo than masonry.
+                # Match both materials before applying the shared room lighting.
+                grade=(.70,.71,.72) if material>=6 else (1,1,1)
+                light=tuple(a*b for a,b in zip(light,grade))
                 dirt=1.0
                 if FLOOR<=pos[1]<=FLOOR+1 and normal[1]>0:
                     radius=math.hypot(pos[0],pos[2])
@@ -153,8 +160,9 @@ class Hall:
             # Measure after the object transform: scaled furniture must not
             # change the apparent size of wood grain or stone courses.
             pa,pb,pc,pd=[self.transform(p) for p in (a,b,c,d)]
-            width=max(length(sub(pb,pa)),length(sub(pc,pd)))/TEXEL_SPAN
-            height=max(length(sub(pd,pa)),length(sub(pc,pb)))/TEXEL_SPAN
+            span=MASONRY_SPAN if kw.get("material",0)==0 else TEXEL_SPAN
+            width=max(length(sub(pb,pa)),length(sub(pc,pd)))/span
+            height=max(length(sub(pd,pa)),length(sub(pc,pb)))/span
             uv=((0,0),(width,0),(width,height),(0,height))
         points=[self.transform(p) for p in (a,b,c,d)]
         if kw.get('visible',True) and kw.get('material',0)!=4 and length(cross(sub(points[1],points[0]),sub(points[2],points[0])))>.001:
@@ -186,8 +194,9 @@ class Hall:
             # Unwrap around the circumference instead of stretching a complete
             # stone tile over every narrow, 830-unit-tall shaft face.
             scale_r=length(sub(self.transform((x+r,y,z)),self.transform((x,y,z))))/r
-            arc=TAU*max(r,top)*scale_r/TEXEL_SPAN
-            height=length(sub(self.transform((x,y+h,z)),self.transform((x,y,z))))/TEXEL_SPAN
+            span=MASONRY_SPAN if kw.get("material",0)==0 else TEXEL_SPAN
+            arc=TAU*max(r,top)*scale_r/span
+            height=length(sub(self.transform((x,y+h,z)),self.transform((x,y,z))))/span
             self.quad(p,q,v,u,uv=tuple((u+uv_offset[0],v+uv_offset[1]) for u,v in
                 ((i*arc/n,0),((i+1)*arc/n,0),((i+1)*arc/n,height),(i*arc/n,height))),**kw)
             self.triangle(((x,y+h,z),u,v),uv=((.5,.5),(.5+.46*math.sin(a),.5+.46*math.cos(a)),(.5+.46*math.sin(b),.5+.46*math.cos(b))),**kw)
@@ -371,7 +380,7 @@ class Hall:
         span=max(max(u for u,v in coords)-xmin,max(v for u,v in coords)-zmin,1)
         crop=rng.uniform(.65,.93);u0=rng.uniform(0,1-crop);v0=rng.uniform(0,1-crop)
         uv=[(u0+(u-xmin)/span*crop,v0+(v-zmin)/span*crop) for u,v in coords]
-        shade=rng.randrange(182,221)
+        shade=rng.randrange(188,218)
         tint=tint or (shade,min(255,shade+rng.randrange(-3,4)),shade+rng.randrange(-8,3))
         material=rng.randrange(6,10)
         for j in range(1,len(points)-1):
@@ -379,46 +388,32 @@ class Hall:
                 material=material,tint=tint,solid=False,shadow_face=face)
 
     def paving(self,boundary):
-        # Continuous native floor remains underneath the purely visual paving.
-        # Jittered Voronoi cells produce unequal, interlocking flagstones rather
-        # than a repeated rectangular grid. All randomness is export-time only.
+        # Worn rectangular flags in staggered, unequal courses, like the reference
+        # hall. No large polygon cells or decorative circular floor inlay.
+        # This is visual paving over the unchanged continuous native collider.
         rng=random.Random(0x524F554E44)
-        sites=[(x*310+rng.uniform(-112,112),z*310+rng.uniform(-112,112))
-               for x in range(-7,8) for z in range(-7,8)]
-        rim=[(x,z) for x,y,z in boundary]
-        for x,z in sites:
-            poly=rim[:]
-            for qx,qz in sorted(sites,key=lambda q:(q[0]-x)**2+(q[1]-z)**2)[1:]:
-                nx=qx-x;nz=qz-z
-                poly=self.clip_polygon(poly,nx,nz,(qx*qx+qz*qz-x*x-z*z)/2)
-                if not poly:break
-            if len(poly)<3:continue
-            # Inset each edge by 1.2 units: fine warm mortar instead of black gaps.
-            original=poly[:]
-            for i,a in enumerate(original):
-                b=original[(i+1)%len(original)];nx=a[1]-b[1];nz=b[0]-a[0]
-                # The hall boundary is clockwise, so its outward normal is left.
-                limit=nx*a[0]+nz*a[1]-1.2*math.hypot(nx,nz)
-                poly=self.clip_polygon(poly,nx,nz,limit)
-                if not poly:break
-            if len(poly)<3:continue
-            # Small uneven corner chips, with no raised collision lip.
-            chipped=[]
-            for i,a in enumerate(poly):
-                before=poly[i-1];after=poly[(i+1)%len(poly)]
-                for b in (before,after):
-                    t=min(.15,rng.uniform(1,4)/max(math.dist(a,b),1))
-                    chipped.append((a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])))
-            self.floor_stone(chipped,rng)
-        # A restrained inlaid circular border relates the paving to the round
-        # table. Everything stays at floor height, including the rest position.
-        for r0,r1,count in ((605,622,48),(624,690,40),(692,709,48)):
-            offset=.012 if r1-r0>30 else 0
-            for i in range(count):
-                a=(i+.018)*TAU/count+offset;b=(i+.982)*TAU/count+offset
-                poly=[(r*math.sin(t),r*math.cos(t)) for r,t in ((r0,a),(r0,b),(r1,b),(r1,a))]
-                shade=rng.randrange(142,164) if r1-r0<30 else rng.randrange(193,218)
-                self.floor_stone(poly,rng,y=FLOOR+.8,tint=(shade,shade-2,shade-8))
+        z=-RADIUS-160
+        while z<RADIUS:
+            depth=rng.uniform(55,82)
+            x=-RADIUS-rng.uniform(60,230)
+            while x<RADIUS:
+                width=rng.uniform(65,135)
+                gap=rng.uniform(.7,1.0)
+                x0=x+gap;x1=x+width-gap;z0=z+gap;z1=z+depth-gap
+                # Each corner has its own small chip, not repeated rectangular
+                # outlines. Thin gray-brown mortar stays below the stone tops.
+                c=[rng.uniform(1,5) for _ in range(4)]
+                poly=[(x0+c[0],z0),(x1-c[1],z0),(x1,z0+c[1]),
+                      (x1,z1-c[2]),(x1-c[2],z1),(x0+c[3],z1),
+                      (x0,z1-c[3]),(x0,z0+c[0])]
+                for i,a in enumerate(boundary):
+                    b=boundary[(i+1)%len(boundary)]
+                    nx=a[2]-b[2];nz=b[0]-a[0]
+                    poly=self.clip_polygon(poly,nx,nz,nx*a[0]+nz*a[2])
+                    if not poly:break
+                self.floor_stone(poly,rng)
+                x+=width
+            z+=depth
 
     def floor_clutter(self):
         # Unequal, asymmetric scatter patches, with independently rotated pieces.
@@ -458,7 +453,7 @@ class Hall:
         boundary=[(RADIUS*math.sin((i+.5)*TAU/SIDES),FLOOR,RADIUS*math.cos((i+.5)*TAU/SIDES)) for i in range(SIDES)]
         for i,a in enumerate(boundary):
             b=boundary[(i+1)%SIDES]
-            self.triangle(((0,FLOOR,0),a,b),material=5,tint=(175,168,155))
+            self.triangle(((0,FLOOR,0),a,b),material=5,tint=(87,86,80))
         self.paving(boundary)
         # Sixteen-sided hall. The south bay is open to the original door.
         for i in range(SIDES):

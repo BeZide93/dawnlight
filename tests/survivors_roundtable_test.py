@@ -155,12 +155,12 @@ wall=g.Hall();wall.quad((0,0,0),(600,0,0),(600,830,0),(0,830,0))
 for surface in (column,wall):
     for start in range(0,len(surface.vertices),3):
         face=surface.vertices[start:start+3]
-        assert max(v[1] for v in face)-min(v[1] for v in face)<=g.TEXEL_SPAN+.01
+        assert max(v[1] for v in face)-min(v[1] for v in face)<=g.MASONRY_SPAN+.01
         for a in face:
             for b in face:
                 if abs(a[0]-b[0])+abs(a[2]-b[2])<.001 and abs(a[1]-b[1])>1:
                     span=abs(a[1]-b[1])/(abs(a[4]-b[4])*2/.92)
-                    assert abs(span-g.TEXEL_SPAN)<.01, 'Unequal vertical texture density'
+                    assert abs(span-g.MASONRY_SPAN)<.01, 'Unequal vertical texture density'
 assert all(0<=v[5]<1 and 0<=v[6]<1 for v in hall.vertices), 'Valid shadow atlas coordinates'
 assert len(hall.vertices)<=150000, 'Stay within renderer resource bounds'
 

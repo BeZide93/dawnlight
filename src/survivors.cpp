@@ -2,6 +2,7 @@
 #include "platform_compat.hpp"
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
+#include "survivors_performance.hpp"
 #include "survivors_roundtable.hpp"
 #include "survivors_roundtable_props.hpp"
 #include "generated/roundtable_layout.hpp"
@@ -151,6 +152,7 @@
 #include "JSystem/J3DGraphAnimator/J3DJoint.h"
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
+#include "JSystem/J3DGraphBase/J3DShape.h"
 #include "res/Object/AlAnm.h"
 #include "d/d_particle_name.h"
 #include "d/d_bg_w.h"
@@ -491,6 +493,7 @@ struct Attack {
     bool active = false;
     unsigned life = 0, weapon = 0, age = 0;
     bool returning = false, exploding = false, greatSpin = false;
+    bool reducedVisual = false;
     bool hurricane=false, bombArrow=false, detonated=false, aimPending=false, manualFlight=false;
     float aimSpread=0;
     bool chainSpin=false;
@@ -518,6 +521,30 @@ struct Attack {
 };
 // Stable addresses: collision server retains pointers until its next frame.
 std::deque<Attack> s_attacks(initial_projectile_slots);
+// Reservations persist until the corresponding emitters are stopped. This is
+// an active-emitter budget, never a per-tick spawn counter.
+survivor_perf::Budget s_visualBudget;
+template<size_t N> void stop_visual_emitters(std::array<u32,N>& keys) {
+    for(auto& key:keys) {
+        if(auto* e=key?dComIfGp_particle_getEmitter(key):nullptr) {
+            e->stopCreateParticle();e->quitImmortalEmitter();e->becomeInvalidEmitter();
+        }
+        key=0;
+    }
+    s_visualBudget.release(keys.data());
+}
+template<size_t N> bool full_visual(std::array<u32,N>& keys,survivor_perf::Effect kind,unsigned cost) {
+    if(!survivor_perf::enabled())return true;
+    if(s_visualBudget.acquire(keys.data(),kind,cost))return true;
+    stop_visual_emitters(keys);return false;
+}
+void prepare_performance_visuals(daAlink_c* link);
+void draw_reduced_attacks();
+void performance_line(cXyz,cXyz,GXColor);
+void begin_performance_lines();
+void submit_performance_lines();
+void clear_performance_lines();
+
 const dCcD_SrcSph kAttackSource = {
     {{0, {{AT_TYPE_NORMAL_SWORD, 3, 0x1a}, {0, 0}, 0}},
      {dCcD_SE_SWORD, 3, dCcG_At_Spl_UNK_1, dCcD_MTRL_NONE, {1}},
@@ -584,6 +611,7 @@ bool sword_kill_hit(const cCcD_Obj* collider);
 #include "survivors_controls.inc"
 #include "survivors_potions.inc"
 void stop_attack(Attack& a) {
+    s_visualBudget.release(a.emitters.data());a.reducedVisual=false;
     for (auto& id : a.emitters) {
         if (id) {
             if (auto* emitter = dComIfGp_particle_getEmitter(id)) {
@@ -598,6 +626,7 @@ void stop_attack(Attack& a) {
     a.collider.OffAtSetBit(); a.collider.ResetAtHit();
 }
 void clear_attacks() {
+    clear_performance_lines();
     s_multiStrike={};clear_lightning();
     clear_sword_aim();
     clear_jump_effects();
@@ -702,6 +731,8 @@ void detach_attack_references() {
 }
 void reset_runtime() {
     retire_hub_zelda();
+    clear_performance_lines();
+    survivor_perf::reset_run();
     clear_player_contacts();
     restore_gear_collection();close_gear_window();s_gear={};s_gearWritable=true;clear_gear_notices();
     clear_zelda_light_orbs();clear_king_waves();
@@ -1005,6 +1036,8 @@ void launch(daAlink_c* link, unsigned weapon, cXyz direction, bool manual, float
 void update_wave_effects(Attack& a, daAlink_c* link) {
     // Snapshot the launch tier: an upgrade never changes an in-flight collider.
     const auto effects = survivor_spin_effects(a.greatSpin);
+    a.reducedVisual=!full_visual(a.emitters,survivor_perf::Effect::Wave,unsigned(effects.size()));
+    if(a.reducedVisual)return;
     const float size = a.radius / std::max(1.f, a.effectBaseRadius);
     const cXyz scale(size, size, size);
     const csXyz rotation(-cM_atan2s(a.velocity.y, a.velocity.absXZ()),
@@ -1201,6 +1234,7 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
 #include "survivors_black_flame.inc"
 #include "survivors_status.inc"
 #include "survivors_lightning.inc"
+#include "survivors_performance_visuals.inc"
 #include "survivors_knockback.inc"
 void new_melee_swing() { ++s_meleeSerial; }
 #include "survivors_combat_pause.inc"
@@ -1329,6 +1363,7 @@ void after_player(ModContext*, void* args, void*, void*) {
         dComIfGs_setLife(std::min<unsigned>(dComIfGs_getMaxLifeGauge(),dComIfGs_getLife()+1));
     if (const unsigned rupees=s_run.auto_rupees())
         dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+s_run.gain_rupees(rupees)));
+    prepare_performance_visuals(link);
     update_enemy_effects();
     update_reachable_floor();
     update_horde_portals(link);
@@ -1534,11 +1569,14 @@ void after_draw(ModContext*, void*, void*, void*) {
         cXyz pos=drop.position+cXyz(0,8*cM_ssin(s16(s_run.ticks*700)),0);
         dDbVw_drawCubeOpa(pos,size,angle,GXColor{255,210,45,255});
     }
+    begin_performance_lines();
+    draw_reduced_attacks();
     draw_lightning();
     draw_loot();
     draw_victory_wave();
     draw_ranged();
     draw_arena_barriers();
+    submit_performance_lines();
 
 }
 void label(const char* text, float x, float y, float size, float width=550) {
@@ -1571,6 +1609,10 @@ void draw_hud(ModContext*, void* args, void*, void*) {
     if(preview || s_gearNoticeTicks)draw_gear_notice(preview);
     if (!preview && s_victory) { draw_victory_hud(x); graf->setup2D(); return; }
     if(!preview)enemy_hud::draw();
+    if(!preview && survivor_perf::monitor_enabled()) {
+        char status[160];survivor_perf::status(status,sizeof(status));
+        label(status,mDoGph_gInf_c::getMinXF()+16,mDoGph_gInf_c::getHeightF()-18,11,590);
+    }
     char text[180];
     draw_run_rank_hud(x,preview);
     const auto drawText=[&](HudPart part,float size,float offset=0.f) {
@@ -1644,6 +1686,7 @@ void select_upgrade(ModContext*, void* data) {
 }
 void begin_run() {
     if (s_run.phase != Phase::Ready || !s_arenaMeshReady || s_restart || s_progressSaving) return;
+    survivor_perf::reset_run();
     clear_zelda_light_orbs();clear_king_waves();
     s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     reset_ending();
@@ -1840,6 +1883,7 @@ bool survivors_dark_link_active() {
         s_run.phase == Phase::Upgrade || s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Treasure);
 }
 void update_survivors() {
+    survivor_perf::tick(s_active);
     update_title_preview();
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
@@ -1907,6 +1951,8 @@ ModResult initialize_survivors(ModError* error) {
     if(result!=MOD_OK)return result;
     result=initialize_option_config();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors settings");
+    result=survivor_perf::initialize();
+    if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors performance settings");
     result=enemy_hud::initialize();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors enemy HUD settings");
     result=initialize_hud_config();
@@ -2077,6 +2123,7 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    survivor_perf::shutdown();
     shutdown_roundtable();
     shutdown_roundtable_props();
     unregister_survivors_title_logo();

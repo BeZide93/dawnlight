@@ -412,7 +412,7 @@ int main(){
 '''
 with tempfile.TemporaryDirectory() as temp:
     cpp=Path(temp)/'test.cpp';exe=Path(temp)/'test'
-    cpp.write_text(fixture+"\nunsigned s_gearNoticeTicks=0;void update_gear_notice(){if(s_gearNoticeTicks)--s_gearNoticeTicks;}void clear_gear_notices(){s_gearNoticeTicks=0;}\n"+(root/'src/survivors_elite_positions.inc').read_text()+
+    cpp.write_text(fixture+"void prepare_performance_visuals(daAlink_c*){}"+"\nunsigned s_gearNoticeTicks=0;void update_gear_notice(){if(s_gearNoticeTicks)--s_gearNoticeTicks;}void clear_gear_notices(){s_gearNoticeTicks=0;}\n"+(root/'src/survivors_elite_positions.inc').read_text()+
         (root/'src/survivors_elites.inc').read_text()+extract(loot,'chest_spawning_allowed')+extract(loot,'find_chest_spawn_slot')+extract(loot,'drop_elite_chest')+
         extract(runtime,'normal_enemy_population')+extract(runtime,'update_spawns')+extract(runtime,'after_player')+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)

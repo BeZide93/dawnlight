@@ -1,3 +1,4 @@
+from survivors_performance_fixture import helpers
 """Exercise production chest purchases, placement and item trajectories with engine boundaries."""
 from pathlib import Path
 import re
@@ -31,7 +32,7 @@ stubs = r'''
 using namespace dawnlight::survivors;
 using ActorId=unsigned;constexpr ActorId kNone=~0u;
 unsigned short bow_fire_effect(){return 0x1234;}
-using s16=short;using u16=unsigned short;using u8=unsigned char;
+using u32=unsigned;using s16=short;using u16=unsigned short;using u8=unsigned char;
 struct ModContext {};
 struct cXyz {
     float x=0,y=0,z=0;
@@ -81,7 +82,7 @@ struct Collider {
     bool ChkAtHit(){return hit;}bool ChkAtShieldHit(){return shield;}
     void SetC(cXyz p){pos=p;}void SetR(float r){radius=r;}void SetAtVec(cXyz v){velocity=v;}
 };
-struct Attack {bool chainSpin=false;unsigned chainSpinTick=0;float chainSpinRadius=0,chainSpinAngle=0;bool manualFlight=false,aimPending=false;float aimSpread=0;
+struct Attack {bool reducedVisual=false;bool chainSpin=false;unsigned chainSpinTick=0;float chainSpinRadius=0,chainSpinAngle=0;bool manualFlight=false,aimPending=false;float aimSpread=0;
     unsigned bowVolleySlot=20;uint64_t bowVolley=0;ActorId target=kNone;unsigned hops=0,visitedCount=0,ballVictimCount=0,arrowTargets=1;std::array<ActorId,enemy_capacity>ballVictims{};std::array<ActorId,13>visited{};
     bool bombArrow=false,hurricane=false,detonated=false;bool active=false;unsigned life=0,weapon=0,age=0;bool returning=false,exploding=false;
     float travel=0,limit=0;cXyz position,velocity;float radius=0;Status status;Collider collider;
@@ -541,6 +542,6 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp'
     binary=Path(tmp)/'test'
     sampler=extract('random_arena_floor',(root/'src/survivors_elites.inc').read_text())
-    cpp.write_text(stubs+sampler+'\n'.join(extract(n) for n in functions)+main)
+    cpp.write_text(stubs+"struct PerfEmitter{void stopCreateParticle(){}void quitImmortalEmitter(){}void becomeInvalidEmitter(){}};PerfEmitter* dComIfGp_particle_getEmitter(u32){return nullptr;}"+helpers()+sampler+'\n'.join(extract(n) for n in functions)+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

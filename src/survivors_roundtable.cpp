@@ -1,4 +1,7 @@
 #include "survivors_roundtable.hpp"
+#include "survivors_performance.hpp"
+#include "JSystem/J3DGraphBase/J3DShape.h"
+#include "survivors_indexed_room.hpp"
 #include "survivors_roundtable_props.hpp"
 #include "generated/roundtable_layout.hpp"
 #include "service_imports.hpp"
@@ -34,6 +37,7 @@ constexpr size_t kMaxVertices=195000;
 static_assert(8+kMaxVertices*32 < 6*1024*1024); // RTH2 resource limit
 static_assert(kMaxVertices*sizeof(Vertex) < 5*1024*1024 - 1536*1024);
 std::vector<Vertex> s_vertices;
+std::vector<survivor_perf::IndexedRoomBatch> s_indexedRoom;
 std::vector<u8> s_collision;
 alignas(32) u8 s_texture[1024*1024*2];
 GXTexObj s_textureObject{},s_shadowObject{};
@@ -86,6 +90,7 @@ bool load_assets() {
         if(!n || n>65535 || offset<52 || offset>collision.size() ||
            n>(collision.size()-offset)/sizes[i])return false;
     }
+    s_indexedRoom=survivor_perf::index_room(vertices);
     s_vertices=std::move(vertices);s_collision=std::move(collision);
     std::memcpy(s_texture,texture.data(),sizeof(s_texture));
     GXInitTexObj(&s_textureObject,s_texture,1024,1024,GX_TF_RGB565,GX_CLAMP,GX_CLAMP,GX_FALSE);
@@ -258,7 +263,22 @@ public:
         GXSetZMode(GX_TRUE,GX_LEQUAL,GX_TRUE);
         GXSetBlendMode(GX_BM_NONE,GX_BL_ONE,GX_BL_ZERO,GX_LO_CLEAR);
         GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);GXSetCullMode(GX_CULL_NONE);
-        for(size_t start=0;start<s_vertices.size();start+=60000) {
+        if(survivor_perf::enabled()) {
+            GXSetVtxDesc(GX_VA_POS,GX_INDEX16);GXSetVtxDesc(GX_VA_CLR0,GX_INDEX16);
+            GXSetVtxDesc(GX_VA_TEX0,GX_INDEX16);GXSetVtxDesc(GX_VA_TEX1,GX_INDEX16);
+            // Arrays stay immutable for the room lifetime: FIFO processing is asynchronous.
+            for(const auto& batch:s_indexedRoom) {
+                GXSetArray(GX_VA_POS,batch.positions.data(),u32(batch.positions.size()*6),6,true);
+                GXSetArray(GX_VA_CLR0,batch.colors.data(),u32(batch.colors.size()*4),4,true);
+                GXSetArray(GX_VA_TEX0,batch.uv.data(),u32(batch.uv.size()*4),4,true);
+                GXSetArray(GX_VA_TEX1,batch.shadow.data(),u32(batch.shadow.size()*4),4,true);
+                GXBegin(GX_TRIANGLES,GX_VTXFMT0,u16(batch.indices.size()));
+                for(const auto& v:batch.indices) {
+                    GXPosition1x16(v[0]);GXColor1x16(v[1]);GXTexCoord1x16(v[2]);GXTexCoord1x16(v[3]);
+                }
+                GXEnd();
+            }
+        } else for(size_t start=0;start<s_vertices.size();start+=60000) {
             const size_t end=std::min(start+60000,s_vertices.size());
             GXBegin(GX_TRIANGLES,GX_VTXFMT0,static_cast<u16>(end-start));
             for(size_t i=start;i<end;++i) {
@@ -268,6 +288,7 @@ public:
             GXEnd();
         }
         j3dSys.reinitGX();
+        J3DShape::resetVcdVatCache();
     }
 };
 std::list<Room> s_rooms;
@@ -381,6 +402,6 @@ void shutdown_roundtable() {
         if(actor && fopAcM_GetName(actor)==fpcNm_BG_e)restore(room,static_cast<daBg_c*>(actor),true);
         else {release_roundtable_props(room.owner);detach(room);room.extinguish();if(room.installed)dComIfG_Bgsp().Release(room.collision);}
     }
-    s_rooms.clear();s_creates.clear();s_vertices.clear();s_collision.clear();s_ready=false;
+    s_rooms.clear();s_creates.clear();s_indexedRoom.clear();s_vertices.clear();s_collision.clear();s_ready=false;
 }
 }

@@ -19,13 +19,15 @@ struct EnemyEffect {
     dCcD_Sph collider;
 };
 std::array<EnemyEffect, enemy_capacity> s_effects;
+std::array<bool,enemy_capacity> s_burnVisuals{};
 void queue_effect_damage(EnemyEffect& effect,DamageSource source,unsigned power,bool fixed=false) {
     (fixed?effect.fixedPending:effect.pending)+=power;
     effect.attribution.add(source,power,fixed);
 }
 void clear_fire_edge();
 unsigned s_meleeSerial = 1, s_spreadSerial = 0;
-void stop_burn(EnemyEffect& effect) {
+void stop_burn_visual(EnemyEffect& effect) {
+    s_visualBudget.release(effect.emitters.data());
     for (unsigned i=0;i<effect.emitters.size();++i) {
         auto& key=effect.emitters[i];
         if (auto* emitter = key ? dComIfGp_particle_getEmitter(key) : nullptr) {
@@ -35,6 +37,9 @@ void stop_burn(EnemyEffect& effect) {
         }
         key = 0;
     }
+}
+void stop_burn(EnemyEffect& effect) {
+    stop_burn_visual(effect);
     effect.burn = 0; effect.pulse = ticks_per_second;
     effect.legendaryBurns={};
 }
@@ -240,6 +245,10 @@ void update_enemy_effects() {
         const bool legendary=std::any_of(effect.legendaryBurns.begin(),effect.legendaryBurns.end(),
             [](const auto& burn){return burn.remaining!=0;});
         if (!effect.burn && !legendary) { stop_burn(effect); continue; }
+        if(survivor_perf::enabled() && (!s_burnVisuals[i] ||
+            !s_visualBudget.acquire(effect.emitters.data(),survivor_perf::Effect::Burn,2))) {
+            stop_burn_visual(effect);continue; // Damage clocks above always advance.
+        }
         // Same native BURNS_A/B, trace callback, anchor fallback and scale as
         // baxlek/Fire-Arrows-Standalone. No external texture/model assets.
         effect.velocity = actor->speed;

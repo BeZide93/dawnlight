@@ -414,7 +414,7 @@ int main() {
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp'; binary=Path(tmp)/'test'
-    cpp.write_text(stubs+'\n'+ '\n'.join(extract(n) for n in [
+    cpp.write_text(stubs+"namespace survivor_perf{void reset_run(){}} void clear_performance_lines(){}"+ '\n'.join(extract(n) for n in [
         'in_arena','survivors_hub_preparing','retire_enemies','reset_runtime','prepare_save','activated','deactivated','new_save','loaded','reset',
         'begin_run','select_arena','cleanup_enemies','credit_death','before_game_start','before_opening','before_stage','after_power'])+'\n'+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)

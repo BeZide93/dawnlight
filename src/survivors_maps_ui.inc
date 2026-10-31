@@ -315,6 +315,19 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     };
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
+    control.label="Performance Mode";
+    control.is_disabled=nullptr; // Live cosmetic setting; never changes run difficulty or score.
+    control.help_rml="Reduce visual effects under load and use a more efficient hub renderer. Damage and projectiles are unchanged. Default: off.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivor_perf::enabled();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){survivor_perf::set_enabled(value->bool_value);};
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
+    control.label="Performance Monitor";
+    control.help_rml="Show completed-frame buffer usage and run peak, and log counters once per second while Performance Mode is on. Unsupported hosts use fixed effect budgets. Default: off.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivor_perf::monitor_enabled();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){survivor_perf::set_monitor(value->bool_value);};
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
     result=build_reset_scores(left);
     if(result!=MOD_OK)return result;
     control=UI_CONTROL_DESC_INIT;

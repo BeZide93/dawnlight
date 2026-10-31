@@ -58,6 +58,14 @@ jobs:
           python3 tests/survivors_hearth_floor_test.py
           python3 tests/survivors_roundtable_test.py
           python3 tests/survivors_roundtable_shadows_test.py
+          c++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/survivors_performance_policy_test.cpp -o /tmp/performance-policy-test
+          /tmp/performance-policy-test
+          c++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/survivors_indexed_room_test.cpp -o /tmp/indexed-room-test
+          /tmp/indexed-room-test res/survivors_roundtable/hall.mesh
+          python3 tests/survivors_performance_visuals_test.py
+          CXX=clang++ python3 tests/survivors_performance_visuals_test.py
+          python3 tests/survivors_performance_monitor_test.py
+          CXX=clang++ python3 tests/survivors_performance_monitor_test.py
           python3 tests/survivors_roundtable_runtime_test.py
           CXX=clang++ python3 tests/survivors_roundtable_runtime_test.py
           python3 tests/survivors_enemy_archives_test.py

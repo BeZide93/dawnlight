@@ -219,7 +219,7 @@ int main(){
 '''
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(fixture+available+(root/'src/survivors_results.inc').read_text()+(root/'src/survivors_scores_ui.inc').read_text()+(root/'src/survivors_maps_ui.inc').read_text()+(root/'src/survivors_debug_ui.inc').read_text()+main)
+ cpp.write_text(fixture+'namespace survivor_perf{bool enabled(){return false;}bool monitor_enabled(){return false;}void set_enabled(bool){}void set_monitor(bool){}}'+available+(root/'src/survivors_results.inc').read_text()+(root/'src/survivors_scores_ui.inc').read_text()+(root/'src/survivors_maps_ui.inc').read_text()+(root/'src/survivors_debug_ui.inc').read_text()+main)
  for enabled in [0,1]:
   subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-attributes',f'-DDAWNLIGHT_SURVIVORS_DEBUG={enabled}','-I',str(root/'src'),'-I',str(root/'include'),'-I',str(root/'dusklight/sdk/include'),str(cpp),'-o',str(exe)],check=True)
   subprocess.run([str(exe)],check=True)

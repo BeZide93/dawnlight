@@ -47,10 +47,21 @@ HookAction before_boss_rdb(ModContext*,void* args,void*,void*) {
     // controls spin duration in action 4, so never accelerate it there.
     if(encounter_running(*owner)&&e->mAction==1&&e->mMode>0&&e->field_0x6b8[0]>0)
         --e->field_0x6b8[0];
-    if(encounter_running(*owner)&&!owner->specialCooldown&&e->mAction==1&&fopAcM_searchPlayerDistance(&e->enemy)<900.f) {
-        e->mAction=4;e->mMode=0;owner->specialCooldown=180; // six seconds, safe attack boundary
+    if(encounter_running(*owner)&&!boss_attack_paused(*owner)&&!owner->stagger) {
+        const bool waiting=e->mAction==1||e->mAction==2;
+        if(waiting&&!owner->specialCooldown) {
+            e->mAction=4;e->mMode=0;owner->specialCooldown=180; // six seconds, including ranged combat
+        } else if(waiting&&e->field_0x6b8[0]==0&&fopAcM_searchPlayerDistance(&e->enemy)>420.f) {
+            e->mAction=3;e->mMode=0; // Native axe tell/swing; wave reaches distant Link.
+            e->enemy.current.angle.y=e->enemy.shape_angle.y=fopAcM_searchPlayerAngleY(&e->enemy);
+            e->enemy.speedF=0;
+        }
     }
     return HOOK_CONTINUE; // native chase, axe combos, spin and defence
+}
+void after_boss_rdb(ModContext*,void* args,void*,void*) {
+    auto* actor=mods::arg<e_rdb_class*>(args,0);auto* owner=encounter_owner(&actor->enemy);
+    if(owner&&owner->initialized)update_king_waves(actor,*owner);
 }
 HookAction before_boss_th(ModContext*,void* args,void*,void*) {
     auto* e=mods::arg<e_th_class*>(args,0);auto* owner=encounter_owner(e);

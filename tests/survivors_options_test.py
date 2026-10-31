@@ -3,6 +3,9 @@ from pathlib import Path
 import os, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
 fixture=r'''
+bool counterShown=false;bool show_enemy_counter(){return counterShown;}void set_enemy_counter(bool v){counterShown=v;}
+bool fateTips=true;bool show_fate_tooltips(){return fateTips;}void set_fate_tooltips(bool value){fateTips=value;}
+
 #include <any>
 #include <cassert>
 #include <cmath>
@@ -53,6 +56,8 @@ struct Save{bool fail=false;unsigned writes=0;std::vector<uint8_t> blob;
 UiDialogHandle s_debugNotice=0;void close_debug_notice(){s_debugNotice=0;}
 Run s_run;RunOptions s_options;int s_player=1;bool s_restart=false;
 enum class HubMenu{None,Talents,Run};unsigned s_hubClosingWindow=0;HubMenu s_hubMenu=HubMenu::Run;
+bool autosaveEnabled=true;bool survivors_autosave_enabled(){return autosaveEnabled;}
+void set_survivors_autosave(bool enabled){autosaveEnabled=enabled;}
 void hub_menu_closed(){} void load_option_config(){} void store_option_config(){}
 bool settings_editable(){return s_run.phase==Phase::Ready&&!s_restart&&!s_progressSaving;}
 
@@ -62,6 +67,8 @@ struct dBgS_CamLinChk{cXyz cross{0,0,150};cXyz GetCross(){return cross;}};
 struct Direction{cXyz v;void Val(cXyz a){v=a;}};
 struct dCamera_c{cXyz mEye{0,0,100},mCenter{};Direction mDirection;int mPadID=0;
  static bool isAimActive(){return aim;}bool lineBGCheck(cXyz*,cXyz*,dBgS_CamLinChk*,int){return blocked;}};
+bool s_hub=false;
+void restore_hub_arrival_camera(dCamera_c*){}
 void restore_sword_aim_camera(dCamera_c*){}bool update_sword_aim_camera(dCamera_c*){return false;}
 void resolve_manual_projectiles(dCamera_c*){}
 void open_hud_editor(ModContext*,void*){}
@@ -98,6 +105,7 @@ struct Service{
  ModResult pane_add_rml(ModContext*,UiElementHandle,const char*,UiElementHandle* handle){if(handle)*handle=99;return MOD_OK;}
  ModResult elem_set_class(ModContext*,UiElementHandle,const char*,bool){return MOD_OK;}
  ModResult pane_add_control(ModContext*,UiElementHandle pane,const UiControlDesc* c,UiElementHandle*){controls.push_back(*c);controlPanes.push_back(pane);return MOD_OK;}
+ ModResult pane_add_section(ModContext*,UiElementHandle,const char*){return MOD_OK;}
  ModResult pane_add_text(ModContext*,UiElementHandle,const char*,UiElementHandle* handle){if(handle)*handle=100;return MOD_OK;}
 }service;auto* svc_ui=&service;
 ModResult build_reset_scores(UiElementHandle){return MOD_OK;}
@@ -199,12 +207,29 @@ int main(){
  s_run.phase=Phase::Ready;s_options.camera_distance=300;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==300);
  before_run_camera(nullptr,cam,nullptr,nullptr);active=false;after_run_camera(nullptr,cam,nullptr,nullptr);assert(camera.mEye.z==100);active=true;
  assert(build_difficulty(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
- assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==18);
- const auto manual=controls.back();
+ assert(build_run_settings(nullptr,0,1,2,nullptr,nullptr)==MOD_OK&&controls.size()==24);
+  auto autosave=controls[16];assert(std::string(autosave.label)=="Autosave"&&autosave.kind==UI_CONTROL_TOGGLE);
+  UiControlValue saving=UI_CONTROL_VALUE_INIT;autosave.get(nullptr,nullptr,&saving);assert(saving.bool_value);
+  saving.bool_value=false;autosave.set(nullptr,nullptr,&saving);assert(!autosaveEnabled);
+  s_run.phase=Phase::Running;saving.bool_value=true;autosave.set(nullptr,nullptr,&saving);
+  assert(autosave.is_disabled(nullptr,nullptr)&&!autosaveEnabled);s_run.phase=Phase::Ready;
+  autosave.set(nullptr,nullptr,&saving);assert(autosaveEnabled);
+  auto population=controls[22];assert(std::string(population.label)=="Max Normal Enemies"&&population.kind==UI_CONTROL_NUMBER);
+  assert(population.min==0&&population.max==345&&population.step==1&&!population.prefix);
+  UiControlValue count=UI_CONTROL_VALUE_INIT;population.get(nullptr,population.user_data,&count);assert(count.int_value==345);
+  count.int_value=-10;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==0);
+  count.int_value=INT64_MAX;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==345);
+  count.int_value=42;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==42);
+  s_run.phase=Phase::Running;count.int_value=1;population.set(nullptr,population.user_data,&count);
+  assert(population.is_disabled(nullptr,population.user_data)&&s_options.max_normal_enemies==42);s_run.phase=Phase::Ready;
+  auto counter=controls[23];assert(std::string(counter.label)=="Show Enemy Counter"&&counter.kind==UI_CONTROL_TOGGLE);
+  UiControlValue visible=UI_CONTROL_VALUE_INIT;counter.get(nullptr,nullptr,&visible);assert(!visible.bool_value);
+  visible.bool_value=true;counter.set(nullptr,nullptr,&visible);assert(counterShown);visible.bool_value=false;counter.set(nullptr,nullptr,&visible);assert(!counterShown);
+ const auto manual=controls[20];
  assert(manual.kind==UI_CONTROL_GROUP&&std::string(manual.label)=="Manual aiming abilities"&&controlPanes.back()==1);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow&&std::string(pushedTab.title)==manual.label);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==28);
- for(unsigned i=18;i<28;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==34);
+ for(unsigned i=24;i<34;++i)assert(controlPanes[i]==3); // Never put toggles in the replaceable help pane.
  for(unsigned i=0;i<5;++i) {
   auto& minus=controls[2*i];auto& plus=controls[2*i+1];auto& setting=s_runControls[i];
   assert(std::string(minus.label)=="-"&&std::string(plus.label)=="+"&&!minus.get&&!plus.set);
@@ -230,22 +255,33 @@ int main(){
   s_run.phase=Phase::Running;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=(i==13);c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(value.bool_value==!(i==13));s_restart=false;
  }
- for(unsigned i=18;i<28;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
+ auto& fate=controls[21];assert(std::string(fate.label)=="Show Fate Tooltips"&&fate.kind==UI_CONTROL_TOGGLE&&!fate.is_disabled);
+ UiControlValue tipValue=UI_CONTROL_VALUE_INIT;fate.get(nullptr,nullptr,&tipValue);assert(tipValue.bool_value);
+ s_run.phase=Phase::Running;tipValue.bool_value=false;fate.set(nullptr,nullptr,&tipValue);
+ fate.get(nullptr,nullptr,&tipValue);assert(!tipValue.bool_value);s_run.phase=Phase::Ready;
+ for(unsigned i=24;i<34;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&c.user_data);
   UiControlValue value=UI_CONTROL_VALUE_INIT;c.get(nullptr,c.user_data,&value);assert(value.bool_value);
   value.bool_value=false;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
-  assert(!s_options.manual_aim[i-18]);for(unsigned j=i-17;j<10;++j)assert(s_options.manual_aim[j]);
+  assert(!s_options.manual_aim[i-24]);for(unsigned j=i-21;j<10;++j)assert(s_options.manual_aim[j]);
   value.bool_value=true;s_run.phase=Phase::Running;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);
   s_run.phase=Phase::Ready;s_restart=true;value.bool_value=true;c.set(nullptr,c.user_data,&value);c.get(nullptr,c.user_data,&value);assert(!value.bool_value);s_restart=false;
  }
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);assert(!s_manualAimSettingsWindow);
  manual.on_pressed(nullptr,nullptr);assert(s_manualAimSettingsWindow);
- assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==38);
- for(unsigned i=28;i<38;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
+ assert(pushedTab.build(nullptr,s_manualAimSettingsWindow,3,4,nullptr,nullptr)==MOD_OK&&controls.size()==44);
+ for(unsigned i=34;i<44;++i){UiControlValue value=UI_CONTROL_VALUE_INIT;controls[i].get(nullptr,controls[i].user_data,&value);assert(!value.bool_value);}
  windowClosed(nullptr,s_manualAimSettingsWindow,nullptr);
  s_run.start(1,s_options);for(bool enabled:s_run.options.manual_aim)assert(!enabled);
  s_options.manual_aim.fill(true);for(bool enabled:s_run.options.manual_aim)assert(!enabled);
  assert(!s_run.options.manual_enabled(Upgrade::Power)&&!s_run.options.manual_enabled(ManualAbility::Count));
  s_run.start(1,s_options);assert(s_run.options.switch_attack_lock&&!s_run.options.gyro_aim);
+ s_run.phase=Phase::Ready;
+ s_run.phase=Phase::Running;
+ for(unsigned i=17;i<=18;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&!c.is_disabled);
+  assert(std::string(c.label)==(i==17?"Performance Mode":"Performance Monitor"));
+  UiControlValue v=UI_CONTROL_VALUE_INIT;c.get(nullptr,nullptr,&v);assert(!v.bool_value);
+  v.bool_value=true;c.set(nullptr,nullptr,&v);c.get(nullptr,nullptr,&v);assert(v.bool_value);
+ }
  s_run.phase=Phase::Ready;
  controls.clear();s_options.debug={4,10,1,1,5};s_run.options.debug=s_options.debug;
  assert(build_debug(nullptr,0,1,2,nullptr,nullptr)==MOD_OK);
@@ -314,11 +350,22 @@ int main(){
 }
 '''
 core=(root/'src/survivors.cpp').read_text()
-window=core[core.index('void open_window() {'):core.index('ModResult activated(')]
+# Extract only the function under test. A range ending at the next unrelated
+# function also pulled in intervening includes (such as the title texture).
+start=core.index('void open_window() {')
+opening=core.index('{',start)
+depth=0
+for end in range(opening,len(core)):
+ depth+=(core[end]=='{')-(core[end]=='}')
+ if depth==0:
+  window=core[start:end+1]
+  break
+else:
+ raise AssertionError('unterminated open_window function')
 ui=(root/'src/survivors_maps_ui.inc').read_text().split('UiElementHandle s_difficultySummary',1)[1]
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(fixture+'bool extended_locomotion(fopAc_ac_c* a,int p){return p==fpcNm_E_BS_e&&reinterpret_cast<e_bs_class*>(a)->action==2;}\n'+(root/'src/survivors_options.inc').read_text()+'UiElementHandle s_difficultySummary'+ui+(root/'src/survivors_debug_ui.inc').read_text()+window+main)
+ cpp.write_text(fixture+'namespace survivor_perf{bool mode=false,monitor=false;bool enabled(){return mode;}bool monitor_enabled(){return mode&&monitor;}void set_enabled(bool v){mode=v;}void set_monitor(bool v){monitor=v;}}'+'bool extended_locomotion(fopAc_ac_c* a,int p){return p==fpcNm_E_BS_e&&reinterpret_cast<e_bs_class*>(a)->action==2;}\n'+(root/'src/survivors_options.inc').read_text()+'UiElementHandle s_difficultySummary'+ui+(root/'src/survivors_debug_ui.inc').read_text()+window+main)
  for enabled in [0,1]:
   subprocess.run([os.environ.get('CXX','c++'),f'-DDAWNLIGHT_SURVIVORS_DEBUG={enabled}','-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-attributes','-I',str(root/'src'),'-I',str(root/'dusklight/sdk/include'),str(cpp),'-o',str(exe)],check=True)
   subprocess.run([str(exe)],check=True)

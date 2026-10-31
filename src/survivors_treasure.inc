@@ -137,7 +137,7 @@ bool begin_treasure_demo(unsigned index, daAlink_c* link, ChestReward reward) {
     s_treasure = {}; s_treasure.item = item;
     s_treasure.result = preview; s_treasure.key = key;
     s_treasure.price = key ? 0 : s_run.chest_price(s_chests[index].free, s_chests[index].fixed);
-    s_treasure.bonusRupees = s_run.chest_rupees(reward, rarity, potion_capacity());
+    s_treasure.bonusRupees = s_run.preview_rupees(s_run.chest_rupees(reward, rarity, potion_capacity()));
     if (reward == ChestReward::RedPotion) s_treasure.potions = s_run.chest_gain(reward, rarity, potion_capacity());
     s_chests[index].reward = reward;
     s_run.phase = Phase::Treasure;
@@ -154,15 +154,26 @@ void apply_treasure_inventory(daAlink_c* link,ChestReward reward,const Run& resu
         if (light) link->onLightSwordGetEffect();
     } else if (reward == ChestReward::Shield) {
         const u8 shield = shield_item(result);
+        const bool changed = dComIfGs_getSelectEquipShield() != shield;
         dComIfGs_setCollectShield(result.shield_tier());
         dComIfGs_onItemFirstBit(shield);
         dMeter2Info_setShield(shield, false);
+        if (changed) link->setShieldChange();
     } else if (reward == ChestReward::RedPotion) {
         for (unsigned i = 0; i < potions; ++i)
             dComIfGs_setItem(potion_slot(), dItemNo_RED_BOTTLE_e);
         dComIfGs_onItemFirstBit(dItemNo_EMPTY_BOTTLE_e);
         dComIfGs_onItemFirstBit(dItemNo_RED_BOTTLE_e);
     }
+}
+HookAction before_survivors_shield_update(ModContext*, void* args, void*, void*) {
+    auto* link = mods::arg<daAlink_c*>(args, 0);
+    // Native gameplay does not pump the collection menu's asynchronous shield
+    // reload. Finish it before Link updates/draws, without opening that menu.
+    if (in_arena() && link && link == daAlink_getAlinkActorClass() &&
+        !link->checkStatusWindowDraw() && link->getShieldChangeWaitTimer() != 0)
+        link->loadShieldModelDVD();
+    return HOOK_CONTINUE;
 }
 // Reuse the choice cards with an inactive, free slot. No world chest/model or
 // Get Item event is needed, and the ordinary chest price never advances.

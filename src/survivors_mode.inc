@@ -5,7 +5,7 @@ ModResult register_survivors_mode(ModError* error) {
     const GameModeDesc mode{
         .struct_size = sizeof(GameModeDesc), .game_mode_id = kMode,
         .full_name = "Hyrule Survivors", .save_name = "gczelda2-survivors", .user_data = nullptr,
-        .on_activated = activated, .on_deactivated = deactivated, .on_play = activated,
+        .on_activated = activated, .on_deactivated = deactivated, .on_play = play_survivors,
         .on_save_loaded = loaded, .on_new_save = new_save, .on_new_save_select = nullptr,
         .on_game_reset = reset, .on_tick = nullptr,
     };

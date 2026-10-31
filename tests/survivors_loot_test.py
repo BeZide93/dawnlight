@@ -1,3 +1,4 @@
+from survivors_performance_fixture import helpers
 """Exercise production chest purchases, placement and item trajectories with engine boundaries."""
 from pathlib import Path
 import re
@@ -31,7 +32,7 @@ stubs = r'''
 using namespace dawnlight::survivors;
 using ActorId=unsigned;constexpr ActorId kNone=~0u;
 unsigned short bow_fire_effect(){return 0x1234;}
-using s16=short;using u16=unsigned short;using u8=unsigned char;
+using u32=unsigned;using s16=short;using u16=unsigned short;using u8=unsigned char;
 struct ModContext {};
 struct cXyz {
     float x=0,y=0,z=0;
@@ -81,7 +82,7 @@ struct Collider {
     bool ChkAtHit(){return hit;}bool ChkAtShieldHit(){return shield;}
     void SetC(cXyz p){pos=p;}void SetR(float r){radius=r;}void SetAtVec(cXyz v){velocity=v;}
 };
-struct Attack {bool chainSpin=false;unsigned chainSpinTick=0;float chainSpinRadius=0,chainSpinAngle=0;bool manualFlight=false,aimPending=false;float aimSpread=0;
+struct Attack {bool reducedVisual=false;bool chainSpin=false;unsigned chainSpinTick=0;float chainSpinRadius=0,chainSpinAngle=0;bool manualFlight=false,aimPending=false;float aimSpread=0;
     unsigned bowVolleySlot=20;uint64_t bowVolley=0;ActorId target=kNone;unsigned hops=0,visitedCount=0,ballVictimCount=0,arrowTargets=1;std::array<ActorId,enemy_capacity>ballVictims{};std::array<ActorId,13>visited{};
     bool bombArrow=false,hurricane=false,detonated=false;bool active=false;unsigned life=0,weapon=0,age=0;bool returning=false,exploding=false;
     float travel=0,limit=0;cXyz position,velocity;float radius=0;Status status;Collider collider;
@@ -122,6 +123,10 @@ std::vector<EliteFloor>s_eliteFloors{
  {{-10000,0,-10000},{10000,0,-10000},{-10000,0,10000},200000000},
  {{10000,0,10000},{-10000,0,10000},{10000,0,-10000},400000000}};
 bool walkable_spawn_path(cXyz,cXyz&,float){return !blocked&&!invalidFloor&&!arenaBlocked;}
+bool distributionReady=true;bool arena_distribution_ready(){return distributionReady;}
+float arena_distribution_area(){return s_eliteFloorArea;}
+bool needs_reachable_floor(){return false;}bool sample_reachable_arena_floor(cXyz&){return false;}
+bool reachable=true;bool reachable_arena_floor(cXyz){return reachable;}
 bool elite_floor_position(cXyz&){++placement;return !invalidFloor;}
 bool in_arena(){return arenaPresent;}bool transitioning(){return transition;}
 unsigned dComIfGs_getRupee(){return rupees;}void dComIfGs_setRupee(unsigned r){rupees=r;}
@@ -432,11 +437,15 @@ int main(){
     s_run.phase=Phase::Running;assert(!chest_spawning_allowed()&&!s_chests[0].active);
     // Seed every map budget independently; fixed chests do not replenish after purchase.
     for(unsigned map=0;map<5;++map) {
-        reset();s_map=map;invalidFloor=true;seed_map_chests(&player);
+        reset();s_map=map;distributionReady=false;seed_map_chests(&player);
+        for(const auto& c:s_chests)assert(!c.active);
+        distributionReady=true;invalidFloor=true;seed_map_chests(&player);
         for(const auto& c:s_chests)assert(!c.active);
         // Safe destinations can be reached by going around obstacles. The old
         // Link-to-chest straight-path filter incorrectly rejected all of them.
-        invalidFloor=false;blocked=true;
+        invalidFloor=false;reachable=false;seed_map_chests(&player);
+        for(const auto& c:s_chests)assert(!c.active);
+        reachable=true;blocked=true;
         for(unsigned frame=0;frame<200;++frame){
             const unsigned before=placement;seed_map_chests(&player);
             assert(placement-before<=24);
@@ -533,6 +542,6 @@ with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp'
     binary=Path(tmp)/'test'
     sampler=extract('random_arena_floor',(root/'src/survivors_elites.inc').read_text())
-    cpp.write_text(stubs+sampler+'\n'.join(extract(n) for n in functions)+main)
+    cpp.write_text(stubs+"struct PerfEmitter{void stopCreateParticle(){}void quitImmortalEmitter(){}void becomeInvalidEmitter(){}};PerfEmitter* dComIfGp_particle_getEmitter(u32){return nullptr;}"+helpers()+sampler+'\n'.join(extract(n) for n in functions)+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

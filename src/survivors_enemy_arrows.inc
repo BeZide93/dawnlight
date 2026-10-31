@@ -27,7 +27,7 @@ unsigned enemy_damage_factor(ActorId id) {
     return child&&!child->retiring?child->damageFactor:1;
 }
 bool structural_enemy_child(s16 profile) {
-    return profile==fpcNm_E_MM_MT_e||profile==fpcNm_E_TH_BALL_e||profile==fpcNm_MANT_e||profile==fpcNm_E_RDY_e;
+    return profile==fpcNm_E_RD_e||profile==fpcNm_E_MM_MT_e||profile==fpcNm_E_TH_BALL_e||profile==fpcNm_MANT_e||profile==fpcNm_E_RDY_e;
 }
 bool attached_enemy_child(s16 profile) {return structural_enemy_child(profile)||profile==fpcNm_E_PZ_e||profile==fpcNm_E_FK_e;}
 bool owned_arrow_spawn(void* args) {
@@ -36,7 +36,9 @@ bool owned_arrow_spawn(void* args) {
     const auto profile=mods::arg<s16>(args,0);
     auto* parent=actor_by_id(mods::arg<ActorId>(args,1));
     if(enemy->profile==fpcNm_E_YC_e&&parent&&fopAcM_GetName(parent)==fpcNm_E_RDY_e&&profile==fpcNm_E_ARROW_e)return true;
-    return (enemy->profile==fpcNm_E_YC_e&&profile==fpcNm_E_RDY_e) ||
+    if(enemy->profile==fpcNm_E_WB_e&&parent&&fopAcM_GetName(parent)==fpcNm_E_RD_e&&profile==fpcNm_E_ARROW_e)return true;
+    return (enemy->profile==fpcNm_E_WB_e&&profile==fpcNm_E_RD_e) ||
+        (enemy->profile==fpcNm_E_YC_e&&profile==fpcNm_E_RDY_e) ||
         (enemy->profile==fpcNm_B_GND_e&&profile==fpcNm_E_FK_e) ||
         ((enemy->profile==fpcNm_E_RD_e||enemy->profile==fpcNm_E_RDY_e)&&profile==fpcNm_E_ARROW_e) ||
         (enemy->profile==fpcNm_E_CR_e&&profile==fpcNm_E_CR_EGG_e) ||
@@ -76,7 +78,7 @@ void spawn_enemy_arrow_spread(void* args) {
     // Count successful original shots only; recursive side arrows never count.
     // Enemy slot lifetime owns the cadence, so replacement archers start fresh.
     owner->arrowVolley=(owner->arrowVolley+1)%(owner->elite?2:3);
-    if(owner->elite) {if(owner->profile!=fpcNm_E_YC_e && owner->arrowVolley==0)return;}
+    if(owner->elite) {if(owner->profile!=fpcNm_E_YC_e && owner->profile!=fpcNm_E_WB_e && owner->arrowVolley==0)return;}
     else if (!s_run.endless && owner->arrowVolley!=0) return;
     struct SpreadScope { SpreadScope(){s_spawningEnemyArrows=true;} ~SpreadScope(){s_spawningEnemyArrows=false;} } scope;
     // Same native +/-0x900 yaw fan as enemy_slow_motion/bulblin.cpp Hard Mode,

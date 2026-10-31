@@ -231,6 +231,8 @@ bool next_boom_target(Attack& a, daAlink_c* link, float range) {
     return true;
 }
 void update_boom_wind(Attack& a, daAlink_c* link) {
+    a.reducedVisual=!full_visual(a.emitters,survivor_perf::Effect::Boomerang,2);
+    if(a.reducedVisual)return;
     constexpr std::array<u16, 2> effects{0x1fe, 0x1ff}; // Native Gale Boomerang trails.
     const csXyz angle(0, cM_atan2s(a.velocity.x, a.velocity.z), 0);
     const float size=a.hurricane ? 2.f : 1.f;
@@ -355,6 +357,10 @@ void explode_item(Attack& a, daAlink_c* link) {
     a.exploding = true; a.life = 60; a.age = 0; a.velocity = cXyz(0, 0, 0);
     a.radius = a.weapon==unsigned(Upgrade::BombArrow) ? s_run.bomb_arrow_radius() : s_run.bomb_radius();
     a.collider.ResetAtHit(); a.collider.OnAtSetBit();
+    // Release an old projectile trail before reserving a different effect family.
+    stop_visual_emitters(a.emitters);
+    a.reducedVisual=!full_visual(a.emitters,survivor_perf::Effect::Explosion,9);
+    if(a.reducedVisual)return; // Collider and lifetime above remain unchanged.
     // Complete native normal-bomb burst, including splash, debris and smoke.
     constexpr std::array<u16, 9> effects{0x161, 0x162, 0x163, 0x164, 0x165, 0x166, 0x167, 0x168, 0x1ec};
     const float size = a.radius / 200.0f;
@@ -454,7 +460,8 @@ void update_item_attack(Attack& a, daAlink_c* link) {
     if (weapon == Upgrade::Boomerang) update_boom_wind(a, link);
     if (weapon == Upgrade::Bow && s_run.rank(Upgrade::FireArrows)) {
         if (const u16 effect = bow_fire_effect())
-            a.emitters[0] = dComIfGp_particle_set(a.emitters[0], effect, &a.position, nullptr,
+            if(full_visual(a.emitters,survivor_perf::Effect::Other,1))
+                a.emitters[0] = dComIfGp_particle_set(a.emitters[0], effect, &a.position, nullptr,
                 nullptr, nullptr, 0xff, nullptr, -1, nullptr, nullptr, nullptr);
     }
     if (a.exploding && a.age > 12) { a.collider.OffAtSetBit(); return; }
@@ -499,7 +506,7 @@ bool spawn_chest(daAlink_c* link) {
             const float corner = dComIfG_Bgsp().GroundCross(&ground);
             if (!std::isfinite(corner) || std::abs(corner - floor) > 20) clear = false;
         }
-        if (!clear || !walkable_spawn_path(link->current.pos,pos,85)) continue;
+        if (!clear || !walkable_spawn_path(link->current.pos,pos,85) || !reachable_arena_floor(pos)) continue;
         // Keep the old chest intact until a replacement position is validated.
         *slot = {}; slot->active = true; slot->position = pos; slot->yaw = yaw + 0x8000;
         slot->spawnOrder=++s_chestSequence;
@@ -510,15 +517,16 @@ bool spawn_chest(daAlink_c* link) {
 // Separate, one-use map chests never consume the six replenishing slots.
 void seed_map_chests(daAlink_c* link) {
     if (!chest_spawning_allowed()) return;
-    if (!s_arenaMeshReady) return;
+    if (!s_arenaMeshReady || !arena_distribution_ready()) return;
     const unsigned budget=map_chest_budget(s_map);
     if (!budget) return;
     // Exploration chests sample the whole room, independently of Link's view
     // and straight-line walking path. random_arena_floor checks dry native
-    // ground, room membership, exits, walls and the chest footprint locally.
+    // ground, room membership, exits, walls and the chest footprint locally,
+    // plus a verified walking route from the entrance on every arena map.
     // A direct path from Link rejects safe sites behind hills/walls/rivers and
     // concentrates the entire map budget near the entrance.
-    const float spacing=std::clamp(std::sqrt(s_eliteFloorArea/float(budget))*0.5f,250.f,2500.f);
+    const float spacing=std::clamp(std::sqrt(arena_distribution_area()/float(budget))*0.5f,250.f,2500.f);
     unsigned attempts=0;
     for (unsigned n=0;n<budget;++n) {
         if (s_mapChestPlaced[n]) continue;
@@ -568,6 +576,7 @@ void draw_loot() {
         root->setMtxCalc(previous); // Shared native chest data must not retain our animation pointer.
     }
     auto* link = daAlink_getAlinkActorClass();
+    unsigned chainBudget=survivor_perf::Pressure{survivor_perf::tier(),0}.chain_total();
     for (unsigned i = kItemBegin; i < s_attacks.size(); ++i) {
         const auto& a = s_attacks[i]; if (!a.active || a.exploding || a.weapon < unsigned(Upgrade::Bow) || a.weapon > unsigned(Upgrade::Ball)) continue;
         const auto weapon = static_cast<Upgrade>(a.weapon);
@@ -575,7 +584,7 @@ void draw_loot() {
         const auto pitch = weapon == Upgrade::Bow ? s16(-cM_atan2s(a.velocity.y, a.velocity.absXZ())) : s16(0);
         draw_loot_model(a.bombArrow ? a.bombModel : a.model, a.position, yaw, pitch,
             weapon == Upgrade::Bow ? 1 : s_run.radius(weapon == Upgrade::Boomerang ? (a.hurricane ? 2.f : 1.f) : 1 + 0.08f * (s_run.rank(weapon) - 1),weapon));
-        if (weapon == Upgrade::Boomerang && s_loot.windAnim) {
+        if (weapon == Upgrade::Boomerang && s_loot.windAnim && !a.reducedVisual) {
             auto* model = a.wind;
             auto* data = model->getModelData(); auto* root = data->getJointNodePointer(0);
             auto* joint = data->getJointNodePointer(4);
@@ -586,6 +595,6 @@ void draw_loot() {
             draw_loot_model(model, a.position, 0, 0, a.hurricane ? 2.f : 1.f);
             root->setMtxCalc(oldCalc); joint->setCallBack(oldCallback);
         }
-        if (weapon == Upgrade::Ball && link) draw_chain(i, link, a.position);
+        if (weapon == Upgrade::Ball && link) draw_chain(i, link, a.position,chainBudget);
     }
 }

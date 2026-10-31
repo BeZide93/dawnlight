@@ -72,7 +72,7 @@ int main(){
   Pedestal p;p.current.pos=anchor;p.shape_angle.y=7;live=&p;pending=false;
   assert(!survivors_equipment_chest_anchor(out));
   phaseResult=1;assert(create_pedestal(&p)==1&&!p.ready&&references==1&&heapCreates==0);
-  phaseResult=4;assert(create_pedestal(&p)==4&&p.ready&&p.equipment&&p.survivors);
+  phaseResult=4;assert(create_pedestal(&p)==4&&p.ready&&p.equipment);
   assert(modelCreates==1&&heapCreates==1&&p.collision.height==120&&!sTrials);
   assert(mDoMtx_stack_c::y==50&&mDoMtx_stack_c::yaw==7);
   assert(survivors_equipment_chest_anchor(out)&&out.x==500&&out.y==40);

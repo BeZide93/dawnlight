@@ -57,7 +57,10 @@ void load_records(){}constexpr const char* kBlob="test";constexpr int MOD_OK=0;
 struct Save{unsigned writes=0;int set_blob(ModContext*,const char*,const void*,size_t){++writes;return 0;}}save;
 auto* svc_save=&save;
 void update_combat_feedback(){}void update_enemy_effects(){}
+void update_reachable_floor(){assert(false);} // Victory/defeat must not expand spawn routes.
 void update_spawns(daAlink_c*){++spawns;}void update_pots(daAlink_c*){}
+void update_palace_ferries(){}
+void update_horde_portals(daAlink_c*){assert(false);}
 void update_weapons(daAlink_c*){++attacks;}void update_orbs(daAlink_c*){++orbs;}
 struct Pickup{bool retiring=false;};unsigned pickupMoves=0;
  bool pickup_waiting(Pickup&,fopAc_ac_c*){return true;}
@@ -173,7 +176,7 @@ int main(){
 '''
 ending=(root/'src/survivors_ending.inc').read_text().replace('#include "survivors_victory_wave.inc"','')
 native=(root/'dusklight/src/d/d_gameover.cpp').read_text()
-code=fixture+'\nunsigned s_gearNoticeTicks=0;void update_gear_notice(){if(s_gearNoticeTicks)--s_gearNoticeTicks;}void clear_gear_notices(){s_gearNoticeTicks=0;}void drop_boss_gear(){}\n'+''.join(function(native,s) for s in ['int dGameover_c::_execute()',
+code=fixture+"void prepare_performance_visuals(daAlink_c*){}"+'\nunsigned s_gearNoticeTicks=0;void update_gear_notice(){if(s_gearNoticeTicks)--s_gearNoticeTicks;}void clear_gear_notices(){s_gearNoticeTicks=0;}void drop_boss_gear(){}\n'+''.join(function(native,s) for s in ['int dGameover_c::_execute()',
  'void dGameover_c::playerAnmWait_init()','void dGameover_c::playerAnmWait_proc()',
  'void dGameover_c::dispFadeOut_init()','void dGameover_c::dispFadeOut_proc()',
  'void dGameover_c::dispWait_init()','void dGameover_c::dispWait_proc()'])+ending+''.join(

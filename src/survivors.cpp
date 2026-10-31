@@ -3,6 +3,10 @@
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
 #include "survivors_freeze_diagnostics.hpp"
+#include "survivors_performance.hpp"
+#include "survivors_roundtable.hpp"
+#include "survivors_roundtable_props.hpp"
+#include "generated/roundtable_layout.hpp"
 #include "survivors_enemy_hud.hpp"
 #include "survivors_integrity.hpp"
 #include "d/d_door_param2.h"
@@ -19,6 +23,7 @@
 #include "survivors_multistrike.hpp"
 #include "survivors_enemy_hits.hpp"
 #include "survivors_boss_tactics.hpp"
+#include "survivors_field_boss_rules.hpp"
 #include "d/d_msg_scrn_explain.h"
 #include "d/d_msg_scrn_3select.h"
 #include "d/d_lib.h"
@@ -26,11 +31,15 @@
 #include "dusk/menu_pointer.h"
 #include "survivors_projectiles.hpp"
 #include "survivors_roster.hpp"
+#include "survivors_reachable.hpp"
 #include "survivors_items.hpp"
 #include "survivors_maps.hpp"
 #include "survivors_barriers.hpp"
 #include "ganondorf_barrier.hpp"
 #include "survivors_locomotion.hpp"
+#include "survivors_title_flow.hpp"
+#include "survivors_title_logo.hpp"
+#include "survivors_title_pose.hpp"
 #include "dual_wield_animation.hpp"
 #include "enemy_spawner.hpp"
 #include "bow_fire_resource.hpp"
@@ -38,12 +47,14 @@
 #include "gale_counter.hpp"
 #include "jump_abilities.hpp"
 #include "m_Do/m_Do_MemCard.h"
+#include "m_Do/m_Do_audio.h"
 #include "service_imports.hpp"
 #include "mods/hook.hpp"
 #include "mods/service.hpp"
 #include "mods/svc/flow.hpp"
 #include "dusk/ui/nav_types.hpp"
 #include "d/d_menu_save.h"
+#include "d/d_file_sel_info.h"
 #include "d/d_menu_window.h"
 #include "d/d_meter_map.h"
 #include "d/d_menu_ring.h"
@@ -54,6 +65,8 @@
 #include "d/d_map.h"
 #include "d/d_camera.h"
 #include "d/d_msg_object.h"
+#include "d/actor/d_a_npc_zelda.h"
+#include "d/d_item.h"
 #include "d/d_msg_class.h"
 #include "JSystem/JMessage/control.h"
 #include "JSystem/JParticle/JPAResource.h"
@@ -65,12 +78,14 @@
 #include "d/actor/d_a_e_ba.h"
 #include "d/actor/d_a_e_oc.h"
 #include "d/actor/d_a_obj_carry.h"
+#include "d/actor/d_a_obj_bosswarp.h"
 #include "d/actor/d_a_obj_item.h"
 #include "d/actor/d_a_obj_life_container.h"
 #include "d/d_bg_s_wtr_chk.h"
 #include "m_Do/m_Do_lib.h"
 #include "d/actor/d_a_e_ms.h"
 #include "d/actor/d_a_e_rd.h"
+#include "d/actor/d_a_e_wb.h"
 #include "d/actor/d_a_e_dd.h"
 #include "d/actor/d_a_e_sh.h"
 #include "d/actor/d_a_e_rdy.h"
@@ -107,6 +122,9 @@
 #include "d/actor/d_a_b_tn.h"
 
 #include "d/d_com_inf_game.h"
+#include "d/d_path.h"
+#include "d/actor/d_a_suspend.h"
+#include "d/actor/d_a_obj_lv8Lift.h"
 #include "d/d_debug_viewer.h"
 #include "d/d_gameover.h"
 #include "res/Object/E_fm.h"
@@ -117,6 +135,7 @@
 #include "d/d_s_play.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_op/f_op_overlap_mng.h"
+#include "f_op/f_op_scene_mng.h"
 #include "f_pc/f_pc_method.h"
 #include "f_pc/f_pc_create_req.h"
 #include "f_pc/f_pc_create_tag.h"
@@ -134,6 +153,7 @@
 #include "JSystem/J3DGraphAnimator/J3DJoint.h"
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
+#include "JSystem/J3DGraphBase/J3DShape.h"
 #include "res/Object/AlAnm.h"
 #include "d/d_particle_name.h"
 #include "d/d_bg_w.h"
@@ -168,12 +188,30 @@ DEFINE_HOOK_SYMBOL("dBgS_Acch::CrrPos", void(dBgS_Acch*, dBgS&), SurvivorsEnemyS
 DEFINE_HOOK(&daAlink_c::setDamagePoint, SurvivorsEnemyDamage);
 DEFINE_HOOK(&daAlink_c::commonBottleDrink, SurvivorsPotionDrink);
 DEFINE_HOOK(&dComIfGp_setItemLifeCount, SurvivorsPotionHeal);
+DEFINE_HOOK(&dComIfGp_setItemRupeeCount, SurvivorsFateRupees);
+DEFINE_HOOK(&daAlink_c::getMainBckData, SurvivorsFateSprint);
+DEFINE_HOOK(&JPABaseEmitter::deleteAllParticle, SurvivorsFairyParticles);
 DEFINE_HOOK(&dCamera_c::Run, SurvivorsCamera);
 DEFINE_HOOK(&daAlink_c::orderZTalk, SurvivorsMidnaOrder);
 DEFINE_HOOK(&dMsgFlow_c::getInitNodeIndex, SurvivorsMidnaFlow);
+DEFINE_HOOK(&daNpc_Zelda_c::setParam, SurvivorsHubZeldaParam);
+// d_a_title.h declares a global procFunc typedef conflicting with item headers.
+DEFINE_HOOK_SYMBOL("daTitle_c::getDemoPrm", int(void*), SurvivorsTitleLogo);
+DEFINE_HOOK_SYMBOL("daTitle_c::logoDispWait", void(void*), SurvivorsTitleWaitLogo);
+DEFINE_HOOK_SYMBOL("daTitle_c::logoDispAnm", void(void*), SurvivorsTitleLogoAnimation);
+DEFINE_HOOK_SYMBOL("daTitle_c::keyWait", void(void*), SurvivorsTitleKey);
+DEFINE_HOOK_SYMBOL("daTitle_c::nextScene_proc", void(void*), SurvivorsTitleNext);
+DEFINE_HOOK_SYMBOL("daTitle_c::Draw", int(void*), SurvivorsTitleDraw);
+DEFINE_HOOK(&daAlink_c::procWait, SurvivorsTitleWait);
+DEFINE_HOOK(&dEvent_manager_c::orderStartDemo, SurvivorsTitleStartDemo);
+DEFINE_HOOK(&daAlink_c::setStickData, SurvivorsTitleInput);
+DEFINE_HOOK(&daAlink_c::checkAutoJumpAction, SurvivorsTitleFall);
+DEFINE_HOOK(&daAlink_c::modelCallBack, SurvivorsTitleJoint);
 DEFINE_HOOK(&daAlink_c::checkSceneChange, SurvivorsArenaExit);
 DEFINE_HOOK(&daAlink_c::checkRestartRoom, SurvivorsArenaRestart);
 DEFINE_HOOK_SYMBOL("src/d/d_stage.cpp#dStage_actorCreate", void(stage_actor_data_class*, fopAcM_prm_class*, size_t), SurvivorsArenaActor);
+DEFINE_HOOK(static_cast<void(*)(fopAc_ac_c*)>(&daSus_c::check), SurvivorsPalaceFerrySuspend);
+DEFINE_HOOK(&daL8Lift_c::moveLift, SurvivorsPalaceFerryMove);
 DEFINE_HOOK(&daAlink_c::checkDamageAction, SurvivorsBlock);
 DEFINE_HOOK(&daAlink_c::setShieldGuard, SurvivorsGuard);
 DEFINE_HOOK_SYMBOL("cCcS::SetCoCommonHitInf",void(cCcS*,cCcD_Obj*,cXyz*,cCcD_Obj*,cXyz*,f32),SurvivorsEnemyContact);
@@ -191,6 +229,12 @@ DEFINE_HOOK(&fopAcM_searchActorAngleY, SurvivorsBossAim);
 DEFINE_HOOK(&daObjCarry_c::obj_break, SurvivorsPotBreak);
 DEFINE_HOOK(&daItem_c::itemGetNextExecute, SurvivorsKeyPickup);
 DEFINE_HOOK(&renderingAmap_c::afterDrawPath, SurvivorsEliteMinimap);
+DEFINE_HOOK(&dFile_info_c::setSaveData, SurvivorsSaveSlotInfo);
+DEFINE_HOOK(&dDlst_FileInfo_c::draw, SurvivorsSaveSlotDraw);
+// SDK v2.0.0's typed trampoline cannot marshal const references. The native
+// const Vec& uses the same pointer ABI; preserve it through a named hook.
+DEFINE_HOOK_SYMBOL("renderingPlusDoorAndCursor_c::drawCursor",
+    void(renderingPlusDoorAndCursor_c*, const Vec*, s16, int, f32), SurvivorsMinimapCursor);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ba.cpp#pl_check", BOOL(e_ba_class*, f32, s16), SurvivorsKeeseAggro);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ms.cpp#pl_check", int(e_ms_class*, f32), SurvivorsRatAggro);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_e_ba.cpp#damage_check", void(e_ba_class*), SurvivorsKeeseHit);
@@ -218,6 +262,8 @@ DEFINE_HOOK(&JMessage::TControl::update, SurvivorsTreasureText);
 DEFINE_HOOK(&daAlink_c::checkUpperGrabItemThrow, SurvivorsBombThrow);
 DEFINE_HOOK(&daAlink_c::cancelUpperItemReadyAnime, SurvivorsRangedCancel);
 DEFINE_HOOK(&daAlink_c::procCoGetItemInit, SurvivorsGetItem);
+DEFINE_HOOK(&daAlink_c::procCoGetItem, SurvivorsGetItemTick);
+DEFINE_HOOK(&daAlink_c::setItemMatrix, SurvivorsItemMatrix);
 DEFINE_HOOK(&fpcLf_Draw, SurvivorsTreasureDraw);
 DEFINE_HOOK(&daAlink_c::draw, SurvivorsDraw);
 DEFINE_HOOK(&daAlink_c::procCoDeadInit, SurvivorsDeath);
@@ -257,6 +303,7 @@ DEFINE_HOOK(&daAlink_c::checkLightSwordMtrl, SurvivorsLightSword);
 DEFINE_HOOK(&dMeter2Draw_c::draw, SurvivorsHud);
 DEFINE_HOOK(&dComIfGs_gameStart, SurvivorsGameStart);
 DEFINE_HOOK(&mDoCPd_c::read, SurvivorsPad);
+DEFINE_HOOK(&daObjBossWarp_c::execute, SurvivorsHordePortal);
 DEFINE_HOOK(&dCamera_c::setMapToolData, SurvivorsCameraType);
 DEFINE_HOOK(&dMenu_save_c::_open, SurvivorsSaveOpen);
 DEFINE_HOOK(&dMenu_save_c::_delete, SurvivorsSaveDelete);
@@ -275,6 +322,12 @@ bool s_active = false, s_registered = false, s_loaded = false, s_restart = false
 // Selecting a mode starts the title flow, not a game. A slot callback prepares
 // the save; only gameStart commits it after names and optional TV settings.
 bool s_saveReady = false, s_gameStarted = false;
+bool survivors_title_active();
+bool survivors_title_preparing();
+bool survivors_hub_arrival_active();
+void restore_hub_arrival_camera(dCamera_c* camera);
+bool s_hubArrivalPending = false;
+float s_hubArrivalSeconds = 0.f;
 bool s_resultsStored = false, s_storeFailed = false, s_saveRequested = false;
 unsigned s_saveStartTicks = 0;
 Run s_run;
@@ -295,6 +348,8 @@ u16 s_hubDoorPriority=0, s_hubDoorFlags=0;
 void open_window();
 void load_option_config();
 void store_option_config();
+bool survivors_autosave_enabled();
+void set_survivors_autosave(bool enabled);
 bool settings_editable();
 void hub_menu_closed() {
     if(s_hubMenu==HubMenu::None)return;
@@ -343,6 +398,7 @@ unsigned s_midnaRequestFrames = 0;
 bool s_midnaTalking = false, s_midnaEndPending = false, s_midnaRestartPending = false;
 bool midna_dialog_busy() { return s_midnaRequestFrames || s_midnaTalking || s_midnaEndPending || s_midnaRestartPending; }
 void reset_midna_dialog() { s_midnaRequestFrames=0; s_midnaTalking=s_midnaEndPending=s_midnaRestartPending=false; }
+void retire_hub_zelda();
 enum class SwordAction { None, Normal, Spin, Jump };
 SwordAction s_swordAction = SwordAction::None;
 unsigned s_meleeCooldown = 0;
@@ -398,6 +454,11 @@ std::array<unsigned, 3> s_choices{0, 1, 2};
 struct ProcessFrame { void* args; ActorId id; bool executed=false; };
 std::vector<ProcessFrame> s_processFrames;
 
+struct AeralfosDive {
+    cXyz target{},velocity{};
+    unsigned ticks=0;
+    bool locked=false,active=false;
+};
 struct Enemy {
     ActorId id = kNone;
     ProfileName profile = 0;
@@ -417,6 +478,12 @@ struct Enemy {
     dCcD_Sph extraAttack{};
     cXyz encounterTarget{};
     unsigned arrowVolley=0;
+    std::array<ActorId,2> bullboRiders{kNone,kNone};
+    std::array<unsigned,3> bullboTargetsPending{};
+    bool bullboReturning=false;
+    AeralfosCycle aeralfosCycle;
+    AeralfosDive aeralfosDive;
+    KingWaveClock kingWaveClock;
 };
 static_assert(enemy_capacity <= 512, "Update enemy HUD slot capacity with the roster");
 std::array<Enemy, enemy_capacity> s_enemies;
@@ -427,6 +494,7 @@ struct Attack {
     bool active = false;
     unsigned life = 0, weapon = 0, age = 0;
     bool returning = false, exploding = false, greatSpin = false;
+    bool reducedVisual = false;
     bool hurricane=false, bombArrow=false, detonated=false, aimPending=false, manualFlight=false;
     float aimSpread=0;
     bool chainSpin=false;
@@ -454,6 +522,30 @@ struct Attack {
 };
 // Stable addresses: collision server retains pointers until its next frame.
 std::deque<Attack> s_attacks(initial_projectile_slots);
+// Reservations persist until the corresponding emitters are stopped. This is
+// an active-emitter budget, never a per-tick spawn counter.
+survivor_perf::Budget s_visualBudget;
+template<size_t N> void stop_visual_emitters(std::array<u32,N>& keys) {
+    for(auto& key:keys) {
+        if(auto* e=key?dComIfGp_particle_getEmitter(key):nullptr) {
+            e->stopCreateParticle();e->quitImmortalEmitter();e->becomeInvalidEmitter();
+        }
+        key=0;
+    }
+    s_visualBudget.release(keys.data());
+}
+template<size_t N> bool full_visual(std::array<u32,N>& keys,survivor_perf::Effect kind,unsigned cost) {
+    if(!survivor_perf::enabled())return true;
+    if(s_visualBudget.acquire(keys.data(),kind,cost))return true;
+    stop_visual_emitters(keys);return false;
+}
+void prepare_performance_visuals(daAlink_c* link);
+void draw_reduced_attacks();
+void performance_line(cXyz,cXyz,GXColor);
+void begin_performance_lines();
+void submit_performance_lines();
+void clear_performance_lines();
+
 const dCcD_SrcSph kAttackSource = {
     {{0, {{AT_TYPE_NORMAL_SWORD, 3, 0x1a}, {0, 0}, 0}},
      {dCcD_SE_SWORD, 3, dCcG_At_Spl_UNK_1, dCcD_MTRL_NONE, {1}},
@@ -463,6 +555,12 @@ const dCcD_SrcSph kAttackSource = {
 
 bool in_arena() {
     return s_active && s_gameStarted && arena_matches(s_map, dComIfGp_getStartStageName(), dComIfGp_getStartStageRoomNo());
+}
+bool survivors_hub_preparing() {
+    // Keep decorations alive across the arrival -> grounded warmup handoff.
+    // Loading them here also overlaps the fade-in on subsequent hub visits.
+    return s_hub && in_arena() && s_run.phase==Phase::Loading && !s_restart && !s_hubDeparture &&
+        !dComIfGp_isEnableNextStage() && !mDoRst::isReset() && !mDoRst::isReturnToMenu();
 }
 #include "survivors_save_modal.inc"
 #include "survivors_save_pointer.inc"
@@ -474,7 +572,7 @@ bool ui_visible() {
 }
 bool transitioning() { return dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek(); }
 bool playable() {
-    return in_arena() && !midna_dialog_busy() && !transitioning() && !dComIfGp_isPauseFlag() &&
+    return in_arena() && !survivors_hub_arrival_active() && !midna_dialog_busy() && !transitioning() && !dComIfGp_isPauseFlag() &&
         !dScnPly_c::isPause() && !dComIfGp_event_runCheck() && !ui_visible() &&
         dMeter2Info_getGameOverType() == 0;
 }
@@ -492,8 +590,11 @@ Enemy* tracked(ActorId id) {
 #include "survivors_enemy_arrows.inc"
 #include "survivors_enemy_hits.inc"
 #include "survivors_zelda_orbs.inc"
+#include "survivors_king_waves.inc"
 #include "survivors_collision.inc"
 #include "survivors_elite_positions.inc"
+#include "survivors_palace_ferry.inc"
+void clear_reachable_floor();
 #include "survivors_maps.inc"
 #include "survivors_extended_ai.inc"
 #include "survivors_aggro.inc"
@@ -503,6 +604,7 @@ DamageAmounts hit_damage_sources(const cCcD_Obj* collider);
 bool sword_kill_hit(const cCcD_Obj* collider);
 #include "survivors_feedback.inc"
 #include "survivors_ground.inc"
+#include "survivors_reachable.inc"
 #include "survivors_pickups.inc"
 #include "survivors_key_visual.inc"
 #include "survivors_player_damage.inc"
@@ -510,6 +612,7 @@ bool sword_kill_hit(const cCcD_Obj* collider);
 #include "survivors_controls.inc"
 #include "survivors_potions.inc"
 void stop_attack(Attack& a) {
+    s_visualBudget.release(a.emitters.data());a.reducedVisual=false;
     for (auto& id : a.emitters) {
         if (id) {
             if (auto* emitter = dComIfGp_particle_getEmitter(id)) {
@@ -524,6 +627,7 @@ void stop_attack(Attack& a) {
     a.collider.OffAtSetBit(); a.collider.ResetAtHit();
 }
 void clear_attacks() {
+    clear_performance_lines();
     s_multiStrike={};clear_lightning();
     clear_sword_aim();
     clear_jump_effects();
@@ -546,6 +650,8 @@ void close_window() {
     }
 }
 #include "survivors_menu_handoff.inc"
+void retire_horde_portals();
+void cleanup_horde_portals();
 void retire_pots();
 void cleanup_pots();
 void detach_pot_attacks();
@@ -555,21 +661,24 @@ void detach_pot_attacks();
 void retire_enemies() {
     release_enemy_archives();
     retire_boss_ring();
-    clear_zelda_light_orbs();
+    clear_zelda_light_orbs();clear_king_waves();
+    retire_horde_portals();
     retire_pots(); retire_pickups(); retire_enemy_arrows();
     clear_enemy_effects();
     for (auto& e : s_enemies) if (e.id != kNone) e.retiring = true;
 }
 void cleanup_enemies() {
+    cleanup_palace_ferries();
+    cleanup_horde_portals();
     cleanup_boss_ring();
     cleanup_enemy_arrows();
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
         auto* actor = actor_by_id(e.id);
         if(e.retiring || e.credited || !actor)enemy_hud::forget(&e-s_enemies.data());
-        if(e.retiring||e.credited||(actor&&actor->health<=0))clear_zelda_light_orbs(e.id);
+        if(e.retiring||e.credited||(actor&&actor->health<=0)){clear_zelda_light_orbs(e.id);clear_king_waves(e.id);}
         if (!actor && !fpcM_IsCreating(e.id)) {
-            clear_zelda_light_orbs(e.id);
+            clear_zelda_light_orbs(e.id);clear_king_waves(e.id);
             s_enemyIndex.erase(e.id); s_bossTactics.erase(e.id);
             e = {}; continue;
         }
@@ -622,9 +731,12 @@ void detach_attack_references() {
     }
 }
 void reset_runtime() {
+    retire_hub_zelda();
+    clear_performance_lines();
+    survivor_perf::reset_run();
     clear_player_contacts();
     restore_gear_collection();close_gear_window();s_gear={};s_gearWritable=true;clear_gear_notices();
-    clear_zelda_light_orbs();
+    clear_zelda_light_orbs();clear_king_waves();
     s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     stop_survivors_music();
     end_survivors_integrity();
@@ -633,10 +745,10 @@ void reset_runtime() {
     s_hub=true; s_hubDeparture=s_hubDoorStarted=s_arrivingRun=s_allowHubDoor=false;
     s_hubDoor=kNone; s_hubDoorTicks=0;
     update_survivors_equipment_chest(false,{},0);
-    update_survivors_pedestal(false);
     s_options.debug.clamp();
     reset_midna_dialog();
     s_saveReady = false; s_gameStarted = false;
+    s_hubArrivalPending = false; s_hubArrivalSeconds = 0.f;
     s_map = s_requestedMap = 0; clear_arena_geometry();
     close_powerup_window(); close_window(); clear_attacks(); clear_loot(); detach_attack_references(); retire_enemies();
     if (s_savePrompt != kNone) {
@@ -672,11 +784,15 @@ void prepare_save() {
     for (int shield = COLLECT_WOODEN_SHIELD; shield <= COLLECT_HYLIAN_SHIELD; ++shield) dComIfGs_offCollectShield(shield);
     dComIfGs_offCollectSword(COLLECT_MASTER_SWORD);
     dComIfGs_offItemFirstBit(dItemNo_MASTER_SWORD_e);
-    dComIfGs_onItemFirstBit(dItemNo_SWORD_e);
-    dComIfGs_setCollectSword(COLLECT_ORDON_SWORD);
-    dComIfGs_setSelectEquipSword(dItemNo_SWORD_e);
+    // The native first-get bit persists Zelda's gift across loads and runs.
+    // Preparing a save must never award the starter weapon by itself.
+    const bool swordReceived = dComIfGs_isItemFirstBit(dItemNo_SWORD_e);
+    if (swordReceived) dComIfGs_setCollectSword(COLLECT_ORDON_SWORD);
+    else dComIfGs_offCollectSword(COLLECT_ORDON_SWORD);
+    const u8 sword = swordReceived ? dItemNo_SWORD_e : dItemNo_NONE_e;
+    dComIfGs_setSelectEquipSword(sword);
     dComIfGs_setSelectEquipShield(dItemNo_NONE_e);
-    dComIfGs_setBButtonItemKey(dItemNo_SWORD_e);
+    dComIfGs_setBButtonItemKey(sword);
     // Save callbacks run inside file select, before Link exists. The live
     // dComIfGs_setSelectItemIndex hook in HD HUD checks Link's wolf state for
     // slot 2. Initialize the data directly, including the play cache, instead.
@@ -722,6 +838,11 @@ void finish(bool won) {
 }
 #include "survivors_ending.inc"
 #include "survivors_midna.inc"
+#include "survivors_hub_layout.inc"
+#include "survivors_hub_zelda.inc"
+#include "survivors_title.inc"
+#include "survivors_title_pose.inc"
+#include "survivors_roundtable.inc"
 void add_orb(cXyz position, unsigned value) {
     position.y -= 20;
     cXyz probe = position; probe.y += 500;
@@ -785,7 +906,7 @@ void update_orbs(daAlink_c* link) {
         const auto target = link->current.pos + cXyz(0, 30, 0);
         cXyz delta = target - orb.position;
         const float distance = delta.abs();
-        if (distance < 60) { s_run.xp += orb.value; orb = {}; }
+        if (distance < 60) { s_run.xp += s_run.gain_xp(orb.value); orb = {}; }
         else if (orb.summoned || distance < range) {
             const float speed = orb.summoned ? std::max(35.f, distance * 0.08f) : 35.f;
             orb.position += delta * (std::min(speed, distance) / distance);
@@ -838,18 +959,27 @@ bool spawn_enemy(daAlink_c* link, bool elite, int eliteSlot = -1) {
 }
 #include "survivors_elites.inc"
 #include "survivors_pots.inc"
-#include "survivors_minimap.inc"
+#include "survivors_save_slot.inc"
+unsigned normal_enemy_population() {
+    return unsigned(std::count_if(s_enemies.begin(),s_enemies.end(),[](const Enemy& enemy) {
+        return enemy.id!=kNone && !enemy.elite && !enemy.retiring && !enemy.credited;
+    }));
+}
 void update_spawns(daAlink_c* link) {
     update_boss_watchdogs(link);
-    unsigned population = 0;
+    unsigned population = normal_enemy_population();
     for (auto& e : s_enemies) {
         if (e.id == kNone) continue;
-        if (!e.elite) ++population;
         auto* actor = actor_by_id(e.id);
         if (!actor || !e.initialized) continue;
         ++e.age;
         // Guards and scheduled elites persist until killed; cleanup grants no loot.
-        if (!e.elite && !e.retiring && e.age > 5400) e.retiring = true;
+        // Do not let ordinary enemies stranded in the old area occupy the
+        // population budget for three minutes after Link has moved away.
+        if (!e.elite && !e.retiring && !e.credited && (e.age>5400 ||
+            (e.age>10*ticks_per_second && actor->current.pos.absXZ(link->current.pos)>6000.f))) {
+            e.retiring=true;--population; // Existing cleanup deletes without kill/drop credit.
+        }
     }
     if ((s_run.endless || s_run.ticks <= s_run.run_duration()) && s_run.ticks % s_run.boss_interval() == 0) s_spawnCooldown = 0;
     for (const auto& encounter : s_eliteEncounters)
@@ -907,6 +1037,8 @@ void launch(daAlink_c* link, unsigned weapon, cXyz direction, bool manual, float
 void update_wave_effects(Attack& a, daAlink_c* link) {
     // Snapshot the launch tier: an upgrade never changes an in-flight collider.
     const auto effects = survivor_spin_effects(a.greatSpin);
+    a.reducedVisual=!full_visual(a.emitters,survivor_perf::Effect::Wave,unsigned(effects.size()));
+    if(a.reducedVisual)return;
     const float size = a.radius / std::max(1.f, a.effectBaseRadius);
     const cXyz scale(size, size, size);
     const csXyz rotation(-cM_atan2s(a.velocity.y, a.velocity.absXZ()),
@@ -1093,6 +1225,9 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 #include "survivors_loot.inc"
+#include "survivors_fate.inc"
+#include "survivors_horde_portals.inc"
+#include "survivors_minimap.inc"
 #include "survivors_ranged.inc"
 #include "survivors_keys.inc"
 #include "survivors_treasure.inc"
@@ -1100,6 +1235,7 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
 #include "survivors_black_flame.inc"
 #include "survivors_status.inc"
 #include "survivors_lightning.inc"
+#include "survivors_performance_visuals.inc"
 #include "survivors_knockback.inc"
 void new_melee_swing() { ++s_meleeSerial; }
 #include "survivors_combat_pause.inc"
@@ -1214,11 +1350,12 @@ void after_player(ModContext*, void* args, void*, void*) {
     update_combat_feedback();
     update_gear_notice();
     chest_spawning_allowed(); // Also retire exhausted chests during victory loot time.
+    update_palace_ferries();
     if (s_victory) {
         update_victory();
         update_exp_magnets(link); update_orbs(link);
         s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;
-        if (s_run.level_up()) { dComIfGs_setLife(dComIfGs_getMaxLifeGauge()); clear_attacks(); }
+        if (s_run.level_up()) { if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge()); clear_attacks(); }
         // Existing chests remain interactable; do not spawn new ones after victory.
         // Do not interrupt a final chest/level-up on the expiration frame.
         if (s_victoryTicks>=10*ticks_per_second && s_run.phase==Phase::Running) finish(true);
@@ -1229,12 +1366,15 @@ void after_player(ModContext*, void* args, void*, void*) {
     if (s_run.life_regen_due() && dComIfGs_getLife()<dComIfGs_getMaxLifeGauge())
         dComIfGs_setLife(std::min<unsigned>(dComIfGs_getMaxLifeGauge(),dComIfGs_getLife()+1));
     if (const unsigned rupees=s_run.auto_rupees())
-        dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+rupees));
+        dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(),dComIfGs_getRupee()+s_run.gain_rupees(rupees)));
+    prepare_performance_visuals(link);
     update_enemy_effects();
+    update_reachable_floor();
+    update_horde_portals(link);
     update_spawns(link); update_pots(link); update_exp_magnets(link); update_weapons(link); update_orbs(link);
     s_run.maximum_hearts = dComIfGs_getMaxLife() / 5;
     if (s_run.level_up()) {
-        dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
+        if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
         clear_attacks();
     }
     else update_chests(link);
@@ -1259,6 +1399,8 @@ HookAction before_sword_attack(ModContext* ctx, void* args, void* result, void* 
 }
 #include "survivors_extended_damage.inc"
 #include "survivors_encounters.inc"
+#include "survivors_bullbo.inc"
+#include "survivors_aeralfos.inc"
 #include "survivors_elite_scale.inc"
 #include "survivors_bosses.inc"
 #include "survivors_boss_tactics.inc"
@@ -1288,15 +1430,22 @@ HookAction before_process(ModContext*, void* args, void* result, void*) {
     retain_treasure_actor(actor, args);
     if (in_arena()) {
         const auto* nativeMethods = reinterpret_cast<const process_method_class*>(actor->sub_method);
-        if (nativeMethods && mods::arg<process_method_func>(args, 0) == nativeMethods->execute_method)
+        if (nativeMethods && mods::arg<process_method_func>(args, 0) == nativeMethods->execute_method) {
             collect_arena_mesh(actor);
+            // A moving floor must pause with its rider during upgrade/settings
+            // menus. Leave native creation, drawing and unloading untouched.
+            if (auto* ferry=tracked_palace_ferry(id); ferry && (ferry->retiring || pause_run_actor(false))) {
+                *static_cast<int*>(result)=1;
+                return HOOK_SKIP_ORIGINAL;
+            }
+        }
     }
     if (!enemy && !pot && !pickup && !arrow && (!in_arena() || id != s_player)) return HOOK_CONTINUE;
     const auto* methods = reinterpret_cast<const process_method_class*>(actor->sub_method);
     if (!methods) return HOOK_CONTINUE;
     const auto method = mods::arg<process_method_func>(args, 0);
     if (method == methods->delete_method) {
-        clear_zelda_light_orbs(id);
+        clear_zelda_light_orbs(id);clear_king_waves(id);
         s_bossTactics.erase(id);
         if (pickup) { s_pickupIndex.erase(id); pickup->id=kNone; }
         if (arrow) { s_enemyArrowIndex.erase(id); arrow->id=kNone; }
@@ -1403,7 +1552,6 @@ HookAction before_stage(ModContext*, void* args, void*, void*) {
         s_hubDeparture=s_hubDoorStarted=false; s_hubDoor=kNone;
         clear_arena_geometry();
         update_survivors_equipment_chest(false,{},0);
-        update_survivors_pedestal(false);
     } else if (in_arena() && !s_restart && s_run.phase != Phase::Loading) return HOOK_SKIP_ORIGINAL;
     dComIfGs_setRestartRoomParam(0);
     mods::arg_ref<const char*>(args, 0) = arena().stage;
@@ -1425,11 +1573,14 @@ void after_draw(ModContext*, void*, void*, void*) {
         cXyz pos=drop.position+cXyz(0,8*cM_ssin(s16(s_run.ticks*700)),0);
         dDbVw_drawCubeOpa(pos,size,angle,GXColor{255,210,45,255});
     }
+    begin_performance_lines();
+    draw_reduced_attacks();
     draw_lightning();
     draw_loot();
     draw_victory_wave();
     draw_ranged();
     draw_arena_barriers();
+    submit_performance_lines();
 
 }
 void label(const char* text, float x, float y, float size, float width=550) {
@@ -1457,11 +1608,15 @@ void draw_hud(ModContext*, void* args, void*, void*) {
     auto* graf = dComIfGp_getCurrentGrafPort(); if (!graf) return;
     graf->setup2D();
     if (!preview && (s_deathPending || s_run.phase==Phase::Defeat)) return;
-    if(!preview) {draw_chest_prices();draw_combat_feedback();}
+    if(!preview) {draw_chest_prices();draw_horde_portal_labels();draw_combat_feedback();}
     const float x = mDoGph_gInf_c::getMinXF() + mDoGph_gInf_c::getWidthF() * 0.5f;
     if(preview || s_gearNoticeTicks)draw_gear_notice(preview);
     if (!preview && s_victory) { draw_victory_hud(x); graf->setup2D(); return; }
     if(!preview)enemy_hud::draw();
+    if(!preview && survivor_perf::monitor_enabled()) {
+        char status[160];survivor_perf::status(status,sizeof(status));
+        label(status,mDoGph_gInf_c::getMinXF()+16,mDoGph_gInf_c::getHeightF()-18,11,590);
+    }
     char text[180];
     draw_run_rank_hud(x,preview);
     const auto drawText=[&](HudPart part,float size,float offset=0.f) {
@@ -1489,13 +1644,26 @@ void draw_hud(ModContext*, void* args, void*, void*) {
         std::snprintf(text, sizeof(text), "No chest rewards available");
         drawText(HudPart::Info,14,bossOffset);
     }
-    if (s_run.horde_remaining) {
-        std::snprintf(text,sizeof(text),"HORDE!  3x enemy spawns  %us",(s_run.horde_remaining+29)/30);
-        drawText(HudPart::Info,17,22+bossOffset);
+    float effectOffset=22+bossOffset;
+    if(preview || show_enemy_counter()) {
+        std::snprintf(text,sizeof(text),"Enemies: %u / %u",normal_enemy_population(),s_run.target_population());
+        drawText(HudPart::EnemyCounter,13);
+    }
+    const bool fateTooltips=show_fate_tooltips();
+    for (unsigned i=0;i<unsigned(FateEffect::Count);++i) {
+        const auto remaining=s_run.fate_ticks(FateEffect(i));
+        if (!remaining) continue;
+        std::snprintf(text,sizeof(text),"%s  %us",fate_names[i],(remaining+ticks_per_second-1)/ticks_per_second);
+        drawText(HudPart::Info,17,effectOffset);
+        if(fateTooltips) {
+            std::snprintf(text,sizeof(text),"%s",fate_tooltips[i]);
+            drawText(HudPart::Info,13,effectOffset+18);
+        }
+        effectOffset+=fateTooltips?38:22;
     }
     if (s_spawnFailures >= 10) {
         std::snprintf(text,sizeof(text),"Waiting for a clear enemy spawn position");
-        drawText(HudPart::Info,13,(s_run.horde_remaining?44:22)+bossOffset);
+        drawText(HudPart::Info,13,effectOffset);
     }
     graf->setup2D();
 }
@@ -1515,14 +1683,15 @@ void select_upgrade(ModContext*, void* data) {
     if (selected == Upgrade::Heart)
         dComIfGs_setMaxLife(std::min(100u,unsigned(dComIfGs_getMaxLife())+5*(s_run.rank(Upgrade::Heart)-oldHearts)));
     // Include newly gained heart containers and each queued level's choice.
-    dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
-    if (bonus) dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(), dComIfGs_getRupee() + bonus));
+    if (!s_run.greed()) dComIfGs_setLife(dComIfGs_getMaxLifeGauge());
+    if (bonus) dComIfGs_setRupee(std::min<unsigned>(dComIfGs_getRupeeMax(), dComIfGs_getRupee() + s_run.gain_rupees(bonus)));
     close_window();
     s_run.level_up(); // Preserve queued levels; do not resume combat between choices.
 }
 void begin_run() {
     if (s_run.phase != Phase::Ready || !s_arenaMeshReady || s_restart || s_progressSaving) return;
-    clear_zelda_light_orbs();
+    survivor_perf::reset_run();
+    clear_zelda_light_orbs();clear_king_waves();
     s_enemyHitSources.clear(); s_enemyContactFrames.clear(); s_bossTactics.clear();
     reset_ending();
     load_option_config();
@@ -1545,7 +1714,7 @@ void begin_run() {
 }
 void start_run(ModContext*, void*) {
     if(!s_hub || s_run.phase!=Phase::Ready || s_hubDeparture || s_progressSaving ||
-       s_restart || !s_arenaMeshReady || !map_available(s_requestedMap) || !actor_by_id(s_hubDoor))return;
+       s_restart || !dComIfGs_isItemFirstBit(dItemNo_SWORD_e) || !s_arenaMeshReady || !map_available(s_requestedMap) || !actor_by_id(s_hubDoor))return;
     s_hubDeparture=true;s_hubDoorStarted=false;s_hubDoorTicks=0;
     close_window(); // Save and fully hide the UI before ordering the native door event.
 }
@@ -1579,6 +1748,10 @@ void reload_run_scene() {
     s_hub=!s_arrivingRun; s_hubMenu=HubMenu::None; s_hubDeparture=s_hubDoorStarted=false;
     s_hubDoor=kNone; s_hubSaveRequested=false;
     s_map=s_arrivingRun?s_requestedMap:0;
+    // Rest arrival belongs to save loading only. On run return the stage hook
+    // moves Link's native shutter entrance alongside the relocated hub door.
+    s_hubArrivalPending=false;
+    s_hubArrivalSeconds=0.f;
     prepare_save();
     dComIfGp_setNextStage(arena().stage, arena().point, arena().room, 0);
     s_run = {}; s_orbs = {}; s_restart = false; s_player = kNone;
@@ -1659,20 +1832,31 @@ void open_window() {
         svc_log->warn(mod_ctx, "Hyrule Survivors: could not open run window");
     else if (s_run.phase == Phase::Ready) remember_menu_document(false);
 }
-ModResult activated(void*, ModError*) { s_active = true; reset_runtime(); return MOD_OK; }
-ModResult deactivated(void*, ModError*) { s_active = false; reset_runtime(); return MOD_OK; }
+#include "survivors_title_texture.inc"
+ModResult activated(void*, ModError* error) {
+    const auto result = register_survivors_title_logo(error);
+    if (result != MOD_OK) return result;
+    s_active = true; reset_runtime(); request_title_preview(); return MOD_OK;
+}
+ModResult deactivated(void*, ModError*) {
+    s_active = false; unregister_survivors_title_logo();
+    reset_runtime(); request_title_preview(); return MOD_OK;
+}
 ModResult new_save(void*, ModError*) {
-    reset_runtime(); s_records = {}; prepare_save();
+    reset_runtime(); s_records = {};
+    dComIfGs_offItemFirstBit(dItemNo_SWORD_e);
+    prepare_save();
     if(!store_gear(GearInventory{}))return MOD_UNAVAILABLE;
     s_saveReady = true;
+    s_hubArrivalPending = true;
     const auto bytes = s_records.encode();
     svc_save->set_blob(mod_ctx, kBlob, bytes.data(), bytes.size());
     return MOD_OK;
 }
 ModResult loaded(void*, ModError*) {
-    reset_runtime(); prepare_save(); s_saveReady = true; return MOD_OK;
+    reset_runtime(); prepare_save(); s_saveReady = true; s_hubArrivalPending = true; return MOD_OK;
 }
-ModResult reset(void*, ModError*) { reset_runtime(); return MOD_OK; }
+ModResult reset(void*, ModError*) { reset_runtime(); reset_title_presentation(); return MOD_OK; }
 #include "survivors_mode.inc"
 #include "survivors_music.inc"
 } // namespace
@@ -1720,6 +1904,9 @@ void update_survivors() {
     }
     const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Update);
 #endif
+    survivor_perf::tick(s_active);
+    update_title_preview();
+    update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();
     update_survivors_registration();
     update_survivors_music();
@@ -1746,6 +1933,7 @@ void update_survivors() {
         s_arenaSafe = s_arenaSpawn = false;
     }
     if (fpcM_IsCreating(s_player)) return;
+    if (survivors_hub_arrival_active()) return; // Finish standing before hub interactions/warmup.
     if (update_ending(link)) return;
     if (!s_hub && !s_resultsStored) prepare_victory_wave();
     update_midna_dialog();
@@ -1753,8 +1941,16 @@ void update_survivors() {
     update_arena_safety(link);
     if (s_run.phase == Phase::Loading) {
         // Never freeze a falling or partially initialized Link in the preview.
-        if (!playable() || !arena_grounded(link)) { s_warmup=0; return; }
+        if (!playable() || link->checkPlayerDemoMode() || !arena_grounded(link)) { s_warmup=0; return; }
         if (++s_warmup < 15) return;
+        if(s_map==0) {
+            // The first grounded checkpoint can be outside the entry door.
+            // Only finalize the scan anchor after Link's native entrance demo
+            // and grounded warmup have finished; no story actor is required.
+            s_arenaSpawnPosition=link->current.pos;
+            s_arenaSpawnYaw=link->shape_angle.y;s_arenaSpawn=true;
+            clear_reachable_floor();
+        }
         load_records(); s_run.phase = Phase::Ready;
         if(s_arrivingRun && s_arenaMeshReady) {s_arrivingRun=false;begin_run();}
     }
@@ -1776,12 +1972,16 @@ ModResult initialize_survivors(ModError* error) {
     if(result!=MOD_OK)return result;
     result=initialize_option_config();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors settings");
+    result=survivor_perf::initialize();
+    if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors performance settings");
     result=enemy_hud::initialize();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors enemy HUD settings");
     result=initialize_hud_config();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors HUD settings");
     result=initialize_midna_dialog();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors Midna dialog");
+    result=initialize_hub_zelda();
+    if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors Zelda dialog");
     initialize_menu_handoff();
 #define PRE(H, F) do { result = mods::hook_add_pre<H>(svc_hook, F); \
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to install Hyrule Survivors pre-hook " #H); } while(false)
@@ -1792,7 +1992,11 @@ ModResult initialize_survivors(ModError* error) {
     s_enemyArchivesAvailable=mods::hook_add_post<SurvivorsArchiveReady>(svc_hook,after_enemy_archive_ready)==MOD_OK;
     if(!s_enemyArchivesAvailable)svc_log->warn(mod_ctx,
         "Survivors archive retention unavailable; using native resource loading");
+    PRE(SurvivorsArenaActor, before_title_stage_actor);
+    PRE(SurvivorsArenaActor, before_roundtable_stage_actor);
     PRE(SurvivorsArenaActor, before_arena_stage_actor);
+    PRE(SurvivorsPalaceFerrySuspend, before_palace_ferry_suspend);
+    PRE(SurvivorsPalaceFerryMove, before_palace_ferry_move);
 #include "survivors_roster_hooks.inc"
     PRE(SurvivorsEnemySpeed, before_enemy_speed); POST(SurvivorsEnemySpeed, after_enemy_facing);
     PRE(SurvivorsEnemySpeed,before_boss_path); // Final position constraints after all movement boosts.
@@ -1800,6 +2004,9 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsEnemyDamage, before_enemy_damage);
     PRE(SurvivorsPotionDrink, before_potion_drink); POST(SurvivorsPotionDrink, after_potion_drink);
     PRE(SurvivorsPotionHeal, before_potion_heal);
+    PRE(SurvivorsFateRupees, before_fate_rupees);
+    PRE(SurvivorsFateSprint, before_fate_sprint);
+    PRE(SurvivorsFairyParticles, before_fate_fairy_particles);
     PRE(SurvivorsPad, before_survivors_pad); POST(SurvivorsPad, after_survivors_pad);
     POST(SurvivorsCameraType, after_survivors_camera_tools);
     PRE(SurvivorsSaveOpen,before_save_screen_open); PRE(SurvivorsSaveDelete,before_save_screen_delete);
@@ -1807,18 +2014,40 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsSaveMapMove,before_save_gameplay_menu); PRE(SurvivorsSaveMapKeys,before_save_gameplay_menu);
     PRE(SurvivorsSaveMenuKeys,before_save_gameplay_menu);
     PRE(SurvivorsCamera, before_run_camera); POST(SurvivorsCamera, after_run_camera);
+    POST(SurvivorsCamera, after_title_camera);
+    PRE(SurvivorsTitleLogo, before_title_logo);
+    PRE(SurvivorsTitleWaitLogo, before_title_controls);
+    PRE(SurvivorsTitleLogoAnimation, before_title_logo_animation);
+    PRE(SurvivorsTitleKey, before_title_controls);
+    PRE(SurvivorsTitleNext, before_title_controls);
+    PRE(SurvivorsTitleDraw, before_title_ui);
+    PRE(SurvivorsTitleWait, before_title_wait);
+    PRE(SurvivorsTitleStartDemo, before_title_start_demo);
+    POST(SurvivorsTitleInput, after_title_input);
+    PRE(SurvivorsTitleFall, before_title_fall);
+    PRE(SurvivorsTitleJoint, before_title_joint);
+    PRE(SurvivorsLocomotionModel, before_title_model);
+    POST(SurvivorsLocomotionModel, after_title_model);
+    PRE(SurvivorsDraw, before_title_player_draw);
     PRE(SurvivorsArenaExit, before_arena_exit);
     PRE(SurvivorsArenaRestart, before_arena_restart);
     POST(SurvivorsBossAim,after_boss_aim);
     PRE(SurvivorsProcess, before_contact_owner_delete);
+    PRE(SurvivorsProcess, before_roundtable); POST(SurvivorsProcess, after_roundtable);
     PRE(SurvivorsProcess, before_process); POST(SurvivorsProcess, after_process);
     POST(SurvivorsPlayer, after_player); POST(SurvivorsDraw, after_draw);
     PRE(SurvivorsPlayer, before_player_contacts);
     PRE(SurvivorsPlayer, before_player_bindings);
+    PRE(SurvivorsPlayer, before_survivors_shield_update);
     PRE(SurvivorsPlayer, before_chest_action);
+    PRE(SurvivorsPlayer, before_horde_portal_action);
+    PRE(SurvivorsHordePortal, before_horde_portal_execute);
     PRE(SurvivorsPlayer, before_midna_call);
     PRE(SurvivorsMidnaOrder, before_midna_order);
     PRE(SurvivorsMidnaFlow, before_midna_flow);
+    PRE(SurvivorsMidnaFlow, before_hub_zelda_flow);
+    PRE(SurvivorsHubZeldaParam, before_hub_zelda_param);
+    POST(SurvivorsHubZeldaParam, after_hub_zelda_param);
     PRE(SurvivorsEnemyContact,before_enemy_contact);
     PRE(SurvivorsBlock, before_player_contacts);
     PRE(SurvivorsBlock, before_shield_block); POST(SurvivorsBlock, after_player_damage); PRE(SurvivorsGuard, before_survivors_guard);
@@ -1842,7 +2071,11 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsBokoblinWait, before_bokoblin_wait);
     PRE(SurvivorsPotBreak, before_pot_break);
     PRE(SurvivorsKeyPickup, before_key_pickup);
+    PRE(SurvivorsEliteMinimap, before_survivors_minimap);
+    POST(SurvivorsSaveSlotInfo, after_survivors_save_slot);
+    POST(SurvivorsSaveSlotDraw, after_survivors_save_slot_draw);
     POST(SurvivorsEliteMinimap, after_elite_minimap);
+    PRE(SurvivorsMinimapCursor, before_survivors_minimap_cursor);
     PRE(SurvivorsKeeseAggro, before_keese_aggro);
     PRE(SurvivorsRatAggro, before_rat_aggro);
     PRE(SurvivorsKeeseHit, before_enemy_hit); POST(SurvivorsKeeseHit, after_enemy_hit);
@@ -1881,6 +2114,11 @@ ModResult initialize_survivors(ModError* error) {
     PRE(SurvivorsTreasureDraw, before_key_draw);
     PRE(SurvivorsTreasureDraw, before_treasure_draw);
     PRE(SurvivorsGetItem, before_treasure_get); POST(SurvivorsGetItem, after_treasure_get);
+    PRE(SurvivorsGetItem, before_hub_zelda_get);
+    POST(SurvivorsGetItem, after_hub_zelda_get);
+    PRE(SurvivorsGetItemTick, before_hub_zelda_get_tick);
+    POST(SurvivorsItemMatrix, after_hub_zelda_item_matrix);
+    PRE(SurvivorsTreasureDraw, before_hub_zelda_gift_draw);
     PRE(SurvivorsGameOver, before_game_over);
     PRE(SurvivorsDeath, before_death); PRE(SurvivorsManualAttack, before_cut);
     PRE(SurvivorsManualCharge, before_manual_charge);
@@ -1897,14 +2135,20 @@ ModResult initialize_survivors(ModError* error) {
     POST(SurvivorsSpinMove, after_sword_move); POST(SurvivorsSpinEffect, after_spin_effect);
     PRE(SurvivorsLargeSpin, before_large_spin);
     POST(SurvivorsNormalMove, after_sword_move); POST(SurvivorsFinishMove, after_sword_move);
+    PRE(SurvivorsStage, before_title_stage);
     PRE(SurvivorsStage, before_stage); POST(SurvivorsHud, draw_hud);
     PRE(SurvivorsGameStart, before_game_start); PRE(SurvivorsOpening, before_opening);
+    PRE(SurvivorsOpening, before_title_opening); POST(SurvivorsOpening, after_title_opening);
     PRE(SurvivorsDrops, before_drop); PRE(SurvivorsDirectDrops, before_drop);
 #undef PRE
 #undef POST
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    survivor_perf::shutdown();
+    shutdown_roundtable();
+    shutdown_roundtable_props();
+    unregister_survivors_title_logo();
     enemy_hud::shutdown();
     shutdown_boss_ring();
     stop_survivors_music();
@@ -1912,6 +2156,10 @@ void shutdown_survivors() {
     before_survivors_pad(nullptr,nullptr,nullptr,nullptr);
     s_active = false; reset_runtime(); cleanup_enemies(); cleanup_pots(); cleanup_pickups();
     s_midnaGraph.reset(); s_midnaPrompt.reset(); s_midnaOptions.reset(); s_midnaStart=0;
+    s_hubZeldaGraph.reset(); s_hubZeldaMessage.reset(); s_hubZeldaCallMessage.reset();
+    s_hubZeldaAfterGiftMessage.reset(); s_hubZeldaTalentsMessage.reset();
+    s_hubZeldaReward={}; s_hubZeldaTalentsEvent={};
+    s_hubZeldaStart=s_hubZeldaCallStart=s_hubZeldaAfterGiftStart=s_hubZeldaTalentsStart=0;
     s_treasureMessage.reset(); s_itemNameMessage.reset(); s_itemDescriptionMessage.reset();
     if (s_savePrompt != kNone) { d_GameOver_Delete(s_savePrompt); s_savePrompt = kNone; }
     if (s_registered) svc_game_mode->unregister_game_mode(mod_ctx, kMode);

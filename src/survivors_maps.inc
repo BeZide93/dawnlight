@@ -12,7 +12,9 @@ bool s_arenaSpawn = false;
 barriers::Point map_point(const cXyz& p) { return {p.x,p.y,p.z}; }
 cXyz game_point(barriers::Point p) { return cXyz(p.x,p.y,p.z); }
 void clear_arena_geometry() {
+    retire_palace_ferries();
     clear_elite_sites();
+    clear_reachable_floor();
     s_barriers.clear(); s_arenaBackgrounds.clear(); s_arenaMeshReady = false; s_arenaSafe = s_arenaSpawn = false;
 }
 void add_exit_box(const fopAcM_prm_class& params, float width, float depth) {
@@ -59,6 +61,12 @@ HookAction before_arena_stage_actor(ModContext*, void* args, void*, void*) {
         return HOOK_CONTINUE;
     }
     const bool local=params->room_no==arena().room || params->room_no==-1;
+    if (capture_palace_ferry(info->procname,*params)) {
+        // Recreate either native light-lift variant from the same route once
+        // room paths are ready. Suppress the original to prevent duplicates.
+        JKRFree(params);
+        return HOOK_SKIP_ORIGINAL;
+    }
     if (s_map==3) capture_elite_site(info->procname,*params);
     bool skip=arena_story_actor(info->procname);
     if (info->procname==fpcNm_SCENE_EXIT_e || info->procname==fpcNm_SCENE_EXIT2_e) {
@@ -116,6 +124,7 @@ void collect_arena_mesh(fopAc_ac_c* actor) {
     auto walls=boundary.walls();
     s_barriers.insert(s_barriers.end(),walls.begin(),walls.end());
     s_arenaBackgrounds.push_back(id); s_arenaMeshReady=true;
+    clear_reachable_floor(); // Newly streamed collision can open previously unknown routes.
     char message[160];
     std::snprintf(message,sizeof(message),"Hyrule Survivors: arena %s room %d, %u exit barrier segments",
         arena().stage,arena().room,unsigned(s_barriers.size()));

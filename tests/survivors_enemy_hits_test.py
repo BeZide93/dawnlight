@@ -28,7 +28,7 @@ struct cCcD_Obj {fopAc_ac_c* actor=nullptr;cCcD_Obj* hit=nullptr;unsigned power=
  auto* GetAc(){return actor;}auto* GetTgHitObj(){return hit;}bool ChkTgHit(){return hit;}
  unsigned GetAtAtp(){return power;}};
 struct fopAc_ac_c {int id=0,profile=0;void* sub_method=&methods;
- int mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
+ int ride_mode=0,mActionMode=0,mOcState=0,action=0,mode=0,mAction=0,field_0x5b4=0,mMode=0,mCurAction=0,
  field_0x672=0,field_0x676=0,field_0x678=0,mActionPhase=0,mActionMode1=0,mActionMode2=0,
  mMoveMode=0,mSubAction=0,field_0x68c=0,mTimers[4]{},field_0x1228[2]{};
  cCcD_Obj mMagicSphs[2],field_0xe64,mAtSph,mBallSphAt;
@@ -58,7 +58,7 @@ fixture += r'''
 bool native_boss_profile(int p){return p==fpcNm_B_TN_e||p==fpcNm_E_PZ_e||p==fpcNm_B_GND_e;}
 bool structural_enemy_child(int p){return p==fpcNm_E_MM_MT_e||p==fpcNm_E_TH_BALL_e||p==fpcNm_E_RDY_e;}
 '''
-fixture += '\nEnemyAttackUsePtr zelda_light_orb_use(cCcD_Obj*){return {};}\nvoid boss_record_contact(cCcD_Obj*){}\n'
+fixture += '\nEnemyAttackUsePtr king_wave_use(cCcD_Obj*){return {};}\nEnemyAttackUsePtr zelda_light_orb_use(cCcD_Obj*){return {};}\nvoid boss_record_contact(cCcD_Obj*){}\n'
 # Reproduce the real director follow-up: mode 0 is overwritten by mode 1
 # before the next process observation, without leaving action 3.
 tactics = (root / 'src/survivors_boss_tactics.inc').read_text()

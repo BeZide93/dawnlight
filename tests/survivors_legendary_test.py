@@ -87,7 +87,7 @@ int main(){
 '''
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(ns['fixture']+ns['function']('native_sword_collider')+(root/'src/survivors_status.inc').read_text()+ns['function']('after_power')+main)
+ cpp.write_text(ns['fixture']+ns['helpers']()+ns['function']('native_sword_collider')+(root/'src/survivors_status.inc').read_text()+ns['function']('after_power')+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
 print('Survivors Legendary: one-rank gates, exact burns, refresh, melee coverage, aura range/LOS/form and damage isolation passed')

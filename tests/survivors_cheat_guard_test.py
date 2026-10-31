@@ -28,25 +28,31 @@ template<class T> void check(T enabled){
  // The user can change the saved preference, but its live effect stays off.
  value.setValue(enabled);assert(value.getValue()==T{}&&value.getValueForSave()==enabled);
  guard.enforce();assert(value.getValueForSave()==enabled);
- changed={};guard.release(false);assert(value.getValue()==enabled);
+ changed={};guard.release();assert(value.getValue()==enabled);
  // Launch-argument overrides survive a whole run, including their lower saved value.
  value.setValue(T{});value.setOverrideValue(enabled);guard.enforce();
  assert(value.getValue()==T{}&&value.getValueForSave()==T{});
- guard.release(false);assert(value.getLayer()==ConfigVarLayer::Override&&value.getValue()==enabled);
+ guard.release();assert(value.getLayer()==ConfigVarLayer::Override&&value.getValue()==enabled);
  value.clearOverride();assert(value.getValue()==T{});
  // Disabling a cheat in the menu must not resurrect the previous override.
  value.setOverrideValue(enabled);guard.enforce();changed=[&]{guard.enforce();};
- value.setValue(T{});changed={};guard.release(false);assert(value.getValue()==T{});
- // Speedrun policy wins when our temporary lock ends; its saved value survives.
- value.setValue(enabled);guard.enforce();guard.release(true);
- assert(value.getValue()==T{}&&value.getValueForSave()==enabled);
- value.clearSpeedrunOverride();assert(value.getValue()==enabled);
+ value.setValue(T{});changed={};guard.release();assert(value.getValue()==T{});
+ // The stored user value is also preserved while our runtime mask is active.
+ value.setValue(enabled);guard.enforce();
+ assert(value.getLayer()==ConfigVarLayer::Speedrun&&value.getValueForSave()==enabled);
+ guard.release();assert(value.getLayer()==ConfigVarLayer::Value&&value.getValue()==enabled);
  // A native speedrun override already present is not owned or removed by us.
- value.setSpeedrunValue(T{});guard.enforce();guard.release(false);
+ value.setSpeedrunValue(T{});guard.enforce();guard.release();
  assert(value.getLayer()==ConfigVarLayer::Speedrun&&value.getValue()==T{});
  value.clearSpeedrunOverride();assert(value.getValue()==enabled);
+ // Removing an active launch override notifies synchronously. Do not recurse
+ // into enforcement or lose the launch value that must return on clean exit.
+ value.setValue(enabled);value.setOverrideValue(enabled);changed=[&]{guard.enforce();};
+ guard.enforce();assert(value.getValue()==T{}&&value.getValueForSave()==enabled);
+ changed={};guard.release();assert(value.getLayer()==ConfigVarLayer::Override&&value.getValue()==enabled);
+ value.clearOverride();
  // Repeated end/restart/shutdown cleanup is idempotent.
- guard.enforce();guard.release(false);guard.release(false);assert(value.getValue()==enabled);
+ guard.enforce();guard.release();guard.release();assert(value.getValue()==enabled);
 }
 
 '''
@@ -67,7 +73,7 @@ struct Loader{std::vector<Item> items;auto active_mods(){return items|std::views
 auto s_loader=+[]()->Loader&{return loader;};
 struct Host{const char* mod_id(void*){return "dev.bezide.dawnlight";}}host;
 auto* svc_host=&host;void* mod_ctx=nullptr;
-ConfigVar<bool> cheat("cheat",false);ConfigVar<bool>* s_speedrun=nullptr;
+ConfigVar<bool> cheat("cheat",false);
 std::array<survivors::CheatGuard<bool>,16> s_bools{};
 survivors::CheatGuard<bool> s_spin,s_armor;
 // BOOL_CHEATS
@@ -94,20 +100,18 @@ void run(){
  begin_survivors_integrity(true,modded);assert(!modded&&cheat.getValue()&&registered==18);
  loader.items.back().active=true;update_survivors_integrity(modded);assert(modded);
  end_survivors_integrity();assert(removed==18);
- // This setting is deliberately absent from the host's speedrun policy.
- ConfigVar<bool> speedrun("speedrun",true);s_speedrun=&speedrun;
- s_bools[0]={};s_bools.back().var=&cheat;
+ // Normal cleanup must not install a host speedrun policy on any cheat.
+ for(auto& guard:s_bools)guard={};
+ s_bools[0].var=&cheat;
  begin_survivors_integrity(false,modded);assert(!cheat.getValue());
- end_survivors_integrity();assert(cheat.getValue());s_speedrun=nullptr;
+ end_survivors_integrity();assert(cheat.getValue()&&cheat.getLayer()==ConfigVarLayer::Value);
+
 }
 }
 int main(){check(true);check(Mode::Cheat);check(Mode::OtherCheat);integrity_test::run();}
 '''
 a=implementation.index('constexpr std::array kBoolCheats')
 fixture=fixture.replace('// BOOL_CHEATS',implementation[a:implementation.index('};',a)+2])
-# Keep restoration consistent with the host's precise speedrun cheat policy.
-policy=(root/'dusklight/src/dusk/speedrun.cpp').read_text()
-assert 'easyQuickSpin.setSpeedrunValue' not in policy
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test';cpp.write_text(fixture)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-DTARGET_PC','-Wall','-Wextra','-Werror',

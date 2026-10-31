@@ -11,6 +11,37 @@ Taktikänderungen erhöhen den Schaden nicht. Ein nachfolgender Balance-Patch
 verdoppelt die HP aller vier zeitgesteuerten Bosse einschließlich Finalboss und
 Endless-Wiederholungen; stationäre Wächter behalten ihre bisherigen HP.
 
+
+Aktualisierung für PR #154 (23.10.2026): Hyrule Field verwendet jetzt
+Riesen-Bokoblin → Bullbo mit zwei Bulblins → Aeralfos → King Bulblin. Die
+historischen nativen Ausgangstabellen unten beschreiben noch die ersetzten
+Gegner. Die HP-Budgets der Ersatzslots bleiben bestehen. Bullbo, beide Reiter
+(inklusive Pfeile) und der Elite-Aeralfos verursachen mit allen Angriffen zwei
+Herzen Basisschaden vor Schwierigkeit/Endless und Schadensreduktion. Der Bullbo hat 150% große Zielradien; sein Bogenschütze feuert immer
+dreifach mit halbem Bereitschaftstimer. Seine Lauf-KI prüft die Bewegung vorab
+gegen den Lichtkreis (inklusive Endless-Tempo), wendet vor der Wand und kehrt
+in die innere Kreishälfte zurück, bevor sie Link wieder verfolgt. Der Aeralfos wechselt alle 10 aktiven
+Sekunden zwischen Boden und Luft, fliegt im halbierten Höhenband 250–400 über
+Boden und hat auf ein Viertel verkürzte native Bereitschaftstimer. Die niedrigere Obergrenze beendet
+auch den Rückflug nach einem Sturzangriff. Bereite Luftangriffe warten nicht mehr
+auf den nativen Partnerstatus. Der Sturzflug erfasst Links Position beim Beginn
+des sichtbaren Ausholens und fliegt danach mit 60 Einheiten pro Update auf einer
+festen Bahn etwa 450 Einheiten darüber hinaus. Er verfolgt Link nicht weiter
+und bremst nicht in seiner Nähe. Auf der erfassten Körperhöhe wird der Flug
+waagerecht; Wand, Bodenkontakt, Lichtkreis oder drei Sekunden Sicherheitslimit
+beenden ihn früher. Die anschließende Erholung verursacht keinen Schaden.
+Im Bodenkampf wird alle drei aktiven Sekunden ein
+kollisionsgeprüfter Gap Closer fällig; laufende Schläge werden erst beendet.
+Nach dem Ansturm beginnt sofort der native Nahkampfangriff. Blockierte Wege
+brechen den Ansturm ab. Gezielte Sword Waves von King Bulblin berücksichtigen
+auch Links Höhe beim Abschuss; sie verfolgen ihn danach nicht weiter.
+
+Die HP-Kurve ab Gerudo Desert folgt jetzt Hyrule Field: Desert x1,10,
+Palace x1,21, Castle x1,331. Das gilt auch für normale Gegner und Wächter;
+die Darknut Arena behält ihre Kurve. Der Map-Aufschlag folgt nach dem gerundeten
+Field-Budget einschließlich des x2 für zeitgesteuerte Bosse. Die vollständigen
+HP-Tabellen und Rundungsregeln stehen in [SURVIVORS.md](../../SURVIVORS.md#enemy-health-curves).
+
 ## Zeiten und Schadenseinheiten
 
 Die vier Slots erscheinen bei 25 %, 50 %, 75 % und 100 % der Run-Dauer:
@@ -56,7 +87,8 @@ ausgenommen. Ganze Animationsabläufe werden nicht halbiert.
 | Gegner | Schaden gegenüber nativ | Zusätzliche Regeln |
 |---|---|---|
 | Beförderte normale Elites/Wächter | ×2 | Bereitschafts-/Erholungstimer ×½; ruhende Wächter bleiben ruhend |
-| King Bulblin | ×1 | Nativer Wirbel aus der Verfolgung unter 900 Einheiten; 6 s Cooldown; aktive Wirbelaxt kann höchstens alle 0,5 s erneut treffen |
+| King Bulblin | ×1 | Nativer Wirbel auch auf Distanz; 6 s Cooldown; aktive Wirbelaxt kann höchstens alle 0,5 s erneut treffen. Normale Schläge senden eine Sword Wave auf Link, Wirbel alle 1 s fünf Wellen (eine auf Links aktuelle Position, vier zufällig gerichtet) (3.000 Einheiten Reichweite, nativer Axt-Basisschaden) |
+| Bullbo/Reiter und Elite-Aeralfos | ×8 auf vereinheitlichte native Stärke 1 | Alle Angriffe: 2 Herzen Basisschaden; Schwierigkeit/Endless und Schadensreduktion wirken danach |
 | Darknut | ×2 | Wiederholter schwerer Schwertwurf alle 3 aktiven Sekunden bei mehr als 400 Einheiten Abstand, in beiden Rüstungsphasen |
 | Death Sword | ×4 | Nach 2,5 s Verfolgung bei mehr als 600 Einheiten Abstand zur nativen Zweifach-Magiephase; laufende Schläge/Schüsse werden nicht neu gestartet |
 | Stallord-Kopf | ×4 | Atemstart bis 6.000 Einheiten, unabhängig von Links Schadensschutz; Annäherung ab 1.800 Einheiten |

@@ -81,6 +81,7 @@ dCamera_c* s_zoomCamera=nullptr;
 cXyz s_nativeEye{}, s_zoomEye{};
 HookAction before_run_camera(ModContext*, void* args, void*, void*) {
     auto* camera=mods::arg<dCamera_c*>(args,0);
+    restore_hub_arrival_camera(camera);
     restore_sword_aim_camera(camera);
     if (camera && camera==s_zoomCamera && camera->mEye.abs2(s_zoomEye)<0.001f) {
         camera->mEye=s_nativeEye;
@@ -92,9 +93,10 @@ HookAction before_run_camera(ModContext*, void* args, void*, void*) {
 void update_run_camera(ModContext*, void* args, void*, void*) {
     auto* camera=mods::arg<dCamera_c*>(args,0);
     if(update_sword_aim_camera(camera))return;
-    if (!camera || !in_arena() || transitioning() || s_run.phase==Phase::Loading ||
+    if (!camera || !in_arena() || transitioning() || (s_run.phase==Phase::Loading && !s_hub) ||
         dComIfGp_event_runCheck() || dCamera_c::isAimActive() || camera->mPadID!=0) return;
-    const unsigned percent=s_run.phase==Phase::Ready ? s_options.camera_distance : s_run.options.camera_distance;
+    // Hub warmup outlasts the arrival: keep its configured endpoint throughout.
+    const unsigned percent=(s_run.phase==Phase::Ready || s_hub) ? s_options.camera_distance : s_run.options.camera_distance;
     if (percent==100) return;
     const cXyz delta=camera->mEye-camera->mCenter;
     if (delta.abs2()<1) return;

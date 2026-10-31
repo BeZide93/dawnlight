@@ -50,6 +50,7 @@ struct fopAc_ac_c {unsigned id=7; int room=51; struct{cXyz pos;}current,old;cXyz
 float correctedHeight=0;
 struct daAlink_c:fopAc_ac_c {struct{int m_gnd=0;bool hit=false;float floor=-1e9f;bool ChkGroundHit(){return hit;}float GetGroundH(){return floor;}void CrrPos(int){hit=true;floor=correctedHeight;}}mLinkAcch;
  int mGroundCode=0;float mNormalSpeed=0,mFallHeight=0,field_0x33c8=0;cXyz mLastJumpPos,field_0x3798,collisionPush;bool falling=false;
+ bool demo=false;bool checkPlayerDemoMode()const{return demo;}
  unsigned teleports=0,waits=0;
  void setPlayerPosAndAngle(const cXyz* p,s16 yaw,BOOL force){assert(force);++teleports;current.pos=old.pos=field_0x3798=*p;collisionPush={};correctedHeight=p->y;shape_angle.y=yaw;}
  void procWaitInit(){++waits;falling=false;}
@@ -79,12 +80,18 @@ bool s_hub=false,s_hubDoorStarted=false,s_arrivingRun=false;void update_hub(daAl
 unsigned s_map=0;const Arena& arena(){return arenas[s_map];}Run s_run;
 ActorId s_player=7;unsigned s_warmup=0,recordsLoaded=0;
 bool active=true,transition=false,event=false,creating=false,s_restart=false;
+bool arrivalActive=false;
+bool survivors_hub_arrival_active(){return arrivalActive;}
 bool in_arena(){return active;}bool transitioning(){return transition;}bool playable(){return active&&!event&&!transition;}
 bool fpcM_IsCreating(ActorId){return creating;}
 unsigned fopAcM_GetID(fopAc_ac_c* a){return a->id;}int fopAcM_GetRoomNo(fopAc_ac_c* a){return a->room;}
 void fopAcM_SetRoomNo(fopAc_ac_c* a,int n){a->room=n;}
 void load_records(){++recordsLoaded;}
 void clear_elite_sites(){}
+void clear_reachable_floor(){}
+void retire_palace_ferries(){}
+bool ferryCaptured=false;
+bool capture_palace_ferry(int,const fopAcM_prm_class&){return ferryCaptured;}
 void capture_elite_site(int,const fopAcM_prm_class&){}
 void reset_midna_dialog(){}
 void update_midna_dialog(){}
@@ -115,6 +122,13 @@ int main(){
    assert((params.base.parameters&0x00fe0fff)==(original&0x00fe0fff));
   }
  }
+ // A captured ferry transfers to explicit creation; release the append and
+ // suppress its original creator so there cannot be two collision platforms.
+ info.procname=fpcNm_BG_e;ferryCaptured=true;
+ assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL&&freed==1);
+ active=false;
+ assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_CONTINUE&&freed==1);
+ active=true;ferryCaptured=false;freed=0;
  // Native story chests remain filtered; the hub chest uses its own actor.
  s_map=0;params.room_no=51;info.procname=fpcNm_TBOX_e;
  assert(before_arena_stage_actor(nullptr,spawnArgs,nullptr,nullptr)==HOOK_SKIP_ORIGINAL);
@@ -134,20 +148,40 @@ int main(){
  assert(link.current.pos.x==100);active=true;
  // Loading cannot time out into Ready while airborne, creating, in an event,
  // above stale collision, on an invalid floor, or in a neighbouring room.
- for(int reason=0;reason<6;++reason){
+ for(int reason=0;reason<7;++reason){
   clear_arena_geometry();s_run.phase=Phase::Loading;s_warmup=0;
   link.current.pos={0,reason==3?100.f:0.f,0};link.mLinkAcch.hit=reason!=0;
   link.mLinkAcch.floor=reason==4?-1e9f:0;link.room=reason==5?0:51;
-  creating=reason==1;event=reason==2;
+  creating=reason==1;event=reason==2;link.demo=reason==6;
   for(int frame=0;frame<60;++frame)load_frame(&link);
   assert(s_run.phase==Phase::Loading&&s_warmup==0);
  }
- creating=event=false;link.room=51;link.current.pos={100,0,0};
+ // Native entry can remain grounded with no global event while walking
+ // through the door. There is deliberately no native Darknut spawn callback.
+ clear_arena_geometry();creating=event=false;link.demo=true;link.room=51;
+ link.current.pos={-1000,0,0};landingFloor=0;landingRoom=51;
+ link.mLinkAcch.hit=true;link.mLinkAcch.floor=0;
+ for(int frame=0;frame<35;++frame){
+  link.current.pos.x=-1000+float(frame)*100;load_frame(&link);
+  assert(s_run.phase==Phase::Loading&&s_warmup==0);
+  assert(s_arenaSpawnPosition.x==-1000); // Early rescue checkpoint only.
+ }
+ link.demo=false;link.current.pos={2400,0,0};link.shape_angle.y=1234;
  link.mLinkAcch.hit=true;link.mLinkAcch.floor=0;s_arenaSafe=false;landingFloor=0;landingRoom=51;
+ // Save-load arrival owns Link until the rise finishes. Neither rescue/scan
+ // anchors nor the grounded warmup may initialize underneath that pose.
+ clear_arena_geometry();s_hub=true;arrivalActive=true;
+ for(int frame=0;frame<120;++frame)load_frame(&link);
+ assert(s_run.phase==Phase::Loading&&s_warmup==0&&recordsLoaded==0);
+ assert(!s_arenaSafe&&!s_arenaSpawn);
+ arrivalActive=false;s_hub=false;
  for(int frame=0;frame<14;++frame){load_frame(&link);assert(s_run.phase==Phase::Loading);}
  // Capture native floor contact even if the derived barrier mesh is not ready.
  assert(s_arenaSafe&&!s_arenaMeshReady);
  load_frame(&link);assert(s_run.phase==Phase::Ready&&recordsLoaded==1);
+ assert(s_arenaSpawn&&s_arenaSpawnPosition.x==2400&&s_arenaSpawnYaw==1234);
+ // Ordinary movement does not move the finalized scan anchor.
+ link.current.pos.x=2500;load_frame(&link);assert(s_arenaSpawnPosition.x==2400);
  // Falling during loading must restore the recorded floor, not freeze below it.
  s_run.phase=Phase::Loading;link.current.pos.y=-600;link.mLinkAcch.hit=false;
  link.mLinkAcch.floor=-1e9f;landingFloor=-1e9f;link.speed.y=-50;load_frame(&link);
@@ -297,7 +331,7 @@ int main(){
 '''
 # Exercise the real floor policy together with the rescue hooks.
 ground = (root/'src/survivors_ground.inc').read_text()
-dry_floor = ground[:ground.index('bool walkable_spawn_path')]
+dry_floor = ground[:ground.index('struct ArenaWalk')]
 functions = dry_floor+'\n'+'\n'.join(extract(n) for n in ['add_exit_box','arena_story_actor','before_arena_stage_actor',
     'confine_arena_actor','after_arena_position','before_arena_restart','arena_grounded','arena_fallen','arena_safe_footprint','restore_arena_player','update_arena_safety'])
 globals = source[source.index('std::vector<barriers::Wall>'):source.index('void add_exit_box')]

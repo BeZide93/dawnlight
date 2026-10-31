@@ -72,6 +72,19 @@ int main(){
   after_potion_drink(nullptr,nullptr,nullptr,nullptr);
   heal[0]=-4.f;assert(before_potion_heal(nullptr,heal,nullptr,nullptr)==HOOK_CONTINUE);
  }
+ // Greed blocks every positive native heal, including owned red potions.
+ s_run.start(1);s_run.red_potion=true;player={};active=true;s_run.apply_fate(FateEffect::Greed);
+ for(auto phase:{Phase::Running,Phase::Upgrade,Phase::Treasure}){
+  s_run.phase=phase;before_potion_drink(nullptr,drink,nullptr,nullptr);
+  for(float amount:{-4.f,0.f,4.f,32.f}){
+   std::any heal[]={amount,u8(0)};
+   assert(before_potion_heal(nullptr,heal,nullptr,nullptr)==(amount>0?HOOK_SKIP_ORIGINAL:HOOK_CONTINUE));
+  }
+  after_potion_drink(nullptr,nullptr,nullptr,nullptr);
+ }
+ active=false;std::any normalHeal[]={4.f,u8(0)};
+ assert(before_potion_heal(nullptr,normalHeal,nullptr,nullptr)==HOOK_CONTINUE);active=true;
+ s_run.clear_fate();assert(before_potion_heal(nullptr,normalHeal,nullptr,nullptr)==HOOK_CONTINUE);
  s_run.start(1);assert(!s_run.red_potion&&s_run.equipment_count()==0&&s_run.rank(Upgrade::PotionHealing)==0);
  s_run.phase=Phase::Treasure;for(unsigned i=0;i<4;++i)assert(s_run.buy_chest(money,ChestReward(i)));
  assert(!s_run.buy_chest(money,ChestReward::RedPotion,4));

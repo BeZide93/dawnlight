@@ -1,8 +1,10 @@
-enum class CombatText { Block, Dodge, Crit };
+enum class CombatText { Block, Dodge, Crit, Fate };
 struct FloatingCombatText {
     cXyz position{};
     unsigned remaining=0;
     CombatText kind=CombatText::Crit;
+    unsigned lifetime=30;
+    FateEffect fate=FateEffect::Horde;
 };
 constexpr unsigned combat_text_lifetime=30;
 std::array<FloatingCombatText,64> s_combatTexts{};
@@ -23,6 +25,11 @@ void combat_feedback(fopAc_ac_c* actor,CombatText kind) {
         [](const auto& a,const auto& b){return a.remaining<b.remaining;});
     const float height=std::max(100.f,std::clamp(actor->eyePos.y-actor->current.pos.y,0.f,400.f))+35.f;
     *slot={actor->current.pos+cXyz(0,height,0),combat_text_lifetime,kind};
+}
+void fate_feedback(const cXyz& position,FateEffect effect) {
+    auto slot=std::min_element(s_combatTexts.begin(),s_combatTexts.end(),
+        [](const auto& a,const auto& b){return a.remaining<b.remaining;});
+    *slot={position+cXyz(0,80,0),60,CombatText::Fate,60,effect};
 }
 void update_combat_feedback() {
     for (auto& text:s_combatTexts) if (text.remaining) { --text.remaining; text.position.y+=1.5f; }

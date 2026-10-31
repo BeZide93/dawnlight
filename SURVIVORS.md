@@ -4,8 +4,35 @@
 
 A 20-minute survival mode included in `dawnlight_mod.dusk`. Select **Hyrule
 Survivors** in Dusklight's game-mode menu and create/load its separate save.
-You arrive in the freely walkable Darknut Arena hub. Interact with the central
-Master Sword using A to open **Talents / Settings**; closing saves automatically.
+Its title screen uses the hub as a live scene: Link kneels before the enlarged
+fire bowl, with Zelda visible beside it.
+The scene previews behind the game-mode menu. Clicking **Hyrule Survivors**
+first fades out the menu, then pans and zooms the camera towards Link and arcs
+around to show him from the side. Only A and B remain in the touch UI. Once the
+camera settles, a fresh button press (including touch controls) reveals the
+native logo and A/Start prompt. Holding the selection button does not reveal it.
+Switching modes and back reloads the preview. Link rests on his right knee with his left foot planted
+in front, his hand above the raised knee and his head slightly bowed. He appears
+only once the grounded pose and hub actors are ready. Native file selection
+remains available after Start. Zelda and the bowl load in parallel as soon as
+the room's collision is ready, including during fade-in; only failed spawn
+requests incur a retry delay.
+This presentation does not start a run or grant/save items.
+You arrive in the freely walkable Darknut Arena hub. A ceremonial oil bowl
+(`Obj_otubo`), enlarged to twice its native size and used as a fire bowl, stands
+in the center. Its fire, light and collision follow the enlarged bowl; it has
+no oil-refill interaction. Zelda stands beside it and turns toward Link when
+spoken to. Visit her to open **Talents / Settings**; closing saves automatically.
+Speak to her with A: "It's dangerous to go alone! Take this." She then presents
+the **Ordon Sword**, raised overhead in Link's hand, with the native item message.
+New saves start without a sword; Zelda's completed gift is saved automatically.
+Trying the exit first turns the conversation camera toward Zelda as she calls
+"Wait! Come here!" Visit her to receive the sword before starting a run.
+Existing saves that already own Ordon keep it. After the first gift Zelda says,
+"Come to me after your journey to get some rest and strengthen your Talents."
+**Talents** is highlighted red in the dialogue. Later conversations say
+"Let me help you on your journey." and open **Talents / Settings** after the
+native dialogue closes, without repeating the sword gift.
 Interact with the exit door beneath **Start Run** to open map selection. Pick a
 map and press **Start run**: the menu closes, the native door opens, and Link walks
 through before the scene changes to the selected arena. Story and Boss Rush saves remain separate.
@@ -75,7 +102,11 @@ Edit outside a run; values are fixed when the run starts.
 
 **Allow Cheats** defaults to **off**. During a run, all settings in Dusklight's
 Cheats tab are temporarily suppressed, including attempts to enable them in the
-menu. Your saved cheat preferences return when the run ends, restarts or exits.
+menu. Only their runtime effect is blocked: the saved preference is never set to
+off. Saving Dusklight's configuration during a run retains the user values, even
+if the process then crashes or exits without run cleanup. The temporary lock is
+removed when the run ends, restarts or exits. Changes you make in the Cheats menu
+are saved normally but remain suppressed until the run ends.
 Turning Allow Cheats on marks the result **Cheated** in small red text at the top,
 even if no individual cheat was used. A second red **Modded** label appears if
 any other mod was active during the run, including cosmetic or asset-only mods;
@@ -145,12 +176,16 @@ the next level costs 2,000 XP, then 2,500, 3,000… Each grants **one Unlock Poi
 Abruptly quitting an unfinished run does not award its score. Old saves retain
 previous statistics and start this new progression at level 1.
 
-Interact with the central sword in the hub to open **Talents**. Each rank costs one point;
+Speak to Zelda in the hub after receiving the Ordon Sword to open **Talents**. Each rank costs one point;
 use **+ / −** to spend or refund points in the scrollable list. Click a perk name
 for its description. Removing a prerequisite also refunds its dependent perks;
 **Reset all perks** refunds every rank without changing XP, level or high scores.
-Changes apply next run; run power-up ranks remain separate. Closing the menu
-saves the native slot in the background automatically. **Save progress** also
+Changes apply next run; run power-up ranks remain separate. **Settings → Autosave**
+is on by default and controls automatic background saves when closing hub menus
+or making other hub changes, independently of Dusklight's Autosave setting. Turning
+it off discards pending automatic requests; writes already started finish normally.
+The preference persists across sessions and is included in settings export/import.
+**Save progress** works even with Autosave off and
 allows an explicit save/retry while keeping the menu open. A failed write leaves
 you in the hub and displays a retry message. The results screen also offers **Save records**.
 
@@ -222,7 +257,7 @@ The remaining rolls use the basic pool. Full specialist pools fall back to basic
 | Hyrule Field | Bokoblin, club Bulblin, Tektite | bow Bulblin (1:00), Guay (2:00), Kargarok (3:00) |
 | Gerudo Desert | Stalchild, club Bulblin, bow Bulblin | Stalhound (1:00), Dodongo (2:00), Gibdo (4:00) |
 | Palace of Twilight | Shadow club Bulblin, Shadow bow Bulblin, Shadow Keese | Shadow Beast (2:00), Shadow Kargarok (3:00) |
-| Hyrule Castle Throne Room | Bokoblin, club Bulblin, Rat | bow Bulblin (1:00), Lizalfos (2:00), Helmasaur (3:00) |
+| Hyrule Castle Throne Room | Bokoblin, club Bulblin, bow Bulblin | Lizalfos (1:00), Helmasaurus (2:00), Dynalfos (3:00) |
 
 Staltroops and Bomskits are excluded. Ordinary bow Bulblins and Guays each cap at
 `min(12, 4 × Horde)`; Kargaroks cap at `min(6, 2 × Horde)`;
@@ -245,7 +280,7 @@ Each map spawns four timed elites:
 | Map | 5:00 | 10:00 | 15:00 | 20:00 |
 | --- | --- | --- | --- | --- |
 | Darknut Arena | Giant Lizalfos | Giant Helmasaur | Dynalfos | Darknut |
-| Hyrule Field | Giant bow Bulblin | Giant Bokoblin | Giant Kargarok | King Bulblin |
+| Hyrule Field | Giant Bokoblin | Bullbo with two Bulblin riders | Aeralfos | King Bulblin |
 | Gerudo Desert | Giant Stalhound | Stalfos | Death Sword | Stallord’s flying head |
 | Palace of Twilight | Giant Shadow Beast | Twilit Bloat | Giant Twilit Carrier Kargarok | Phantom Zant |
 | Hyrule Castle Throne Room | Darknut | Darkhammer | Puppet Zelda | Ganondorf |
@@ -257,6 +292,32 @@ and use the native Tear-of-Light minimap icon. Dormant guards remain
 giant Bokoblins except in the Palace, where they are giant Shadow club Bulblins. Dormant
 elites wake only after taking damage; after a kill they respawn in three minutes,
 with new positions in Field/Desert. Timed elites do not respawn.
+
+Hyrule Field's Bullbo uses native charges with a front Bulblin driver and a rear
+Bulblin archer. All three share one boss HP budget and one kill/reward; hits on
+either rider damage the mount. The Bullbo and Aeralfos retain the timed-elite HP
+scaling of the enemies they replace. All Bullbo/rider attacks (including arrows)
+and elite Aeralfos attacks deal two base hearts before difficulty/Endless scaling
+and damage reduction. Riders and their arrows follow
+the encounter's pause and cleanup rules. Mount/rider target spheres are 150% of
+native radius, and the rear archer always fires triple arrows with half the
+native readiness delay. Rider targets remain at their visible saddle positions.
+The mounted boss anticipates the light-ring boundary, stops to turn inward, and
+returns to the inner half of the circle before resuming pursuit. The check
+includes Endless movement scaling; native collision and rider attacks stay active.
+The elite Aeralfos flies at 250–400 units above terrain (half the native band),
+has quarter-length native readiness waits, and alternates air/ground phases every ten
+active seconds, descending over a dry floor and using the native takeoff.
+A ready aerial attack starts without waiting for the native paired-Aeralfos AI.
+The dive locks Link's position at the start of its visible windup, then follows
+a fixed lane at 60 units per update without homing or braking near Link. It flies
+about 450 units beyond that position, levels out at the captured body height,
+and enters recovery with damage disabled. Walls, ground contact, the light-ring
+boundary or a three-second safety limit end the pass early.
+On the ground, a gap closer becomes due every three active seconds, waits for an
+ongoing strike to finish, and uses a bounded, collision-checked dash into melee.
+It starts a native attack immediately on arrival; blocked paths abort the dash.
+Nearby Link triggers a strike without another sidestep/idle cycle.
 
 Stalhounds emerge and fight in daylight as well as at night. The giant elite
 uses a lower pounce arc so its bite can reach grounded Link. Shadow Beasts do
@@ -280,10 +341,17 @@ are excluded; attacks, effects and attack timing remain native where portable.
 
 Boss balance: active elites/bosses move 50% faster. Promoted ordinary elites have
 half attack-readiness/recovery timers and double damage; native bosses/minibosses
-do not inherit those two generic factors. Explicit damage overrides are Darknut
-×2; Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
+do not inherit those two generic factors. Explicit damage overrides are Darknut ×2;
+elite Aeralfos and Bullbo/riders ×8 on normalized native power 1 (two hearts); Death Sword, Stallord, elite Carrier and Puppet Zelda ×4; Bloat and Darkhammer
 ×3; Ganondorf and Phantom Zant ×5. Overrides do not stack with the generic ×2.
-King Bulblin can spin every six seconds at a safe chase boundary. Darknut repeats
+King Bulblin can spin every six seconds at a safe chase boundary, including at
+range. Normal axe swings launch one Sword Wave toward Link, even outside melee
+range; active spins emit five waves every second: one aimed at Link's current position
+and four randomly directed waves. Aimed waves include Link's height and fly
+toward his body position at release, without homing afterward. Waves travel
+up to the light ring's diameter (3,000 units), stop at walls/hits, and use the
+native axe's base damage. Each five-wave salvo shares one accepted-hit budget.
+Darknut repeats
 his sword throw every 1.5 active seconds outside melee range in either phase.
 Death Sword can enter ranged combat after four seconds of distant pursuit;
 Stallord can start breath out to 6,000 units without Link's damage-protection gate.
@@ -311,13 +379,42 @@ Timed bosses take priority over awakened chest guards. With several candidates,
 the nearest is selected and retained until defeated or replaced by a timed boss;
 sleeping guards and ordinary enemies never occupy this bar.
 
-Normal enemies have a fixed ceiling of **345**, from the start at every Horde
-difficulty. Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
+Normal enemies default to a ceiling of **345**, from the start at every Horde
+difficulty. Settings → **Enemy Count** can lower it with **Max Normal Enemies** (0–345),
+independently of Debug. This preference is saved and applies to the next run. Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
 the first 10 minutes; Horde difficulty still controls batch size (1–5).
 Random **HORDE!** events triple spawn batches for 15 seconds, within
 that population limit. They average two events per five minutes, without a quota;
 overlaps add 15 seconds instead of stacking the multiplier. The HUD shows the
 remaining duration. Events stop at 20:00 and pause with the run.
+
+Settings → **Enemy Count** also includes **Show Enemy Counter** (default Off).
+The saved toggle applies immediately in normal and Debug runs. The counter shows
+**Enemies: current / limit**, includes pending spawn slots and excludes elites,
+retired and defeated enemies. **Enemy Counter** is a separate HUD-Editor element
+with saved X/Y/scale, visible in editor previews even when the toggle is Off.
+Zero normal enemies disables regular waves; bosses, guards and boss summons keep
+their separate limits. Horde batches respect the cap too.
+
+Darknut Arena's reachable-floor scan starts at Link's position after the native
+entrance demo and grounded loading warmup have finished. The first safe loading
+checkpoint can be outside the door and is used only for early fall recovery.
+No native Darknut placement is required. Chests, pots and Fate portals share the
+resulting arena-side component. During reachability scans, stair transitions do
+not require a flat spawn footprint at every tread. The path still checks ground,
+water, walls and exit barriers; the final spawn landing retains its full footprint
+checks. Wall rays clear accepted short risers in both directions. Floor connectivity
+also matches partially overlapping collinear edges, so a long landing edge can
+connect to several shorter stair edges. Edge matching uses spatial buckets and
+resumes after a bounded number of operations per frame; native collision and
+height checks still decide whether each resulting connection is walkable.
+
+Darknut Arena's entrance contains two native 50-unit stair risers. Its graph and
+walking checks allow 50 units plus a small collision tolerance; all other maps
+retain the 35-unit limit. Shared stair-edge checks account for their midpoint
+height, including the 25-unit offset at a 50-unit riser. Actual spawn footprints
+remain strict. Temporary floor diagnostics have been removed after identifying
+these limits from the runtime floor capture.
 
 Up to **64 EXP crystals** can lie on the ground. Further XP merges into the nearest
 crystal without loss; merged crystals turn **red**, ordinary crystals stay turquoise.
@@ -415,24 +512,42 @@ damageable. Ball lifetime grows with Reach so its return leg is preserved.
 
 ### Enemy health curves
 
-Normal HP multiply the species' base HP by the following fixed map/time factors.
-Interpolate linearly; start at 1× at minute zero and stop growth at minute 20.
+Normal HP multiply the species' base HP by a fixed time curve. Interpolate
+linearly from 1x at minute zero; normal-run growth stops at minute 20. Darknut
+Arena retains its own curve. Every later map uses the Hyrule Field curve and
+budget, with these cumulative map multipliers: Field x1, Desert x1.10, Palace
+x1.21, Castle x1.331. They apply to normal enemies, timed bosses and guards.
 These curves do not react to the player's equipment or luck. HP is sampled on
-spawn; untouched dormant guards refresh until engaged. Ordinary elite HP is
-`max(120, 32 × factor)`. Final bosses instead use the separate absolute budgets
-below. The selected Enemy HP difficulty multiplier applies once to every type;
-round once and cap at native signed-HP maximum 32,767.
+spawn; untouched dormant guards refresh until engaged. Existing wounded or
+active enemies do not gain HP as time passes during a normal run.
 
-| Map | 1 min | 5 min | 10 min | 15 min | 20 min | Final boss HP |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Darknut Arena | 1.00 | 4.09 | 10.76 | 19.22 | 28.30 | 2,300 |
-| Hyrule Field | 1.08 | 8.76 | 25.39 | 49.66 | 67.44 | 5,400 |
-| Gerudo Desert | 1.04 | 8.39 | 23.26 | 44.30 | 59.43 | 4,800 |
-| Palace of Twilight | 1.00 | 5.70 | 14.62 | 24.38 | 34.54 | 2,800 |
-| Hyrule Castle Throne Room | 1.10 | 4.98 | 12.79 | 22.41 | 32.73 | 2,600 |
+| Base curve | 1 min | 5 min | 10 min | 15 min | 20 min |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Darknut Arena | 1.00 | 4.09 | 10.76 | 19.22 | 28.30 |
+| Hyrule Field and later maps | 1.08 | 8.76 | 25.39 | 49.66 | 67.44 |
 
-These are balance starting points from the progression model; actual boss flight
-windows, attack geometry and survival pressure still need in-game validation.
+Before the map multiplier, elite HP is `max(120, 32 x factor)`; final bosses
+instead use 2,300 HP in the Arena and 5,400 in Field/later maps. Enemy HP difficulty
+applies only to normal enemies; Boss HP applies to elites and final bosses.
+Apply the selected difficulty and Endless factor, round to whole HP, then double
+the budget for timed slots only. Finally apply the map multiplier once, round
+half up and cap at 32,767. Do not round through each intermediate map: Castle
+uses exactly 1.331 times the Field budget. Damage is unaffected by these HP steps.
+
+At Boss HP x1 in a normal 20-minute run, the scheduled spawn budgets are:
+
+| Map | 5 min | 10 min | 15 min | 20 min (final boss) |
+| --- | ---: | ---: | ---: | ---: |
+| Darknut Arena | 262 | 688 | 1,230 | 4,600 |
+| Hyrule Field | 560 | 1,626 | 3,178 | 10,800 |
+| Gerudo Desert | 616 | 1,789 | 3,496 | 11,880 |
+| Palace of Twilight | 678 | 1,967 | 3,845 | 13,068 |
+| Hyrule Castle Throne Room | 745 | 2,164 | 4,230 | 14,375 |
+
+Guard HP at 0/5/10/15 minutes: Field 120/280/813/1,589; Desert
+132/308/894/1,748; Palace 145/339/984/1,923. Guards never receive the timed-slot
+x2. Delayed spawns and shortened debug runs use their actual simulation time.
+Endless extrapolates the same base curve and retains the map multiplier.
 No optional Legendary global-damage bonus is included.
 
 ## Critical hits
@@ -708,7 +823,7 @@ are hidden during native Collection, map/ring menus and pause transitions.
 
 Every scheduled boss and stationary guard boss, including repeated Endless bosses and respawned guards, has a base 20% chance to award permanent equipment directly to the inventory. A successful drop is 80% Weapon / 20% Tunic. Weapons have five equally likely families (Sword, Bow, Boomerang, Bombs, Ball and Chain), each with two equally likely variants: each named weapon is 8% of equipment drops. Luck does not change these odds. Equipment Drop Rate adds 5 percentage points per rank (maximum 10), reaching 70% at Twilit Rank 5. Difficulty scales this toward guaranteed equipment at Rank 25, with 75% Epic and 25% Legendary. Ordinary enemies and the victory cleanup wave do not award equipment. Debug runs award none unless **Max Equipment Drop Rate** or **Always Legendary Equipment** is enabled before the run. This session-only toggle defaults to Off and guarantees an equipment award per timed or stationary boss, with normal type rolls and the run's Equipment Rarity talent applied to stat rolls. **Always Legendary Equipment** also defaults to Off and applies from the next run: all new drops have maximum base stats (tier 5 or +2 for count stats), guaranteeing Legendary rarity. Weapons receive one random bonus from their full Legendary pool; Tunics have no perk. Used alone it preserves the normal talent-adjusted drop chance; combined with Max Equipment Drop Rate, every boss awards Legendary equipment. Existing items are unchanged. These items are saved; Debug score, permanent XP and map-unlock exclusions still apply. A successful award displays a small rarity-colored banner, initially centered vertically near the right screen edge; its position and size can be changed in the HUD-Editor. It slides in from the right toward the left, shows the equipment icon on the left and its name/stats on the right, and slides out after eight active gameplay seconds (including the short entrance/exit animation). Below an acquired-item banner, **Call Midna to Equip** offers immediate equipment replacement via the configured Midna input (including touch). This equips exactly the displayed drop in its Weapon/Tunic slot, preserving the replaced item in inventory. On successful storage the banner disappears immediately and the next queued drop appears. A failed equip save leaves the banner available to retry. Simultaneous awards queue in order until the current banner expires or is equipped. Menus pause the timer and hide the banner. Inventory-full and save-failure notices use the same banner without a misleading acquired item. A full inventory displays only **Inventory Full!** and never replaces an existing item.
 
-Open the large equipment chest in the Darknut Arena hub with A. It is an independent hub actor at the side wall on the +X side of the Master Sword pedestal, with its front facing the center of the room. It does not depend on story chest flags, native appearance events, Link's draw or run-loot resources. The inventory contains **40 shared slots across two tabs**, **Equipment 1 (20 slots)** and **Equipment 2 (20 slots)**. Each page has four rows of five. New items occupy the first empty slot in page order, from top left to bottom right, filling page one before page two. Controller/keyboard navigation and touch/mouse activation use native UI controls. Confirm equips **one Weapon and one Tunic**, replacing the previous item in that slot. Both equipped items remain in the inventory and are marked **Equipped**, with one Weapon and one Tunic shared across both pages. **Tap/click an equipped item again, or select it again with A/Confirm, to unequip it without deleting it.** Toggle Banish, then select an item to open **Delete Equipment?**, showing the exact item and stats. **Cancel** and B/Escape keep it; only **Delete** permanently removes it and unequips it if necessary. A failed save keeps the confirmation open for retry. Closing the inventory, switching pages or leaving the editable hub clears pending confirmations; delayed or stale confirmations cannot delete a changed slot. Closing the inventory saves progress through the existing native background-save flow. A failed storage write leaves the previous inventory intact.
+Open the large equipment chest in the Darknut Arena hub with A. It is an independent hub actor at the side wall on the +X side of the central fire bowl, with its front facing the center of the room. It does not depend on story chest flags, native appearance events, Link's draw or run-loot resources. The inventory contains **40 shared slots across two tabs**, **Equipment 1 (20 slots)** and **Equipment 2 (20 slots)**. Each page has four rows of five. New items occupy the first empty slot in page order, from top left to bottom right, filling page one before page two. Controller/keyboard navigation and touch/mouse activation use native UI controls. Confirm equips **one Weapon and one Tunic**, replacing the previous item in that slot. Both equipped items remain in the inventory and are marked **Equipped**, with one Weapon and one Tunic shared across both pages. **Tap/click an equipped item again, or select it again with A/Confirm, to unequip it without deleting it.** Toggle Banish, then select an item to open **Delete Equipment?**, showing the exact item and stats. **Cancel** and B/Escape keep it; only **Delete** permanently removes it and unequips it if necessary. A failed save keeps the confirmation open for retry. Closing the inventory, switching pages or leaving the editable hub clears pending confirmations; delayed or stale confirmations cannot delete a changed slot. Closing the inventory saves progress through the existing native background-save flow. A failed storage write leaves the previous inventory intact.
 
 The toolbar at the top of each inventory page provides **Sort by Rarity**, **Sort by Type** and **Move Items**, using the same controller/keyboard, mouse and touch controls as the item cards. Sorting covers all 40 slots, places empty slots last and saves the order. Rarity sorts highest first, then by family/variant; Type groups Sword, Bow, Boomerang, Bombs, Ball and Chain, then Tunic, with variants together and highest rarity first within each variant. Equal items retain their order. To move, enable **Move Items**, select an item, then choose any destination, including on the other page. An occupied destination swaps both items. Selecting the source again cancels that selection; selecting **Move Items** again exits move mode. Sorting, Banish or closing the inventory also clears move mode. Equipped items remain equipped after either operation, including identical duplicates. Failed saves preserve the original order and allow retry.
 

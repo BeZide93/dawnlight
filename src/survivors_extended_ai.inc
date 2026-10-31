@@ -8,6 +8,7 @@ struct ExtendedBody {
 ExtendedBody extended_body(fopAc_ac_c* actor,ProfileName profile) {
 #define BODY(P,T,Targets,Info,Status,Morph) case P: { auto* e=reinterpret_cast<T*>(actor);return {Targets,Info,Status,Morph}; }
     switch(profile) {
+    BODY(fpcNm_E_WB_e,e_wb_class,(std::array<dCcD_GObjInf*,8>{&e->cc_sph[0],&e->cc_sph[1],&e->cc_sph[2],&e->cc_sph[3],&e->cc_sph[4],&e->cc_sph[5],&e->cc_sph[6]}),&e->at_info,&e->Stts,e->anm_p)
     BODY(fpcNm_E_TT_e,daE_TT_c,(std::array<dCcD_GObjInf*,8>{&e->mSphere}),&e->mAtInfo,&e->mStts,e->mpMorfSO)
     BODY(fpcNm_E_GE_e,daE_GE_c,(std::array<dCcD_GObjInf*,8>{&e->mSphere,&e->mSphere2}),&e->mAtInfo,&e->mStts,e->mpMorfSO)
     BODY(fpcNm_E_KR_e,e_kr_class,(std::array<dCcD_GObjInf*,8>{&e->mSphere2,&e->mSphere3}),&e->mAtInfo,&e->mStts,e->mpMorf)

@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from survivors_performance_fixture import helpers
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'src/survivors.cpp').read_text()
@@ -180,7 +181,7 @@ u32 dComIfGp_particle_set(u32 id,u16 effect,cXyz*,int*,const csXyz*,const cXyz* 
     if(!id){id=nextEmitter++;emitters.emplace(id,Emitter{});}return id;
 }
 void dComIfGp_particle_levelEmitterOnEventMove(u32){}
-struct Attack {unsigned weapon=0;bool active=true,greatSpin=false;float radius=65,effectBaseRadius=260;unsigned life=10;cXyz position,velocity;cCcD_Obj collider;std::array<u32,9>emitters{};};
+struct Attack {unsigned weapon=0;bool active=true,greatSpin=false,reducedVisual=false;float radius=65,effectBaseRadius=260;unsigned life=10;cXyz position,velocity;cCcD_Obj collider;std::array<u32,9>emitters{};};
 std::array<Attack,initial_projectile_slots>s_attacks;
 struct Effect{cCcD_Obj collider;unsigned damage=0,fixedDamage=0;bool critical=false;};std::array<Effect,24>s_effects;
 void new_melee_swing(){}
@@ -713,6 +714,13 @@ int main(){
     const auto oldLevel=s_run.level;
     select_upgrade(nullptr,&choice);
     assert(life==16&&s_run.level==oldLevel+1&&s_run.phase==Phase::Upgrade);
+    // Greed also blocks the choice-time refill, including newly gained containers.
+    reset();s_run.phase=Phase::Upgrade;s_run.apply_fate(FateEffect::Greed);
+    s_run.offers[0]=Upgrade::Heart;maxLife=17;life=3;choice=0;
+    select_upgrade(nullptr,&choice);assert(maxLife==22&&life==3);
+    s_run.phase=Phase::Upgrade;s_run.offers[0]=Upgrade::Rupees;rupees=0;
+    const auto greedBonus=s_run.upgrade_rupees(Upgrade::Rupees,s_run.offer_rarities[0]);
+    select_upgrade(nullptr,&choice);assert(life==3&&rupees==greedBonus*3/2);
     // Every Multi Strike activation uses a new native cut, after the previous
     // pose/hit window; repeats do not recursively re-arm the burst.
     for(unsigned extra=1;extra<=3;++extra){
@@ -748,7 +756,7 @@ native_combo_functions = extract('daAlink_c::commonCutAction', native) + '\n' + 
 with tempfile.TemporaryDirectory() as tmp:
     cpp = Path(tmp) / 'test.cpp'
     binary = Path(tmp) / 'test'
-    cpp.write_text(native_combo + stubs + (root/'src/survivors_manual_attack.inc').read_text().replace('#include "survivors_sword_aim.inc"','') + native_combo_functions + '\n'.join((root/'src/survivors_melee.inc').read_text() if name=='melee' else (root/'src/survivors_targeting.inc').read_text() if name=='targeting' else (root/'src/survivors_jump_strike.inc').read_text() if name=='jump_strike' else (root/'src/survivors_wave_cast.inc').read_text() if name=='wave_cast' else extract(name) for name in functions) + '\n' + main)
+    cpp.write_text(native_combo + stubs + helpers() + (root/'src/survivors_manual_attack.inc').read_text().replace('#include "survivors_sword_aim.inc"','') + native_combo_functions + '\n'.join((root/'src/survivors_melee.inc').read_text() if name=='melee' else (root/'src/survivors_targeting.inc').read_text() if name=='targeting' else (root/'src/survivors_jump_strike.inc').read_text() if name=='jump_strike' else (root/'src/survivors_wave_cast.inc').read_text() if name=='wave_cast' else extract(name) for name in functions) + '\n' + main)
     subprocess.run([os.environ.get('CXX','c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror', '-I', str(root/'src'),
                     str(cpp), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

@@ -307,6 +307,27 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     };
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
+    control.label="Autosave";
+    control.help_rml="Automatically save Survivors progress when closing hub menus and after hub changes. Independent of Dusklight's Autosave setting. Save progress and Save records remain available when off. Default: on.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivors_autosave_enabled();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){
+        if(settings_editable())set_survivors_autosave(value->bool_value);
+    };
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
+    control.label="Performance Mode";
+    control.is_disabled=nullptr; // Live cosmetic setting; never changes run difficulty or score.
+    control.help_rml="Reduce visual effects under load and use a more efficient hub renderer. Damage and projectiles are unchanged. Default: off.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivor_perf::enabled();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){survivor_perf::set_enabled(value->bool_value);};
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
+    control.label="Performance Monitor";
+    control.help_rml="Show completed-frame buffer usage and run peak, and log counters once per second while Performance Mode is on. Unsupported hosts use fixed effect budgets. Default: off.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivor_perf::monitor_enabled();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){survivor_perf::set_monitor(value->bool_value);};
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
     result=build_reset_scores(left);
     if(result!=MOD_OK)return result;
     control=UI_CONTROL_DESC_INIT;
@@ -324,5 +345,33 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     result=build_performance_logs(left);
     if(result!=MOD_OK)return result;
 #endif
+    control=UI_CONTROL_DESC_INIT;
+    control.kind=UI_CONTROL_TOGGLE;control.label="Show Fate Tooltips";
+    control.help_rml="Show smaller effect descriptions below Fate names and timers. Off shows only the short names and timers. Default: on.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=show_fate_tooltips();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){set_fate_tooltips(value->bool_value);};
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
+    result=svc_ui->pane_add_section(mod_ctx,left,"Enemy Count");
+    if(result!=MOD_OK)return result;
+    control=UI_CONTROL_DESC_INIT;
+    control.kind=UI_CONTROL_NUMBER;control.label="Max Normal Enemies";
+    control.min=0;control.max=normal_enemy_limit;control.step=1;
+    control.help_rml="Maximum simultaneous normal wave enemies, including Horde waves. Default and maximum: 345. Zero disables normal waves. Bosses, guards and boss summons have separate limits. Saved for the next run.";
+    control.is_disabled=[](ModContext*,void*){return !settings_editable();};
+    control.get=[](ModContext*,void*,UiControlValue* value){value->int_value=s_options.max_normal_enemies;};
+    control.set=[](ModContext*,void*,const UiControlValue* value){
+        if(!settings_editable())return;
+        s_options.max_normal_enemies=unsigned(std::clamp<int64_t>(value->int_value,0,normal_enemy_limit));
+        store_option_config();
+    };
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
+    control=UI_CONTROL_DESC_INIT;control.kind=UI_CONTROL_TOGGLE;control.label="Show Enemy Counter";
+    control.help_rml="Show the current normal-enemy count and limit in the HUD. Move and resize it with Enemy Counter in the HUD-Editor. Default: off.";
+    control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=show_enemy_counter();};
+    control.set=[](ModContext*,void*,const UiControlValue* value){set_enemy_counter(value->bool_value);};
+    result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
+    if(result!=MOD_OK)return result;
     return enemy_hud::build(left);
 }

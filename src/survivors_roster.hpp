@@ -7,7 +7,7 @@ enum class Species : unsigned {
     Bokoblin, Keese, Rat, Club, Bow, Tektite, Lizalfos, Helmasaur, Helmasaurus,
     Guay, Kargarok, Bomskit, Stalchild, Gibdo, Stalfos, Puppet,
     Bubble, FireBubble, BlackChu, Dynalfos, Aeralfos, Darknut, Dodongo, Stalhound, ShadowClub, ShadowBow, ShadowBeast,
-    ShadowKeese, ShadowKargarok, StallordHead, ZantHand, KingBulblin, DeathSword, TwilitBloat, PhantomZant, Darkhammer, PuppetZelda, Ganondorf, Count
+    ShadowKeese, ShadowKargarok, StallordHead, ZantHand, KingBulblin, DeathSword, TwilitBloat, PhantomZant, Darkhammer, PuppetZelda, Ganondorf, Bullbo, Count
 };
 constexpr unsigned species_count=unsigned(Species::Count);
 struct RosterEntry { Species species; unsigned unlock_seconds=0; };
@@ -23,15 +23,15 @@ inline constexpr std::array<MapRoster,5> map_rosters{{
      {{Species::Lizalfos,Species::Helmasaur,Species::Dynalfos,Species::Darknut}}},
     {{{Species::Bokoblin,Species::Club,Species::Tektite}},
      {{{Species::Bow,60},{Species::Guay,120},{Species::Kargarok,180}}},3,
-     {{Species::Bow,Species::Bokoblin,Species::Kargarok,Species::KingBulblin}}},
+     {{Species::Bokoblin,Species::Bullbo,Species::Aeralfos,Species::KingBulblin}}},
     {{{Species::Stalchild,Species::Club,Species::Bow}},
      {{{Species::Stalhound,60},{Species::Dodongo,120},{Species::Gibdo,240}}},3,
      {{Species::Stalhound,Species::Stalfos,Species::DeathSword,Species::StallordHead}}},
     {{{Species::ShadowClub,Species::ShadowBow,Species::ShadowKeese}},
      {{{Species::ShadowBeast,120},{Species::ShadowKargarok,180}}},2,
      {{Species::ShadowBeast,Species::TwilitBloat,Species::ShadowKargarok,Species::PhantomZant}}},
-    {{{Species::Bokoblin,Species::Club,Species::Rat}},
-     {{{Species::Bow,60},{Species::Lizalfos,120},{Species::Helmasaur,180}}},3,
+    {{{Species::Bokoblin,Species::Club,Species::Bow}},
+     {{{Species::Lizalfos,60},{Species::Helmasaurus,120},{Species::Dynalfos,180}}},3,
      {{Species::Darknut,Species::Darkhammer,Species::PuppetZelda,Species::Ganondorf}}}
 }};
 constexpr const MapRoster& map_roster(unsigned map) { return map_rosters[map<map_rosters.size()?map:0]; }
@@ -63,13 +63,13 @@ inline Species choose_species(unsigned map,unsigned seconds,bool horde_event,flo
         if(counts[unsigned(type)]<ordinary_limit(type,horde)) candidates[count++]=type;
     return count?candidates[pick_roll%count]:Species::Count;
 }
-constexpr Species guard_species(unsigned map) {return map==3?Species::ShadowClub:Species::Bokoblin;}
+constexpr Species guard_species(unsigned map) {return map==2?Species::Stalfos:map==3?Species::ShadowClub:Species::Bokoblin;}
 constexpr float elite_scale(Species type) {
     switch(type) {
     case Species::KingBulblin:case Species::DeathSword:case Species::TwilitBloat:
     case Species::PhantomZant:case Species::Darkhammer:case Species::PuppetZelda:case Species::Ganondorf:
     case Species::Helmasaurus:case Species::Dynalfos:
-    case Species::StallordHead:case Species::ZantHand:case Species::Aeralfos:case Species::Darknut:return 1.f;
+    case Species::StallordHead:case Species::ZantHand:case Species::Aeralfos:case Species::Darknut:case Species::Bullbo:return 1.f;
     default:return 2.f;
     }
 }

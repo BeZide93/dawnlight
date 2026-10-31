@@ -11,7 +11,7 @@ struct LightningTargets {
     void reserve(ActorId id) { if(count<assigned.size())assigned[count++]=id; }
 };
 struct LightningBolt {
-    bool active=false;
+    bool active=false,reducedVisual=false;
     unsigned delay=0,life=0,hops=0,visitedCount=0,power=0,flash=0;
     float range=0;
     ActorId target=kNone;
@@ -22,6 +22,7 @@ struct LightningBolt {
 };
 std::deque<LightningBolt> s_lightning;
 void stop_lightning(LightningBolt& bolt) {
+    s_visualBudget.release(bolt.emitters.data());
     for(auto& key:bolt.emitters) {
         if(auto* emitter=key?dComIfGp_particle_getEmitter(key):nullptr) {
             emitter->stopCreateParticle();emitter->quitImmortalEmitter();emitter->becomeInvalidEmitter();
@@ -108,7 +109,8 @@ void update_lightning(daAlink_c* link) {
         if(dComIfG_Bgsp().LineCross(&wall)){stop_lightning(bolt);continue;}
         bolt.flashFrom=bolt.legFrom;bolt.flashTo=next;bolt.flash=6;bolt.position=next;
         // Use private common-bank copies, never a missing dungeon resource ID.
-        for(unsigned i=0;i<bolt.emitters.size();++i) {
+        bolt.reducedVisual=!full_visual(bolt.emitters,survivor_perf::Effect::Lightning,2);
+        for(unsigned i=0;!bolt.reducedVisual && i<bolt.emitters.size();++i) {
             if(const u16 effect=lightning_strike_effect(i))
                 bolt.emitters[i]=dComIfGp_particle_set(bolt.emitters[i],effect,&bolt.position,&link->tevStr,nullptr,nullptr,0xff,nullptr,-1,nullptr,nullptr,nullptr);
         }
@@ -125,6 +127,10 @@ void draw_lightning() {
     // if a stage has not loaded Link's optional electric particle resource.
     for(const auto& bolt:s_lightning) {
         if(!bolt.active || !bolt.flash || bolt.delay)continue;
+        if(bolt.reducedVisual) {
+            performance_line(bolt.flashFrom,bolt.flashTo,GXColor{160,225,255,255});
+            continue;
+        }
         const auto delta=bolt.flashTo-bolt.flashFrom;
         cXyz previous=bolt.flashFrom;
         for(unsigned i=1;i<=8;++i) {

@@ -8,8 +8,6 @@ ModResult initialize_heroes_shade_encounter(ModError* error);
 void update_heroes_shade_arena();
 void update_heroes_shade_audio();
 void shutdown_heroes_shade_encounter();
-void update_survivors_pedestal(bool enabled);
 void update_survivors_equipment_chest(bool enabled,const cXyz& position,short yaw);
 bool survivors_equipment_chest_anchor(cXyz& position);
-bool survivors_pedestal_anchor(cXyz& position);
 }

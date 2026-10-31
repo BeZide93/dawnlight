@@ -1,2 +1,5 @@
 # Bundles are byte-compared across platform builds; keep text files LF everywhere.
 * text=auto eol=lf
+
+# I8 atlases may contain no NUL bytes, but are binary GPU resources.
+res/survivors_roundtable/*.i8 binary

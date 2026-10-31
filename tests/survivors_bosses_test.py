@@ -84,6 +84,7 @@ ActorId fopAcM_createChild(int,ActorId parent,u32 param,const cXyz*,int,const cs
 fixture+=r'''
 struct Tactics{unsigned pattern=0,summons=0,recovery=0;int pzStage=0;ActorId summoner=kNone;};
 std::map<ActorId,Tactics>s_bossTactics;
+void update_king_waves(e_rdb_class*,Enemy&){}
 void update_zelda_light_volley(e_hzelda_class*,Enemy&){}
 bool boss_attack_paused(const Enemy&){return false;}
 bool boss_major_ready(Enemy&,unsigned){return true;}
@@ -134,7 +135,16 @@ int main(){
  boss.mAction=1;owner.specialCooldown=0;distanceToPlayer=500;
  before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==4&&owner.specialCooldown==180);
  boss.mMode=2;before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mMode==2);
- boss.mAction=1;before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==1);
+ boss.mAction=1;before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==3);
+ assert(boss.shape_angle.y==123&&boss.current.angle.y==123);
+ // Far Link still receives normal attacks, and spins keep the existing cooldown.
+ for(int action:{1,2}){
+  boss.mAction=action;boss.mMode=1;boss.field_0x6b8[0]=0;owner.specialCooldown=180;distanceToPlayer=2800;
+  before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==3&&boss.mMode==0&&boss.shape_angle.y==123);
+  boss.mAction=action;owner.specialCooldown=0;
+  before_boss_rdb(nullptr,args,nullptr,nullptr);assert(boss.mAction==4&&owner.specialCooldown==180);
+ }
+ distanceToPlayer=300;
  // Halve only King Bulblin's idle timer: 20 native ticks become 10.
  boss.mAction=1;boss.mMode=1;boss.field_0x6b8[0]=20;owner.specialCooldown=180;
  for(int tick=0;tick<10;++tick){

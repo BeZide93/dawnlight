@@ -36,6 +36,7 @@ bool separated_guard(cXyz pos, float distance) {
     return true;
 }
 bool random_arena_floor(cXyz& pos) {
+    if(needs_reachable_floor())return sample_reachable_arena_floor(pos) && elite_floor_position(pos);
     if (s_eliteFloors.empty() || s_eliteFloorArea <= 0) return false;
     const float roll = float(s_run.next_random() & 0xffffff) / 16777216.f * s_eliteFloorArea;
     auto tile = std::lower_bound(s_eliteFloors.begin(),s_eliteFloors.end(),roll,
@@ -45,12 +46,12 @@ bool random_arena_floor(cXyz& pos) {
     float b = float(s_run.next_random() & 0xffff)/65536.f;
     if (a+b>1) {a=1-a;b=1-b;}
     pos = tile->a + (tile->b-tile->a)*a + (tile->c-tile->a)*b;
-    return elite_floor_position(pos);
+    return elite_floor_position(pos) && reachable_arena_floor(pos);
 }
 bool random_guard_position(cXyz& pos) {
     auto* link=daAlink_getAlinkActorClass();
     if (!link || !random_arena_floor(pos) || !separated_guard(pos,1800)) return false;
-    // A straight path from Link confines every guard to an entrance corridor.
+    // The connected-floor sampler allows detours around hills and walls.
     // Sample the whole room, but keep guards away from both the original start
     // and the player's current location, including when a guard respawns.
     const cXyz start=s_arenaSpawn ? s_arenaSpawnPosition : link->current.pos;

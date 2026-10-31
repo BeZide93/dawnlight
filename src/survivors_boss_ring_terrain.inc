@@ -73,7 +73,7 @@ bool prepare_boss_ring_terrain(obj_gb_class* barrier,const cXyz& center) {
     const auto stop=std::min(t.sampled+24,BossRingTerrain::samples);
     for(;t.sampled<stop;++t.sampled) {
         const float angle=t.sampled*(6.2831853071795864769f/BossRingTerrain::samples);
-        cXyz probe(center.x+std::sin(angle)*1500.f,center.y+6000.f,center.z+std::cos(angle)*1500.f);
+        cXyz probe(center.x+std::sin(angle)*boss_ring_radius,center.y+6000.f,center.z+std::cos(angle)*boss_ring_radius);
         dBgS_GndChk ground;ground.SetActorPid(fopAcM_GetID(barrier));ground.SetPos(&probe);
         const float y=dComIfG_Bgsp().GroundCross(&ground);
         t.floor[t.sampled]=std::isfinite(y)&&y>center.y-20000.f&&y<=probe.y?y:NAN;

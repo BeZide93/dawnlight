@@ -2017,6 +2017,7 @@ ModResult initialize_survivors(ModError* error) {
     POST(SurvivorsPlayer, after_player); POST(SurvivorsDraw, after_draw);
     PRE(SurvivorsPlayer, before_player_contacts);
     PRE(SurvivorsPlayer, before_player_bindings);
+    PRE(SurvivorsPlayer, before_survivors_shield_update);
     PRE(SurvivorsPlayer, before_chest_action);
     PRE(SurvivorsPlayer, before_horde_portal_action);
     PRE(SurvivorsHordePortal, before_horde_portal_execute);

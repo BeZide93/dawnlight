@@ -2,8 +2,10 @@
 from pathlib import Path
 import os
 import subprocess
+import sys
 import tempfile
 root=Path(__file__).resolve().parents[1]
+sdk=Path(sys.argv[1]) if len(sys.argv)>1 else root/'dusklight'
 source=(root/'src/survivors_treasure.inc').read_text().split('HookAction before_treasure_draw')[0]
 core=(root/'src/survivors.cpp').read_text()
 start=core.index('bool pause_run_actor(')
@@ -67,6 +69,16 @@ struct daDitem_c:Actor {
     EventInfo eventInfo; bool visible=true,dead=false;
     bool chkDraw(){return visible;} bool chkDead(){return dead;}
 } prop;
+int equippedShield=255;
+bool shieldResourceReady=true;
+unsigned shieldLoads=0,shieldDeletes=0,shieldModels=0;
+constexpr int cPhs_COMPLEATE_e=4;
+struct ShieldHeap{void freeAll(){}} shieldHeap;
+void cPhs_Reset(int* phase){*phase=0;}
+void dComIfG_resDelete(int*,int){++shieldDeletes;}
+int dComIfG_resLoad(int*,int archive,ShieldHeap*){
+    assert(archive==equippedShield);++shieldLoads;return shieldResourceReady?cPhs_COMPLEATE_e:1;
+}
 struct daAlink_c:Actor {
     enum {PROC_WAIT,PROC_MOVE,PROC_ATN_MOVE,PROC_TIRED_WAIT,PROC_GET_ITEM,OTHER,ANM_GET_A,UPPER_2};
     int mProcID=PROC_WAIT,animation=-1;bool wolf=false,dead=false,inEvent=false;
@@ -81,7 +93,15 @@ struct daAlink_c:Actor {
     bool checkWolf(){return wolf;}bool checkDeadHP(){return dead;}bool checkEventRun(){return inEvent;}
     void onLightSwordGetEffect(){}
     void setSingleAnimeBase(int a){animation=a;}
+    bool statusWindow=false;int mShieldChangeWaitTimer=0,mShieldPhaseReq=0,mShieldArcName=dItemNo_SHIELD_e;
+    ShieldHeap* mpShieldArcHeap=&shieldHeap;void* mShieldModel=nullptr;
+    bool checkStatusWindowDraw(){return statusWindow;}
+    int getShieldChangeWaitTimer(){return mShieldChangeWaitTimer;}
+    void setShieldChange();int loadShieldModelDVD();
+    void setShieldArcName(){mShieldArcName=equippedShield;}
+    void setShieldModel(){++shieldModels;mShieldModel=reinterpret_cast<void*>(uintptr_t(mShieldArcName+1));}
 } player;
+// NATIVE_SHIELD_RELOAD
 constexpr int PAD_1=0,PAD_BUTTON_A=1;
 struct Pad {unsigned mPressedButtonFlags=0;};
 struct mDoCPd_c {static inline Pad pad{};
@@ -142,7 +162,8 @@ int dComIfGs_getItem(int slot,bool){return bottles.at(slot-SLOT_11);}
 void dComIfGs_setItem(int slot,int item){bottles.at(slot-SLOT_11)=item;++potionGrants;}
 void dComIfGs_onItemFirstBit(int){}
 void dComIfGs_setCollectSword(int){++swordGrants;}
-int equippedShield=0;enum{COLLECT_WOODEN_SHIELD=0,COLLECT_HYLIAN_SHIELD=2};void dComIfGs_offCollectShield(int){}
+enum{COLLECT_WOODEN_SHIELD=0,COLLECT_HYLIAN_SHIELD=2};void dComIfGs_offCollectShield(int){}
+u8 dComIfGs_getSelectEquipShield(){return equippedShield;}
 void dComIfGs_setCollectShield(int){}
 void dMeter2Info_setShield(int item,bool){equippedShield=item;}
 void dMeter2Info_setSword(int item,bool){equippedSword=item;}
@@ -180,6 +201,7 @@ main=r'''
 
 void fresh(){nativeKeys=pendingKeys=0;
     bottles.fill(dItemNo_NONE_e);equippedSword=swordGrants=potionGrants=0;
+    equippedShield=dItemNo_NONE_e;shieldLoads=shieldDeletes=shieldModels=0;shieldResourceReady=true;
     s_run.start(123);s_treasure={};s_chests={};s_chests[0].active=true;s_chests[0].position={0,0,100};
     s_chosenTreasure=ChestReward::Count;s_selectedChest=kChestCount;rupees=100;s_loot.ready=true;
     prop={};player={};player.id=1;event.mPt2=-1;
@@ -476,6 +498,46 @@ int main(){
     assert(open_first(Rarity::Epic)&&prop.itemNo==dItemNo_HYLIA_SHIELD_e);
     accept();eventEnded=true;update_treasure_demo(&player);
     assert(s_run.shield==9&&equippedShield==dItemNo_HYLIA_SHIELD_e&&rupees==80&&s_run.chest_cost()==25);
+    // A selected shield ID alone does not update Link's live model. Drive the
+    // actual SDK reload across tier changes, same-tier rewards and acquisition.
+    for(unsigned rank:{0u,1u,3u,4u,6u,7u}) {
+        fresh();s_run.shield=rank;
+        equippedShield=rank?shield_item(s_run):u8(dItemNo_NONE_e);
+        player.mShieldArcName=rank?equippedShield:dItemNo_SHIELD_e;
+        player.setShieldModel();shieldModels=0;
+        void* oldModel=player.mShieldModel;const int oldShield=equippedShield;
+        s_chests[0].offers={ChestReward::Shield,ChestReward::Count,ChestReward::Count};
+        assert(open_first());accept();update_treasure_demo(&player);
+        assert(equippedShield==oldShield&&player.mShieldChangeWaitTimer==0);
+        eventEnded=true;update_treasure_demo(&player);
+        assert(s_run.shield==rank+1&&equippedShield==shield_item(s_run));
+        const bool changed=equippedShield!=oldShield;
+        assert(player.mShieldChangeWaitTimer==(changed?4:0));
+        if(!changed){before_survivors_shield_update(nullptr,&player,nullptr,nullptr);
+            assert(player.mShieldModel==oldModel&&!shieldDeletes&&!shieldLoads);continue;}
+        // No double stepping in the collection screen or writes to another
+        // actor/mode. Native menu/deletion retain their own reload pump.
+        player.statusWindow=true;before_survivors_shield_update(nullptr,&player,nullptr,nullptr);
+        player.statusWindow=false;mode=false;before_survivors_shield_update(nullptr,&player,nullptr,nullptr);
+        mode=true;daAlink_c other=player;before_survivors_shield_update(nullptr,&other,nullptr,nullptr);
+        before_survivors_shield_update(nullptr,nullptr,nullptr,nullptr);
+        assert(player.mShieldChangeWaitTimer==4&&other.mShieldChangeWaitTimer==4&&!shieldDeletes);
+        before_survivors_shield_update(nullptr,&player,nullptr,nullptr);
+        update_treasure_demo(&player);assert(player.mShieldChangeWaitTimer==3); // One commit.
+        before_survivors_shield_update(nullptr,&player,nullptr,nullptr);
+        assert(player.mShieldChangeWaitTimer==2&&player.mShieldModel==nullptr&&shieldDeletes==1);
+        shieldResourceReady=false;
+        for(int i=0;i<5;++i)before_survivors_shield_update(nullptr,&player,nullptr,nullptr);
+        assert(player.mShieldChangeWaitTimer==2&&!shieldModels&&shieldLoads==5&&shieldDeletes==1);
+        shieldResourceReady=true;before_survivors_shield_update(nullptr,&player,nullptr,nullptr);
+        assert(!player.mShieldChangeWaitTimer&&shieldModels==1&&
+            player.mShieldModel==reinterpret_cast<void*>(uintptr_t(equippedShield+1)));
+        before_survivors_shield_update(nullptr,&player,nullptr,nullptr);assert(shieldModels==1&&shieldLoads==6);
+    }
+    fresh();s_run.shield=6;equippedShield=dItemNo_SHIELD_e;
+    s_chests[0].offers={ChestReward::Shield,ChestReward::Count,ChestReward::Count};
+    assert(open_first());cancel_treasure_demo();
+    assert(s_run.shield==6&&equippedShield==dItemNo_SHIELD_e&&!player.mShieldChangeWaitTimer);
     // Async failure, order timeout, interrupted event: no charge or reward.
     for(unsigned reason=0;reason<3;++reason){
         fresh();assert(open_first());
@@ -495,6 +557,17 @@ int main(){
     deleteAllowed=true;retire_treasure_actor();assert(!alive&&s_treasure.item==kNone);
 }
 '''
+def extract_function(text,signature):
+    start=text.index(signature);opening=text.index('{',start);depth=0
+    for end in range(opening,len(text)):
+        depth+=(text[end]=='{')-(text[end]=='}')
+        if not depth:return text[start:end+1]+'\n'
+    raise AssertionError(signature)
+native=(sdk/'src/d/actor/d_a_alink_swindow.inc').read_text()
+fixture=fixture.replace('// NATIVE_SHIELD_RELOAD',
+    extract_function(native,'void daAlink_c::setShieldChange()')+
+    extract_function(native,'int daAlink_c::loadShieldModelDVD()'))
+assert 'PRE(SurvivorsPlayer, before_survivors_shield_update)' in core
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp';binary=Path(tmp)/'test'
     cpp.write_text(fixture+"\nbool hub_gear_interaction(daAlink_c*){return false;}\n"+source+main)

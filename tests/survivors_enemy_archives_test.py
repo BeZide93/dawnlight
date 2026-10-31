@@ -178,7 +178,9 @@ assert update.index('update_enemy_archives();')<update.index('if (!s_active || !
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp';binary=Path(tmp)/'test'
     cpp.write_text(fixture+scope+production+cases)
-    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror',
-                    '-Wno-misleading-indentation','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)
-    subprocess.run([str(binary)],check=True)
+    for diagnostics in (0,1):
+        subprocess.run([os.environ.get('CXX','c++'),'-std=c++20',f'-DDAWNLIGHT_FREEZE_DIAGNOSTICS={diagnostics}','-include',str(root/'tests/survivors_freeze_fixture.hpp'),'-Wall','-Wextra','-Werror',
+                        '-Wno-misleading-indentation','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)
+        subprocess.run([str(binary)],check=True)
+
 print('Survivors archive retention: five maps, variants/children, single load across respawns, scoped ownership and balanced teardown passed')

@@ -72,6 +72,10 @@ ModResult initialize_option_config() {
         const auto result=register_owned_setting(&desc,&s_optionConfig[i]);
         if(result!=MOD_OK)return result;
     }
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    const auto diagnostics=initialize_performance_logs_setting();
+    if(diagnostics!=MOD_OK)return diagnostics;
+#endif
     ConfigVarDesc autosave=CONFIG_VAR_DESC_INIT;
     autosave.name="survivors-autosave";autosave.type=CONFIG_VAR_INT;autosave.default_int=1;
     const auto result=register_owned_setting(&autosave,&s_autosaveConfig);

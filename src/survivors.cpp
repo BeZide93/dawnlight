@@ -2,6 +2,7 @@
 #include "platform_compat.hpp"
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
+#include "survivors_freeze_diagnostics.hpp"
 #include "survivors_performance.hpp"
 #include "survivors_roundtable.hpp"
 #include "survivors_roundtable_props.hpp"
@@ -1235,6 +1236,7 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
 #include "survivors_status.inc"
 #include "survivors_lightning.inc"
 #include "survivors_performance_visuals.inc"
+#include "survivors_buffer_scene.inc"
 #include "survivors_knockback.inc"
 void new_melee_swing() { ++s_meleeSerial; }
 #include "survivors_combat_pause.inc"
@@ -1340,6 +1342,9 @@ void after_power(ModContext*, void* args, void*, void*) {
 }
 void after_player(ModContext*, void* args, void*, void*) {
     if (!s_active || s_run.phase != Phase::Running || !playable()) return;
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Player);
+#endif
     auto* link = mods::arg<daAlink_c*>(args, 0);
     if (!link || fopAcM_GetID(link) != s_player) return;
     if (dComIfGs_getLife() == 0 && !s_victory) { begin_defeat(); return; }
@@ -1774,6 +1779,7 @@ ModResult button(UiElementHandle pane, const char* text, UiPressedFn callback, v
 #include "survivors_results.inc"
 #include "survivors_scores_ui.inc"
 #include "survivors_hud_editor.inc"
+#include "survivors_performance_settings.inc"
 #include "survivors_maps_ui.inc"
 #include "survivors_debug_ui.inc"
 #include "survivors_settings_config.inc"
@@ -1877,12 +1883,28 @@ bool survivors_dual_wield() {
     return in_arena() && s_run.owns(ChestReward::OrdonSword) && !shield_pose(daAlink_getAlinkActorClass());
 }
 bool survivors_arena_active() { return in_arena(); }
+bool survivors_performance_logs_enabled() {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    return performance_logs_saved();
+#else
+    return false;
+#endif
+}
 bool survivors_save_screen_active() { return save_modal_active(); }
 bool survivors_dark_link_active() {
     return in_arena() && s_run.dark_active() && (s_run.phase == Phase::Running ||
         s_run.phase == Phase::Upgrade || s_run.phase == Phase::TreasureChoice || s_run.phase == Phase::Treasure);
 }
 void update_survivors() {
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    if(freeze_diag::enabled) {
+        freeze_diag::context({s_active,s_hub,in_arena(),transitioning(),bool(dComIfGp_isPauseFlag()),
+            bool(dComIfGp_event_runCheck()),ui_visible()||dMeter2Info_getWindowStatus()!=0||dMeter2Info_getPauseStatus()!=0,
+            s_map,unsigned(s_run.phase),s_run.ticks});
+        freeze_diag::pulse();
+    }
+    const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Update);
+#endif
     survivor_perf::tick(s_active);
     update_title_preview();
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
@@ -1951,6 +1973,9 @@ ModResult initialize_survivors(ModError* error) {
     if(result!=MOD_OK)return result;
     result=initialize_option_config();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors settings");
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    survivor_perf::set_diagnostic_providers(survivors_buffer_scene,survivors_fog_inventory);
+#endif
     result=survivor_perf::initialize();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors performance settings");
     result=enemy_hud::initialize();

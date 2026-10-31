@@ -1236,6 +1236,7 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
 #include "survivors_status.inc"
 #include "survivors_lightning.inc"
 #include "survivors_performance_visuals.inc"
+#include "survivors_buffer_scene.inc"
 #include "survivors_knockback.inc"
 void new_melee_swing() { ++s_meleeSerial; }
 #include "survivors_combat_pause.inc"
@@ -1972,6 +1973,9 @@ ModResult initialize_survivors(ModError* error) {
     if(result!=MOD_OK)return result;
     result=initialize_option_config();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors settings");
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+    survivor_perf::set_diagnostic_providers(survivors_buffer_scene,survivors_fog_inventory);
+#endif
     result=survivor_perf::initialize();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Survivors performance settings");
     result=enemy_hud::initialize();

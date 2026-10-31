@@ -1,4 +1,5 @@
 #include "survivors_freeze_diagnostics.hpp"
+#include "survivors_performance.hpp"
 #include "survivors.hpp"
 #include "touch_buttons.hpp"
 #include "bow_modes.hpp"
@@ -190,6 +191,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
 
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
     dawnlight::freeze_diag::initialize(dawnlight::survivors_performance_logs_enabled());
+    dawnlight::survivor_perf::set_diagnostics(dawnlight::freeze_diag::enabled);
 #endif
     svc_log->info(mod_ctx, "Dawnlight portable feature pack initialized");
     return MOD_OK;

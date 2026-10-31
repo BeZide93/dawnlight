@@ -14,7 +14,7 @@ ModResult initialize_performance_logs_setting() {
 ModResult build_performance_logs(UiElementHandle pane) {
     UiControlDesc control=UI_CONTROL_DESC_INIT;
     control.kind=UI_CONTROL_TOGGLE;control.label="Performance Logs";
-    control.help_rml="Records timing information to help investigate freezes. Default: Off. Restart Dusklight after changing this setting. The current session keeps its previous setting until restart.";
+    control.help_rml="Records freeze timings and buffer pressure, effect counts and scene context, including when Performance Mode is off. Default: Off. Restart Dusklight after changing this setting. The current session keeps its previous setting until restart.";
     control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=performance_logs_saved();};
     control.set=[](ModContext*,void*,const UiControlValue* value){
         if(s_performanceLogsConfig && svc_config->set_bool(mod_ctx,s_performanceLogsConfig,value->bool_value)!=MOD_OK)

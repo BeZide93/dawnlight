@@ -110,3 +110,77 @@ settings fixture verifies default Off, persistence, the restart boundary and UI.
 (including ASan/UBSan) and archive retention tests run with instrumentation both
 compiled out and enabled behind a reporter fixture. Native platform CI builds
 and iOS preparation checks validate the actual SDK hook metadata.
+
+
+## Buffer-crash diagnostics
+
+Performance Logs also enables `[SurvivorsBuffer]` records, **independently of
+Performance Mode and Performance Monitor**. The restart requirement remains.
+Sampling alone does not enable effect limits, change difficulty or alter combat.
+With Performance Logs off, scene/effect inventory and these records are inactive;
+Performance Mode can still use its existing buffer-pressure feedback.
+
+- All four arenas report used bytes, actual capacity and high-water marks:
+  `vertex`, `index`, `uniform`, `storage`. Peaks reset with the run/measurement
+  epoch (including a Performance Mode switch).
+- `buffer_threshold` records crossings of 80%, 90% and 95%. Each arena rearms
+  below 65%. `buffer_growth` also flags an increase of at least 15 percentage
+  points and 256 KiB between requests no more than 250 ms apart. Its bitmask is
+  vertex=1, index=2, uniform=4, storage=8. Threshold/growth/sample-loss reports
+  share a one-second rate limit; pending crossings are retained. The highest
+  utilization snapshot during that pending window supplies the detailed context;
+  crossed thresholds can summarize multiple observations in that window.
+- Normal heartbeats are every 30 seconds. Scene changes have a separate
+  one-second limit. A newly identified item event may emit immediately using a
+  separate one-second allowance, so the initial scene record does not suppress
+  the Ordon Sword event. These `context_only=1` records deliberately contain no
+  buffer measurement. They are issued before that update's later render work.
+- `map`, `phase`, `tick`, hub/transition/pause/event/menu flags, enemy/projectile
+  counts and `item_event` identify the captured context. Item event 1 is the hub
+  Ordon Sword presentation, 2 a Survivors treasure presentation, 0 neither of
+  those identified events. `reward` is a `ChestReward` enum, not a native item ID.
+- Each named visual has `active`, `full`, `reduced` and `emitters` counters. They
+  cover burns, waves, lightning, explosions, boomerangs, fire-arrow trails,
+  Fire Edge, Jump Strike and chains. Emitter counts are live owned emitters, not
+  particles. Full means a non-reduced group with a living emitter; native chain
+  models are counted separately. Active groups can have no visual yet (e.g. a
+  delayed bolt or unavailable particle resource). Fire Edge/Jump counters report
+  living decorations, not suppressed attempts. `reserved_emitters` is the
+  Performance Mode reservation budget; it is normally zero with Mode off.
+- Once per second, the existing read-only mod inventory is scanned for an active
+  package whose ID or display name contains “deferred fog”, ignoring separators
+  and case. `fog_inventory` is -1 unavailable, 0 no matching active package,
+  1 one or more matches. ID/version of the first match and match count are logged.
+  This is package recognition, **not proof that fog rendering is enabled**:
+  `fog_render_setting=unknown` is intentional. Renamed/unrecognized packages can
+  be missed; inactive packages are excluded. Inventory polling can lag a change.
+
+### Frame attribution and persistence limits
+
+AuroraStats does not expose the source frame ID. `stats_frame=unknown` therefore
+remains explicit. `request` identifies Dawnlight's AFTER_HUD sampling request;
+`sample_sequence` identifies a worker copy, **not a game or GPU frame number**.
+`context_request` associates the copied game-thread scene snapshot with that
+request. The statistics may describe earlier completed recording work, so the
+scene is correlation evidence rather than exact attribution of those bytes.
+
+`request_age_ms` is time since enqueue, `sample_age_ms` time since the worker copy,
+and `context_age_ms` time since the game-state snapshot. `request_lag` counts
+subsequent sampling requests. None measures the unknown age of the original
+Aurora frame. A missing context is marked explicitly rather than replaced with
+current game state. `consumed_sequence` can exceed the reported warning sample
+when an earlier spike was retained by the rate limiter.
+
+The worker queue and context history have 64 fixed entries each. Older pending
+samples can be overwritten; `samples_dropped` and `sample_loss` expose this, while
+per-arena high-water marks survive sample loss. `requests_failed` counts rejected
+compute submissions. No worker callback logs or touches game objects. Run epochs
+reject queued work from before a reset. Unknown Dusklight versions, missing
+symbols and graphics registration failures produce explicit measurement status;
+scene context remains available without guessed capacities.
+
+Warnings are passed to the host logger as they become reportable, rather than
+being held only for a shutdown dump. The mod cannot force the host logger or OS
+to flush durable storage. It cannot catch Aurora's fatal overflow, guarantee the
+last line survives a process crash, or measure a frame that aborts before the
+callback. Native actors/effects and other mods are outside the owned effect counts.

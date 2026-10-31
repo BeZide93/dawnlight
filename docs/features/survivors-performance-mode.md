@@ -76,3 +76,9 @@ combat/resource/lifecycle tests continue to execute production functions.
 Before release, verify the Ordon Sword event with deferred fog and late-game runs
 on Steam Deck, Windows and Android. Automated boundary tests and a successful mod
 build do not replace those renderer/device checks.
+
+
+Performance Logs can additionally record buffer thresholds, peaks, effect counts,
+scene/item-event context and sampling latency even while Performance Mode is off.
+See [Buffer-crash diagnostics](../diagnostics/survivors-freezes.md#buffer-crash-diagnostics)
+for field definitions, package-detection limits and the unknown source-frame ID.

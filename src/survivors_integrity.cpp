@@ -71,6 +71,7 @@ bool other_mod_active() {
     return false;
 }
 }
+#include "survivors_fog_inventory.inc"
 ModResult initialize_survivors_integrity(ModError* error) {
     if(!resolve("dusk::config::ConfigVarBase::has_subscribers",s_nativeHasSubscribers) ||
        !resolve("dusk::config::ConfigVarBase::notify_changed",s_nativeNotifyChanged) ||

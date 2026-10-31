@@ -2,6 +2,7 @@
 // world-space offset. Their lifetime belongs to the run, not Link's model.
 std::array<u32,3> s_fireEdgeEmitters{};
 void clear_fire_edge() {
+    s_visualBudget.release(s_fireEdgeEmitters.data());
     for (auto& key:s_fireEdgeEmitters) {
         if (auto* emitter=key?dComIfGp_particle_getEmitter(key):nullptr) {
             emitter->stopCreateParticle();emitter->quitImmortalEmitter();emitter->becomeInvalidEmitter();
@@ -16,6 +17,7 @@ void update_fire_edge() {
     }
     const u16 flame=bow_fire_effect();
     if (!flame) {clear_fire_edge();return;}
+    if(!full_visual(s_fireEdgeEmitters,survivor_perf::Effect::Other,3))return;
     for (unsigned i=0;i<s_fireEdgeEmitters.size();++i) {
         // Combat endpoints can be stale while sheathed and are extended by
         // Reach. Use the current visible sword model, including its back pose.

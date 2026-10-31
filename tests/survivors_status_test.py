@@ -1,3 +1,4 @@
+from survivors_performance_fixture import helpers
 """Run production burn/multihit lifecycle and damage hooks with engine-boundary fakes."""
 from pathlib import Path
 import ast
@@ -180,12 +181,20 @@ int main(){
  assert(s_run.damage.total()==30&&s_run.damage.dealt[unsigned(DamageSource::DarkLink)]==15);
  assert(s_run.damage.dealt[unsigned(DamageSource::DualWield)]==11&&s_run.damage.dealt[unsigned(DamageSource::FireArrows)]==4);
  assert(group[1].health==20&&s_run.random==270369); // (11 melee + 4 burn) x2
+ // Dropping flames releases only graphics: all three burn pulses still land.
+ clear_enemy_effects();s_run.dark_remaining=0;s_run.ranks[unsigned(Upgrade::FireArrows)]=1;
+ group[1].health=50;group[1].mSph1.ResetTgHit();survivor_perf::testEnabled=true;s_burnVisuals.fill(false);
+ record_status_hit(&group[1],&arrow);const unsigned duration=s_effects[1].burn;
+ assert(duration==90);
+ for(unsigned tick=0;tick<duration;++tick){update_enemy_effects();hit(group[1]);assert(!s_effects[1].emitters[0]&&!s_effects[1].emitters[1]);}
+ assert(group[1].health==47);survivor_perf::testEnabled=false;
+
  clear_enemy_effects();
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
-    cpp.write_text(fixture+function('native_sword_collider')+(root/'src/survivors_status.inc').read_text()+function('after_power')+(root/'src/survivors_defense.inc').read_text()+main)
+    cpp.write_text(fixture+helpers()+function('native_sword_collider')+(root/'src/survivors_status.inc').read_text()+function('after_power')+(root/'src/survivors_defense.inc').read_text()+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
 print('Survivors status: burn timing/refresh/deaths, Dark damage, nearest multihits, duplicate suppression and cleanup passed')

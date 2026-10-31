@@ -108,7 +108,7 @@ struct daAlink_c {struct{cXyz pos;}current;J3DModel* mpSwMModel=&nativeSword;
     void* loadAram(unsigned,unsigned size){assert(size==0x4000);return &lidData;}
 }player;
 daAlink_c* daAlink_getAlinkActorClass(){return &player;}
-void draw_chain(unsigned,daAlink_c*,cXyz){}
+void draw_chain(unsigned,daAlink_c*,cXyz,unsigned&){}
 namespace mDoMtx_stack_c{void transS(cXyz){}void YrotM(s16){}void XrotM(s16){}void* get(){return nullptr;}}
 struct dKy_tevstr_c{};
 struct Light{void settingTevStruct(int,cXyz*,dKy_tevstr_c*){}void setLightTevColorType_MAJI(J3DModel*,dKy_tevstr_c*){}}g_env_light;
@@ -116,7 +116,7 @@ bool expectWorldDraw=false;
 void mDoExt_modelUpdateDL(J3DModel*){
     assert(dark_link::WorldModelDrawScope::active()==expectWorldDraw);++draws;
 }
-struct Attack{JKRSolidHeap* bombHeap=nullptr;J3DModel* bombModel=nullptr;bool bombArrow=false,hurricane=false;JKRSolidHeap* modelHeap=nullptr;J3DModel* model=nullptr;J3DModel* wind=nullptr;bool active=false,exploding=false;unsigned weapon=0,age=0;cXyz position,velocity;};
+struct Attack{bool reducedVisual=false;JKRSolidHeap* bombHeap=nullptr;J3DModel* bombModel=nullptr;bool bombArrow=false,hurricane=false;JKRSolidHeap* modelHeap=nullptr;J3DModel* model=nullptr;J3DModel* wind=nullptr;bool active=false,exploding=false;unsigned weapon=0,age=0;cXyz position,velocity;};
 std::deque<Attack>s_attacks(initial_projectile_slots);Run s_run;
 void cancel_treasure_demo(){}
 enum HookAction{HOOK_CONTINUE,HOOK_SKIP_ORIGINAL};
@@ -192,6 +192,6 @@ int main(){
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp';binary=Path(tmp)/'test'
-    cpp.write_text(stubs+globals+'\n'.join(extract(n) for n in ['clear_loot','prepare_loot','prepare_projectile_model','prepare_bomb_arrow_model','draw_loot_model','draw_loot'])+draw+main)
+    cpp.write_text(stubs+'#include "survivors_performance_policy.hpp"\nnamespace survivor_perf=dawnlight::survivor_perf; namespace dawnlight::survivor_perf{unsigned tier(){return 0;}}\n'+globals+'\n'.join(extract(n) for n in ['clear_loot','prepare_loot','prepare_projectile_model','prepare_bomb_arrow_model','draw_loot_model','draw_loot'])+draw+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

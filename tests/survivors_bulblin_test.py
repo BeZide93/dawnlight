@@ -119,7 +119,7 @@ int main(){
 '''
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(fixture+function('native_sword_collider')+(root/'src/survivors_status.inc').read_text()+
+ cpp.write_text(fixture+context['helpers']()+function('native_sword_collider')+(root/'src/survivors_status.inc').read_text()+
   (root/'src/survivors_defense.inc').read_text()+(root/'src/survivors_bulblin.inc').read_text()+function('after_power')+engine+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

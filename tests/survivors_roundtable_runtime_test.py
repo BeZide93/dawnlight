@@ -7,6 +7,8 @@ production=source[source.index('namespace dawnlight {'):]
 production=production.replace('namespace dawnlight {','namespace dawnlight {\nHookAction before_roundtable_prop_process(void*,void*) {return HOOK_CONTINUE;}\nvoid update_roundtable_props(ActorId) {}\nvoid release_roundtable_props(ActorId) {}',1)
 fixture=r'''
 #include "generated/roundtable_layout.hpp"
+#include "survivors_indexed_room.hpp"
+namespace dawnlight::survivor_perf {bool testEnabled=false;bool enabled(){return testEnabled;}}
 #include <algorithm>
 #include <any>
 #include <array>
@@ -114,6 +116,7 @@ struct dDlst_list_c{enum{DB_XLU_LIST=0};J3DDrawBuffer* mDrawBuffers[1]{&shadeLis
 struct{dDlst_list_c drawlist;}g_dComIfG_gameInfo;
 J3DDrawBuffer* dComIfGd_getOpaListBG(){return &drawList;}
 J3DDrawBuffer* dComIfGd_getOpaList(){assert(false && "Room must precede native shadows, not render with actors");return nullptr;}
+struct J3DShape{static void resetVcdVatCache(){}};
 struct J3DSys{void reinitGX(){}void* getViewMtx(){return nullptr;}}j3dSys;
 struct GXTexObj{};
 struct Lighting{void settingTevStruct(int,void*,void*){}}g_env_light;
@@ -139,7 +142,15 @@ void GXBegin(int,int,unsigned count){assert(count<=60000&&count%3==0);submitted+
 constants=sorted(set(re.findall(r'\bGX_[A-Z0-9a-z_]+',production)) | {'GX_S16','GX_U16'})
 fixture+='\nenum {'+','.join(constants)+'};\n'
 for fn in sorted(set(re.findall(r'\b(GX\w+)\(',production))):
-    if fn not in {'GXBegin','GXPosition3f32','GXColor4u8','GXSetZMode','GXSetBlendMode','GXSetCullMode','GXSetVtxAttrFmt','GXPosition3s16','GXTexCoord2u16','GXTexCoord2f32'}:fixture+=f'template<class... T>void {fn}(T...){{}}\n'
+    if fn not in {'GXSetArray','GXPosition1x16','GXColor1x16','GXTexCoord1x16','GXBegin','GXPosition3f32','GXColor4u8','GXSetZMode','GXSetBlendMode','GXSetCullMode','GXSetVtxAttrFmt','GXPosition3s16','GXTexCoord2u16','GXTexCoord2f32'}:fixture+=f'template<class... T>void {fn}(T...){{}}\n'
+fixture+=r'''
+struct BoundArray{const unsigned char* data;unsigned size,stride;};
+std::map<int,BoundArray> arrays;
+void GXSetArray(int attr,const void* data,unsigned size,unsigned char stride,bool le){assert(le);arrays[attr]={static_cast<const unsigned char*>(data),size,stride};}
+void GXPosition1x16(u16 i){const auto& a=arrays.at(GX_VA_POS);assert((i+1)*a.stride<=a.size);s16 v[3];std::memcpy(v,a.data+i*a.stride,6);stream(2);positions.push_back({v[0]/8.f,v[1]/8.f,v[2]/8.f});}
+void GXColor1x16(u16 i){const auto& a=arrays.at(GX_VA_CLR0);assert((i+1)*a.stride<=a.size);auto* v=a.data+i*a.stride;stream(2);colors.push_back({v[0],v[1],v[2],v[3]});}
+void GXTexCoord1x16(u16){stream(2);}
+'''
 tests=r'''
 int create(void*){return 4;}int remove(void*){return 1;}int execute(void*){return 1;}int draw(void*){return 1;}
 leafdraw_method_class methods{{create,remove,execute,nullptr},draw};
@@ -152,6 +163,7 @@ void dispatch(daBg_c& bg,process_method_func method,bool hub,int result=4,bool p
 int main(int argc,char** argv){
  assert(argc==2);assetRoot=argv[1];
  for(int cycle=0;cycle<30;++cycle){
+  dawnlight::survivor_perf::testEnabled=cycle%2!=0;
   daBg_c bg;bg.id=unsigned(cycle+1);bg.sub_method=&methods;actors[bg.id]=&bg;
   dBgWKCol native;bg.mpKCol=&native;registry.Regist(&native,&bg);roomCollision=&native;
   // Normal combat/story room and partial create must remain native.
@@ -177,11 +189,11 @@ int main(int argc,char** argv){
   const unsigned expected=unsigned(header[4])|(unsigned(header[5])<<8)|
       (unsigned(header[6])<<16)|(unsigned(header[7])<<24);
   submitted=batches=0;frameBytes=otherSceneBytes;positions.clear();packet->draw();
-  assert(frameBytes==otherSceneBytes+size_t(expected)*18);
+  assert(frameBytes==otherSceneBytes+size_t(expected)*(dawnlight::survivor_perf::testEnabled?8:18));
   assert(formats[GX_VA_POS]==std::make_pair(int(GX_S16),3));
   assert(formats[GX_VA_TEX0]==std::make_pair(int(GX_U16),16));
   assert(formats[GX_VA_TEX1]==std::make_pair(int(GX_U16),16));
-  if(cycle==0){
+  if(cycle<=1){
    for(unsigned i=0;i<expected;++i){
     float v[7];unsigned char rgba[4];mesh.read(reinterpret_cast<char*>(v),28);mesh.read(reinterpret_cast<char*>(rgba),4);assert(mesh);
     const auto& packed=dawnlight::s_vertices[i];
@@ -191,9 +203,10 @@ int main(int argc,char** argv){
    }
   }
   assert(submitted==expected&&batches==(expected+59999)/60000);
+  if(dawnlight::survivor_perf::testEnabled){frameBytes=otherSceneBytes;packet->draw();packet->draw();assert(frameBytes==otherSceneBytes+size_t(expected)*16);}
   auto* shade=shadeList.entries[0];assert(shade!=&otherShade&&shade->getNextPacket()==&otherShade);
   submitted=batches=0;positions.clear();colors.clear();shade->draw();
-  assert(frameBytes==otherSceneBytes+size_t(expected)*18+36*16);
+  assert(frameBytes==otherSceneBytes+size_t(expected)*(dawnlight::survivor_perf::testEnabled?16:18)+36*16);
   assert(submitted==36&&batches==6&&zTest==GX_TRUE&&zWrite==GX_FALSE&&blendMode==GX_BM_BLEND&&cullMode==GX_CULL_BACK);
   for(unsigned i=0;i<colors.size();++i){
    assert(colors[i][0]==0&&colors[i][1]==0&&colors[i][2]==0&&colors[i][3]>0);

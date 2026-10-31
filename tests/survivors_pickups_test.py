@@ -236,6 +236,6 @@ int main(){
 '''
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(fixture+native+(root/'src/survivors_pickups.inc').read_text()+(root/'src/survivors_key_visual.inc').read_text()+core[core.index('void add_orb('):core.index('void drop_reward(')]+orbs+core[core.index('void after_draw('):core.index('void label(')]+main)
+ cpp.write_text(fixture+"void begin_performance_lines(){}void draw_reduced_attacks(){}void submit_performance_lines(){}"+native+(root/'src/survivors_pickups.inc').read_text()+(root/'src/survivors_key_visual.inc').read_text()+core[core.index('void add_orb('):core.index('void drop_reward(')]+orbs+core[core.index('void after_draw('):core.index('void label(')]+main)
  subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

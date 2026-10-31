@@ -6,6 +6,7 @@ bool jump_strike_pose(const daAlink_c* link) {
         link->mProcID == daAlink_c::PROC_CUT_LARGE_JUMP_LAND;
 }
 void clear_jump_effects() {
+    s_visualBudget.release(s_jumpEmitters.data());
     for (auto& key : s_jumpEmitters) {
         if (auto* emitter = key ? dComIfGp_particle_getEmitter(key) : nullptr) {
             emitter->stopCreateParticle(); emitter->quitImmortalEmitter();
@@ -72,6 +73,7 @@ HookAction before_jump_strike_effect(ModContext*, void* args, void*, void*) {
     constexpr std::array<u16, 2> effects{ID_ZI_J_BOMBex_A, ID_ZI_J_BOMBex_B};
     const float size = s_run.melee_reach(link->field_0x3478) / 200.0f;
     const cXyz scale(size, size, size);
+    if(!full_visual(s_jumpEmitters,survivor_perf::Effect::Other,2))return HOOK_SKIP_ORIGINAL;
     for (unsigned i = 0; i < effects.size(); ++i)
         s_jumpEmitters[i] = dComIfGp_particle_set(0, effects[i], &link->current.pos,
             &link->tevStr, nullptr, &scale, 0xff, nullptr, -1, nullptr, nullptr, nullptr);

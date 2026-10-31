@@ -1,3 +1,4 @@
+from survivors_performance_fixture import helpers
 """Production lightning propagation, targeting, damage provenance and cleanup."""
 from pathlib import Path
 import os, subprocess, tempfile
@@ -134,11 +135,25 @@ int main(){
  for(const auto& bolt:s_lightning)assert(!bolt.targets);
  fresh();proc();update_lightning(&player);clear_lightning();assert(!active());
  auto old=effects[0].pending;for(unsigned i=0;i<100;++i)update_lightning(&player);assert(effects[0].pending==old);
+ // Visual pressure cannot change chain selection, damage, repeats or lifetime.
+ const auto simulate=[&](bool performance){
+  fresh(30);survivor_perf::testEnabled=performance;s_visualBudget.clear();
+  s_run.dual_wield=1;s_run.ranks[unsigned(Upgrade::MultiStrike)]=3;s_run.ranks[unsigned(Upgrade::Multishot)]=3;
+  s_run.ranks[unsigned(Upgrade::Lightning)]=30;proc();unsigned maximum=0;
+  for(unsigned tick=0;tick<2000&&active();++tick){
+   update_lightning(&player);maximum=std::max(maximum,s_visualBudget.count(survivor_perf::Effect::Lightning));
+   if(performance)assert(s_visualBudget.used()<=16);
+  }
+  assert(!active());if(performance)assert(maximum<=8);
+  std::array<unsigned,30> damage{};for(unsigned i=0;i<30;++i)damage[i]=effects[i].pending;return damage;
+ };
+ assert(simulate(false)==simulate(true));assert(s_visualBudget.used()==0);
+
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
-    cpp.write_text(fixture+(root/'src/survivors_lightning.inc').read_text()+main)
+    cpp.write_text(fixture+helpers()+"void performance_line(cXyz a,cXyz b,GXColor c){dDbVw_drawLineXlu(a,b,c,1,10);}"+(root/'src/survivors_lightning.inc').read_text()+main)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-Wall','-Wextra','-Werror','-I',str(root/'src'),str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
 print('Survivors lightning: speed, hops, walls, guards, dead targets, multishot/repeats, effects and cleanup passed')

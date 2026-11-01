@@ -313,6 +313,8 @@ DEFINE_HOOK(&dMeterMap_c::keyCheck, SurvivorsSaveMapKeys);
 DEFINE_HOOK(&dMw_c::key_wait_proc, SurvivorsSaveMenuKeys);
 DEFINE_HOOK(&dComIfG_changeOpeningScene, SurvivorsOpening);
 DEFINE_HOOK(&fpcMtd_Method, SurvivorsProcess);
+DEFINE_HOOK(&fpcLf_DrawMethod, SurvivorsShadowActorDraw);
+DEFINE_HOOK(&dComIfGd_setShadow, SurvivorsNormalShadow);
 DEFINE_HOOK(&fopAcM_createItemFromTable, SurvivorsDrops);
 DEFINE_HOOK(&fopAcM_createItem, SurvivorsDirectDrops);
 DEFINE_HOOK(static_cast<void (*)(const char*, s16, s8, s8, f32, u32, int, s8, s16, int, int)>(
@@ -1407,6 +1409,8 @@ HookAction before_sword_attack(ModContext* ctx, void* args, void* result, void* 
 #include "survivors_boss_tactics.inc"
 #include "survivors_stalfos.inc"
 #include "survivors_dynalfos.inc"
+#include "survivors_shadow_budget.inc"
+
 bool pause_run_actor(bool enemy) {
     if(save_modal_active())return true;
     if (!in_arena() || s_run.phase == Phase::Loading) return false;
@@ -1987,6 +1991,7 @@ ModResult initialize_survivors(ModError* error) {
     result=initialize_hub_zelda();
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors Zelda dialog");
     initialize_menu_handoff();
+    initialize_shadow_budget();
 #define PRE(H, F) do { result = mods::hook_add_pre<H>(svc_hook, F); \
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to install Hyrule Survivors pre-hook " #H); } while(false)
 #define POST(H, F) do { result = mods::hook_add_post<H>(svc_hook, F); \
@@ -2149,6 +2154,7 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    shutdown_shadow_budget();
     survivor_perf::shutdown();
     shutdown_roundtable();
     shutdown_roundtable_props();

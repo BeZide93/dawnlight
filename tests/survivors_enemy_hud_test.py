@@ -20,6 +20,8 @@ fixture=r'''
 #include "mods/svc/hook.h"
 #include "survivors_enemy_hud.hpp"
 #include "survivors_enemy_hud_state.hpp"
+#include "survivors_performance_policy.hpp"
+namespace dawnlight::survivor_perf {bool mode=false;unsigned pressure=0;bool enabled(){return mode;}unsigned tier(){return pressure;}}
 ModContext* mod_ctx=nullptr;
 namespace dusk::config {
 struct ConfigVarBase{};
@@ -66,6 +68,8 @@ constexpr unsigned fopAcStts_NODRAW_e=1,fopAcCnd_NODRAW_e=1;
 class fopAc_ac_c {public: unsigned id=1,actor_status=0,actor_condition=0;int health=100,field_0x560=100;
  struct{cXyz pos{200,100,10};}current;struct{cXyz position{200,155,10};}attention_info;cXyz eyePos{200,155,10};};
 unsigned fopAcM_GetID(const fopAc_ac_c* actor){return actor->id;}
+struct Attention{unsigned target=0xffffffff;unsigned LockonTargetPId(int){return target;}}attention;
+auto* dComIfGp_getAttention(){return &attention;}
 fopAc_ac_c player;
 auto* dComIfGp_getPlayer(int){return &player;}
 bool event=false,view=true,occluded=false;unsigned rays=0;
@@ -148,6 +152,40 @@ int main(){
  event=true;boxes=0;printed.clear();draw();assert(!boxes&&printed.empty());event=false;
  for(unsigned i=0;i<lifetime;++i)tick();
  assert(std::all_of(popups.begin(),popups.end(),[](auto p){return p.age==lifetime;}));
+
+ // Live pressure changes clamp actual draw submissions, including old fade tails.
+ namespace perf=dawnlight::survivor_perf;
+ for(unsigned tier=0;tier<3;++tier) {
+  reset();perf::mode=true;perf::pressure=tier;attention.target=89;
+  for(unsigned i=0;i<100;++i) {
+   enemy.id=i+10;enemy.health=100;enemy.current.pos={200,100,float(10+i)};
+   observe(i,&enemy,true);enemy.health=90;observe(i,&enemy,true);
+  }
+  for(unsigned i=0;i<30;++i)tick();
+  boxes=0;printed.clear();draw();const auto stats=perf::presentation;
+  assert(stats.bars==(tier==0?32u:tier==1?16u:8u));
+  assert(stats.numbers==(tier==0?8u:tier==1?4u:0u));
+  assert(stats.popups==(tier==0?24u:tier==1?12u:0u));
+  assert(stats.textPasses==2*(stats.numbers+stats.popups));
+  assert(entries[79].rank==0); // Distant lock-on target beats nearer labels.
+  perf::pressure=2;draw();assert(perf::presentation.bars<=8&&!perf::presentation.numbers&&!perf::presentation.popups);
+  perf::pressure=0;draw();assert(!perf::presentation.popups); // Discarded numbers never return.
+ }
+ reset();perf::pressure=0;enemy.id=500;enemy.health=100;enemy.current.pos={200,100,10};
+ observe(0,&enemy,true);enemy.health=90;observe(0,&enemy,true);
+ tick();enemy.health=80;observe(0,&enemy,true);
+ assert(popups[0].amount==20&&popups[0].age==1&&popups[1].age==lifetime);
+ for(unsigned i=0;i<5;++i){tick();}
+ enemy.health=70;observe(0,&enemy,true);
+ assert(popups[1].amount==10); // Bounded merge window.
+ enemy.id=501;enemy.health=100;observe(0,&enemy,true);enemy.health=95;observe(0,&enemy,true);
+ assert(popups[2].amount==5&&popups[0].amount==20); // Slot reuse never merges owners.
+ te("enabled",true);te("hpBarsEnabled",true);te("hpBarsShowNumbers",true);te("damageNumbersEnabled",true);
+ refresh();const auto savedValues=values;draw();
+ assert(perf::presentation.teMask==7&&!perf::presentation.bars&&!perf::presentation.popups&&values==savedValues);
+ te("enabled",false);refresh();perf::mode=false;perf::pressure=0;attention.target=0xffffffff;
+ reset();enemy.health=100;observe(0,&enemy,true);enemy.health=95;observe(0,&enemy,true);
+ tick();printed.clear();draw();assert(perf::presentation.textPasses==10); // Original five-pass numbers restored.
  reset();assert(!entries[0].eligible);values={false,false,false};refresh();rays=0;observe(0,&enemy,true);tick();draw();assert(!rays&&!entries[0].eligible);
  shutdown();puts("Survivors enemy HUD: independent TE ownership, UI lifetime, health, bounded work, rendering and reset passed");
 }

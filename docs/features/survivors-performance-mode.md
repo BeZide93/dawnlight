@@ -30,6 +30,46 @@ continuous chain strand and their ball model. Boomerangs retain their base model
 A reusable packet draws simple markers without consuming native debug-packet slots.
 Switching mode or pressure tier stops old owned emitters before admitting replacements.
 
+## Enemy HUD and normal-enemy shadows
+
+Performance Mode also budgets Dawnlight's own enemy HUD. Local display toggles
+still decide whether a feature is enabled; enabling Performance Mode does not
+turn on hidden labels or rewrite any saved preferences.
+
+| Display | Mode off | Mode on | Tier 1 | Tier 2 |
+| --- | ---: | ---: | ---: | ---: |
+| Enemy labels / bars | 64 | 32 | 16 | 8 |
+| Exact HP labels | 64 | 8 | 4 | 0 |
+| Floating damage numbers | 96 | 24 | 12 | 0 |
+
+Visible nearby enemies are preferred, with the native lock-on target first.
+Limits also apply at draw time so a live tier change cannot retain excessive
+fading labels. Damage within the first six simulation ticks of one enemy's
+popup is combined without extending its lifetime. Excess popups are discarded,
+not queued for a later burst. Text uses one outline pass plus its foreground
+instead of four outline passes. Mode off restores the original rendering.
+The separate boss HUD, stamina display and all combat rules are unchanged.
+
+Twilit Essentials retains ownership of its enabled HUD features. Dawnlight does
+not disable its settings or constrain its draws. Disable TE's corresponding
+features and enable the Survivors HUD alternatives to use these budgets.
+The diagnostics expose active TE provider features instead of implying that
+Dawnlight's counters include them.
+
+Normal tracked enemies submit native `dComIfGd_setShadow` shadows only within
+1,200 world units of Link in the base tier and 600 in tier 1; tier 2 suppresses
+those shadow submissions entirely. Elites/bosses, Link, untracked actors, hub,
+transitions and non-running phases keep native behavior. This never skips the
+actor Draw/Execute methods or changes enemy population. A nested actor draw has
+its own scope; no model/actor pointer is retained after returning. Zero is the
+native no-shadow key, and the host rebuilds shadow submissions every frame.
+
+The optional hooks roll back to native shadows if registration fails and are
+removed on shutdown. Their signatures/symbols were checked against the pinned
+SDK and the official Android 2.0.3 ELF. The native real-shadow pool already holds
+at most eight shadows, so this is additional headroom, not a replacement for
+reducing the main enemy geometry. Other shadow submission paths are unaffected.
+
 ## Monitoring and adaptive reduction
 
 **Performance Monitor**, separately off by default, adds a HUD line during runs
@@ -52,8 +92,8 @@ previously disabled sampling, buffer warnings and adaptive pressure tiers while
 leaving fixed effect budgets active. Nonzero revisions, suffixes and newer
 releases remain unsupported until their statistics ABI has been checked.
 
-The highest measured utilization among the four arenas selects tier 1 at 80%
-and tier 2 at 90%. Recovery requires 120 distinct samples below 65% per tier.
+The highest measured utilization among the four arenas selects tier 1 at 70%
+and tier 2 at 80%. Recovery requires 120 distinct samples below 65% per tier.
 Measurements describe completed recording work and arrive asynchronously; they
 are not a live allocation guard. A sudden spike can exceed an engine buffer
 before a sample reaches the mod. Native actors/particles, other mods and other
@@ -87,7 +127,8 @@ mods cannot exhaust it.
 
 ## Validation
 
-Tests exercise lifetime/shared caps, adaptive recovery, optional symbol lookup,
+Tests exercise HUD draw limits, lock-on priority, damage aggregation, TE ownership,
+nested shadow scopes, native fallback, hook cleanup, lifetime/shared caps, adaptive recovery, optional symbol lookup,
 worker-only sampling, stale samples, shutdown, live settings, identical lightning
 and burn damage, and repeated hub creation/draw/cleanup. The mesh test reconstructs
 every indexed attribute and compares it with the original packed data. Existing

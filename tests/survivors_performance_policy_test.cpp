@@ -23,8 +23,8 @@ int main(){
         for(unsigned i=0;i<b.limit(Effect::Explosion);++i)assert(b.acquire(&owners[i],Effect::Explosion,9));
         assert(!b.acquire(&owners[159],Effect::Explosion,9));
     }
-    Pressure p;p.observe(79,100);assert(p.tier==0);
-    p.observe(80,100);assert(p.tier==1);p.observe(90,100);assert(p.tier==2);
+    Pressure p;p.observe(69,100);assert(p.tier==0);
+    p.observe(70,100);assert(p.tier==1);p.observe(80,100);assert(p.tier==2);
     for(unsigned i=0;i<119;++i)p.observe(64,100);
     assert(p.tier==2);
     p.observe(64,100);assert(p.tier==1);

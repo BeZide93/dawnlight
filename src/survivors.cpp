@@ -573,6 +573,7 @@ bool ui_visible() {
     return value;
 }
 bool transitioning() { return dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek(); }
+#include "survivors_performance_ui.inc"
 #include "survivors_shield_reload.inc"
 bool playable() {
     return in_arena() && !survivors_hub_arrival_active() && !midna_dialog_busy() && !transitioning() && !dComIfGp_isPauseFlag() &&
@@ -1847,6 +1848,7 @@ ModResult activated(void*, ModError* error) {
 }
 ModResult deactivated(void*, ModError*) {
     s_active = false; unregister_survivors_title_logo();
+    clear_performance_ui();
     reset_runtime(); request_title_preview(); return MOD_OK;
 }
 ModResult new_save(void*, ModError*) {
@@ -1912,6 +1914,7 @@ void update_survivors() {
     const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Update);
 #endif
     survivor_perf::tick(s_active);
+    update_performance_ui();
     validate_shield_reload();
     update_title_preview();
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
@@ -2157,6 +2160,7 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    clear_performance_ui();
     shutdown_shadow_budget();
     survivor_perf::shutdown();
     shutdown_roundtable();

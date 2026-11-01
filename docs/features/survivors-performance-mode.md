@@ -70,6 +70,26 @@ SDK and the official Android 2.0.3 ELF. The native real-shadow pool already hold
 at most eight shadows, so this is additional headroom, not a replacement for
 reducing the main enemy geometry. Other shadow submission paths are unaffected.
 
+## Simplified Survivors windows
+
+While Survivors and Performance Mode are active, Dawnlight-owned RmlUI windows
+use square corners without box shadows, backdrop blur or text glow. Tabs use
+flat hover/focus backgrounds instead of animated gradients. This applies to
+existing and newly opened Dawnlight windows, including hub/settings, upgrade
+choices, equipment and results. Borders, rarity colors, focus/selection cues,
+close icons, disabled controls and native window open/close animations remain.
+
+The optional style sheet is registered once per activation and removed when
+Performance Mode is disabled, Survivors is left, or the mod shuts down. Removing
+it restores the original styles, including on already-open windows. Registration
+failure warns once per activation and leaves normal styling available. Selectors
+are restricted to `window[mod-id="dev.bezide.dawnlight"]`: host dialogs and other
+mods' windows are not restyled. The J2D HUD and its existing budgets are unchanged.
+
+This reduces Dawnlight's contribution to the shared UI geometry buffers. It does
+not resize the engine buffers, intercept their fatal overflow, or establish that
+Dawnlight's windows alone caused the reported RmlUI background/border crash.
+
 ## Monitoring and adaptive reduction
 
 **Performance Monitor**, separately off by default, adds a HUD line during runs
@@ -151,3 +171,26 @@ Performance Logs can additionally record buffer thresholds, peaks, effect counts
 scene/item-event context and sampling latency even while Performance Mode is off.
 See [Buffer-crash diagnostics](../diagnostics/survivors-freezes.md#buffer-crash-diagnostics)
 for field definitions, package-detection limits and the unknown source-frame ID.
+
+### UI regression checks
+
+`python3 tests/survivors_performance_ui_test.py` exercises registration, live
+mode changes, deactivation/shutdown cleanup and failure without per-frame retries.
+CI runs this fixture with GCC and Clang.
+
+The optional headless RCSS integration fixture uses the actual host stylesheet
+files and RmlUi parser/cascade. It checks owner isolation, local card styles,
+interactive states, retained control/rarity cues and repeated restoration. It
+requires a built copy of the host-pinned RmlUi fork (currently
+`encounter/RmlUi@339cd6475b7fdbe06f17c0d4d3f2a34c424ead4f`), with
+`RMLUI_FONT_ENGINE=none` and `BUILD_SHARED_LIBS=OFF`:
+
+```sh
+c++ -std=c++20 -Wall -Wextra -Werror -I/path/to/RmlUi/Include \
+  tests/survivors_performance_ui_rcss_test.cpp /path/to/rmlui-build/librmlui.a \
+  -o /tmp/survivors-ui-rcss-test
+/tmp/survivors-ui-rcss-test "$PWD" "$PWD/dusklight"
+```
+
+This fixture does not render fonts or measure a complete game frame. Check
+controller/touch navigation, live toggling and crowded late-game menus on-device.

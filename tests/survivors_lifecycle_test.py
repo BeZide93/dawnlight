@@ -76,6 +76,7 @@ ActorId s_hubDoor=kNone;unsigned s_hubDoorTicks=0;
 unsigned s_window=0,s_refreshChoices=0;
 void retire_hub_zelda(){}
 void clear_shield_reload(){}
+void clear_performance_ui(){}
 void request_title_preview(){}void reset_title_presentation(){}
 ModResult register_survivors_title_logo(ModError*){return MOD_OK;}
 void unregister_survivors_title_logo(){}

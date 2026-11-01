@@ -39,11 +39,16 @@ int main(){
  set_survivors_autosave(false);
  configNames.clear();assert(initialize_option_config()==MOD_OK&&!survivors_autosave_enabled()); // Reload.
  set_survivors_autosave(true);assert(survivors_autosave_enabled());
- assert(s_options.max_normal_enemies==345);
+ assert(s_options.max_normal_enemies==300);
  s_options.max_normal_enemies=42;store_option_config();s_run.start(123,s_options);
  s_options.max_normal_enemies=1;load_option_config();assert(s_options.max_normal_enemies==42&&s_run.target_population()==42&&!s_run.debug_run);
  persisted[configNames.at("survivors-max-normal-enemies")]=-1;load_option_config();assert(s_options.max_normal_enemies==0&&s_run.target_population()==42);
- persisted[configNames.at("survivors-max-normal-enemies")]=9999;load_option_config();assert(s_options.max_normal_enemies==345&&s_run.target_population()==42);
+ // Legacy/imported values above the new ceiling are clamped without changing an active run.
+ for(int64_t legacy:{301,345}) {
+  persisted[configNames.at("survivors-max-normal-enemies")]=legacy;
+  load_option_config();assert(s_options.max_normal_enemies==300&&s_run.target_population()==42);
+ }
+ persisted[configNames.at("survivors-max-normal-enemies")]=9999;load_option_config();assert(s_options.max_normal_enemies==300&&s_run.target_population()==42);
  debug_session_enabled=true;store_option_config();
  debug_session_enabled=false;load_option_config();assert(!debug_session_enabled);
  for(const auto& [name,handle]:configNames){(void)handle;assert(name.find("debug")==std::string::npos);}

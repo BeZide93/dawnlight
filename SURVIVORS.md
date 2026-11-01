@@ -386,8 +386,9 @@ independently of Performance Mode. **Enemy Collision** still controls only
 whether enemies block Link. Attacks, damage, walls, floors, chests and pots retain
 their existing collision behavior; the hub and other game modes are unaffected.
 
-Normal enemies default to a ceiling of **345**, from the start at every Horde
-difficulty. Settings → **Enemy Count** can lower it with **Max Normal Enemies** (0–345),
+Normal enemies default to a ceiling of **300**, from the start at every Horde
+difficulty. Saved or imported limits above 300 are clamped when loaded.
+Settings → **Enemy Count** can lower it with **Max Normal Enemies** (0–300),
 independently of Debug. This preference is saved and applies to the next run. Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over
 the first 10 minutes; Horde difficulty still controls batch size (1–5).
 Random **HORDE!** events triple spawn batches for 15 seconds, within

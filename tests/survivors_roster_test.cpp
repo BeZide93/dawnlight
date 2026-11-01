@@ -37,14 +37,14 @@ int main() {
             }
             assert(special==(horde?1000u:2500u));
         }
-        for(unsigned i=0;i<roster.specialist_count;++i)counts[unsigned(roster.specialists[i].species)]=345;
+        for(unsigned i=0;i<roster.specialist_count;++i)counts[unsigned(roster.specialists[i].species)]=300;
         for(unsigned pick=0;pick<100;++pick) {
             const auto kind=choose_species(map,600,false,5,counts,0,pick);
             assert(std::find(roster.basic.begin(),roster.basic.end(),kind)!=roster.basic.end());
         }
         // Simulate the maximum horde population, including pending admissions.
         counts={};uint32_t rng=23;
-        for(unsigned n=0;n<345;++n) {
+        for(unsigned n=0;n<300;++n) {
             rng=rng*1664525+1013904223;
             const auto kind=choose_species(map,600,false,5,counts,rng,rng>>12);
             assert(kind!=Species::Count);++counts[unsigned(kind)];

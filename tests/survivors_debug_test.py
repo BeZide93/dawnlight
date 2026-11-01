@@ -20,10 +20,10 @@ int main(){
  assert(run.options.debug.minimum_rarity==(debug_enabled?4u:0u));
  assert(run.options.debug.infinite_rerolls==unsigned(debug_enabled));
  assert(run.options.debug.infinite_banishes==unsigned(debug_enabled));
- assert(run.target_population()==345);
- for(unsigned count:{0u,1u,42u,344u,345u,999u}){
+ assert(run.target_population()==300);
+ for(unsigned count:{0u,1u,42u,299u,300u,301u,345u,999u}){
   options.max_normal_enemies=count;run.start(71,options);
-  assert(run.target_population()==std::min(count,345u));
+  assert(run.target_population()==std::min(count,300u));
  }
  options.max_normal_enemies=42;run.start(71,options);
  options.max_normal_enemies=12;assert(run.target_population()==42u);

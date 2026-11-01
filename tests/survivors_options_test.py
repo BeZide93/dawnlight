@@ -215,10 +215,10 @@ int main(){
   assert(autosave.is_disabled(nullptr,nullptr)&&!autosaveEnabled);s_run.phase=Phase::Ready;
   autosave.set(nullptr,nullptr,&saving);assert(autosaveEnabled);
   auto population=controls[22];assert(std::string(population.label)=="Max Normal Enemies"&&population.kind==UI_CONTROL_NUMBER);
-  assert(population.min==0&&population.max==345&&population.step==1&&!population.prefix);
-  UiControlValue count=UI_CONTROL_VALUE_INIT;population.get(nullptr,population.user_data,&count);assert(count.int_value==345);
+  assert(population.min==0&&population.max==300&&population.step==1&&!population.prefix);
+  UiControlValue count=UI_CONTROL_VALUE_INIT;population.get(nullptr,population.user_data,&count);assert(count.int_value==300);
   count.int_value=-10;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==0);
-  count.int_value=INT64_MAX;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==345);
+  count.int_value=INT64_MAX;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==300);
   count.int_value=42;population.set(nullptr,population.user_data,&count);assert(s_options.max_normal_enemies==42);
   s_run.phase=Phase::Running;count.int_value=1;population.set(nullptr,population.user_data,&count);
   assert(population.is_disabled(nullptr,population.user_data)&&s_options.max_normal_enemies==42);s_run.phase=Phase::Ready;

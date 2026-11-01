@@ -63,6 +63,14 @@ int main(){
  rawStats[4]=4800000;render(jobs.back());tick(true);
  assert(sample().vertices==4800000&&peak()==4800000&&tier()==2);
  assert(sample().vertexCapacity==5*1024*1024);
+ assert(pressureTriggerMask==1&&dominant_arena_mask(sample())==1);
+ reset_run();rawStats[4]=1;rawStats[6]=1500000;
+ presentation.bars=16;presentation.popups=12;presentation.shadowSuppressed=42;
+ stageFn(nullptr,nullptr,nullptr);render(jobs.back());tick(true);
+ assert(tier()==1&&pressureTriggerMask==2); // Index alone triggers earlier reduction.
+ rawStats[6]=1700000;stageFn(nullptr,nullptr,nullptr);render(jobs.back());tick(true);
+ assert(tier()==2&&pressureTriggerMask==2);
+ rawStats[6]=0;
  const auto old=jobs.back();reset_run();render(old);tick(true);assert(!sample().sequence&&!peak());
  // Pressure also responds to other arenas, using the actual GPU capacities.
  rawStats[4]=100;rawStats[7]=8*1024*1024;stageFn(nullptr,nullptr,nullptr);render(jobs.back());tick(true);assert(tier()==2);
@@ -76,11 +84,16 @@ int main(){
  const auto warningCount=[](){unsigned n=0;for(const auto& m:messages)n+=m.find("reason=buffer_")!=std::string::npos||m.find("reason=sample_loss")!=std::string::npos;return n;};
  const auto lastWarning=[](){for(auto i=messages.rbegin();i!=messages.rend();++i)if(i->find("reason=buffer_")!=std::string::npos||i->find("reason=sample_loss")!=std::string::npos)return *i;return std::string{};};
  const auto submit=[](){stageFn(nullptr,nullptr,nullptr);render(jobs.back());};
+ presentation.bars=16;presentation.popups=12;presentation.teMask=5;presentation.shadowSuppressed=42;
  rawStats[7]=0;rawStats[4]=5*1024*1024*8/10;submit();
+ presentation.bars=0;presentation.shadowSuppressed=99;
  providedScene.map=4;tick(true);
  assert(!enabled()&&tier()==0&&warningCount()==1);
  auto log=lastWarning();assert(log.find("vertex_crossed_pct=80")!=std::string::npos&&log.find(" map=2 ")!=std::string::npos);
  assert(log.find("measured=1 telemetry=available")!=std::string::npos);
+ assert(log.find("hud_bars=16")!=std::string::npos&&log.find("hud_damage_numbers=12")!=std::string::npos);
+ assert(log.find("te_hud_mask=5")!=std::string::npos&&log.find("shadow_suppressed_total=42")!=std::string::npos);
+ assert(log.find("buffer_max_mask=1")!=std::string::npos);
  assert(log.find("burn_active=40 burn_full=32 burn_reduced=8 burn_emitters=64")!=std::string::npos);
  assert(log.find("fog_inventory=1")!=std::string::npos&&log.find("stats_frame=unknown")!=std::string::npos);
  // 90/95% crossings within a second are retained, then written with their original ages.

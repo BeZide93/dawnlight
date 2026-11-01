@@ -36,6 +36,18 @@ std::array<uint32_t,4> workerPeaks{};
 uint64_t workerSequence=0,epoch=1;
 uint32_t runPeak=0;
 Pressure pressure;
+unsigned pressureTriggerMask=0;
+unsigned dominant_arena_mask(const Sample& s) {
+    const std::array<uint64_t,4> used{s.vertices,s.indices,s.uniforms,s.storage};
+    const std::array<uint64_t,4> cap{s.vertexCapacity,s.indexCapacity,s.uniformCapacity,s.storageCapacity};
+    uint64_t maximum=0;unsigned mask=0;
+    for(unsigned i=0;i<4;++i)if(cap[i]) {
+        const auto fraction=used[i]*10000/cap[i];
+        if(fraction>maximum){maximum=fraction;mask=1u<<i;}
+        else if(fraction && fraction==maximum)mask|=1u<<i;
+    }
+    return mask;
+}
 ConfigVarHandle modeConfig=0,monitorConfig=0;
 GfxComputeTypeHandle compute=0;
 GfxStageHookHandle stage=0;
@@ -70,7 +82,7 @@ void queue_stats(ModContext*,const GfxStageContext*,void*) {
     if((mode||diagnostics) && active && compute) {
         Request request{epoch,++requestSequence,diagnostics?now_us():0};
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
-        if(diagnostics)diagnosticContexts[request.serial%diagnosticContexts.size()]={request.serial,currentScene,currentFog,mode,pressure.tier,sceneCapturedUs};
+        if(diagnostics)diagnosticContexts[request.serial%diagnosticContexts.size()]={request.serial,currentScene,currentFog,mode,pressure.tier,sceneCapturedUs,presentation,pressureTriggerMask};
 #endif
         if(svc_gfx->push_compute(mod_ctx,compute,&request,sizeof(request))!=MOD_OK)++requestFailures;
     }
@@ -115,7 +127,8 @@ bool monitor_enabled(){return mode&&monitor;}
 void set_enabled(bool v){if(modeConfig)svc_config->set_int(mod_ctx,modeConfig,v);}
 void set_monitor(bool v){if(monitorConfig)svc_config->set_int(mod_ctx,monitorConfig,v);}
 void reset_run(){
-    ++epoch;latest={};runPeak=0;pressure={};lastLog={};requestFailures=0;
+    ++epoch;latest={};runPeak=0;pressure={};pressureTriggerMask=0;lastLog={};requestFailures=0;
+    const bool shadows=presentation.shadowAvailable;presentation={};presentation.shadowAvailable=shadows;
     {std::lock_guard lock(mutex);acceptedEpoch=epoch;workerCount=workerBegin=0;workerPeaks={};droppedSamples=0;}
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
     reset_diagnostic_window();
@@ -154,7 +167,12 @@ void tick(bool running) {
         const auto add=[&](uint64_t n,uint64_t cap){if(cap)fraction=std::max(fraction,n*10000/cap);};
         add(s.vertices,s.vertexCapacity);add(s.indices,s.indexCapacity);
         add(s.uniforms,s.uniformCapacity);add(s.storage,s.storageCapacity);
-        if(mode)pressure.observe(fraction,10000);
+        if(mode) {
+            const auto oldTier=pressure.tier;
+            pressure.observe(fraction,10000);
+            if(pressure.tier>oldTier)pressureTriggerMask=dominant_arena_mask(s);
+            if(!pressure.tier)pressureTriggerMask=0;
+        }
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
         if(diagnostics)diagnostic_observe(s);
 #endif
@@ -164,11 +182,14 @@ void tick(bool running) {
 #endif
     const auto now=std::chrono::steady_clock::now();
     if(mode && monitor && now-lastLog>=std::chrono::seconds(1)) {
-        lastLog=now;char text[400];
-        std::snprintf(text,sizeof(text),"Survivors Performance: measured=%u vertex=%u/%llu peak=%u index=%u/%llu uniform=%u/%llu storage=%u/%llu tier=%u enemies=%u projectiles=%u burns=%u bolts=%u reservedEmitters=%u",
+        lastLog=now;char text[800];
+        std::snprintf(text,sizeof(text),"Survivors Performance: measured=%u vertex=%u/%llu peak=%u index=%u/%llu uniform=%u/%llu storage=%u/%llu tier=%u enemies=%u projectiles=%u burns=%u bolts=%u reservedEmitters=%u tier_trigger_mask=%u buffer_max_mask=%u hud_bars=%u hud_hp_numbers=%u hud_damage_numbers=%u hud_text_passes=%u te_hud_mask=%u shadow_budget_available=%u shadow_allowed_total=%llu shadow_suppressed_total=%llu",
             unsigned(latest.sequence!=0),latest.vertices,(unsigned long long)latest.vertexCapacity,runPeak,
             latest.indices,(unsigned long long)latest.indexCapacity,latest.uniforms,(unsigned long long)latest.uniformCapacity,
-            latest.storage,(unsigned long long)latest.storageCapacity,pressure.tier,enemyCount,projectileCount,burnCount,boltCount,emitterCount);
+            latest.storage,(unsigned long long)latest.storageCapacity,pressure.tier,enemyCount,projectileCount,burnCount,boltCount,emitterCount,
+            pressureTriggerMask,dominant_arena_mask(latest),presentation.bars,presentation.numbers,presentation.popups,
+            presentation.textPasses,presentation.teMask,unsigned(presentation.shadowAvailable),
+            (unsigned long long)presentation.shadowAllowed,(unsigned long long)presentation.shadowSuppressed);
         svc_log->info(mod_ctx,text);
     }
 }

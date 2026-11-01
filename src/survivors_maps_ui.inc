@@ -317,7 +317,7 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     if(result!=MOD_OK)return result;
     control.label="Performance Mode";
     control.is_disabled=nullptr; // Live cosmetic setting; never changes run difficulty or score.
-    control.help_rml="Reduce visual effects under load. Damage and projectiles are unchanged. The hub always uses efficient rendering. Default: off.";
+    control.help_rml="Limit Dawnlight enemy labels, damage numbers, effects and normal-enemy shadows under load. Enemy counts and damage are unchanged. Other mods manage their own HUD. The hub always uses efficient rendering. Default: off.";
     control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivor_perf::enabled();};
     control.set=[](ModContext*,void*,const UiControlValue* value){survivor_perf::set_enabled(value->bool_value);};
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);

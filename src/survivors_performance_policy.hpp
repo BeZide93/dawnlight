@@ -27,12 +27,31 @@ struct Budget {
     }
     void clear() { leases={}; }
 };
+struct HudBudget {
+    unsigned bars=64,numbers=64,popups=96;
+    static HudBudget for_mode(bool enabled,unsigned tier) {
+        if(!enabled)return {};
+        constexpr HudBudget budgets[]{{32,8,24},{16,4,12},{8,0,0}};
+        return budgets[std::min(tier,2u)];
+    }
+};
+// Main-thread counters. HUD values describe the last local overlay draw;
+// shadow totals count submission decisions, not final GPU draws or unique actors.
+struct PresentationStats {
+    unsigned bars=0,numbers=0,popups=0,textPasses=0,teMask=0;
+    uint64_t shadowAllowed=0,shadowSuppressed=0;
+    bool shadowAvailable=false;
+};
+inline PresentationStats presentation{};
+inline bool suppress_normal_shadow(unsigned tier,float distance) {
+    return tier>=2 || distance>(tier==1?600.f:1200.f);
+}
 struct Pressure {
     unsigned tier=0,quiet=0;
     // One observation per distinct completed-frame sample. Recovery needs sustained headroom.
     void observe(uint64_t used,uint64_t capacity) {
         if(!capacity)return;
-        const unsigned wanted=used>=capacity*9/10?2:used>=capacity*4/5?1:tier;
+        const unsigned wanted=used>=capacity*4/5?2:used>=capacity*7/10?1:tier;
         if(wanted>tier){tier=wanted;quiet=0;}
         else if(used<capacity*13/20) {if(++quiet>=120){if(tier)--tier;quiet=0;}}
         else quiet=0;

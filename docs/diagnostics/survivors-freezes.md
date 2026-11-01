@@ -184,3 +184,27 @@ being held only for a shutdown dump. The mod cannot force the host logger or OS
 to flush durable storage. It cannot catch Aurora's fatal overflow, guarantee the
 last line survives a process crash, or measure a frame that aborts before the
 callback. Native actors/effects and other mods are outside the owned effect counts.
+
+### Presentation budgets and pressure source
+
+`SurvivorsBuffer` records and the once-per-second Performance Monitor now include:
+
+- `buffer_max_mask`: arena(s) with the highest utilization in this measured sample.
+- `tier_trigger_mask`: arena(s) that last raised the adaptive tier, retained during
+  hysteresis until recovery to tier zero. It is not necessarily the current maximum.
+  Both masks use vertex=1, index=2, uniform=4, storage=8; ties combine bits.
+- `hud_bars`, `hud_hp_numbers`, `hud_damage_numbers`, `hud_text_passes`: actual
+  submissions from the last Dawnlight enemy-overlay draw, not other mods' UI.
+  Text passes include outlines. These are game-thread context, not GPU attribution.
+- `te_hud_mask`: enabled TE providers (bars=1, exact HP=2, damage numbers=4).
+  Zero does not imply other mods have no UI. Boss/stamina settings are not measured.
+- `shadow_budget_available`: whether both optional shadow hooks registered.
+- `shadow_allowed_total`, `shadow_suppressed_total`: cumulative normal-enemy shadow
+  submission decisions since the current monitoring epoch began. Allowed means
+  passed to the next hook/native code, not necessarily drawn. Replays count again;
+  these are not unique actors, per-frame counts or byte savings.
+
+Diagnostic presentation fields are copied with their request context. A missing
+context (`context_missing=1`) has no valid presentation values. Pressure thresholds
+are 70/80%; warning thresholds remain 80/90/95%. None of these delayed samples can
+catch an engine abort or guarantee a buffer reservation for subsequent UI.

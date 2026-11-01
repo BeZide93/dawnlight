@@ -38,6 +38,8 @@ int initialize_option_config(){return init(2,nullptr);}
 int initialize_midna_dialog(){return init(3,nullptr);}
 int initialize_hub_zelda(){return init(7,nullptr);}
 void initialize_menu_handoff(){}
+// Optional shadow registration/fallback is exercised by survivors_shadow_budget_test.py.
+void initialize_shadow_budget(){}
 constexpr int activated=0,deactivated=0,loaded=0,new_save=0,reset=0,play_survivors=1;
 constexpr const char* kMode="survivors";
 struct GameModeDesc{unsigned struct_size;const char* game_mode_id;const char* full_name;const char* save_name;void* user_data;

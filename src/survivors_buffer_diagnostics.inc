@@ -7,6 +7,8 @@ struct DiagnosticContext {
     bool performanceMode=false;
     unsigned pressureTier=0;
     uint64_t capturedUs=0;
+    PresentationStats presentation{};
+    unsigned pressureTriggerMask=0;
 };
 std::array<DiagnosticContext,64> diagnosticContexts{};
 BufferScene (*sceneProvider)()=nullptr;
@@ -66,6 +68,10 @@ void emit_buffer_record(const char* reason,const Sample& s,const DiagnosticConte
         const int n=std::snprintf(line+used,sizeof(line)-used,fmt,values...);
         if(n>0)used+=std::min(size_t(n),sizeof(line)-used-1);
     };
+    const auto& p=c.presentation;
+    append(" tier_trigger_mask=%u buffer_max_mask=%u hud_bars=%u hud_hp_numbers=%u hud_damage_numbers=%u hud_text_passes=%u te_hud_mask=%u shadow_budget_available=%u shadow_allowed_total=%llu shadow_suppressed_total=%llu",
+        c.pressureTriggerMask,dominant_arena_mask(s),p.bars,p.numbers,p.popups,p.textPasses,p.teMask,
+        unsigned(p.shadowAvailable),(unsigned long long)p.shadowAllowed,(unsigned long long)p.shadowSuppressed);
     constexpr const char* arenas[]{"vertex","index","uniform","storage"};
     const auto u=usage(s);const auto cap=capacities(s);
     for(unsigned i=0;i<4;++i)append(" %s_bytes=%u %s_capacity=%llu %s_peak=%u %s_crossed_pct=%u",arenas[i],u[i],arenas[i],
@@ -98,7 +104,7 @@ void diagnostic_report(uint64_t now) {
         currentFog.id!=reportedFog.id||currentFog.version!=reportedFog.version;
     const bool itemStarted=currentScene.itemEvent&&currentScene.itemEvent!=reportedScene.itemEvent;
     if(changed&&(!lastContext||now-lastContext>=1000000||(itemStarted&&(!lastItemEvent||now-lastItemEvent>=1000000)))) {
-        emit_buffer_record("scene",{},DiagnosticContext{0,currentScene,currentFog,mode,pressure.tier,sceneCapturedUs},now,true);
+        emit_buffer_record("scene",{},DiagnosticContext{0,currentScene,currentFog,mode,pressure.tier,sceneCapturedUs,presentation,pressureTriggerMask},now,true);
         if(itemStarted)lastItemEvent=now;
         lastContext=now;reportedScene=currentScene;reportedFog=currentFog;reportedMode=mode;contextReported=true;
     }

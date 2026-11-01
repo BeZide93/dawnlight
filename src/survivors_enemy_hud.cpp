@@ -3,6 +3,8 @@
 // Survivors feeds its own tracked slots; this module never enumerates actors
 // or installs additional game hooks. See docs/features/survivors-enemy-hud.md.
 #include "survivors_enemy_hud.hpp"
+#include "survivors_performance.hpp"
+#include "d/d_attention.h"
 #include "survivors_enemy_hud_state.hpp"
 #include "config.hpp"
 #include "service_imports.hpp"
@@ -22,15 +24,16 @@
 
 namespace dawnlight::enemy_hud {
 namespace {
-constexpr size_t slot_count=512, visible_limit=64, popup_limit=96;
+constexpr size_t slot_count=512, popup_limit=96;
 constexpr unsigned lifetime=62, ray_budget=8;
 struct Entry {
     Health health{};
     cXyz anchor{0,0,0};
     float height=0,alpha=0,chip=1;
+    unsigned rank=unsigned(slot_count);
     bool eligible=false,los=false;
 };
-struct Popup {cXyz position{0,0,0};unsigned amount=0,age=lifetime;float velocity=4;};
+struct Popup {cXyz position{0,0,0};unsigned amount=0,age=lifetime;float velocity=4;unsigned owner=0;};
 std::array<Entry,slot_count> entries{};
 std::array<Popup,popup_limit> popups{};
 Options saved{},provider{},effects{};
@@ -84,10 +87,14 @@ bool project(const cXyz& world,cXyz& screen) {
 void text(const char* string,float x,float y,float size,JUtility::TColor color,u8 alpha) {
     auto* font=mDoExt_getSubFont();if(!font)font=mDoExt_getMesgFont();if(!font)return;
     // Same outlined cream/red style as TE, using Dawnlight's native J2D path.
+    unsigned outlines=0;
     for(const auto offset:std::array<std::array<float,2>,4>{{{{-1,0}},{{1,0}},{{0,-1}},{{0,1}}}}) {
+        if(survivor_perf::enabled() && outlines++)break;
+        ++survivor_perf::presentation.textPasses;
         J2DPrint outline(font,JUtility::TColor(0,0,0,255),JUtility::TColor(0,0,0,255));
         outline.setFontSize(size,size*1.23f);outline.printReturn(string,180,size*1.5f,HBIND_CENTER,VBIND_TOP,x-90+offset[0],y+offset[1],alpha);
     }
+    ++survivor_perf::presentation.textPasses;
     J2DPrint print(font,color,color);print.setFontSize(size,size*1.23f);
     print.printReturn(string,180,size*1.5f,HBIND_CENTER,VBIND_TOP,x-90,y,alpha);
 }
@@ -138,8 +145,15 @@ void observe(size_t slot,const fopAc_ac_c* actor,bool eligible) {
     entry.height=std::max(entry.height,height);entry.anchor=actor->current.pos+cXyz(0,entry.height+8,0);
     entry.eligible=eligible&&actor->health>0&&!(actor->actor_status&fopAcStts_NODRAW_e)&&!(actor->actor_condition&fopAcCnd_NODRAW_e);
     if(loss&&eligible&&wasEligible&&effects.damage) {
+        const auto budget=survivor_perf::HudBudget::for_mode(survivor_perf::enabled(),survivor_perf::tier());
+        if(!budget.popups)return;
+        // Merge only within the first six simulation ticks; never prolong a popup
+        // indefinitely during sustained damage, and never merge reused actor IDs.
+        if(survivor_perf::enabled())for(auto& p:popups)if(p.owner==id&&p.age<6) {
+            p.amount+=loss;return;
+        }
         auto popup=std::max_element(popups.begin(),popups.end(),[](const auto& a,const auto& b){return a.age<b.age;});
-        *popup={entry.anchor,loss,0,4};
+        *popup={entry.anchor,loss,0,4,id};
     }
 }
 void tick() {
@@ -154,8 +168,15 @@ void tick() {
         if(distance<4500&&project(e.anchor,screen))nearest[count++]={distance,i};
         else {e.alpha=0;e.los=false;}
     }
-    const auto limit=std::min(count,visible_limit);
-    std::partial_sort(nearest.begin(),nearest.begin()+limit,nearest.begin()+count);
+    const auto budget=survivor_perf::HudBudget::for_mode(survivor_perf::enabled(),survivor_perf::tier());
+    const auto limit=std::min(count,size_t(budget.bars));
+    const auto target=survivor_perf::enabled()?dComIfGp_getAttention()->LockonTargetPId(0):0xffffffffu;
+    std::partial_sort(nearest.begin(),nearest.begin()+limit,nearest.begin()+count,[&](const auto& a,const auto& b) {
+        const bool at=entries[a.second].health.id==target,bt=entries[b.second].health.id==target;
+        return at!=bt?at:a<b;
+    });
+    for(auto& e:entries)e.rank=unsigned(slot_count);
+    for(size_t i=0;i<limit;++i)entries[nearest[i].second].rank=unsigned(i);
     for(size_t i=limit;i<count;++i){entries[nearest[i].second].alpha=0;entries[nearest[i].second].los=false;}
     auto* camera=dCam_getBody();
     for(size_t n=0;n<std::min<size_t>(limit,ray_budget);++n) {
@@ -172,6 +193,10 @@ void tick() {
     }
 }
 void draw() {
+    auto& stats=survivor_perf::presentation;
+    stats.bars=stats.numbers=stats.popups=stats.textPasses=0;
+    stats.teMask=unsigned(provider.bars)|(unsigned(provider.numbers)<<1)|(unsigned(provider.damage)<<2);
+    const auto budget=survivor_perf::HudBudget::for_mode(survivor_perf::enabled(),survivor_perf::tier());
     if((!effects.bars&&!effects.numbers&&!effects.damage)||dComIfGp_event_runCheck())return;
     auto* graf=dComIfGp_getCurrentGrafPort();if(!graf)return;
     const auto tl=graf->mColorTL,tr=graf->mColorTR,br=graf->mColorBR,bl=graf->mColorBL;
@@ -179,20 +204,30 @@ void draw() {
         graf->setup2D();graf->setColor(color);graf->fillBox(JGeometry::TBox2<f32>(x,y,x+width,y+height));
     };
     if(effects.bars||effects.numbers)for(const auto& e:entries) {
+        if(e.rank>=budget.bars)continue;
         cXyz screen;if(!e.eligible||e.alpha<.005f||!project(e.anchor,screen))continue;
         const auto alpha=[&](unsigned a){return u8(a*e.alpha);};
         const float ratio=std::clamp(float(e.health.hp)/e.health.maximum,0.f,1.f);
         const float x=screen.x-12.5f,y=screen.y-.5f;
         if(effects.bars) {
+            ++stats.bars;
             box(x-1.5f,y-1.5f,28,4,{0,0,0,alpha(160)});
             box(x-1,y-1,27,3,{170,135,55,alpha(230)});box(x,y,25,1,{12,12,16,alpha(230)});
             const auto rgb=health_color(ratio);box(x,y,25*ratio,1,{rgb[0],rgb[1],rgb[2],alpha(240)});
             if(e.chip>ratio+.001f)box(x+25*ratio,y,25*(e.chip-ratio),1,{236,226,200,alpha(150)});
         }
-        if(effects.numbers){char label[32];std::snprintf(label,sizeof(label),"%d/%d",e.health.hp,e.health.maximum);text(label,screen.x,y-13,7,{255,252,240,255},alpha(255));}
+        if(effects.numbers&&e.rank<budget.numbers){++stats.numbers;char label[32];std::snprintf(label,sizeof(label),"%d/%d",e.health.hp,e.health.maximum);text(label,screen.x,y-13,7,{255,252,240,255},alpha(255));}
+    }
+    // Drop excess active feedback on a pressure change, so it cannot reappear
+    // as a burst when headroom recovers. Normal mode retains the original path.
+    if(survivor_perf::enabled()) {
+        std::sort(popups.begin(),popups.end(),[](const auto& a,const auto& b){return a.age<b.age;});
+        for(size_t i=budget.popups;i<popups.size();++i)popups[i].age=lifetime;
     }
     if(effects.damage)for(const auto& p:popups) {
         cXyz screen;if(p.age>=lifetime||!project(p.position,screen))continue;
+        if(stats.popups>=budget.popups)break;
+        ++stats.popups;
         const float scale=p.age<7?1.55f-p.age*.08f:1.f;const bool strong=p.amount>=60;
         const float size=(strong?24.f:17.f)*scale;char label[32];
         std::snprintf(label,sizeof(label),strong?"-%u!":"-%u",p.amount);
@@ -201,6 +236,9 @@ void draw() {
     }
     graf->setup2D();graf->setColor(tl,tr,br,bl);
 }
-void reset(){entries={};popups={};ray_cursor=0;}
+void reset(){
+    entries={};popups={};ray_cursor=0;
+    auto& s=survivor_perf::presentation;s.bars=s.numbers=s.popups=s.textPasses=s.teMask=0;
+}
 void shutdown(){reset();notes_live.clear();get_config=nullptr;}
 }

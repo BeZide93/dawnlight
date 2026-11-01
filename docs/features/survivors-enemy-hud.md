@@ -46,6 +46,9 @@ Work is bounded to the existing tracked slots, the nearest 64 visible enemy
 labels, 96 concurrent damage numbers, and at most eight line-of-sight queries per
 active tick. Visibility checks rotate across nearby candidates. Labels fade out
 before 4,500 world units and are culled behind the camera or outside the screen.
+With Performance Mode enabled, [adaptive HUD budgets](survivors-performance-mode.md#enemy-hud-and-normal-enemy-shadows)
+reduce these limits, prioritize the lock-on target, combine short bursts of damage
+and simplify text outlines. TE-owned draws remain outside those budgets.
 With all local effects off, observation, animation and drawing return immediately.
 Native GX state is restored between text and rectangle draws.
 

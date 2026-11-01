@@ -6,12 +6,24 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <string_view>
 
 namespace dawnlight::survivor_perf {
 namespace {
 // AuroraStats ABI from Dusklight 2.0.0-2.0.3. No hard import on unsupported hosts.
 struct HostStats {uint32_t queued,created,draws,merged,vertices,uniforms,indices,storage,uploads;};
 using GetStats=const HostStats*(*)();
+bool known_stats_version(const char* version) {
+    if(!version)return false;
+    std::string_view v=version;
+    if(v.starts_with('v'))v.remove_prefix(1);
+    // HostService uses four components on release builds (e.g. 2.0.3.0),
+    // while the displayed version has three. Only accept the zero revision
+    // of the already supported releases; unknown builds still fail closed.
+    for(std::string_view known:{"2.0.0","2.0.1","2.0.2","2.0.3"})
+        if(v==known || (v.ends_with(".0") && v.substr(0,v.size()-2)==known))return true;
+    return false;
+}
 std::mutex mutex;
 GetStats getStats=nullptr;
 Sample latest{};
@@ -69,8 +81,7 @@ ModResult initialize() {
     d.name="survivors-performance-mode";auto r=register_owned_setting(&d,&modeConfig);if(r!=MOD_OK)return r;
     d.name="survivors-performance-monitor";r=register_owned_setting(&d,&monitorConfig);if(r!=MOD_OK)return r;
     mode=setting(modeConfig);monitor=setting(monitorConfig);
-    const char* v=svc_host->version;if(v && *v=='v')++v;
-    const bool known=v && (!std::strcmp(v,"2.0.0")||!std::strcmp(v,"2.0.1")||!std::strcmp(v,"2.0.2")||!std::strcmp(v,"2.0.3"));
+    const bool known=known_stats_version(svc_host->version);
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
     measurementStatus=known?"symbol_unavailable":"unsupported_host";
 #endif

@@ -19,14 +19,16 @@ struct cCcD_Obj{fopAc_ac_c* owner=nullptr;bool shield=false,hit=false;int target
  void SetAtHitApid(int id){target=id;}void OnAtShieldHit(){shield=true;}};
 using dCcD_GObjInf=cCcD_Obj;
 struct Player:fopAc_ac_c{cCcD_Obj mGuardAtCps,sword;bool dead=false;bool checkDeadHP(){return dead;}}player;
-Player* daAlink_getAlinkActorClass(){return &player;}
+bool linkAvailable=true;
+Player* daAlink_getAlinkActorClass(){return linkAvailable?&player:nullptr;}
 bool arena=true,s_hub=false,s_active=true,s_gameStarted=true,s_restart=false,s_deathPending=false,moving=false;
 bool in_arena(){return arena;}bool transitioning(){return moving;}
 int s_player=1;unsigned s_map=4;
 enum class Phase{Ready,Loading,Running,Upgrade,Victory,Defeat};
 struct{struct{bool enemy_collision=false;}options;Phase phase=Phase::Running;}s_run;
 struct Enemy{int profile=0;bool elite=true,dormant=false,stagger=false;};
-bool enemy_child_root(int id){return id==2||id==3;}
+Enemy enemyOwners[2];bool secondTracked=true;
+Enemy* enemy_child_root(int id){return id==2||id==3?&enemyOwners[0]:secondTracked&&(id==5||id==6)?&enemyOwners[1]:nullptr;}
 constexpr int fpcNm_B_TN_e=10,fpcNm_B_GND_e=11,fpcNm_E_SF_e=12,fpcNm_E_MF_e=13;
 struct daB_TN_c:fopAc_ac_c{enum{ACT_GUARDH=6,ACT_GUARDL=12};int mActionMode1=0;};
 struct b_gnd_class:fopAc_ac_c{int mActionMode=0;};
@@ -51,6 +53,30 @@ int main(){
  }
  assert(contact(&linkCo,&potCo)==HOOK_CONTINUE&&contact(&enemyCo,&childCo)==HOOK_CONTINUE);
  assert(contact(nullptr,&linkCo)==HOOK_CONTINUE);
+ fopAc_ac_c other,otherChild;other.id=5;otherChild.id=6;
+ cCcD_Obj otherCo{&other},otherChildCo{&otherChild},ownerless;
+ // Both pair orders, normal/boss ownership, and structural child bodies.
+ for(bool collide:{false,true}) {
+  s_run.options.enemy_collision=collide;
+  for(bool elite:{false,true}) {
+   enemyOwners[1].elite=elite;
+   for(auto* a:{&enemyCo,&childCo})for(auto* b:{&otherCo,&otherChildCo}) {
+    assert(contact(a,b)==HOOK_SKIP_ORIGINAL&&contact(b,a)==HOOK_SKIP_ORIGINAL);
+   }
+  }
+  assert(contact(&enemyCo,&childCo)==HOOK_CONTINUE); // Same owner's internals.
+  assert(contact(&enemyCo,&enemyCo)==HOOK_CONTINUE);
+  assert(contact(&enemyCo,&potCo)==HOOK_CONTINUE&&contact(&potCo,&enemyCo)==HOOK_CONTINUE);
+  assert(contact(&enemyCo,&ownerless)==HOOK_CONTINUE&&contact(&ownerless,&enemyCo)==HOOK_CONTINUE);
+  assert(contact(nullptr,&enemyCo)==HOOK_CONTINUE&&contact(&enemyCo,nullptr)==HOOK_CONTINUE);
+  assert(contact(&linkCo,&enemyCo)==(collide?HOOK_CONTINUE:HOOK_SKIP_ORIGINAL));
+ }
+ linkAvailable=false;assert(contact(&enemyCo,&otherCo)==HOOK_SKIP_ORIGINAL);linkAvailable=true;
+ s_player=99;assert(contact(&enemyCo,&otherCo)==HOOK_SKIP_ORIGINAL);
+ s_run.options.enemy_collision=false;assert(contact(&linkCo,&enemyCo)==HOOK_CONTINUE);s_player=1;
+ secondTracked=false;assert(contact(&enemyCo,&otherCo)==HOOK_CONTINUE);secondTracked=true;
+ s_hub=true;assert(contact(&enemyCo,&otherCo)==HOOK_CONTINUE);s_hub=false;
+ arena=false;assert(contact(&enemyCo,&otherCo)==HOOK_CONTINUE);arena=true;
  s_run.options.enemy_collision=true;assert(contact(&linkCo,&enemyCo)==HOOK_CONTINUE);
  s_run.options.enemy_collision=false;s_hub=true;assert(contact(&linkCo,&enemyCo)==HOOK_CONTINUE);
  s_hub=false;arena=false;assert(contact(&linkCo,&enemyCo)==HOOK_CONTINUE);arena=true;

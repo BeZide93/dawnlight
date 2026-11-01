@@ -292,7 +292,7 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
     control.label="Enemy Collision";
-    control.help_rml="Allow enemies to block Link's movement. Off lets Link pass through enemies; terrain, chests and pots still block him. Enemy attacks still deal damage. Default: off.";
+    control.help_rml="Allow enemies to block Link's movement. Off lets Link pass through enemies; terrain, chests and pots still block him. Enemies always pass through each other. Enemy attacks still deal damage. Default: off.";
     control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=s_options.enemy_collision;};
     control.set=[](ModContext*,void*,const UiControlValue* value){
         if(settings_editable()){s_options.enemy_collision=value->bool_value;store_option_config();}

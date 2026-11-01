@@ -379,6 +379,13 @@ Timed bosses take priority over awakened chest guards. With several candidates,
 the nearest is selected and retained until defeated or replaced by a timed boss;
 sleeping guards and ordinary enemies never occupy this bar.
 
+Run-owned enemies do not physically block or push each other, including bosses
+and their owned child actors. Internal contacts belonging to the same enemy
+(such as a rider and its mount) remain native. This applies throughout the arena,
+independently of Performance Mode. **Enemy Collision** still controls only
+whether enemies block Link. Attacks, damage, walls, floors, chests and pots retain
+their existing collision behavior; the hub and other game modes are unaffected.
+
 Normal enemies default to a ceiling of **345**, from the start at every Horde
 difficulty. Settings → **Enemy Count** can lower it with **Max Normal Enemies** (0–345),
 independently of Debug. This preference is saved and applies to the next run. Spawn intervals still decrease from 2.5 seconds to 0.5 seconds over

@@ -317,15 +317,18 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     if(result!=MOD_OK)return result;
     control.label="Performance Mode";
     control.is_disabled=nullptr; // Live cosmetic setting; never changes run difficulty or score.
-    control.help_rml="Limit Dawnlight enemy labels, damage numbers, effects and normal-enemy shadows under load. Enemy counts and damage are unchanged. Other mods manage their own HUD. The hub always uses efficient rendering. Default: off.";
+    control.help_rml="Limit Dawnlight enemy labels, damage numbers, effects and normal-enemy shadows under load. Enemy counts and damage are unchanged. Other mods manage their own HUD. The hub always uses efficient rendering. Default: on.";
     control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivor_perf::enabled();};
     control.set=[](ModContext*,void*,const UiControlValue* value){survivor_perf::set_enabled(value->bool_value);};
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
     control.label="Performance Monitor";
+    control.is_disabled=[](ModContext*,void*){return !survivor_perf::enabled();};
     control.help_rml="Show completed-frame buffer usage and run peak, and log counters once per second while Performance Mode is on. Unsupported hosts use fixed effect budgets. Default: off.";
     control.get=[](ModContext*,void*,UiControlValue* value){value->bool_value=survivor_perf::monitor_enabled();};
-    control.set=[](ModContext*,void*,const UiControlValue* value){survivor_perf::set_monitor(value->bool_value);};
+    control.set=[](ModContext*,void*,const UiControlValue* value){
+        if(survivor_perf::enabled())survivor_perf::set_monitor(value->bool_value);
+    };
     result=svc_ui->pane_add_control(mod_ctx,left,&control,nullptr);
     if(result!=MOD_OK)return result;
     result=build_reset_scores(left);

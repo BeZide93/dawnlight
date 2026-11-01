@@ -1,4 +1,6 @@
 #include "fierce_deity_equipment_scope.hpp"
+#include "f_pc/f_pc_draw.h"
+#include "d/actor/d_a_e_arrow.h"
 #include "platform_compat.hpp"
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
@@ -313,6 +315,12 @@ DEFINE_HOOK(&dMeterMap_c::keyCheck, SurvivorsSaveMapKeys);
 DEFINE_HOOK(&dMw_c::key_wait_proc, SurvivorsSaveMenuKeys);
 DEFINE_HOOK(&dComIfG_changeOpeningScene, SurvivorsOpening);
 DEFINE_HOOK(&fpcMtd_Method, SurvivorsProcess);
+DEFINE_HOOK(&fpcDw_Handler, SurvivorsArrowFrame);
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
+DEFINE_HOOK_SYMBOL("_ZL14daE_ARROW_DrawP13e_arrow_class", int(e_arrow_class*), SurvivorsArrowDraw);
+#else
+DEFINE_HOOK_SYMBOL("daE_ARROW_Draw", int(e_arrow_class*), SurvivorsArrowDraw);
+#endif
 DEFINE_HOOK(&fpcLf_DrawMethod, SurvivorsShadowActorDraw);
 DEFINE_HOOK(&dComIfGd_setShadow, SurvivorsNormalShadow);
 DEFINE_HOOK(&fopAcM_createItemFromTable, SurvivorsDrops);
@@ -545,6 +553,7 @@ void prepare_performance_visuals(daAlink_c* link);
 void draw_reduced_attacks();
 void performance_line(cXyz,cXyz,GXColor);
 void begin_performance_lines();
+void clear_enemy_arrow_visuals();
 void submit_performance_lines();
 void clear_performance_lines();
 
@@ -573,6 +582,7 @@ bool ui_visible() {
     return value;
 }
 bool transitioning() { return dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek(); }
+#include "survivors_performance_ui.inc"
 #include "survivors_shield_reload.inc"
 bool playable() {
     return in_arena() && !survivors_hub_arrival_active() && !midna_dialog_busy() && !transitioning() && !dComIfGp_isPauseFlag() &&
@@ -1240,6 +1250,7 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
 #include "survivors_status.inc"
 #include "survivors_lightning.inc"
 #include "survivors_performance_visuals.inc"
+#include "survivors_enemy_arrow_visuals.inc"
 #include "survivors_buffer_scene.inc"
 #include "survivors_knockback.inc"
 void new_melee_swing() { ++s_meleeSerial; }
@@ -1847,6 +1858,7 @@ ModResult activated(void*, ModError* error) {
 }
 ModResult deactivated(void*, ModError*) {
     s_active = false; unregister_survivors_title_logo();
+    clear_performance_ui();
     reset_runtime(); request_title_preview(); return MOD_OK;
 }
 ModResult new_save(void*, ModError*) {
@@ -1912,6 +1924,7 @@ void update_survivors() {
     const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Update);
 #endif
     survivor_perf::tick(s_active);
+    update_performance_ui();
     validate_shield_reload();
     update_title_preview();
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
@@ -1995,6 +2008,7 @@ ModResult initialize_survivors(ModError* error) {
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors Zelda dialog");
     initialize_menu_handoff();
     initialize_shadow_budget();
+    initialize_enemy_arrow_visuals();
 #define PRE(H, F) do { result = mods::hook_add_pre<H>(svc_hook, F); \
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to install Hyrule Survivors pre-hook " #H); } while(false)
 #define POST(H, F) do { result = mods::hook_add_post<H>(svc_hook, F); \
@@ -2157,7 +2171,9 @@ ModResult initialize_survivors(ModError* error) {
     return survivors_enabled()?register_survivors_mode(error):MOD_OK;
 }
 void shutdown_survivors() {
+    clear_performance_ui();
     shutdown_shadow_budget();
+    shutdown_enemy_arrow_visuals();
     survivor_perf::shutdown();
     shutdown_roundtable();
     shutdown_roundtable_props();

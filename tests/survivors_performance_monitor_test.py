@@ -86,14 +86,19 @@ int main(){
  static BufferScene providedScene;providedScene=scene;
  set_diagnostic_providers(+[](){return providedScene;},+[](){FogInventory f;f.state=1;f.matches=1;log_token(f.id,"example.deferred-fog");log_token(f.version,"1.2");return f;});
  set_diagnostics(true);tick(true);assert(!enabled()&&tier()==0);
- const auto warningCount=[](){unsigned n=0;for(const auto& m:messages)n+=m.find("reason=buffer_")!=std::string::npos||m.find("reason=sample_loss")!=std::string::npos;return n;};
+ const auto warningCount=[](){unsigned n=0;for(const auto& m:messages)n+=m.find("[SurvivorsBuffer]")!=std::string::npos&&(m.find("reason=buffer_")!=std::string::npos||m.find("reason=sample_loss")!=std::string::npos);return n;};
  const auto lastWarning=[](){for(auto i=messages.rbegin();i!=messages.rend();++i)if(i->find("reason=buffer_")!=std::string::npos||i->find("reason=sample_loss")!=std::string::npos)return *i;return std::string{};};
  const auto submit=[](){stageFn(nullptr,nullptr,nullptr);render(jobs.back());};
  presentation.bars=16;presentation.popups=12;presentation.teMask=5;presentation.shadowSuppressed=42;
+ presentation.native.projectiles=77;presentation.native.arrows=70;presentation.native.reducedDraws=54;presentation.native.available=true;
  rawStats[7]=0;rawStats[4]=5*1024*1024*8/10;submit();
- presentation.bars=0;presentation.shadowSuppressed=99;
+ presentation.bars=0;presentation.shadowSuppressed=99;presentation.native.projectiles=88;
  providedScene.map=4;tick(true);
  assert(!enabled()&&tier()==0&&warningCount()==1);
+ auto nativeLog=std::string{};
+ for(auto i=messages.rbegin();i!=messages.rend();++i)if(i->find("[SurvivorsNative]")!=std::string::npos&&i->find("reason=buffer_")!=std::string::npos){nativeLog=*i;break;}
+ assert(nativeLog.find("native_projectiles=77")!=std::string::npos&&nativeLog.find("native_arrows=70")!=std::string::npos);
+ assert(nativeLog.find("arrow_reduced_draws=54")!=std::string::npos&&nativeLog.find("arrow_budget_available=1")!=std::string::npos&&nativeLog.size()<768);
  auto log=lastWarning();assert(log.find("vertex_crossed_pct=80")!=std::string::npos&&log.find(" map=2 ")!=std::string::npos);
  assert(log.find("measured=1 telemetry=available")!=std::string::npos);
  assert(log.find("hud_bars=16")!=std::string::npos&&log.find("hud_damage_numbers=12")!=std::string::npos);

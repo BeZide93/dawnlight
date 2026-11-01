@@ -50,6 +50,16 @@ void diagnostic_observe(const Sample& s) {
     }
 }
 void emit_buffer_record(const char* reason,const Sample& s,const DiagnosticContext& c,uint64_t now,bool contextOnly=false) {
+    // Keep native actor counts in a separate short record: the host/platform can
+    // truncate the long effect record. request links both to the same snapshot.
+    const auto& native=c.presentation.native;
+    char nativeLine[768];
+    std::snprintf(nativeLine,sizeof(nativeLine),
+        "[SurvivorsNative] schema=1 reason=%s request=%llu context_request=%llu context_missing=%u map=%u tick=%u normal_enemies=%u elite_enemies=%u native_projectiles=%u native_arrows=%u arrow_normal=%u arrow_fire=%u arrow_bomb=%u arrow_elite=%u native_attached=%u native_pending=%u native_retiring=%u arrow_full_draws=%u arrow_reduced_draws=%u arrow_detail_limit=%u arrow_budget_available=%u",
+        reason,(unsigned long long)s.request,(unsigned long long)c.request,unsigned(!contextOnly&&!c.request),c.scene.map,c.scene.tick,
+        native.normalEnemies,native.eliteEnemies,native.projectiles,native.arrows,native.normalArrows,native.fireArrows,native.bombArrows,native.eliteArrows,native.attached,native.pending,native.retiring,
+        native.fullDraws,native.reducedDraws,native.limit,unsigned(native.available));
+    svc_log->info(mod_ctx,nativeLine);
     char line[4096];
     const auto& x=c.scene;
     const int wrote=std::snprintf(line,sizeof(line),

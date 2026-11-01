@@ -37,7 +37,18 @@ struct HudBudget {
 };
 // Main-thread counters. HUD values describe the last local overlay draw;
 // shadow totals count submission decisions, not final GPU draws or unique actors.
+struct NativeProjectileStats {
+    unsigned normalEnemies=0,eliteEnemies=0,projectiles=0,arrows=0,attached=0,pending=0,retiring=0;
+    unsigned normalArrows=0,fireArrows=0,bombArrows=0,eliteArrows=0;
+    unsigned fullDraws=0,reducedDraws=0,limit=0;
+    bool available=false;
+};
+inline unsigned native_arrow_detail_limit(unsigned tier) {
+    constexpr unsigned limits[]{64,32,16};
+    return limits[std::min(tier,2u)];
+}
 struct PresentationStats {
+    NativeProjectileStats native{};
     unsigned bars=0,numbers=0,popups=0,textPasses=0,teMask=0;
     uint64_t shadowAllowed=0,shadowSuppressed=0;
     bool shadowAvailable=false;

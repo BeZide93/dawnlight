@@ -47,6 +47,7 @@ struct TextureService{
  }
 }textureService;auto* svc_texture=&textureService;
 struct Log{void warn(ModContext*,const char*){++warnings;}}logger;auto* svc_log=&logger;
+void clear_performance_ui(){}
 void reset_runtime(){++resets;}void request_title_preview(){++previews;}
 '''
 main = r'''

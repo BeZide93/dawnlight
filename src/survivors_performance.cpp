@@ -128,7 +128,8 @@ void set_enabled(bool v){if(modeConfig)svc_config->set_int(mod_ctx,modeConfig,v)
 void set_monitor(bool v){if(monitorConfig)svc_config->set_int(mod_ctx,monitorConfig,v);}
 void reset_run(){
     ++epoch;latest={};runPeak=0;pressure={};pressureTriggerMask=0;lastLog={};requestFailures=0;
-    const bool shadows=presentation.shadowAvailable;presentation={};presentation.shadowAvailable=shadows;
+    const bool shadows=presentation.shadowAvailable,arrows=presentation.native.available;
+    presentation={};presentation.shadowAvailable=shadows;presentation.native.available=arrows;
     {std::lock_guard lock(mutex);acceptedEpoch=epoch;workerCount=workerBegin=0;workerPeaks={};droppedSamples=0;}
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
     reset_diagnostic_window();
@@ -182,14 +183,16 @@ void tick(bool running) {
 #endif
     const auto now=std::chrono::steady_clock::now();
     if(mode && monitor && now-lastLog>=std::chrono::seconds(1)) {
-        lastLog=now;char text[800];
-        std::snprintf(text,sizeof(text),"Survivors Performance: measured=%u vertex=%u/%llu peak=%u index=%u/%llu uniform=%u/%llu storage=%u/%llu tier=%u enemies=%u projectiles=%u burns=%u bolts=%u reservedEmitters=%u tier_trigger_mask=%u buffer_max_mask=%u hud_bars=%u hud_hp_numbers=%u hud_damage_numbers=%u hud_text_passes=%u te_hud_mask=%u shadow_budget_available=%u shadow_allowed_total=%llu shadow_suppressed_total=%llu",
+        lastLog=now;char text[1200];
+        std::snprintf(text,sizeof(text),"Survivors Performance: measured=%u vertex=%u/%llu peak=%u index=%u/%llu uniform=%u/%llu storage=%u/%llu tier=%u enemies=%u projectiles=%u burns=%u bolts=%u reservedEmitters=%u tier_trigger_mask=%u buffer_max_mask=%u hud_bars=%u hud_hp_numbers=%u hud_damage_numbers=%u hud_text_passes=%u te_hud_mask=%u shadow_budget_available=%u shadow_allowed_total=%llu shadow_suppressed_total=%llu native_projectiles=%u native_arrows=%u native_attached=%u native_pending=%u arrow_full_draws=%u arrow_reduced_draws=%u arrow_detail_limit=%u arrow_budget_available=%u",
             unsigned(latest.sequence!=0),latest.vertices,(unsigned long long)latest.vertexCapacity,runPeak,
             latest.indices,(unsigned long long)latest.indexCapacity,latest.uniforms,(unsigned long long)latest.uniformCapacity,
             latest.storage,(unsigned long long)latest.storageCapacity,pressure.tier,enemyCount,projectileCount,burnCount,boltCount,emitterCount,
             pressureTriggerMask,dominant_arena_mask(latest),presentation.bars,presentation.numbers,presentation.popups,
             presentation.textPasses,presentation.teMask,unsigned(presentation.shadowAvailable),
-            (unsigned long long)presentation.shadowAllowed,(unsigned long long)presentation.shadowSuppressed);
+            (unsigned long long)presentation.shadowAllowed,(unsigned long long)presentation.shadowSuppressed,
+            presentation.native.projectiles,presentation.native.arrows,presentation.native.attached,presentation.native.pending,
+            presentation.native.fullDraws,presentation.native.reducedDraws,presentation.native.limit,unsigned(presentation.native.available));
         svc_log->info(mod_ctx,text);
     }
 }

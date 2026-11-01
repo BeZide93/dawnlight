@@ -1,6 +1,6 @@
 // Arrows/eggs outlive their shooter. Armor, weapons, cloaks and Phantom Zant
 // children retire with their owner; all share run pause, damage and teardown.
-struct EnemyArrow { ActorId id=kNone; bool retiring=false; ActorId parent=kNone; bool shell=false; unsigned damageFactor=1; };
+struct EnemyArrow { ActorId id=kNone; bool retiring=false; ActorId parent=kNone; bool shell=false; unsigned damageFactor=1; s16 profile=0; bool eliteOwner=false; };
 std::array<EnemyArrow, enemy_capacity*4> s_enemyArrows;
 ActorSlotIndex<ActorId> s_enemyArrowIndex;
 EnemyArrow* tracked_enemy_arrow(ActorId id) {
@@ -94,7 +94,7 @@ void after_enemy_arrow(ModContext*, void* args, void* result, void*) {
     const auto id=*static_cast<ActorId*>(result);
     if (id==kNone || !owned_arrow_spawn(args) || tracked_enemy_arrow(id)) return;
     for (auto& arrow:s_enemyArrows) if (arrow.id==kNone) {const auto* owner=enemy_child_root(mods::arg<ActorId>(args,1));
-        arrow={id,false,owner->id,attached_enemy_child(mods::arg<s16>(args,0)),enemy_attack_factor(*owner)};
+        arrow={id,false,owner->id,attached_enemy_child(mods::arg<s16>(args,0)),enemy_attack_factor(*owner),mods::arg<s16>(args,0),owner->elite};
         s_enemyArrowIndex.add(id,std::size_t(&arrow-s_enemyArrows.data()));
         spawn_enemy_arrow_spread(args);return;}
 }

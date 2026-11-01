@@ -1,4 +1,6 @@
 #include "fierce_deity_equipment_scope.hpp"
+#include "f_pc/f_pc_draw.h"
+#include "d/actor/d_a_e_arrow.h"
 #include "platform_compat.hpp"
 #include "Z2AudioLib/Z2AudioMgr.h"
 #include "survivors.hpp"
@@ -313,6 +315,12 @@ DEFINE_HOOK(&dMeterMap_c::keyCheck, SurvivorsSaveMapKeys);
 DEFINE_HOOK(&dMw_c::key_wait_proc, SurvivorsSaveMenuKeys);
 DEFINE_HOOK(&dComIfG_changeOpeningScene, SurvivorsOpening);
 DEFINE_HOOK(&fpcMtd_Method, SurvivorsProcess);
+DEFINE_HOOK(&fpcDw_Handler, SurvivorsArrowFrame);
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
+DEFINE_HOOK_SYMBOL("_ZL14daE_ARROW_DrawP13e_arrow_class", int(e_arrow_class*), SurvivorsArrowDraw);
+#else
+DEFINE_HOOK_SYMBOL("daE_ARROW_Draw", int(e_arrow_class*), SurvivorsArrowDraw);
+#endif
 DEFINE_HOOK(&fpcLf_DrawMethod, SurvivorsShadowActorDraw);
 DEFINE_HOOK(&dComIfGd_setShadow, SurvivorsNormalShadow);
 DEFINE_HOOK(&fopAcM_createItemFromTable, SurvivorsDrops);
@@ -545,6 +553,7 @@ void prepare_performance_visuals(daAlink_c* link);
 void draw_reduced_attacks();
 void performance_line(cXyz,cXyz,GXColor);
 void begin_performance_lines();
+void clear_enemy_arrow_visuals();
 void submit_performance_lines();
 void clear_performance_lines();
 
@@ -1241,6 +1250,7 @@ HookAction before_large_spin(ModContext*, void*, void* result, void*) {
 #include "survivors_status.inc"
 #include "survivors_lightning.inc"
 #include "survivors_performance_visuals.inc"
+#include "survivors_enemy_arrow_visuals.inc"
 #include "survivors_buffer_scene.inc"
 #include "survivors_knockback.inc"
 void new_melee_swing() { ++s_meleeSerial; }
@@ -1998,6 +2008,7 @@ ModResult initialize_survivors(ModError* error) {
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to initialize Hyrule Survivors Zelda dialog");
     initialize_menu_handoff();
     initialize_shadow_budget();
+    initialize_enemy_arrow_visuals();
 #define PRE(H, F) do { result = mods::hook_add_pre<H>(svc_hook, F); \
     if(result!=MOD_OK)return mods::set_error(error,result,"failed to install Hyrule Survivors pre-hook " #H); } while(false)
 #define POST(H, F) do { result = mods::hook_add_post<H>(svc_hook, F); \
@@ -2162,6 +2173,7 @@ ModResult initialize_survivors(ModError* error) {
 void shutdown_survivors() {
     clear_performance_ui();
     shutdown_shadow_budget();
+    shutdown_enemy_arrow_visuals();
     survivor_perf::shutdown();
     shutdown_roundtable();
     shutdown_roundtable_props();

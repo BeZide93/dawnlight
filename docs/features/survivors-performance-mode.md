@@ -70,6 +70,50 @@ SDK and the official Android 2.0.3 ELF. The native real-shadow pool already hold
 at most eight shadows, so this is additional headroom, not a replacement for
 reducing the main enemy geometry. Other shadow submission paths are unaffected.
 
+## Native enemy arrow detail
+
+Performance Mode keeps at most 64 normal enemy arrows at full model detail in
+its base tier, 32 in tier 1 and 16 in tier 2. Flying arrows are prioritized over
+stuck arrows, then nearest arrows first. Further arrows use a visible shaft and
+arrowhead made from three line segments in one reusable packet. Only native
+Draw calls that would submit a visible model are replaced; the native culling
+path still decides whether the actor is drawn. Execute, spawn frequency, volleys,
+collision, damage, pickup behavior and lifetimes are unchanged.
+
+Boss/elite provenance is retained when a projectile is created, including after
+its shooter dies. Their arrows, fire/bomb arrows, other projectile types and
+attached enemy parts keep native rendering. Disabling Performance Mode restores
+native arrow models. Missing draw lists or optional hooks fail open. Pending
+actors are not dereferenced; each render pass builds a fresh selection by actor
+ID. Packets contain copied positions, and reset/shutdown unlinks them.
+
+The hooks use the pinned host's `fpcDw_Handler` and `daE_ARROW_Draw`. The latter's
+model/hidden-field accesses were checked against the official Android 2.0.3 ELF;
+the SDK layout has a 3,384-byte arrow actor, matching that host. This is not a
+guarantee for arbitrary host forks or future layout changes.
+
+`projectiles` in existing logs still counts Dawnlight attack objects. Native
+objects now have separate counters in monitor output and a short
+`[SurvivorsNative]` companion to each detailed buffer record. The companion's
+`request`/`context_request` identify the same captured context as the buffer
+record, not a proven GPU source-frame ID. It reports:
+
+- `normal_enemies` / `elite_enemies`: occupied, non-retiring/non-credited tracked
+  enemy slots, including pending creation.
+- `native_projectiles` / `native_attached`: live tracked child actors split by
+  whether they are attached enemy parts; `native_arrows` is the E_ARROW subset.
+- `native_pending` / `native_retiring`: excluded pending creations and retiring
+  slots. These are not extra live projectile counts.
+- `arrow_full_draws` / `arrow_reduced_draws`: decisions in the most recent draw
+  pass, not unique live counts or measured bytes. Exempt arrows may make full
+  draws exceed `arrow_detail_limit`.
+- `arrow_budget_available`: optional hook installation succeeded. When false,
+  native counts are unavailable, not evidence of zero native actors.
+
+The short companion avoids losing these fields to platform truncation of the
+long effect record. Neither counters nor detail limits measure per-actor buffer
+costs or guarantee enough headroom when the enemy/world geometry alone is large.
+
 ## Simplified Survivors windows
 
 While Survivors and Performance Mode are active, Dawnlight-owned RmlUI windows
@@ -194,3 +238,9 @@ c++ -std=c++20 -Wall -Wextra -Werror -I/path/to/RmlUi/Include \
 
 This fixture does not render fonts or measure a complete game frame. Check
 controller/touch navigation, live toggling and crowded late-game menus on-device.
+
+Native arrow regression coverage runs the production selection/draw hooks and
+packet insertion/unlink helpers: all tiers, flying/nearest priority, visible
+fallback, missing lists, boss/type exemptions, live toggles, pending/deleted/reused
+slots, duplicate draws, shutdown and partial hook-registration failure. Telemetry
+tests verify that companion records retain their captured native counts.

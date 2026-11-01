@@ -74,12 +74,13 @@ struct PerformanceLines : J3DPacket {
 } s_performanceLines;
 void performance_line(cXyz a,cXyz b,GXColor color){s_performanceLines.lines.push_back({a,b,color});}
 void begin_performance_lines(){s_performanceLines.lines.clear();}
-void submit_performance_lines(){
-    auto* list=g_dComIfG_gameInfo.drawlist.mDrawBuffers[dDlst_list_c::DB_XLU_LIST];if(!list||s_performanceLines.lines.empty())return;
+bool submit_line_packet(PerformanceLines& packet){
+    auto* list=g_dComIfG_gameInfo.drawlist.mDrawBuffers[dDlst_list_c::DB_XLU_LIST];if(!list||!list->mpBuffer||!list->getEntryTableSize()||packet.lines.empty())return false;
     for(u32 i=0;i<list->getEntryTableSize();++i)
-        for(auto* p=list->mpBuffer[i];p;p=p->getNextPacket())if(p==&s_performanceLines)return;
-    list->entryImm(&s_performanceLines,0);
+        for(auto* p=list->mpBuffer[i];p;p=p->getNextPacket())if(p==&packet)return true;
+    return list->entryImm(&packet,0)!=0;
 }
+void submit_performance_lines(){submit_line_packet(s_performanceLines);}
 void draw_reduced_attacks() {
     for(const auto& a:s_attacks) {
         if(!a.active||!a.reducedVisual)continue;
@@ -94,17 +95,22 @@ void draw_reduced_attacks() {
     }
 }
 
-void clear_performance_lines() {
+void clear_line_packet(PerformanceLines& packet) {
     auto* list=g_dComIfG_gameInfo.drawlist.mDrawBuffers[dDlst_list_c::DB_XLU_LIST];
     if(list && list->mpBuffer)for(u32 i=0;i<list->getEntryTableSize();++i) {
         J3DPacket* previous=nullptr;
         for(auto* p=list->mpBuffer[i];p;) {
             auto* next=p->getNextPacket();
-            if(p==&s_performanceLines) {
+            if(p==&packet) {
                 if(previous)previous->setNextPacket(next);else list->mpBuffer[i]=next;
             }else previous=p;
             p=next;
         }
     }
-    s_performanceLines.setNextPacket(nullptr);s_performanceLines.lines.clear();
+    packet.setNextPacket(nullptr);packet.lines.clear();
+}
+
+void clear_performance_lines() {
+    clear_line_packet(s_performanceLines);
+    clear_enemy_arrow_visuals();
 }

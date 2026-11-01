@@ -124,6 +124,8 @@ jobs:
           CXX=clang++ python3 tests/survivors_boss_tactics_test.py
           python3 tests/survivors_enemy_hits_test.py
           CXX=clang++ python3 tests/survivors_enemy_hits_test.py
+          python3 tests/survivors_enemy_arrow_visuals_test.py
+          CXX=clang++ python3 tests/survivors_enemy_arrow_visuals_test.py
           python3 tests/survivors_enemy_types_test.py
           python3 tests/survivors_horde_portals_test.py
           python3 tests/survivors_fate_test.py

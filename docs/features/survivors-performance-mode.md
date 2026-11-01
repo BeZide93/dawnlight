@@ -55,15 +55,28 @@ buffers nor catches its fatal overflow.
 
 ## Indexed hub geometry
 
-Performance Mode draws the existing packed hall attributes through 16-bit GX
-indices. Triangle order, positions, colors, UVs, textures and collision are
-unchanged. Arrays remain immutable for asynchronous FIFO processing. Mode off
-uses the original direct-attribute path.
+The hub always draws the existing packed hall attributes through 16-bit GX
+indices, including the title screen and with Performance Mode off. This is a
+scene safety fix, independent of optional effect limits. Triangle order,
+positions, colors, UVs, textures and collision are unchanged. Arrays remain
+immutable for asynchronous FIFO processing.
 
 For the bundled 192,534 vertices, two room submissions (including a fog replay)
 require 3,080,544 vertex bytes rather than 6,931,224. The deduplicated attribute
 arrays add at most 1,765,464 storage bytes across those two submissions. These
 are room-only calculations, not a measurement of an entire in-game frame.
+
+The Android v2.0.3 title-screen crash in `dusklight-20261101-005724.log` was
+symbolicated against the official APK with the matching build ID
+`e5fcdd6af182b596ebf50dcaf4fd11356529f87a`. The call at `draw_prim+0xc8`
+(`0x16e6870`) enters `push_verts`; the stack then reaches `ByteBuffer::append`
+and its fixed-capacity overflow abort. Deferred Fog was disabled in that log.
+It does not expose the exact allocation size, drawing actor or number of room
+submissions. The previous direct path consumed 3,465,612 vertex bytes per room
+submission, leaving little space for the rest of the title scene. Indexed
+drawing reduces that contribution to 1,540,272 bytes (56% less) in both modes.
+This does not increase the engine's arena or guarantee that arbitrary other
+mods cannot exhaust it.
 
 ## Validation
 
@@ -72,6 +85,10 @@ worker-only sampling, stale samples, shutdown, live settings, identical lightnin
 and burn damage, and repeated hub creation/draw/cleanup. The mesh test reconstructs
 every indexed attribute and compares it with the original packed data. Existing
 combat/resource/lifecycle tests continue to execute production functions.
+The production room draw fixture also checks both toggle states, a live toggle
+change and two submissions with 2 MiB reserved for other scene geometry, within
+the same 5 MiB vertex arena. It validates indexed attribute formats and emitted
+positions, colors and both UV sets, plus cleanup after repeated room creation.
 
 Before release, verify the Ordon Sword event with deferred fog and late-game runs
 on Steam Deck, Windows and Android. Automated boundary tests and a successful mod

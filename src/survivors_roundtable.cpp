@@ -1,5 +1,4 @@
 #include "survivors_roundtable.hpp"
-#include "survivors_performance.hpp"
 #include "JSystem/J3DGraphBase/J3DShape.h"
 #include "survivors_indexed_room.hpp"
 #include "survivors_roundtable_props.hpp"
@@ -29,13 +28,17 @@ namespace dawnlight {
 namespace {
 constexpr ActorId kNoRoom = fpcM_ERROR_PROCESS_ID_e;
 // Aurora has a shared 5 MiB per-frame vertex arena. Keep the authored RTH2
-// floats on disk, but cache/send fixed-point vertices (18 instead of 32 bytes).
+// floats on disk and cache fixed-point attributes. Always send their four u16
+// indices (8 bytes/vertex): the 18-byte direct stream can exhaust the arena in
+// the title scene even without Deferred Fog or Performance Logs enabled.
 // Position error <= 1/16 world unit; UV error <= 1/128 texel in the 1024 atlas.
 struct Vertex { s16 x,y,z; u16 u,v,lu,lv; u8 r,g,b,a; };
 static_assert(sizeof(Vertex)==18);
 constexpr size_t kMaxVertices=195000;
 static_assert(8+kMaxVertices*32 < 6*1024*1024); // RTH2 resource limit
-static_assert(kMaxVertices*sizeof(Vertex) < 5*1024*1024 - 1536*1024);
+// Room + one replay must leave 2 MiB for the rest of the scene. This bounds
+// our contribution, not allocations made by native actors or other mods.
+static_assert(kMaxVertices*8*2 < 5*1024*1024 - 2*1024*1024);
 std::vector<Vertex> s_vertices;
 std::vector<survivor_perf::IndexedRoomBatch> s_indexedRoom;
 std::vector<u8> s_collision;
@@ -245,7 +248,7 @@ public:
         j3dSys.reinitGX();
         GXLoadPosMtxImm(j3dSys.getViewMtx(),GX_PNMTX0);GXSetCurrentMtx(GX_PNMTX0);
         GXClearVtxDesc();
-        GXSetVtxDesc(GX_VA_POS,GX_DIRECT);GXSetVtxDesc(GX_VA_CLR0,GX_DIRECT);GXSetVtxDesc(GX_VA_TEX0,GX_DIRECT);GXSetVtxDesc(GX_VA_TEX1,GX_DIRECT);
+        GXSetVtxDesc(GX_VA_POS,GX_INDEX16);GXSetVtxDesc(GX_VA_CLR0,GX_INDEX16);GXSetVtxDesc(GX_VA_TEX0,GX_INDEX16);GXSetVtxDesc(GX_VA_TEX1,GX_INDEX16);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_S16,3);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_CLR0,GX_CLR_RGBA,GX_RGBA8,0);
         GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_TEX0,GX_TEX_ST,GX_U16,16);
@@ -263,27 +266,16 @@ public:
         GXSetZMode(GX_TRUE,GX_LEQUAL,GX_TRUE);
         GXSetBlendMode(GX_BM_NONE,GX_BL_ONE,GX_BL_ZERO,GX_LO_CLEAR);
         GXSetAlphaCompare(GX_ALWAYS,0,GX_AOP_AND,GX_ALWAYS,0);GXSetCullMode(GX_CULL_NONE);
-        if(survivor_perf::enabled()) {
-            GXSetVtxDesc(GX_VA_POS,GX_INDEX16);GXSetVtxDesc(GX_VA_CLR0,GX_INDEX16);
-            GXSetVtxDesc(GX_VA_TEX0,GX_INDEX16);GXSetVtxDesc(GX_VA_TEX1,GX_INDEX16);
-            // Arrays stay immutable for the room lifetime: FIFO processing is asynchronous.
-            for(const auto& batch:s_indexedRoom) {
-                GXSetArray(GX_VA_POS,batch.positions.data(),u32(batch.positions.size()*6),6,true);
-                GXSetArray(GX_VA_CLR0,batch.colors.data(),u32(batch.colors.size()*4),4,true);
-                GXSetArray(GX_VA_TEX0,batch.uv.data(),u32(batch.uv.size()*4),4,true);
-                GXSetArray(GX_VA_TEX1,batch.shadow.data(),u32(batch.shadow.size()*4),4,true);
-                GXBegin(GX_TRIANGLES,GX_VTXFMT0,u16(batch.indices.size()));
-                for(const auto& v:batch.indices) {
-                    GXPosition1x16(v[0]);GXColor1x16(v[1]);GXTexCoord1x16(v[2]);GXTexCoord1x16(v[3]);
-                }
-                GXEnd();
-            }
-        } else for(size_t start=0;start<s_vertices.size();start+=60000) {
-            const size_t end=std::min(start+60000,s_vertices.size());
-            GXBegin(GX_TRIANGLES,GX_VTXFMT0,static_cast<u16>(end-start));
-            for(size_t i=start;i<end;++i) {
-                const auto& v=s_vertices[i];GXPosition3s16(v.x,v.y,v.z);
-                GXColor4u8(v.r,v.g,v.b,v.a);GXTexCoord2u16(v.u,v.v);GXTexCoord2u16(v.lu,v.lv);
+        // This lossless encoding is a scene safety fix, independent of effect
+        // budgets. Arrays stay immutable for asynchronous FIFO processing.
+        for(const auto& batch:s_indexedRoom) {
+            GXSetArray(GX_VA_POS,batch.positions.data(),u32(batch.positions.size()*6),6,true);
+            GXSetArray(GX_VA_CLR0,batch.colors.data(),u32(batch.colors.size()*4),4,true);
+            GXSetArray(GX_VA_TEX0,batch.uv.data(),u32(batch.uv.size()*4),4,true);
+            GXSetArray(GX_VA_TEX1,batch.shadow.data(),u32(batch.shadow.size()*4),4,true);
+            GXBegin(GX_TRIANGLES,GX_VTXFMT0,u16(batch.indices.size()));
+            for(const auto& v:batch.indices) {
+                GXPosition1x16(v[0]);GXColor1x16(v[1]);GXTexCoord1x16(v[2]);GXTexCoord1x16(v[3]);
             }
             GXEnd();
         }

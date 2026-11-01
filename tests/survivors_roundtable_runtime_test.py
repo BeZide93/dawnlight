@@ -123,12 +123,18 @@ struct Lighting{void settingTevStruct(int,void*,void*){}}g_env_light;
 void* dComIfGp_roomControl_getTevStr(unsigned){return nullptr;}
 unsigned submitted=0,batches=0;int zTest=0,zWrite=0,blendMode=0,cullMode=0;
 // Mirror Aurora's shared, fixed-size per-frame arena, including other actors.
-constexpr size_t frameCapacity=5*1024*1024,otherSceneBytes=1536*1024;
+// With 2 MiB of actors/title/effects, even one old direct room stream overflowed.
+// The indexed room plus a replay must fit with Performance Mode off as well.
+constexpr size_t frameCapacity=5*1024*1024,otherSceneBytes=2*1024*1024;
 size_t frameBytes=otherSceneBytes;
 void stream(size_t bytes){frameBytes+=bytes;assert(frameBytes<=frameCapacity && "Shared Aurora vertex arena overflow");}
 std::map<int,std::pair<int,int>> formats;
+std::map<int,int> descriptors;
+void GXClearVtxDesc(){descriptors.clear();}
+void GXSetVtxDesc(int attr,int type){descriptors[attr]=type;}
 void GXSetVtxAttrFmt(int,int attr,int,int type,int frac){formats[attr]={type,frac};}
 std::vector<std::array<float,3>> positions;std::vector<std::array<unsigned,4>> colors;
+std::vector<std::array<u16,2>> texcoords;
 void GXPosition3f32(float x,float y,float z){stream(12);positions.push_back({x,y,z});}
 void GXPosition3s16(s16 x,s16 y,s16 z){stream(6);positions.push_back({x/8.f,y/8.f,z/8.f});}
 void GXTexCoord2f32(float,float){stream(8);}
@@ -142,14 +148,14 @@ void GXBegin(int,int,unsigned count){assert(count<=60000&&count%3==0);submitted+
 constants=sorted(set(re.findall(r'\bGX_[A-Z0-9a-z_]+',production)) | {'GX_S16','GX_U16'})
 fixture+='\nenum {'+','.join(constants)+'};\n'
 for fn in sorted(set(re.findall(r'\b(GX\w+)\(',production))):
-    if fn not in {'GXSetArray','GXPosition1x16','GXColor1x16','GXTexCoord1x16','GXBegin','GXPosition3f32','GXColor4u8','GXSetZMode','GXSetBlendMode','GXSetCullMode','GXSetVtxAttrFmt','GXPosition3s16','GXTexCoord2u16','GXTexCoord2f32'}:fixture+=f'template<class... T>void {fn}(T...){{}}\n'
+    if fn not in {'GXClearVtxDesc','GXSetVtxDesc','GXSetArray','GXPosition1x16','GXColor1x16','GXTexCoord1x16','GXBegin','GXPosition3f32','GXColor4u8','GXSetZMode','GXSetBlendMode','GXSetCullMode','GXSetVtxAttrFmt','GXPosition3s16','GXTexCoord2u16','GXTexCoord2f32'}:fixture+=f'template<class... T>void {fn}(T...){{}}\n'
 fixture+=r'''
 struct BoundArray{const unsigned char* data;unsigned size,stride;};
 std::map<int,BoundArray> arrays;
 void GXSetArray(int attr,const void* data,unsigned size,unsigned char stride,bool le){assert(le);arrays[attr]={static_cast<const unsigned char*>(data),size,stride};}
-void GXPosition1x16(u16 i){const auto& a=arrays.at(GX_VA_POS);assert((i+1)*a.stride<=a.size);s16 v[3];std::memcpy(v,a.data+i*a.stride,6);stream(2);positions.push_back({v[0]/8.f,v[1]/8.f,v[2]/8.f});}
-void GXColor1x16(u16 i){const auto& a=arrays.at(GX_VA_CLR0);assert((i+1)*a.stride<=a.size);auto* v=a.data+i*a.stride;stream(2);colors.push_back({v[0],v[1],v[2],v[3]});}
-void GXTexCoord1x16(u16){stream(2);}
+void GXPosition1x16(u16 i){assert(descriptors.at(GX_VA_POS)==GX_INDEX16);const auto& a=arrays.at(GX_VA_POS);assert((i+1)*a.stride<=a.size);s16 v[3];std::memcpy(v,a.data+i*a.stride,6);stream(2);positions.push_back({v[0]/8.f,v[1]/8.f,v[2]/8.f});}
+void GXColor1x16(u16 i){assert(descriptors.at(GX_VA_CLR0)==GX_INDEX16);const auto& a=arrays.at(GX_VA_CLR0);assert((i+1)*a.stride<=a.size);auto* v=a.data+i*a.stride;stream(2);colors.push_back({v[0],v[1],v[2],v[3]});}
+void GXTexCoord1x16(u16 i){const auto attr=texcoords.size()%2?GX_VA_TEX1:GX_VA_TEX0;assert(descriptors.at(attr)==GX_INDEX16);const auto& a=arrays.at(attr);assert((i+1)*a.stride<=a.size);std::array<u16,2> uv;std::memcpy(uv.data(),a.data+i*a.stride,4);texcoords.push_back(uv);stream(2);}
 '''
 tests=r'''
 int create(void*){return 4;}int remove(void*){return 1;}int execute(void*){return 1;}int draw(void*){return 1;}
@@ -188,8 +194,8 @@ int main(int argc,char** argv){
   unsigned char header[8]{};mesh.read(reinterpret_cast<char*>(header),8);assert(mesh);
   const unsigned expected=unsigned(header[4])|(unsigned(header[5])<<8)|
       (unsigned(header[6])<<16)|(unsigned(header[7])<<24);
-  submitted=batches=0;frameBytes=otherSceneBytes;positions.clear();packet->draw();
-  assert(frameBytes==otherSceneBytes+size_t(expected)*(dawnlight::survivor_perf::testEnabled?8:18));
+  submitted=batches=0;frameBytes=otherSceneBytes;positions.clear();colors.clear();texcoords.clear();packet->draw();
+  assert(frameBytes==otherSceneBytes+size_t(expected)*8);
   assert(formats[GX_VA_POS]==std::make_pair(int(GX_S16),3));
   assert(formats[GX_VA_TEX0]==std::make_pair(int(GX_U16),16));
   assert(formats[GX_VA_TEX1]==std::make_pair(int(GX_U16),16));
@@ -197,16 +203,22 @@ int main(int argc,char** argv){
    for(unsigned i=0;i<expected;++i){
     float v[7];unsigned char rgba[4];mesh.read(reinterpret_cast<char*>(v),28);mesh.read(reinterpret_cast<char*>(rgba),4);assert(mesh);
     const auto& packed=dawnlight::s_vertices[i];
+    assert((colors[i]==std::array<unsigned,4>{rgba[0],rgba[1],rgba[2],rgba[3]}));
+    assert((texcoords[i*2]==std::array<u16,2>{packed.u,packed.v}));
+    assert((texcoords[i*2+1]==std::array<u16,2>{packed.lu,packed.lv}));
     for(unsigned axis=0;axis<3;++axis)assert(std::abs(positions[i][axis]-v[axis])<=.0625f);
     const u16 uv[]{packed.u,packed.v,packed.lu,packed.lv};
     for(unsigned axis=0;axis<4;++axis)assert(std::abs(uv[axis]/65536.f-v[axis+3])*1024<=1.f/128);
    }
   }
   assert(submitted==expected&&batches==(expected+59999)/60000);
-  if(dawnlight::survivor_perf::testEnabled){frameBytes=otherSceneBytes;packet->draw();packet->draw();assert(frameBytes==otherSceneBytes+size_t(expected)*16);}
+  // Both toggle states, including switching during the same room lifetime.
+  frameBytes=otherSceneBytes;packet->draw();
+  dawnlight::survivor_perf::testEnabled=!dawnlight::survivor_perf::testEnabled;
+  packet->draw();assert(frameBytes==otherSceneBytes+size_t(expected)*16);
   auto* shade=shadeList.entries[0];assert(shade!=&otherShade&&shade->getNextPacket()==&otherShade);
   submitted=batches=0;positions.clear();colors.clear();shade->draw();
-  assert(frameBytes==otherSceneBytes+size_t(expected)*(dawnlight::survivor_perf::testEnabled?16:18)+36*16);
+  assert(frameBytes==otherSceneBytes+size_t(expected)*16+36*16);
   assert(submitted==36&&batches==6&&zTest==GX_TRUE&&zWrite==GX_FALSE&&blendMode==GX_BM_BLEND&&cullMode==GX_CULL_BACK);
   for(unsigned i=0;i<colors.size();++i){
    assert(colors[i][0]==0&&colors[i][1]==0&&colors[i][2]==0&&colors[i][3]>0);

@@ -41,11 +41,12 @@ struct Gfx {
  ModResult unregister_stage_hook(ModContext*,uint64_t){return MOD_OK;}
  ModResult push_compute(ModContext*,uint64_t,const void* p,size_t n){assert(!onWorker&&n==sizeof(Job));Job job;std::memcpy(job.data(),p,n);jobs.push_back(job);return MOD_OK;}
 }gfx;auto* svc_gfx=&gfx;
-struct Host{const char* version="2.0.3";} host;auto* svc_host=&host;
+// Exact HostService version from the official Android v2.0.3 APK.
+struct Host{const char* version="2.0.3.0";} host;auto* svc_host=&host;
 enum HookSymbolFlags{HOOK_SYMBOL_CODE=1,HOOK_SYMBOL_MULTI_NAME=8};
-uint32_t rawStats[9]{};bool symbolAvailable=true;
+uint32_t rawStats[9]{};bool symbolAvailable=true;unsigned resolveCalls=0;
 const void* getter(){assert(onWorker);return rawStats;}
-struct Hook {ModResult resolve(ModContext*,const char* name,void** out,HookSymbolFlags* flags){assert(!onWorker&&!std::strcmp(name,"aurora_get_stats"));*out=reinterpret_cast<void*>(&getter);*flags=HOOK_SYMBOL_CODE;return symbolAvailable?MOD_OK:MOD_UNAVAILABLE;}} hook;
+struct Hook {ModResult resolve(ModContext*,const char* name,void** out,HookSymbolFlags* flags){++resolveCalls;assert(!onWorker&&!std::strcmp(name,"aurora_get_stats"));*out=reinterpret_cast<void*>(&getter);*flags=HOOK_SYMBOL_CODE;return symbolAvailable?MOD_OK:MOD_UNAVAILABLE;}} hook;
 auto* svc_hook=&hook;
 std::vector<std::string> messages;
 struct Log{void info(ModContext*,const char* text){assert(!onWorker);messages.emplace_back(text);}} logService;auto* svc_log=&logService;
@@ -57,7 +58,7 @@ int main(){
  BufferAlerts latch;latch.observe({850,0,0,0},{1000,0,0,0},1);assert(latch.pending());
  latch.acknowledged();latch.observe({850,0,0,0},{1000,0,0,0},2);assert(!latch.pending());
  latch.observe({640,0,0,0},{1000,0,0,0},3);latch.observe({850,0,0,0},{1000,0,0,0},4);assert(latch.pending());
- assert(initialize()==MOD_OK&&!enabled());tick(true);stageFn(nullptr,nullptr,nullptr);assert(jobs.empty()&&clockReads==0);
+ assert(initialize()==MOD_OK&&!enabled()&&stageFn&&worker);tick(true);stageFn(nullptr,nullptr,nullptr);assert(jobs.empty()&&clockReads==0);
  set_enabled(true);set_monitor(true);tick(true);stageFn(nullptr,nullptr,nullptr);assert(jobs.size()==1);
  rawStats[4]=4800000;render(jobs.back());tick(true);
  assert(sample().vertices==4800000&&peak()==4800000&&tier()==2);
@@ -79,6 +80,7 @@ int main(){
  providedScene.map=4;tick(true);
  assert(!enabled()&&tier()==0&&warningCount()==1);
  auto log=lastWarning();assert(log.find("vertex_crossed_pct=80")!=std::string::npos&&log.find(" map=2 ")!=std::string::npos);
+ assert(log.find("measured=1 telemetry=available")!=std::string::npos);
  assert(log.find("burn_active=40 burn_full=32 burn_reduced=8 burn_emitters=64")!=std::string::npos);
  assert(log.find("fog_inventory=1")!=std::string::npos&&log.find("stats_frame=unknown")!=std::string::npos);
  // 90/95% crossings within a second are retained, then written with their original ages.
@@ -123,11 +125,39 @@ int main(){
  assert(messages.back().find("measured=0")!=std::string::npos);
 #endif
  shutdown();
- host.version="2.0.3";symbolAvailable=false;assert(initialize()==MOD_OK);tick(true);assert(enabled()&&!sample().sequence);
+ host.version="2.0.3.0";symbolAvailable=false;assert(initialize()==MOD_OK);tick(true);assert(enabled()&&!sample().sequence);
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS
  set_diagnostics(true);tick(true);assert(messages.back().find("telemetry=symbol_unavailable")!=std::string::npos);
 #endif
  shutdown();
+ // Exercise real registration, worker sampling and pressure feedback for every
+ // supported spelling, rather than just testing a version parsing helper.
+ symbolAvailable=true;
+ for(const char* release:{"2.0.0","2.0.1","2.0.2","2.0.3"}) {
+  for(const char* prefix:{"","v"})for(const char* suffix:{"",".0"}) {
+   const std::string version=std::string(prefix)+release+suffix;host.version=version.c_str();
+   worker=nullptr;stageFn=nullptr;jobs.clear();const auto resolves=resolveCalls;
+   assert(initialize()==MOD_OK&&worker&&stageFn&&resolveCalls==resolves+1);
+   set_enabled(true);set_monitor(false);tick(true);
+   std::memset(rawStats,0,sizeof(rawStats));rawStats[4]=4800000;
+   stageFn(nullptr,nullptr,nullptr);assert(jobs.size()==1);render(jobs.back());tick(true);
+   assert(sample().sequence&&sample().vertices==4800000&&sample().vertexCapacity==5*1024*1024&&tier()==2);
+   shutdown();
+  }
+ }
+ // Do not accidentally accept newer ABIs, nonzero revisions or partial matches.
+ const char* unsupported[]{nullptr,"","v","2.0","2.0.30","2.0.3.1","2.0.3.00",
+  "2.0.3.0.0","2.0.3-rc1","2.0.3.0suffix","2.0.4.0","2.1.0.0","3.0.0.0"," 2.0.3.0","vv2.0.3.0"};
+ for(const char* version:unsupported) {
+  host.version=version;worker=nullptr;stageFn=nullptr;const auto resolves=resolveCalls;
+  assert(initialize()==MOD_OK&&!worker&&!stageFn&&resolveCalls==resolves);tick(true);
+  assert(enabled()&&!sample().sequence&&tier()==0);
+#if DAWNLIGHT_FREEZE_DIAGNOSTICS
+  set_diagnostics(true);tick(true);
+  assert(messages.back().find("telemetry=unsupported_host")!=std::string::npos);
+#endif
+  shutdown();
+ }
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

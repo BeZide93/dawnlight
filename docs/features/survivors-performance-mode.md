@@ -45,6 +45,13 @@ reads Aurora's mutable statistics directly. Run epochs discard stale queued
 samples after a reset or mode change. Missing symbols or unrecognized host
 versions leave fixed budgets active and show measurement unavailable.
 
+The version check accepts `2.0.0` through `2.0.3` and their four-component
+zero-revision forms (`2.0.0.0` through `2.0.3.0`), with an optional leading `v`.
+The official Android v2.0.3 HostService reports `2.0.3.0`; rejecting that spelling
+previously disabled sampling, buffer warnings and adaptive pressure tiers while
+leaving fixed effect budgets active. Nonzero revisions, suffixes and newer
+releases remain unsupported until their statistics ABI has been checked.
+
 The highest measured utilization among the four arenas selects tier 1 at 80%
 and tier 2 at 90%. Recovery requires 120 distinct samples below 65% per tier.
 Measurements describe completed recording work and arrive asynchronously; they

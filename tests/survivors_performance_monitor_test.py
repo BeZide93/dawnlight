@@ -58,7 +58,12 @@ int main(){
  BufferAlerts latch;latch.observe({850,0,0,0},{1000,0,0,0},1);assert(latch.pending());
  latch.acknowledged();latch.observe({850,0,0,0},{1000,0,0,0},2);assert(!latch.pending());
  latch.observe({640,0,0,0},{1000,0,0,0},3);latch.observe({850,0,0,0},{1000,0,0,0},4);assert(latch.pending());
- assert(initialize()==MOD_OK&&!enabled()&&stageFn&&worker);tick(true);stageFn(nullptr,nullptr,nullptr);assert(jobs.empty()&&clockReads==0);
+ assert(initialize()==MOD_OK&&enabled()&&!monitor_enabled()&&stageFn&&worker);
+ assert(settings[names.at("survivors-performance-mode")]==1&&settings[names.at("survivors-performance-monitor")]==0);
+ // Existing choices survive registration even when the default changes.
+ set_enabled(false);set_monitor(true);shutdown();assert(initialize()==MOD_OK&&!enabled()&&!monitor_enabled());
+ assert(settings[names.at("survivors-performance-monitor")]==1);
+ set_monitor(false);tick(true);stageFn(nullptr,nullptr,nullptr);assert(jobs.empty()&&clockReads==0);
  set_enabled(true);set_monitor(true);tick(true);stageFn(nullptr,nullptr,nullptr);assert(jobs.size()==1);
  rawStats[4]=4800000;render(jobs.back());tick(true);
  assert(sample().vertices==4800000&&peak()==4800000&&tier()==2);

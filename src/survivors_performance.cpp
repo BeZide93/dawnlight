@@ -89,9 +89,9 @@ void queue_stats(ModContext*,const GfxStageContext*,void*) {
 }
 }
 ModResult initialize() {
-    ConfigVarDesc d=CONFIG_VAR_DESC_INIT;d.type=CONFIG_VAR_INT;d.default_int=0;
+    ConfigVarDesc d=CONFIG_VAR_DESC_INIT;d.type=CONFIG_VAR_INT;d.default_int=1;
     d.name="survivors-performance-mode";auto r=register_owned_setting(&d,&modeConfig);if(r!=MOD_OK)return r;
-    d.name="survivors-performance-monitor";r=register_owned_setting(&d,&monitorConfig);if(r!=MOD_OK)return r;
+    d.name="survivors-performance-monitor";d.default_int=0;r=register_owned_setting(&d,&monitorConfig);if(r!=MOD_OK)return r;
     mode=setting(modeConfig);monitor=setting(monitorConfig);
     const bool known=known_stats_version(svc_host->version);
 #if DAWNLIGHT_FREEZE_DIAGNOSTICS

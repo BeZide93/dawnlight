@@ -277,10 +277,27 @@ int main(){
  s_run.start(1,s_options);assert(s_run.options.switch_attack_lock&&!s_run.options.gyro_aim);
  s_run.phase=Phase::Ready;
  s_run.phase=Phase::Running;
- for(unsigned i=17;i<=18;++i){auto& c=controls[i];assert(c.kind==UI_CONTROL_TOGGLE&&!c.is_disabled);
-  assert(std::string(c.label)==(i==17?"Performance Mode":"Performance Monitor"));
-  UiControlValue v=UI_CONTROL_VALUE_INIT;c.get(nullptr,nullptr,&v);assert(!v.bool_value);
-  v.bool_value=true;c.set(nullptr,nullptr,&v);c.get(nullptr,nullptr,&v);assert(v.bool_value);
+ {
+  auto& modeControl=controls[17];auto& monitorControl=controls[18];
+  assert(modeControl.kind==UI_CONTROL_TOGGLE&&!modeControl.is_disabled);
+  assert(std::string(modeControl.label)=="Performance Mode");
+  assert(monitorControl.kind==UI_CONTROL_TOGGLE&&monitorControl.is_disabled);
+  assert(std::string(monitorControl.label)=="Performance Monitor");
+  UiControlValue value=UI_CONTROL_VALUE_INIT;
+  modeControl.get(nullptr,nullptr,&value);assert(value.bool_value);
+  monitorControl.get(nullptr,nullptr,&value);assert(!value.bool_value);
+  assert(!monitorControl.is_disabled(nullptr,nullptr));
+  value.bool_value=true;monitorControl.set(nullptr,nullptr,&value);
+  value.bool_value=false;modeControl.set(nullptr,nullptr,&value);
+  assert(monitorControl.is_disabled(nullptr,nullptr));
+  monitorControl.get(nullptr,nullptr,&value);assert(!value.bool_value);
+  // A stale callback cannot edit the stored monitor preference while disabled.
+  monitorControl.set(nullptr,nullptr,&value);assert(survivor_perf::monitor);
+  value.bool_value=true;modeControl.set(nullptr,nullptr,&value);
+  assert(!monitorControl.is_disabled(nullptr,nullptr));
+  monitorControl.get(nullptr,nullptr,&value);assert(value.bool_value);
+  value.bool_value=false;monitorControl.set(nullptr,nullptr,&value);
+  monitorControl.get(nullptr,nullptr,&value);assert(!value.bool_value);
  }
  s_run.phase=Phase::Ready;
  controls.clear();s_options.debug={4,10,1,1,5};s_run.options.debug=s_options.debug;
@@ -365,7 +382,7 @@ else:
 ui=(root/'src/survivors_maps_ui.inc').read_text().split('UiElementHandle s_difficultySummary',1)[1]
 with tempfile.TemporaryDirectory() as tmp:
  cpp=Path(tmp)/'test.cpp';exe=Path(tmp)/'test'
- cpp.write_text(fixture+'namespace survivor_perf{bool mode=false,monitor=false;bool enabled(){return mode;}bool monitor_enabled(){return mode&&monitor;}void set_enabled(bool v){mode=v;}void set_monitor(bool v){monitor=v;}}'+'bool extended_locomotion(fopAc_ac_c* a,int p){return p==fpcNm_E_BS_e&&reinterpret_cast<e_bs_class*>(a)->action==2;}\n'+(root/'src/survivors_options.inc').read_text()+'UiElementHandle s_difficultySummary'+ui+(root/'src/survivors_debug_ui.inc').read_text()+window+main)
+ cpp.write_text(fixture+'namespace survivor_perf{bool mode=true,monitor=false;bool enabled(){return mode;}bool monitor_enabled(){return mode&&monitor;}void set_enabled(bool v){mode=v;}void set_monitor(bool v){monitor=v;}}'+'bool extended_locomotion(fopAc_ac_c* a,int p){return p==fpcNm_E_BS_e&&reinterpret_cast<e_bs_class*>(a)->action==2;}\n'+(root/'src/survivors_options.inc').read_text()+'UiElementHandle s_difficultySummary'+ui+(root/'src/survivors_debug_ui.inc').read_text()+window+main)
  for enabled in [0,1]:
   subprocess.run([os.environ.get('CXX','c++'),f'-DDAWNLIGHT_SURVIVORS_DEBUG={enabled}','-std=c++20','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-attributes','-I',str(root/'src'),'-I',str(root/'dusklight/sdk/include'),str(cpp),'-o',str(exe)],check=True)
   subprocess.run([str(exe)],check=True)

@@ -1,7 +1,7 @@
 # Survivors Performance Mode
 
 Enable **Performance Mode** in Survivors settings to reduce Dawnlight-owned visual
-load. It defaults to off, persists in the mod configuration, and can be changed
+load. It defaults to on for new configurations, persists in the mod configuration, and can be changed
 during a run. Visual reservations are reconciled on the next player simulation
 update. Damage, status durations, collision radii, projectile counts, enemy counts,
 RNG, difficulty and score eligibility are unchanged.
@@ -73,7 +73,11 @@ reducing the main enemy geometry. Other shadow submission paths are unaffected.
 ## Monitoring and adaptive reduction
 
 **Performance Monitor**, separately off by default, adds a HUD line during runs
-and logs counters once per second while Performance Mode is active. It reports
+and logs counters once per second while Performance Mode is active. Its toggle
+is disabled while Performance Mode is off; its saved preference is retained
+and becomes effective again when Performance Mode is enabled. Existing saved
+Mode/Monitor preferences are preserved when updating. Performance Logs continues
+to default to off and remains independent of Performance Mode. The monitor reports
 vertex usage/capacity, run peak, index/uniform/storage usage, pressure tier and
 enemy/projectile/effect counts. Emitter counts are reserved custom slots, not the
 number of particles or native emitters.

@@ -158,22 +158,13 @@ void apply_treasure_inventory(daAlink_c* link,ChestReward reward,const Run& resu
         dComIfGs_setCollectShield(result.shield_tier());
         dComIfGs_onItemFirstBit(shield);
         dMeter2Info_setShield(shield, false);
-        if (changed) link->setShieldChange();
+        if (changed) request_shield_reload(link, shield);
     } else if (reward == ChestReward::RedPotion) {
         for (unsigned i = 0; i < potions; ++i)
             dComIfGs_setItem(potion_slot(), dItemNo_RED_BOTTLE_e);
         dComIfGs_onItemFirstBit(dItemNo_EMPTY_BOTTLE_e);
         dComIfGs_onItemFirstBit(dItemNo_RED_BOTTLE_e);
     }
-}
-HookAction before_survivors_shield_update(ModContext*, void* args, void*, void*) {
-    auto* link = mods::arg<daAlink_c*>(args, 0);
-    // Native gameplay does not pump the collection menu's asynchronous shield
-    // reload. Finish it before Link updates/draws, without opening that menu.
-    if (in_arena() && link && link == daAlink_getAlinkActorClass() &&
-        !link->checkStatusWindowDraw() && link->getShieldChangeWaitTimer() != 0)
-        link->loadShieldModelDVD();
-    return HOOK_CONTINUE;
 }
 // Reuse the choice cards with an inactive, free slot. No world chest/model or
 // Get Item event is needed, and the ordinary chest price never advances.

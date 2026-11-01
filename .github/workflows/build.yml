@@ -358,6 +358,8 @@ jobs:
           # Reads the native shield loader; Configure CMake provides the SDK.
           python3 tests/survivors_treasure_test.py dusklight
           CXX=clang++ python3 tests/survivors_treasure_test.py dusklight
+          python3 tests/survivors_shield_reload_test.py dusklight
+          CXX=clang++ python3 tests/survivors_shield_reload_test.py dusklight
           python3 tests/survivors_arena_behavior_test.py
           CXX=clang++ python3 tests/survivors_arena_behavior_test.py
           python3 tests/survivors_post_run_save_test.py

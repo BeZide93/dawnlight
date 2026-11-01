@@ -573,6 +573,7 @@ bool ui_visible() {
     return value;
 }
 bool transitioning() { return dComIfGp_isEnableNextStage() || fopOvlpM_IsPeek(); }
+#include "survivors_shield_reload.inc"
 bool playable() {
     return in_arena() && !survivors_hub_arrival_active() && !midna_dialog_busy() && !transitioning() && !dComIfGp_isPauseFlag() &&
         !dScnPly_c::isPause() && !dComIfGp_event_runCheck() && !ui_visible() &&
@@ -734,6 +735,7 @@ void detach_attack_references() {
 }
 void reset_runtime() {
     retire_hub_zelda();
+    clear_shield_reload();
     clear_performance_lines();
     survivor_perf::reset_run();
     clear_player_contacts();
@@ -1910,6 +1912,7 @@ void update_survivors() {
     const freeze_diag::Scope diagnosticScope(freeze_diag::Metric::Update);
 #endif
     survivor_perf::tick(s_active);
+    validate_shield_reload();
     update_title_preview();
     update_hub_zelda(); // Also drains pending NPC deletion when the mode is inactive.
     enemy_hud::refresh();

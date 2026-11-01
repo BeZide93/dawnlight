@@ -168,7 +168,7 @@ constexpr ManualAbility manual_ability(Upgrade weapon) {
     default:return ManualAbility::Count;
     }
 }
-inline constexpr unsigned normal_enemy_limit = 345;
+inline constexpr unsigned normal_enemy_limit = 300;
 struct RunOptions {
     float enemy_hp = 1, enemy_damage = 1, enemy_speed = 1, horde = 1;
     float camera_distance = 200;

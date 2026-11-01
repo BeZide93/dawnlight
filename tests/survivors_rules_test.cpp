@@ -519,13 +519,13 @@ int main() {
         Run swarm;RunOptions settings;settings.horde=horde;swarm.start(3,settings);
         for(unsigned tick=0;tick<=duration;++tick) {
             swarm.ticks=tick;
-            assert(swarm.target_population()==345);
+            assert(swarm.target_population()==300);
             assert(swarm.spawn_interval()==(tick<600*ticks_per_second ? 75-tick/(10*ticks_per_second) : 15));
             swarm.horde_remaining=0;assert(swarm.spawn_batch()==horde);
             swarm.horde_remaining=1;assert(swarm.spawn_batch()==3*horde);
         }
         for(unsigned kill=1;kill<=50;++kill)assert(swarm.normal_kill_drops()==(kill%horde==0));
-        swarm.ticks=duration;assert(swarm.target_population()==345&&swarm.target_population()+elite_capacity<enemy_capacity);
+        swarm.ticks=duration;assert(swarm.target_population()==300&&swarm.target_population()+elite_capacity<enemy_capacity);
     }
     // Fixed-price exploration chests neither follow nor raise the regular price.
     Run fixed;fixed.start(8);fixed.chests_opened=10;fixed.phase=Phase::Treasure;

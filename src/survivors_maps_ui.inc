@@ -360,7 +360,7 @@ ModResult build_run_settings(ModContext*,UiWindowHandle,UiElementHandle left,UiE
     control=UI_CONTROL_DESC_INIT;
     control.kind=UI_CONTROL_NUMBER;control.label="Max Normal Enemies";
     control.min=0;control.max=normal_enemy_limit;control.step=1;
-    control.help_rml="Maximum simultaneous normal wave enemies, including Horde waves. Default and maximum: 345. Zero disables normal waves. Bosses, guards and boss summons have separate limits. Saved for the next run.";
+    control.help_rml="Maximum simultaneous normal wave enemies, including Horde waves. Default and maximum: 300. Zero disables normal waves. Bosses, guards and boss summons have separate limits. Saved for the next run.";
     control.is_disabled=[](ModContext*,void*){return !settings_editable();};
     control.get=[](ModContext*,void*,UiControlValue* value){value->int_value=s_options.max_normal_enemies;};
     control.set=[](ModContext*,void*,const UiControlValue* value){

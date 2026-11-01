@@ -43,7 +43,7 @@ constexpr unsigned ordinary_limit(Species type,float horde) {
     case Species::Guay:return std::min(12u,unsigned(4*horde));
     case Species::Bomskit:return std::min(6u,unsigned(2*horde));
     case Species::ShadowBeast:case Species::Gibdo:case Species::Dynalfos:return std::min(4u,unsigned(2*horde));
-    default:return 345;
+    default:return 300;
     }
 }
 // Filter before choosing; saturated specialists fall back to the basic pool.

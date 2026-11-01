@@ -1113,7 +1113,9 @@ remaining duration; active events multiply spawn batches by three, never by nine
 The normal population cap remains enforced. The HUD shows a warning/countdown;
 menus freeze both trials and duration, and 20:00 clears/stops random hordes.
 
-The normal-enemy population cap is always 345, independent of time and difficulty.
+The normal-enemy population ceiling is 300, independent of time and difficulty.
+Settings → Enemy Count → Max Normal Enemies can lower it to any value from 0–300.
+Previously saved or imported values above 300 are clamped when loaded.
 Spawn intervals retain their original time curve (75 down to 15 ticks, decreasing
 by one every 10 seconds). Horde difficulty multiplies per-wave spawns;
 every Nth normal kill generates XP and rolls loot. Elites and pots are exempt.

@@ -350,6 +350,17 @@ shown in the preview/message and capped by the wallet when granted. This also
 applies to extra Ordon Sword units and potion units beyond available bottle slots.
 One chest still charges only once. Price increases are +5, +7, +9, +11 rupees, etc.
 
+Shield tier changes preload the next native shield archive while Link retains the
+old live model. Once the archive is ready, the native reload's four bounded steps
+complete within one player pre-update callback, before collision or drawing can
+read the shield matrix. This differs from swords, whose already-loaded models are
+selected by native equipment updates. Same-archive changes need no reload. Failed
+loads retain the old visual; cancelled requests release only their temporary
+archive reference. Mode/reset/scene/player changes cancel pending work. Native
+Collection-menu reloads remain under the menu's control. The regression fixture
+uses the SDK's actual reload and resource-phase functions, then reads the native
+shield matrix after every gameplay callback, including delayed loading.
+
 `survivors_roster.hpp` defines each map's basic pool, timed specialist unlocks,
 ordinary caps and four elite species. See [the player guide](../../SURVIVORS.md#maps-elites-and-pots)
 for the exact tables. Staltroops are deliberately excluded, including their native

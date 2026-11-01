@@ -49,8 +49,10 @@ rendered/gameplay details.
 - Throne Room uses the native final Ganondorf combat cue. Ownership is released
   on death, restart, stage transition and shutdown; a replacement area's cue is
   never stopped by stale cleanup.
-- Enemy Collision defaults off and filters only Link/owned-enemy contact pairs,
-  including structural children. Attack/target checks and objects are unaffected.
+- Enemy Collision defaults off and controls Link/owned-enemy body contacts,
+  including child actors. Different run-owned enemies always pass through each
+  other, independently of this toggle and Performance Mode. Same-owner internal
+  contacts, attack/target checks and objects are unaffected.
 - Bosses and elites ignore all Survivors knockback, including pending motion.
 - Darknut's high/low guard and Ganondorf's defence block frontal owned attacks
   before damage attribution and on-hit effects; rear attacks remain effective.
